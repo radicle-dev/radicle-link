@@ -3,10 +3,16 @@ FROM rust:1.39-slim-buster
 # Install additional packages
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        libssl-dev \
-        pkg-config \
-        jq \
         curl \
+        jq \
+        libssl-dev \
+        lmodern \
+        make \
+        pandoc \
+        pandoc-citeproc \
+        pkg-config \
+        texlive \
+        texlive-xetex \
     && apt-get autoremove \
     && rm -rf /var/lib/apt/lists/*
 
