@@ -1,0 +1,10 @@
+env:
+  DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build"
+  DOCKER_FILE: .buildkite/docker/rustc1.39/Dockerfile
+
+steps:
+- label: "Tests"
+  command: "cargo test --all"
+  agents:
+    production: "true"
+    platform: "linux"

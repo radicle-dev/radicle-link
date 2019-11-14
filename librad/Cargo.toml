@@ -1,0 +1,7 @@
+[package]
+name = "librad"
+version = "0.1.0"
+authors = ["Monadic <team@monadic.xyz>"]
+edition = "2018"
+
+[dependencies]
