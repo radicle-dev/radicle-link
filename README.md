@@ -1,3 +1,5 @@
+[![Build status](https://badge.buildkite.com/c76805e51e194fb0cdf4bf537306e3b6270cb1ebc4db48f21c.svg)](https://buildkite.com/monadic/radicle-link)
+
 # Radicle Link
 
 Second iteration of the Radicle code collaboration protocol and stack.
