@@ -8,7 +8,7 @@ This is the working repo for the second iteration of the [Radicle](http://radicl
 
 _In fact, there is nothing substantial to see here yet_
 
-Join our [#radicle](irc://freenode:1/radicle) IRC channel for development updates. 
+Join our [#radicle](https://webchat.freenode.net/?channels=radicle) IRC channel for development updates. 
 
 ## License
 
