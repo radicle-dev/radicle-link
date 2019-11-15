@@ -1,5 +1,5 @@
 env:
-  DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build@sha256:8a785ab79f769412c042f9c0d88cbf41c777e1e654045262dba9ba3e11534138"
+  DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build@sha256:6b061cd8347976a6b2935e2a0389fea0b18ea856e32749947b904174e1c01e35"
   DOCKER_FILE: .buildkite/docker/rustc1.39/Dockerfile
 
 steps:

@@ -3,10 +3,15 @@ FROM rust:1.39-slim-buster
 # Install additional packages
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        clang \
         curl \
         jq \
+        libclang-dev \
+        libgmp-dev \
         libssl-dev \
+        llvm-dev \
         lmodern \
+        m4 \
         make \
         pandoc \
         pandoc-citeproc \
