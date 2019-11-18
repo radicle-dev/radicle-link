@@ -1,2 +1,2 @@
 [workspace]
-members = [ "librad", "rad" ]
+members = [ "librad2", "rad2" ]
