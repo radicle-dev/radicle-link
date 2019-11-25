@@ -4,6 +4,7 @@ use std::io::Write;
 use failure;
 use pgp::armor;
 use pgp::constants::{Features, HashAlgorithm, KeyFlags, SignatureType};
+use pgp::conversions::Time;
 use pgp::packet;
 use pgp::packet::key::Key4;
 use pgp::packet::signature;
@@ -25,6 +26,7 @@ pub struct Signature(Vec<u8>);
 
 #[derive(Debug)]
 pub enum Error {
+    NotATSK,
     PGPError(failure::Error),
     IoError(io::Error),
 }
@@ -54,7 +56,7 @@ impl Key {
         // Self-sign
         let sig = signature::Builder::new(SignatureType::DirectKey)
             .set_features(&Features::sequoia())?
-            .set_key_flags(&KeyFlags::default().set_certify(true).set_sign(true))?
+            .set_key_flags(&KeyFlags::default().set_sign(true))?
             .set_signature_creation_time(creation_time)?
             .set_key_expiration_time(None)?
             .set_issuer_fingerprint(key.fingerprint())?
@@ -110,27 +112,86 @@ impl Key {
         Ok(())
     }
 
-    pub fn export_public(&self, out: &mut dyn io::Write) -> Result<(), Error> {
+    pub fn export(&self, out: &mut dyn io::Write) -> Result<(), Error> {
         self.0.armored().export(out).map_err(|e| e.into())
     }
 
-    pub fn export_private(&self, mut out: &mut dyn io::Write) -> Result<(), Error> {
-        let mut armor = armor::Writer::new(&mut out, armor::Kind::SecretKey, &[])?;
-        self.0.as_tsk().export(&mut armor).map_err(|e| e.into())
-    }
-
-    /// Import an ASCII-armored OpenPGP key.
+    /// Certify this key using the TSK read from the supplied `io::Read`.
     ///
-    /// Note that this will import both public and private keys. Obviously, `sign` will fail if no
-    /// private key material is known. Also note that we don't currently handle encrypted key
-    /// material.
-    pub fn import<D: AsRef<[u8]> + ?Sized>(key: &D) -> Result<Self, Error> {
-        let tpk = pgp::TPK::from_bytes(key)?;
-        Ok(Self(tpk))
+    /// We don't want device keys to be stored elsewhere, yet want to enable PGP users to certify
+    /// them. That is, make the device key a "subkey" of their primary identity key published to
+    /// key servers _without_ actually storing the device key in the GPG keyring.
+    ///
+    /// To achieve this, we read the certifying _secret_ key (as obtained by `gpg --export-secret-keys
+    /// --armor`), add this key as a subkey, and write a TPK which should be sent directly to
+    /// keyservers.
+    pub fn certify_with<R: io::Read, W: io::Write>(
+        &self,
+        tsk_reader: &mut R,
+        tpk_writer: &mut W,
+    ) -> Result<(), Error> {
+        let mut tpk = pgp::TPK::from_reader(tsk_reader)?;
+        if !tpk.is_tsk() {
+            return Err(Error::NotATSK);
+        }
+
+        // Their primary key
+        let primary = tpk.primary();
+        let mut primary_signer = primary.clone().mark_parts_secret().into_keypair().unwrap();
+
+        // Our key, to be used as a subkey
+        let subkey = self
+            .0
+            .primary()
+            .clone()
+            .mark_parts_secret()
+            .mark_role_secondary()
+            .into_keypair()
+            .unwrap();
+        let mut subkey_signer = subkey.clone();
+
+        let mut sig = signature::Builder::new(SignatureType::SubkeyBinding)
+            .set_features(&Features::sequoia())?
+            .set_key_flags(&KeyFlags::default().set_sign(true))?
+            .set_key_expiration_time(None)?
+            .set_preferred_hash_algorithms(vec![HashAlgorithm::SHA512])?;
+
+        let backsig = signature::Builder::new(SignatureType::PrimaryKeyBinding)
+            .set_signature_creation_time(time::now().canonicalize())?
+            .set_issuer_fingerprint(self.fingerprint())?
+            .set_issuer(self.keyid())?
+            .sign_subkey_binding(
+                &mut subkey_signer,
+                &primary,
+                &subkey.public(),
+                HashAlgorithm::SHA512,
+            )?;
+
+        sig = sig.set_embedded_signature(backsig)?;
+
+        let signature = subkey.clone().public().bind(
+            &mut primary_signer,
+            &tpk,
+            sig,
+            HashAlgorithm::SHA512,
+            None,
+        )?;
+
+        tpk = tpk.merge_packets(vec![
+            pgp::Packet::SecretSubkey(subkey.public().clone().mark_parts_secret()),
+            signature.into(),
+        ])?;
+
+        tpk.armored().export(tpk_writer)?;
+        Ok(())
     }
 
     pub fn fingerprint(&self) -> pgp::Fingerprint {
         self.0.fingerprint()
+    }
+
+    pub fn keyid(&self) -> pgp::KeyID {
+        self.0.keyid()
     }
 }
 
@@ -186,6 +247,8 @@ impl<'a> VerificationHelper for Helper<'a> {
 pub mod tests {
     use super::*;
     use crate::keys::device;
+
+    use pgp::tpk;
     use sodiumoxide::crypto::sign::Seed;
 
     const SEED: Seed = Seed([
@@ -221,40 +284,14 @@ pub mod tests {
     }
 
     #[test]
-    fn test_export_import() {
-        let device_key = device::Key::new();
-        let pgp_key = device_key
-            .as_pgp("leboeuf")
-            .expect("Failed to obtain PGP key");
-
-        let mut buf = Vec::new();
-        pgp_key.export_public(&mut buf).expect("Export failed");
-        let import = super::Key::import(&buf).expect("Import failed");
-        assert_eq!(pgp_key.fingerprint(), import.fingerprint())
-    }
-
-    #[test]
-    fn test_export_import_private() {
-        let device_key = device::Key::new();
-        let pgp_key = device_key
-            .as_pgp("leboeuf")
-            .expect("Failed to obtain PGP key");
-
-        let mut buf = Vec::new();
-        pgp_key.export_private(&mut buf).expect("Export failed");
-        let import = super::Key::import(&buf).expect("Import failed");
-        assert_eq!(pgp_key.fingerprint(), import.fingerprint())
-    }
-
-    #[test]
-    fn test_export_public() {
+    fn test_export() {
         let device_key = device::Key::from_seed(&SEED, time::at(CREATED_AT));
         let pgp_key = device_key
             .as_pgp("leboeuf")
             .expect("Failed to obtain PGP key");
 
         let mut buf = Vec::new();
-        pgp_key.export_public(&mut buf).expect("Export failed");
+        pgp_key.export(&mut buf).expect("Export failed");
 
         // Read armor
         let mut cursor = io::Cursor::new(&buf);
@@ -282,5 +319,39 @@ pub mod tests {
         expected_headers.sort();
 
         assert_eq!(&expected_headers[..], &headers[..]);
+    }
+
+    #[test]
+    fn test_certify() -> Result<(), Error> {
+        let device_key = device::Key::new();
+        let pgp_key = device_key.as_pgp("leboeuf")?;
+        let (certifier, _) = tpk::TPKBuilder::general_purpose(
+            tpk::CipherSuite::Cv25519,
+            UserID::from("leboeuf@acme.org").into(),
+        )
+        .generate()?;
+
+        let mut cert_buf = Vec::new();
+        certifier.as_tsk().export(&mut armor::Writer::new(
+            &mut cert_buf,
+            armor::Kind::SecretKey,
+            &[],
+        )?)?;
+
+        let mut out = Vec::new();
+        pgp_key.certify_with(&mut io::Cursor::new(&cert_buf), &mut out)?;
+
+        let tpk = tpk::TPK::from_bytes(&out)?;
+        if tpk.fingerprint() != certifier.fingerprint() {
+            Err(failure::err_msg("Different TPK came out the other end").into())
+        } else {
+            tpk.keys_valid()
+                .signing_capable()
+                .map(|(_, _, key)| key)
+                .filter(|key| key.fingerprint() == pgp_key.fingerprint())
+                .nth(0)
+                .ok_or(failure::err_msg("Key not certified").into())
+                .map(|_| ())
+        }
     }
 }
