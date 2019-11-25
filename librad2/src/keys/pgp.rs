@@ -15,7 +15,7 @@ use pgp::parse::Parse;
 use pgp::serialize::stream;
 use pgp::serialize::Serialize;
 use pgp::tpk::TPK;
-use secstr::SecVec;
+use sodiumoxide::crypto::sign::ed25519 as sodium;
 use time;
 
 pub use pgp::packet::UserID;
@@ -44,14 +44,21 @@ impl From<io::Error> for Error {
 }
 
 impl Key {
-    pub fn from_scalar<U: Into<packet::UserID>>(
-        ed25519_scalar: SecVec<u8>,
+    pub fn from_sodium<U: Into<packet::UserID>>(
+        sodium: &sodium::SecretKey,
         uid: U,
         creation_time: time::Tm,
     ) -> Result<Key, Error> {
-        // Force primary key from our scalar
-        let key4 = Key4::import_secret_ed25519(ed25519_scalar.unsecure(), creation_time)?;
-        let key = packet::Key::from(key4);
+        let key = {
+            // ACHTUNG: NaCl stores the public part in the second half of the secret key, so
+            // we just extract the first 32 bytes. Relying on this is obviously leaky, but the best
+            // we can do for now is to `use` the ed25519 module, so the chances are slimmer for
+            // this to break in case libsodium decides to make some other signature scheme the
+            // default.
+            let scalar = &sodium.as_ref()[..32];
+            let key4 = Key4::import_secret_ed25519(&scalar, creation_time)?;
+            packet::Key::from(key4)
+        };
 
         // Self-sign
         let sig = signature::Builder::new(SignatureType::DirectKey)

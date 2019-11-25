@@ -1,7 +1,6 @@
 use std::fmt;
 
 use bs58;
-use secstr::SecVec;
 use sodiumoxide::crypto::sign;
 use time;
 
@@ -54,14 +53,10 @@ impl Key {
     }
 
     pub fn as_pgp(&self, nickname: &str) -> Result<pgp::Key, pgp::Error> {
-        let scalar = {
-            let bytes = self.sk.as_ref();
-            SecVec::new(Vec::from(&bytes[..32]))
-        };
         let uid = pgp::UserID::from_address(None, None, format!("{}@{}", nickname, self))
             .expect("messed up UserID");
-        pgp::Key::from_scalar(
-            scalar,
+        pgp::Key::from_sodium(
+            &self.sk,
             uid,
             time::at(time::Timespec::new(self.created_at, 0)),
         )
