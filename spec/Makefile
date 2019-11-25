@@ -33,4 +33,4 @@ out/%.html: %.md pandoc/template.html out/spec.css pandoc/ieee-with-url.csl refe
 		-o $@
 
 clean:
-	rm -f out/*.{pdf,html}
+	rm -f out/radicle-link.*

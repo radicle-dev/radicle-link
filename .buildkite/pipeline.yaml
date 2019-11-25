@@ -1,18 +1,22 @@
-env:
-  DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build@sha256:6b061cd8347976a6b2935e2a0389fea0b18ea856e32749947b904174e1c01e35"
-  DOCKER_FILE: .buildkite/docker/rustc1.39/Dockerfile
-
 steps:
 - label: "Tests"
   command: "cargo test --all"
   agents:
     production: "true"
     platform: "linux"
+  env:
+    DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build@sha256:51ec4db1da1870e753610209880f3ff1759ba54149493cf3118b47a84edbc75a"
+    DOCKER_FILE: .buildkite/docker/rustc1.39/Dockerfile
+
 
 - label: "Render Spec"
-  command: "make -C spec all"
-  artifact_paths:
-  - "spec/out/*"
+  commands:
+  - "cd spec"
+  - "make clean all"
+  - "git diff --exit-code -- spec/out"
   agents:
     production: "true"
     platform: "linux"
+  env:
+    DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-pandoc@sha256:eb1d9592d83fa5edad1b626a71b53aa586c64a5a7e7bb4158256d6265e1ac1a9"
+    DOCKER_FILE: .buildkite/docker/pandoc/Dockerfile

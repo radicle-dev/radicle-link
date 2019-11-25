@@ -1,0 +1,395 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <meta name="author" content="Monadic" />
+  <meta name="date" content="2019-11-14" />
+  <title>Radicle Link</title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="spec.css" type="text/css" />
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" type="text/javascript"></script>
+</head>
+<body>
+<div id="header">
+<h1 class="title">Radicle Link</h1>
+<b>Author:</b> Monadic<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a><br/>
+<b>Revision:</b> rev1-draft<br/>
+<b>Date:</b> 2019-11-14<br/>
+<b>Status:</b> official/experimental<br/>
+<b>PDF:</b> <a href="radicle-link.pdf">radicle-link.pdf</a><br/>
+</div>
+<div id="TOC">
+<h2 class="toc">Table of Contents</h2>
+<ul>
+<li><a href="#introduction">Introduction</a>
+<ul>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#conventions-and-terminology">Conventions and Terminology</a></li>
+</ul></li>
+<li><a href="#cryptographic-identities">Cryptographic Identities</a></li>
+<li><a href="#resource-locators">Resource Locators</a>
+<ul>
+<li><a href="#urls">URLs</a></li>
+<li><a href="#paths">Paths</a></li>
+<li><a href="#content-addresses">Content Addresses</a></li>
+<li><a href="#cddl-types">CDDL types</a></li>
+</ul></li>
+<li><a href="#replication">Replication</a>
+<ul>
+<li><a href="#metadata">Metadata</a>
+<ul>
+<li><a href="#format">Format</a></li>
+<li><a href="#project">Project</a></li>
+<li><a href="#contributor">Contributor</a></li>
+<li><a href="#heuristics">Heuristics</a></li>
+</ul></li>
+<li><a href="#large-objects">Large Objects</a></li>
+</ul></li>
+<li><a href="#collaboration">Collaboration</a></li>
+<li><a href="#network-model">Network Model</a>
+<ul>
+<li><a href="#membership">Membership</a></li>
+<li><a href="#syncing">Syncing</a></li>
+<li><a href="#gossip">Gossip</a></li>
+<li><a href="#transport">Transport</a></li>
+<li><a href="#rpc">RPC</a></li>
+</ul></li>
+<li><a href="#optional-features">Optional Features</a>
+<ul>
+<li><a href="#relaying">Relaying</a></li>
+<li><a href="#alternate-urls">Alternate URLs</a></li>
+</ul></li>
+<li><a href="#security-considerations">Security Considerations</a></li>
+<li><a href="#refs">References</a></li>
+<li><a href="#appendix-a-implementation-notes-git">Appendix A: Implementation Notes <code>git</code></a></li>
+<li><a href="#appendix-b-implementation-notes-pijul">Appendix B: Implementation Notes <code>pijul</code></a></li>
+</ul>
+</div>
+<h1 id="introduction">Introduction</h1>
+<p><strong>Radicle Link</strong> is a protocol for sharing of and collaborating around source code in a peer-to-peer network.</p>
+<p><strong>THIS IS A WORK IN PROGRESS. INFORMATION GIVEN HERE MIGHT BE INACCURATE, INCOMPLETE, OR OUTDATED</strong></p>
+<blockquote>
+<p>tl;dr We adopt the SSB “social overlay” paradigm to establish a peer-to-peer replication layer on top of distributed version control systems. We model this largely based on an (unmodified) <code>git</code> backend, but strive for the protocol to be general enough to allow implementations on top of different paradigms, e.g. <code>pijul</code>. We assume a mostly non-adversarial setting. Features requiring strong sybil resistance (or are otherwise difficult to implement in a purely peer-to-peer way) are out of the scope of this specification. We refer to the <code>radicle-registry</code> project for solutions to those.</p>
+</blockquote>
+<h2 id="overview">Overview</h2>
+<h2 id="conventions-and-terminology">Conventions and Terminology</h2>
+<p>Data types (schemas) are defined using the Concise Data Definition Language (CDDL)<span class="citation" data-cites="rfc8610">[<a href="#ref-rfc8610" role="doc-biblioref">1</a>]</span>, irrespective of the programming language types or the serialisation format they describe.</p>
+<p>The key words “MUST”, “MUST NOT”, “REQUIRED”, “SHALL”, “SHALL NOT”, “SHOULD”, “SHOULD NOT”, “RECOMMENDED”, “NOT RECOMMENDED”, “MAY”, and “OPTIONAL” in this document are to be interpreted as described in RFC 2119<span class="citation" data-cites="rfc2119">[<a href="#ref-rfc2119" role="doc-biblioref">2</a>]</span> and RFC 8174<span class="citation" data-cites="rfc8174">[<a href="#ref-rfc8174" role="doc-biblioref">3</a>]</span> when, and only when, they appear in all capitals, as shown here.</p>
+<h1 id="cryptographic-identities">Cryptographic Identities</h1>
+<ul>
+<li><p><em>DeviceKey</em> (<span class="math inline">\(K_{d}\)</span>)</p>
+<p>A Ed25519 keypair tied to a device <code>d</code>.</p></li>
+<li><p><em>PeerID</em> (<span class="math inline">\(I_{d} = BASE58(PK(K_{d}))\)</span>)</p>
+<p>Textual representation of the <em>DeviceKey</em>.</p></li>
+<li><p><em>DHKey</em> (<span class="math inline">\(S_{d} = PK(Curve25519(K_{d}))\)</span>)</p>
+<p>Used for authentication in a Diffie-Hellman key agreement (the static public key <code>s</code> in the Noise<span class="citation" data-cites="noise">[<a href="#ref-noise" role="doc-biblioref">4</a>]</span> protocol).</p></li>
+<li><p><em>CodeSigningKey</em> (<span class="math inline">\(C\)</span>)</p>
+<p>MAY be equal to <span class="math inline">\(K_{d}\)</span> for any device <code>d</code> (i.e. as long as the key is not shared between multiple devices). Typically, PGP keys already present on a PKI are used for code signing, and shared across devices.</p></li>
+</ul>
+<h1 id="resource-locators">Resource Locators</h1>
+<h2 id="urls">URLs</h2>
+<p>Radicle Link uses standard URLs<span class="citation" data-cites="rfc1738">[<a href="#ref-rfc1738" role="doc-biblioref">5</a>]</span> for full-qualified references to resources. We introduce a new scheme, <code>rad</code>, for URLs within the Radicle network. The <code>rad</code> URL scheme takes the form:</p>
+<pre><code>    rad://&lt;ProjectID&gt;[/&lt;path&gt;]</code></pre>
+<p>More formally, a <code>rad</code> URL is a URI<span class="citation" data-cites="rfc3986">[<a href="#ref-rfc3986" role="doc-biblioref">6</a>]</span> where</p>
+<pre><code>    scheme = &quot;rad&quot;
+    authority = ProjectID (required)</code></pre>
+<p>See <a href="#metadata">Metadata</a>, <a href="#project">Project</a> for what the <em>ProjectID</em> denotes. The <code>path</code> component is generally specific to the implementation’s repository format. Implementation-independent paths are specified in the relevant sections of this document.</p>
+<h2 id="paths">Paths</h2>
+<p>Where Radicle interprets data stored in repository objects, path specifiers are interpreted as being relative to the file system tree corresponding to the current context. For example, a path <code>foo/bar/baz</code> occuring in a <code>git</code> <code>blob</code> reachable from <code>commit</code> C is interpreted as being relative to the root of the <code>tree</code> of the context C. A leading slash (<code>/foo/bar/baz</code>) has the same meaning. If there is no context, the meaning of the path is undefined, and it SHALL be treated as unresolvable.</p>
+<p>Within context C, data blob D is itself a (sub-)context, which can be dereferenced using the dot “.”. That is, the path <code>./img/x.png</code> is interpreted as being relative to D within C.</p>
+<p>Note that these semantics are also applicable to path components of URLs, although establishing the context is implementation-specific.</p>
+<h2 id="content-addresses">Content Addresses</h2>
+<p>Where applicable, content may be referred to by its hash, making it location-independent. Such content addresses SHALL be encoded as “multihashes”<span class="citation" data-cites="multihash">[<a href="#ref-multihash" role="doc-biblioref">7</a>]</span>, wrapped in an approprate “multibase”<span class="citation" data-cites="multibase">[<a href="#ref-multibase" role="doc-biblioref">8</a>]</span> encoding for textual representation. The choice of the approprate hash algorithm is up to the application.</p>
+<h2 id="cddl-types">CDDL types</h2>
+<p>In the context of CDDL schemas in this document, the following types shall be used:</p>
+<pre><code>    ; URL of scheme `s`
+    ; A polymorphic `s` denotes &quot;any applicable scheme&quot;
+    URL&lt;s&gt;
+
+    ; URL Template [RFC6570] of scheme `s`
+    URLTemplate &lt;s&gt;
+
+    ; Context-relative file system path
+    Path
+
+    ; Content address using hash algorithm `h`
+    ; A polymorphic `h` denotes &quot;any applicable algorithm&quot;
+    CAddr&lt;h&gt;</code></pre>
+<h1 id="replication">Replication</h1>
+<p>Data in the Radicle network is disseminated via <strong>replication</strong>. That is, participants (semantically) <strong>pull</strong> the data and updates they’re interested in from their peers.</p>
+<p>The unit of replication is a <strong>repository</strong>, identified by a <em>PeerID</em> in the context of a <a href="#project">project</a>. The holder of the corresponding <em>DeviceKey</em> is referred to as the <strong>owner</strong> of the repository. Repositories belonging to the same project are represented locally as a single repository, identified by a <a href="#project"><em>ProjectID</em></a>. In the context of a project, the owner of a repository may choose to <strong>track</strong> the repositories of other owners (this is called a <strong>remote</strong> in <code>git</code> terminology: a named reference to a remote repository). If the remote repository is found to track other remotes, the tracking repository SHALL also transitively track those, up to <code>n</code> degrees out.</p>
+<p>A repository MUST therefore preserve the transitivity information (i.e. <em>via</em> which tracked <em>PeerID</em> another <em>PeerID</em> is tracked).</p>
+<p>Participants in the network can choose to act as <strong>seeds</strong>. This is similar in concept to a “Pub” in SSB<span class="citation" data-cites="ssb">[<a href="#ref-ssb" role="doc-biblioref">9</a>]</span>: when a peer starts tracking a seed, the seed also tracks this peer, thereby increasing the availability of data on the network. In order to limit its resource usage, a seed MAY require authentication. Note, however, that any participant may act as a seed, and may choose to do so only temporarily.</p>
+<p>Tracking a <em>project</em> means to implicitly track its maintainers (see <a href="#metadata">Metadata</a>). When initialising a local repository for a project (<strong>cloning</strong>) from a seed, however, it is beneficial to also track the seed (recall that <span class="math inline">\(K_{d} \equiv S_{d}\)</span>). The transitivity rule above applies here as well.</p>
+<p>Notice that a seed may track a large number of repositories for a given project, so cloning from a seed will greatly increase the connectedness of a tracking graph. Also note that, by tracking a seed, upstream maintainers can increase the number of paths leading back to them, such that contributions can flow back up even if they come from participants not within the set of tracked repositories of a maintainer. On the other hand, tracking a seed (or operating one) may increase disk and/or memory pressure on the tracking machine, and increases the risk to be exposed to malicious or otherwise unwanted data. We therefore devise that:</p>
+<ul>
+<li>It SHOULD be possible to selectively mark tracked remotes as “notifications only”. This may be implemented using <strong>shallow</strong> tracking if the VCS backend supports it. Shallow remotes MUST NOT be accessible to other peers, except when providing update notifications to them.</li>
+<li>Seeds SHOULD untrack any <em>PeerIDs</em> they haven’t heard from within a (generous) time window.</li>
+<li>Followers SHOULD take appropriate measures to protect themselves against pathological repositories. What measures to take is outside the scope of this document, but a simple measure is to abort transfers bigger than an upper bound, and <strong>banning</strong> the offending <em>PeerID</em> (i.e. stop replicating from it, and refuse network connections).</li>
+</ul>
+<h2 id="metadata">Metadata</h2>
+<p>In order to be replicated on the Radicle network, repositories must store metadata under conventional locations, and with cryptographic signatures as described below.</p>
+<h3 id="format">Format</h3>
+<p>Metadata is stored and transmitted in JSON Canonical Form<span class="citation" data-cites="canonicaljson">[<a href="#ref-canonicaljson" role="doc-biblioref">10</a>]</span>. While intended to be manipulated by tools rather than humans, a textual representation is favourable in the context of source code version control systems. Where a binary representation is more appropriate, e.g. for wire transfer, Canonical CBOR<span class="citation" data-cites="rfc7049">[<a href="#ref-rfc7049" role="doc-biblioref">11</a>, Sec. 3.9]</span> SHALL be used.</p>
+<blockquote>
+<p><em>TBD: It seems like everyone is using OLPC’s definition of canonical JSON (http://wiki.laptop.org/go/Canonical_JSON), or something else entirely (e.g. SSB). These are either not valid JSON, or it’s not clear how canonical they actually are. The spec above <strong>looks</strong> saner, but is lacking implementations, so perhaps revisit this.</em></p>
+</blockquote>
+<h3 id="project">Project</h3>
+<p>A <strong>project</strong> is a statement of intent: two <strong>repositories</strong> which share a prefix of their histories are <em>intended</em> to converge to a common state. It is equally valid for one of them to diverge, which is referred to as a <strong>fork</strong>.</p>
+<p>Hence, in a fully peer-to-peer setting, we must rely on the respective <strong>owner</strong> of a repository to state their intent as to what project identity their repository shall have. This statement is made by storing a file <code>project.json</code> in the repository with the following structure:</p>
+<pre><code>    project = {
+        ; Radicle spec version
+        rad-version: &quot;2&quot;,
+
+        ; Monotonically increasing version of this file
+        revision: uint,
+
+        ; Short name of the project, e.g. &quot;linux&quot;
+        ? name: tstr .size 32,
+
+        ; Brief description
+        ? description: tstr .size 255,
+
+        ; Sum of relations: tags, labels, external URLs, or
+        ;labelled in-tree paths.
+        ? rel: [1*32 {
+            ? tag   =&gt; tstr .size 16,
+            ? label =&gt; {tstr .size 16 =&gt; tstr .size 16},
+            ? url   =&gt; {tstr .size 16 =&gt; URL&lt;s&gt;},
+
+            ; Assumed to exist in `default-branch`
+            ? path  =&gt; {tstr .size 16 =&gt; Path}
+        }]
+
+        ; Branch considered &quot;upstream&quot;, equivalent to HEAD in git
+        ? default-branch: tstr .default &quot;master&quot;,
+
+        ; Trust delegation
+        maintainers: {
+            ; Radicle peer IDs which may alter this file.
+            ; Must include the founder key initially.
+            keys: [+ peer_id],
+        }
+    }</code></pre>
+<p>A single <strong>founder</strong> of the project signs the initial version of the project metadata file with their <em>DeviceKey</em>. The identity of the initial version, as determined by the repository backend, becomes the <em>ProjectID</em>. For <code>git</code>, this would be the commit hash, while in other systems it might be the hash of the patch which introduced the file (and only the file). A <em>ProjectID</em> is thus represented in text form as:</p>
+<pre><code>    &lt;identity&gt; &#39;.&#39; &lt;backend&gt;</code></pre>
+<p>The only currently defined value for <code>backend</code> is <code>git</code>, with <code>identity</code> being the SHA1 hash of the signed commit introducing the metadata file.</p>
+<p>Initially, <code>maintainers</code> includes the founder’s <em>DeviceKey</em>. Updates to the project metadata MUST be signed by a quorum <span class="math inline">\(Q &gt; M/2\)</span>, where <span class="math inline">\(M\)</span> is the number of <code>maintainers</code>. It must be possible to retrieve and inspect the history of the metadata file, where the order of updates is established by incrementing <code>revision</code> by 1 on every update.</p>
+<p>Non-maintainers simply copy the project metadata they currently believe is the latest without signing it (unless and until they become maintainers). This may be implemented by just moving the branch head pointer (e.g. <code>rad/project</code> in <code>git</code>).</p>
+<p>In order for a non-maintainer to determine the latest agreed-upon project metadata, an algorithm similar to the root file update process from The Update Framework (TUF)<span class="citation" data-cites="tuf">[<a href="#ref-tuf" role="doc-biblioref">12</a>]</span> is used:</p>
+<ol type="1">
+<li><p><strong>The founder’s trusted project metadata file is fetched.</strong></p>
+<p>The <em>ProjectID</em> serves as a content address for the founder’s project metadata file. The file is fetched, up to some <code>X</code> number of bytes. If the transfer exceeds <code>X</code>, abort and report that the project is invalid.</p></li>
+<li><p><strong>The co-maintainer’s views of the project metadata file are fetched.</strong></p>
+<p>By inspecting the founder’s <code>maintainers</code> field, the metadata branches for each maintainer (including the founder) are resolved. The history of each branch is walked back until the initial revision is found. Note that this will typically involve downloading the entire history, without knowing its size (in bytes) in advance. Hence, the validator downloads only up to some <code>Y</code> number of bytes, and reports the project as invalid if the transfer exceeds <code>Y</code>.</p>
+<p>If no quorum of maintainers can be resolved, the project is invalid.</p></li>
+<li><p><strong>Check signatures.</strong></p>
+<p>Verify that a quorum of the project metadata files are equivalent according to their normal form, and that each file of this set is signed by the <em>DeviceKey</em> corresponding its maintainer’s <em>PeerID</em>.</p>
+<p>If verification fais, abort and report that the project is invalid.</p></li>
+<li><p><strong>Update to the latest revision.</strong></p>
+<p>Walk the histories of the quorum determined in step 3. <em>forward</em>, and resolve any new maintainers like in step 2.</p>
+<p>For every revision N, verify that</p>
+<ol type="a">
+<li>a quorum of the project metadata files are equivalent according to their normal form</li>
+<li>the <code>revision</code> of N-1 is less than the <code>revision</code> of N</li>
+<li>a quorum of the files is signed with the maintainer keys from revision N</li>
+<li>a quorum of the files is signed with the maintainer keys from revision N-1</li>
+</ol>
+<p>If verification fails, revert to revision N-1, and <strong>discard</strong> all later updates (i.e. reset / untrack the respective branches). Otherwise, repeat step 4. until there are no more updates.</p>
+<p>As new updates are discovered on the network, repeat step 4., starting from the latest validated revision N.</p></li>
+</ol>
+<blockquote>
+<p><em><strong>Note</strong>: It is tempting to implement this scheme in <code>git</code> using merge commits to sign updates to the project metadata file. Since patches don’t commute in <code>git</code>, this may lead to (false) merge conflicts, though. Therefore, it is RECOMMENDED to maintain independent histories for each maintainer.</em></p>
+</blockquote>
+<p>Maintainers perform the same validation, but are prompted to attest updates from co-maintainers instead of discarding them. It is assumed that maintainers coordinate out-of-band on proposals, such that no conflicts arise. If a maintainer is prompted to sign conflicting updates nevertheless, we expect them to sign only one, and discard the rest. Note that this may lead to an undecided state for an observer – since invalid updates are discarded by all verifiers, it is safe to reset maintainer histories in order to resolve such conflicts.</p>
+<p>The project metadata file may be referred to using URLs of the form:</p>
+<pre><code>    rad://&lt;ProjectID&gt;/&lt;PeerID&gt;/rad/project[.json]</code></pre>
+<h3 id="contributor">Contributor</h3>
+<p>A <strong>contributor</strong> is someone who publishes updates to a project, which includes the maintainers. It is legitimate to publish updates which are not signed by the contributor, hence we require the contributor to attest (sign) the branch heads to be published. Additionally, a contributor may wish to identify themselves in some way. We provide this by storing a file <code>contributor.json</code> in the repository with the following structure:</p>
+<pre><code>    contributor = {
+        ; Radicle spec version
+        rad-version: &quot;2&quot;,
+
+        ; Monotonically increasing version of this file
+        revision: uint,
+
+        ; User profile.
+        ? profile:
+            ; Inline `user_profile`
+              user_profile
+            ; Web URL which yields a `user_profile`
+            / URL&lt;https / http&gt;
+            ; URL to another Radicle project (see Note)
+            / URL&lt;rad&gt;,
+
+        ; Note: Referring to another Radicle project may imply the
+        ; same contributor key, or specify one explicitly. The target
+        ; contributor metadata MUST specify an inline `user_profile`
+        ; to prevent cycles.
+
+        ; See &quot;Large Objects&quot;
+        ? largefiles: URLTemplate&lt;s&gt;,
+
+        ; The public CodeSigningKey.
+        ; This can be used to coalesce multiple PeerIDs into a global
+        ; &quot;identity&quot;.
+        ? signingkey: gpg_key,
+
+        ; (Name, Hash) pairs of published branches, e.g.
+        ;
+        ; refs = [
+        ;     &quot;master&quot; = &quot;f620f64f57e5d81977be1ea6a59e131f5bacba3f&quot;,
+        ;     &quot;pr/123&quot; = &quot;7ac558676aef0408d5e732b080a72480bde1b991&quot;
+        ; ]
+        ;
+        ; Should always include project.default-branch. Removing an
+        ; entry &quot;unpublishes&quot; the ref, causing tracking repositories
+        ; to prune it.
+        refs: {+ tstr =&gt; tstr}
+    }
+
+    user_profile = (
+        nickname: tstr .size 32,
+        ? img: Path / URL&lt;https / http&gt;,
+        ? full-name: tstr .size 64,
+        ? bio: tstr .size 255,
+        ; &lt;local-part .size 64&gt;&#39;@&#39;&lt;domain .size 255&gt;
+        ? email: tstr .size 320,
+        ? geo: (float, float) / &quot;earth&quot;,
+        ? urls: {1*5 (tstr .size 16) =&gt; URL&lt;s&gt;}
+    )</code></pre>
+<blockquote>
+<p>TBD: require GPG key to be signed by itself?</p>
+</blockquote>
+<p>Amendments to this file MUST be signed by the <em>DeviceKey</em> of the contributor only. Radicle clients are free to only fetch the latest revision of the contributor metadata file for each contributor.</p>
+<p>Deferring creation of the contributor metadata file until an actual contribution is made is valid, and amounts to “anonymous tracking”.</p>
+<p>The contributor metadata file may be referred to using URLs of the form:</p>
+<pre><code>    rad://&lt;ProjectID&gt;/&lt;PeerID&gt;/rad/contributor[.json]</code></pre>
+<h3 id="heuristics">Heuristics</h3>
+<blockquote>
+<p>TBD: How to determine upstream, how to resolve identities</p>
+</blockquote>
+<h2 id="large-objects">Large Objects</h2>
+<p>In some circumstances it is beneficial to store (binary) large objects outside the source tree of a version control system. This trades local storage space against consistency and data availability – only the most “interesting” (i.e. recent) large files need to be downloaded, and only on demand. Examples of tooling which enables this are Git LFS<span class="citation" data-cites="git-lfs">[<a href="#ref-git-lfs" role="doc-biblioref">13</a>]</span> or Mercurial’s Largefiles Extension<span class="citation" data-cites="hg-largefiles">[<a href="#ref-hg-largefiles" role="doc-biblioref">14</a>]</span>.</p>
+<p>Radicle Link does not provide reduced availability storage – it is up to the user to make aforementioned trade-off, and reason about the guarantees of the chosen large file storage system.</p>
+<p>We enable projects to use out-of-tree large file storage in a distributed fashion by adopting the convention that it is the <em>contributor’s</em> responsibility to provide access to the storage backend, as backends may be subject to access control restrictions. The contributor announces an endpoint for collaborators to fetch large files from in their <a href="#contributor">contributor metadata file</a> as a URL template<span class="citation" data-cites="rfc6570">[<a href="#ref-rfc6570" role="doc-biblioref">15</a>]</span>, which tooling may inspect to configure large file extensions automatically.</p>
+<p>Example <code>largefiles</code> values:</p>
+<pre><code>    https://github.com/me/rad-mirror.git/info/lfs/objects/batch
+    ipfs://{SHA256_CID}
+    dat://778f8d955175c92e4ced5e4f5563f69bfec0c86cc6f670352c457943666fe639/{SHA256}</code></pre>
+<h1 id="collaboration">Collaboration</h1>
+<blockquote>
+<p>TBD</p>
+</blockquote>
+<h1 id="network-model">Network Model</h1>
+<p>Participants in the Radicle network are referred to as <strong>Radicle clients</strong> or <strong>peers</strong>.</p>
+<h2 id="membership">Membership</h2>
+<p>In Radicle, data flows along the edges of the tracking graph. We model the membership protocol on the network layer accordingly.</p>
+<p>Every Radicle client maintains two lists of <code>(PeerID, IP, Port)</code> triples: one containing the <em>PeerIDs</em> it is tracking directly, and the other containing transitively tracked <em>PeerIDs</em>. Both lists are kept sorted by the time a message was received from the respective peer. The list of transitively tracked <em>PeerIDs</em> is at most <code>k</code> elements in size.</p>
+<p>In order to join the network, a Radicle client must know at least one such triple, for example that of a <strong>seed</strong>.</p>
+<p>New triples are discovered either via incoming connections, or by asking connected peers for the <code>(IP, Port)</code> pairs of a random subset of already-known <em>PeerIDs</em> from either list. In the latter case, the liveness of the peer address is checked by sending it a <code>PING</code> RPC. If the <em>PeerID</em> is in the transitive set, and the list is already full, the Radicle client picks the most recently seen triple from that list, and sends it a <code>PING</code> RPC. If it fails to respond, its entry is replaced by the newly discovered peer triple. Otherwise, its last-seen time is updated and the new peer is discarded.</p>
+<blockquote>
+<p><em>[Note]: This works like Kademlia, but without the XOR metric. There might be a meaningful way to arrange PeerIDs in a structure mirroring the tracking graph (instead of Kademlia’s tree structure), so we get some notion of “distance”. Not sure how useful that is, though.</em></p>
+<p><em>Should use UDP for efficiency, yet this requires authentication or at least echoing a challenge. Can we have QUIC with Noise, please?</em></p>
+</blockquote>
+<h2 id="syncing">Syncing</h2>
+<p>A common pattern in interactive use of Radicle is to ask the client to <code>SYNC</code> with the network, and then disconnect. In order to do this, the Radicle client uses its membership lists to select peers to connect to, up to a limit. For each successful connection, the initiator determines which of its local projects the remote has, and performs a <code>SYNC</code>. This process is repeated until all local projects have been <code>SYNC</code>ed with at least one peer.</p>
+<blockquote>
+<p><em>TBD: <code>SYNC</code> is envisioned as kind of a combination of send-pack/receive-pack and fetch-pack/upload-pack, in order to minimise roundtrips</em></p>
+</blockquote>
+<h2 id="gossip">Gossip</h2>
+<p>A stateful Radicle client starts by <a href="#syncing">syncing</a>, but does not disconnect afterwards. Whenever a local update is made, it announces <code>(ProjectID, ref, hash)</code> to its connected peers (multiple updates SHOULD be combined in one message). This triggers the peers to fetch the update, after which they forward the announcement to their connected peers (minus the originator). This process terminates if the receiver is already up-to-date.</p>
+<blockquote>
+<p><em>TBD: Prove this! It’s kinda like EBT, but with lazy push / graft only. A proper EBT may also be possible, but that’d mean the tree root may receive (potentially large) patches.</em></p>
+</blockquote>
+<p>The Radicle client periodically shuffles its active connections by picking other peers from its membership lists at random, and attempting to replace active connections with them.</p>
+<blockquote>
+<p><em>[Note]: This is different from HyParView, in that peers cannot initiate shuffles (which is a bit of a concern in untrusted networks).</em></p>
+</blockquote>
+<h2 id="transport">Transport</h2>
+<blockquote>
+<p>TBD</p>
+</blockquote>
+<h2 id="rpc">RPC</h2>
+<blockquote>
+<p>TBD</p>
+</blockquote>
+<h1 id="optional-features">Optional Features</h1>
+<h2 id="relaying">Relaying</h2>
+<blockquote>
+<p><em>TBD</em></p>
+</blockquote>
+<h2 id="alternate-urls">Alternate URLs</h2>
+<blockquote>
+<p><em>TBD</em></p>
+</blockquote>
+<h1 id="security-considerations">Security Considerations</h1>
+<blockquote>
+<p>TBD</p>
+</blockquote>
+<section id="refs" class="references" role="doc-bibliography">
+<h1 id="references">References</h1>
+<div id="ref-rfc8610">
+<p>[1] H. Birkholz, C. Vigano, and C. Bormann, “Concise Data Definition Language (CDDL): A Notational Convention to Express Concise Binary Object Representation (CBOR) and JSON Data Structures.” RFC 8610; RFC Editor, Jun-2019. <a href="https://rfc-editor.org/rfc/rfc8610.txt">https://rfc-editor.org/rfc/rfc8610.txt</a></p>
+</div>
+<div id="ref-rfc2119">
+<p>[2] S. Bradner, “Key words for use in RFCs to Indicate Requirement Levels.” RFC Editor; RFC 2119 (Best Current Practice); RFC Editor, Fremont, CA, USA, Mar-1997. <a href="https://www.rfc-editor.org/rfc/rfc2119.txt">https://www.rfc-editor.org/rfc/rfc2119.txt</a></p>
+</div>
+<div id="ref-rfc8174">
+<p>[3] B. Leiba, “Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words.” RFC Editor; RFC 8174 (Best Current Practice); RFC Editor, Fremont, CA, USA, May-2017. <a href="https://www.rfc-editor.org/rfc/rfc8174.txt">https://www.rfc-editor.org/rfc/rfc8174.txt</a></p>
+</div>
+<div id="ref-noise">
+<p>[4] Trevor Perrin, “The Noise Protocol Framework.” 2017. <a href="https://noiseprotocol.org/noise.html">https://noiseprotocol.org/noise.html</a></p>
+</div>
+<div id="ref-rfc1738">
+<p>[5] T. Berners-Lee, L. M. Masinter, and M. P. McCahill, “Uniform Resource Locators (URL).” RFC 1738; RFC Editor, Dec-1994. <a href="https://rfc-editor.org/rfc/rfc1738.txt">https://rfc-editor.org/rfc/rfc1738.txt</a></p>
+</div>
+<div id="ref-rfc3986">
+<p>[6] T. Berners-Lee, R. T. Fielding, and L. M. Masinter, “Uniform Resource Identifier (URI): Generic Syntax.” RFC 3986; RFC Editor, Jan-2005. <a href="https://rfc-editor.org/rfc/rfc3986.txt">https://rfc-editor.org/rfc/rfc3986.txt</a></p>
+</div>
+<div id="ref-multihash">
+<p>[7] <a href="https://github.com/multiformats/multihash/blob/cde1aef8158d193d73012b7d730013f05c2f7063/README.md">https://github.com/multiformats/multihash/blob/cde1aef8158d193d73012b7d730013f05c2f7063/README.md</a>. [Accessed: 26-Jul-2019]</p>
+</div>
+<div id="ref-multibase">
+<p>[8] <a href="https://github.com/multiformats/multibase/blob/f2d3c43f9d30d7dca178dc3220c5bf50963a1e70/README.md">https://github.com/multiformats/multibase/blob/f2d3c43f9d30d7dca178dc3220c5bf50963a1e70/README.md</a>. [Accessed: 29-Jul-2019]</p>
+</div>
+<div id="ref-ssb">
+<p>[9] <a href="https://www.scuttlebutt.nz">https://www.scuttlebutt.nz</a>. [Accessed: 30-Oct-2019]</p>
+</div>
+<div id="ref-canonicaljson">
+<p>[10] R. Gibson, “JSON canonical form,” Apr-2019.. <a href="https://github.com/gibson042/canonicaljson-spec/blob/2d2228fef917a61b382c439fbf0d79e61dd3fdf9/README.md">https://github.com/gibson042/canonicaljson-spec/blob/2d2228fef917a61b382c439fbf0d79e61dd3fdf9/README.md</a></p>
+</div>
+<div id="ref-rfc7049">
+<p>[11] C. Bormann and P. Hoffman, “Concise Binary Object Representation (CBOR).” RFC Editor; RFC 7049 (Proposed Standard); RFC Editor, Fremont, CA, USA, Oct-2013. <a href="https://www.rfc-editor.org/rfc/rfc7049.txt">https://www.rfc-editor.org/rfc/rfc7049.txt</a></p>
+</div>
+<div id="ref-tuf">
+<p>[12] J. Cappos et.al., “The Update Framework Specification.” 2019. <a href="https://github.com/theupdateframework/specification/blob/0cddec0a60f95f06d2e23ebadbd876eeb62c1df3/tuf-spec.md">https://github.com/theupdateframework/specification/blob/0cddec0a60f95f06d2e23ebadbd876eeb62c1df3/tuf-spec.md</a></p>
+</div>
+<div id="ref-git-lfs">
+<p>[13] <a href="https://git-lfs.github.com">https://git-lfs.github.com</a>. [Accessed: 11-Nov-2019]</p>
+</div>
+<div id="ref-hg-largefiles">
+<p>[14] <a href="https://www.mercurial-scm.org/wiki/LargefilesExtension">https://www.mercurial-scm.org/wiki/LargefilesExtension</a>. [Accessed: 11-Nov-2019]</p>
+</div>
+<div id="ref-rfc6570">
+<p>[15] R. T. Fielding, M. Nottingham, D. Orchard, J. Gregorio, and M. Hadley, “URI Template.” RFC 6570; RFC Editor, Mar-2012. <a href="https://rfc-editor.org/rfc/rfc6570.txt">https://rfc-editor.org/rfc/rfc6570.txt</a></p>
+</div>
+</section>
+<h1 id="appendix-a-implementation-notes-git">Appendix A: Implementation Notes <code>git</code></h1>
+<blockquote>
+<p>TBD</p>
+</blockquote>
+<h1 id="appendix-b-implementation-notes-pijul">Appendix B: Implementation Notes <code>pijul</code></h1>
+<blockquote>
+<p>TBD</p>
+</blockquote>
+<section class="footnotes" role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1" role="doc-endnote"><p><a href="mailto:team@monadic.xyz">team@monadic.xyz</a><a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>
+</body>
+</html>

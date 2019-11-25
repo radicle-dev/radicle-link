@@ -5,19 +5,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         clang \
         curl \
-        jq \
+        file \
         libclang-dev \
         libgmp-dev \
         libssl-dev \
         llvm-dev \
-        lmodern \
         m4 \
         make \
-        pandoc \
-        pandoc-citeproc \
         pkg-config \
-        texlive \
-        texlive-xetex \
     && apt-get autoremove \
     && rm -rf /var/lib/apt/lists/*
 
