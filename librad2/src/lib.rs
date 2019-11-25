@@ -1,7 +1,9 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
+extern crate sequoia_openpgp as pgp;
+extern crate sodiumoxide;
+
+pub mod keys;
+pub mod paths;
+
+pub fn init() -> bool {
+    sodiumoxide::init().is_ok()
 }
