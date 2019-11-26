@@ -1,4 +1,5 @@
 use std::fmt;
+use std::ops::Deref;
 
 use bs58;
 use sodiumoxide::crypto::sign;
@@ -14,6 +15,7 @@ pub struct Key {
 }
 
 /// The public part of a `Key``
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublicKey(sign::PublicKey);
 
 /// A signature produced by `Key::sign`
@@ -44,7 +46,7 @@ impl Key {
         }
     }
 
-    pub fn public_key(&self) -> PublicKey {
+    pub fn public(&self) -> PublicKey {
         PublicKey(self.sk.public_key())
     }
 
@@ -52,7 +54,7 @@ impl Key {
         Signature(sign::sign_detached(data, &self.sk))
     }
 
-    pub fn as_pgp(&self, nickname: &str) -> Result<pgp::Key, pgp::Error> {
+    pub fn into_pgp(self, nickname: &str) -> Result<pgp::Key, pgp::Error> {
         let uid = pgp::UserID::from_address(None, None, format!("{}@{}", nickname, self))
             .expect("messed up UserID");
         pgp::Key::from_sodium(
@@ -71,7 +73,7 @@ impl Default for Key {
 
 impl fmt::Display for Key {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.public_key().fmt(f)
+        self.public().fmt(f)
     }
 }
 
@@ -85,7 +87,17 @@ impl AsRef<[u8]> for Key {
 
 impl PublicKey {
     pub fn verify(&self, sig: &Signature, data: &[u8]) -> bool {
-        sign::verify_detached(&sig.0, &data, &self.0)
+        sign::verify_detached(sig, &data, self)
+    }
+
+    pub fn from_slice(bs: &[u8]) -> Option<PublicKey> {
+        sign::PublicKey::from_slice(&bs).map(PublicKey)
+    }
+}
+
+impl From<sign::PublicKey> for PublicKey {
+    fn from(pk: sign::PublicKey) -> Self {
+        Self(pk)
     }
 }
 
@@ -94,7 +106,7 @@ impl fmt::Display for PublicKey {
         write!(
             f,
             "{}",
-            bs58::encode(self.0)
+            bs58::encode(self)
                 .with_alphabet(bs58::alphabet::BITCOIN)
                 .into_string()
         )
@@ -107,11 +119,33 @@ impl AsRef<[u8]> for PublicKey {
     }
 }
 
+impl Deref for PublicKey {
+    type Target = sign::PublicKey;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 // Signature
 
 impl Signature {
     pub fn verify(&self, data: &[u8], pk: &PublicKey) -> bool {
-        sign::verify_detached(&self.0, &data, &pk.0)
+        sign::verify_detached(self, &data, pk)
+    }
+}
+
+impl AsRef<[u8]> for Signature {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl Deref for Signature {
+    type Target = sign::Signature;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -125,13 +159,13 @@ pub mod tests {
     fn test_sign_verify_via_signature() {
         let key = Key::new();
         let sig = key.sign(&DATA_TO_SIGN);
-        assert!(sig.verify(&DATA_TO_SIGN, &key.public_key()))
+        assert!(sig.verify(&DATA_TO_SIGN, &key.public()))
     }
 
     #[test]
     fn test_sign_verify_via_pubkey() {
         let key = Key::new();
         let sig = key.sign(&DATA_TO_SIGN);
-        assert!(key.public_key().verify(&sig, &DATA_TO_SIGN))
+        assert!(key.public().verify(&sig, &DATA_TO_SIGN))
     }
 }

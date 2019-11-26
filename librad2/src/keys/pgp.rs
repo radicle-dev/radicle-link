@@ -1,5 +1,6 @@
 use std::io;
 use std::io::Write;
+use std::ops::Deref;
 
 use failure;
 use pgp::armor;
@@ -20,10 +21,6 @@ use time;
 
 pub use pgp::packet::UserID;
 
-pub struct Key(TPK);
-
-pub struct Signature(Vec<u8>);
-
 #[derive(Debug)]
 pub enum Error {
     NotATSK,
@@ -42,6 +39,8 @@ impl From<io::Error> for Error {
         Error::IoError(err)
     }
 }
+
+pub struct Key(TPK);
 
 impl Key {
     pub fn from_sodium<U: Into<packet::UserID>>(
@@ -98,7 +97,6 @@ impl Key {
 
         // Pull out signing keypair from TSK
         let mut keypair = self
-            .0
             .primary()
             .clone()
             .mark_parts_secret()
@@ -114,13 +112,13 @@ impl Key {
 
     pub fn verify(&self, sig: &Signature, data: &[u8]) -> Result<(), Error> {
         let helper = Helper(self);
-        let mut verifier = DetachedVerifier::from_bytes(&sig.0, data, helper, None)?;
+        let mut verifier = DetachedVerifier::from_bytes(sig, data, helper, None)?;
         io::copy(&mut verifier, &mut io::sink())?;
         Ok(())
     }
 
     pub fn export(&self, out: &mut dyn io::Write) -> Result<(), Error> {
-        self.0.armored().export(out).map_err(|e| e.into())
+        self.armored().export(out).map_err(|e| e.into())
     }
 
     /// Certify this key using the TSK read from the supplied `io::Read`.
@@ -148,7 +146,6 @@ impl Key {
 
         // Our key, to be used as a subkey
         let subkey = self
-            .0
             .primary()
             .clone()
             .mark_parts_secret()
@@ -192,21 +189,39 @@ impl Key {
         tpk.armored().export(tpk_writer)?;
         Ok(())
     }
+}
 
-    pub fn fingerprint(&self) -> pgp::Fingerprint {
-        self.0.fingerprint()
+impl Deref for Key {
+    type Target = TPK;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
+}
 
-    pub fn keyid(&self) -> pgp::KeyID {
-        self.0.keyid()
+pub struct Signature(Vec<u8>);
+
+impl Deref for Signature {
+    type Target = Vec<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
 struct Helper<'a>(&'a Key);
 
+impl<'a> Deref for Helper<'a> {
+    type Target = Key;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl<'a> VerificationHelper for Helper<'a> {
     fn get_public_keys(&mut self, _ids: &[pgp::KeyID]) -> pgp::Result<Vec<TPK>> {
-        Ok(vec![(self.0).0.clone()])
+        Ok(vec![self.clone()])
     }
 
     fn check(&mut self, structure: &MessageStructure) -> pgp::Result<()> {
@@ -274,27 +289,26 @@ pub mod tests {
     fn test_idempotency() {
         let device_key = device::Key::new();
         let pgp_one = device_key
-            .as_pgp("leboeuf")
+            .clone()
+            .into_pgp("leboeuf")
             .expect("Failed to obtain PGP key");
         let pgp_two = device_key
-            .as_pgp("leboeuf")
+            .into_pgp("leboeuf")
             .expect("Failed to obtain PGP key");
         assert_eq!(pgp_one.fingerprint(), pgp_two.fingerprint())
     }
 
     #[test]
     fn test_sign_verify() -> Result<(), Error> {
-        let device_key = device::Key::new();
-        let mut pgp_key = device_key.as_pgp("leboeuf")?;
+        let mut pgp_key = device::Key::new().into_pgp("leboeuf")?;
         let sig = pgp_key.sign(&DATA_TO_SIGN)?;
         pgp_key.verify(&sig, &DATA_TO_SIGN)
     }
 
     #[test]
     fn test_export() {
-        let device_key = device::Key::from_seed(&SEED, time::at(CREATED_AT));
-        let pgp_key = device_key
-            .as_pgp("leboeuf")
+        let pgp_key = device::Key::from_seed(&SEED, time::at(CREATED_AT))
+            .into_pgp("leboeuf")
             .expect("Failed to obtain PGP key");
 
         let mut buf = Vec::new();
@@ -330,8 +344,7 @@ pub mod tests {
 
     #[test]
     fn test_certify() -> Result<(), Error> {
-        let device_key = device::Key::new();
-        let pgp_key = device_key.as_pgp("leboeuf")?;
+        let pgp_key = device::Key::new().into_pgp("leboeuf")?;
         let (certifier, _) = tpk::TPKBuilder::general_purpose(
             tpk::CipherSuite::Cv25519,
             UserID::from("leboeuf@acme.org").into(),

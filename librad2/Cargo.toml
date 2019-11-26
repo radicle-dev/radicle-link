@@ -5,15 +5,25 @@ authors = ["Monadic <team@monadic.xyz>"]
 edition = "2018"
 
 [dependencies]
-bs58 = "0.3"
+bs58 = { version = "0.3", features = ["check"] }
 directories = "2.0"
 failure = "0.1"
+failure_derive = "0.1"
 nettle = { version = "5.0", features = ["vendored"]  }
+nonempty = "0.1"
 secstr = "0.3"
 sequoia-openpgp = "0.11"
+sequoia-rfc2822 = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.10"
+serde_json = "1.0"
 sha2 = "0.8"
 sodiumoxide = "0.2"
 tempfile = "3.1"
 time = "0.1"
+url = { version = "2.1", features = ["serde"] }
+urltemplate = "0.1"
+
+[dev-dependencies]
+proptest = "0.9"
+proptest-derive = "0.1"

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 91a28d975d6de1a194dc7e2aa8bda146027044bc0545dd92a2e413424edc136e # shrinks to contrib = Contributor { rad_version: 2, revision: 0, profile: Some(UserProfile(UserProfile { nick: "", name: None, img: None, bio: None, email: None, geo: None, urls: {} })), largefiles: Some(UrlTemplate("https://git-lfs.github.com/{SHA512}")), signing_key: Some(Fingerprint("3E88 77C8 7727 4692 9751  89F5 D03F 6F86 5226 FE8B")) }
