@@ -97,12 +97,7 @@ impl Key {
         let armor = armor::Writer::new(&mut buf, armor::Kind::Signature, &[])?;
 
         // Pull out signing keypair from TSK
-        let mut keypair = self
-            .0
-            .primary()
-            .clone()
-            .mark_parts_secret()
-            .into_keypair()?;
+        let mut keypair = self.0.primary().clone().mark_parts_secret().into_keypair()?;
 
         let msg = stream::Message::new(armor);
         let mut signer = stream::Signer::detached(msg, vec![&mut keypair], None)?;
