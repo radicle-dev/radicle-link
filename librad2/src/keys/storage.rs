@@ -1,7 +1,10 @@
+use std::convert::Infallible;
+use std::fmt::Debug;
 use std::fs::File;
 use std::io;
 use std::path::PathBuf;
 
+use failure::Fail;
 use secstr::SecUtf8;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::pwhash;
@@ -11,43 +14,72 @@ use sodiumoxide::crypto::sign;
 use crate::keys::device;
 use crate::paths::Paths;
 
-#[derive(Debug)]
-pub enum Error {
+#[derive(Debug, Fail)]
+pub enum Error<P: Fail> {
+    #[fail(display = "The key already exists")]
     KeyExists,
+
+    #[fail(display = "Key not found")]
     NoSuchKey,
+
+    #[fail(display = "Unable to retrieve key: Invalid salt")]
     InvalidSalt,
+
+    #[fail(display = "Unable to retrieve key: Invalid nonce")]
     InvalidNonce,
+
+    #[fail(display = "Unable to retrieve key: Invalid key")]
     InvalidKey,
+
+    #[fail(display = "Unable to retrieve key: Invalid passphrase")]
     InvalidPassphrase,
+
+    #[fail(display = "{}", 0)]
     IoError(io::Error),
+
+    #[fail(display = "{}", 0)]
     SerdeError(serde_cbor::error::Error),
+
+    #[fail(display = "{}", 0)]
+    PinentryError(P),
 }
 
-impl From<io::Error> for Error {
+impl<T: Fail> From<io::Error> for Error<T> {
     fn from(err: io::Error) -> Self {
         Error::IoError(err)
     }
 }
 
-impl From<serde_cbor::error::Error> for Error {
+impl<T: Fail> From<serde_cbor::error::Error> for Error<T> {
     fn from(err: serde_cbor::error::Error) -> Self {
         Error::SerdeError(err)
     }
 }
 
 pub trait Pinentry {
-    fn get_passphrase(&self) -> SecUtf8;
+    type Error;
+
+    fn get_passphrase(&self) -> Result<SecUtf8, Self::Error>;
 }
 
 impl Pinentry for SecUtf8 {
-    fn get_passphrase(&self) -> SecUtf8 {
-        self.clone()
+    type Error = Infallible;
+
+    fn get_passphrase(&self) -> Result<SecUtf8, Infallible> {
+        Ok(self.clone())
     }
 }
 
 pub trait Storage {
-    fn put_device_key<F: Pinentry>(&mut self, k: &device::Key, pinentry: F) -> Result<(), Error>;
-    fn get_device_key<F: Pinentry>(&self, pinentry: F) -> Result<device::Key, Error>;
+    fn put_device_key<F>(&mut self, k: &device::Key, pinentry: F) -> Result<(), Error<F::Error>>
+    where
+        F: Pinentry,
+        F::Error: Fail;
+
+    fn get_device_key<F>(&self, pinentry: F) -> Result<device::Key, Error<F::Error>>
+    where
+        F: Pinentry,
+        F::Error: Fail;
 }
 
 #[derive(Default)]
@@ -62,12 +94,17 @@ impl MemoryStorage {
 }
 
 impl Storage for MemoryStorage {
-    fn put_device_key<F: Pinentry>(&mut self, k: &device::Key, pinentry: F) -> Result<(), Error> {
+    fn put_device_key<F>(&mut self, k: &device::Key, pinentry: F) -> Result<(), Error<F::Error>>
+    where
+        F: Pinentry,
+        F::Error: Fail,
+    {
         match self.device_key {
             Some(_) => Err(Error::KeyExists),
             None => {
+                let pass = pinentry.get_passphrase().map_err(Error::PinentryError)?;
                 let pwhash = pwhash::pwhash(
-                    pinentry.get_passphrase().unsecure().as_bytes(),
+                    pass.unsecure().as_bytes(),
                     pwhash::OPSLIMIT_INTERACTIVE,
                     pwhash::MEMLIMIT_INTERACTIVE,
                 )
@@ -78,11 +115,15 @@ impl Storage for MemoryStorage {
         }
     }
 
-    fn get_device_key<F: Pinentry>(&self, pinentry: F) -> Result<device::Key, Error> {
+    fn get_device_key<F>(&self, pinentry: F) -> Result<device::Key, Error<F::Error>>
+    where
+        F: Pinentry,
+        F::Error: Fail,
+    {
         self.device_key
             .as_ref()
             .map_or(Err(Error::NoSuchKey), |(k, pwhash)| {
-                let pass = pinentry.get_passphrase();
+                let pass = pinentry.get_passphrase().map_err(Error::PinentryError)?;
                 if pwhash::pwhash_verify(&pwhash, pass.unsecure().as_bytes()) {
                     Ok(k.clone())
                 } else {
@@ -101,7 +142,7 @@ impl FileStorage {
         Self { paths }
     }
 
-    fn key_file_path(&self) -> PathBuf {
+    pub fn key_file_path(&self) -> PathBuf {
         self.paths.keys_dir().join("device.key")
     }
 }
@@ -115,7 +156,11 @@ struct StorableKey {
 }
 
 impl Storage for FileStorage {
-    fn put_device_key<F: Pinentry>(&mut self, k: &device::Key, pinentry: F) -> Result<(), Error> {
+    fn put_device_key<F>(&mut self, k: &device::Key, pinentry: F) -> Result<(), Error<F::Error>>
+    where
+        F: Pinentry,
+        F::Error: Fail,
+    {
         let file_path = self.key_file_path();
 
         if file_path.exists() {
@@ -123,7 +168,7 @@ impl Storage for FileStorage {
         } else {
             let salt = pwhash::gen_salt();
             let nonce = secretbox::gen_nonce();
-            let pass = pinentry.get_passphrase();
+            let pass = pinentry.get_passphrase().map_err(Error::PinentryError)?;
 
             let deriv = derive_key(&salt, &pass);
             let sealed_key = secretbox::seal(k.as_ref(), &nonce, &deriv);
@@ -143,7 +188,11 @@ impl Storage for FileStorage {
         }
     }
 
-    fn get_device_key<F: Pinentry>(&self, pinentry: F) -> Result<device::Key, Error> {
+    fn get_device_key<F>(&self, pinentry: F) -> Result<device::Key, Error<F::Error>>
+    where
+        F: Pinentry,
+        F::Error: Fail,
+    {
         let file_path = self.key_file_path();
 
         if !file_path.exists() {
@@ -151,7 +200,7 @@ impl Storage for FileStorage {
         } else {
             let key_file = File::open(file_path)?;
             let storable: StorableKey = serde_cbor::from_reader(key_file)?;
-            let pass = pinentry.get_passphrase();
+            let pass = pinentry.get_passphrase().map_err(Error::PinentryError)?;
 
             // Unseal key
             let deriv = derive_key(&storable.salt, &pass);
