@@ -1,0 +1,353 @@
+use std::fmt;
+use std::fmt::Display;
+use std::io;
+use std::path::Path;
+use std::str::FromStr;
+
+use git2;
+use olpc_cjson::CanonicalFormatter;
+use serde::Serialize;
+use serde_json;
+
+use crate::keys;
+use crate::keys::device;
+use crate::keys::pgp;
+use crate::meta;
+use crate::paths::Paths;
+use crate::peer::PeerId;
+
+const PROJECT_METADATA_BRANCH: &str = "rad/project";
+const PROJECT_METADATA_FILE: &str = "project.json";
+
+const CONTRIBUTOR_METADATA_BRANCH: &str = "rad/contributor";
+const CONTRIBUTOR_METADATA_FILE: &str = "contributor.json";
+
+const RAD_REMOTE_NAME: &str = "rad";
+
+#[derive(Debug, Fail)]
+pub enum Error {
+    #[fail(display = "Invalid key")]
+    InvalidKey,
+
+    #[fail(display = "Project already exists")]
+    ProjectExists,
+
+    #[fail(display = "Project not found")]
+    NoSuchProject,
+
+    #[fail(display = "Unable to determine project name from repository directory")]
+    NeedProjectDir,
+
+    #[fail(display = "{}", 0)]
+    Libgit(git2::Error),
+
+    #[fail(display = "{}", 0)]
+    Io(io::Error),
+
+    #[fail(display = "{}", 0)]
+    Serde(serde_json::error::Error),
+
+    #[fail(display = "{}", 0)]
+    Pgp(keys::pgp::Error),
+}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Self {
+        Error::Io(err)
+    }
+}
+
+impl From<git2::Error> for Error {
+    fn from(err: git2::Error) -> Self {
+        Error::Libgit(err)
+    }
+}
+
+impl From<serde_json::error::Error> for Error {
+    fn from(err: serde_json::error::Error) -> Self {
+        Error::Serde(err)
+    }
+}
+
+impl From<keys::pgp::Error> for Error {
+    fn from(err: keys::pgp::Error) -> Self {
+        Error::Pgp(err)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProjectId(git2::Oid);
+
+impl ProjectId {
+    pub fn new(oid: git2::Oid) -> Self {
+        Self(oid)
+    }
+}
+
+pub mod projectid {
+    #[derive(Debug, Fail)]
+    pub enum ParseError {
+        #[fail(display = "Invalid backend: `{}`, expected `git`", 0)]
+        InvalidBackend(String),
+
+        #[fail(display = "Invalid oid: `{}` ({})", 0, 1)]
+        InvalidOid(String, git2::Error),
+
+        #[fail(
+            display = "Invalid ProjectId format, expected `<identifier> '.' <backend>`: {}",
+            0
+        )]
+        InvalidFormat(String),
+    }
+}
+
+impl FromStr for ProjectId {
+    type Err = projectid::ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.splitn(2, '.');
+        let may_oid = parts.next();
+        let may_typ = parts.next();
+        match (may_oid, may_typ) {
+            (Some(oid), Some("git")) => git2::Oid::from_str(oid)
+                .map(ProjectId)
+                .map_err(|e| Self::Err::InvalidOid(oid.to_string(), e)),
+
+            (_, Some(typ)) => Err(Self::Err::InvalidBackend(typ.to_string())),
+
+            _ => Err(Self::Err::InvalidFormat(s.to_string())),
+        }
+    }
+}
+
+impl Display for ProjectId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}.git", self.0)
+    }
+}
+
+pub struct GitProject(git2::Repository);
+
+impl GitProject {
+    pub fn open(path: &Path) -> Result<GitProject, Error> {
+        git2::Repository::open_bare(path)
+            .map(GitProject)
+            .map_err(|e| e.into())
+    }
+
+    pub fn init(
+        paths: &Paths,
+        key: &device::Key,
+        // TODO: Should accept a `ProfileRef`, but then we need to get hold of `nick`
+        profile: &meta::UserProfile,
+        sources: &git2::Repository,
+    ) -> Result<ProjectId, Error> {
+        let project_name = {
+            let src_path = sources.path();
+            let file_name = if src_path.ends_with(".git") {
+                src_path.parent().and_then(|parent| parent.file_name())
+            } else {
+                src_path.file_name()
+            };
+            file_name
+                .map(|f| f.to_string_lossy().to_string())
+                .ok_or(Error::NeedProjectDir)
+        }?;
+
+        let mut pgp_key = key.clone().into_pgp(&profile.nick)?;
+
+        // Link all metadata to HEAD
+        // TODO: we may want to pass this in as an argument
+        let head = sources.head()?.peel_to_commit()?;
+
+        // Create the metadata in the sources repo
+        let pid = commit_project_meta(
+            sources,
+            &head,
+            &mut pgp_key,
+            "Radicle: intial project metadata",
+            meta::Project::new(&project_name, &PeerId::from(key.clone())),
+        )?;
+        let mut proj_branch =
+            sources.branch(PROJECT_METADATA_BRANCH, &sources.find_commit(pid)?, true)?;
+
+        // The ProjectId is the commit SHA1
+        let pid = ProjectId(pid);
+
+        // Add initial contributor metadata from the profile
+        let mut contrib = meta::Contributor::new();
+        contrib.profile = Some(meta::ProfileRef::UserProfile(profile.clone()));
+        let cid = commit_contributor_meta(
+            sources,
+            &head,
+            &mut pgp_key,
+            "Radicle: initial contributor metadata",
+            contrib,
+        )?;
+        let mut contrib_branch = sources.branch(
+            CONTRIBUTOR_METADATA_BRANCH,
+            &sources.find_commit(cid)?,
+            true,
+        )?;
+
+        // Create a remote in our state dir
+        let res = register_project(paths, &pid, sources);
+
+        // Clean up local stuff
+        let _ = proj_branch.delete();
+        let _ = contrib_branch.delete();
+
+        res.map(|_| pid)
+    }
+
+    pub fn metadata(&self) -> Result<meta::Project, Error> {
+        let blob = {
+            self.0
+                .find_branch(PROJECT_METADATA_BRANCH, git2::BranchType::Local)?
+                .get()
+                .peel_to_tree()?
+                .get_name(PROJECT_METADATA_FILE)
+                .expect("Missing project.json")
+                .to_object(&self.0)?
+                .peel_to_blob()
+        }?;
+        let meta = serde_json::from_slice(blob.content())?;
+        Ok(meta)
+    }
+}
+
+fn commit_project_meta(
+    repo: &git2::Repository,
+    parent: &git2::Commit,
+    pgp_key: &mut pgp::Key,
+    msg: &str,
+    meta: meta::Project,
+) -> Result<git2::Oid, Error> {
+    commit_meta(repo, parent, pgp_key, msg, meta, PROJECT_METADATA_FILE)
+}
+
+fn commit_contributor_meta(
+    repo: &git2::Repository,
+    parent: &git2::Commit,
+    pgp_key: &mut pgp::Key,
+    msg: &str,
+    meta: meta::Contributor,
+) -> Result<git2::Oid, Error> {
+    commit_meta(repo, parent, pgp_key, msg, meta, CONTRIBUTOR_METADATA_FILE)
+}
+
+fn commit_meta<M>(
+    repo: &git2::Repository,
+    parent: &git2::Commit,
+    pgp_key: &mut pgp::Key,
+    msg: &str,
+    meta: M,
+    filename: &str,
+) -> Result<git2::Oid, Error>
+where
+    M: Serialize,
+{
+    let blob_oid = {
+        let mut blob = repo.blob_writer(None)?;
+        let mut ser = serde_json::Serializer::with_formatter(&mut blob, CanonicalFormatter::new());
+        meta.serialize(&mut ser)?;
+        blob.commit()?
+    };
+
+    let tree = {
+        let mut builder = repo.treebuilder(None)?;
+        builder.insert(filename, blob_oid, 0o100_644)?;
+        let oid = builder.write()?;
+        repo.find_tree(oid)?
+    };
+
+    let author = {
+        let addr = pgp_key
+            .userids()
+            .nth(0)
+            .ok_or(Error::InvalidKey)
+            .and_then(|binding| {
+                binding
+                    .userid()
+                    .address()
+                    .map_err(|_| Error::InvalidKey)
+                    .and_then(|addr| addr.ok_or(Error::InvalidKey))
+            })?;
+
+        // TODO: Check what happens if not set - is this returned as `Error`?
+        let username = repo.config()?.get_string("user.name")?;
+        git2::Signature::now(&username, &addr)
+    }?;
+
+    let commit = repo.commit_create_buffer(&author, &author, msg, &tree, &[parent])?;
+    let sig = pgp_key.sign(&commit)?;
+
+    Ok(repo.commit_signed(
+        std::str::from_utf8(&commit).unwrap(),
+        &sig.to_string(),
+        None,
+    )?)
+}
+
+fn register_project(
+    paths: &Paths,
+    pid: &ProjectId,
+    sources: &git2::Repository,
+) -> Result<(), Error> {
+    // FIXME: It's unfortunate this is duplicated in `project::ProjectId::into_path`
+    let dest = paths.projects_dir().join(pid.to_string());
+    if dest.is_dir() {
+        Err(Error::ProjectExists)
+    } else {
+        let _ = git2::Repository::init_bare(&dest)?;
+        let mut remote = sources.remote(RAD_REMOTE_NAME, &dest.to_string_lossy())?;
+
+        // Push the metadata
+        remote.push(
+            &[
+                &to_refname(PROJECT_METADATA_BRANCH),
+                &to_refname(CONTRIBUTOR_METADATA_BRANCH),
+            ],
+            None,
+        )?;
+
+        // Set up fetchspecs to hide rad/* branches
+        // FIXME: libgit2's `git_remote_create_with_fetchspec` is not available in
+        // `git2-rs`, so we need to remove the default:
+        sources.config()?.remove("remote.rad.fetch")?;
+        sources.remote_add_fetch("rad", "+refs/heads/src/*:refs/remotes/rad/*")?;
+        sources.remote_add_push("rad", "+refs/heads/*:refs/heads/src/*")?;
+
+        Ok(())
+    }
+}
+
+fn to_refname(branch_name: &str) -> String {
+    format!("refs/heads/{}", branch_name)
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    use proptest::prelude::*;
+
+    fn gen_oid() -> impl Strategy<Value = git2::Oid> {
+        proptest::collection::vec(any::<u8>(), 1..32)
+            .prop_map(|bytes| git2::Oid::hash_object(git2::ObjectType::Blob, &bytes).unwrap())
+    }
+
+    fn gen_projectid() -> impl Strategy<Value = ProjectId> {
+        gen_oid().prop_map(ProjectId)
+    }
+
+    proptest! {
+        #[test]
+        fn prop_projectid_roundtrip(pid in gen_projectid()) {
+            match ProjectId::from_str(&pid.to_string()) {
+                Ok(pid2) => assert_eq!(pid, pid2),
+                Err(e) => panic!("Error parsing ProjectId: {}", e),
+            }
+        }
+    }
+}

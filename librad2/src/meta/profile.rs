@@ -10,16 +10,16 @@ use crate::meta::serde_helpers;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct UserProfile {
-    nick: String,
+    pub nick: String,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
+    pub name: Option<String>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    img: Option<ProfileImage>,
+    pub img: Option<ProfileImage>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    bio: Option<String>,
+    pub bio: Option<String>,
 
     #[serde(
         default,
@@ -27,13 +27,27 @@ pub struct UserProfile {
         serialize_with = "serde_helpers::addrspec::serialize_opt",
         deserialize_with = "serde_helpers::addrspec::deserialize_opt"
     )]
-    email: Option<AddrSpec>,
+    pub email: Option<AddrSpec>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    geo: Option<Geo>,
+    pub geo: Option<Geo>,
 
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    urls: HashMap<Label, Url>,
+    pub urls: HashMap<Label, Url>,
+}
+
+impl UserProfile {
+    pub fn new(nick: &str) -> Self {
+        Self {
+            nick: nick.to_string(),
+            name: None,
+            img: None,
+            bio: None,
+            email: None,
+            geo: None,
+            urls: HashMap::default(),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]

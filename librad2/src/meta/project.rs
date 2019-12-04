@@ -16,9 +16,9 @@ fn default_branch() -> String {
 
 #[derive(Deserialize, Serialize, Debug, PartialEq)]
 pub struct Project {
-    pub rad_version: u8,
+    rad_version: u8,
 
-    pub revision: u64,
+    revision: u64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -33,7 +33,7 @@ pub struct Project {
         serialize_with = "serde_helpers::nonempty::serialize",
         deserialize_with = "serde_helpers::nonempty::deserialize"
     )]
-    pub maintainers: NonEmpty<PeerId>,
+    maintainers: NonEmpty<PeerId>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub rel: Vec<Relation>,
@@ -50,6 +50,38 @@ impl Project {
             maintainers: NonEmpty::new(founder.clone()),
             rel: vec![],
         }
+    }
+
+    pub fn rad_version(&self) -> u8 {
+        self.rad_version
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub fn add_rel(&mut self, rel: Relation) {
+        self.rel.push(rel)
+    }
+
+    pub fn add_rels(&mut self, rels: &mut Vec<Relation>) {
+        self.rel.append(rels)
+    }
+
+    pub fn add_maintainer(&mut self, maintainer: &PeerId) {
+        self.maintainers.push(maintainer.clone());
+        self.dedup_maintainers();
+    }
+
+    pub fn add_maintainers(&mut self, maintainers: &mut Vec<PeerId>) {
+        self.maintainers.append(maintainers);
+        self.dedup_maintainers();
+    }
+
+    fn dedup_maintainers(&mut self) {
+        let mut xs: Vec<PeerId> = self.maintainers.iter().cloned().collect();
+        xs.dedup();
+        self.maintainers = NonEmpty::from_slice(&xs).unwrap();
     }
 }
 

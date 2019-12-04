@@ -3,11 +3,17 @@ name = "rad2"
 version = "0.1.0"
 authors = ["Monadic <team@monadic.xyz>"]
 edition = "2018"
+description = "The Official Unoffical Radicle CLI"
 
 [dependencies]
-clap = { version = "2.33", features = ["suggestions", "color"] }
 failure = "0.1"
 failure_derive = "0.1"
+git2 = "0.10"
 librad2 = { path = "../librad2" }
 rpassword = "4.0"
 secstr = "0.3"
+serde = "1.0"
+serde_yaml = "0.8"
+structopt = "0.3"
+tempfile = "3.1"
+url = "2.1"

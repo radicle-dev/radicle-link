@@ -3,10 +3,12 @@ extern crate sodiumoxide;
 #[macro_use]
 extern crate failure_derive;
 
+pub mod git;
 pub mod keys;
 pub mod meta;
 pub mod paths;
 pub mod peer;
+pub mod project;
 
 pub fn init() -> bool {
     sodiumoxide::init().is_ok()

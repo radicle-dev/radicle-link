@@ -9,9 +9,9 @@ use crate::meta::serde_helpers;
 
 #[derive(Deserialize, Serialize, Debug, Default, PartialEq)]
 pub struct Contributor {
-    pub rad_version: u8,
+    rad_version: u8,
 
-    pub revision: u64,
+    revision: u64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<ProfileRef>,
@@ -40,6 +40,14 @@ impl Contributor {
             largefiles: None,
             signing_key: None,
         }
+    }
+
+    pub fn rad_version(&self) -> u8 {
+        self.rad_version
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 }
 

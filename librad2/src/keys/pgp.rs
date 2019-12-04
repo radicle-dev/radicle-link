@@ -1,3 +1,4 @@
+use std::fmt;
 use std::io;
 use std::io::Write;
 use std::ops::Deref;
@@ -21,10 +22,15 @@ use time;
 
 pub use pgp::packet::UserID;
 
-#[derive(Debug)]
+#[derive(Debug, Fail)]
 pub enum Error {
+    #[fail(display = "No secret key (not a TSK)")]
     NotATSK,
+
+    #[fail(display = "{}", 0)]
     PGPError(failure::Error),
+
+    #[fail(display = "{}", 0)]
     IoError(io::Error),
 }
 
@@ -96,11 +102,7 @@ impl Key {
         let armor = armor::Writer::new(&mut buf, armor::Kind::Signature, &[])?;
 
         // Pull out signing keypair from TSK
-        let mut keypair = self
-            .primary()
-            .clone()
-            .mark_parts_secret()
-            .into_keypair()?;
+        let mut keypair = self.primary().clone().mark_parts_secret().into_keypair()?;
 
         let msg = stream::Message::new(armor);
         let mut signer = stream::Signer::detached(msg, vec![&mut keypair], None)?;
@@ -199,6 +201,7 @@ impl Deref for Key {
     }
 }
 
+/// Detached PGP signature in ASCII-armor format.
 pub struct Signature(Vec<u8>);
 
 impl Deref for Signature {
@@ -206,6 +209,12 @@ impl Deref for Signature {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl fmt::Display for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(std::str::from_utf8(self).unwrap())
     }
 }
 

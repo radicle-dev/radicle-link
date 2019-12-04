@@ -1,5 +1,5 @@
-use std::convert::TryFrom;
 use std::fmt;
+use std::str::FromStr;
 
 use bs58;
 use serde::de::Visitor;
@@ -51,18 +51,11 @@ impl<'de> Deserialize<'de> for PeerId {
             where
                 E: serde::de::Error,
             {
-                self.visit_string(s.to_string())
-            }
-
-            fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                PeerId::try_from(s).map_err(serde::de::Error::custom)
+                PeerId::from_str(&s).map_err(serde::de::Error::custom)
             }
         }
 
-        deserializer.deserialize_string(PeerIdVisitor)
+        deserializer.deserialize_str(PeerIdVisitor)
     }
 }
 
@@ -86,11 +79,11 @@ mod conversion {
     }
 }
 
-impl TryFrom<String> for PeerId {
-    type Error = conversion::Error;
+impl FromStr for PeerId {
+    type Err = conversion::Error;
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        let mut chars = value.chars();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars();
         let pre = chars.nth(0);
         if pre == Some(PEER_ID_PREFIX_ED25519) {
             let suf: String = chars.collect();
@@ -100,9 +93,9 @@ impl TryFrom<String> for PeerId {
                 .into_vec()?;
             device::PublicKey::from_slice(&bytes)
                 .map(PeerId)
-                .ok_or_else(|| Self::Error::InvalidPublicKey)
+                .ok_or_else(|| Self::Err::InvalidPublicKey)
         } else {
-            Err(Self::Error::UnknownPrefix(pre))
+            Err(Self::Err::UnknownPrefix(pre))
         }
     }
 }
@@ -128,7 +121,7 @@ pub mod tests {
     #[test]
     fn test_rountrip() -> Result<(), conversion::Error> {
         let peer_id1 = PeerId::from(device::Key::new().public());
-        let peer_id2 = PeerId::try_from(peer_id1.to_string())?;
+        let peer_id2 = PeerId::from_str(&peer_id1.to_string())?;
         if peer_id1 == peer_id2 {
             Ok(())
         } else {

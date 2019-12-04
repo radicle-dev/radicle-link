@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use directories::ProjectDirs;
 
+#[derive(Clone)]
 pub struct Paths(ProjectDirs);
 
 impl Paths {
@@ -24,8 +25,18 @@ impl Paths {
         self.0.config_dir().join("keys")
     }
 
+    pub fn projects_dir(&self) -> PathBuf {
+        self.0.data_dir().join("projects")
+    }
+
+    pub fn profiles_dir(&self) -> PathBuf {
+        self.0.config_dir().join("profiles")
+    }
+
     fn init(self) -> Result<Self, io::Error> {
         fs::create_dir_all(self.keys_dir())?;
+        fs::create_dir_all(self.projects_dir())?;
+        fs::create_dir_all(self.profiles_dir())?;
         Ok(self)
     }
 }
