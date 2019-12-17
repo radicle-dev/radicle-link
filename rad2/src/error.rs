@@ -4,10 +4,10 @@ use std::io;
 use failure::Fail;
 use git2;
 
-use librad2::git;
-use librad2::keys::pgp;
-use librad2::keys::storage;
-use librad2::project;
+use librad::git;
+use librad::keys::pgp;
+use librad::keys::storage;
+use librad::project;
 
 use crate::commands::profiles;
 use crate::editor;

@@ -1,11 +1,11 @@
-extern crate librad2;
+extern crate librad;
 
 use failure::Fail;
 use std::process::exit;
 use structopt::StructOpt;
 
-use librad2::keys::storage::Pinentry;
-use librad2::paths::Paths;
+use librad::keys::storage::Pinentry;
+use librad::paths::Paths;
 
 mod commands;
 mod editor;
@@ -34,7 +34,7 @@ enum Commands {
 }
 
 fn main() {
-    if !librad2::init() {
+    if !librad::init() {
         eprintln!("Failed to initialise librad2");
         exit(1);
     }

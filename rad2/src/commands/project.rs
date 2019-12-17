@@ -7,12 +7,12 @@ use git2;
 use serde_yaml;
 use structopt::StructOpt;
 
-use librad2::git::GitProject;
-use librad2::keys::device;
-use librad2::keys::storage::{FileStorage, Pinentry, Storage};
-use librad2::meta::profile::UserProfile;
-use librad2::paths::Paths;
-use librad2::project::{list_projects, show_project, ProjectId};
+use librad::git::GitProject;
+use librad::keys::device;
+use librad::keys::storage::{FileStorage, Pinentry, Storage};
+use librad::meta::profile::UserProfile;
+use librad::paths::Paths;
+use librad::project::{list_projects, show_project, ProjectId};
 
 use crate::commands::profiles::{load_profile, ProfilePath};
 use crate::error::Error;

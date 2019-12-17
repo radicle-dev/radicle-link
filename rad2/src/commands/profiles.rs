@@ -6,8 +6,8 @@ use failure::Fail;
 use serde_yaml as yaml;
 use structopt::StructOpt;
 
-use librad2::meta::profile::UserProfile;
-use librad2::paths::Paths;
+use librad::meta::profile::UserProfile;
+use librad::paths::Paths;
 
 use crate::editor;
 

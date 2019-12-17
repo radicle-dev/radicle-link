@@ -9,7 +9,7 @@ description = "The Official Unoffical Radicle CLI"
 failure = "0.1"
 failure_derive = "0.1"
 git2 = "0.10"
-librad2 = { path = "../librad2" }
+librad = { path = "../librad" }
 rpassword = "4.0"
 secstr = "0.3"
 serde = "1.0"

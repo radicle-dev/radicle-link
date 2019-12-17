@@ -1,10 +1,10 @@
 use failure::Fail;
 use structopt::StructOpt;
 
-use librad2::keys::device;
-use librad2::keys::storage;
-use librad2::keys::storage::{FileStorage, Pinentry, Storage};
-use librad2::paths::Paths;
+use librad::keys::device;
+use librad::keys::storage;
+use librad::keys::storage::{FileStorage, Pinentry, Storage};
+use librad::paths::Paths;
 
 use crate::error::Error;
 

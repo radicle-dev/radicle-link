@@ -4,7 +4,7 @@ use failure::Fail;
 use rpassword;
 use secstr::SecUtf8;
 
-use librad2::keys::storage;
+use librad::keys::storage;
 
 #[derive(Debug, Fail)]
 pub enum Error {
