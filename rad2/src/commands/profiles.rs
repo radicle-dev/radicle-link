@@ -3,6 +3,7 @@ use std::io;
 use std::path::PathBuf;
 
 use failure::Fail;
+use sequoia_rfc2822::AddrSpec;
 use serde_yaml as yaml;
 use structopt::StructOpt;
 
@@ -113,7 +114,21 @@ pub fn load_profile(path: ProfilePath) -> Result<UserProfile, Error> {
 
 fn create_profile(paths: &Paths, name: &str) -> Result<(), Error> {
     let path = ProfilePath::new(paths, name).must_not_exist()?;
-    let _ = editor::edit_yaml(UserProfile::new("anonymous"), Some(path.path))?;
+
+    let profile = {
+        let mut profile = UserProfile::new("anonymous");
+        if let Ok(git_config) = git2::Config::open_default() {
+            profile.name = git_config.get_string("user.name").ok();
+            profile.email = git_config
+                .get_string("user.email")
+                .ok()
+                .and_then(|addr| AddrSpec::parse(addr).ok());
+        }
+
+        profile
+    };
+
+    let _ = editor::edit_yaml(profile, Some(path.path))?;
     Ok(())
 }
 

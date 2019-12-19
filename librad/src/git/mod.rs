@@ -26,17 +26,17 @@ const RAD_REMOTE_NAME: &str = "rad";
 
 #[derive(Debug, Fail)]
 pub enum Error {
-    #[fail(display = "Invalid key")]
-    InvalidKey,
+    #[fail(display = "Invalid PGP key: missing UserID packet")]
+    MissingPgpUserId,
+
+    #[fail(display = "Invalid PGP key: missing address")]
+    MissingPgpAddr,
 
     #[fail(display = "Project already exists")]
     ProjectExists,
 
     #[fail(display = "Project not found")]
     NoSuchProject,
-
-    #[fail(display = "Unable to determine project name from repository directory")]
-    NeedProjectDir,
 
     #[fail(display = "{}", 0)]
     Libgit(git2::Error),
@@ -138,27 +138,26 @@ impl GitProject {
     pub fn init(
         paths: &Paths,
         key: &device::Key,
-        // TODO: Should accept a `ProfileRef`, but then we need to get hold of `nick`
-        profile: &meta::UserProfile,
         sources: &git2::Repository,
+        metadata: meta::Project,
+        founder: meta::Contributor,
     ) -> Result<ProjectId, Error> {
-        let project_name = {
-            let src_path = sources.path();
-            let file_name = if src_path.ends_with(".git") {
-                src_path.parent().and_then(|parent| parent.file_name())
-            } else {
-                src_path.file_name()
-            };
-            file_name
-                .map(|f| f.to_string_lossy().to_string())
-                .ok_or(Error::NeedProjectDir)
-        }?;
-
-        let mut pgp_key = key.clone().into_pgp(&profile.nick)?;
+        // TODO: resolve URL ref iff rad://
+        let (nickname, fullname) = match founder.profile {
+            Some(meta::ProfileRef::UserProfile(meta::UserProfile {
+                ref nick, ref name, ..
+            })) => (nick.to_owned(), name.to_owned()),
+            _ => ("anonymous".into(), None),
+        };
+        let mut pgp_key = key.clone().into_pgp(&nickname, fullname)?;
 
         // Link all metadata to HEAD
         // TODO: we may want to pass this in as an argument
         let head = sources.head()?.peel_to_commit()?;
+
+        // Ensure the signing key is a maintainer
+        let mut metadata = metadata.clone();
+        metadata.add_maintainer(&PeerId::from(key.clone()));
 
         // Create the metadata in the sources repo
         let pid = commit_project_meta(
@@ -166,7 +165,7 @@ impl GitProject {
             &head,
             &mut pgp_key,
             "Radicle: intial project metadata",
-            meta::Project::new(&project_name, &PeerId::from(key.clone())),
+            metadata,
         )?;
         let mut proj_branch =
             sources.branch(PROJECT_METADATA_BRANCH, &sources.find_commit(pid)?, true)?;
@@ -175,14 +174,12 @@ impl GitProject {
         let pid = ProjectId(pid);
 
         // Add initial contributor metadata from the profile
-        let mut contrib = meta::Contributor::new();
-        contrib.profile = Some(meta::ProfileRef::UserProfile(profile.clone()));
         let cid = commit_contributor_meta(
             sources,
             &head,
             &mut pgp_key,
             "Radicle: initial contributor metadata",
-            contrib,
+            founder,
         )?;
         let mut contrib_branch = sources.branch(
             CONTRIBUTOR_METADATA_BRANCH,
@@ -262,21 +259,26 @@ where
     };
 
     let author = {
-        let addr = pgp_key
+        let uid = pgp_key
             .userids()
             .nth(0)
-            .ok_or(Error::InvalidKey)
-            .and_then(|binding| {
-                binding
-                    .userid()
-                    .address()
-                    .map_err(|_| Error::InvalidKey)
-                    .and_then(|addr| addr.ok_or(Error::InvalidKey))
-            })?;
+            .ok_or(Error::MissingPgpUserId)
+            .map(|binding| binding.userid())?;
 
-        // TODO: Check what happens if not set - is this returned as `Error`?
-        let username = repo.config()?.get_string("user.name")?;
-        git2::Signature::now(&username, &addr)
+        // FIXME: use `Option::flatten` once out of nightly
+        let addr = if let Ok(Some(addr)) = uid.address() {
+            Ok(addr)
+        } else {
+            Err(Error::MissingPgpAddr)
+        }?;
+
+        let name = if let Ok(Some(name)) = uid.name() {
+            name
+        } else {
+            "Radicle".into()
+        };
+
+        git2::Signature::now(&name, &addr)
     }?;
 
     let commit = repo.commit_create_buffer(&author, &author, msg, &tree, &[parent])?;

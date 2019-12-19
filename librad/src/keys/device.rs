@@ -54,8 +54,12 @@ impl Key {
         Signature(sign::sign_detached(data, &self.sk))
     }
 
-    pub fn into_pgp(self, nickname: &str) -> Result<pgp::Key, pgp::Error> {
-        let uid = pgp::UserID::from_address(None, None, format!("{}@{}", nickname, self))
+    pub fn into_pgp(
+        self,
+        nickname: &str,
+        fullname: Option<String>,
+    ) -> Result<pgp::Key, pgp::Error> {
+        let uid = pgp::UserID::from_address(fullname, None, format!("{}@{}", nickname, self))
             .expect("messed up UserID");
         pgp::Key::from_sodium(
             &self.sk,

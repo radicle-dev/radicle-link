@@ -10,8 +10,9 @@ use structopt::StructOpt;
 use librad::git::GitProject;
 use librad::keys::device;
 use librad::keys::storage::{FileStorage, Pinentry, Storage};
-use librad::meta::profile::UserProfile;
+use librad::meta;
 use librad::paths::Paths;
+use librad::peer::PeerId;
 use librad::project::{list_projects, show_project, ProjectId};
 
 use crate::commands::profiles::{load_profile, ProfilePath};
@@ -26,13 +27,17 @@ pub enum Commands {
     Show { project: ProjectId },
     /// Initialise a new project
     Init {
+        /// Name of the project. Defaults to the directory name of the source repository.
         #[structopt(short, long)]
+        name: Option<String>,
+
         /// User profile to use for this project
+        #[structopt(short, long)]
         profile: String,
 
-        #[structopt(short, long)]
         /// `.git` directory of the repository to initialise as a project. Discovered from the
         /// current directory by default.
+        #[structopt(short, long)]
         git_dir: Option<PathBuf>,
     },
     /// Update project <project>
@@ -46,11 +51,15 @@ where
     P::Error: Fail,
 {
     match cmd {
-        Commands::Init { profile, git_dir } => {
+        Commands::Init {
+            name,
+            profile,
+            git_dir,
+        } => {
             let key =
                 FileStorage::new(paths.clone()).get_device_key(pin("Unlock your key store:"))?;
             let profile = load_profile(ProfilePath::new(&paths, &profile))?;
-            init_project(&paths, &key, &profile, git_dir)
+            init_project(&paths, &key, name, profile, git_dir)
         }
 
         Commands::Show { project } => {
@@ -77,7 +86,8 @@ where
 fn init_project<E: Fail>(
     paths: &Paths,
     key: &device::Key,
-    profile: &UserProfile,
+    project_name: Option<String>,
+    profile: meta::UserProfile,
     git_dir: Option<PathBuf>,
 ) -> Result<(), Error<E>> {
     let cwd = env::current_dir()?;
@@ -85,7 +95,26 @@ fn init_project<E: Fail>(
         Some(dir) => git2::Repository::open(dir)?,
         None => git2::Repository::open(&cwd)?,
     };
-    let proj = GitProject::init(paths, key, profile, &sources)?;
+
+    // Guess the project name if none was given
+    let project_name = project_name.unwrap_or({
+        let src_path = sources.path();
+        let file_name = if src_path.ends_with(".git") {
+            src_path.parent().and_then(|parent| parent.file_name())
+        } else {
+            src_path.file_name()
+        };
+        file_name.map(|f| f.to_string_lossy().to_string()).unwrap()
+    });
+
+    let proj_meta = meta::Project::new(&project_name, &PeerId::from(key.clone()));
+    let contrib_meta = {
+        let mut contrib = meta::Contributor::new();
+        contrib.profile = Some(meta::ProfileRef::UserProfile(profile));
+        contrib
+    };
+
+    let proj = GitProject::init(paths, key, &sources, proj_meta, contrib_meta)?;
     println!("Successfully initialised project: {}", proj);
 
     Ok(())

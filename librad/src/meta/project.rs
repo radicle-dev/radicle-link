@@ -14,7 +14,7 @@ fn default_branch() -> String {
     DEFAULT_BRANCH.into()
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct Project {
     rad_version: u8,
 
@@ -85,7 +85,7 @@ impl Project {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub enum Relation {
     Tag(Label),
     Label(Label, String),
