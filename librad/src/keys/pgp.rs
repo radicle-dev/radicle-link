@@ -299,17 +299,17 @@ pub mod tests {
         let device_key = device::Key::new();
         let pgp_one = device_key
             .clone()
-            .into_pgp("leboeuf")
+            .into_pgp("leboeuf", None)
             .expect("Failed to obtain PGP key");
         let pgp_two = device_key
-            .into_pgp("leboeuf")
+            .into_pgp("leboeuf", None)
             .expect("Failed to obtain PGP key");
         assert_eq!(pgp_one.fingerprint(), pgp_two.fingerprint())
     }
 
     #[test]
     fn test_sign_verify() -> Result<(), Error> {
-        let mut pgp_key = device::Key::new().into_pgp("leboeuf")?;
+        let mut pgp_key = device::Key::new().into_pgp("leboeuf", None)?;
         let sig = pgp_key.sign(&DATA_TO_SIGN)?;
         pgp_key.verify(&sig, &DATA_TO_SIGN)
     }
@@ -317,7 +317,7 @@ pub mod tests {
     #[test]
     fn test_export() {
         let pgp_key = device::Key::from_seed(&SEED, time::at(CREATED_AT))
-            .into_pgp("leboeuf")
+            .into_pgp("leboeuf", None)
             .expect("Failed to obtain PGP key");
 
         let mut buf = Vec::new();
@@ -353,7 +353,7 @@ pub mod tests {
 
     #[test]
     fn test_certify() -> Result<(), Error> {
-        let pgp_key = device::Key::new().into_pgp("leboeuf")?;
+        let pgp_key = device::Key::new().into_pgp("leboeuf", None)?;
         let (certifier, _) = tpk::TPKBuilder::general_purpose(
             tpk::CipherSuite::Cv25519,
             UserID::from("leboeuf@acme.org").into(),
