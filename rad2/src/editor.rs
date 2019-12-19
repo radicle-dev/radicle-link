@@ -21,7 +21,7 @@ pub enum Error {
     #[fail(display = "Editor error: {}", 0)]
     Yaml(yaml::Error),
 
-    #[fail(display = "Editor error: could not persist temporary file {}", 0)]
+    #[fail(display = "Editor error: {:?}", 0)]
     Persist(tempfile::PersistError),
 }
 
@@ -63,7 +63,14 @@ where
     match result {
         Ok(updated) => {
             if let Some(dest) = store_at {
-                let tmp = NamedTempFile::new()?;
+                // Try to create the temp file next to the target file, so we don't run into issues
+                // if dest is on another device
+                let tmpdir = dest
+                    .as_ref()
+                    .parent()
+                    .map(|dir| dir.to_path_buf())
+                    .unwrap_or_else(env::temp_dir);
+                let tmp = NamedTempFile::new_in(&tmpdir)?;
                 yaml::to_writer(&tmp, &updated)?;
                 tmp.persist(dest)?;
             }
