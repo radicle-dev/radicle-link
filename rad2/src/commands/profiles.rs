@@ -3,11 +3,10 @@ use std::io;
 use std::path::PathBuf;
 
 use failure::Fail;
-use sequoia_rfc2822::AddrSpec;
 use serde_yaml as yaml;
 use structopt::StructOpt;
 
-use librad::meta::profile::UserProfile;
+use librad::meta::{AddrSpec, UserProfile};
 use librad::paths::Paths;
 
 use crate::editor;
