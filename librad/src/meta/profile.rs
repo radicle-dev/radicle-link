@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use sequoia_rfc2822::AddrSpec;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::meta::common::Label;
-use crate::meta::serde_helpers;
+use crate::meta::common::{EmailAddr, Label};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct UserProfile {
@@ -21,13 +19,8 @@ pub struct UserProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bio: Option<String>,
 
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        serialize_with = "serde_helpers::addrspec::serialize_opt",
-        deserialize_with = "serde_helpers::addrspec::deserialize_opt"
-    )]
-    pub email: Option<AddrSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<EmailAddr>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geo: Option<Geo>,
@@ -88,8 +81,8 @@ pub mod tests {
         ]
     }
 
-    pub fn gen_addr_spec() -> impl Strategy<Value = AddrSpec> {
-        Just(AddrSpec::parse("leboeuf@acme.org").expect("Invalid AddrSpec"))
+    pub fn gen_addr_spec() -> impl Strategy<Value = EmailAddr> {
+        Just(EmailAddr::parse("leboeuf@acme.org").expect("Invalid EmailAddr"))
     }
 
     pub fn gen_user_profile() -> impl Strategy<Value = UserProfile> {

@@ -63,48 +63,6 @@ pub(crate) mod urltemplate {
     }
 }
 
-pub(crate) mod addrspec {
-    use sequoia_rfc2822::AddrSpec;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(addr: &AddrSpec, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(addr.address())
-    }
-
-    pub fn serialize_opt<S>(opt: &Option<AddrSpec>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        if let Some(addr) = opt {
-            serialize(addr, serializer)
-        } else {
-            serializer.serialize_none()
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<AddrSpec, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(deserializer)?;
-        AddrSpec::parse(&string).map_err(serde::de::Error::custom)
-    }
-
-    pub fn deserialize_opt<'de, D>(deserializer: D) -> Result<Option<AddrSpec>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wrapper(#[serde(deserialize_with = "deserialize")] AddrSpec);
-
-        let v = Option::deserialize(deserializer)?;
-        Ok(v.map(|Wrapper(a)| a))
-    }
-}
-
 pub(crate) mod pgp_fingerprint {
     use pgp::Fingerprint;
     use serde::{Deserialize, Deserializer, Serializer};

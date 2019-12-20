@@ -6,7 +6,7 @@ use failure::Fail;
 use serde_yaml as yaml;
 use structopt::StructOpt;
 
-use librad::meta::{AddrSpec, UserProfile};
+use librad::meta::{EmailAddr, UserProfile};
 use librad::paths::Paths;
 
 use crate::editor;
@@ -121,7 +121,8 @@ fn create_profile(paths: &Paths, name: &str) -> Result<(), Error> {
             profile.email = git_config
                 .get_string("user.email")
                 .ok()
-                .and_then(|addr| AddrSpec::parse(addr).ok());
+                .as_ref()
+                .and_then(|addr| EmailAddr::parse(addr).ok());
         }
 
         profile

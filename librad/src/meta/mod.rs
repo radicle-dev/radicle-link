@@ -11,5 +11,4 @@ pub use contributor::{Contributor, ProfileRef};
 pub use profile::{Geo, ProfileImage, UserProfile};
 pub use project::{Project, Relation};
 
-pub use sequoia_rfc2822::AddrSpec;
 pub use url::Url;
