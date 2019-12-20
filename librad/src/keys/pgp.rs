@@ -270,6 +270,9 @@ impl<'a> VerificationHelper for Helper<'a> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+
+    use std::time::Duration;
+
     use crate::keys::device;
 
     use pgp::tpk;
@@ -304,7 +307,10 @@ pub mod tests {
 
     #[test]
     fn test_export() {
-        let pgp_key = device::Key::from_seed(&SEED, CREATED_AT)
+        let created_at = SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_secs(CREATED_AT))
+            .expect("SystemTime overflow o.O");
+        let pgp_key = device::Key::from_seed(&SEED, created_at)
             .into_pgp("leboeuf", None)
             .expect("Failed to obtain PGP key");
 

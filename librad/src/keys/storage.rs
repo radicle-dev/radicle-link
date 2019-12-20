@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::fs::File;
 use std::io;
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime, SystemTimeError};
 
 use failure::Fail;
 use secstr::SecUtf8;
@@ -34,6 +35,12 @@ pub enum Error<P: Fail> {
     #[fail(display = "Unable to retrieve key: Invalid passphrase")]
     InvalidPassphrase,
 
+    #[fail(display = "Unable to retrieve key: Invalid creation timestamp")]
+    InvalidCreationTimestamp,
+
+    #[fail(display = "Refusing to store key: creation timestamp is before UNIX epoch")]
+    BackwardsTime(#[fail(cause)] SystemTimeError),
+
     #[fail(display = "{}", 0)]
     IoError(io::Error),
 
@@ -46,13 +53,19 @@ pub enum Error<P: Fail> {
 
 impl<T: Fail> From<io::Error> for Error<T> {
     fn from(err: io::Error) -> Self {
-        Error::IoError(err)
+        Self::IoError(err)
     }
 }
 
 impl<T: Fail> From<serde_cbor::error::Error> for Error<T> {
     fn from(err: serde_cbor::error::Error) -> Self {
-        Error::SerdeError(err)
+        Self::SerdeError(err)
+    }
+}
+
+impl<T: Fail> From<SystemTimeError> for Error<T> {
+    fn from(err: SystemTimeError) -> Self {
+        Self::BackwardsTime(err)
     }
 }
 
@@ -173,10 +186,15 @@ impl Storage for FileStorage {
             let deriv = derive_key(&salt, &pass);
             let sealed_key = secretbox::seal(k.as_ref(), &nonce, &deriv);
 
+            let created_at = k
+                .created_at()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .as_secs();
+
             let storable = StorableKey {
                 nonce,
                 salt,
-                created_at: k.created_at,
+                created_at,
                 sealed_key,
             };
 
@@ -208,7 +226,11 @@ impl Storage for FileStorage {
                 .or(Err(Error::InvalidPassphrase))?;
             let key = sign::SecretKey::from_slice(&key_plain).ok_or(Error::InvalidKey)?;
 
-            Ok(device::Key::from_secret(key, storable.created_at))
+            let created_at = SystemTime::UNIX_EPOCH
+                .checked_add(Duration::from_secs(storable.created_at))
+                .ok_or(Error::InvalidCreationTimestamp)?;
+
+            Ok(device::Key::from_secret(key, created_at))
         }
     }
 }
