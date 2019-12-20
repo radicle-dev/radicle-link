@@ -9,7 +9,7 @@ use crate::peer::PeerId;
 
 pub const DEFAULT_BRANCH: &str = "master";
 
-fn default_branch() -> String {
+pub fn default_branch() -> String {
     DEFAULT_BRANCH.into()
 }
 

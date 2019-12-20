@@ -12,7 +12,6 @@ use librad::keys::device;
 use librad::keys::storage::{FileStorage, Pinentry, Storage};
 use librad::meta;
 use librad::paths::Paths;
-use librad::peer::PeerId;
 use librad::project::{list_projects, show_project, ProjectId};
 
 use crate::commands::profiles::{load_profile, ProfilePath};
@@ -107,14 +106,14 @@ fn init_project<E: Fail>(
         file_name.map(|f| f.to_string_lossy().to_string()).unwrap()
     });
 
-    let proj_meta = meta::Project::new(&project_name, &PeerId::from(key.clone()));
     let contrib_meta = {
         let mut contrib = meta::Contributor::new();
         contrib.profile = Some(meta::ProfileRef::UserProfile(profile));
         contrib
     };
 
-    let proj = GitProject::init(paths, key, &sources, proj_meta, contrib_meta)?;
+    let proj =
+        GitProject::builder(&project_name, key, contrib_meta).init_project(paths, &sources)?;
     println!("Successfully initialised project: {}", proj);
 
     Ok(())

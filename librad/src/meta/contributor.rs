@@ -6,7 +6,7 @@ use crate::meta::common::{Url, RAD_VERSION};
 use crate::meta::profile::UserProfile;
 use crate::meta::serde_helpers;
 
-#[derive(Deserialize, Serialize, Debug, Default, PartialEq)]
+#[derive(Clone, Deserialize, Serialize, Debug, Default, PartialEq)]
 pub struct Contributor {
     rad_version: u8,
 

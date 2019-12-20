@@ -211,6 +211,78 @@ impl GitProject {
         let meta = serde_json::from_slice(blob.content())?;
         Ok(meta)
     }
+
+    pub fn builder(
+        project_name: &str,
+        founder_key: &device::Key,
+        founder_meta: meta::Contributor,
+    ) -> project::Builder {
+        project::Builder::new(project_name, founder_key, founder_meta)
+    }
+}
+
+pub mod project {
+    use super::*;
+
+    pub struct Builder {
+        key: device::Key,
+        founder: meta::Contributor,
+        name: String,
+        description: Option<String>,
+        default_branch: String,
+        rel: Vec<meta::Relation>,
+    }
+
+    impl Builder {
+        pub fn new(name: &str, key: &device::Key, founder: meta::Contributor) -> Self {
+            Self {
+                key: key.clone(),
+                founder,
+                name: name.to_owned(),
+                description: None,
+                default_branch: meta::default_branch(),
+                rel: vec![],
+            }
+        }
+
+        pub fn set_description(&mut self, descr: String) -> &mut Self {
+            self.description = Some(descr);
+            self
+        }
+
+        pub fn set_default_branch(&mut self, branch: String) -> &mut Self {
+            self.default_branch = branch;
+            self
+        }
+
+        pub fn add_rel(&mut self, rel: meta::Relation) -> &mut Self {
+            self.rel.push(rel);
+            self
+        }
+
+        pub fn add_rels(&mut self, rels: &mut Vec<meta::Relation>) -> &mut Self {
+            self.rel.append(rels);
+            self
+        }
+
+        pub fn set_rels(&mut self, rels: Vec<meta::Relation>) -> &mut Self {
+            self.rel = rels;
+            self
+        }
+
+        pub fn init_project(
+            self,
+            paths: &Paths,
+            sources: &git2::Repository,
+        ) -> Result<ProjectId, Error> {
+            let mut meta = meta::Project::new(&self.name, &PeerId::from(self.key.clone()));
+            meta.default_branch = self.default_branch;
+            meta.description = self.description;
+            meta.rel = self.rel;
+
+            GitProject::init(paths, &self.key, sources, meta, self.founder.clone())
+        }
+    }
 }
 
 fn commit_project_meta(
