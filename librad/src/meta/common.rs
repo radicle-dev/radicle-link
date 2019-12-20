@@ -140,20 +140,20 @@ pub mod tests {
     use super::*;
     use serde_json;
 
-    const SIMPLE_VALID: &str = "leboeuf@example.org";
+    const SIMPLE_EMAIL: &str = "leboeuf@example.org";
 
     #[test]
     fn test_email_roundtrip() {
-        let addr = EmailAddr::parse(SIMPLE_VALID).expect("Invalid EmailAddr");
-        assert_eq!(addr.to_string(), SIMPLE_VALID.to_string())
+        let addr = EmailAddr::parse(SIMPLE_EMAIL).expect("Invalid EmailAddr");
+        assert_eq!(addr.to_string(), SIMPLE_EMAIL.to_string())
     }
 
     #[test]
     fn test_email_serde() {
-        let addr = EmailAddr::parse(SIMPLE_VALID).expect("Invalid EmailAddr");
+        let addr = EmailAddr::parse(SIMPLE_EMAIL).expect("Invalid EmailAddr");
         let ser = serde_json::to_string(&addr).unwrap();
         let de = serde_json::from_str(&ser).unwrap();
-        assert_eq!(ser, format!("\"{}\"", SIMPLE_VALID));
+        assert_eq!(ser, format!("\"{}\"", SIMPLE_EMAIL));
         assert_eq!(addr, de)
     }
 }
