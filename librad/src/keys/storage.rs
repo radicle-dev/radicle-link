@@ -151,7 +151,7 @@ impl FileStorage {
 struct StorableKey {
     nonce: secretbox::Nonce,
     salt: pwhash::Salt,
-    created_at: i64,
+    created_at: u64,
     sealed_key: Vec<u8>,
 }
 
@@ -208,9 +208,7 @@ impl Storage for FileStorage {
                 .or(Err(Error::InvalidPassphrase))?;
             let key = sign::SecretKey::from_slice(&key_plain).ok_or(Error::InvalidKey)?;
 
-            let created_at = time::at(time::Timespec::new(storable.created_at, 0));
-
-            Ok(device::Key::from_secret(key, created_at))
+            Ok(device::Key::from_secret(key, storable.created_at))
         }
     }
 }

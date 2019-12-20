@@ -266,7 +266,7 @@ where
             .map(|binding| binding.userid())?;
 
         // FIXME: use `Option::flatten` once out of nightly
-        let addr = if let Ok(Some(addr)) = uid.address() {
+        let addr = if let Ok(Some(addr)) = uid.email() {
             Ok(addr)
         } else {
             Err(Error::MissingPgpAddr)

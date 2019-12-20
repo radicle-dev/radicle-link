@@ -2,11 +2,10 @@ use std::fmt;
 use std::io;
 use std::io::Write;
 use std::ops::Deref;
+use std::time::SystemTime;
 
 use failure;
 use pgp::armor;
-use pgp::constants::{Features, HashAlgorithm, KeyFlags, SignatureType};
-use pgp::conversions::Time;
 use pgp::packet;
 use pgp::packet::key::Key4;
 use pgp::packet::signature;
@@ -17,8 +16,8 @@ use pgp::parse::Parse;
 use pgp::serialize::stream;
 use pgp::serialize::Serialize;
 use pgp::tpk::TPK;
+use pgp::types::{Features, HashAlgorithm, KeyFlags, SignatureType};
 use sodiumoxide::crypto::sign::ed25519 as sodium;
-use time;
 
 pub use pgp::packet::UserID;
 
@@ -52,7 +51,7 @@ impl Key {
     pub fn from_sodium<U: Into<packet::UserID>>(
         sodium: &sodium::SecretKey,
         uid: U,
-        creation_time: time::Tm,
+        creation_time: SystemTime,
     ) -> Result<Key, Error> {
         let key = {
             // ACHTUNG: NaCl stores the public part in the second half of the secret key, so
@@ -76,7 +75,7 @@ impl Key {
             .set_preferred_hash_algorithms(vec![HashAlgorithm::SHA512])?;
 
         let mut signer = key.clone().into_keypair()?;
-        let sig = sig.sign_primary_key_binding(&mut signer, HashAlgorithm::SHA512)?;
+        let sig = sig.sign_primary_key_binding(&mut signer)?;
 
         // Assemble TPK
         let mut packets = Vec::<pgp::Packet>::with_capacity(3);
@@ -90,7 +89,7 @@ impl Key {
         let uid_sig_builder = signature::Builder::from(sig)
             .set_type(SignatureType::PositiveCertificate)
             .set_signature_creation_time(creation_time)?;
-        let uid_sig = the_uid.bind(&mut signer, &tpk, uid_sig_builder, None, None)?;
+        let uid_sig = the_uid.bind(&mut signer, &tpk, uid_sig_builder, None)?;
         tpk = tpk.merge_packets(vec![the_uid.into(), uid_sig.into()])?;
 
         Ok(Key(tpk))
@@ -102,10 +101,15 @@ impl Key {
         let armor = armor::Writer::new(&mut buf, armor::Kind::Signature, &[])?;
 
         // Pull out signing keypair from TSK
-        let mut keypair = self.primary().clone().mark_parts_secret().into_keypair()?;
+        let keypair = self
+            .primary()
+            .clone()
+            .mark_parts_secret()?
+            .mark_role_unspecified()
+            .into_keypair()?;
 
         let msg = stream::Message::new(armor);
-        let mut signer = stream::Signer::detached(msg, vec![&mut keypair], None)?;
+        let mut signer = stream::Signer::new(msg, keypair).detached().build()?;
         signer.write_all(data)?;
         signer.finalize()?;
 
@@ -144,17 +148,14 @@ impl Key {
 
         // Their primary key
         let primary = tpk.primary();
-        let mut primary_signer = primary.clone().mark_parts_secret().into_keypair().unwrap();
+        let mut primary_signer = primary.clone().mark_parts_secret()?.into_keypair().unwrap();
 
         // Our key, to be used as a subkey
         let subkey = self
             .primary()
             .clone()
-            .mark_parts_secret()
-            .mark_role_secondary()
-            .into_keypair()
-            .unwrap();
-        let mut subkey_signer = subkey.clone();
+            .mark_parts_secret()?
+            .mark_role_secondary();
 
         let mut sig = signature::Builder::new(SignatureType::SubkeyBinding)
             .set_features(&Features::sequoia())?
@@ -162,31 +163,25 @@ impl Key {
             .set_key_expiration_time(None)?
             .set_preferred_hash_algorithms(vec![HashAlgorithm::SHA512])?;
 
-        let backsig = signature::Builder::new(SignatureType::PrimaryKeyBinding)
-            .set_signature_creation_time(time::now().canonicalize())?
-            .set_issuer_fingerprint(self.fingerprint())?
-            .set_issuer(self.keyid())?
-            .sign_subkey_binding(
-                &mut subkey_signer,
-                &primary,
-                &subkey.public(),
-                HashAlgorithm::SHA512,
-            )?;
+        // Sign the given primary key using our key, aka create a primary key binding
+        let backsig = {
+            let mut subkey_signer = subkey.clone().into_keypair().unwrap();
+            signature::Builder::new(SignatureType::PrimaryKeyBinding)
+                .set_signature_creation_time(SystemTime::now())?
+                .set_issuer_fingerprint(self.fingerprint())?
+                .set_issuer(self.keyid())?
+                .set_hash_algo(HashAlgorithm::SHA512)
+                .sign_subkey_binding(&mut subkey_signer, &primary, subkey.mark_parts_public_ref())
+        }?;
 
         sig = sig.set_embedded_signature(backsig)?;
 
-        let signature = subkey.clone().public().bind(
-            &mut primary_signer,
-            &tpk,
-            sig,
-            HashAlgorithm::SHA512,
-            None,
-        )?;
+        let signature =
+            subkey
+                .mark_parts_public_ref()
+                .bind(&mut primary_signer, &tpk, sig, None)?;
 
-        tpk = tpk.merge_packets(vec![
-            pgp::Packet::SecretSubkey(subkey.public().clone().mark_parts_secret()),
-            signature.into(),
-        ])?;
+        tpk = tpk.merge_packets(vec![pgp::Packet::SecretSubkey(subkey), signature.into()])?;
 
         tpk.armored().export(tpk_writer)?;
         Ok(())
@@ -248,11 +243,9 @@ impl<'a> VerificationHelper for Helper<'a> {
                     // our policy.
                     match results.get(0) {
                         Some(VerificationResult::GoodChecksum(..)) => good = true,
-                        /*
                         Some(VerificationResult::NotAlive(..)) => {
                             return Err(failure::err_msg("Signature good, but not alive"))
                         }
-                        */
                         Some(VerificationResult::MissingKey(_)) => {
                             return Err(failure::err_msg("Missing key to verify signature"))
                         }
@@ -286,12 +279,7 @@ pub mod tests {
         20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81,
         181, 134, 74, 88, 174, 254, 78, 69, 84, 149, 84, 167,
     ]);
-
-    const CREATED_AT: time::Timespec = time::Timespec {
-        sec: 8734710,
-        nsec: 0,
-    };
-
+    const CREATED_AT: u64 = 1576843598;
     const DATA_TO_SIGN: &[u8] = b"ceci n'est pas un pipe";
 
     #[test]
@@ -316,7 +304,7 @@ pub mod tests {
 
     #[test]
     fn test_export() {
-        let pgp_key = device::Key::from_seed(&SEED, time::at(CREATED_AT))
+        let pgp_key = device::Key::from_seed(&SEED, CREATED_AT)
             .into_pgp("leboeuf", None)
             .expect("Failed to obtain PGP key");
 
@@ -344,7 +332,7 @@ pub mod tests {
 
         let mut expected_headers = [
             "leboeuf@Gbsp8juYVbEWvvdFSreVLC98nS5JRXcVfkpZaiQYu9tW",
-            "D97A F228 9757 4999 80E6  D4EA AAFE AD11 A3D5 43E4",
+            "8D15 5430 2B8F C2D1 B3FE  BC05 236D F80F 84DF 27EA",
         ];
         expected_headers.sort();
 

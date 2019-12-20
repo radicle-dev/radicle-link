@@ -1,9 +1,9 @@
 use std::fmt;
 use std::ops::Deref;
+use std::time::{Duration, SystemTime};
 
 use bs58;
 use sodiumoxide::crypto::sign;
-use time;
 
 use crate::keys::pgp;
 
@@ -11,7 +11,8 @@ use crate::keys::pgp;
 #[derive(Clone, Eq, PartialEq)]
 pub struct Key {
     sk: sign::SecretKey,
-    pub created_at: i64,
+    /// Time since `SystemTime::UNIX_EPOCH`, in seconds.
+    pub created_at: u64,
 }
 
 /// The public part of a `Key``
@@ -26,24 +27,21 @@ pub struct Signature(sign::Signature);
 impl Key {
     pub fn new() -> Self {
         let (_, sk) = sign::gen_keypair();
-        let created_at = time::now_utc().to_timespec().sec;
+        let created_at = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("SystemTime before UNIX_EPOCH. You're screwed.")
+            .as_secs();
         Key { sk, created_at }
     }
 
     #[cfg(test)]
-    pub fn from_seed(seed: &sign::Seed, created_at: time::Tm) -> Self {
+    pub fn from_seed(seed: &sign::Seed, created_at: u64) -> Self {
         let (_, sk) = sign::keypair_from_seed(seed);
-        Key {
-            sk,
-            created_at: created_at.to_timespec().sec,
-        }
+        Key { sk, created_at }
     }
 
-    pub(crate) fn from_secret(sk: sign::SecretKey, created_at: time::Tm) -> Self {
-        Key {
-            sk,
-            created_at: created_at.to_timespec().sec,
-        }
+    pub(crate) fn from_secret(sk: sign::SecretKey, created_at: u64) -> Self {
+        Key { sk, created_at }
     }
 
     pub fn public(&self) -> PublicKey {
@@ -64,7 +62,9 @@ impl Key {
         pgp::Key::from_sodium(
             &self.sk,
             uid,
-            time::at(time::Timespec::new(self.created_at, 0)),
+            SystemTime::UNIX_EPOCH
+                .checked_add(Duration::from_secs(self.created_at))
+                .expect("SystemTime overflow o.O"),
         )
     }
 }
