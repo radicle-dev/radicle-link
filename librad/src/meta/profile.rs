@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use url::Url;
 
-use crate::meta::common::{EmailAddr, Label};
+use crate::meta::common::{EmailAddr, Label, Url};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct UserProfile {

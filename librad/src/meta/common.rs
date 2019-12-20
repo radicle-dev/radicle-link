@@ -1,6 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
+use ::url as the_url;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub const RAD_VERSION: u8 = 2;
@@ -135,12 +136,56 @@ impl<'de> Deserialize<'de> for EmailAddr {
     }
 }
 
+/// A generic URL.
+///
+/// The implementation is based on the [WHATWG Specification](https://url.spec.whatwg.org/).
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct Url(the_url::Url);
+
+impl Url {
+    pub fn parse(s: &str) -> Result<Self, url::ParseError> {
+        Self::from_str(s)
+    }
+}
+
+pub mod url {
+    use ::url as the_url;
+
+    #[derive(Debug, Fail)]
+    #[fail(display = "Error parsing Url: {}", 0)]
+    pub struct ParseError(#[fail(cause)] the_url::ParseError);
+
+    impl ParseError {
+        pub(crate) fn new(err: the_url::ParseError) -> Self {
+            Self(err)
+        }
+    }
+}
+
+impl FromStr for Url {
+    type Err = url::ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        the_url::Url::parse(s)
+            .map(Url)
+            .map_err(url::ParseError::new)
+    }
+}
+
+impl fmt::Display for Url {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
+
     use serde_json;
 
     const SIMPLE_EMAIL: &str = "leboeuf@example.org";
+    const SIMPLE_URL: &str = "http://example.org/xyz";
 
     #[test]
     fn test_email_roundtrip() {
@@ -155,5 +200,20 @@ pub mod tests {
         let de = serde_json::from_str(&ser).unwrap();
         assert_eq!(ser, format!("\"{}\"", SIMPLE_EMAIL));
         assert_eq!(addr, de)
+    }
+
+    #[test]
+    fn test_url_rountrip() {
+        let url = Url::parse(SIMPLE_URL).expect("Invalid URL");
+        assert_eq!(url.to_string(), SIMPLE_URL.to_string())
+    }
+
+    #[test]
+    fn test_url_serde() {
+        let url = Url::parse(SIMPLE_URL).expect("Invalid URL");
+        let ser = serde_json::to_string(&url).unwrap();
+        let de = serde_json::from_str(&ser).unwrap();
+        assert_eq!(ser, format!("\"{}\"", url));
+        assert_eq!(url, de)
     }
 }

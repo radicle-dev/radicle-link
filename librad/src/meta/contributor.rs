@@ -1,9 +1,8 @@
 use pgp;
 use serde::{Deserialize, Serialize};
-use url::Url;
 use urltemplate::UrlTemplate;
 
-use crate::meta::common::RAD_VERSION;
+use crate::meta::common::{Url, RAD_VERSION};
 use crate::meta::profile::UserProfile;
 use crate::meta::serde_helpers;
 

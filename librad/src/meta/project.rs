@@ -2,9 +2,8 @@ use std::path::PathBuf;
 
 use nonempty::NonEmpty;
 use serde::{Deserialize, Serialize};
-use url::Url;
 
-use crate::meta::common::{Label, RAD_VERSION};
+use crate::meta::common::{Label, Url, RAD_VERSION};
 use crate::meta::serde_helpers;
 use crate::peer::PeerId;
 

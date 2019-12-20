@@ -2,8 +2,8 @@ use std::fmt;
 use std::ops::Deref;
 use std::time::SystemTime;
 
-use bs58;
 use ::pgp::conversions::Time;
+use bs58;
 use sodiumoxide::crypto::sign;
 
 use crate::keys::pgp;
