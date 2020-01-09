@@ -79,6 +79,7 @@ impl Project {
 
     fn dedup_maintainers(&mut self) {
         let mut xs: Vec<PeerId> = self.maintainers.iter().cloned().collect();
+        xs.sort();
         xs.dedup();
         self.maintainers = NonEmpty::from_slice(&xs).unwrap();
     }
@@ -98,6 +99,7 @@ pub mod tests {
 
     use proptest::prelude::*;
     use serde_json;
+    use sodiumoxide::crypto::sign::Seed;
 
     use crate::keys::device;
 
@@ -149,5 +151,33 @@ pub mod tests {
                 .unwrap();
             assert_eq!(proj, proj_de)
         }
+    }
+
+    const SEED: Seed = Seed([
+        20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81,
+        181, 134, 74, 88, 174, 254, 78, 69, 84, 149, 84, 167,
+    ]);
+    const CREATED_AT: u64 = 1576843598;
+    fn new_peer(seed_value: u8) -> PeerId {
+        let mut seed = SEED.clone();
+        seed.0[0] = seed_value;
+        let created_at = std::time::SystemTime::UNIX_EPOCH
+            .checked_add(std::time::Duration::from_secs(CREATED_AT))
+            .expect("SystemTime overflow o.O");
+        let key = device::Key::from_seed(&seed, created_at);
+        PeerId::from(device::PublicKey::from(key.public()))
+    }
+
+    #[test]
+    fn test_dedup_maintainers() {
+        let founder = new_peer(42);
+        let mut prj = Project::new("foo", &founder);
+        let m1 = new_peer(1);
+        let m2 = new_peer(2);
+        prj.add_maintainer(&m1);
+        prj.add_maintainer(&m2);
+        assert_eq!(3, prj.maintainers.len());
+        prj.add_maintainer(&m1);
+        assert_eq!(3, prj.maintainers.len());
     }
 }
