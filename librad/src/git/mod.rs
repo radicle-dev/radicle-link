@@ -6,6 +6,7 @@ use std::str::FromStr;
 
 use git2;
 use olpc_cjson::CanonicalFormatter;
+use radicle_surf::vcs::git as surf;
 use serde::Serialize;
 use serde_json;
 
@@ -49,6 +50,9 @@ pub enum Error {
 
     #[fail(display = "{}", 0)]
     Pgp(keys::pgp::Error),
+
+    #[fail(display = "{:?}", 0)]
+    Surf(surf::error::Error),
 }
 
 impl From<io::Error> for Error {
@@ -72,6 +76,12 @@ impl From<serde_json::error::Error> for Error {
 impl From<keys::pgp::Error> for Error {
     fn from(err: keys::pgp::Error) -> Self {
         Error::Pgp(err)
+    }
+}
+
+impl From<surf::error::Error> for Error {
+    fn from(err: surf::error::Error) -> Self {
+        Error::Surf(err)
     }
 }
 
@@ -156,7 +166,7 @@ impl GitProject {
         let head = sources.head()?.peel_to_commit()?;
 
         // Ensure the signing key is a maintainer
-        let mut metadata = metadata.clone();
+        let mut metadata = metadata;
         metadata.add_maintainer(&PeerId::from(key.clone()));
 
         // Create the metadata in the sources repo
@@ -218,6 +228,16 @@ impl GitProject {
         founder_meta: meta::Contributor,
     ) -> project::Builder {
         project::Builder::new(project_name, founder_key, founder_meta)
+    }
+
+    pub fn browser(self) -> Result<surf::GitBrowser, Error> {
+        surf::GitBrowser::new(self.into()).map_err(|e| e.into())
+    }
+}
+
+impl From<GitProject> for surf::Repository {
+    fn from(proj: GitProject) -> Self {
+        proj.0.into()
     }
 }
 

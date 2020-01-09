@@ -12,7 +12,7 @@ use librad::keys::device;
 use librad::keys::storage::{FileStorage, Pinentry, Storage};
 use librad::meta;
 use librad::paths::Paths;
-use librad::project::{list_projects, show_project, ProjectId};
+use librad::project::{Project, ProjectId};
 
 use crate::commands::profiles::{load_profile, ProfilePath};
 use crate::error::Error;
@@ -62,13 +62,13 @@ where
         }
 
         Commands::Show { project } => {
-            let proj = show_project(&paths, &project)?;
+            let proj = Project::show(&paths, &project)?;
             serde_yaml::to_writer(io::stdout(), &proj).expect("I/O error");
             Ok(())
         }
 
         Commands::List => {
-            for pid in list_projects(&paths) {
+            for pid in Project::list(&paths) {
                 if verbose {
                     println!("{} ({:?})", pid, paths.projects_dir().join(pid.to_string()))
                 } else {

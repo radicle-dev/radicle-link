@@ -14,6 +14,7 @@ lazy_static = "1.4"
 nettle = { version = "5.0", features = ["vendored"]  }
 nonempty = "0.1"
 olpc-cjson = "0.1"
+radicle-surf = "0.1"
 regex = "1.3"
 secstr = "0.3"
 sequoia-openpgp = "0.12"
