@@ -17,7 +17,7 @@ pub struct Key {
 }
 
 /// The public part of a `Key``
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct PublicKey(sign::PublicKey);
 
 /// A signature produced by `Key::sign`
