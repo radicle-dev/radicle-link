@@ -1,5 +1,3 @@
-extern crate sequoia_openpgp as pgp;
-extern crate sodiumoxide;
 #[macro_use]
 extern crate failure_derive;
 #[macro_use]

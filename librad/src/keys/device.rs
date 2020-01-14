@@ -1,7 +1,7 @@
 use std::{fmt, ops::Deref, time::SystemTime};
 
-use ::pgp::conversions::Time;
 use bs58;
+use sequoia_openpgp::conversions::Time;
 use sodiumoxide::crypto::sign;
 
 use crate::keys::pgp;
@@ -66,6 +66,14 @@ impl Key {
         let uid = pgp::UserID::from_address(fullname, None, format!("{}@{}", nickname, self))
             .expect("messed up UserID");
         pgp::Key::from_sodium(&self.sk, uid, self.created_at)
+    }
+
+    pub fn into_libp2p(
+        self,
+    ) -> Result<libp2p::identity::Keypair, libp2p::identity::error::DecodingError> {
+        let mut sk = self.sk;
+        let bs = &mut sk.0;
+        libp2p::identity::ed25519::Keypair::decode(bs).map(libp2p::identity::Keypair::Ed25519)
     }
 }
 
@@ -171,5 +179,24 @@ pub mod tests {
         let key = Key::new();
         let sig = key.sign(&DATA_TO_SIGN);
         assert!(key.public().verify(&sig, &DATA_TO_SIGN))
+    }
+
+    #[test]
+    fn test_can_convert_to_libp2p() {
+        let key = Key::new();
+
+        let p2p = key
+            .clone()
+            .into_libp2p()
+            .expect("Failed to convert to libp2p keypair");
+        let p2p_sig = p2p
+            .sign(&DATA_TO_SIGN)
+            .expect("Failed to sign using libp2p keypair");
+
+        // Let's see if we can verify it with our libsodium key
+        let sig = sign::Signature::from_slice(&p2p_sig)
+            .map(Signature)
+            .expect("Failed to convert to libsodium Signature");
+        assert!(sig.verify(&DATA_TO_SIGN, &key.public()))
     }
 }

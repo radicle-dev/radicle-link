@@ -1,4 +1,4 @@
-use pgp;
+use sequoia_openpgp as pgp;
 use serde::{Deserialize, Serialize};
 use urltemplate::UrlTemplate;
 

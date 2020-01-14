@@ -64,7 +64,7 @@ pub(crate) mod urltemplate {
 }
 
 pub(crate) mod pgp_fingerprint {
-    use pgp::Fingerprint;
+    use sequoia_openpgp::Fingerprint;
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(fingerprint: &Fingerprint, serializer: S) -> Result<S::Ok, S::Error>

@@ -11,6 +11,7 @@ failure = { version = "0.1", features = ["backtrace"] }
 failure_derive = "0.1"
 git2 = "0.10"
 lazy_static = "1.4"
+libp2p = "0.13"
 nettle = { version = "5.0", features = ["vendored"]  }
 nonempty = "0.1"
 olpc-cjson = "0.1"

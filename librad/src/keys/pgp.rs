@@ -1,5 +1,7 @@
 use std::{fmt, io, io::Write, ops::Deref, time::SystemTime};
 
+use sequoia_openpgp as pgp;
+
 use failure;
 use pgp::{
     armor,
