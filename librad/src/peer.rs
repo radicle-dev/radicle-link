@@ -9,7 +9,7 @@ use crate::keys::device;
 
 pub const PEER_ID_PREFIX_ED25519: char = '0';
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct PeerId(device::PublicKey);
 
 impl From<device::PublicKey> for PeerId {
