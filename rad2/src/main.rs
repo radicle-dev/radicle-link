@@ -32,6 +32,8 @@ enum Commands {
     Project(commands::project::Commands),
     /// Manage user profiles
     Profiles(commands::profiles::Commands),
+    /// Run the p2p daemon
+    Daemon(commands::daemon::Options),
 }
 
 impl Commands {
@@ -50,6 +52,7 @@ impl Commands {
 }
 
 fn main() -> Result<(), error::Error<self::pinentry::Error>> {
+    env_logger::init();
     if !librad::init() {
         eprintln!("Failed to initialise librad2");
         exit(1);
