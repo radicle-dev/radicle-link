@@ -230,8 +230,8 @@ impl GitProject {
         project::Builder::new(project_name, founder_key, founder_meta)
     }
 
-    pub fn browser(self) -> Result<surf::GitBrowser, Error> {
-        surf::GitBrowser::new(self.into()).map_err(|e| e.into())
+    pub fn browser(self) -> Result<surf::Browser, Error> {
+        surf::Browser::new(self.into()).map_err(|e| e.into())
     }
 }
 
