@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use nonempty::NonEmpty;
 use serde::{Deserialize, Serialize};
+use serde_json;
 
 use crate::{
     meta::{
@@ -15,6 +16,12 @@ pub const DEFAULT_BRANCH: &str = "master";
 
 pub fn default_branch() -> String {
     DEFAULT_BRANCH.into()
+}
+
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
+pub struct Signature {
+    pub key: PeerId,
+    pub sig: String,
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
@@ -40,6 +47,9 @@ pub struct Project {
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub rel: Vec<Relation>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub signatures: Vec<Signature>,
 }
 
 impl Project {
@@ -52,6 +62,7 @@ impl Project {
             default_branch: DEFAULT_BRANCH.into(),
             maintainers: NonEmpty::new(founder.clone()),
             rel: vec![],
+            signatures: vec![],
         }
     }
 
@@ -87,6 +98,18 @@ impl Project {
         xs.dedup();
         self.maintainers = NonEmpty::from_slice(&xs).unwrap();
     }
+
+    pub fn canonical_text_contents(&self) -> serde_json::Result<String> {
+        let mut data = self.clone();
+        data.signatures.clear();
+        // TODO: actually canonicalize the output format (use a different serializer)
+        let data = serde_json::to_string(&data)?;
+        Ok(data)
+    }
+
+    pub fn canonical_data(&self) -> serde_json::Result<Vec<u8>> {
+        Ok(serde_json::to_string(&self)?.into_bytes())
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
@@ -115,9 +138,10 @@ pub mod tests {
             ".*",
             proptest::collection::vec(Just(PeerId::from(device::Key::new().public())), 1..32),
             proptest::collection::vec(gen_relation(), 0..16),
+            proptest::collection::vec(gen_signature(), 0..16),
         )
             .prop_map(
-                |(revision, name, description, branch, maintainers, rel)| Project {
+                |(revision, name, description, branch, maintainers, rel, signatures)| Project {
                     rad_version: RAD_VERSION,
                     revision,
                     name,
@@ -125,6 +149,7 @@ pub mod tests {
                     default_branch: branch,
                     maintainers: NonEmpty::from_slice(&maintainers).unwrap(),
                     rel,
+                    signatures,
                 },
             )
     }
@@ -137,6 +162,13 @@ pub mod tests {
             (".*", prop::collection::vec(".*", 1..32))
                 .prop_map(|(l, xs)| Relation::Path(l, xs.iter().collect())),
         ]
+    }
+
+    fn gen_signature() -> impl Strategy<Value = Signature> {
+        prop_oneof![".*".prop_map(|sig| Signature {
+            key: PeerId::from(device::Key::new().public()),
+            sig,
+        }),]
     }
 
     proptest! {
