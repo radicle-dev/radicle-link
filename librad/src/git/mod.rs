@@ -140,7 +140,7 @@ pub struct GitProject(git2::Repository);
 
 impl GitProject {
     pub fn open(path: &Path) -> Result<GitProject, Error> {
-        git2::Repository::open_bare(path)
+        git2::Repository::open(path)
             .map(GitProject)
             .map_err(|e| e.into())
     }
