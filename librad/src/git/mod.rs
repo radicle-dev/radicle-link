@@ -39,6 +39,12 @@ pub enum Error {
     #[fail(display = "Project not found")]
     NoSuchProject,
 
+    #[fail(
+        display = "Branch {} specified as default_branch does not exist in the source repo",
+        0
+    )]
+    MissingDefaultBranch(String, #[fail(cause)] git2::Error),
+
     #[fail(display = "{}", 0)]
     Libgit(git2::Error),
 
@@ -161,9 +167,13 @@ impl GitProject {
         };
         let mut pgp_key = key.clone().into_pgp(&nickname, fullname)?;
 
-        // Link all metadata to HEAD
-        // TODO: we may want to pass this in as an argument
-        let head = sources.head()?.peel_to_commit()?;
+        // Link all metadata to the tip of the default branch
+        let default_branch = metadata.default_branch.clone();
+        let parent = sources
+            .find_branch(&default_branch, git2::BranchType::Local)
+            .map_err(|e| Error::MissingDefaultBranch(default_branch.clone(), e))?
+            .into_reference()
+            .peel_to_commit()?;
 
         // Ensure the signing key is a maintainer
         let mut metadata = metadata;
@@ -172,7 +182,7 @@ impl GitProject {
         // Create the metadata in the sources repo
         let pid = commit_project_meta(
             sources,
-            &head,
+            &parent,
             &mut pgp_key,
             "Radicle: intial project metadata",
             metadata,
@@ -186,7 +196,7 @@ impl GitProject {
         // Add initial contributor metadata from the profile
         let cid = commit_contributor_meta(
             sources,
-            &head,
+            &parent,
             &mut pgp_key,
             "Radicle: initial contributor metadata",
             founder,
@@ -198,7 +208,7 @@ impl GitProject {
         )?;
 
         // Create a remote in our state dir
-        let res = register_project(paths, &pid, sources);
+        let res = register_project(paths, &pid, &default_branch, sources);
 
         // Clean up local stuff
         let _ = proj_branch.delete();
@@ -386,6 +396,7 @@ where
 fn register_project(
     paths: &Paths,
     pid: &ProjectId,
+    default_branch: &str,
     sources: &git2::Repository,
 ) -> Result<(), Error> {
     // FIXME: It's unfortunate this is duplicated in `project::ProjectId::into_path`
@@ -393,7 +404,14 @@ fn register_project(
     if dest.is_dir() {
         Err(Error::ProjectExists)
     } else {
-        let _ = git2::Repository::init_bare(&dest)?;
+        let _ = git2::Repository::init_opts(
+            &dest,
+            git2::RepositoryInitOptions::new()
+                .bare(true)
+                .no_reinit(true)
+                .external_template(false)
+                .initial_head(default_branch),
+        )?;
         let mut remote = sources.remote(RAD_REMOTE_NAME, &dest.to_string_lossy())?;
 
         // Push the metadata
@@ -401,6 +419,7 @@ fn register_project(
             &[
                 &to_refname(PROJECT_METADATA_BRANCH),
                 &to_refname(CONTRIBUTOR_METADATA_BRANCH),
+                &to_refname(default_branch),
             ],
             None,
         )?;
