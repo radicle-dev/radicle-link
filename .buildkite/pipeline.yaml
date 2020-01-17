@@ -1,5 +1,5 @@
 steps:
-- label: "fast"
+- label: "Build, lint, test"
   commands:
   - "cargo fmt -- --check"
   - "cargo test --all"
@@ -7,32 +7,8 @@ steps:
     production: "true"
     platform: "linux"
   env:
-    DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build@sha256:fc5eded79ac8af38482e4fb54ec6dfb16e04a3fff2c3a061a60602b827b9f54e"
-    DOCKER_FILE: .buildkite/docker/rust/Dockerfile
-
-- label: "Latest Stable Rust"
-  commands:
-  - "cargo test --all"
-  agents:
-    production: "true"
-    platform: "linux"
-  env:
-    DOCKER_FILE: .buildkite/docker/rust/Dockerfile
-  soft_fail: true
-  concurrency_group: "radicle-link/slow"
-  concurrency: 1
-
-- label: "Nightly Rust"
-  commands:
-  - "cargo test --all"
-  agents:
-    production: "true"
-    platform: "linux"
-  env:
+    DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build@sha256:9214c20051acc77b4f18d518176f78f94e003f13b122bd70249f45fb247a27ac"
     DOCKER_FILE: .buildkite/docker/rust-nightly/Dockerfile
-  soft_fail: true
-  concurrency_group: "radicle-link/slow"
-  concurrency: 1
 
 - label: "Render Spec"
   commands:
