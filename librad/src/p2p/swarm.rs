@@ -57,7 +57,7 @@ pub async fn join(key: device::Key, listen_addr: Option<Multiaddr>) -> Result<()
     let mut swarm = {
         let store = MemoryStore::new(peer_id.clone());
         let kademlia = Kademlia::new(peer_id.clone(), store);
-        let mdns = Mdns::new()?;
+        let mdns = task::block_on(Mdns::new())?;
 
         let behaviour = RadBehaviour { kademlia, mdns };
 
