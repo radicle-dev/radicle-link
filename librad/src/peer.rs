@@ -82,7 +82,7 @@ impl FromStr for PeerId {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut chars = s.chars();
-        let pre = chars.nth(0);
+        let pre = chars.next();
         if pre == Some(PEER_ID_PREFIX_ED25519) {
             let suf: String = chars.collect();
             let bytes = bs58::decode(&suf)

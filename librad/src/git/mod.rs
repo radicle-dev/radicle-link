@@ -360,7 +360,7 @@ where
     let author = {
         let uid = pgp_key
             .userids()
-            .nth(0)
+            .next()
             .ok_or(Error::MissingPgpUserId)
             .map(|binding| binding.userid())?;
 
@@ -451,13 +451,12 @@ pub mod tests {
         gen_oid().prop_map(ProjectId)
     }
 
+    #[allow(clippy::unnecessary_operation)]
     proptest! {
         #[test]
         fn prop_projectid_roundtrip(pid in gen_projectid()) {
-            match ProjectId::from_str(&pid.to_string()) {
-                Ok(pid2) => assert_eq!(pid, pid2),
-                Err(e) => panic!("Error parsing ProjectId: {}", e),
-            }
+            let pid2 = ProjectId::from_str(&pid.to_string()).expect("Error parsing ProjectId");
+            assert_eq!(pid, pid2)
         }
     }
 }

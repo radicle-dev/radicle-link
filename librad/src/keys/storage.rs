@@ -326,7 +326,7 @@ pub mod tests {
             .put_device_key(&key, pass.clone())
             .expect("Put failed");
 
-        match store.put_device_key(&key, pass.clone()) {
+        match store.put_device_key(&key, pass) {
             Err(Error::KeyExists) => (),
             Err(e) => panic!("Unexpected error: {:?}", e),
             _ => panic!("Second put should fail"),

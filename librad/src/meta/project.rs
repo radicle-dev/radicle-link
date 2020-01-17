@@ -161,15 +161,15 @@ pub mod tests {
         20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81,
         181, 134, 74, 88, 174, 254, 78, 69, 84, 149, 84, 167,
     ]);
-    const CREATED_AT: u64 = 1576843598;
+    const CREATED_AT: u64 = 1_576_843_598;
     fn new_peer(seed_value: u8) -> PeerId {
-        let mut seed = SEED.clone();
+        let mut seed = SEED;
         seed.0[0] = seed_value;
         let created_at = std::time::SystemTime::UNIX_EPOCH
             .checked_add(std::time::Duration::from_secs(CREATED_AT))
             .expect("SystemTime overflow o.O");
         let key = device::Key::from_seed(&seed, created_at);
-        PeerId::from(device::PublicKey::from(key.public()))
+        PeerId::from(key.public())
     }
 
     #[test]

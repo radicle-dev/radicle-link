@@ -2,6 +2,7 @@ steps:
 - label: "Build, lint, test"
   commands:
   - "cargo fmt -- --check"
+  - "cargo clippy --all-targets --all-features -- -D warnings"
   - "cargo test --all"
   agents:
     production: "true"

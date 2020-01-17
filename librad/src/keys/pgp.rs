@@ -284,7 +284,7 @@ pub mod tests {
         20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81,
         181, 134, 74, 88, 174, 254, 78, 69, 84, 149, 84, 167,
     ]);
-    const CREATED_AT: u64 = 1576843598;
+    const CREATED_AT: u64 = 1_576_843_598;
     const DATA_TO_SIGN: &[u8] = b"ceci n'est pas un pipe";
 
     #[test]
@@ -330,7 +330,7 @@ pub mod tests {
         let mut headers: Vec<&str> = reader
             .headers()
             .unwrap()
-            .into_iter()
+            .iter()
             .map(|header| {
                 assert_eq!(&header.0[..], "Comment");
                 &header.1[..]
@@ -373,9 +373,8 @@ pub mod tests {
             tpk.keys_valid()
                 .signing_capable()
                 .map(|(_, _, key)| key)
-                .filter(|key| key.fingerprint() == pgp_key.fingerprint())
-                .nth(0)
-                .ok_or(failure::err_msg("Key not certified").into())
+                .find(|key| key.fingerprint() == pgp_key.fingerprint())
+                .ok_or_else(|| failure::err_msg("Key not certified").into())
                 .map(|_| ())
         }
     }
