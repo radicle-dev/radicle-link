@@ -1,8 +1,11 @@
 steps:
 - label: "Build, lint, test"
   commands:
+  - "echo '--- Formatting'"
   - "cargo fmt -- --check"
+  - "echo '--- Bestest Practices'"
   - "cargo clippy --all-targets --all-features -- -D warnings"
+  - "echo '--- Tests'"
   - "cargo test --all"
   agents:
     production: "true"
