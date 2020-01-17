@@ -3,9 +3,13 @@ use std::path::PathBuf;
 use nonempty::NonEmpty;
 use serde::{Deserialize, Serialize};
 
-use crate::meta::common::{Label, Url, RAD_VERSION};
-use crate::meta::serde_helpers;
-use crate::peer::PeerId;
+use crate::{
+    meta::{
+        common::{Label, Url, RAD_VERSION},
+        serde_helpers,
+    },
+    peer::PeerId,
+};
 
 pub const DEFAULT_BRANCH: &str = "master";
 

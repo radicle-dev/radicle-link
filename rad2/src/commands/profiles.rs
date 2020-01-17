@@ -1,13 +1,17 @@
-use std::fs::{remove_file, File};
-use std::io;
-use std::path::PathBuf;
+use std::{
+    fs::{remove_file, File},
+    io,
+    path::PathBuf,
+};
 
 use failure::Fail;
 use serde_yaml as yaml;
 use structopt::StructOpt;
 
-use librad::meta::{EmailAddr, UserProfile};
-use librad::paths::Paths;
+use librad::{
+    meta::{EmailAddr, UserProfile},
+    paths::Paths,
+};
 
 use crate::editor;
 

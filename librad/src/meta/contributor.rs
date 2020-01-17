@@ -2,9 +2,11 @@ use pgp;
 use serde::{Deserialize, Serialize};
 use urltemplate::UrlTemplate;
 
-use crate::meta::common::{Url, RAD_VERSION};
-use crate::meta::profile::UserProfile;
-use crate::meta::serde_helpers;
+use crate::meta::{
+    common::{Url, RAD_VERSION},
+    profile::UserProfile,
+    serde_helpers,
+};
 
 #[derive(Clone, Deserialize, Serialize, Debug, Default, PartialEq)]
 pub struct Contributor {

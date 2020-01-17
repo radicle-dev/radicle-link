@@ -1,11 +1,11 @@
 max_width = 100
+# yeap
+comment_width = 80
+wrap_comments = false
 hard_tabs = false
 tab_spaces = 4
-# wish we could have unstable_features:
-# comment_width = 80
-# wrap_comments = false
-# imports_layout = "HorizontalVertical"
-# merge_imports = true
+imports_layout = "HorizontalVertical"
+merge_imports = true
 
 newline_style = "Unix"
 use_small_heuristics = "Default"

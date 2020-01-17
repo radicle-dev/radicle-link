@@ -1,15 +1,9 @@
-use std::env;
-use std::fs::File;
-use std::io;
-use std::path::Path;
-use std::process::Command;
+use std::{env, fs::File, io, path::Path, process::Command};
 
 use failure::Fail;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 use serde_yaml as yaml;
-use tempfile;
-use tempfile::NamedTempFile;
+use tempfile::{self, NamedTempFile};
 
 const DEFAULT_EDITOR: &str = "nano";
 

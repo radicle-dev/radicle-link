@@ -4,8 +4,7 @@ use failure::Fail;
 use std::process::exit;
 use structopt::StructOpt;
 
-use librad::keys::storage::Pinentry;
-use librad::paths::Paths;
+use librad::{keys::storage::Pinentry, paths::Paths};
 
 mod commands;
 mod editor;

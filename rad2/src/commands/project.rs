@@ -1,21 +1,25 @@
-use std::env;
-use std::io;
-use std::path::PathBuf;
+use std::{env, io, path::PathBuf};
 
 use failure::Fail;
 use git2;
 use serde_yaml;
 use structopt::StructOpt;
 
-use librad::git::GitProject;
-use librad::keys::device;
-use librad::keys::storage::{FileStorage, Pinentry, Storage};
-use librad::meta;
-use librad::paths::Paths;
-use librad::project::{Project, ProjectId};
+use librad::{
+    git::GitProject,
+    keys::{
+        device,
+        storage::{FileStorage, Pinentry, Storage},
+    },
+    meta,
+    paths::Paths,
+    project::{Project, ProjectId},
+};
 
-use crate::commands::profiles::{load_profile, ProfilePath};
-use crate::error::Error;
+use crate::{
+    commands::profiles::{load_profile, ProfilePath},
+    error::Error,
+};
 
 #[derive(StructOpt)]
 /// Manage projects

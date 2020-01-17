@@ -1,6 +1,4 @@
-use std::fmt;
-use std::ops::Deref;
-use std::time::SystemTime;
+use std::{fmt, ops::Deref, time::SystemTime};
 
 use ::pgp::conversions::Time;
 use bs58;

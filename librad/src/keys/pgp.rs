@@ -1,22 +1,24 @@
-use std::fmt;
-use std::io;
-use std::io::Write;
-use std::ops::Deref;
-use std::time::SystemTime;
+use std::{fmt, io, io::Write, ops::Deref, time::SystemTime};
 
 use failure;
-use pgp::armor;
-use pgp::packet;
-use pgp::packet::key::Key4;
-use pgp::packet::signature;
-use pgp::parse::stream::{
-    DetachedVerifier, MessageLayer, MessageStructure, VerificationHelper, VerificationResult,
+use pgp::{
+    armor,
+    packet,
+    packet::{key::Key4, signature},
+    parse::{
+        stream::{
+            DetachedVerifier,
+            MessageLayer,
+            MessageStructure,
+            VerificationHelper,
+            VerificationResult,
+        },
+        Parse,
+    },
+    serialize::{stream, Serialize},
+    tpk::TPK,
+    types::{Features, HashAlgorithm, KeyFlags, SignatureType},
 };
-use pgp::parse::Parse;
-use pgp::serialize::stream;
-use pgp::serialize::Serialize;
-use pgp::tpk::TPK;
-use pgp::types::{Features, HashAlgorithm, KeyFlags, SignatureType};
 use sodiumoxide::crypto::sign::ed25519 as sodium;
 
 pub use pgp::packet::UserID;

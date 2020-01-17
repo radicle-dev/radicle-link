@@ -1,19 +1,18 @@
-use std::convert::Infallible;
-use std::fmt::Debug;
-use std::fs::File;
-use std::io;
-use std::path::PathBuf;
-use std::time::{Duration, SystemTime, SystemTimeError};
+use std::{
+    convert::Infallible,
+    fmt::Debug,
+    fs::File,
+    io,
+    path::PathBuf,
+    time::{Duration, SystemTime, SystemTimeError},
+};
 
 use failure::Fail;
 use secstr::SecUtf8;
 use serde::{Deserialize, Serialize};
-use sodiumoxide::crypto::pwhash;
-use sodiumoxide::crypto::secretbox;
-use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto::{pwhash, secretbox, sign};
 
-use crate::keys::device;
-use crate::paths::Paths;
+use crate::{keys::device, paths::Paths};
 
 #[derive(Debug, Fail)]
 pub enum Error<P: Fail> {

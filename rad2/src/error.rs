@@ -1,16 +1,15 @@
-use std::fmt::Debug;
-use std::io;
+use std::{fmt::Debug, io};
 
 use failure::Fail;
 use git2;
 
-use librad::git;
-use librad::keys::pgp;
-use librad::keys::storage;
-use librad::project;
+use librad::{
+    git,
+    keys::{pgp, storage},
+    project,
+};
 
-use crate::commands::profiles;
-use crate::editor;
+use crate::{commands::profiles, editor};
 
 #[derive(Debug, Fail)]
 pub enum Error<S: Fail> {

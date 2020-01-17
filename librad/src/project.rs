@@ -1,13 +1,6 @@
-use std::fmt;
-use std::fmt::Display;
-use std::ops::Deref;
-use std::path::PathBuf;
-use std::str::FromStr;
+use std::{fmt, fmt::Display, ops::Deref, path::PathBuf, str::FromStr};
 
-use crate::git;
-use crate::git::GitProject;
-use crate::meta;
-use crate::paths::Paths;
+use crate::{git, git::GitProject, meta, paths::Paths};
 
 #[derive(Debug, Fail)]
 pub enum Error {

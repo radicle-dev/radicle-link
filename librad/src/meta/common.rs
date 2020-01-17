@@ -1,5 +1,4 @@
-use std::fmt;
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 use ::url as the_url;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

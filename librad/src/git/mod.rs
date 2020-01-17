@@ -1,8 +1,4 @@
-use std::fmt;
-use std::fmt::Display;
-use std::io;
-use std::path::Path;
-use std::str::FromStr;
+use std::{fmt, fmt::Display, io, path::Path, str::FromStr};
 
 use git2;
 use olpc_cjson::CanonicalFormatter;
@@ -10,12 +6,13 @@ use radicle_surf::vcs::git as surf;
 use serde::Serialize;
 use serde_json;
 
-use crate::keys;
-use crate::keys::device;
-use crate::keys::pgp;
-use crate::meta;
-use crate::paths::Paths;
-use crate::peer::PeerId;
+use crate::{
+    keys,
+    keys::{device, pgp},
+    meta,
+    paths::Paths,
+    peer::PeerId,
+};
 
 const PROJECT_METADATA_BRANCH: &str = "rad/project";
 const PROJECT_METADATA_FILE: &str = "project.json";
