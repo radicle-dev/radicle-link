@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use hex::ToHex;
@@ -28,6 +29,8 @@ pub enum Error {
     SignatureAlreadyPresent,
     #[fail(display = "Signature from non maintainer")]
     SignatureFromNonMaintainer,
+    #[fail(display = "Signature missing")]
+    SignatureMissing,
     #[fail(display = "Signature decoding failed")]
     SignatureDecodingFailed,
     #[fail(display = "Signature verification failed")]
@@ -175,6 +178,27 @@ impl Project {
         for s in self.signatures.iter() {
             s.verify_data(&data)?
         }
+        Ok(())
+    }
+
+    pub fn check_signatures_against_maintainers(&self) -> Result<(), Error> {
+        let mut maintainers = HashSet::<&PeerId>::new();
+        for m in self.maintainers.iter() {
+            maintainers.insert(m);
+        }
+
+        for s in self.signatures.iter() {
+            let m = maintainers.take(&s.key);
+            match m {
+                Some(_) => {}
+                None => return Err(Error::SignatureFromNonMaintainer),
+            }
+        }
+
+        if maintainers.len() > 0 {
+            return Err(Error::SignatureMissing);
+        }
+
         Ok(())
     }
 }
