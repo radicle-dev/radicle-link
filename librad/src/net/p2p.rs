@@ -4,6 +4,7 @@ use std::{
     io,
     marker::Unpin,
     pin::Pin,
+    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
     time::Duration,
@@ -11,7 +12,7 @@ use std::{
 
 use async_std::task;
 use futures::prelude::*;
-use log::{debug, info};
+use log::{debug, info, warn};
 
 use libp2p::{
     self,
@@ -24,7 +25,7 @@ use libp2p::{
     },
     mdns::{Mdns, MdnsEvent},
     noise,
-    swarm::NetworkBehaviourEventProcess,
+    swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess},
     tcp,
     yamux,
     InboundUpgradeExt,
@@ -38,7 +39,19 @@ use libp2p::{
 use crate::{keys::device, project::ProjectId};
 
 enum ToWorker {
-    HaveProject(ProjectId),
+    /// Advertise we have project [`ProjectId`] available locally
+    Have(ProjectId),
+    /// Instruct the network to find peers which [`Self::Have`] this
+    /// [`ProjectId`]
+    Fetch(ProjectId, futures::channel::mpsc::UnboundedSender<Event>),
+}
+
+#[derive(Clone, Debug)]
+pub enum Event {
+    Provides {
+        project: ProjectId,
+        peers: Vec<PeerId>,
+    },
 }
 
 pub struct Service {
@@ -46,8 +59,14 @@ pub struct Service {
 }
 
 impl Service {
-    pub fn have_project(&self, proj: ProjectId) {
-        let _ = self.to_worker.unbounded_send(ToWorker::HaveProject(proj));
+    pub fn have(&self, pid: ProjectId) {
+        let _ = self.to_worker.unbounded_send(ToWorker::Have(pid));
+    }
+
+    pub fn fetch(&self, pid: ProjectId) -> impl Stream<Item = Event> {
+        let (tx, rx) = futures::channel::mpsc::unbounded();
+        let _ = self.to_worker.unbounded_send(ToWorker::Fetch(pid, tx));
+        rx
     }
 }
 
@@ -58,6 +77,7 @@ pub struct Worker {
     swarm: Swarm<Substream<StreamMuxerBox>>,
     service: Arc<Service>,
     from_service: futures::channel::mpsc::UnboundedReceiver<ToWorker>,
+    subscribers: Vec<futures::channel::mpsc::UnboundedSender<Event>>,
 }
 
 impl Worker {
@@ -71,7 +91,11 @@ impl Worker {
             let kademlia = Kademlia::new(peer_id.clone(), store);
             let mdns = task::block_on(Mdns::new())?;
 
-            let behaviour = Behaviour { kademlia, mdns };
+            let behaviour = Behaviour {
+                kademlia,
+                mdns,
+                events: Vec::new(),
+            };
             libp2p::Swarm::new(transport, behaviour, peer_id)
         };
 
@@ -87,6 +111,7 @@ impl Worker {
             swarm,
             service,
             from_service: rx,
+            subscribers: Vec::new(),
         })
     }
 
@@ -108,7 +133,11 @@ impl Future for Worker {
             };
 
             match msg {
-                ToWorker::HaveProject(pid) => self.swarm.kademlia.start_providing(Key::new(&pid)),
+                ToWorker::Have(pid) => self.swarm.kademlia.start_providing(Key::new(&pid)),
+                ToWorker::Fetch(pid, rx) => {
+                    self.swarm.kademlia.get_providers(Key::new(&pid));
+                    self.subscribers.push(rx);
+                }
             }
         }
 
@@ -128,7 +157,9 @@ impl Future for Worker {
                     }
                     break;
                 }
-                Poll::Ready(Some(x)) => debug!("Recv {:?}", x),
+                Poll::Ready(Some(evt)) => self
+                    .subscribers
+                    .retain(|chan| chan.unbounded_send(evt.clone()).is_ok()),
             }
         }
 
@@ -177,20 +208,24 @@ fn build_transport(
     Ok(transport)
 }
 
-/*
-enum UpstreamEvent {
-    Providers(GetProvidersOk),
-    NewPeer {
-        peer_id: PeerId,
-        addrs: Vec<Multiaddr>,
-    },
-}
-*/
-
 #[derive(NetworkBehaviour)]
+#[behaviour(out_event = "Event", poll_method = "poll")]
 pub struct Behaviour<S> {
     kademlia: Kademlia<S, MemoryStore>,
     mdns: Mdns<S>,
+
+    #[behaviour(ignore)]
+    events: Vec<Event>,
+}
+
+impl<S> Behaviour<S> {
+    fn poll<T>(&mut self, _: &mut Context) -> Poll<NetworkBehaviourAction<T, Event>> {
+        if !self.events.is_empty() {
+            return Poll::Ready(NetworkBehaviourAction::GenerateEvent(self.events.remove(0)));
+        }
+
+        Poll::Pending
+    }
 }
 
 impl<S: AsyncRead + AsyncWrite> NetworkBehaviourEventProcess<MdnsEvent> for Behaviour<S> {
@@ -208,5 +243,18 @@ impl<S: AsyncRead + AsyncWrite> NetworkBehaviourEventProcess<KademliaEvent> for 
     // Called when `kademlia` produces an event.
     fn inject_event(&mut self, message: KademliaEvent) {
         debug!("Received KademliaEvent: {:?}", message);
+        if let KademliaEvent::GetProvidersResult(Ok(res)) = message {
+            let project = String::from_utf8(res.key.to_vec())
+                .map_err(|e| e.to_string())
+                .and_then(|s| ProjectId::from_str(&s).map_err(|e| e.to_string()));
+
+            match project {
+                Err(e) => warn!("GetProvidersResult: Invalid `ProjectId` {}", e),
+                Ok(pid) => self.events.push(Event::Provides {
+                    project: pid,
+                    peers: res.closest_peers,
+                }),
+            }
+        }
     }
 }
