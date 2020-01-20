@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 
+use hex::ToHex;
 use nonempty::NonEmpty;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
+use crate::keys::device::{Key, Signature};
 use crate::{
     meta::{
         common::{Label, Url, RAD_VERSION},
@@ -18,8 +20,14 @@ pub fn default_branch() -> String {
     DEFAULT_BRANCH.into()
 }
 
+#[derive(Debug, Fail)]
+pub enum Error {
+    #[fail(display = "Cannot serialize project metadata")]
+    SerializationFailed(serde_json::error::Error),
+}
+
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
-pub struct Signature {
+pub struct ProjectSignature {
     pub key: PeerId,
     pub sig: String,
 }
@@ -49,7 +57,7 @@ pub struct Project {
     pub rel: Vec<Relation>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub signatures: Vec<Signature>,
+    pub signatures: Vec<ProjectSignature>,
 }
 
 impl Project {
@@ -107,8 +115,28 @@ impl Project {
         Ok(data)
     }
 
-    pub fn canonical_data(&self) -> serde_json::Result<Vec<u8>> {
-        Ok(serde_json::to_string(&self)?.into_bytes())
+    pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
+        match serde_json::to_string(&self) {
+            Ok(s) => Ok(s.into_bytes()),
+            Err(err) => Err(Error::SerializationFailed(err)),
+        }
+    }
+
+    pub fn sign(&self, key: &Key) -> Result<Signature, Error> {
+        Ok(key.sign(&self.canonical_data()?))
+    }
+
+    pub fn build_signature(&self, key: &Key) -> Result<ProjectSignature, Error> {
+        let signature = self.sign(key)?;
+        Ok(ProjectSignature {
+            key: PeerId::from(key.clone()),
+            sig: signature.encode_hex_upper(),
+        })
+    }
+
+    pub fn add_signature(&mut self, key: &Key) -> Result<(), Error> {
+        self.signatures.push(self.build_signature(key)?);
+        Ok(())
     }
 }
 
@@ -138,7 +166,7 @@ pub mod tests {
             ".*",
             proptest::collection::vec(Just(PeerId::from(device::Key::new().public())), 1..32),
             proptest::collection::vec(gen_relation(), 0..16),
-            proptest::collection::vec(gen_signature(), 0..16),
+            proptest::collection::vec(gen_project_signature(), 0..16),
         )
             .prop_map(
                 |(revision, name, description, branch, maintainers, rel, signatures)| Project {
@@ -164,8 +192,8 @@ pub mod tests {
         ]
     }
 
-    fn gen_signature() -> impl Strategy<Value = Signature> {
-        prop_oneof![".*".prop_map(|sig| Signature {
+    fn gen_project_signature() -> impl Strategy<Value = ProjectSignature> {
+        prop_oneof![".*".prop_map(|sig| ProjectSignature {
             key: PeerId::from(device::Key::new().public()),
             sig,
         }),]
