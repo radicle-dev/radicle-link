@@ -32,6 +32,17 @@ pub struct ProjectSignature {
     pub sig: String,
 }
 
+impl ProjectSignature {
+    pub fn verify_data(&self, data: &[u8]) -> Result<(), ()> {
+        let sig = Signature::from_hex_string(&self.sig)?;
+        if sig.verify(data, self.key.device_key()) {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct Project {
     rad_version: u8,
@@ -136,6 +147,18 @@ impl Project {
 
     pub fn add_signature(&mut self, key: &Key) -> Result<(), Error> {
         self.signatures.push(self.build_signature(key)?);
+        Ok(())
+    }
+
+    pub fn verify_signature(&self, signature: &ProjectSignature) -> Result<(), ()> {
+        signature.verify_data(&self.canonical_data().map_err(|_| ())?)
+    }
+
+    pub fn verify_signatures(&self) -> Result<(), ()> {
+        let data = self.canonical_data().map_err(|_| ())?;
+        for s in self.signatures.iter() {
+            s.verify_data(&data)?
+        }
         Ok(())
     }
 }

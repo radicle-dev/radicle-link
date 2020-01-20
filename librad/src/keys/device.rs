@@ -2,6 +2,7 @@ use std::{fmt, ops::Deref, time::SystemTime};
 
 use ::pgp::conversions::Time;
 use bs58;
+use hex::decode;
 use sodiumoxide::crypto::sign;
 
 use crate::keys::pgp;
@@ -136,6 +137,20 @@ impl Deref for PublicKey {
 impl Signature {
     pub fn verify(&self, data: &[u8], pk: &PublicKey) -> bool {
         sign::verify_detached(self, &data, pk)
+    }
+
+    pub fn from_hex_string(s: &str) -> Result<Self, ()> {
+        let bytes = decode(s).map_err(|_| ())?;
+        let buffer = if bytes.len() == 64 {
+            let mut buffer = [0u8; 64];
+            for (i, v) in bytes.iter().enumerate() {
+                buffer[i] = *v;
+            }
+            buffer
+        } else {
+            return Err(());
+        };
+        Ok(Self(sodiumoxide::crypto::sign::Signature(buffer)))
     }
 }
 
