@@ -24,6 +24,14 @@ pub fn default_branch() -> String {
 pub enum Error {
     #[fail(display = "Cannot serialize project metadata")]
     SerializationFailed(serde_json::error::Error),
+    #[fail(display = "Signature already present")]
+    SignatureAlreadyPresent,
+    #[fail(display = "Signature from non maintainer")]
+    SignatureFromNonMaintainer,
+    #[fail(display = "Signature decoding failed")]
+    SignatureDecodingFailed,
+    #[fail(display = "Signature verification failed")]
+    SignatureVerificationFailed,
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
@@ -33,12 +41,13 @@ pub struct ProjectSignature {
 }
 
 impl ProjectSignature {
-    pub fn verify_data(&self, data: &[u8]) -> Result<(), ()> {
-        let sig = Signature::from_hex_string(&self.sig)?;
+    pub fn verify_data(&self, data: &[u8]) -> Result<(), Error> {
+        let sig =
+            Signature::from_hex_string(&self.sig).map_err(|_| Error::SignatureDecodingFailed)?;
         if sig.verify(data, self.key.device_key()) {
             Ok(())
         } else {
-            Err(())
+            Err(Error::SignatureVerificationFailed)
         }
     }
 }
@@ -146,16 +155,23 @@ impl Project {
     }
 
     pub fn add_signature(&mut self, key: &Key) -> Result<(), Error> {
-        self.signatures.push(self.build_signature(key)?);
-        Ok(())
+        let id = PeerId::from(key.clone());
+        if self.signatures.iter().any(|s| s.key == id) {
+            Err(Error::SignatureAlreadyPresent)
+        } else if !self.maintainers.iter().any(|m| m == &id) {
+            Err(Error::SignatureFromNonMaintainer)
+        } else {
+            self.signatures.push(self.build_signature(key)?);
+            Ok(())
+        }
     }
 
-    pub fn verify_signature(&self, signature: &ProjectSignature) -> Result<(), ()> {
-        signature.verify_data(&self.canonical_data().map_err(|_| ())?)
+    pub fn verify_signature(&self, signature: &ProjectSignature) -> Result<(), Error> {
+        signature.verify_data(&self.canonical_data()?)
     }
 
-    pub fn verify_signatures(&self) -> Result<(), ()> {
-        let data = self.canonical_data().map_err(|_| ())?;
+    pub fn verify_signatures(&self) -> Result<(), Error> {
+        let data = self.canonical_data()?;
         for s in self.signatures.iter() {
             s.verify_data(&data)?
         }
