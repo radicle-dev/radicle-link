@@ -1,4 +1,4 @@
-use std::{fmt, fmt::Display, io, path::Path, str::FromStr};
+use std::{convert::AsRef, fmt, fmt::Display, io, path::Path, str::FromStr};
 
 use git2;
 use olpc_cjson::CanonicalFormatter;
@@ -136,6 +136,12 @@ impl FromStr for ProjectId {
 impl Display for ProjectId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}.git", self.0)
+    }
+}
+
+impl AsRef<[u8]> for ProjectId {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
     }
 }
 

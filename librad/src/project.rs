@@ -1,4 +1,4 @@
-use std::{fmt, fmt::Display, ops::Deref, path::PathBuf, str::FromStr};
+use std::{convert::AsRef, fmt, fmt::Display, ops::Deref, path::PathBuf, str::FromStr};
 
 use crate::{git, git::GitProject, meta, paths::Paths};
 
@@ -62,6 +62,12 @@ impl Display for ProjectId {
 impl From<git::ProjectId> for ProjectId {
     fn from(pid: git::ProjectId) -> Self {
         Self(pid)
+    }
+}
+
+impl AsRef<[u8]> for ProjectId {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
     }
 }
 

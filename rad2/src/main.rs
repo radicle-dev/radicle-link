@@ -32,8 +32,6 @@ enum Commands {
     Project(commands::project::Commands),
     /// Manage user profiles
     Profiles(commands::profiles::Commands),
-    /// Run the p2p daemon
-    Daemon(commands::daemon::Options),
 }
 
 impl Commands {
