@@ -20,12 +20,22 @@ impl From<git::Error> for Error {
 /// in the future.
 ///
 /// [`git::ProjectId`]: ../git/struct.ProjectId.html
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectId(git::ProjectId);
 
 impl ProjectId {
     pub fn path(&self, paths: &Paths) -> PathBuf {
         paths.projects_dir().join(self.to_string())
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, projectid::FromBytesError> {
+        git::ProjectId::from_bytes(bytes)
+            .map(Self)
+            .map_err(|e| e.into())
     }
 }
 
@@ -40,6 +50,18 @@ pub mod projectid {
 
     impl From<git::projectid::ParseError> for ParseError {
         fn from(err: git::projectid::ParseError) -> Self {
+            Self::Git(err)
+        }
+    }
+
+    #[derive(Debug, Fail)]
+    pub enum FromBytesError {
+        #[fail(display = "{}", 0)]
+        Git(git::projectid::FromBytesError),
+    }
+
+    impl From<git::projectid::FromBytesError> for FromBytesError {
+        fn from(err: git::projectid::FromBytesError) -> Self {
             Self::Git(err)
         }
     }

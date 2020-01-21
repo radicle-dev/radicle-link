@@ -28,10 +28,18 @@ struct Rad2 {
 enum Commands {
     /// Manage keys
     Keys(commands::keys::Commands),
+
     /// Manage projects
     Project(commands::project::Commands),
+
     /// Manage user profiles
     Profiles(commands::profiles::Commands),
+
+    /// Run a p2p server
+    Serve,
+
+    /// Fetch a project from the network
+    Fetch(commands::fetch::Options),
 }
 
 impl Commands {

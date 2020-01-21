@@ -88,12 +88,20 @@ impl From<surf::error::Error> for Error {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectId(git2::Oid);
 
 impl ProjectId {
     pub fn new(oid: git2::Oid) -> Self {
         Self(oid)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, projectid::FromBytesError> {
+        git2::Oid::from_bytes(bytes).map(Self).map_err(|e| e.into())
     }
 }
 
@@ -111,6 +119,18 @@ pub mod projectid {
             0
         )]
         InvalidFormat(String),
+    }
+
+    #[derive(Debug, Fail)]
+    pub enum FromBytesError {
+        #[fail(display = "Invalid oid: {}", 0)]
+        InvalidOid(git2::Error),
+    }
+
+    impl From<git2::Error> for FromBytesError {
+        fn from(e: git2::Error) -> Self {
+            Self::InvalidOid(e)
+        }
     }
 }
 
@@ -141,7 +161,7 @@ impl Display for ProjectId {
 
 impl AsRef<[u8]> for ProjectId {
     fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
+        self.as_bytes()
     }
 }
 
@@ -460,8 +480,14 @@ pub mod tests {
     #[allow(clippy::unnecessary_operation)]
     proptest! {
         #[test]
-        fn prop_projectid_roundtrip(pid in gen_projectid()) {
+        fn prop_projectid_str_roundtrip(pid in gen_projectid()) {
             let pid2 = ProjectId::from_str(&pid.to_string()).expect("Error parsing ProjectId");
+            assert_eq!(pid, pid2)
+        }
+
+        #[test]
+        fn prop_projectid_bytes_rountrip(pid in gen_projectid()) {
+            let pid2 = ProjectId::from_bytes(pid.as_bytes()).expect("ProjectId::from_bytes failed");
             assert_eq!(pid, pid2)
         }
     }

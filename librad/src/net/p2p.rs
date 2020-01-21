@@ -1,17 +1,20 @@
 use std::{
+    collections::HashMap,
     error::Error,
     future::Future,
     io,
     marker::Unpin,
     pin::Pin,
-    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
 
 use async_std::task;
-use futures::prelude::*;
+use futures::{
+    channel::{mpsc, oneshot, oneshot::Canceled},
+    prelude::*,
+};
 use log::{debug, info, warn};
 
 use libp2p::{
@@ -25,7 +28,7 @@ use libp2p::{
     },
     mdns::{Mdns, MdnsEvent},
     noise,
-    swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess},
+    swarm::{NetworkBehaviour, NetworkBehaviourAction, NetworkBehaviourEventProcess},
     tcp,
     yamux,
     InboundUpgradeExt,
@@ -41,21 +44,19 @@ use crate::{keys::device, project::ProjectId};
 enum ToWorker {
     /// Advertise we have project [`ProjectId`] available locally
     Have(ProjectId),
-    /// Instruct the network to find peers which [`Self::Have`] this
-    /// [`ProjectId`]
-    Fetch(ProjectId, futures::channel::mpsc::UnboundedSender<Event>),
+    /// Find peers which serve project [`ProjectId`]
+    Providers(ProjectId, oneshot::Sender<Vec<Provider>>),
 }
 
-#[derive(Clone, Debug)]
-pub enum Event {
-    Provides {
-        project: ProjectId,
-        peers: Vec<PeerId>,
-    },
+#[derive(Debug, Clone)]
+pub struct Provider {
+    project: ProjectId,
+    peer: PeerId,
+    addrs: Vec<Multiaddr>,
 }
 
 pub struct Service {
-    to_worker: futures::channel::mpsc::UnboundedSender<ToWorker>,
+    to_worker: mpsc::UnboundedSender<ToWorker>,
 }
 
 impl Service {
@@ -63,9 +64,12 @@ impl Service {
         let _ = self.to_worker.unbounded_send(ToWorker::Have(pid));
     }
 
-    pub fn fetch(&self, pid: ProjectId) -> impl Stream<Item = Event> {
-        let (tx, rx) = futures::channel::mpsc::unbounded();
-        let _ = self.to_worker.unbounded_send(ToWorker::Fetch(pid, tx));
+    pub fn providers(
+        &self,
+        pid: ProjectId,
+    ) -> impl Future<Output = Result<Vec<Provider>, Canceled>> {
+        let (tx, rx) = oneshot::channel();
+        let _ = self.to_worker.unbounded_send(ToWorker::Providers(pid, tx));
         rx
     }
 }
@@ -76,8 +80,8 @@ pub struct Worker {
     listening: bool,
     swarm: Swarm<Substream<StreamMuxerBox>>,
     service: Arc<Service>,
-    from_service: futures::channel::mpsc::UnboundedReceiver<ToWorker>,
-    subscribers: Vec<futures::channel::mpsc::UnboundedSender<Event>>,
+    from_service: mpsc::UnboundedReceiver<ToWorker>,
+    providers_resp: HashMap<ProjectId, Vec<oneshot::Sender<Vec<Provider>>>>,
 }
 
 impl Worker {
@@ -104,14 +108,14 @@ impl Worker {
             listen_addr.unwrap_or_else(|| "/ip4/0.0.0.0/tcp/0".parse().unwrap()),
         )?;
 
-        let (tx, rx) = futures::channel::mpsc::unbounded();
+        let (tx, rx) = mpsc::unbounded();
         let service = Arc::new(Service { to_worker: tx });
         Ok(Self {
             listening: false,
             swarm,
             service,
             from_service: rx,
-            subscribers: Vec::new(),
+            providers_resp: HashMap::new(),
         })
     }
 
@@ -134,9 +138,10 @@ impl Future for Worker {
 
             match msg {
                 ToWorker::Have(pid) => self.swarm.kademlia.start_providing(Key::new(&pid)),
-                ToWorker::Fetch(pid, rx) => {
+                ToWorker::Providers(pid, tx) => {
                     self.swarm.kademlia.get_providers(Key::new(&pid));
-                    self.subscribers.push(rx);
+                    let subscribers = self.providers_resp.entry(pid).or_insert_with(Vec::new);
+                    subscribers.push(tx);
                 }
             }
         }
@@ -157,9 +162,26 @@ impl Future for Worker {
                     }
                     break;
                 }
-                Poll::Ready(Some(evt)) => self
-                    .subscribers
-                    .retain(|chan| chan.unbounded_send(evt.clone()).is_ok()),
+                Poll::Ready(Some(evt)) => match evt {
+                    Event::Provides { project, peers } => {
+                        let providers: Vec<Provider> = peers
+                            .iter()
+                            .map(|peer_id| Provider {
+                                project: project.clone(),
+                                peer: peer_id.clone(),
+                                addrs: self.swarm.addresses_of_peer(peer_id),
+                            })
+                            .collect();
+
+                        debug!("Collect providers: {:?}", providers);
+
+                        if let Some(subscribers) = self.providers_resp.remove(&project) {
+                            for tx in subscribers {
+                                let _ = tx.send(providers.clone());
+                            }
+                        }
+                    }
+                },
             }
         }
 
@@ -208,9 +230,16 @@ fn build_transport(
     Ok(transport)
 }
 
+enum Event {
+    Provides {
+        project: ProjectId,
+        peers: Vec<PeerId>,
+    },
+}
+
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "Event", poll_method = "poll")]
-pub struct Behaviour<S> {
+struct Behaviour<S> {
     kademlia: Kademlia<S, MemoryStore>,
     mdns: Mdns<S>,
 
@@ -244,17 +273,33 @@ impl<S: AsyncRead + AsyncWrite> NetworkBehaviourEventProcess<KademliaEvent> for 
     fn inject_event(&mut self, message: KademliaEvent) {
         debug!("Received KademliaEvent: {:?}", message);
         if let KademliaEvent::GetProvidersResult(Ok(res)) = message {
-            let project = String::from_utf8(res.key.to_vec())
-                .map_err(|e| e.to_string())
-                .and_then(|s| ProjectId::from_str(&s).map_err(|e| e.to_string()));
+            let project = ProjectId::from_bytes(&res.key.to_vec()).map_err(|e| e.to_string());
 
             match project {
-                Err(e) => warn!("GetProvidersResult: Invalid `ProjectId` {}", e),
-                Ok(pid) => self.events.push(Event::Provides {
-                    project: pid,
-                    peers: res.closest_peers,
-                }),
+                Err(e) => warn!("GetProvidersResult: Invalid `ProjectId`: {}", e),
+                Ok(pid) => {
+                    debug!("Found providers of {}", pid);
+                    self.events.push(Event::Provides {
+                        project: pid,
+                        peers: res.closest_peers,
+                    })
+                }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_project_id_kad_key_roundtrip() {
+        let pid = ProjectId::from_str("67e6bd81be337c69385da551d93fd89fd3967eee.git").unwrap();
+        let key = Key::new(&pid);
+        let pid2 = ProjectId::from_bytes(&key.to_vec()).unwrap();
+
+        assert_eq!(pid, pid2)
     }
 }

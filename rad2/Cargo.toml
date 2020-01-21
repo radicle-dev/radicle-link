@@ -6,6 +6,7 @@ edition = "2018"
 description = "The Official Unoffical Radicle CLI"
 
 [dependencies]
+async-std = "1.4"
 env_logger = "0.7"
 failure = "0.1"
 failure_derive = "0.1"
