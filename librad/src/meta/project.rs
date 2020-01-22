@@ -2,6 +2,7 @@ use std::{collections::HashSet, path::PathBuf};
 
 use hex::ToHex;
 use nonempty::NonEmpty;
+use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
@@ -24,6 +25,8 @@ pub fn default_branch() -> String {
 pub enum Error {
     #[fail(display = "Cannot serialize project metadata")]
     SerializationFailed(serde_json::error::Error),
+    #[fail(display = "Invalid UTF8")]
+    InvalidUtf8,
     #[fail(display = "Signature already present")]
     SignatureAlreadyPresent,
     #[fail(display = "Signature from non maintainer")]
@@ -152,19 +155,20 @@ impl Project {
         self.maintainers = NonEmpty::from_slice(&xs).unwrap();
     }
 
-    pub fn canonical_text_contents(&self) -> serde_json::Result<String> {
-        let mut data = self.clone();
-        data.signatures.clear();
-        // TODO: actually canonicalize the output format (use a different serializer)
-        let data = serde_json::to_string(&data)?;
-        Ok(data)
+    pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
+        let mut cleaned = self.clone();
+        cleaned.signatures.clear();
+        let mut buffer: Vec<u8> = vec![];
+        let mut ser =
+            serde_json::Serializer::with_formatter(&mut buffer, CanonicalFormatter::new());
+        cleaned
+            .serialize(&mut ser)
+            .map_err(|e| Error::SerializationFailed(e))?;
+        Ok(buffer)
     }
 
-    pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
-        match self.canonical_text_contents() {
-            Ok(s) => Ok(s.into_bytes()),
-            Err(err) => Err(Error::SerializationFailed(err)),
-        }
+    pub fn canonical_text_contents(&self) -> Result<String, Error> {
+        String::from_utf8(self.canonical_data()?).map_err(|_| Error::InvalidUtf8)
     }
 
     pub fn sign(&self, key: &Key) -> Result<Signature, Error> {
