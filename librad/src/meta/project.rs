@@ -1,13 +1,12 @@
-use std::collections::HashSet;
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use hex::ToHex;
 use nonempty::NonEmpty;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use crate::keys::device::{Key, Signature};
 use crate::{
+    keys::device::{Key, Signature},
     meta::{
         common::{Label, Url, RAD_VERSION},
         serde_helpers,
@@ -139,7 +138,7 @@ impl Project {
     }
 
     pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
-        match serde_json::to_string(&self) {
+        match self.canonical_text_contents() {
             Ok(s) => Ok(s.into_bytes()),
             Err(err) => Err(Error::SerializationFailed(err)),
         }
@@ -167,6 +166,10 @@ impl Project {
             self.signatures.push(self.build_signature(key)?);
             Ok(())
         }
+    }
+
+    pub fn remove_signature(&mut self, id: &PeerId) {
+        self.signatures.retain(|s| s.key != *id);
     }
 
     pub fn verify_signature(&self, signature: &ProjectSignature) -> Result<(), Error> {
@@ -201,6 +204,19 @@ impl Project {
 
         Ok(())
     }
+
+    pub fn check_validity(&self) -> Result<(), Error> {
+        self.check_signatures_against_maintainers()?;
+        self.verify_signatures()?;
+        Ok(())
+    }
+
+    pub fn is_valid(&self) -> bool {
+        match self.check_validity() {
+            Err(_) => false,
+            Ok(()) => true,
+        }
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
@@ -214,6 +230,7 @@ pub enum Relation {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use matches::matches;
 
     use proptest::prelude::*;
     use serde_json;
@@ -285,14 +302,20 @@ pub mod tests {
         181, 134, 74, 88, 174, 254, 78, 69, 84, 149, 84, 167,
     ]);
     const CREATED_AT: u64 = 1_576_843_598;
-    fn new_peer(seed_value: u8) -> PeerId {
-        let mut seed = SEED;
+
+    fn new_peer_with_key(seed_value: u8) -> (PeerId, device::Key) {
+        let mut seed = SEED.clone();
         seed.0[0] = seed_value;
         let created_at = std::time::SystemTime::UNIX_EPOCH
             .checked_add(std::time::Duration::from_secs(CREATED_AT))
             .expect("SystemTime overflow o.O");
         let key = device::Key::from_seed(&seed, created_at);
-        PeerId::from(key.public())
+        (PeerId::from(device::PublicKey::from(key.public())), key)
+    }
+
+    fn new_peer(seed_value: u8) -> PeerId {
+        let (peer, _) = new_peer_with_key(seed_value);
+        peer
     }
 
     #[test]
@@ -306,5 +329,113 @@ pub mod tests {
         assert_eq!(3, prj.maintainers.len());
         prj.add_maintainer(&m1);
         assert_eq!(3, prj.maintainers.len());
+    }
+
+    #[test]
+    fn test_project_signatures() {
+        let (m0, k0) = new_peer_with_key(42);
+        let m1 = new_peer(1);
+        let m2 = new_peer(2);
+
+        // Keep signing the project while adding maintainers
+        let mut prj = Project::new("foo", &m0);
+        let s0 = prj.sign(&k0).unwrap();
+        prj.add_maintainer(&m1);
+        let s1 = prj.sign(&k0).unwrap();
+        prj.add_maintainer(&m2);
+        let s2 = prj.sign(&k0).unwrap();
+
+        // Check that the resulting signatures are different
+        assert_ne!(&s0, &s1);
+        assert_ne!(&s0, &s2);
+        assert_ne!(&s1, &s2);
+    }
+
+    #[test]
+    fn test_adding_project_signatures() {
+        let (m0, k0) = new_peer_with_key(42);
+        let (m1, k1) = new_peer_with_key(1);
+        let (m2, k2) = new_peer_with_key(2);
+
+        // Check that canonical data changes while adding maintainers
+        let mut prj = Project::new("foo", &m0);
+        let d0 = prj.canonical_data().unwrap();
+        prj.add_maintainer(&m1);
+        let d1 = prj.canonical_data().unwrap();
+        prj.add_maintainer(&m2);
+        let d2 = prj.canonical_data().unwrap();
+        assert_ne!(&d0, &d1);
+        assert_ne!(&d0, &d2);
+        assert_ne!(&d1, &d2);
+        // Check that canonical data does not change manipulating signatures
+        let d0 = prj.canonical_data().unwrap();
+        prj.add_signature(&k0).unwrap();
+        let d1 = prj.canonical_data().unwrap();
+        prj.add_signature(&k1).unwrap();
+        let d2 = prj.canonical_data().unwrap();
+        prj.add_signature(&k2).unwrap();
+        let d3 = prj.canonical_data().unwrap();
+        assert_eq!(&d0, &d1);
+        assert_eq!(&d0, &d2);
+        assert_eq!(&d0, &d3);
+
+        // Check signatures collection contents
+        assert_eq!(3, prj.signatures.len());
+        assert_eq!(1, prj.signatures.iter().filter(|s| s.key == m0).count());
+        assert_eq!(1, prj.signatures.iter().filter(|s| s.key == m1).count());
+        assert_eq!(1, prj.signatures.iter().filter(|s| s.key == m2).count());
+
+        // Check signature verification
+        let data = prj.canonical_data().unwrap();
+        for s in prj.signatures.iter() {
+            let sig = Signature::from_hex_string(&s.sig).unwrap();
+            assert_eq!(sig.verify(&data, s.key.device_key()), true);
+        }
+
+        // Check signature removal
+        prj.remove_signature(&m1);
+        assert_eq!(2, prj.signatures.len());
+    }
+
+    #[test]
+    fn test_project_verification() {
+        let (m0, k0) = new_peer_with_key(42);
+        let (m1, k1) = new_peer_with_key(1);
+        let (m2, k2) = new_peer_with_key(2);
+
+        // A new project is not valid because the owner has not signed it
+        let mut prj = Project::new("foo", &m0);
+        assert!(matches!(prj.check_validity(), Err(Error::SignatureMissing)));
+        assert!(!prj.is_valid());
+        // Adding the signature fixes it
+        prj.add_signature(&k0).unwrap();
+        assert!(matches!(prj.check_validity(), Ok(())));
+        assert!(prj.is_valid());
+        // Adding maintainers without signatures invalidates it
+        prj.add_maintainer(&m1);
+        prj.add_maintainer(&m2);
+        assert!(matches!(prj.check_validity(), Err(Error::SignatureMissing)));
+        // Adding the missing signatures does not fix it: m0 signed a previous revision
+        prj.add_signature(&k1).unwrap();
+        prj.add_signature(&k2).unwrap();
+        assert!(matches!(
+            prj.check_validity(),
+            Err(Error::SignatureVerificationFailed)
+        ));
+        // Cannot sign a project twice with the sme key
+        assert!(matches!(
+            prj.add_signature(&k0),
+            Err(Error::SignatureAlreadyPresent)
+        ));
+        // Removing the signature and re adding it fixes the project
+        prj.remove_signature(&m0);
+        prj.add_signature(&k0).unwrap();
+        assert!(prj.is_valid());
+        // Removing a maintainer invalidates it again
+        prj.maintainers.pop();
+        assert!(matches!(
+            prj.check_validity(),
+            Err(Error::SignatureFromNonMaintainer)
+        ));
     }
 }

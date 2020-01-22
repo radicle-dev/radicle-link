@@ -599,6 +599,7 @@ dependencies = [
  "git2 0.10.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "hex 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "matches 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "nettle 5.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "nonempty 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "olpc-cjson 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
