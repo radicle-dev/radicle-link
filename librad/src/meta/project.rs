@@ -36,6 +36,29 @@ pub enum Error {
     SignatureVerificationFailed,
 }
 
+#[derive(Debug, Fail)]
+pub enum UpdateVerificationError {
+    #[fail(display = "Non monotonic revision")]
+    NonMonotonicRevision,
+    #[fail(display = "Update without previous quorum")]
+    NoPreviousQuorum,
+    #[fail(display = "Update without current quorum")]
+    NoCurrentQuorum,
+}
+
+#[derive(Debug, Fail)]
+pub enum HistoryVerificationError {
+    #[fail(display = "Empty history")]
+    EmptyHistory,
+    #[fail(display = "Project error")]
+    ProjectError { revision: u64, error: Error },
+    #[fail(display = "Update error")]
+    UpdateError {
+        revision: u64,
+        error: UpdateVerificationError,
+    },
+}
+
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct ProjectSignature {
     pub key: PeerId,
@@ -216,6 +239,63 @@ impl Project {
             Err(_) => false,
             Ok(()) => true,
         }
+    }
+
+    pub fn check_update(&self, previous: &Project) -> Result<(), UpdateVerificationError> {
+        if self.revision() <= previous.revision() {
+            return Err(UpdateVerificationError::NonMonotonicRevision);
+        }
+
+        let mut previous_maintainers = HashSet::<&PeerId>::new();
+        for m in previous.maintainers.iter() {
+            previous_maintainers.insert(m);
+        }
+        let retained = self
+            .maintainers
+            .iter()
+            .filter(|m| previous_maintainers.contains(m))
+            .count();
+        let total = self.maintainers.len();
+        let added = total - retained;
+        let removed = previous_maintainers.len() - retained;
+        let quorum = total / 2;
+
+        if added > quorum {
+            Err(UpdateVerificationError::NoCurrentQuorum)
+        } else if removed > quorum {
+            Err(UpdateVerificationError::NoPreviousQuorum)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn check_history<'a>(
+        history: impl Iterator<Item = &'a Project>,
+    ) -> Result<(), HistoryVerificationError> {
+        let mut history = history;
+        let current = history.next();
+        let mut current = match current {
+            None => {
+                return Err(HistoryVerificationError::EmptyHistory);
+            }
+            Some(project) => project,
+        };
+
+        let revision = current.revision();
+        current
+            .check_validity()
+            .map_err(|error| HistoryVerificationError::ProjectError { revision, error })?;
+        for previous in history {
+            let revision = current.revision();
+            previous
+                .check_validity()
+                .map_err(|error| HistoryVerificationError::ProjectError { revision, error })?;
+            current
+                .check_update(previous)
+                .map_err(|error| HistoryVerificationError::UpdateError { revision, error })?;
+            current = previous;
+        }
+        Ok(())
     }
 }
 
@@ -436,6 +516,125 @@ pub mod tests {
         assert!(matches!(
             prj.check_validity(),
             Err(Error::SignatureFromNonMaintainer)
+        ));
+    }
+    #[test]
+    fn test_project_update() {
+        let (m0, k0) = new_peer_with_key(42);
+        let (m1, k1) = new_peer_with_key(1);
+        let (m2, k2) = new_peer_with_key(2);
+        let (m3, k3) = new_peer_with_key(3);
+        let (m4, k4) = new_peer_with_key(4);
+
+        // Empty history is invalid
+        let mut history: Vec<Project> = vec![];
+        assert!(matches!(
+            Project::check_history(history.iter()),
+            Err(HistoryVerificationError::EmptyHistory)
+        ));
+        // History with invalid project is invalid
+        let mut prj = Project::new("foo", &m0);
+        prj.revision = 1;
+        history.push(prj);
+        assert!(matches!(
+            Project::check_history(history.iter()),
+            Err(HistoryVerificationError::ProjectError {
+                revision: 1,
+                error: Error::SignatureMissing,
+            })
+        ));
+        // History with single valid project is valid
+        history.last_mut().unwrap().add_signature(&k0).unwrap();
+        assert!(matches!(Project::check_history(history.iter()), Ok(())));
+        // Adding one maintainer is ok
+        let mut prj = history.last().unwrap().clone();
+        prj.revision = 2;
+        prj.add_maintainer(&m1);
+        prj.signatures.clear();
+        prj.add_signature(&k0).unwrap();
+        prj.add_signature(&k1).unwrap();
+        history.push(prj);
+        assert!(matches!(
+            Project::check_history(history.iter().rev()),
+            Ok(())
+        ));
+        // Adding two maintainers starting from one is not ok
+        history.pop();
+        let mut prj = history.last().unwrap().clone();
+        prj.revision = 2;
+        prj.add_maintainer(&m1);
+        prj.add_maintainer(&m2);
+        prj.signatures.clear();
+        prj.add_signature(&k0).unwrap();
+        prj.add_signature(&k1).unwrap();
+        prj.add_signature(&k2).unwrap();
+        history.push(prj);
+        assert!(matches!(
+            Project::check_history(history.iter().rev()),
+            Err(HistoryVerificationError::UpdateError {
+                revision: 2,
+                error: UpdateVerificationError::NoCurrentQuorum,
+            })
+        ));
+        // Adding two maintainers one by one is ok
+        history.pop();
+        let mut prj = history.last().unwrap().clone();
+        prj.revision = 2;
+        prj.add_maintainer(&m1);
+        prj.signatures.clear();
+        prj.add_signature(&k0).unwrap();
+        prj.add_signature(&k1).unwrap();
+        history.push(prj);
+        assert!(matches!(
+            Project::check_history(history.iter().rev()),
+            Ok(())
+        ));
+        let mut prj = history.last().unwrap().clone();
+        prj.revision = 3;
+        prj.add_maintainer(&m2);
+        prj.signatures.clear();
+        prj.add_signature(&k0).unwrap();
+        prj.add_signature(&k1).unwrap();
+        prj.add_signature(&k2).unwrap();
+        history.push(prj);
+        assert!(matches!(
+            Project::check_history(history.iter().rev()),
+            Ok(())
+        ));
+        // Changing two maintainers out of three is not ok
+        let mut prj = history.last().unwrap().clone();
+        prj.revision = 4;
+        prj.maintainers.pop();
+        prj.maintainers.pop();
+        prj.add_maintainer(&m3);
+        prj.add_maintainer(&m4);
+        prj.signatures.clear();
+        prj.add_signature(&k2).unwrap();
+        prj.add_signature(&k3).unwrap();
+        prj.add_signature(&k4).unwrap();
+        history.push(prj);
+        assert!(matches!(
+            Project::check_history(history.iter().rev()),
+            Err(HistoryVerificationError::UpdateError {
+                revision: 4,
+                error: UpdateVerificationError::NoCurrentQuorum,
+            })
+        ));
+        // Removing two maintainers out of three is not ok
+        history.pop();
+        let mut prj = history.last().unwrap().clone();
+        prj.revision = 4;
+        prj.maintainers.pop();
+        prj.maintainers.pop();
+        prj.signatures.clear();
+        prj.add_signature(&k2).unwrap();
+        history.push(prj);
+        assert!(matches!(
+            Project::check_history(history.iter().rev()),
+            Err(HistoryVerificationError::UpdateError {
+                revision: 4,
+                error: UpdateVerificationError::NoPreviousQuorum,
+            })
         ));
     }
 }
