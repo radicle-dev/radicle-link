@@ -1,7 +1,7 @@
 max_width = 100
 # yeap
 comment_width = 80
-wrap_comments = false
+wrap_comments = true
 hard_tabs = false
 tab_spaces = 4
 imports_layout = "HorizontalVertical"
