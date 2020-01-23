@@ -163,7 +163,7 @@ impl Project {
             serde_json::Serializer::with_formatter(&mut buffer, CanonicalFormatter::new());
         cleaned
             .serialize(&mut ser)
-            .map_err(|e| Error::SerializationFailed(e))?;
+            .map_err(Error::SerializationFailed)?;
         Ok(buffer)
     }
 
@@ -225,7 +225,7 @@ impl Project {
             }
         }
 
-        if maintainers.len() > 0 {
+        if maintainers.is_empty() {
             return Err(Error::SignatureMissing);
         }
 
