@@ -50,9 +50,9 @@ enum ToWorker {
 
 #[derive(Debug, Clone)]
 pub struct Provider {
-    project: ProjectId,
-    peer: PeerId,
-    addrs: Vec<Multiaddr>,
+    pub project: ProjectId,
+    pub peer: PeerId,
+    pub addrs: Vec<Multiaddr>,
 }
 
 pub struct Service {
@@ -60,16 +60,20 @@ pub struct Service {
 }
 
 impl Service {
-    pub fn have(&self, pid: ProjectId) {
-        let _ = self.to_worker.unbounded_send(ToWorker::Have(pid));
+    /// Announce that we have project [`ProjectId`]
+    pub fn have(&self, pid: &ProjectId) {
+        let _ = self.to_worker.unbounded_send(ToWorker::Have(pid.clone()));
     }
 
+    /// Try to find peers providing project [`ProjectId`]
     pub fn providers(
         &self,
-        pid: ProjectId,
+        pid: &ProjectId,
     ) -> impl Future<Output = Result<Vec<Provider>, Canceled>> {
         let (tx, rx) = oneshot::channel();
-        let _ = self.to_worker.unbounded_send(ToWorker::Providers(pid, tx));
+        let _ = self
+            .to_worker
+            .unbounded_send(ToWorker::Providers(pid.clone(), tx));
         rx
     }
 }
@@ -173,8 +177,6 @@ impl Future for Worker {
                             })
                             .collect();
 
-                        debug!("Collect providers: {:?}", providers);
-
                         if let Some(subscribers) = self.providers_resp.remove(&project) {
                             for tx in subscribers {
                                 let _ = tx.send(providers.clone());
@@ -272,18 +274,15 @@ impl<S: AsyncRead + AsyncWrite> NetworkBehaviourEventProcess<KademliaEvent> for 
     // Called when `kademlia` produces an event.
     fn inject_event(&mut self, message: KademliaEvent) {
         debug!("Received KademliaEvent: {:?}", message);
+
         if let KademliaEvent::GetProvidersResult(Ok(res)) = message {
             let project = ProjectId::from_bytes(&res.key.to_vec()).map_err(|e| e.to_string());
-
             match project {
                 Err(e) => warn!("GetProvidersResult: Invalid `ProjectId`: {}", e),
-                Ok(pid) => {
-                    debug!("Found providers of {}", pid);
-                    self.events.push(Event::Provides {
-                        project: pid,
-                        peers: res.closest_peers,
-                    })
-                }
+                Ok(pid) => self.events.push(Event::Provides {
+                    project: pid,
+                    peers: res.closest_peers,
+                }),
             }
         }
     }

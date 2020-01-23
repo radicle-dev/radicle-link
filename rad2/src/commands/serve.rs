@@ -23,7 +23,7 @@ where
 
     Project::list(&paths).for_each(|pid| {
         info!("Serving project {}", pid);
-        service.have(pid)
+        service.have(&pid)
     });
 
     task::block_on(worker).map_err(|e| e.into())
