@@ -109,7 +109,7 @@ impl Project {
                             } else {
                                 None
                             }
-                        }
+                        },
                         _ => None,
                     }
                 } else {

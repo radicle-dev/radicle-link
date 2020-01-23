@@ -30,7 +30,8 @@ pub enum Commands {
     Show { project: ProjectId },
     /// Initialise a new project
     Init {
-        /// Name of the project. Defaults to the directory name of the source repository.
+        /// Name of the project. Defaults to the directory name of the source
+        /// repository.
         #[structopt(short, long)]
         name: Option<String>,
 
@@ -38,8 +39,8 @@ pub enum Commands {
         #[structopt(short, long)]
         profile: String,
 
-        /// `.git` directory of the repository to initialise as a project. Discovered from the
-        /// current directory by default.
+        /// `.git` directory of the repository to initialise as a project.
+        /// Discovered from the current directory by default.
         #[structopt(short, long)]
         git_dir: Option<PathBuf>,
     },
@@ -63,13 +64,13 @@ where
                 FileStorage::new(paths.clone()).get_device_key(pin("Unlock your key store:"))?;
             let profile = load_profile(ProfilePath::new(&paths, &profile))?;
             init_project(&paths, &key, name, profile, git_dir)
-        }
+        },
 
         Commands::Show { project } => {
             let proj = Project::show(&paths, &project)?;
             serde_yaml::to_writer(io::stdout(), &proj).expect("I/O error");
             Ok(())
-        }
+        },
 
         Commands::List => {
             for pid in Project::list(&paths) {
@@ -80,7 +81,7 @@ where
                 }
             }
             Ok(())
-        }
+        },
 
         Commands::Update { .. } => unimplemented!(),
     }

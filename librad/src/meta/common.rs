@@ -9,11 +9,13 @@ pub type Label = String;
 
 /// An RFC2822-ish email address.
 ///
-/// While we validate the `local-part`, and ensure that the entire address is shorter than 255
-/// characters, we don't care much about the `domain`: pseudo email addresses of the form
-/// `<local-part>@<some hash value>` are generally acceptable within Radicle.
+/// While we validate the `local-part`, and ensure that the entire address is
+/// shorter than 255 characters, we don't care much about the `domain`: pseudo
+/// email addresses of the form `<local-part>@<some hash value>` are generally
+/// acceptable within Radicle.
 ///
-/// The validation logic is mostly stolen from the `addr` resp. `publicsuffix` crates.
+/// The validation logic is mostly stolen from the `addr` resp. `publicsuffix`
+/// crates.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EmailAddr {
     local: String,

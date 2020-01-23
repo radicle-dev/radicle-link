@@ -57,8 +57,8 @@ where
     match result {
         Ok(updated) => {
             if let Some(dest) = store_at {
-                // Try to create the temp file next to the target file, so we don't run into issues
-                // if dest is on another device
+                // Try to create the temp file next to the target file, so we don't run into
+                // issues if dest is on another device
                 let tmpdir = dest
                     .as_ref()
                     .parent()
@@ -69,13 +69,13 @@ where
                 tmp.persist(dest)?;
             }
             Ok(updated)
-        }
+        },
         Err(e) => {
             println!("{}", e);
             println!("Press ENTER to try again");
             let mut buf = String::with_capacity(1);
             io::stdin().read_line(&mut buf).unwrap();
             edit_yaml(data, store_at)
-        }
+        },
     }
 }
