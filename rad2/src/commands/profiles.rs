@@ -9,11 +9,12 @@ use serde_yaml as yaml;
 use structopt::StructOpt;
 
 use librad::{
+    keys::storage::{Pinentry, Storage},
     meta::{EmailAddr, UserProfile},
     paths::Paths,
 };
 
-use crate::editor;
+use crate::{config::Config, editor};
 
 #[derive(StructOpt)]
 /// Manage user profiles
@@ -100,13 +101,19 @@ impl ProfilePath {
     }
 }
 
-pub fn run(paths: Paths, cmd: Commands, _verbose: bool) -> Result<(), Error> {
-    match cmd {
-        Commands::New { name } => create_profile(&paths, &name),
-        Commands::Edit { name } => edit_profile(&paths, &name),
-        Commands::Show { name } => show_profile(&paths, &name),
-        Commands::Delete { name } => delete_profile(&paths, &name),
-        Commands::List => list_profiles(&paths),
+impl Commands {
+    pub fn run<K, P>(self, cfg: Config<K, P>) -> Result<(), Error>
+    where
+        K: Storage<P>,
+        P: Pinentry,
+    {
+        match self {
+            Self::New { name } => create_profile(&cfg.paths, &name),
+            Self::Edit { name } => edit_profile(&cfg.paths, &name),
+            Self::Show { name } => show_profile(&cfg.paths, &name),
+            Self::Delete { name } => delete_profile(&cfg.paths, &name),
+            Self::List => list_profiles(&cfg.paths),
+        }
     }
 }
 

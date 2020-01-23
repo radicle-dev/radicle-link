@@ -4,19 +4,21 @@ use failure::Fail;
 use std::process::exit;
 use structopt::StructOpt;
 
-use librad::{keys::storage::Pinentry, paths::Paths};
+use librad::keys::storage::{FileStorage, Pinentry, Storage};
 
 mod commands;
+mod config;
 mod editor;
 pub mod error;
 mod pinentry;
 
+use crate::config::{CommonOpts, Config};
+
 #[derive(StructOpt)]
 #[structopt(about)]
 struct Rad2 {
-    #[structopt(short, long)]
-    /// Verbose output
-    verbose: bool,
+    #[structopt(flatten)]
+    common: CommonOpts,
 
     #[structopt(subcommand)]
     cmd: Commands,
@@ -32,35 +34,34 @@ enum Commands {
     Profiles(commands::profiles::Commands),
 }
 
-fn main() {
+impl Commands {
+    fn run<K, P>(self, cfg: Config<K, P>) -> Result<(), error::Error<P::Error>>
+    where
+        K: Storage<P>,
+        P: Pinentry,
+        P::Error: Fail,
+    {
+        match self {
+            Self::Keys(cmd) => cmd.run(cfg),
+            Self::Project(cmd) => cmd.run(cfg),
+            Self::Profiles(cmd) => cmd.run(cfg).map_err(|e| e.into()),
+        }
+    }
+}
+
+fn main() -> Result<(), error::Error<self::pinentry::Error>> {
     if !librad::init() {
         eprintln!("Failed to initialise librad2");
         exit(1);
     }
 
-    let pin = pinentry::Pinentry::new;
-    let app = StructOpt::from_args();
-    exit(match run(app, pin) {
-        Ok(_) => 0,
-        Err(e) => {
-            eprintln!("{}", e);
-            1
-        },
-    });
-}
+    let app: Rad2 = StructOpt::from_args();
+    let cfg = app.common.into_config(|paths| {
+        FileStorage::new(
+            paths,
+            self::pinentry::Pinentry::new("Unlock your keystore:"),
+        )
+    })?;
 
-fn run<F, P>(app: Rad2, pin: F) -> Result<(), error::Error<P::Error>>
-where
-    F: FnOnce(&'static str) -> P,
-    P: Pinentry,
-    P::Error: Fail,
-{
-    let paths = Paths::new()?;
-    match app.cmd {
-        Commands::Keys(cmd) => commands::keys::run(paths, cmd, app.verbose, pin),
-        Commands::Project(cmd) => commands::project::run(paths, cmd, app.verbose, pin),
-        Commands::Profiles(cmd) => {
-            commands::profiles::run(paths, cmd, app.verbose).map_err(|e| e.into())
-        },
-    }
+    app.cmd.run(cfg)
 }

@@ -69,7 +69,7 @@ impl<T: Fail> From<SystemTimeError> for Error<T> {
 }
 
 pub trait Pinentry {
-    type Error;
+    type Error: Fail;
 
     fn get_passphrase(&self) -> Result<SecUtf8, Self::Error>;
 }
@@ -82,39 +82,42 @@ impl Pinentry for SecUtf8 {
     }
 }
 
-pub trait Storage {
-    fn put_device_key<F>(&mut self, k: &device::Key, pinentry: F) -> Result<(), Error<F::Error>>
-    where
-        F: Pinentry,
-        F::Error: Fail;
+pub trait Storage<P>
+where
+    P: Pinentry,
+{
+    fn put_device_key(&mut self, k: &device::Key) -> Result<(), Error<P::Error>>;
 
-    fn get_device_key<F>(&self, pinentry: F) -> Result<device::Key, Error<F::Error>>
-    where
-        F: Pinentry,
-        F::Error: Fail;
+    fn get_device_key(&self) -> Result<device::Key, Error<P::Error>>;
 }
 
 #[derive(Default)]
-pub struct MemoryStorage {
+pub struct MemoryStorage<P> {
     device_key: Option<(device::Key, pwhash::HashedPassword)>,
+    pinentry: P,
 }
 
-impl MemoryStorage {
-    pub fn new() -> Self {
-        MemoryStorage { device_key: None }
+impl<P> MemoryStorage<P> {
+    pub fn new(pinentry: P) -> Self {
+        MemoryStorage {
+            device_key: None,
+            pinentry,
+        }
     }
 }
 
-impl Storage for MemoryStorage {
-    fn put_device_key<F>(&mut self, k: &device::Key, pinentry: F) -> Result<(), Error<F::Error>>
-    where
-        F: Pinentry,
-        F::Error: Fail,
-    {
+impl<P> Storage<P> for MemoryStorage<P>
+where
+    P: Pinentry,
+{
+    fn put_device_key(&mut self, k: &device::Key) -> Result<(), Error<P::Error>> {
         match self.device_key {
             Some(_) => Err(Error::KeyExists),
             None => {
-                let pass = pinentry.get_passphrase().map_err(Error::PinentryError)?;
+                let pass = self
+                    .pinentry
+                    .get_passphrase()
+                    .map_err(Error::PinentryError)?;
                 let pwhash = pwhash::pwhash(
                     pass.unsecure().as_bytes(),
                     pwhash::OPSLIMIT_INTERACTIVE,
@@ -127,15 +130,14 @@ impl Storage for MemoryStorage {
         }
     }
 
-    fn get_device_key<F>(&self, pinentry: F) -> Result<device::Key, Error<F::Error>>
-    where
-        F: Pinentry,
-        F::Error: Fail,
-    {
+    fn get_device_key(&self) -> Result<device::Key, Error<P::Error>> {
         self.device_key
             .as_ref()
             .map_or(Err(Error::NoSuchKey), |(k, pwhash)| {
-                let pass = pinentry.get_passphrase().map_err(Error::PinentryError)?;
+                let pass = self
+                    .pinentry
+                    .get_passphrase()
+                    .map_err(Error::PinentryError)?;
                 if pwhash::pwhash_verify(&pwhash, pass.unsecure().as_bytes()) {
                     Ok(k.clone())
                 } else {
@@ -145,13 +147,17 @@ impl Storage for MemoryStorage {
     }
 }
 
-pub struct FileStorage {
+pub struct FileStorage<P> {
     paths: Paths,
+    pinentry: P,
 }
 
-impl FileStorage {
-    pub fn new(paths: Paths) -> Self {
-        Self { paths }
+impl<P> FileStorage<P> {
+    pub fn new(paths: &Paths, pinentry: P) -> Self {
+        Self {
+            paths: paths.clone(),
+            pinentry,
+        }
     }
 
     pub fn key_file_path(&self) -> PathBuf {
@@ -167,12 +173,11 @@ struct StorableKey {
     sealed_key: Vec<u8>,
 }
 
-impl Storage for FileStorage {
-    fn put_device_key<F>(&mut self, k: &device::Key, pinentry: F) -> Result<(), Error<F::Error>>
-    where
-        F: Pinentry,
-        F::Error: Fail,
-    {
+impl<P> Storage<P> for FileStorage<P>
+where
+    P: Pinentry,
+{
+    fn put_device_key(&mut self, k: &device::Key) -> Result<(), Error<P::Error>> {
         let file_path = self.key_file_path();
 
         if file_path.exists() {
@@ -180,7 +185,10 @@ impl Storage for FileStorage {
         } else {
             let salt = pwhash::gen_salt();
             let nonce = secretbox::gen_nonce();
-            let pass = pinentry.get_passphrase().map_err(Error::PinentryError)?;
+            let pass = self
+                .pinentry
+                .get_passphrase()
+                .map_err(Error::PinentryError)?;
 
             let deriv = derive_key(&salt, &pass);
             let sealed_key = secretbox::seal(k.as_ref(), &nonce, &deriv);
@@ -205,11 +213,7 @@ impl Storage for FileStorage {
         }
     }
 
-    fn get_device_key<F>(&self, pinentry: F) -> Result<device::Key, Error<F::Error>>
-    where
-        F: Pinentry,
-        F::Error: Fail,
-    {
+    fn get_device_key(&self) -> Result<device::Key, Error<P::Error>> {
         let file_path = self.key_file_path();
 
         if !file_path.exists() {
@@ -217,7 +221,10 @@ impl Storage for FileStorage {
         } else {
             let key_file = File::open(file_path)?;
             let storable: StorableKey = serde_cbor::from_reader(key_file)?;
-            let pass = pinentry.get_passphrase().map_err(Error::PinentryError)?;
+            let pass = self
+                .pinentry
+                .get_passphrase()
+                .map_err(Error::PinentryError)?;
 
             // Unseal key
             let deriv = derive_key(&storable.salt, &pass);
@@ -248,110 +255,121 @@ fn derive_key(salt: &pwhash::Salt, passphrase: &SecUtf8) -> secretbox::Key {
 pub mod tests {
     use super::*;
     use crate::keys::device;
+
+    use std::{cell::RefCell, iter::Cycle, slice};
     use tempfile::tempdir;
 
-    fn with_mem_store<F>(f: F)
-    where
-        F: FnOnce(MemoryStorage) -> (),
-    {
-        f(MemoryStorage::new())
+    /// Pinentry which just yields the stored sequence of pins cyclicly.
+    struct PinCycle<'a>(RefCell<Cycle<slice::Iter<'a, SecUtf8>>>);
+
+    impl<'a> PinCycle<'a> {
+        fn new(pins: &'a [SecUtf8]) -> Self {
+            Self(RefCell::new(pins.iter().cycle()))
+        }
     }
 
-    fn with_fs_store<F>(f: F)
+    impl<'a> Pinentry for PinCycle<'a> {
+        type Error = Infallible;
+
+        fn get_passphrase(&self) -> Result<SecUtf8, Self::Error> {
+            Ok(self.0.borrow_mut().next().unwrap().clone())
+        }
+    }
+
+    fn with_mem_store<F, P>(pin: P, f: F)
     where
-        F: FnOnce(FileStorage) -> (),
+        F: FnOnce(MemoryStorage<P>) -> (),
+        P: Pinentry,
+    {
+        f(MemoryStorage::new(pin))
+    }
+
+    fn with_fs_store<F, P>(pin: P, f: F)
+    where
+        F: FnOnce(FileStorage<P>) -> (),
+        P: Pinentry,
     {
         let tmp = tempdir().expect("Can't get tempdir");
         let paths = Paths::from_root(tmp.path()).expect("Can't get paths");
-        f(FileStorage::new(paths))
+        f(FileStorage::new(&paths, pin))
+    }
+
+    fn default_passphrase() -> SecUtf8 {
+        SecUtf8::from("asdf")
     }
 
     #[test]
     fn mem_get_after_put() {
-        with_mem_store(get_after_put)
+        with_mem_store(default_passphrase(), get_after_put)
     }
 
     #[test]
     fn mem_put_twice() {
-        with_mem_store(put_twice)
+        with_mem_store(default_passphrase(), put_twice)
     }
 
     #[test]
     fn mem_get_empty() {
-        with_mem_store(get_empty)
+        with_mem_store(default_passphrase(), get_empty)
     }
 
     #[test]
     fn mem_passphrase_mismatch() {
-        with_mem_store(passphrase_mismatch)
+        with_mem_store(
+            PinCycle::new(&["right".into(), "wrong".into()]),
+            passphrase_mismatch,
+        )
     }
 
     #[test]
     fn fs_get_after_put() {
-        with_fs_store(get_after_put)
+        with_fs_store(default_passphrase(), get_after_put)
     }
 
     #[test]
     fn fs_put_twice() {
-        with_fs_store(put_twice)
+        with_fs_store(default_passphrase(), put_twice)
     }
 
     #[test]
     fn fs_get_empty() {
-        with_fs_store(get_empty)
+        with_fs_store(default_passphrase(), get_empty)
     }
 
     #[test]
     fn fs_passphrase_mismatch() {
-        with_fs_store(passphrase_mismatch)
+        with_fs_store(
+            PinCycle::new(&["right".into(), "wrong".into()]),
+            passphrase_mismatch,
+        )
     }
 
-    fn get_after_put<S: Storage>(mut store: S) {
+    fn get_after_put<S: Storage<P>, P: Pinentry>(mut store: S) {
         let key = device::Key::new();
-        let pass = SecUtf8::from("asd");
-
-        store
-            .put_device_key(&key, pass.clone())
-            .expect("Put failed");
-        let res = store.get_device_key(pass).expect("Get failed");
+        store.put_device_key(&key).expect("Put failed");
+        let res = store.get_device_key().expect("Get failed");
 
         assert!(key == res, "Keys don't match")
     }
 
-    fn put_twice<S: Storage>(mut store: S) {
+    fn put_twice<S: Storage<P>, P: Pinentry>(mut store: S) {
         let key = device::Key::new();
-        let pass = SecUtf8::from("asd");
-
-        store
-            .put_device_key(&key, pass.clone())
-            .expect("Put failed");
-
-        match store.put_device_key(&key, pass) {
-            Err(Error::KeyExists) => (),
-            Err(e) => panic!("Unexpected error: {:?}", e),
-            _ => panic!("Second put should fail"),
-        }
+        store.put_device_key(&key).expect("Put failed");
+        assert!(matches!(store.put_device_key(&key), Err(Error::KeyExists)))
     }
 
-    fn get_empty<S: Storage>(store: S) {
-        match store.get_device_key(SecUtf8::from("asdf")) {
-            Err(Error::NoSuchKey) => (),
-            Err(e) => panic!("Unexpected error: {:?}", e),
-            _ => panic!("Get on empty key store should fail"),
-        }
+    fn get_empty<S: Storage<P>, P: Pinentry>(store: S) {
+        assert!(matches!(store.get_device_key(), Err(Error::NoSuchKey)))
     }
 
-    fn passphrase_mismatch<S: Storage>(mut store: S) {
+    fn passphrase_mismatch<S: Storage<P>, P: Pinentry>(mut store: S) {
         let key = device::Key::new();
 
-        store
-            .put_device_key(&key, SecUtf8::from("right"))
-            .expect("Put failed");
+        store.put_device_key(&key).expect("Put failed");
 
-        match store.get_device_key(SecUtf8::from("wrong")) {
-            Err(Error::InvalidPassphrase) => (),
-            Err(e) => panic!("Unexpected error: {:?}", e),
-            _ => panic!("Mismatched passphrase should fail"),
-        }
+        assert!(matches!(
+            store.get_device_key(),
+            Err(Error::InvalidPassphrase)
+        ))
     }
 }
