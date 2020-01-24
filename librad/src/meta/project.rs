@@ -25,16 +25,22 @@ pub fn default_branch() -> String {
 pub enum Error {
     #[fail(display = "Cannot serialize project metadata")]
     SerializationFailed(serde_json::error::Error),
+
     #[fail(display = "Invalid UTF8")]
-    InvalidUtf8,
+    InvalidUtf8(std::string::FromUtf8Error),
+
     #[fail(display = "Signature already present")]
     SignatureAlreadyPresent,
+
     #[fail(display = "Signature from non maintainer")]
     SignatureFromNonMaintainer,
+
     #[fail(display = "Signature missing")]
     SignatureMissing,
+
     #[fail(display = "Signature decoding failed")]
     SignatureDecodingFailed,
+
     #[fail(display = "Signature verification failed")]
     SignatureVerificationFailed,
 }
@@ -43,8 +49,10 @@ pub enum Error {
 pub enum UpdateVerificationError {
     #[fail(display = "Non monotonic revision")]
     NonMonotonicRevision,
+
     #[fail(display = "Update without previous quorum")]
     NoPreviousQuorum,
+
     #[fail(display = "Update without current quorum")]
     NoCurrentQuorum,
 }
@@ -53,8 +61,10 @@ pub enum UpdateVerificationError {
 pub enum HistoryVerificationError {
     #[fail(display = "Empty history")]
     EmptyHistory,
+
     #[fail(display = "Project error")]
     ProjectError { revision: u64, error: Error },
+
     #[fail(display = "Update error")]
     UpdateError {
         revision: u64,
@@ -168,7 +178,7 @@ impl Project {
     }
 
     pub fn canonical_text_contents(&self) -> Result<String, Error> {
-        String::from_utf8(self.canonical_data()?).map_err(|_| Error::InvalidUtf8)
+        String::from_utf8(self.canonical_data()?).map_err(Error::InvalidUtf8)
     }
 
     pub fn sign(&self, key: &Key) -> Result<Signature, Error> {
@@ -218,10 +228,8 @@ impl Project {
         }
 
         for s in self.signatures.iter() {
-            let m = maintainers.take(&s.key);
-            match m {
-                Some(_) => {}
-                None => return Err(Error::SignatureFromNonMaintainer),
+            if maintainers.take(&s.key).is_none() {
+                return Err(Error::SignatureFromNonMaintainer);
             }
         }
 
