@@ -123,7 +123,7 @@ impl Storage for MemoryStorage {
                 .unwrap();
                 self.device_key = Some((k.clone(), pwhash));
                 Ok(())
-            }
+            },
         }
     }
 

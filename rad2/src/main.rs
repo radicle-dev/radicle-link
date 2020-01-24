@@ -45,7 +45,7 @@ fn main() {
         Err(e) => {
             eprintln!("{}", e);
             1
-        }
+        },
     });
 }
 
@@ -61,6 +61,6 @@ where
         Commands::Project(cmd) => commands::project::run(paths, cmd, app.verbose, pin),
         Commands::Profiles(cmd) => {
             commands::profiles::run(paths, cmd, app.verbose).map_err(|e| e.into())
-        }
+        },
     }
 }

@@ -69,13 +69,13 @@ where
                 tmp.persist(dest)?;
             }
             Ok(updated)
-        }
+        },
         Err(e) => {
             println!("{}", e);
             println!("Press ENTER to try again");
             let mut buf = String::with_capacity(1);
             io::stdin().read_line(&mut buf).unwrap();
             edit_yaml(data, store_at)
-        }
+        },
     }
 }

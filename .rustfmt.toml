@@ -19,6 +19,8 @@ fn_args_layout = "Tall"
 
 edition = "2018"
 
+match_block_trailing_comma = true
+
 merge_derives = true
 
 use_try_shorthand = false

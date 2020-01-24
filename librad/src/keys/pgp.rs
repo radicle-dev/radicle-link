@@ -248,16 +248,16 @@ impl<'a> VerificationHelper for Helper<'a> {
                         Some(VerificationResult::GoodChecksum(..)) => good = true,
                         Some(VerificationResult::NotAlive(..)) => {
                             return Err(failure::err_msg("Signature good, but not alive"))
-                        }
+                        },
                         Some(VerificationResult::MissingKey(_)) => {
                             return Err(failure::err_msg("Missing key to verify signature"))
-                        }
+                        },
                         Some(VerificationResult::BadChecksum(_)) => {
                             return Err(failure::err_msg("Bad signature"))
-                        }
+                        },
                         None => return Err(failure::err_msg("No signature")),
                     }
-                }
+                },
                 _ => return Err(failure::err_msg("Unexpected message structure")),
             }
         }

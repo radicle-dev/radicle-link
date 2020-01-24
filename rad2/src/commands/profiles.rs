@@ -164,7 +164,7 @@ fn list_profiles(paths: &Paths) -> Result<(), Error> {
                 "{}",
                 path.file_stem().unwrap().to_string_lossy().to_string()
             ),
-            _ => {}
+            _ => {},
         }
     }
     Ok(())

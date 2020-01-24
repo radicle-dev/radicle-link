@@ -64,13 +64,13 @@ where
                 FileStorage::new(paths.clone()).get_device_key(pin("Unlock your key store:"))?;
             let profile = load_profile(ProfilePath::new(&paths, &profile))?;
             init_project(&paths, &key, name, profile, git_dir)
-        }
+        },
 
         Commands::Show { project } => {
             let proj = Project::show(&paths, &project)?;
             serde_yaml::to_writer(io::stdout(), &proj).expect("I/O error");
             Ok(())
-        }
+        },
 
         Commands::List => {
             for pid in Project::list(&paths) {
@@ -81,7 +81,7 @@ where
                 }
             }
             Ok(())
-        }
+        },
 
         Commands::Update { .. } => unimplemented!(),
     }
