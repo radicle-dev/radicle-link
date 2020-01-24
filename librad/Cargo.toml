@@ -7,6 +7,8 @@ edition = "2018"
 [dependencies]
 async-std = "1.4"
 bs58 = { version = "0.3", features = ["check"] }
+futures_codec = "0.3"
+futures_cbor_codec = "0.2"
 directories = "2.0"
 failure = { version = "0.1", features = ["backtrace"] }
 failure_derive = "0.1"

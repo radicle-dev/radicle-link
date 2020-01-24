@@ -3,43 +3,38 @@ use std::{
     error::Error,
     future::Future,
     io,
-    marker::Unpin,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
 
-use async_std::task;
 use futures::{
     channel::{mpsc, oneshot, oneshot::Canceled},
     prelude::*,
 };
-use log::{debug, info, warn};
+use log::info;
 
 use libp2p::{
     self,
     core::{muxing::StreamMuxerBox, nodes::Substream, transport::boxed::Boxed, upgrade},
     dns,
-    kad::{
-        record::{store::MemoryStore, Key},
-        Kademlia,
-        KademliaEvent,
-    },
-    mdns::{Mdns, MdnsEvent},
     noise,
-    swarm::{NetworkBehaviour, NetworkBehaviourAction, NetworkBehaviourEventProcess},
+    swarm::NetworkBehaviour,
     tcp,
     yamux,
     InboundUpgradeExt,
     Multiaddr,
-    NetworkBehaviour,
     OutboundUpgradeExt,
     PeerId,
     Transport,
 };
 
-use crate::{keys::device, project::ProjectId};
+use crate::{
+    keys::device,
+    net::behaviour::{self, Behaviour},
+    project::ProjectId,
+};
 
 enum ToWorker {
     /// Advertise we have project [`ProjectId`] available locally
@@ -95,15 +90,7 @@ impl Worker {
 
         let mut swarm = {
             let transport = build_transport(keypair)?;
-            let store = MemoryStore::new(peer_id.clone());
-            let kademlia = Kademlia::new(peer_id.clone(), store);
-            let mdns = task::block_on(Mdns::new())?;
-
-            let behaviour = Behaviour {
-                kademlia,
-                mdns,
-                events: Vec::new(),
-            };
+            let behaviour = Behaviour::new(&peer_id)?;
             libp2p::Swarm::new(transport, behaviour, peer_id)
         };
 
@@ -141,9 +128,9 @@ impl Future for Worker {
             };
 
             match msg {
-                ToWorker::Have(pid) => self.swarm.kademlia.start_providing(Key::new(&pid)),
+                ToWorker::Have(pid) => self.swarm.start_providing(&pid),
                 ToWorker::Providers(pid, tx) => {
-                    self.swarm.kademlia.get_providers(Key::new(&pid));
+                    self.swarm.get_providers(&pid);
                     let subscribers = self.providers_resp.entry(pid).or_insert_with(Vec::new);
                     subscribers.push(tx);
                 }
@@ -167,7 +154,7 @@ impl Future for Worker {
                     break;
                 }
                 Poll::Ready(Some(evt)) => match evt {
-                    Event::Provides { project, peers } => {
+                    behaviour::Event::Provides { project, peers } => {
                         let providers: Vec<Provider> = peers
                             .iter()
                             .map(|peer_id| Provider {
@@ -230,75 +217,4 @@ fn build_transport(
         .boxed();
 
     Ok(transport)
-}
-
-enum Event {
-    Provides {
-        project: ProjectId,
-        peers: Vec<PeerId>,
-    },
-}
-
-#[derive(NetworkBehaviour)]
-#[behaviour(out_event = "Event", poll_method = "poll")]
-struct Behaviour<S> {
-    kademlia: Kademlia<S, MemoryStore>,
-    mdns: Mdns<S>,
-
-    #[behaviour(ignore)]
-    events: Vec<Event>,
-}
-
-impl<S> Behaviour<S> {
-    fn poll<T>(&mut self, _: &mut Context) -> Poll<NetworkBehaviourAction<T, Event>> {
-        if !self.events.is_empty() {
-            return Poll::Ready(NetworkBehaviourAction::GenerateEvent(self.events.remove(0)));
-        }
-
-        Poll::Pending
-    }
-}
-
-impl<S: AsyncRead + AsyncWrite> NetworkBehaviourEventProcess<MdnsEvent> for Behaviour<S> {
-    fn inject_event(&mut self, event: MdnsEvent) {
-        if let MdnsEvent::Discovered(list) = event {
-            for (peer_id, addr) in list {
-                debug!("Disovered peer via mDNS: {} @ {}", peer_id, addr);
-                self.kademlia.add_address(&peer_id, addr);
-            }
-        }
-    }
-}
-
-impl<S: AsyncRead + AsyncWrite> NetworkBehaviourEventProcess<KademliaEvent> for Behaviour<S> {
-    // Called when `kademlia` produces an event.
-    fn inject_event(&mut self, message: KademliaEvent) {
-        debug!("Received KademliaEvent: {:?}", message);
-
-        if let KademliaEvent::GetProvidersResult(Ok(res)) = message {
-            let project = ProjectId::from_bytes(&res.key.to_vec()).map_err(|e| e.to_string());
-            match project {
-                Err(e) => warn!("GetProvidersResult: Invalid `ProjectId`: {}", e),
-                Ok(pid) => self.events.push(Event::Provides {
-                    project: pid,
-                    peers: res.closest_peers,
-                }),
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::str::FromStr;
-
-    #[test]
-    fn test_project_id_kad_key_roundtrip() {
-        let pid = ProjectId::from_str("67e6bd81be337c69385da551d93fd89fd3967eee.git").unwrap();
-        let key = Key::new(&pid);
-        let pid2 = ProjectId::from_bytes(&key.to_vec()).unwrap();
-
-        assert_eq!(pid, pid2)
-    }
 }

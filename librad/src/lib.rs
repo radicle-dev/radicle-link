@@ -10,10 +10,7 @@ pub use radicle_surf as surf;
 pub mod git;
 pub mod keys;
 pub mod meta;
-pub mod net {
-    pub mod p2p;
-    pub mod tcp;
-}
+pub mod net;
 pub mod paths;
 pub mod peer;
 pub mod project;
