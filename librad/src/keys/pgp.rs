@@ -57,10 +57,10 @@ impl Key {
     ) -> Result<Key, Error> {
         let key = {
             // ACHTUNG: NaCl stores the public part in the second half of the secret key, so
-            // we just extract the first 32 bytes. Relying on this is obviously leaky, but the best
-            // we can do for now is to `use` the ed25519 module, so the chances are slimmer for
-            // this to break in case libsodium decides to make some other signature scheme the
-            // default.
+            // we just extract the first 32 bytes. Relying on this is obviously leaky, but
+            // the best we can do for now is to `use` the ed25519 module, so the
+            // chances are slimmer for this to break in case libsodium decides
+            // to make some other signature scheme the default.
             let scalar = &sodium.as_ref()[..32];
             let key4 = Key4::import_secret_ed25519(&scalar, creation_time)?;
             packet::Key::from(key4)
@@ -131,13 +131,14 @@ impl Key {
 
     /// Certify this key using the TSK read from the supplied `io::Read`.
     ///
-    /// We don't want device keys to be stored elsewhere, yet want to enable PGP users to certify
-    /// them. That is, make the device key a "subkey" of their primary identity key published to
-    /// key servers _without_ actually storing the device key in the GPG keyring.
+    /// We don't want device keys to be stored elsewhere, yet want to enable PGP
+    /// users to certify them. That is, make the device key a "subkey" of
+    /// their primary identity key published to key servers _without_
+    /// actually storing the device key in the GPG keyring.
     ///
-    /// To achieve this, we read the certifying _secret_ key (as obtained by `gpg --export-secret-keys
-    /// --armor`), add this key as a subkey, and write a TPK which should be sent directly to
-    /// keyservers.
+    /// To achieve this, we read the certifying _secret_ key (as obtained by
+    /// `gpg --export-secret-keys --armor`), add this key as a subkey, and
+    /// write a TPK which should be sent directly to keyservers.
     pub fn certify_with<R: io::Read, W: io::Write>(
         &self,
         tsk_reader: &mut R,

@@ -30,7 +30,8 @@ pub enum Commands {
     Show { project: ProjectId },
     /// Initialise a new project
     Init {
-        /// Name of the project. Defaults to the directory name of the source repository.
+        /// Name of the project. Defaults to the directory name of the source
+        /// repository.
         #[structopt(short, long)]
         name: Option<String>,
 
@@ -38,8 +39,8 @@ pub enum Commands {
         #[structopt(short, long)]
         profile: String,
 
-        /// `.git` directory of the repository to initialise as a project. Discovered from the
-        /// current directory by default.
+        /// `.git` directory of the repository to initialise as a project.
+        /// Discovered from the current directory by default.
         #[structopt(short, long)]
         git_dir: Option<PathBuf>,
     },
