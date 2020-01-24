@@ -221,11 +221,16 @@ impl Project {
         Ok(())
     }
 
-    pub fn check_signatures_against_maintainers(&self) -> Result<(), Error> {
+    fn maintainers_set(&self) -> HashSet<&PeerId> {
         let mut maintainers = HashSet::<&PeerId>::new();
         for m in self.maintainers.iter() {
             maintainers.insert(m);
         }
+        maintainers
+    }
+
+    pub fn check_signatures_against_maintainers(&self) -> Result<(), Error> {
+        let mut maintainers = self.maintainers_set();
 
         for s in self.signatures.iter() {
             if maintainers.take(&s.key).is_none() {
@@ -258,10 +263,7 @@ impl Project {
             return Err(UpdateVerificationError::NonMonotonicRevision);
         }
 
-        let mut previous_maintainers = HashSet::<&PeerId>::new();
-        for m in previous.maintainers.iter() {
-            previous_maintainers.insert(m);
-        }
+        let previous_maintainers = previous.maintainers_set();
         let retained = self
             .maintainers
             .iter()

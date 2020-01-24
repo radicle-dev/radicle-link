@@ -140,8 +140,9 @@ impl Signature {
         sign::verify_detached(self, &data, pk)
     }
 
-    pub fn from_hex_string(s: &str) -> Result<Self, ()> {
-        let bytes = decode(s).map_err(|_| ())?;
+    pub fn from_hex_string(s: &str) -> Result<Self, failure::Error> {
+        let bytes =
+            decode(s).map_err(|_| failure::format_err!("Cannot decode signature hex string"))?;
         let buffer = if bytes.len() == 64 {
             let mut buffer = [0u8; 64];
             for (i, v) in bytes.iter().enumerate() {
@@ -149,7 +150,10 @@ impl Signature {
             }
             buffer
         } else {
-            return Err(());
+            return Err(failure::format_err!(
+                "Signature buffer has length {} instead of 64",
+                bytes.len()
+            ));
         };
         Ok(Self(sodiumoxide::crypto::sign::Signature(buffer)))
     }
