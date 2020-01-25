@@ -3,7 +3,7 @@ use std::{convert::AsRef, fmt, fmt::Display, io, path::Path, str::FromStr};
 use git2;
 use olpc_cjson::CanonicalFormatter;
 use radicle_surf::vcs::git as surf;
-use serde::Serialize;
+use serde::{self, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json;
 
 use crate::{
@@ -90,6 +90,25 @@ impl From<surf::error::Error> for Error {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectId(git2::Oid);
+
+impl Serialize for ProjectId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for ProjectId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map(ProjectId).map_err(serde::de::Error::custom)
+    }
+}
 
 impl ProjectId {
     pub fn new(oid: git2::Oid) -> Self {

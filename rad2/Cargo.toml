@@ -12,9 +12,10 @@ failure = "0.1"
 failure_derive = "0.1"
 futures = "0.1"
 git2 = "0.10"
-libp2p = { version = "0.14.0-alpha.1", default-features = false, features = [] }
+libp2p = { version = "0.15.0", default-features = false, features = [] }
 librad = { path = "../librad" }
 log = "0.4"
+retry = "1.0"
 rpassword = "4.0"
 secstr = "0.3"
 serde = "1.0"

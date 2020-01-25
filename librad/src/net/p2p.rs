@@ -32,7 +32,10 @@ use libp2p::{
 
 use crate::{
     keys::device,
-    net::behaviour::{self, Behaviour},
+    net::{
+        behaviour::{self, Behaviour},
+        protocol::Capabilities,
+    },
     project::ProjectId,
 };
 
@@ -41,6 +44,8 @@ enum ToWorker {
     Have(ProjectId),
     /// Find peers which serve project [`ProjectId`]
     Providers(ProjectId, oneshot::Sender<Vec<Provider>>),
+    /// Get the [`Capabilities`] of [`PeerId`]
+    Capabilities(PeerId, oneshot::Sender<CapabilitiesOf>),
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +53,12 @@ pub struct Provider {
     pub project: ProjectId,
     pub peer: PeerId,
     pub addrs: Vec<Multiaddr>,
+}
+
+#[derive(Clone)]
+pub struct CapabilitiesOf {
+    pub peer: PeerId,
+    pub capabilities: Capabilities,
 }
 
 pub struct Service {
@@ -71,6 +82,18 @@ impl Service {
             .unbounded_send(ToWorker::Providers(pid.clone(), tx));
         rx
     }
+
+    /// Try to determine the [`Capabilities`] of peer [`PeerId`]
+    pub fn capabilities(
+        &self,
+        peer: &PeerId,
+    ) -> impl Future<Output = Result<CapabilitiesOf, Canceled>> {
+        let (tx, rx) = oneshot::channel();
+        let _ = self
+            .to_worker
+            .unbounded_send(ToWorker::Capabilities(peer.clone(), tx));
+        rx
+    }
 }
 
 type Swarm<S> = libp2p::swarm::Swarm<Boxed<(PeerId, StreamMuxerBox), io::Error>, Behaviour<S>>;
@@ -81,16 +104,21 @@ pub struct Worker {
     service: Arc<Service>,
     from_service: mpsc::UnboundedReceiver<ToWorker>,
     providers_resp: HashMap<ProjectId, Vec<oneshot::Sender<Vec<Provider>>>>,
+    capabilities_resp: HashMap<PeerId, Vec<oneshot::Sender<CapabilitiesOf>>>,
 }
 
 impl Worker {
-    pub fn new(key: device::Key, listen_addr: Option<Multiaddr>) -> Result<Self, Box<dyn Error>> {
+    pub fn new(
+        key: device::Key,
+        listen_addr: Option<Multiaddr>,
+        capabilities: Capabilities,
+    ) -> Result<Self, Box<dyn Error>> {
         let keypair = key.into_libp2p()?;
         let peer_id = PeerId::from(keypair.public());
 
         let mut swarm = {
             let transport = build_transport(keypair)?;
-            let behaviour = Behaviour::new(&peer_id)?;
+            let behaviour = Behaviour::new(&peer_id, capabilities)?;
             libp2p::Swarm::new(transport, behaviour, peer_id)
         };
 
@@ -107,6 +135,7 @@ impl Worker {
             service,
             from_service: rx,
             providers_resp: HashMap::new(),
+            capabilities_resp: HashMap::new(),
         })
     }
 
@@ -131,8 +160,17 @@ impl Future for Worker {
                 ToWorker::Have(pid) => self.swarm.start_providing(&pid),
                 ToWorker::Providers(pid, tx) => {
                     self.swarm.get_providers(&pid);
-                    let subscribers = self.providers_resp.entry(pid).or_insert_with(Vec::new);
-                    subscribers.push(tx);
+                    self.providers_resp
+                        .entry(pid)
+                        .or_insert_with(Vec::new)
+                        .push(tx);
+                }
+                ToWorker::Capabilities(peer, tx) => {
+                    self.swarm.get_capabilities(&peer);
+                    self.capabilities_resp
+                        .entry(peer)
+                        .or_insert_with(Vec::new)
+                        .push(tx);
                 }
             }
         }
@@ -167,6 +205,18 @@ impl Future for Worker {
                         if let Some(subscribers) = self.providers_resp.remove(&project) {
                             for tx in subscribers {
                                 let _ = tx.send(providers.clone());
+                            }
+                        }
+                    }
+
+                    behaviour::Event::CapabilitiesOf { peer, capabilities } => {
+                        let capabilities = CapabilitiesOf {
+                            peer: peer.clone(),
+                            capabilities,
+                        };
+                        if let Some(subscribers) = self.capabilities_resp.remove(&peer) {
+                            for tx in subscribers {
+                                let _ = tx.send(capabilities.clone());
                             }
                         }
                     }

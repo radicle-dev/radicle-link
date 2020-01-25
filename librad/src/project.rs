@@ -1,5 +1,7 @@
 use std::{convert::AsRef, fmt, fmt::Display, ops::Deref, path::PathBuf, str::FromStr};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{git, git::GitProject, meta, paths::Paths};
 
 #[derive(Debug, Fail)]
@@ -20,7 +22,7 @@ impl From<git::Error> for Error {
 /// in the future.
 ///
 /// [`git::ProjectId`]: ../git/struct.ProjectId.html
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct ProjectId(git::ProjectId);
 
 impl ProjectId {

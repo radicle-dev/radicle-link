@@ -4,7 +4,7 @@ use log::info;
 
 use librad::{
     keys::storage::{FileStorage, Pinentry, Storage},
-    net::p2p,
+    net::{p2p, protocol::Capability},
     paths::Paths,
     project::Project,
 };
@@ -18,7 +18,14 @@ where
     P::Error: Fail,
 {
     let key = FileStorage::new(paths.clone()).get_device_key(pin("Unlock your key store:"))?;
-    let worker = p2p::Worker::new(key, None).unwrap();
+    let worker = p2p::Worker::new(
+        key,
+        None,
+        vec![Capability::GitDaemon { port: 9418 }]
+            .into_iter()
+            .collect(),
+    )
+    .unwrap();
     let service = worker.service().clone();
 
     Project::list(&paths).for_each(|pid| {
