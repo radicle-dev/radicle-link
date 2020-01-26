@@ -10,7 +10,7 @@ use libp2p::{multiaddr::Protocol, PeerId};
 
 use librad::{
     keys::storage::{FileStorage, Pinentry, Storage},
-    net::{p2p, protocol::Capability, tcp},
+    net::{p2p, tcp},
     paths::Paths,
     project::ProjectId,
 };
@@ -46,9 +46,9 @@ where
     for provider in providers {
         info!("Finding git port of {}", provider.peer);
         let git_port: Result<Option<u16>, Error<P::Error>> =
-            get_capabilities(service.clone(), &provider.peer, opts.max_retries).map(|caps| {
-                caps.capabilities.iter().find_map(|cap| match cap {
-                    Capability::GitDaemon { port } => Some(*port),
+            get_peer_info(service.clone(), &provider.peer, opts.max_retries).map(|info| {
+                info.capabilities.iter().find_map(|cap| match cap {
+                    p2p::Capability::GitDaemon { port } => Some(*port),
                     _ => None,
                 })
             });
@@ -96,13 +96,13 @@ fn get_providers<E: Fail>(
     .map_err(map_retry_error)
 }
 
-fn get_capabilities<E: Fail>(
+fn get_peer_info<E: Fail>(
     srv: Arc<p2p::Service>,
     peer: &PeerId,
     retries: usize,
-) -> Result<p2p::CapabilitiesOf, Error<E>> {
+) -> Result<p2p::PeerInfo, Error<E>> {
     retry(with_backoff().take(retries), || {
-        task::block_on(srv.capabilities(peer)).map_err(|_| {
+        task::block_on(srv.peer_info(peer)).map_err(|_| {
             Error::Io(io::Error::new(
                 io::ErrorKind::Other,
                 "Capabilities query cancelled",

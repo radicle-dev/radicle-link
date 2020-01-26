@@ -32,20 +32,16 @@ use libp2p::{
 
 use crate::{
     keys::device,
-    net::{
-        behaviour::{self, Behaviour},
-        protocol::Capabilities,
-    },
+    net::behaviour::{self, Behaviour},
     project::ProjectId,
 };
 
+pub use crate::net::protocol::{Capabilities, Capability, PeerInfo};
+
 enum ToWorker {
-    /// Advertise we have project [`ProjectId`] available locally
     Have(ProjectId),
-    /// Find peers which serve project [`ProjectId`]
-    Providers(ProjectId, oneshot::Sender<Vec<Provider>>),
-    /// Get the [`Capabilities`] of [`PeerId`]
-    Capabilities(PeerId, oneshot::Sender<CapabilitiesOf>),
+    GetProviders(ProjectId, oneshot::Sender<Vec<Provider>>),
+    GetPeerInfo(PeerId, oneshot::Sender<PeerInfo>),
 }
 
 #[derive(Debug, Clone)]
@@ -53,12 +49,6 @@ pub struct Provider {
     pub project: ProjectId,
     pub peer: PeerId,
     pub addrs: Vec<Multiaddr>,
-}
-
-#[derive(Clone)]
-pub struct CapabilitiesOf {
-    pub peer: PeerId,
-    pub capabilities: Capabilities,
 }
 
 pub struct Service {
@@ -79,32 +69,42 @@ impl Service {
         let (tx, rx) = oneshot::channel();
         let _ = self
             .to_worker
-            .unbounded_send(ToWorker::Providers(pid.clone(), tx));
+            .unbounded_send(ToWorker::GetProviders(pid.clone(), tx));
         rx
     }
 
-    /// Try to determine the [`Capabilities`] of peer [`PeerId`]
-    pub fn capabilities(
-        &self,
-        peer: &PeerId,
-    ) -> impl Future<Output = Result<CapabilitiesOf, Canceled>> {
+    /// Try to determine the [`PeerInfo`] of peer [`PeerId`]
+    pub fn peer_info(&self, peer: &PeerId) -> impl Future<Output = Result<PeerInfo, Canceled>> {
         let (tx, rx) = oneshot::channel();
         let _ = self
             .to_worker
-            .unbounded_send(ToWorker::Capabilities(peer.clone(), tx));
+            .unbounded_send(ToWorker::GetPeerInfo(peer.clone(), tx));
         rx
     }
 }
 
 type Swarm<S> = libp2p::swarm::Swarm<Boxed<(PeerId, StreamMuxerBox), io::Error>, Behaviour<S>>;
 
+struct Subscribers {
+    providers: HashMap<ProjectId, Vec<oneshot::Sender<Vec<Provider>>>>,
+    peer_info: HashMap<PeerId, Vec<oneshot::Sender<PeerInfo>>>,
+}
+
+impl Default for Subscribers {
+    fn default() -> Self {
+        Self {
+            providers: HashMap::default(),
+            peer_info: HashMap::default(),
+        }
+    }
+}
+
 pub struct Worker {
     listening: bool,
     swarm: Swarm<Substream<StreamMuxerBox>>,
     service: Arc<Service>,
     from_service: mpsc::UnboundedReceiver<ToWorker>,
-    providers_resp: HashMap<ProjectId, Vec<oneshot::Sender<Vec<Provider>>>>,
-    capabilities_resp: HashMap<PeerId, Vec<oneshot::Sender<CapabilitiesOf>>>,
+    subscribers: Subscribers,
 }
 
 impl Worker {
@@ -134,8 +134,7 @@ impl Worker {
             swarm,
             service,
             from_service: rx,
-            providers_resp: HashMap::new(),
-            capabilities_resp: HashMap::new(),
+            subscribers: Subscribers::default(),
         })
     }
 
@@ -158,16 +157,18 @@ impl Future for Worker {
 
             match msg {
                 ToWorker::Have(pid) => self.swarm.start_providing(&pid),
-                ToWorker::Providers(pid, tx) => {
+                ToWorker::GetProviders(pid, tx) => {
                     self.swarm.get_providers(&pid);
-                    self.providers_resp
+                    self.subscribers
+                        .providers
                         .entry(pid)
                         .or_insert_with(Vec::new)
                         .push(tx);
                 }
-                ToWorker::Capabilities(peer, tx) => {
-                    self.swarm.get_capabilities(&peer);
-                    self.capabilities_resp
+                ToWorker::GetPeerInfo(peer, tx) => {
+                    self.swarm.get_peer_info(&peer);
+                    self.subscribers
+                        .peer_info
                         .entry(peer)
                         .or_insert_with(Vec::new)
                         .push(tx);
@@ -202,21 +203,17 @@ impl Future for Worker {
                             })
                             .collect();
 
-                        if let Some(subscribers) = self.providers_resp.remove(&project) {
+                        if let Some(subscribers) = self.subscribers.providers.remove(&project) {
                             for tx in subscribers {
                                 let _ = tx.send(providers.clone());
                             }
                         }
                     }
 
-                    behaviour::Event::CapabilitiesOf { peer, capabilities } => {
-                        let capabilities = CapabilitiesOf {
-                            peer: peer.clone(),
-                            capabilities,
-                        };
-                        if let Some(subscribers) = self.capabilities_resp.remove(&peer) {
+                    behaviour::Event::PeerInfo { peer_id, info } => {
+                        if let Some(subscribers) = self.subscribers.peer_info.remove(&peer_id) {
                             for tx in subscribers {
-                                let _ = tx.send(capabilities.clone());
+                                let _ = tx.send(info.clone());
                             }
                         }
                     }

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     error::Error,
     marker::Unpin,
     task::{Context, Poll},
@@ -17,7 +18,10 @@ use libp2p::{
     PeerId,
 };
 
-use crate::{net::protocol::Capabilities, project::ProjectId};
+use crate::{
+    net::protocol::{Capabilities, PeerInfo},
+    project::ProjectId,
+};
 
 #[derive(Debug)]
 pub enum Event {
@@ -26,9 +30,9 @@ pub enum Event {
         peers: Vec<PeerId>,
     },
 
-    CapabilitiesOf {
-        peer: PeerId,
-        capabilities: Capabilities,
+    PeerInfo {
+        peer_id: PeerId,
+        info: PeerInfo,
     },
 }
 
@@ -39,32 +43,35 @@ pub struct Behaviour<S> {
     mdns: Mdns<S>,
 
     #[behaviour(ignore)]
+    local_peer_id: PeerId,
+
+    #[behaviour(ignore)]
+    local_peer_info: PeerInfo,
+
+    #[behaviour(ignore)]
     events: Vec<Event>,
 }
 
 impl<S> Behaviour<S> {
     pub fn new(peer_id: &PeerId, capabilities: Capabilities) -> Result<Self, Box<dyn Error>> {
         let store = MemoryStore::new(peer_id.clone());
-        let mut kademlia = Kademlia::new(peer_id.clone(), store);
+        let kademlia = Kademlia::new(peer_id.clone(), store);
         let mdns = Mdns::new()?;
-        let events = vec![];
 
-        // Abuse the DHT to publish some info about us.
-        kademlia.put_record(
-            kad::record::Record {
-                key: Self::capabilities_key(&peer_id),
-                value: serde_cbor::to_vec(&capabilities).expect("CBOR shallt not fail. qed"),
-                publisher: Some(peer_id.clone()),
-                expires: None,
-            },
-            Quorum::One,
-        );
-
-        Ok(Self {
+        let mut moi = Self {
             kademlia,
             mdns,
-            events,
-        })
+            local_peer_id: peer_id.clone(),
+            local_peer_info: PeerInfo {
+                provided_projects: HashSet::default(),
+                capabilities,
+            },
+            events: vec![],
+        };
+
+        moi.put_peer_info();
+
+        Ok(moi)
     }
 
     fn poll<T>(&mut self, _: &mut Context) -> Poll<NetworkBehaviourAction<T, Event>> {
@@ -76,12 +83,35 @@ impl<S> Behaviour<S> {
     }
 
     pub fn start_providing(&mut self, project: &ProjectId) {
+        self.local_peer_info
+            .provided_projects
+            .insert(project.clone());
+        self.put_peer_info();
         self.kademlia
-            .start_providing(kad::record::Key::new(project))
+            .start_providing(kad::record::Key::new(project));
     }
 
     pub fn get_providers(&mut self, project: &ProjectId) {
         self.kademlia.get_providers(kad::record::Key::new(project))
+    }
+
+    pub fn get_peer_info(&mut self, peer: &PeerId) {
+        self.kademlia
+            .get_record(&kad::record::Key::new(&format!("{}", peer)), Quorum::One)
+    }
+
+    fn put_peer_info(&mut self) {
+        // TODO: sign
+        self.kademlia.put_record(
+            kad::record::Record {
+                key: kad::record::Key::new(&format!("{}", self.local_peer_id)),
+                value: serde_cbor::to_vec(&self.local_peer_info)
+                    .expect("CBOR shallt not fail. qed"),
+                publisher: Some(self.local_peer_id.clone()),
+                expires: None,
+            },
+            Quorum::One,
+        );
     }
 
     pub fn get_capabilities(&mut self, peer: &PeerId) {
@@ -124,30 +154,27 @@ impl<S: AsyncRead + AsyncWrite> NetworkBehaviourEventProcess<KademliaEvent> for 
                 }
             }
 
-            KademliaEvent::GetRecordResult(Ok(res)) => {
-                for record in res.records {
-                    let upstream_event = || {
-                        let mut key = String::from_utf8(record.key.to_vec())?;
-                        if !key.starts_with("capsof-") {
-                            Err(format_err!("Unexpected record key prefix: {}", key))
-                        } else {
-                            let peer = key.split_off(7).parse::<PeerId>()?;
-                            let capabilities = serde_cbor::from_slice(&record.value)?;
-                            Ok(Event::CapabilitiesOf { peer, capabilities })
-                        }
-                    };
+            KademliaEvent::GetRecordResult(res) => match res {
+                Err(e) => warn!("{:?}", e),
+                Ok(recs) => {
+                    for rec in recs.records {
+                        let upstream_event: Result<Event, _> = {
+                            PeerId::from_bytes(rec.key.to_vec())
+                                .map_err(|_| format_err!("Record key is not a PeerId"))
+                                .and_then(|peer_id| {
+                                    serde_cbor::from_slice(&rec.value)
+                                        .map_err(|e| format_err!("{}", e))
+                                        .map(|info| Event::PeerInfo { peer_id, info })
+                                })
+                        };
 
-                    let upstream_event = upstream_event();
-                    debug!("{:?}", upstream_event);
-                    match upstream_event {
-                        Err(e) => warn!("{}", e),
-                        Ok(evt) => {
-                            debug!("caps event: {:?}", evt);
-                            self.events.push(evt)
+                        match upstream_event {
+                            Err(e) => warn!("GetRecordResult: {:?}", e),
+                            Ok(evt) => self.events.push(evt),
                         }
                     }
                 }
-            }
+            },
 
             _ => {}
         }
