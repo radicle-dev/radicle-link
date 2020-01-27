@@ -4,6 +4,7 @@ use log::info;
 use structopt::StructOpt;
 
 use librad::{
+    git,
     keys::storage::{Pinentry, Storage},
     net::{p2p, protocol::Capability},
     project::Project,
@@ -42,6 +43,8 @@ impl Serve {
             service.have(&pid)
         });
 
-        task::block_on(worker).map_err(|e| e.into())
+        task::spawn(worker);
+        let git = git::Daemon::new(&cfg.paths, self.git_port)?.run()?;
+        task::block_on(git).map_err(|e| e.into())
     }
 }

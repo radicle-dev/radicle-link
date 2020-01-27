@@ -10,7 +10,7 @@ async-std = "1.4"
 env_logger = "0.7"
 failure = "0.1"
 failure_derive = "0.1"
-futures = "0.1"
+futures = "0.3"
 git2 = "0.10"
 libp2p = { version = "0.15.0", default-features = false, features = [] }
 librad = { path = "../librad" }

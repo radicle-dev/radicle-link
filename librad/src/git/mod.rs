@@ -15,6 +15,7 @@ use crate::{
 };
 
 pub mod server;
+pub use server::Daemon;
 
 const PROJECT_METADATA_BRANCH: &str = "rad/project";
 const PROJECT_METADATA_FILE: &str = "project.json";
