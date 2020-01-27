@@ -288,7 +288,7 @@ impl Project {
         let mut current = match current {
             None => {
                 return Err(HistoryVerificationError::EmptyHistory);
-            }
+            },
             Some(project) => project,
         };
 
