@@ -9,16 +9,15 @@ use structopt::StructOpt;
 use libp2p::{multiaddr::Protocol, PeerId};
 
 use librad::{
-    keys::storage::{FileStorage, Pinentry, Storage},
+    keys::storage::{Pinentry, Storage},
     net::{p2p, tcp},
-    paths::Paths,
     project::ProjectId,
 };
 
-use crate::error::Error;
+use crate::{config::Config, error::Error};
 
 #[derive(StructOpt)]
-pub struct Options {
+pub struct Fetch {
     /// The project to fetch
     project: ProjectId,
 
@@ -26,58 +25,62 @@ pub struct Options {
     max_retries: usize,
 }
 
-pub fn run<F, P>(paths: Paths, opts: Options, pin: F) -> Result<(), Error<P::Error>>
-where
-    F: FnOnce(&'static str) -> P,
-    P: Pinentry,
-    P::Error: Fail,
-{
-    let key = FileStorage::new(paths).get_device_key(pin("Unlock your key store:"))?;
-    let worker = p2p::Worker::new(key, None, Default::default()).unwrap();
-    let service = worker.service().clone();
+impl Fetch {
+    pub fn run<K, P>(self, cfg: Config<K, P>) -> Result<(), Error<P::Error>>
+    where
+        K: Storage<P>,
+        P: Pinentry,
+        P::Error: Fail,
+    {
+        let key = cfg.keystore.get_device_key()?;
+        let worker = p2p::Worker::new(key, None, Default::default()).unwrap();
+        let service = worker.service().clone();
 
-    info!("Joining the network");
-    task::spawn(worker);
+        info!("Joining the network");
+        task::spawn(worker);
 
-    info!("Finding peers providing project {}", opts.project);
-    let providers = get_providers(service.clone(), &opts.project, opts.max_retries)?;
+        info!("Finding peers providing project {}", self.project);
+        let providers = get_providers(service.clone(), &self.project, self.max_retries)?;
 
-    info!("Found {} providers", providers.len());
-    for provider in providers {
-        info!("Finding git port of {}", provider.peer);
-        let git_port: Result<Option<u16>, Error<P::Error>> =
-            get_peer_info(service.clone(), &provider.peer, opts.max_retries).map(|info| {
-                info.capabilities.iter().find_map(|cap| match cap {
-                    p2p::Capability::GitDaemon { port } => Some(*port),
-                    _ => None,
-                })
-            });
+        info!("Found {} providers", providers.len());
+        for provider in providers {
+            info!("Finding git port of {}", provider.peer);
+            let git_port: Result<Option<u16>, Error<P::Error>> =
+                get_peer_info(service.clone(), &provider.peer, self.max_retries).map(|info| {
+                    info.capabilities.iter().find_map(|cap| match cap {
+                        p2p::Capability::GitDaemon { port } => Some(*port),
+                        _ => None,
+                    })
+                });
 
-        if let Ok(Some(git_port)) = git_port {
-            for addr in provider.addrs {
-                let gitaddr = addr.replace(1, |_| Some(Protocol::Tcp(git_port))).unwrap();
-                match tcp::multiaddr_to_socketaddr(&gitaddr) {
-                    Ok(saddr) => {
-                        info!(
-                            "Trying to clone {} from {} at {}",
-                            opts.project, provider.peer, saddr
-                        );
-                        if git2::Repository::clone(
-                            &format!("git://{}/{}", &saddr, &opts.project),
-                            Path::new(&format!("/tmp/{}", opts.project)),
-                        )
-                        .is_ok()
-                        {
-                            return Ok(());
-                        }
+            if let Ok(Some(git_port)) = git_port {
+                for addr in provider.addrs {
+                    let gitaddr = addr.replace(1, |_| Some(Protocol::Tcp(git_port))).unwrap();
+                    match tcp::multiaddr_to_socketaddr(&gitaddr) {
+                        Ok(saddr) => {
+                            info!(
+                                "Trying to clone {} from {} at {}",
+                                self.project, provider.peer, saddr
+                            );
+                            if git2::Repository::clone(
+                                &format!("git://{}/{}", &saddr, &self.project),
+                                Path::new(&format!("/tmp/{}", self.project)),
+                            )
+                            .is_ok()
+                            {
+                                return Ok(());
+                            }
+                        },
+                        Err(e) => {
+                            warn!("Could not connect to {} at {}: {}", provider.peer, addr, e)
+                        },
                     }
-                    Err(e) => warn!("Could not connect to {} at {}: {}", provider.peer, addr, e),
                 }
             }
         }
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 fn get_providers<E: Fail>(
@@ -130,6 +133,6 @@ fn map_retry_error<E: Fail>(err: retry::Error<Error<E>>) -> Error<E> {
                 total_delay.as_secs()
             );
             error
-        }
+        },
     }
 }

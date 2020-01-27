@@ -36,10 +36,10 @@ enum Commands {
     Profiles(commands::profiles::Commands),
 
     /// Run a p2p server
-    Serve,
+    Serve(commands::serve::Serve),
 
     /// Fetch a project from the network
-    Fetch(commands::fetch::Options),
+    Fetch(commands::fetch::Fetch),
 }
 
 impl Commands {
@@ -53,6 +53,8 @@ impl Commands {
             Self::Keys(cmd) => cmd.run(cfg),
             Self::Project(cmd) => cmd.run(cfg),
             Self::Profiles(cmd) => cmd.run(cfg).map_err(|e| e.into()),
+            Self::Serve(cmd) => cmd.run(cfg),
+            Self::Fetch(cmd) => cmd.run(cfg),
         }
     }
 }

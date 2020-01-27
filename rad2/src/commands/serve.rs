@@ -1,37 +1,47 @@
 use async_std::task;
 use failure::Fail;
 use log::info;
+use structopt::StructOpt;
 
 use librad::{
-    keys::storage::{FileStorage, Pinentry, Storage},
+    keys::storage::{Pinentry, Storage},
     net::{p2p, protocol::Capability},
-    paths::Paths,
     project::Project,
 };
 
-use crate::error::Error;
+use crate::{config::Config, error::Error};
 
-pub fn run<F, P>(paths: Paths, pin: F) -> Result<(), Error<P::Error>>
-where
-    F: FnOnce(&'static str) -> P,
-    P: Pinentry,
-    P::Error: Fail,
-{
-    let key = FileStorage::new(paths.clone()).get_device_key(pin("Unlock your key store:"))?;
-    let worker = p2p::Worker::new(
-        key,
-        None,
-        vec![Capability::GitDaemon { port: 9418 }]
+#[derive(StructOpt)]
+pub struct Serve {
+    #[structopt(long, default_value = "9418", env = "DEFAULT_GIT_PORT")]
+    git_port: u16,
+}
+
+impl Serve {
+    pub fn run<K, P>(self, cfg: Config<K, P>) -> Result<(), Error<P::Error>>
+    where
+        K: Storage<P>,
+        P: Pinentry,
+        P::Error: Fail,
+    {
+        let key = cfg.keystore.get_device_key()?;
+        let worker = p2p::Worker::new(
+            key,
+            None,
+            vec![Capability::GitDaemon {
+                port: self.git_port,
+            }]
             .into_iter()
             .collect(),
-    )
-    .unwrap();
-    let service = worker.service().clone();
+        )
+        .unwrap();
+        let service = worker.service().clone();
 
-    Project::list(&paths).for_each(|pid| {
-        info!("Serving project {}", pid);
-        service.have(&pid)
-    });
+        Project::list(&cfg.paths).for_each(|pid| {
+            info!("Serving project {}", pid);
+            service.have(&pid)
+        });
 
-    task::block_on(worker).map_err(|e| e.into())
+        task::block_on(worker).map_err(|e| e.into())
+    }
 }
