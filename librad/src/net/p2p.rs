@@ -164,7 +164,7 @@ impl Future for Worker {
                         .entry(pid)
                         .or_insert_with(Vec::new)
                         .push(tx);
-                }
+                },
                 ToWorker::GetPeerInfo(peer, tx) => {
                     self.swarm.get_peer_info(&peer);
                     self.subscribers
@@ -172,7 +172,7 @@ impl Future for Worker {
                         .entry(peer)
                         .or_insert_with(Vec::new)
                         .push(tx);
-                }
+                },
             }
         }
 
@@ -191,7 +191,7 @@ impl Future for Worker {
                         }
                     }
                     break;
-                }
+                },
                 Poll::Ready(Some(evt)) => match evt {
                     behaviour::Event::Provides { project, peers } => {
                         let providers: Vec<Provider> = peers
@@ -208,7 +208,7 @@ impl Future for Worker {
                                 let _ = tx.send(providers.clone());
                             }
                         }
-                    }
+                    },
 
                     behaviour::Event::PeerInfo { peer_id, info } => {
                         if let Some(subscribers) = self.subscribers.peer_info.remove(&peer_id) {
@@ -216,7 +216,7 @@ impl Future for Worker {
                                 let _ = tx.send(info.clone());
                             }
                         }
-                    }
+                    },
                 },
             }
         }
