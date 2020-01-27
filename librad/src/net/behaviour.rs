@@ -113,15 +113,6 @@ impl<S> Behaviour<S> {
             Quorum::One,
         );
     }
-
-    pub fn get_capabilities(&mut self, peer: &PeerId) {
-        self.kademlia
-            .get_record(&Self::capabilities_key(peer), Quorum::One)
-    }
-
-    fn capabilities_key(peer_id: &PeerId) -> kad::record::Key {
-        kad::record::Key::new(&format!("capsof-{}", peer_id))
-    }
 }
 
 impl<S: AsyncRead + AsyncWrite> NetworkBehaviourEventProcess<MdnsEvent> for Behaviour<S> {
@@ -152,7 +143,7 @@ impl<S: AsyncRead + AsyncWrite> NetworkBehaviourEventProcess<KademliaEvent> for 
                     Err(e) => warn!("GetProvidersResult: Invalid `ProjectId`: {}", e),
                     Ok(evt) => self.events.push(evt),
                 }
-            }
+            },
 
             KademliaEvent::GetRecordResult(res) => match res {
                 Err(e) => warn!("{:?}", e),
@@ -173,10 +164,10 @@ impl<S: AsyncRead + AsyncWrite> NetworkBehaviourEventProcess<KademliaEvent> for 
                             Ok(evt) => self.events.push(evt),
                         }
                     }
-                }
+                },
             },
 
-            _ => {}
+            _ => {},
         }
     }
 }

@@ -75,10 +75,12 @@ impl Future for Daemon {
         if let Some(child) = &mut unpin.child {
             // FIXME: There's an async version of the signals iterator, but it
             // uses futures 0.1. Figure out that compat layer.
-            for signal in signals.forever() {
-                debug!("got signal {}", signal);
-                kill(&child, signal);
-                break;
+            match signals.forever().next() {
+                Some(signal) => {
+                    debug!("got signal {}", signal);
+                    kill(&child, signal);
+                },
+                None => unreachable!(),
             }
 
             match child.wait() {
