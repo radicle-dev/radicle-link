@@ -252,10 +252,7 @@ impl Project {
     }
 
     pub fn is_valid(&self) -> bool {
-        match self.check_validity() {
-            Err(_) => false,
-            Ok(()) => true,
-        }
+        self.check_validity().is_ok()
     }
 
     pub fn check_update(&self, previous: &Project) -> Result<(), UpdateVerificationError> {
