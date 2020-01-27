@@ -5,6 +5,8 @@ extern crate failure_derive;
 #[macro_use]
 extern crate lazy_static;
 
+pub use radicle_surf as surf;
+
 pub mod git;
 pub mod keys;
 pub mod meta;

@@ -1,7 +1,7 @@
 max_width = 100
 # yeap
 comment_width = 80
-wrap_comments = false
+wrap_comments = true
 hard_tabs = false
 tab_spaces = 4
 imports_layout = "HorizontalVertical"
@@ -18,6 +18,8 @@ remove_nested_parens = true
 fn_args_layout = "Tall"
 
 edition = "2018"
+
+match_block_trailing_comma = true
 
 merge_derives = true
 
