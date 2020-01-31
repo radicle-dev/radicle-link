@@ -976,6 +976,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "radicle-keystore"
+version = "0.1.0"
+dependencies = [
+ "failure 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "secstr 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sodiumoxide 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "radicle-surf"
 version = "0.2.1"
 source = "git+https://github.com/radicle-dev/radicle-surf?rev=58a0e6680d61cc312eee3255abe5d0d494f631d2#58a0e6680d61cc312eee3255abe5d0d494f631d2"

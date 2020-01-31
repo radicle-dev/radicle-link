@@ -1,0 +1,11 @@
+[package]
+name = "radicle-keystore"
+description = "Abstraction over storage of cryptographic keys within the Radicle stack"
+version = "0.1.0"
+authors = ["Monadic GmbH <radicle@monadic.xyz>"]
+edition = "2018"
+
+[dependencies]
+sodiumoxide = "0.2"
+failure = { version = "0.1", features = ["backtrace"] }
+secstr = "0.3"
