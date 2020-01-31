@@ -9,3 +9,5 @@ edition = "2018"
 sodiumoxide = "0.2"
 failure = { version = "0.1", features = ["backtrace"] }
 secstr = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_cbor = "0.10"

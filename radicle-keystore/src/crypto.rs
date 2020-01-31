@@ -1,61 +1,49 @@
-use std::{convert::TryFrom, marker::PhantomData, time::SystemTime};
+use std::convert::TryFrom;
 
-use failure::format_err;
 use secstr::SecUtf8;
+use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::{pwhash, secretbox};
 
-pub(crate) struct SealedKey<PK, SK> {
+#[derive(Serialize, Deserialize)]
+pub(crate) struct SealedKey {
     nonce: secretbox::Nonce,
     salt: pwhash::Salt,
-    pub created_at: u64,
-    pub public_key: PK,
-    sealed_key: Vec<u8>,
-
-    _marker: PhantomData<SK>,
+    sealed: Vec<u8>,
 }
 
-pub(crate) enum Error<E> {
+pub enum Error<E> {
     InvalidPassphrase,
     TryFrom(E),
 }
 
-impl<PK, SK> SealedKey<PK, SK> {
-    pub fn seal(public_key: PK, secret_key: SK, passphrase: SecUtf8, created_at: SystemTime) -> Self
+impl SealedKey {
+    pub fn seal<K>(secret_key: K, passphrase: SecUtf8) -> Self
     where
-        SK: AsRef<[u8]>,
+        K: AsRef<[u8]>,
     {
         let nonce = secretbox::gen_nonce();
         let salt = pwhash::gen_salt();
 
-        let sealed_key =
-            secretbox::seal(secret_key.as_ref(), &nonce, &derive_key(&salt, &passphrase));
+        let sealed = secretbox::seal(secret_key.as_ref(), &nonce, &derive_key(&salt, &passphrase));
 
         Self {
             nonce,
             salt,
-            created_at: created_at
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .expect("System clock went backwards")
-                .as_secs(),
-            public_key,
-            sealed_key,
-
-            _marker: PhantomData,
+            sealed,
         }
     }
 
-    pub fn unseal<E>(&self, passphrase: SecUtf8) -> Result<SK, Error<E>>
+    pub fn unseal<K>(&self, passphrase: SecUtf8) -> Result<K, Error<<K as TryFrom<Vec<u8>>>::Error>>
     where
-        SK: TryFrom<Vec<u8>>,
-        E: <SK as TryFrom<Vec<u8>>>::Error,
+        K: TryFrom<Vec<u8>>,
     {
         secretbox::open(
-            &self.sealed_key,
+            &self.sealed,
             &self.nonce,
             &derive_key(&self.salt, &passphrase),
         )
-        .map_err(|_| Error::InvalidPassphrase)
-        .and_then(|unsealed| SK::try_from(unsealed).map_err(Error::TryFrom))
+        .map_err(|()| Error::InvalidPassphrase)
+        .and_then(|unsealed| K::try_from(unsealed).map_err(Error::TryFrom))
     }
 }
 

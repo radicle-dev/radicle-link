@@ -1,10 +1,13 @@
-use std::{convert::Infallible, time::SystemTime};
+#![allow(clippy::type_complexity)]
+
+use std::convert::Infallible;
 
 use failure::Fail;
 use secstr::SecUtf8;
 
 mod crypto;
 pub mod error;
+pub mod file;
 pub mod memory;
 
 pub trait Pinentry {
@@ -21,7 +24,15 @@ impl Pinentry for SecUtf8 {
     }
 }
 
-pub type Keypair<PK, SK> = (PK, SK);
+pub struct Keypair<PK, SK> {
+    pub public_key: PK,
+    pub secret_key: SK,
+}
+
+pub struct AndMeta<A, M> {
+    pub value: A,
+    pub metadata: M,
+}
 
 pub trait Storage<P>
 where
@@ -30,6 +41,8 @@ where
     type PublicKey;
     type SecretKey;
 
+    type Metadata;
+
     type PutError;
     type GetError;
     type ShowError;
@@ -37,9 +50,12 @@ where
     fn put_keypair(
         &mut self,
         keypair: Keypair<Self::PublicKey, Self::SecretKey>,
-        created_at: Option<SystemTime>,
+        metadata: Self::Metadata,
     ) -> Result<(), Self::PutError>;
 
-    fn get_keypair(&self) -> Result<Keypair<Self::PublicKey, Self::SecretKey>, Self::GetError>;
-    fn show_key(&self) -> Result<Self::PublicKey, Self::ShowError>;
+    fn get_keypair(
+        &self,
+    ) -> Result<AndMeta<Keypair<Self::PublicKey, Self::SecretKey>, Self::Metadata>, Self::GetError>;
+
+    fn show_key(&self) -> Result<AndMeta<Self::PublicKey, Self::Metadata>, Self::ShowError>;
 }
