@@ -3,7 +3,6 @@ use std::{fmt::Debug, time::SystemTime};
 use structopt::StructOpt;
 
 use librad::keys::device;
-use radicle_keystore::Storage;
 
 use crate::{config::Config, error::Error};
 
@@ -19,7 +18,11 @@ pub enum Commands {
 impl Commands {
     pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error<K::Error>>
     where
-        K: Storage<PublicKey = device::PublicKey, SecretKey = device::Key, Metadata = SystemTime>,
+        K: keystore::Storage<
+            PublicKey = device::PublicKey,
+            SecretKey = device::Key,
+            Metadata = SystemTime,
+        >,
         K::Error: Debug + Send + Sync,
     {
         match self {

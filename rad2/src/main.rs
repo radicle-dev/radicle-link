@@ -1,9 +1,10 @@
+extern crate radicle_keystore as keystore;
+
 use std::{process::exit, time::SystemTime};
 
 use structopt::StructOpt;
 
 use librad::keys::device;
-use radicle_keystore::{FileStorage, Storage};
 
 mod commands;
 mod config;
@@ -33,10 +34,14 @@ enum Commands {
     Profiles(commands::profiles::Commands),
 }
 
-type StorageImpl =
-    FileStorage<self::pinentry::Pinentry<'static>, device::PublicKey, device::Key, SystemTime>;
+type KeystoreImpl = keystore::FileStorage<
+    self::pinentry::Pinentry<'static>,
+    device::PublicKey,
+    device::Key,
+    SystemTime,
+>;
 
-fn main() -> Result<(), error::Error<<StorageImpl as Storage>::Error>> {
+fn main() -> Result<(), error::Error<<KeystoreImpl as keystore::Storage>::Error>> {
     if !librad::init() {
         eprintln!("Failed to initialise librad2");
         exit(1);
@@ -44,7 +49,7 @@ fn main() -> Result<(), error::Error<<StorageImpl as Storage>::Error>> {
 
     let app: Rad2 = StructOpt::from_args();
     let cfg = app.common.into_config(|paths| {
-        FileStorage::new(
+        keystore::FileStorage::new(
             paths.keys_dir(),
             self::pinentry::Pinentry::new("Unlock your keystore:"),
         )

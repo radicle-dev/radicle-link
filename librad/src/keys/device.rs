@@ -6,7 +6,7 @@ use secstr::SecStr;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::sign;
 
-use radicle_keystore::{HasMetadata, IntoSecretKey};
+use keystore::{HasMetadata, IntoSecretKey};
 
 use crate::keys::pgp;
 

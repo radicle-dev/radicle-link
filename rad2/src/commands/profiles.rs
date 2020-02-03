@@ -12,7 +12,6 @@ use librad::{
     meta::{EmailAddr, UserProfile},
     paths::Paths,
 };
-use radicle_keystore::Storage;
 
 use crate::{config::Config, editor};
 
@@ -104,7 +103,7 @@ impl ProfilePath {
 impl Commands {
     pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error>
     where
-        K: Storage,
+        K: keystore::Storage,
     {
         match self {
             Self::New { name } => create_profile(&cfg.paths, &name),

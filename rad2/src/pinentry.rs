@@ -6,8 +6,6 @@ use std::{
 use rpassword;
 use secstr::SecUtf8;
 
-use radicle_keystore as keystore;
-
 #[derive(Debug)]
 pub enum Error {
     Tty(io::Error),

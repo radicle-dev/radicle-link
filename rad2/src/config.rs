@@ -1,7 +1,6 @@
 use std::{fmt::Debug, path::PathBuf};
 
 use librad::paths::Paths;
-use radicle_keystore as keystore;
 use structopt::StructOpt;
 
 use crate::error::Error;

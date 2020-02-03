@@ -12,7 +12,6 @@ use librad::{
     paths::Paths,
     project::{Project, ProjectId},
 };
-use radicle_keystore::Storage;
 
 use crate::{
     commands::profiles::{load_profile, ProfilePath},
@@ -50,7 +49,11 @@ pub enum Commands {
 impl Commands {
     pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error<K::Error>>
     where
-        K: Storage<PublicKey = device::PublicKey, SecretKey = device::Key, Metadata = SystemTime>,
+        K: keystore::Storage<
+            PublicKey = device::PublicKey,
+            SecretKey = device::Key,
+            Metadata = SystemTime,
+        >,
         K::Error: Send + Sync,
     {
         match self {
