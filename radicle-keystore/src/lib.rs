@@ -30,35 +30,27 @@ pub struct Keypair<PK, SK> {
     pub secret_key: SK,
 }
 
-#[derive(Debug)]
-pub struct AndMeta<A, M> {
-    pub value: A,
-    pub metadata: M,
-}
-
 pub trait IntoSecretKey<M> {
     fn into_secret_key(bytes: SecStr, metadata: &M) -> Self;
+}
+
+pub trait HasMetadata<M> {
+    fn metadata(&self) -> M;
 }
 
 pub trait Storage {
     type Pinentry: Pinentry;
 
-    type PublicKey;
-    type SecretKey: IntoSecretKey<Self::Metadata>;
+    type PublicKey: From<Self::SecretKey>;
+    type SecretKey: IntoSecretKey<Self::Metadata> + HasMetadata<Self::Metadata>;
 
     type Metadata;
 
     type Error: std::error::Error;
 
-    fn put_keypair(
-        &mut self,
-        keypair: Keypair<Self::PublicKey, Self::SecretKey>,
-        metadata: Self::Metadata,
-    ) -> Result<(), Self::Error>;
+    fn put_key(&mut self, key: Self::SecretKey) -> Result<(), Self::Error>;
 
-    fn get_keypair(
-        &self,
-    ) -> Result<AndMeta<Keypair<Self::PublicKey, Self::SecretKey>, Self::Metadata>, Self::Error>;
+    fn get_key(&self) -> Result<Keypair<Self::PublicKey, Self::SecretKey>, Self::Error>;
 
-    fn show_key(&self) -> Result<AndMeta<Self::PublicKey, Self::Metadata>, Self::Error>;
+    fn show_key(&self) -> Result<(Self::PublicKey, Self::Metadata), Self::Error>;
 }

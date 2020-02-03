@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     crypto::{self, SealedKey},
-    AndMeta,
+    HasMetadata,
     IntoSecretKey,
     Keypair,
     Pinentry,
@@ -62,8 +62,8 @@ impl<P, PK, SK, M> Storage for MemoryStorage<P, PK, SK, M>
 where
     P: Pinentry,
     P::Error: Display + Debug,
-    SK: AsRef<[u8]> + IntoSecretKey<M>,
-    PK: Clone,
+    SK: AsRef<[u8]> + IntoSecretKey<M> + HasMetadata<M>,
+    PK: Clone + From<SK>,
     M: Clone,
 {
     type Pinentry = P;
@@ -75,19 +75,16 @@ where
 
     type Error = Error<P::Error>;
 
-    fn put_keypair(
-        &mut self,
-        keypair: Keypair<Self::PublicKey, Self::SecretKey>,
-        metadata: Self::Metadata,
-    ) -> Result<(), Self::Error> {
+    fn put_key(&mut self, key: Self::SecretKey) -> Result<(), Self::Error> {
         if self.key.is_some() {
             return Err(Error::KeyExists);
         }
 
+        let metadata = key.metadata();
         let passphrase = self.pinentry.get_passphrase().map_err(Error::Pinentry)?;
-        let sealed_key = SealedKey::seal(keypair.secret_key, passphrase);
+        let sealed_key = SealedKey::seal(&key, passphrase);
         self.key = Some(Stored {
-            public_key: keypair.public_key,
+            public_key: Self::PublicKey::from(key),
             secret_key: sealed_key,
             metadata,
 
@@ -97,10 +94,7 @@ where
         Ok(())
     }
 
-    fn get_keypair(
-        &self,
-    ) -> Result<AndMeta<Keypair<Self::PublicKey, Self::SecretKey>, Self::Metadata>, Self::Error>
-    {
+    fn get_key(&self) -> Result<Keypair<Self::PublicKey, Self::SecretKey>, Self::Error> {
         match &self.key {
             None => Err(Error::NoSuchKey),
             Some(stored) => {
@@ -111,24 +105,18 @@ where
                     .map_err(Error::Crypto)
                     .map(|sec| Self::SecretKey::into_secret_key(sec, &stored.metadata))?;
 
-                Ok(AndMeta {
-                    value: Keypair {
-                        public_key: stored.public_key.clone(),
-                        secret_key: sk,
-                    },
-                    metadata: stored.metadata.clone(),
+                Ok(Keypair {
+                    public_key: stored.public_key.clone(),
+                    secret_key: sk,
                 })
             },
         }
     }
 
-    fn show_key(&self) -> Result<AndMeta<Self::PublicKey, Self::Metadata>, Self::Error> {
+    fn show_key(&self) -> Result<(Self::PublicKey, Self::Metadata), Self::Error> {
         self.key
             .as_ref()
             .ok_or(Error::NoSuchKey)
-            .map(|sealed| AndMeta {
-                value: sealed.public_key.clone(),
-                metadata: sealed.metadata.clone(),
-            })
+            .map(|sealed| (sealed.public_key.clone(), sealed.metadata.clone()))
     }
 }

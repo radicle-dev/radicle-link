@@ -6,7 +6,7 @@ use secstr::SecStr;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::sign;
 
-use radicle_keystore::IntoSecretKey;
+use radicle_keystore::{HasMetadata, IntoSecretKey};
 
 use crate::keys::pgp;
 
@@ -100,6 +100,12 @@ impl IntoSecretKey<SystemTime> for Key {
     }
 }
 
+impl HasMetadata<SystemTime> for Key {
+    fn metadata(&self) -> SystemTime {
+        self.created_at
+    }
+}
+
 // PublicKey
 
 impl PublicKey {
@@ -115,6 +121,12 @@ impl PublicKey {
 impl From<sign::PublicKey> for PublicKey {
     fn from(pk: sign::PublicKey) -> Self {
         Self(pk)
+    }
+}
+
+impl From<Key> for PublicKey {
+    fn from(k: Key) -> Self {
+        k.public()
     }
 }
 

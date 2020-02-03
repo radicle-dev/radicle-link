@@ -50,7 +50,7 @@ pub enum Commands {
 impl Commands {
     pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error<K::Error>>
     where
-        K: Storage<SecretKey = device::Key, Metadata = SystemTime>,
+        K: Storage<PublicKey = device::PublicKey, SecretKey = device::Key, Metadata = SystemTime>,
         K::Error: Send + Sync,
     {
         match self {
@@ -59,12 +59,7 @@ impl Commands {
                 profile,
                 git_dir,
             } => {
-                let key = cfg
-                    .keystore
-                    .get_keypair()
-                    .map_err(Error::Keystore)?
-                    .value
-                    .secret_key;
+                let key = cfg.keystore.get_key().map_err(Error::Keystore)?.secret_key;
                 let profile = load_profile(ProfilePath::new(&cfg.paths, &profile))?;
                 init_project(&cfg.paths, key, name, profile, git_dir)
             },

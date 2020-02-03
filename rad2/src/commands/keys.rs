@@ -3,7 +3,7 @@ use std::{fmt::Debug, time::SystemTime};
 use structopt::StructOpt;
 
 use librad::keys::device;
-use radicle_keystore::{Keypair, Storage};
+use radicle_keystore::Storage;
 
 use crate::{config::Config, error::Error};
 
@@ -26,15 +26,7 @@ impl Commands {
             Self::New => {
                 let key = device::Key::new();
                 let mut store = cfg.keystore;
-                store
-                    .put_keypair(
-                        Keypair {
-                            public_key: key.public(),
-                            secret_key: key,
-                        },
-                        SystemTime::now(),
-                    )
-                    .map_err(Error::Keystore)
+                store.put_key(key).map_err(Error::Keystore)
             },
             Self::Show => cfg
                 .keystore

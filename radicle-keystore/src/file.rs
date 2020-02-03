@@ -10,7 +10,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
     crypto::{self, SealedKey},
-    AndMeta,
+    HasMetadata,
     IntoSecretKey,
     Keypair,
     Pinentry,
@@ -86,8 +86,8 @@ impl<P, PK, SK, M> Storage for FileStorage<P, PK, SK, M>
 where
     P: Pinentry,
     P::Error: Display + Debug,
-    SK: AsRef<[u8]> + IntoSecretKey<M>,
-    PK: Clone + Serialize + DeserializeOwned,
+    SK: AsRef<[u8]> + IntoSecretKey<M> + HasMetadata<M>,
+    PK: Clone + From<SK> + Serialize + DeserializeOwned,
     M: Clone + Serialize + DeserializeOwned,
 {
     type Pinentry = P;
@@ -99,25 +99,22 @@ where
 
     type Error = Error<P::Error>;
 
-    fn put_keypair(
-        &mut self,
-        keypair: Keypair<Self::PublicKey, Self::SecretKey>,
-        metadata: Self::Metadata,
-    ) -> Result<(), Self::Error> {
+    fn put_key(&mut self, key: Self::SecretKey) -> Result<(), Self::Error> {
         if self.key_file_path().exists() {
             return Err(Error::KeyExists);
         }
 
+        let metadata = key.metadata();
         let sealed_key = {
             let passphrase = self.pinentry.get_passphrase().map_err(Error::Pinentry)?;
-            SealedKey::seal(keypair.secret_key, passphrase)
+            SealedKey::seal(&key, passphrase)
         };
 
         let key_file = File::create(self.key_file_path())?;
         serde_cbor::to_writer(
             &key_file,
             &Stored {
-                public_key: keypair.public_key,
+                public_key: Self::PublicKey::from(key),
                 secret_key: sealed_key,
                 metadata,
             },
@@ -127,10 +124,7 @@ where
         Ok(())
     }
 
-    fn get_keypair(
-        &self,
-    ) -> Result<AndMeta<Keypair<Self::PublicKey, Self::SecretKey>, Self::Metadata>, Self::Error>
-    {
+    fn get_key(&self) -> Result<Keypair<Self::PublicKey, Self::SecretKey>, Self::Error> {
         if !self.key_file_path().exists() {
             return Err(Error::NoSuchKey);
         }
@@ -145,16 +139,13 @@ where
             .map_err(Error::Crypto)
             .map(|sec| Self::SecretKey::into_secret_key(sec, &stored.metadata))?;
 
-        Ok(AndMeta {
-            value: Keypair {
-                public_key: stored.public_key.clone(),
-                secret_key,
-            },
-            metadata: stored.metadata,
+        Ok(Keypair {
+            public_key: stored.public_key,
+            secret_key,
         })
     }
 
-    fn show_key(&self) -> Result<AndMeta<Self::PublicKey, Self::Metadata>, Self::Error> {
+    fn show_key(&self) -> Result<(Self::PublicKey, Self::Metadata), Self::Error> {
         if !self.key_file_path().exists() {
             return Err(Error::NoSuchKey);
         }
@@ -162,9 +153,6 @@ where
         let stored: Stored<Self::PublicKey, Self::Metadata> =
             serde_cbor::from_reader(File::open(self.key_file_path())?)?;
 
-        Ok(AndMeta {
-            value: stored.public_key,
-            metadata: stored.metadata,
-        })
+        Ok((stored.public_key, stored.metadata))
     }
 }
