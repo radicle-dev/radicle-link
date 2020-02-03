@@ -1,10 +1,9 @@
-extern crate librad;
+use std::{process::exit, time::SystemTime};
 
-use failure::Fail;
-use std::process::exit;
 use structopt::StructOpt;
 
-use librad::keys::storage::{FileStorage, Pinentry, Storage};
+use librad::keys::device;
+use radicle_keystore::{FileStorage, Storage};
 
 mod commands;
 mod config;
@@ -12,7 +11,7 @@ mod editor;
 pub mod error;
 mod pinentry;
 
-use crate::config::{CommonOpts, Config};
+use crate::config::CommonOpts;
 
 #[derive(StructOpt)]
 #[structopt(about)]
@@ -34,22 +33,10 @@ enum Commands {
     Profiles(commands::profiles::Commands),
 }
 
-impl Commands {
-    fn run<K, P>(self, cfg: Config<K, P>) -> Result<(), error::Error<P::Error>>
-    where
-        K: Storage<P>,
-        P: Pinentry,
-        P::Error: Fail,
-    {
-        match self {
-            Self::Keys(cmd) => cmd.run(cfg),
-            Self::Project(cmd) => cmd.run(cfg),
-            Self::Profiles(cmd) => cmd.run(cfg).map_err(|e| e.into()),
-        }
-    }
-}
+type StorageImpl =
+    FileStorage<self::pinentry::Pinentry<'static>, device::PublicKey, device::Key, SystemTime>;
 
-fn main() -> Result<(), error::Error<self::pinentry::Error>> {
+fn main() -> Result<(), error::Error<<StorageImpl as Storage>::Error>> {
     if !librad::init() {
         eprintln!("Failed to initialise librad2");
         exit(1);
@@ -58,10 +45,14 @@ fn main() -> Result<(), error::Error<self::pinentry::Error>> {
     let app: Rad2 = StructOpt::from_args();
     let cfg = app.common.into_config(|paths| {
         FileStorage::new(
-            paths,
+            paths.keys_dir(),
             self::pinentry::Pinentry::new("Unlock your keystore:"),
         )
     })?;
 
-    app.cmd.run(cfg)
+    match app.cmd {
+        Commands::Keys(cmd) => cmd.run(cfg),
+        Commands::Project(cmd) => cmd.run(cfg),
+        Commands::Profiles(cmd) => cmd.run(cfg).map_err(|e| e.into()),
+    }
 }

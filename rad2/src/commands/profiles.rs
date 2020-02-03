@@ -9,10 +9,10 @@ use serde_yaml as yaml;
 use structopt::StructOpt;
 
 use librad::{
-    keys::storage::{Pinentry, Storage},
     meta::{EmailAddr, UserProfile},
     paths::Paths,
 };
+use radicle_keystore::Storage;
 
 use crate::{config::Config, editor};
 
@@ -102,10 +102,9 @@ impl ProfilePath {
 }
 
 impl Commands {
-    pub fn run<K, P>(self, cfg: Config<K, P>) -> Result<(), Error>
+    pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error>
     where
-        K: Storage<P>,
-        P: Pinentry,
+        K: Storage,
     {
         match self {
             Self::New { name } => create_profile(&cfg.paths, &name),

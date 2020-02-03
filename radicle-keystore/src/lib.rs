@@ -2,16 +2,17 @@
 
 use std::convert::Infallible;
 
-use failure::Fail;
-use secstr::SecUtf8;
+use secstr::{SecStr, SecUtf8};
 
 mod crypto;
-pub mod error;
 pub mod file;
 pub mod memory;
 
+pub use file::FileStorage;
+pub use memory::MemoryStorage;
+
 pub trait Pinentry {
-    type Error: Fail;
+    type Error: std::error::Error;
 
     fn get_passphrase(&self) -> Result<SecUtf8, Self::Error>;
 }
@@ -29,33 +30,35 @@ pub struct Keypair<PK, SK> {
     pub secret_key: SK,
 }
 
+#[derive(Debug)]
 pub struct AndMeta<A, M> {
     pub value: A,
     pub metadata: M,
 }
 
-pub trait Storage<P>
-where
-    P: Pinentry,
-{
+pub trait IntoSecretKey<M> {
+    fn into_secret_key(bytes: SecStr, metadata: &M) -> Self;
+}
+
+pub trait Storage {
+    type Pinentry: Pinentry;
+
     type PublicKey;
-    type SecretKey;
+    type SecretKey: IntoSecretKey<Self::Metadata>;
 
     type Metadata;
 
-    type PutError;
-    type GetError;
-    type ShowError;
+    type Error: std::error::Error;
 
     fn put_keypair(
         &mut self,
         keypair: Keypair<Self::PublicKey, Self::SecretKey>,
         metadata: Self::Metadata,
-    ) -> Result<(), Self::PutError>;
+    ) -> Result<(), Self::Error>;
 
     fn get_keypair(
         &self,
-    ) -> Result<AndMeta<Keypair<Self::PublicKey, Self::SecretKey>, Self::Metadata>, Self::GetError>;
+    ) -> Result<AndMeta<Keypair<Self::PublicKey, Self::SecretKey>, Self::Metadata>, Self::Error>;
 
-    fn show_key(&self) -> Result<AndMeta<Self::PublicKey, Self::Metadata>, Self::ShowError>;
+    fn show_key(&self) -> Result<AndMeta<Self::PublicKey, Self::Metadata>, Self::Error>;
 }

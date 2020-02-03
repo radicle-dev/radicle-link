@@ -1,6 +1,6 @@
-use std::convert::TryFrom;
+use std::fmt;
 
-use secstr::SecUtf8;
+use secstr::{SecStr, SecUtf8};
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::{pwhash, secretbox};
 
@@ -11,9 +11,13 @@ pub(crate) struct SealedKey {
     sealed: Vec<u8>,
 }
 
-pub enum Error<E> {
-    InvalidPassphrase,
-    TryFrom(E),
+#[derive(Debug)]
+pub struct UnsealError;
+
+impl fmt::Display for UnsealError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("Invalid passphrase")
+    }
 }
 
 impl SealedKey {
@@ -33,17 +37,14 @@ impl SealedKey {
         }
     }
 
-    pub fn unseal<K>(&self, passphrase: SecUtf8) -> Result<K, Error<<K as TryFrom<Vec<u8>>>::Error>>
-    where
-        K: TryFrom<Vec<u8>>,
-    {
+    pub fn unseal(&self, passphrase: SecUtf8) -> Result<SecStr, UnsealError> {
         secretbox::open(
             &self.sealed,
             &self.nonce,
             &derive_key(&self.salt, &passphrase),
         )
-        .map_err(|()| Error::InvalidPassphrase)
-        .and_then(|unsealed| K::try_from(unsealed).map_err(Error::TryFrom))
+        .map_err(|()| UnsealError)
+        .map(SecStr::new)
     }
 }
 

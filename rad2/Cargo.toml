@@ -10,6 +10,7 @@ failure = "0.1"
 failure_derive = "0.1"
 git2 = "0.10"
 librad = { path = "../librad" }
+radicle-keystore = { path = "../radicle-keystore" }
 rpassword = "4.0"
 secstr = "0.3"
 serde = "1.0"

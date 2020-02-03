@@ -2,7 +2,11 @@ use std::{fmt, ops::Deref, time::SystemTime};
 
 use ::pgp::conversions::Time;
 use bs58;
+use secstr::SecStr;
+use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::sign;
+
+use radicle_keystore::IntoSecretKey;
 
 use crate::keys::pgp;
 
@@ -15,7 +19,7 @@ pub struct Key {
 }
 
 /// The public part of a `Key``
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PublicKey(sign::PublicKey);
 
 /// A signature produced by `Key::sign`
@@ -84,6 +88,15 @@ impl fmt::Display for Key {
 impl AsRef<[u8]> for Key {
     fn as_ref(&self) -> &[u8] {
         self.sk.as_ref()
+    }
+}
+
+impl IntoSecretKey<SystemTime> for Key {
+    fn into_secret_key(bytes: SecStr, metadata: &SystemTime) -> Self {
+        Self::from_secret(
+            sign::SecretKey::from_slice(bytes.unsecure()).unwrap(),
+            *metadata,
+        )
     }
 }
 

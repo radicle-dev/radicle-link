@@ -1,8 +1,12 @@
-use std::{convert::TryFrom, marker::PhantomData};
+use std::{
+    fmt::{self, Debug, Display},
+    marker::PhantomData,
+};
 
 use crate::{
     crypto::{self, SealedKey},
     AndMeta,
+    IntoSecretKey,
     Keypair,
     Pinentry,
     Storage,
@@ -30,47 +34,57 @@ impl<P, PK, SK, M> MemoryStorage<P, PK, SK, M> {
     }
 }
 
-pub enum PutError<P> {
+#[derive(Debug)]
+pub enum Error<P> {
     KeyExists,
+    NoSuchKey,
+    Crypto(crypto::UnsealError),
     Pinentry(P),
 }
 
-pub enum GetError<C, P> {
-    NoSuchKey,
-    Crypto(crypto::Error<C>),
-    Pinentry(P),
+impl<P> std::error::Error for Error<P> where P: Display + Debug {}
+
+impl<P> Display for Error<P>
+where
+    P: Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::KeyExists => f.write_str("Key exists, refusing to overwrite"),
+            Self::NoSuchKey => f.write_str("No key found"),
+            Self::Crypto(e) => write!(f, "Error unsealing key: {}", e),
+            Self::Pinentry(e) => write!(f, "{}", e),
+        }
+    }
 }
 
-pub enum ShowError {
-    NoSuchKey,
-}
-
-impl<P, PK, SK, M> Storage<P> for MemoryStorage<P, PK, SK, M>
+impl<P, PK, SK, M> Storage for MemoryStorage<P, PK, SK, M>
 where
     P: Pinentry,
-    SK: AsRef<[u8]> + TryFrom<Vec<u8>>,
+    P::Error: Display + Debug,
+    SK: AsRef<[u8]> + IntoSecretKey<M>,
     PK: Clone,
     M: Clone,
 {
+    type Pinentry = P;
+
     type PublicKey = PK;
     type SecretKey = SK;
 
     type Metadata = M;
 
-    type PutError = PutError<P::Error>;
-    type GetError = GetError<<SK as TryFrom<Vec<u8>>>::Error, P::Error>;
-    type ShowError = ShowError;
+    type Error = Error<P::Error>;
 
     fn put_keypair(
         &mut self,
         keypair: Keypair<Self::PublicKey, Self::SecretKey>,
         metadata: Self::Metadata,
-    ) -> Result<(), Self::PutError> {
+    ) -> Result<(), Self::Error> {
         if self.key.is_some() {
-            return Err(Self::PutError::KeyExists);
+            return Err(Error::KeyExists);
         }
 
-        let passphrase = self.pinentry.get_passphrase().map_err(PutError::Pinentry)?;
+        let passphrase = self.pinentry.get_passphrase().map_err(Error::Pinentry)?;
         let sealed_key = SealedKey::seal(keypair.secret_key, passphrase);
         self.key = Some(Stored {
             public_key: keypair.public_key,
@@ -85,19 +99,17 @@ where
 
     fn get_keypair(
         &self,
-    ) -> Result<AndMeta<Keypair<Self::PublicKey, Self::SecretKey>, Self::Metadata>, Self::GetError>
+    ) -> Result<AndMeta<Keypair<Self::PublicKey, Self::SecretKey>, Self::Metadata>, Self::Error>
     {
         match &self.key {
-            None => Err(GetError::NoSuchKey),
+            None => Err(Error::NoSuchKey),
             Some(stored) => {
-                let passphrase = self
-                    .pinentry
-                    .get_passphrase()
-                    .map_err(Self::GetError::Pinentry)?;
+                let passphrase = self.pinentry.get_passphrase().map_err(Error::Pinentry)?;
                 let sk = stored
                     .secret_key
                     .unseal(passphrase)
-                    .map_err(Self::GetError::Crypto)?;
+                    .map_err(Error::Crypto)
+                    .map(|sec| Self::SecretKey::into_secret_key(sec, &stored.metadata))?;
 
                 Ok(AndMeta {
                     value: Keypair {
@@ -110,10 +122,10 @@ where
         }
     }
 
-    fn show_key(&self) -> Result<AndMeta<Self::PublicKey, Self::Metadata>, Self::ShowError> {
+    fn show_key(&self) -> Result<AndMeta<Self::PublicKey, Self::Metadata>, Self::Error> {
         self.key
             .as_ref()
-            .ok_or(Self::ShowError::NoSuchKey)
+            .ok_or(Error::NoSuchKey)
             .map(|sealed| AndMeta {
                 value: sealed.public_key.clone(),
                 metadata: sealed.metadata.clone(),

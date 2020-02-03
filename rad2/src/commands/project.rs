@@ -1,4 +1,4 @@
-use std::{env, io, path::PathBuf};
+use std::{env, io, path::PathBuf, time::SystemTime};
 
 use failure::Fail;
 use git2;
@@ -7,14 +7,12 @@ use structopt::StructOpt;
 
 use librad::{
     git::GitProject,
-    keys::{
-        device,
-        storage::{Pinentry, Storage},
-    },
+    keys::device,
     meta,
     paths::Paths,
     project::{Project, ProjectId},
 };
+use radicle_keystore::Storage;
 
 use crate::{
     commands::profiles::{load_profile, ProfilePath},
@@ -50,11 +48,10 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn run<K, P>(self, cfg: Config<K, P>) -> Result<(), Error<P::Error>>
+    pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error<K::Error>>
     where
-        K: Storage<P>,
-        P: Pinentry,
-        P::Error: Fail,
+        K: Storage<SecretKey = device::Key, Metadata = SystemTime>,
+        K::Error: Send + Sync,
     {
         match self {
             Self::Init {
@@ -62,7 +59,12 @@ impl Commands {
                 profile,
                 git_dir,
             } => {
-                let key = cfg.keystore.get_device_key()?;
+                let key = cfg
+                    .keystore
+                    .get_keypair()
+                    .map_err(Error::Keystore)?
+                    .value
+                    .secret_key;
                 let profile = load_profile(ProfilePath::new(&cfg.paths, &profile))?;
                 init_project(&cfg.paths, key, name, profile, git_dir)
             },

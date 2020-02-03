@@ -1,5 +1,5 @@
 use std::{
-    convert::TryFrom,
+    fmt::{self, Debug, Display},
     fs::File,
     io,
     marker::PhantomData,
@@ -11,6 +11,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use crate::{
     crypto::{self, SealedKey},
     AndMeta,
+    IntoSecretKey,
     Keypair,
     Pinentry,
     Storage,
@@ -44,90 +45,71 @@ struct Stored<PK, M> {
     metadata: M,
 }
 
-pub enum PutError<P> {
+#[derive(Debug)]
+pub enum Error<P> {
     KeyExists,
+    NoSuchKey,
+    Crypto(crypto::UnsealError),
     Pinentry(P),
     Serde(serde_cbor::error::Error),
     Io(io::Error),
 }
 
-impl<P> From<io::Error> for PutError<P> {
+impl<P: Display + Debug> std::error::Error for Error<P> {}
+
+impl<P: Display> Display for Error<P> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::KeyExists => f.write_str("Key exists, refusing to overwrite"),
+            Self::NoSuchKey => f.write_str("No key found"),
+            Self::Crypto(e) => write!(f, "Error unsealing key: {}", e),
+            Self::Pinentry(e) => write!(f, "{}", e),
+            Self::Serde(e) => write!(f, "{}", e),
+            Self::Io(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl<P> From<io::Error> for Error<P> {
     fn from(e: io::Error) -> Self {
         Self::Io(e)
     }
 }
 
-impl<P> From<serde_cbor::error::Error> for PutError<P> {
+impl<P> From<serde_cbor::error::Error> for Error<P> {
     fn from(e: serde_cbor::error::Error) -> Self {
         Self::Serde(e)
     }
 }
 
-pub enum GetError<C, P> {
-    NoSuchKey,
-    Crypto(crypto::Error<C>),
-    Pinentry(P),
-    Serde(serde_cbor::error::Error),
-    Io(io::Error),
-}
-
-impl<C, P> From<io::Error> for GetError<C, P> {
-    fn from(e: io::Error) -> Self {
-        Self::Io(e)
-    }
-}
-
-impl<C, P> From<serde_cbor::error::Error> for GetError<C, P> {
-    fn from(e: serde_cbor::error::Error) -> Self {
-        Self::Serde(e)
-    }
-}
-
-pub enum ShowError {
-    NoSuchKey,
-    Serde(serde_cbor::error::Error),
-    Io(io::Error),
-}
-
-impl From<io::Error> for ShowError {
-    fn from(e: io::Error) -> Self {
-        Self::Io(e)
-    }
-}
-
-impl From<serde_cbor::error::Error> for ShowError {
-    fn from(e: serde_cbor::error::Error) -> Self {
-        Self::Serde(e)
-    }
-}
-
-impl<P, PK, SK, M> Storage<P> for FileStorage<P, PK, SK, M>
+impl<P, PK, SK, M> Storage for FileStorage<P, PK, SK, M>
 where
     P: Pinentry,
-    SK: AsRef<[u8]> + TryFrom<Vec<u8>>,
+    P::Error: Display + Debug,
+    SK: AsRef<[u8]> + IntoSecretKey<M>,
     PK: Clone + Serialize + DeserializeOwned,
     M: Clone + Serialize + DeserializeOwned,
 {
+    type Pinentry = P;
+
     type PublicKey = PK;
     type SecretKey = SK;
 
     type Metadata = M;
 
-    type PutError = PutError<P::Error>;
-    type GetError = GetError<<SK as TryFrom<Vec<u8>>>::Error, P::Error>;
-    type ShowError = ShowError;
+    type Error = Error<P::Error>;
 
     fn put_keypair(
         &mut self,
         keypair: Keypair<Self::PublicKey, Self::SecretKey>,
         metadata: Self::Metadata,
-    ) -> Result<(), Self::PutError> {
+    ) -> Result<(), Self::Error> {
         if self.key_file_path().exists() {
-            return Err(PutError::KeyExists);
+            return Err(Error::KeyExists);
         }
 
         let sealed_key = {
-            let passphrase = self.pinentry.get_passphrase().map_err(PutError::Pinentry)?;
+            let passphrase = self.pinentry.get_passphrase().map_err(Error::Pinentry)?;
             SealedKey::seal(keypair.secret_key, passphrase)
         };
 
@@ -147,23 +129,21 @@ where
 
     fn get_keypair(
         &self,
-    ) -> Result<AndMeta<Keypair<Self::PublicKey, Self::SecretKey>, Self::Metadata>, Self::GetError>
+    ) -> Result<AndMeta<Keypair<Self::PublicKey, Self::SecretKey>, Self::Metadata>, Self::Error>
     {
         if !self.key_file_path().exists() {
-            return Err(Self::GetError::NoSuchKey);
+            return Err(Error::NoSuchKey);
         }
 
         let stored: Stored<Self::PublicKey, Self::Metadata> =
             serde_cbor::from_reader(File::open(self.key_file_path())?)?;
-        let passphrase = self
-            .pinentry
-            .get_passphrase()
-            .map_err(Self::GetError::Pinentry)?;
+        let passphrase = self.pinentry.get_passphrase().map_err(Error::Pinentry)?;
 
         let secret_key = stored
             .secret_key
             .unseal(passphrase)
-            .map_err(Self::GetError::Crypto)?;
+            .map_err(Error::Crypto)
+            .map(|sec| Self::SecretKey::into_secret_key(sec, &stored.metadata))?;
 
         Ok(AndMeta {
             value: Keypair {
@@ -174,9 +154,9 @@ where
         })
     }
 
-    fn show_key(&self) -> Result<AndMeta<Self::PublicKey, Self::Metadata>, Self::ShowError> {
+    fn show_key(&self) -> Result<AndMeta<Self::PublicKey, Self::Metadata>, Self::Error> {
         if !self.key_file_path().exists() {
-            return Err(Self::ShowError::NoSuchKey);
+            return Err(Error::NoSuchKey);
         }
 
         let stored: Stored<Self::PublicKey, Self::Metadata> =

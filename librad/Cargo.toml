@@ -26,6 +26,7 @@ sodiumoxide = "0.2"
 tempfile = "3.1"
 url = { version = "2.1", features = ["serde"] }
 urltemplate = "0.1"
+radicle-keystore = { path = "../radicle-keystore" }
 
 [dev-dependencies]
 proptest = "0.9"

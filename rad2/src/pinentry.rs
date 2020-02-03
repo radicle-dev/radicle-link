@@ -1,15 +1,26 @@
-use std::io;
+use std::{
+    fmt::{self, Display},
+    io,
+};
 
-use failure::Fail;
 use rpassword;
 use secstr::SecUtf8;
 
-use librad::keys::storage;
+use radicle_keystore as keystore;
 
-#[derive(Debug, Fail)]
+#[derive(Debug)]
 pub enum Error {
-    #[fail(display = "{}", 0)]
     Tty(io::Error),
+}
+
+impl std::error::Error for Error {}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Tty(e) => write!(f, "{}", e),
+        }
+    }
 }
 
 impl From<io::Error> for Error {
@@ -26,7 +37,7 @@ impl<'a> Pinentry<'a> {
     }
 }
 
-impl<'a> storage::Pinentry for Pinentry<'a> {
+impl<'a> keystore::Pinentry for Pinentry<'a> {
     type Error = Error;
 
     fn get_passphrase(&self) -> Result<SecUtf8, Self::Error> {
