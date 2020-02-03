@@ -13,8 +13,8 @@ use crate::{
     HasMetadata,
     IntoSecretKey,
     Keypair,
+    Keystore,
     Pinentry,
-    Storage,
 };
 
 pub struct FileStorage<P, PK, SK, M> {
@@ -84,7 +84,7 @@ impl<P, C> From<serde_cbor::error::Error> for Error<P, C> {
     }
 }
 
-impl<P, PK, SK, M> Storage for FileStorage<P, PK, SK, M>
+impl<P, PK, SK, M> Keystore for FileStorage<P, PK, SK, M>
 where
     P: Pinentry,
     P::Error: Display + Debug,

@@ -4,6 +4,7 @@ use std::{process::exit, time::SystemTime};
 
 use structopt::StructOpt;
 
+use keystore::Keystore;
 use librad::keys::device;
 
 mod commands;
@@ -41,7 +42,7 @@ type KeystoreImpl = keystore::FileStorage<
     SystemTime,
 >;
 
-fn main() -> Result<(), error::Error<<KeystoreImpl as keystore::Storage>::Error>> {
+fn main() -> Result<(), error::Error<<KeystoreImpl as Keystore>::Error>> {
     if !librad::init() {
         eprintln!("Failed to initialise librad2");
         exit(1);

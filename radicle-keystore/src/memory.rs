@@ -8,8 +8,8 @@ use crate::{
     HasMetadata,
     IntoSecretKey,
     Keypair,
+    Keystore,
     Pinentry,
-    Storage,
 };
 
 struct Stored<PK, SK, M> {
@@ -66,7 +66,7 @@ where
     }
 }
 
-impl<P, PK, SK, M> Storage for MemoryStorage<P, PK, SK, M>
+impl<P, PK, SK, M> Keystore for MemoryStorage<P, PK, SK, M>
 where
     P: Pinentry,
     P::Error: Display + Debug,

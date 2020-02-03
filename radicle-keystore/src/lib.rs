@@ -49,7 +49,7 @@ pub trait HasMetadata {
     fn metadata(&self) -> Self::Metadata;
 }
 
-pub trait Storage {
+pub trait Keystore {
     type Pinentry: Pinentry;
 
     type PublicKey: From<Self::SecretKey>;

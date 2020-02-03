@@ -8,6 +8,7 @@ use failure::Fail;
 use serde_yaml as yaml;
 use structopt::StructOpt;
 
+use keystore::Keystore;
 use librad::{
     meta::{EmailAddr, UserProfile},
     paths::Paths,
@@ -103,7 +104,7 @@ impl ProfilePath {
 impl Commands {
     pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error>
     where
-        K: keystore::Storage,
+        K: Keystore,
     {
         match self {
             Self::New { name } => create_profile(&cfg.paths, &name),

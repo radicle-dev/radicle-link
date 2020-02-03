@@ -1,7 +1,9 @@
 use std::{fmt::Debug, path::PathBuf};
 
-use librad::paths::Paths;
 use structopt::StructOpt;
+
+use keystore::Keystore;
+use librad::paths::Paths;
 
 use crate::error::Error;
 
@@ -22,10 +24,7 @@ pub struct CommonOpts {
 
 /// Stateful configuration, derived from [`CommonOpts`] and passed around to
 /// commands.
-pub struct Config<K>
-where
-    K: keystore::Storage,
-{
+pub struct Config<K> {
     pub verbose: bool,
     pub paths: Paths,
     pub keystore: K,
@@ -35,7 +34,7 @@ impl CommonOpts {
     pub fn into_config<F, K>(self, init_keystore: F) -> Result<Config<K>, Error<K::Error>>
     where
         F: FnOnce(&Paths) -> K,
-        K: keystore::Storage,
+        K: Keystore,
         K::Error: Debug + Send + Sync,
     {
         let verbose = self.verbose;

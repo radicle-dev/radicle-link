@@ -5,6 +5,7 @@ use git2;
 use serde_yaml;
 use structopt::StructOpt;
 
+use keystore::Keystore;
 use librad::{
     git::GitProject,
     keys::device,
@@ -49,11 +50,7 @@ pub enum Commands {
 impl Commands {
     pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error<K::Error>>
     where
-        K: keystore::Storage<
-            PublicKey = device::PublicKey,
-            SecretKey = device::Key,
-            Metadata = SystemTime,
-        >,
+        K: Keystore<PublicKey = device::PublicKey, SecretKey = device::Key, Metadata = SystemTime>,
         K::Error: Send + Sync,
     {
         match self {
