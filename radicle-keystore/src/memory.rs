@@ -134,3 +134,43 @@ where
             .map(|sealed| (sealed.public_key.clone(), sealed.metadata.clone()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::*;
+
+    fn with_mem_store<F, P>(pin: P, f: F)
+    where
+        F: FnOnce(MemoryStorage<P, PublicKey, SecretKey, ()>) -> (),
+        P: Pinentry,
+    {
+        f(MemoryStorage::new(pin))
+    }
+
+    #[test]
+    fn test_get_after_put() {
+        with_mem_store(default_passphrase(), get_after_put)
+    }
+
+    #[test]
+    fn test_put_twice() {
+        with_mem_store(default_passphrase(), |store| {
+            put_twice(store, Error::KeyExists)
+        })
+    }
+
+    #[test]
+    fn test_get_empty() {
+        with_mem_store(default_passphrase(), |store| {
+            get_empty(store, Error::NoSuchKey)
+        })
+    }
+
+    #[test]
+    fn test_passphrase_mismatch() {
+        with_mem_store(PinCycle::new(&["right".into(), "wrong".into()]), |store| {
+            passphrase_mismatch(store, Error::Crypto(crypto::UnsealError))
+        })
+    }
+}

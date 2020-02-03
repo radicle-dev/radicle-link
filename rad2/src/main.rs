@@ -51,7 +51,7 @@ fn main() -> Result<(), error::Error<<KeystoreImpl as Keystore>::Error>> {
     let app: Rad2 = StructOpt::from_args();
     let cfg = app.common.into_config(|paths| {
         keystore::FileStorage::new(
-            paths.keys_dir(),
+            &paths.keys_dir().join("device.key"),
             self::pinentry::Pinentry::new("Unlock your keystore:"),
         )
     })?;

@@ -163,3 +163,46 @@ where
         Ok((stored.public_key, stored.metadata))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::*;
+    use tempfile::tempdir;
+
+    fn with_fs_store<F, P>(pin: P, f: F)
+    where
+        F: FnOnce(FileStorage<P, PublicKey, SecretKey, ()>) -> (),
+        P: Pinentry,
+    {
+        let tmp = tempdir().expect("Can't get tempdir");
+        println!("tmp dir: {}", tmp.path().display());
+        f(FileStorage::new(&tmp.path().join("test.key"), pin))
+    }
+
+    #[test]
+    fn test_get_after_put() {
+        with_fs_store(default_passphrase(), get_after_put)
+    }
+
+    #[test]
+    fn test_put_twice() {
+        with_fs_store(default_passphrase(), |store| {
+            put_twice(store, Error::KeyExists)
+        })
+    }
+
+    #[test]
+    fn test_get_empty() {
+        with_fs_store(default_passphrase(), |store| {
+            get_empty(store, Error::NoSuchKey)
+        })
+    }
+
+    #[test]
+    fn test_passphrase_mismatch() {
+        with_fs_store(PinCycle::new(&["right".into(), "wrong".into()]), |store| {
+            passphrase_mismatch(store, Error::Crypto(crypto::UnsealError))
+        })
+    }
+}

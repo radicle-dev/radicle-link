@@ -5,6 +5,8 @@ use secstr::{SecStr, SecUtf8};
 mod crypto;
 pub mod file;
 pub mod memory;
+#[cfg(test)]
+pub(crate) mod test;
 
 pub use file::FileStorage;
 pub use memory::MemoryStorage;
