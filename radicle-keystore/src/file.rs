@@ -46,22 +46,24 @@ struct Stored<PK, M> {
 }
 
 #[derive(Debug)]
-pub enum Error<P> {
+pub enum Error<Pinentry, Conversion> {
     KeyExists,
     NoSuchKey,
+    Conversion(Conversion),
     Crypto(crypto::UnsealError),
-    Pinentry(P),
+    Pinentry(Pinentry),
     Serde(serde_cbor::error::Error),
     Io(io::Error),
 }
 
-impl<P: Display + Debug> std::error::Error for Error<P> {}
+impl<P: Display + Debug, C: Display + Debug> std::error::Error for Error<P, C> {}
 
-impl<P: Display> Display for Error<P> {
+impl<P: Display, C: Display> Display for Error<P, C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::KeyExists => f.write_str("Key exists, refusing to overwrite"),
             Self::NoSuchKey => f.write_str("No key found"),
+            Self::Conversion(e) => write!(f, "Error reconstructing sealed key: {}", e),
             Self::Crypto(e) => write!(f, "Error unsealing key: {}", e),
             Self::Pinentry(e) => write!(f, "{}", e),
             Self::Serde(e) => write!(f, "{}", e),
@@ -70,13 +72,13 @@ impl<P: Display> Display for Error<P> {
     }
 }
 
-impl<P> From<io::Error> for Error<P> {
+impl<P, C> From<io::Error> for Error<P, C> {
     fn from(e: io::Error) -> Self {
         Self::Io(e)
     }
 }
 
-impl<P> From<serde_cbor::error::Error> for Error<P> {
+impl<P, C> From<serde_cbor::error::Error> for Error<P, C> {
     fn from(e: serde_cbor::error::Error) -> Self {
         Self::Serde(e)
     }
@@ -86,7 +88,10 @@ impl<P, PK, SK, M> Storage for FileStorage<P, PK, SK, M>
 where
     P: Pinentry,
     P::Error: Display + Debug,
-    SK: AsRef<[u8]> + IntoSecretKey<M> + HasMetadata<M>,
+
+    SK: AsRef<[u8]> + IntoSecretKey<Metadata = M> + HasMetadata<Metadata = M>,
+    <SK as IntoSecretKey>::Error: Display + Debug,
+
     PK: Clone + From<SK> + Serialize + DeserializeOwned,
     M: Clone + Serialize + DeserializeOwned,
 {
@@ -97,7 +102,7 @@ where
 
     type Metadata = M;
 
-    type Error = Error<P::Error>;
+    type Error = Error<P::Error, <SK as IntoSecretKey>::Error>;
 
     fn put_key(&mut self, key: Self::SecretKey) -> Result<(), Self::Error> {
         if self.key_file_path().exists() {
@@ -137,7 +142,9 @@ where
             .secret_key
             .unseal(passphrase)
             .map_err(Error::Crypto)
-            .map(|sec| Self::SecretKey::into_secret_key(sec, &stored.metadata))?;
+            .and_then(|sec| {
+                Self::SecretKey::into_secret_key(sec, &stored.metadata).map_err(Error::Conversion)
+            })?;
 
         Ok(Keypair {
             public_key: stored.public_key,

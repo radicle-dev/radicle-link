@@ -1,5 +1,3 @@
-#![allow(clippy::type_complexity)]
-
 use std::convert::Infallible;
 
 use secstr::{SecStr, SecUtf8};
@@ -11,6 +9,10 @@ pub mod memory;
 pub use file::FileStorage;
 pub use memory::MemoryStorage;
 
+/// A method to obtain a passphrase from which an encryption key can be derived.
+///
+/// Similar in spirit to GPG's `pinentry` program, but no implementation of the
+/// Assuan protocol is provided as of yet.
 pub trait Pinentry {
     type Error: std::error::Error;
 
@@ -25,24 +27,34 @@ impl Pinentry for SecUtf8 {
     }
 }
 
+/// Named pair of public / secret key.
 pub struct Keypair<PK, SK> {
     pub public_key: PK,
     pub secret_key: SK,
 }
 
-pub trait IntoSecretKey<M> {
-    fn into_secret_key(bytes: SecStr, metadata: &M) -> Self;
+pub trait IntoSecretKey
+where
+    Self: Sized,
+{
+    type Metadata;
+    type Error;
+
+    fn into_secret_key(bytes: SecStr, metadata: &Self::Metadata) -> Result<Self, Self::Error>;
 }
 
-pub trait HasMetadata<M> {
-    fn metadata(&self) -> M;
+pub trait HasMetadata {
+    type Metadata;
+
+    fn metadata(&self) -> Self::Metadata;
 }
 
 pub trait Storage {
     type Pinentry: Pinentry;
 
     type PublicKey: From<Self::SecretKey>;
-    type SecretKey: IntoSecretKey<Self::Metadata> + HasMetadata<Self::Metadata>;
+    type SecretKey: IntoSecretKey<Metadata = Self::Metadata>
+        + HasMetadata<Metadata = Self::Metadata>;
 
     type Metadata;
 

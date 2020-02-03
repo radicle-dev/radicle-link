@@ -1,4 +1,8 @@
-use std::{fmt, ops::Deref, time::SystemTime};
+use std::{
+    fmt::{self, Display},
+    ops::Deref,
+    time::SystemTime,
+};
 
 use ::pgp::conversions::Time;
 use bs58;
@@ -91,17 +95,34 @@ impl AsRef<[u8]> for Key {
     }
 }
 
-impl IntoSecretKey<SystemTime> for Key {
-    fn into_secret_key(bytes: SecStr, metadata: &SystemTime) -> Self {
-        Self::from_secret(
-            sign::SecretKey::from_slice(bytes.unsecure()).unwrap(),
-            *metadata,
-        )
+#[derive(Debug)]
+pub enum IntoSecretKeyError {
+    InvalidSliceLength,
+}
+
+impl Display for IntoSecretKeyError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::InvalidSliceLength => f.write_str("Invalid slice length"),
+        }
     }
 }
 
-impl HasMetadata<SystemTime> for Key {
-    fn metadata(&self) -> SystemTime {
+impl IntoSecretKey for Key {
+    type Metadata = SystemTime;
+    type Error = IntoSecretKeyError;
+
+    fn into_secret_key(bytes: SecStr, metadata: &Self::Metadata) -> Result<Self, Self::Error> {
+        let sk = sign::SecretKey::from_slice(bytes.unsecure())
+            .ok_or(IntoSecretKeyError::InvalidSliceLength)?;
+        Ok(Self::from_secret(sk, *metadata))
+    }
+}
+
+impl HasMetadata for Key {
+    type Metadata = SystemTime;
+
+    fn metadata(&self) -> Self::Metadata {
         self.created_at
     }
 }
