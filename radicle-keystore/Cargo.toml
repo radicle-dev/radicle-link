@@ -6,7 +6,8 @@ authors = ["Monadic GmbH <radicle@monadic.xyz>"]
 edition = "2018"
 
 [dependencies]
-sodiumoxide = "0.2"
 secstr = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.10"
+sodiumoxide = "0.2"
+
