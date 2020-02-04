@@ -53,10 +53,10 @@ pub trait Keystore {
 
     /// Securely store secret key `key` in the keystore.
     ///
-    /// The key may carry [`Self::Metadata`], which is stored alongside the key
-    /// material. The metadata, as well as the public portion of the key,
-    /// may be stored in clear, so as to not require prompting the user when
-    /// retrieving those values.
+    /// The key may carry [`Keystore::Metadata`], which is stored alongside the
+    /// key material. The metadata, as well as the public portion of the
+    /// key, may be stored in clear, so as to not require prompting the user
+    /// when retrieving those values.
     ///
     /// Key rotation is not (yet) part of this API, thus `put_key` MUST return
     /// an error if an equivalent key is already present in the storage
