@@ -4,7 +4,7 @@ use std::{process::exit, time::SystemTime};
 
 use structopt::StructOpt;
 
-use keystore::{crypto::Passphrase, pinentry::Prompt, Keystore};
+use keystore::{crypto::Pwhash, pinentry::Prompt, Keystore};
 use librad::keys::device;
 
 mod commands;
@@ -35,7 +35,7 @@ enum Commands {
 }
 
 type KeystoreImpl =
-    keystore::FileStorage<Passphrase<Prompt<'static>>, device::PublicKey, device::Key, SystemTime>;
+    keystore::FileStorage<Pwhash<Prompt<'static>>, device::PublicKey, device::Key, SystemTime>;
 
 fn main() -> Result<(), error::Error<<KeystoreImpl as Keystore>::Error>> {
     if !librad::init() {
@@ -47,7 +47,7 @@ fn main() -> Result<(), error::Error<<KeystoreImpl as Keystore>::Error>> {
     let cfg = app.common.into_config(|paths| {
         keystore::FileStorage::new(
             &paths.keys_dir().join("device.key"),
-            Passphrase::new(Prompt::new("Unlock your keystore:")),
+            Pwhash::new(Prompt::new("Unlock your keystore:")),
         )
     })?;
 

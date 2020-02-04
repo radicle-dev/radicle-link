@@ -8,7 +8,7 @@ use secstr::SecUtf8;
 /// Similar in spirit to GPG's `pinentry` program, but no implementation of the
 /// Assuan protocol is provided as of yet.
 pub trait Pinentry {
-    type Error: std::error::Error;
+    type Error;
 
     fn get_passphrase(&self) -> Result<SecUtf8, Self::Error>;
 }

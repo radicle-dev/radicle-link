@@ -10,6 +10,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{crypto::Crypto, Keypair, Keystore, SecretKeyExt};
 
+/// [`Keystore`] implementation which stores the encrypted key in a file on the
+/// local filesystem.
 pub struct FileStorage<C, PK, SK, M> {
     key_file_path: PathBuf,
     crypto: C,
@@ -18,6 +20,11 @@ pub struct FileStorage<C, PK, SK, M> {
 }
 
 impl<C, PK, SK, M> FileStorage<C, PK, SK, M> {
+    /// Construct a new [`FileStorage`] with the given [`Crypto`]
+    /// implementation.
+    ///
+    /// The [`Path`] given by `key_file_path` must be an actual file path, not a
+    /// directory.
     pub fn new(key_file_path: &Path, crypto: C) -> Self {
         Self {
             key_file_path: key_file_path.to_path_buf(),
@@ -27,6 +34,7 @@ impl<C, PK, SK, M> FileStorage<C, PK, SK, M> {
         }
     }
 
+    /// [`Path`] to the file where the encrypted key is stored.
     pub fn key_file_path(&self) -> &Path {
         self.key_file_path.as_path()
     }
@@ -166,7 +174,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        crypto::{Passphrase, PassphraseError},
+        crypto::{Pwhash, SecretBoxError},
         pinentry::Pinentry,
         test::*,
     };
@@ -174,13 +182,13 @@ mod tests {
 
     fn with_fs_store<F, P>(pin: P, f: F)
     where
-        F: FnOnce(FileStorage<Passphrase<P>, PublicKey, SecretKey, ()>) -> (),
+        F: FnOnce(FileStorage<Pwhash<P>, PublicKey, SecretKey, ()>) -> (),
         P: Pinentry,
     {
         let tmp = tempdir().expect("Can't get tempdir");
         f(FileStorage::new(
             &tmp.path().join("test.key"),
-            Passphrase::new(pin),
+            Pwhash::new(pin),
         ))
     }
 
@@ -206,7 +214,7 @@ mod tests {
     #[test]
     fn test_passphrase_mismatch() {
         with_fs_store(PinCycle::new(&["right".into(), "wrong".into()]), |store| {
-            passphrase_mismatch(store, Error::Crypto(PassphraseError::InvalidKey))
+            passphrase_mismatch(store, Error::Crypto(SecretBoxError::InvalidKey))
         })
     }
 }

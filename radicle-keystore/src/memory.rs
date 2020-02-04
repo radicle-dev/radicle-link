@@ -11,6 +11,12 @@ struct Stored<PK, S, M> {
     metadata: M,
 }
 
+/// [`Keystore`] implementation which stores the encrypted key in memory.
+///
+/// This is provided mainly for testing in environments where hitting the
+/// filesystem is undesirable, and otherwise equivalent to [`FileStorage`].
+///
+/// [`FileStorage`]: ../struct.FileStorage.html
 pub struct MemoryStorage<C: Crypto, PK, SK, M> {
     key: Option<Stored<PK, C::SecretBox, M>>,
     crypto: C,
@@ -129,17 +135,17 @@ where
 mod tests {
     use super::*;
     use crate::{
-        crypto::{Passphrase, PassphraseError},
+        crypto::{Pwhash, SecretBoxError},
         pinentry::Pinentry,
         test::*,
     };
 
     fn with_mem_store<F, P>(pin: P, f: F)
     where
-        F: FnOnce(MemoryStorage<Passphrase<P>, PublicKey, SecretKey, ()>) -> (),
+        F: FnOnce(MemoryStorage<Pwhash<P>, PublicKey, SecretKey, ()>) -> (),
         P: Pinentry,
     {
-        f(MemoryStorage::new(Passphrase::new(pin)))
+        f(MemoryStorage::new(Pwhash::new(pin)))
     }
 
     #[test]
@@ -164,7 +170,7 @@ mod tests {
     #[test]
     fn test_passphrase_mismatch() {
         with_mem_store(PinCycle::new(&["right".into(), "wrong".into()]), |store| {
-            passphrase_mismatch(store, Error::Crypto(PassphraseError::InvalidKey))
+            passphrase_mismatch(store, Error::Crypto(SecretBoxError::InvalidKey))
         })
     }
 }

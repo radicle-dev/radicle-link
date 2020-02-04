@@ -6,6 +6,10 @@ use sodiumoxide::crypto::{pwhash, secretbox};
 
 use crate::pinentry::Pinentry;
 
+/// Class of types which can seal (encrypt) a secret, and unseal (decrypt) it
+/// from it's sealed form.
+///
+/// It is up to the user to perform conversion from and to domain types.
 pub trait Crypto: Sized {
     type SecretBox;
     type Error;
@@ -15,19 +19,19 @@ pub trait Crypto: Sized {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct PassphraseBox {
+pub struct SecretBox {
     nonce: secretbox::Nonce,
     salt: pwhash::Salt,
     sealed: Vec<u8>,
 }
 
 #[derive(Debug)]
-pub enum PassphraseError<PinentryError> {
+pub enum SecretBoxError<PinentryError> {
     InvalidKey,
     Pinentry(PinentryError),
 }
 
-impl<E: Display> Display for PassphraseError<E> {
+impl<E: Display> Display for SecretBoxError<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::InvalidKey => f.write_str(
@@ -39,11 +43,17 @@ impl<E: Display> Display for PassphraseError<E> {
     }
 }
 
-pub struct Passphrase<P> {
+/// A [`Crypto`] implementation using `libsodium`'s "secretbox". The encryption
+/// key is derived from a passphrase using the primitives provided by
+/// `libsodium`'s `pwhash` (hence the name).
+///
+/// The resulting [`SecretBox`] stores the ciphertext alongside cleartext salt
+/// and nonce values.
+pub struct Pwhash<P> {
     pinentry: P,
 }
 
-impl<P> Passphrase<P> {
+impl<P> Pwhash<P> {
     pub fn new(pinentry: P) -> Self {
         Self { pinentry }
     }
@@ -57,15 +67,15 @@ impl<P> Passphrase<P> {
     }
 }
 
-impl<P: Pinentry> Crypto for Passphrase<P> {
-    type SecretBox = PassphraseBox;
-    type Error = PassphraseError<P::Error>;
+impl<P: Pinentry> Crypto for Pwhash<P> {
+    type SecretBox = SecretBox;
+    type Error = SecretBoxError<P::Error>;
 
     fn seal<K: AsRef<[u8]>>(&self, secret: K) -> Result<Self::SecretBox, Self::Error> {
         let passphrase = self
             .pinentry
             .get_passphrase()
-            .map_err(PassphraseError::Pinentry)?;
+            .map_err(SecretBoxError::Pinentry)?;
 
         let nonce = secretbox::gen_nonce();
         let salt = pwhash::gen_salt();
@@ -76,7 +86,7 @@ impl<P: Pinentry> Crypto for Passphrase<P> {
             &Self::derive_key(&salt, &passphrase),
         );
 
-        Ok(PassphraseBox {
+        Ok(SecretBox {
             nonce,
             salt,
             sealed,
@@ -87,54 +97,14 @@ impl<P: Pinentry> Crypto for Passphrase<P> {
         let passphrase = self
             .pinentry
             .get_passphrase()
-            .map_err(PassphraseError::Pinentry)?;
+            .map_err(SecretBoxError::Pinentry)?;
 
         secretbox::open(
             &secret_box.sealed,
             &secret_box.nonce,
             &Self::derive_key(&secret_box.salt, &passphrase),
         )
-        .map_err(|()| PassphraseError::InvalidKey)
+        .map_err(|()| SecretBoxError::InvalidKey)
         .map(SecStr::new)
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ExternalKeyBox {
-    nonce: secretbox::Nonce,
-    sealed: Vec<u8>,
-}
-
-#[derive(Debug)]
-pub enum ExternalKeyError {
-    InvalidKey,
-}
-
-impl Display for ExternalKeyError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::InvalidKey => f.write_str("Unable to decrypt secret box using the given key."),
-        }
-    }
-}
-
-pub struct ExternalKey {
-    key: secretbox::Key, // TODO: make pluggable
-}
-
-impl Crypto for ExternalKey {
-    type SecretBox = ExternalKeyBox;
-    type Error = ExternalKeyError;
-
-    fn seal<K: AsRef<[u8]>>(&self, secret: K) -> Result<Self::SecretBox, Self::Error> {
-        let nonce = secretbox::gen_nonce();
-        let sealed = secretbox::seal(secret.as_ref(), &nonce, &self.key);
-        Ok(ExternalKeyBox { nonce, sealed })
-    }
-
-    fn unseal(&self, secret_box: Self::SecretBox) -> Result<SecStr, Self::Error> {
-        secretbox::open(&secret_box.sealed, &secret_box.nonce, &self.key)
-            .map_err(|()| ExternalKeyError::InvalidKey)
-            .map(SecStr::new)
     }
 }

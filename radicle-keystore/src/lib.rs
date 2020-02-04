@@ -1,3 +1,20 @@
+//! `radicle-keystore` aims to become the sole abstraction over storage of key
+//! material in the Radicle ecosystem.
+//!
+//! Radicle employs two kinds of keys: ones which may leave your device (e.g.
+//! onto an HSM), and ones that shouldn't. For the first kind, we will
+//! eventually provide an implementation of [`Keystore`] which interfaces
+//! directly with system keychains or hardware devices, while for the second
+//! kind matters are a bit more complicated: we recommend to use the
+//! [`file::FileStorage`] implementation, which stores keys in encrypted form on
+//! the filesystem. This is to discourage (accidental) key sharing via backup or
+//! cross-device syncing setups the user might have.
+//!
+//! The choice of [`crypto::Crypto`] (and relatedly [`pinentry::Pinentry`]) may
+//! however be used to store the passphrase for a key-derivation scheme (as
+//! employed by [`crypto::Pwhash`]) in some system keychain, or offload
+//! encryption entirely to an external system (such as GPG, or a password
+//! manager).
 use secstr::SecStr;
 
 pub mod crypto;
@@ -34,23 +51,19 @@ pub trait Keystore {
 
     type Error: std::error::Error;
 
-    /// Store secret key `key` in the keystore.
+    /// Securely store secret key `key` in the keystore.
     ///
     /// The key may carry [`Self::Metadata`], which is stored alongside the key
-    /// material. The secret key material MUST be encrypted using a key
-    /// derived from the passphrase obtained via [`Self::Pinentry`]
+    /// material. The metadata, as well as the public portion of the key,
+    /// may be stored in clear, so as to not require prompting the user when
+    /// retrieving those values.
     ///
-    /// The public portion of the key (as obtained via
-    /// [`From<Self::SecretKey>`]) and the metadata may be stored in plain text.
-    ///
-    /// `put_key` MUST return an error if an equivalent key is already present
-    /// in the storage backend (i.e. key deletion / rotation is not provided
-    /// by this interface).
+    /// Key rotation is not (yet) part of this API, thus `put_key` MUST return
+    /// an error if an equivalent key is already present in the storage
+    /// backend.
     fn put_key(&mut self, key: Self::SecretKey) -> Result<(), Self::Error>;
 
     /// Retrieve both the secret and public parts of the stored key material.
-    ///
-    /// In order to decrypt the secret key, [`Self::Pinentry`] shall be invoked.
     fn get_key(&self) -> Result<Keypair<Self::PublicKey, Self::SecretKey>, Self::Error>;
 
     /// Retrieve only the public part of the key material, along with any
