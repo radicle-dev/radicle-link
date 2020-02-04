@@ -10,7 +10,7 @@ use secstr::SecStr;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::sign;
 
-use keystore::{HasMetadata, IntoSecretKey};
+use keystore::SecretKeyExt;
 
 use crate::keys::pgp;
 
@@ -108,19 +108,15 @@ impl Display for IntoSecretKeyError {
     }
 }
 
-impl IntoSecretKey for Key {
+impl SecretKeyExt for Key {
     type Metadata = SystemTime;
     type Error = IntoSecretKeyError;
 
-    fn into_secret_key(bytes: SecStr, metadata: &Self::Metadata) -> Result<Self, Self::Error> {
+    fn from_bytes_and_meta(bytes: SecStr, metadata: &Self::Metadata) -> Result<Self, Self::Error> {
         let sk = sign::SecretKey::from_slice(bytes.unsecure())
             .ok_or(IntoSecretKeyError::InvalidSliceLength)?;
         Ok(Self::from_secret(sk, *metadata))
     }
-}
-
-impl HasMetadata for Key {
-    type Metadata = SystemTime;
 
     fn metadata(&self) -> Self::Metadata {
         self.created_at

@@ -4,14 +4,13 @@ use std::{process::exit, time::SystemTime};
 
 use structopt::StructOpt;
 
-use keystore::Keystore;
+use keystore::{crypto::Passphrase, pinentry::Prompt, Keystore};
 use librad::keys::device;
 
 mod commands;
 mod config;
 mod editor;
 pub mod error;
-mod pinentry;
 
 use crate::config::CommonOpts;
 
@@ -35,12 +34,8 @@ enum Commands {
     Profiles(commands::profiles::Commands),
 }
 
-type KeystoreImpl = keystore::FileStorage<
-    self::pinentry::Pinentry<'static>,
-    device::PublicKey,
-    device::Key,
-    SystemTime,
->;
+type KeystoreImpl =
+    keystore::FileStorage<Passphrase<Prompt<'static>>, device::PublicKey, device::Key, SystemTime>;
 
 fn main() -> Result<(), error::Error<<KeystoreImpl as Keystore>::Error>> {
     if !librad::init() {
@@ -52,7 +47,7 @@ fn main() -> Result<(), error::Error<<KeystoreImpl as Keystore>::Error>> {
     let cfg = app.common.into_config(|paths| {
         keystore::FileStorage::new(
             &paths.keys_dir().join("device.key"),
-            self::pinentry::Pinentry::new("Unlock your keystore:"),
+            Passphrase::new(Prompt::new("Unlock your keystore:")),
         )
     })?;
 

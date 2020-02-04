@@ -968,7 +968,6 @@ dependencies = [
  "git2 0.10.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "librad 0.1.0",
  "radicle-keystore 0.1.0",
- "rpassword 4.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "secstr 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.104 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_yaml 0.8.11 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -981,6 +980,7 @@ dependencies = [
 name = "radicle-keystore"
 version = "0.1.0"
 dependencies = [
+ "rpassword 4.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "secstr 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.104 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_cbor 0.10.2 (registry+https://github.com/rust-lang/crates.io-index)",

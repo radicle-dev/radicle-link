@@ -3,57 +3,51 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::{
-    crypto::{self, SealedKey},
-    HasMetadata,
-    IntoSecretKey,
-    Keypair,
-    Keystore,
-    Pinentry,
-};
+use crate::{crypto::Crypto, Keypair, Keystore, SecretKeyExt};
 
-struct Stored<PK, SK, M> {
+struct Stored<PK, S, M> {
     public_key: PK,
-    secret_key: SealedKey,
+    secret_key: S,
     metadata: M,
+}
+
+pub struct MemoryStorage<C: Crypto, PK, SK, M> {
+    key: Option<Stored<PK, C::SecretBox, M>>,
+    crypto: C,
 
     _marker: PhantomData<SK>,
 }
 
-pub struct MemoryStorage<P, PK, SK, M> {
-    key: Option<Stored<PK, SK, M>>,
-    pinentry: P,
-}
-
-impl<P, PK, SK, M> MemoryStorage<P, PK, SK, M> {
-    pub fn new(pinentry: P) -> Self {
+impl<C: Crypto, PK, SK, M> MemoryStorage<C, PK, SK, M> {
+    pub fn new(crypto: C) -> Self {
         Self {
             key: None,
-            pinentry,
+            crypto,
+
+            _marker: PhantomData,
         }
     }
 }
 
 #[derive(Debug)]
-pub enum Error<Pinentry, Conversion> {
+pub enum Error<Crypto, Conversion> {
     KeyExists,
     NoSuchKey,
+    Crypto(Crypto),
     Conversion(Conversion),
-    Crypto(crypto::UnsealError),
-    Pinentry(Pinentry),
 }
 
-impl<P, C> std::error::Error for Error<P, C>
+impl<Crypto, Conversion> std::error::Error for Error<Crypto, Conversion>
 where
-    P: Display + Debug,
-    C: Display + Debug,
+    Crypto: Display + Debug,
+    Conversion: Display + Debug,
 {
 }
 
-impl<P, C> Display for Error<P, C>
+impl<Crypto, Conversion> Display for Error<Crypto, Conversion>
 where
-    P: Display,
-    C: Display,
+    Crypto: Display,
+    Conversion: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -61,30 +55,26 @@ where
             Self::NoSuchKey => f.write_str("No key found"),
             Self::Conversion(e) => write!(f, "Error reconstructing sealed key: {}", e),
             Self::Crypto(e) => write!(f, "Error unsealing key: {}", e),
-            Self::Pinentry(e) => write!(f, "{}", e),
         }
     }
 }
 
-impl<P, PK, SK, M> Keystore for MemoryStorage<P, PK, SK, M>
+impl<C, PK, SK, M> Keystore for MemoryStorage<C, PK, SK, M>
 where
-    P: Pinentry,
-    P::Error: Display + Debug,
+    C: Crypto,
+    C::Error: Display + Debug,
+    C::SecretBox: Clone,
 
-    SK: AsRef<[u8]> + IntoSecretKey<Metadata = M> + HasMetadata<Metadata = M>,
-    <SK as IntoSecretKey>::Error: Display + Debug,
+    SK: AsRef<[u8]> + SecretKeyExt<Metadata = M>,
+    <SK as SecretKeyExt>::Error: Display + Debug,
 
     PK: Clone + From<SK>,
     M: Clone,
 {
-    type Pinentry = P;
-
     type PublicKey = PK;
     type SecretKey = SK;
-
     type Metadata = M;
-
-    type Error = Error<P::Error, <SK as IntoSecretKey>::Error>;
+    type Error = Error<C::Error, <SK as SecretKeyExt>::Error>;
 
     fn put_key(&mut self, key: Self::SecretKey) -> Result<(), Self::Error> {
         if self.key.is_some() {
@@ -92,14 +82,11 @@ where
         }
 
         let metadata = key.metadata();
-        let passphrase = self.pinentry.get_passphrase().map_err(Error::Pinentry)?;
-        let sealed_key = SealedKey::seal(&key, passphrase);
+        let sealed_key = self.crypto.seal(&key).map_err(Error::Crypto)?;
         self.key = Some(Stored {
             public_key: Self::PublicKey::from(key),
             secret_key: sealed_key,
             metadata,
-
-            _marker: PhantomData,
         });
 
         Ok(())
@@ -108,16 +95,19 @@ where
     fn get_key(&self) -> Result<Keypair<Self::PublicKey, Self::SecretKey>, Self::Error> {
         match &self.key {
             None => Err(Error::NoSuchKey),
-            Some(stored) => {
-                let passphrase = self.pinentry.get_passphrase().map_err(Error::Pinentry)?;
-                let sk = stored
-                    .secret_key
-                    .unseal(passphrase)
-                    .map_err(Error::Crypto)
-                    .and_then(|sec| {
-                        Self::SecretKey::into_secret_key(sec, &stored.metadata)
-                            .map_err(Error::Conversion)
-                    })?;
+            Some(ref stored) => {
+                let sk = {
+                    let sbox = stored.secret_key.clone();
+                    let meta = stored.metadata.clone();
+
+                    self.crypto
+                        .unseal(sbox)
+                        .map_err(Error::Crypto)
+                        .and_then(|sec| {
+                            Self::SecretKey::from_bytes_and_meta(sec, &meta)
+                                .map_err(Error::Conversion)
+                        })
+                }?;
 
                 Ok(Keypair {
                     public_key: stored.public_key.clone(),
@@ -138,14 +128,18 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::*;
+    use crate::{
+        crypto::{Passphrase, PassphraseError},
+        pinentry::Pinentry,
+        test::*,
+    };
 
     fn with_mem_store<F, P>(pin: P, f: F)
     where
-        F: FnOnce(MemoryStorage<P, PublicKey, SecretKey, ()>) -> (),
+        F: FnOnce(MemoryStorage<Passphrase<P>, PublicKey, SecretKey, ()>) -> (),
         P: Pinentry,
     {
-        f(MemoryStorage::new(pin))
+        f(MemoryStorage::new(Passphrase::new(pin)))
     }
 
     #[test]
@@ -170,7 +164,7 @@ mod tests {
     #[test]
     fn test_passphrase_mismatch() {
         with_mem_store(PinCycle::new(&["right".into(), "wrong".into()]), |store| {
-            passphrase_mismatch(store, Error::Crypto(crypto::UnsealError))
+            passphrase_mismatch(store, Error::Crypto(PassphraseError::InvalidKey))
         })
     }
 }

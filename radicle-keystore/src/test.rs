@@ -11,7 +11,7 @@ use secstr::{SecStr, SecUtf8};
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::sign;
 
-use crate::{HasMetadata, IntoSecretKey, Keystore, Pinentry};
+use crate::{pinentry::Pinentry, Keystore, SecretKeyExt};
 
 /// Pinentry which just yields the stored sequence of pins cyclicly.
 pub struct PinCycle<'a>(RefCell<Cycle<slice::Iter<'a, SecUtf8>>>);
@@ -59,19 +59,15 @@ impl Display for IntoSecretKeyError {
     }
 }
 
-impl IntoSecretKey for SecretKey {
+impl SecretKeyExt for SecretKey {
     type Metadata = ();
     type Error = IntoSecretKeyError;
 
-    fn into_secret_key(bytes: SecStr, _metadata: &Self::Metadata) -> Result<Self, Self::Error> {
+    fn from_bytes_and_meta(bytes: SecStr, _metadata: &Self::Metadata) -> Result<Self, Self::Error> {
         sign::SecretKey::from_slice(bytes.unsecure())
             .map(SecretKey)
             .ok_or(IntoSecretKeyError::InvalidSliceLength)
     }
-}
-
-impl HasMetadata for SecretKey {
-    type Metadata = ();
 
     fn metadata(&self) -> Self::Metadata {}
 }

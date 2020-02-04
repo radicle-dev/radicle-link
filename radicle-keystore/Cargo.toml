@@ -10,6 +10,7 @@ secstr = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.10"
 sodiumoxide = "0.2"
+rpassword = "4.0"
 
 [dev-dependencies]
 tempfile = "3.1"
