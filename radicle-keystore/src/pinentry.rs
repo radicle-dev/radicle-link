@@ -13,7 +13,7 @@ pub trait Pinentry {
     fn get_passphrase(&self) -> Result<SecUtf8, Self::Error>;
 }
 
-/// Constant [`Pinentry`]
+/// Identity [`Pinentry`]
 impl Pinentry for SecUtf8 {
     type Error = Infallible;
 
