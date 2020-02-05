@@ -1,10 +1,9 @@
-use std::{marker::PhantomData, path::PathBuf};
+use std::{fmt::Debug, path::PathBuf};
 
-use librad::{
-    keys::{self, storage::Pinentry},
-    paths::Paths,
-};
 use structopt::StructOpt;
+
+use keystore::Keystore;
+use librad::paths::Paths;
 
 use crate::error::Error;
 
@@ -25,24 +24,18 @@ pub struct CommonOpts {
 
 /// Stateful configuration, derived from [`CommonOpts`] and passed around to
 /// commands.
-pub struct Config<K, P>
-where
-    K: keys::Storage<P>,
-    P: Pinentry,
-{
+pub struct Config<K> {
     pub verbose: bool,
     pub paths: Paths,
     pub keystore: K,
-
-    _marker: PhantomData<P>,
 }
 
 impl CommonOpts {
-    pub fn into_config<F, K, P>(self, init_keystore: F) -> Result<Config<K, P>, Error<P::Error>>
+    pub fn into_config<F, K>(self, init_keystore: F) -> Result<Config<K>, Error<K::Error>>
     where
         F: FnOnce(&Paths) -> K,
-        K: keys::Storage<P>,
-        P: Pinentry,
+        K: Keystore,
+        K::Error: Debug + Send + Sync,
     {
         let verbose = self.verbose;
         let paths = if let Some(root) = self.paths {
@@ -56,7 +49,6 @@ impl CommonOpts {
             verbose,
             paths,
             keystore,
-            _marker: PhantomData,
         })
     }
 }

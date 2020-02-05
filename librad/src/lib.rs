@@ -1,3 +1,4 @@
+extern crate radicle_keystore as keystore;
 extern crate sequoia_openpgp as pgp;
 extern crate sodiumoxide;
 #[macro_use]

@@ -1,26 +1,25 @@
-use std::{fmt::Debug, io};
+use std::{
+    fmt::{Debug, Display},
+    io,
+};
 
 use failure::Fail;
 use git2;
 
-use librad::{
-    git,
-    keys::{pgp, storage},
-    project,
-};
+use librad::{git, keys::pgp, project};
 
 use crate::{commands::profiles, editor};
 
 #[derive(Debug, Fail)]
-pub enum Error<S: Fail> {
+pub enum Error<S>
+where
+    S: Debug + Display + Send + Sync + 'static,
+{
     #[fail(display = "{}", 0)]
     Cli(String),
 
-    #[fail(display = "Empty key store! Create a key using `rad2 keys new`.")]
-    EmptyKeyStore,
-
-    #[fail(display = "Error: {}", 0)]
-    Storage(storage::Error<S>),
+    #[fail(display = "{}", 0)]
+    Keystore(S),
 
     #[fail(display = "{}", 0)]
     Io(io::Error),
@@ -44,64 +43,37 @@ pub enum Error<S: Fail> {
     Project(project::Error),
 }
 
-impl<S> From<storage::Error<S>> for Error<S>
-where
-    S: Fail,
-{
-    fn from(err: storage::Error<S>) -> Self {
-        Self::Storage(err)
-    }
-}
-
-impl<S> From<io::Error> for Error<S>
-where
-    S: Fail,
-{
+impl<S: Debug + Display + Send + Sync> From<io::Error> for Error<S> {
     fn from(err: io::Error) -> Self {
         Self::Io(err)
     }
 }
 
-impl<S> From<pgp::Error> for Error<S>
-where
-    S: Fail,
-{
+impl<S: Debug + Display + Send + Sync> From<pgp::Error> for Error<S> {
     fn from(err: pgp::Error) -> Self {
         Self::Pgp(err)
     }
 }
 
-impl<S> From<git::Error> for Error<S>
-where
-    S: Fail,
-{
+impl<S: Debug + Display + Send + Sync> From<git::Error> for Error<S> {
     fn from(err: git::Error) -> Self {
         Self::Git(err)
     }
 }
 
-impl<S> From<git2::Error> for Error<S>
-where
-    S: Fail,
-{
+impl<S: Debug + Display + Send + Sync> From<git2::Error> for Error<S> {
     fn from(err: git2::Error) -> Self {
         Self::Libgit(err)
     }
 }
 
-impl<S> From<profiles::Error> for Error<S>
-where
-    S: Fail,
-{
+impl<S: Debug + Display + Send + Sync> From<profiles::Error> for Error<S> {
     fn from(err: profiles::Error) -> Self {
         Self::Profiles(err)
     }
 }
 
-impl<S> From<project::Error> for Error<S>
-where
-    S: Fail,
-{
+impl<S: Debug + Display + Send + Sync> From<project::Error> for Error<S> {
     fn from(err: project::Error) -> Self {
         Self::Project(err)
     }

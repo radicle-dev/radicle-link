@@ -1,18 +1,18 @@
-extern crate librad;
+extern crate radicle_keystore as keystore;
 
-use failure::Fail;
-use std::process::exit;
+use std::{process::exit, time::SystemTime};
+
 use structopt::StructOpt;
 
-use librad::keys::storage::{FileStorage, Pinentry, Storage};
+use keystore::{crypto::Pwhash, pinentry::Prompt, Keystore};
+use librad::keys::device;
 
 mod commands;
 mod config;
 mod editor;
 pub mod error;
-mod pinentry;
 
-use crate::config::{CommonOpts, Config};
+use crate::config::CommonOpts;
 
 #[derive(StructOpt)]
 #[structopt(about)]
@@ -34,22 +34,10 @@ enum Commands {
     Profiles(commands::profiles::Commands),
 }
 
-impl Commands {
-    fn run<K, P>(self, cfg: Config<K, P>) -> Result<(), error::Error<P::Error>>
-    where
-        K: Storage<P>,
-        P: Pinentry,
-        P::Error: Fail,
-    {
-        match self {
-            Self::Keys(cmd) => cmd.run(cfg),
-            Self::Project(cmd) => cmd.run(cfg),
-            Self::Profiles(cmd) => cmd.run(cfg).map_err(|e| e.into()),
-        }
-    }
-}
+type KeystoreImpl =
+    keystore::FileStorage<Pwhash<Prompt<'static>>, device::PublicKey, device::Key, SystemTime>;
 
-fn main() -> Result<(), error::Error<self::pinentry::Error>> {
+fn main() -> Result<(), error::Error<<KeystoreImpl as Keystore>::Error>> {
     if !librad::init() {
         eprintln!("Failed to initialise librad2");
         exit(1);
@@ -57,11 +45,15 @@ fn main() -> Result<(), error::Error<self::pinentry::Error>> {
 
     let app: Rad2 = StructOpt::from_args();
     let cfg = app.common.into_config(|paths| {
-        FileStorage::new(
-            paths,
-            self::pinentry::Pinentry::new("Unlock your keystore:"),
+        keystore::FileStorage::new(
+            &paths.keys_dir().join("device.key"),
+            Pwhash::new(Prompt::new("Unlock your keystore:")),
         )
     })?;
 
-    app.cmd.run(cfg)
+    match app.cmd {
+        Commands::Keys(cmd) => cmd.run(cfg),
+        Commands::Project(cmd) => cmd.run(cfg),
+        Commands::Profiles(cmd) => cmd.run(cfg).map_err(|e| e.into()),
+    }
 }

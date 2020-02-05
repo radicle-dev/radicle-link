@@ -1,0 +1,17 @@
+[package]
+name = "radicle-keystore"
+description = "Abstraction over storage of cryptographic keys within the Radicle stack"
+version = "0.1.0"
+authors = ["Monadic GmbH <radicle@monadic.xyz>"]
+edition = "2018"
+
+[dependencies]
+secstr = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_cbor = "0.10"
+sodiumoxide = "0.2"
+rpassword = "4.0"
+
+[dev-dependencies]
+tempfile = "3.1"
+

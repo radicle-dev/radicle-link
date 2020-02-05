@@ -1,11 +1,9 @@
-use failure::Fail;
+use std::{fmt::Debug, time::SystemTime};
+
 use structopt::StructOpt;
 
-use librad::keys::{
-    device,
-    storage,
-    storage::{Pinentry, Storage},
-};
+use keystore::Keystore;
+use librad::keys::device;
 
 use crate::{config::Config, error::Error};
 
@@ -19,26 +17,22 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn run<K, P>(self, cfg: Config<K, P>) -> Result<(), Error<P::Error>>
+    pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error<K::Error>>
     where
-        K: Storage<P>,
-        P: Pinentry,
-        P::Error: Fail,
+        K: Keystore<PublicKey = device::PublicKey, SecretKey = device::Key, Metadata = SystemTime>,
+        K::Error: Debug + Send + Sync,
     {
         match self {
             Self::New => {
                 let key = device::Key::new();
                 let mut store = cfg.keystore;
-                store.put_device_key(&key).map_err(|e| e.into())
+                store.put_key(key).map_err(Error::Keystore)
             },
             Self::Show => cfg
                 .keystore
-                .get_device_key()
-                .map_err(|e| match e {
-                    storage::Error::NoSuchKey => Error::EmptyKeyStore,
-                    _ => e.into(),
-                })
-                .map(|key| println!("Device key: {}", key)),
+                .show_key()
+                .map_err(Error::Keystore)
+                .map(|key| println!("Device key: {:?}", key)),
         }
     }
 }
