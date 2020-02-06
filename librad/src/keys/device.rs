@@ -1,9 +1,17 @@
-use std::{fmt, ops::Deref, time::SystemTime};
+use std::{
+    fmt::{self, Display},
+    ops::Deref,
+    time::SystemTime,
+};
 
 use ::pgp::conversions::Time;
 use bs58;
 use hex::decode;
+use secstr::SecStr;
+use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::sign;
+
+use keystore::SecretKeyExt;
 
 use crate::keys::pgp;
 
@@ -16,7 +24,7 @@ pub struct Key {
 }
 
 /// The public part of a `Key``
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PublicKey(sign::PublicKey);
 
 /// A signature produced by `Key::sign`
@@ -89,6 +97,34 @@ impl AsRef<[u8]> for Key {
     }
 }
 
+#[derive(Debug)]
+pub enum IntoSecretKeyError {
+    InvalidSliceLength,
+}
+
+impl Display for IntoSecretKeyError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::InvalidSliceLength => f.write_str("Invalid slice length"),
+        }
+    }
+}
+
+impl SecretKeyExt for Key {
+    type Metadata = SystemTime;
+    type Error = IntoSecretKeyError;
+
+    fn from_bytes_and_meta(bytes: SecStr, metadata: &Self::Metadata) -> Result<Self, Self::Error> {
+        let sk = sign::SecretKey::from_slice(bytes.unsecure())
+            .ok_or(IntoSecretKeyError::InvalidSliceLength)?;
+        Ok(Self::from_secret(sk, *metadata))
+    }
+
+    fn metadata(&self) -> Self::Metadata {
+        self.created_at
+    }
+}
+
 // PublicKey
 
 impl PublicKey {
@@ -104,6 +140,12 @@ impl PublicKey {
 impl From<sign::PublicKey> for PublicKey {
     fn from(pk: sign::PublicKey) -> Self {
         Self(pk)
+    }
+}
+
+impl From<Key> for PublicKey {
+    fn from(k: Key) -> Self {
+        k.public()
     }
 }
 

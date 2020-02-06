@@ -1,0 +1,6 @@
+echo '--- Formatting'
+cargo fmt -- --check
+echo '--- Bestest Practices'
+cargo clippy --all-targets --all-features -- -D warnings
+echo '--- Tests'
+cargo test --all

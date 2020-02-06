@@ -1,16 +1,14 @@
-use std::{env, io, path::PathBuf};
+use std::{env, io, path::PathBuf, time::SystemTime};
 
 use failure::Fail;
 use git2;
 use serde_yaml;
 use structopt::StructOpt;
 
+use keystore::Keystore;
 use librad::{
     git::GitProject,
-    keys::{
-        device,
-        storage::{FileStorage, Pinentry, Storage},
-    },
+    keys::device,
     meta,
     paths::Paths,
     project::{Project, ProjectId},
@@ -18,6 +16,7 @@ use librad::{
 
 use crate::{
     commands::profiles::{load_profile, ProfilePath},
+    config::Config,
     error::Error,
 };
 
@@ -48,48 +47,52 @@ pub enum Commands {
     Update { project: ProjectId },
 }
 
-pub fn run<F, P>(paths: Paths, cmd: Commands, verbose: bool, pin: F) -> Result<(), Error<P::Error>>
-where
-    F: FnOnce(&'static str) -> P,
-    P: Pinentry,
-    P::Error: Fail,
-{
-    match cmd {
-        Commands::Init {
-            name,
-            profile,
-            git_dir,
-        } => {
-            let key =
-                FileStorage::new(paths.clone()).get_device_key(pin("Unlock your key store:"))?;
-            let profile = load_profile(ProfilePath::new(&paths, &profile))?;
-            init_project(&paths, &key, name, profile, git_dir)
-        },
+impl Commands {
+    pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error<K::Error>>
+    where
+        K: Keystore<PublicKey = device::PublicKey, SecretKey = device::Key, Metadata = SystemTime>,
+        K::Error: Send + Sync,
+    {
+        match self {
+            Self::Init {
+                name,
+                profile,
+                git_dir,
+            } => {
+                let key = cfg.keystore.get_key().map_err(Error::Keystore)?.secret_key;
+                let profile = load_profile(ProfilePath::new(&cfg.paths, &profile))?;
+                init_project(&cfg.paths, key, name, profile, git_dir)
+            },
 
-        Commands::Show { project } => {
-            let proj = Project::show(&paths, &project)?;
-            serde_yaml::to_writer(io::stdout(), &proj).expect("I/O error");
-            Ok(())
-        },
+            Self::Show { project } => {
+                let proj = Project::show(&cfg.paths, &project)?;
+                serde_yaml::to_writer(io::stdout(), &proj).expect("I/O error");
+                Ok(())
+            },
 
-        Commands::List => {
-            for pid in Project::list(&paths) {
-                if verbose {
-                    println!("{} ({:?})", pid, paths.projects_dir().join(pid.to_string()))
-                } else {
-                    println!("{}", pid)
+            Self::List => {
+                for pid in Project::list(&cfg.paths) {
+                    if cfg.verbose {
+                        println!(
+                            "{} ({:?})",
+                            pid,
+                            cfg.paths.projects_dir().join(pid.to_string())
+                        )
+                    } else {
+                        println!("{}", pid)
+                    }
                 }
-            }
-            Ok(())
-        },
+                Ok(())
+            },
 
-        Commands::Update { .. } => unimplemented!(),
+            Self::Update { .. } => unimplemented!(),
+        }
     }
 }
 
 fn init_project<E: Fail>(
     paths: &Paths,
-    key: &device::Key,
+    key: device::Key,
     project_name: Option<String>,
     profile: meta::UserProfile,
     git_dir: Option<PathBuf>,
@@ -118,7 +121,7 @@ fn init_project<E: Fail>(
     };
 
     let proj =
-        GitProject::builder(&project_name, key, contrib_meta).init_project(paths, &sources)?;
+        GitProject::builder(&project_name, &key, contrib_meta).init_project(paths, &sources)?;
     println!("Successfully initialised project: {}", proj);
 
     Ok(())
