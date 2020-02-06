@@ -1,27 +1,22 @@
 steps:
-- label: "Build, lint, test"
-  commands:
-  - "echo '--- Formatting'"
-  - "cargo fmt -- --check"
-  - "echo '--- Bestest Practices'"
-  - "cargo clippy --all-targets --all-features -- -D warnings"
-  - "echo '--- Tests'"
-  - "cargo test --all"
-  agents:
-    production: "true"
-    platform: "linux"
-  env:
-    DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build@sha256:9214c20051acc77b4f18d518176f78f94e003f13b122bd70249f45fb247a27ac"
-    DOCKER_FILE: .buildkite/docker/rust-nightly/Dockerfile
+  - label: "Build, lint, test"
+    commands:
+      - "./ci-checks"
+    agents:
+      production: "true"
+      platform: "linux"
+    env:
+      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build@sha256:9214c20051acc77b4f18d518176f78f94e003f13b122bd70249f45fb247a27ac"
+      DOCKER_FILE: .buildkite/docker/rust-nightly/Dockerfile
 
-- label: "Render Spec"
-  commands:
-  - "cd spec"
-  - "make clean all"
-  - "git diff --exit-code -- spec/out"
-  agents:
-    production: "true"
-    platform: "linux"
-  env:
-    DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-pandoc@sha256:eb1d9592d83fa5edad1b626a71b53aa586c64a5a7e7bb4158256d6265e1ac1a9"
-    DOCKER_FILE: .buildkite/docker/pandoc/Dockerfile
+  - label: "Render Spec"
+    commands:
+      - "cd spec"
+      - "make clean all"
+      - "git diff --exit-code -- spec/out"
+    agents:
+      production: "true"
+      platform: "linux"
+    env:
+      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-pandoc@sha256:eb1d9592d83fa5edad1b626a71b53aa586c64a5a7e7bb4158256d6265e1ac1a9"
+      DOCKER_FILE: .buildkite/docker/pandoc/Dockerfile
