@@ -7,8 +7,14 @@ use crate::keys::device;
 
 pub const PEER_ID_PREFIX_ED25519: char = '0';
 
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct PeerId(device::PublicKey);
+
+impl PeerId {
+    pub fn device_key(&self) -> &device::PublicKey {
+        &self.0
+    }
+}
 
 impl From<device::PublicKey> for PeerId {
     fn from(pk: device::PublicKey) -> Self {

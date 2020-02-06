@@ -6,6 +6,7 @@ use std::{
 
 use ::pgp::conversions::Time;
 use bs58;
+use hex::decode;
 use secstr::SecStr;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::sign;
@@ -23,10 +24,11 @@ pub struct Key {
 }
 
 /// The public part of a `Key``
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PublicKey(sign::PublicKey);
 
 /// A signature produced by `Key::sign`
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Signature(sign::Signature);
 
 // Key
@@ -178,6 +180,24 @@ impl Deref for PublicKey {
 impl Signature {
     pub fn verify(&self, data: &[u8], pk: &PublicKey) -> bool {
         sign::verify_detached(self, &data, pk)
+    }
+
+    pub fn from_hex_string(s: &str) -> Result<Self, failure::Error> {
+        let bytes =
+            decode(s).map_err(|_| failure::format_err!("Cannot decode signature hex string"))?;
+        let buffer = if bytes.len() == 64 {
+            let mut buffer = [0u8; 64];
+            for (i, v) in bytes.iter().enumerate() {
+                buffer[i] = *v;
+            }
+            buffer
+        } else {
+            return Err(failure::format_err!(
+                "Signature buffer has length {} instead of 64",
+                bytes.len()
+            ));
+        };
+        Ok(Self(sodiumoxide::crypto::sign::Signature(buffer)))
     }
 }
 
