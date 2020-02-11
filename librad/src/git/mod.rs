@@ -14,6 +14,9 @@ use crate::{
     peer::PeerId,
 };
 
+pub mod h3;
+pub mod server;
+
 const PROJECT_METADATA_BRANCH: &str = "rad/project";
 const PROJECT_METADATA_FILE: &str = "project.json";
 

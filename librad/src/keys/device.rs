@@ -5,6 +5,7 @@ use std::{
 };
 
 use ::pgp::conversions::Time;
+use bit_vec::BitVec;
 use bs58;
 use hex::decode;
 use secstr::SecStr;
@@ -76,6 +77,36 @@ impl Key {
         let uid = pgp::UserID::from_address(fullname, None, format!("{}@{}", nickname, self))
             .expect("messed up UserID");
         pgp::Key::from_sodium(&self.sk, uid, self.created_at)
+    }
+
+    const PKCS_ED25519_OID: &'static [u64] = &[1, 3, 101, 112];
+
+    /// Export in PKCS#8 format.
+    ///
+    /// **NOTE**: this will export private key material. Use with caution.
+    ///
+    /// Attribution: this code is stolen from the `thrussh` project.
+    pub fn as_pkcs8(&self) -> Vec<u8> {
+        yasna::construct_der(|writer| {
+            writer.write_sequence(|writer| {
+                writer.next().write_u32(1);
+                writer.next().write_sequence(|writer| {
+                    writer
+                        .next()
+                        .write_oid(&yasna::models::ObjectIdentifier::from_slice(
+                            Self::PKCS_ED25519_OID,
+                        ));
+                });
+                let seed = yasna::construct_der(|writer| writer.write_bytes(&self.sk[..32]));
+                writer.next().write_bytes(&seed);
+                writer
+                    .next()
+                    .write_tagged(yasna::Tag::context(1), |writer| {
+                        let public = &self.sk[32..];
+                        writer.write_bitvec(&BitVec::from_bytes(&public))
+                    })
+            })
+        })
     }
 }
 
