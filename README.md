@@ -16,7 +16,7 @@ To build this, besides a rust build environment, you'll need the following libra
 
 * `libssl-dev` (ssl library)
 * `nettle-dev` (low level crypto library)
-* `m4`, `llvm`, `libclang`, `libclang-dev` (dev tools and libs)
+* `pkg-config`, `m4`, `llvm`, `libclang`, `libclang-dev` (dev tools and libs)
 
 ## License
 
