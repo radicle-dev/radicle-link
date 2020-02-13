@@ -15,7 +15,7 @@ nettle = { version = "5.0", features = ["vendored"]  }
 nonempty = "0.2"
 olpc-cjson = "0.1"
 radicle-keystore = { path = "../radicle-keystore" }
-radicle-surf = { git = "https://github.com/radicle-dev/radicle-surf", rev = "58a0e6680d61cc312eee3255abe5d0d494f631d2" }
+radicle-surf = { git = "https://github.com/radicle-dev/radicle-surf", rev = "5c04b846cf53763a70bf0c168ce40293bbce0bd6" }
 regex = "1.3"
 secstr = "0.3"
 sequoia-openpgp = "0.12"
