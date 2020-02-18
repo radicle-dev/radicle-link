@@ -1,17 +1,12 @@
-use std::{
-    io::{self, Write},
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
+use std::{io, path::PathBuf, process::Stdio};
+
+use log::error;
+use tokio::{
+    self,
+    io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
+    process::Command,
 };
 
-use bytes::Bytes;
-use http::Response;
-use log::{debug, error};
-
-/// A very simple git HTTP server.
-///
-/// It supports the "smart" git HTTP protocol, and just shells out to `git
-/// upload-pack`. Push (`git receive-pack`) is not supported).
 #[derive(Clone)]
 pub struct GitServer {
     /// Base directory under which all git repositories are "exported", i.e.
@@ -20,119 +15,99 @@ pub struct GitServer {
 }
 
 impl GitServer {
-    pub async fn handle_advertise_refs(&self, repo: &str) -> Response<Bytes> {
-        self.with_repo(repo, |repo| {
-            advertise_refs(repo)
-                .map(|out| {
-                    Response::builder()
-                        .status(200)
-                        .header(
-                            "Content-Type",
-                            "application/x-git-upload-pack-advertisement",
-                        )
-                        .body(out)
-                        .unwrap()
-                })
-                .unwrap_or_else(|_| resp_500())
-        })
-    }
-
-    pub async fn handle_upload_pack(&self, repo: &str, body: Bytes) -> Response<Bytes> {
-        self.with_repo(repo, |repo| {
-            upload_pack(repo, body)
-                .map(|out| {
-                    Response::builder()
-                        .status(200)
-                        .header("Content-Type", "application/x-git-upload-pack-result")
-                        .body(out)
-                        .unwrap()
-                })
-                .unwrap_or_else(|_| resp_500())
-        })
-    }
-
-    fn with_repo<F, T>(&self, repo: &str, f: F) -> Response<T>
+    pub async fn invoke_service<'a, R, W>(&self, recv: R, mut send: W) -> Result<(), io::Error>
     where
-        F: FnOnce(&Path) -> Response<T>,
-        T: Default,
+        R: AsyncRead + Unpin,
+        W: AsyncWrite + Unpin,
     {
-        let repo = self.export.join(repo);
-        debug!("repo path: {}", repo.display());
-        if repo.exists() {
-            f(&repo)
-        } else {
-            error!("repo {} doesn't exist!", repo.display());
-            resp_404()
+        let mut recv = BufReader::new(recv);
+        let mut header = String::with_capacity(512);
+        if let Err(e) = recv.read_line(&mut header).await {
+            error!("Error reading git service header: {}", e);
+            return send_err(&mut send, "garbage header").await;
+        }
+
+        let (service, repo) = {
+            let mut parts = header.split(|c| c == ' ' || c == '\0');
+
+            let service = parts.next();
+            let repo = parts.next();
+            (service, repo)
+        };
+
+        if service != Some("git-upload-pack") {
+            error!("Invalid git service: {:?}", service);
+            return send_err(&mut send, "service not enabled").await;
+        }
+
+        let repo_path = {
+            let repo_path = repo
+                .map(|path| self.export.join(path.trim_start_matches('/')))
+                .filter(|path| path.exists());
+            match repo_path {
+                None => {
+                    error!("Invalid repo path: {:?}", repo_path);
+                    return send_err(&mut send, "repo not found or access denied").await;
+                },
+
+                Some(path) => path,
+            }
+        };
+
+        let cmd = Command::new("git")
+            .args(&["upload-pack", "--strict", "--timeout=5", "."])
+            .current_dir(repo_path)
+            .stdout(Stdio::piped())
+            .stdin(Stdio::piped())
+            .spawn();
+
+        match cmd {
+            Err(e) => {
+                error!("Error forking upload-pack: {}", e);
+                return send_err(&mut send, "internal server error").await;
+            },
+
+            Ok(child) => {
+                let mut stdin = child.stdin.unwrap();
+                let mut stdout = child.stdout.unwrap();
+
+                tokio::try_join!(
+                    tokio::io::copy(&mut recv, &mut stdin),
+                    tokio::io::copy(&mut stdout, &mut send)
+                )
+                .map(|_| ())
+            },
         }
     }
 }
 
-const ADVERTISE_REFS_HEADER: &str = "001e# service=git-upload-pack\n0000";
-
-fn advertise_refs(repo: &Path) -> io::Result<Bytes> {
-    let out = Command::new("git")
-        .args(&["upload-pack", "--stateless-rpc", "--advertise-refs", "."])
-        .current_dir(repo)
-        .stdout(Stdio::piped())
-        .output()?;
-
-    if out.status.success() {
-        let header = ADVERTISE_REFS_HEADER.as_bytes();
-        let mut stdout = Vec::with_capacity(header.len() + out.stdout.len());
-        stdout.extend(header);
-        stdout.extend(out.stdout);
-        Ok(Bytes::from(stdout))
-    } else {
-        error!("advertise_refs error");
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "advertise_refs: Error invoking git-upload-pack",
-        ))
-    }
+async fn send_err<W>(writer: &mut W, msg: &str) -> Result<(), io::Error>
+where
+    W: AsyncWrite + Unpin,
+{
+    writer
+        .write_all(pkt_line(&format!("ERR {}", msg)).as_bytes())
+        .await
 }
 
-// FIXME(kim): we should stream the result
-fn upload_pack(repo: &Path, haves: Bytes) -> io::Result<Bytes> {
-    let mut child = Command::new("git")
-        .args(&["upload-pack", "--stateless-rpc"])
-        .arg(repo)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()?;
+fn pkt_line(msg: &str) -> String {
+    assert!(
+        msg.len() <= 65516,
+        "pkt-line data must not exceed 65516 bytes"
+    );
 
-    {
-        let stdin = child.stdin.as_mut().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "Couldn't open stdin of child process",
-            )
-        })?;
-        stdin.write_all(haves.as_ref())?;
-    }
-
-    let out = child.wait_with_output()?;
-    if out.status.success() {
-        debug!("upload_pack ok");
-        Ok(Bytes::from(out.stdout))
-    } else {
-        error!("upload_pack error");
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "upload_pack: Error invoking git-upload-pack",
-        ))
-    }
+    format!("{:04x}{}", 4 + msg.len(), msg)
 }
 
-fn resp_404<T: Default>() -> Response<T> {
-    Response::builder()
-        .status(404)
-        .body(Default::default())
-        .unwrap()
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn resp_500<T: Default>() -> Response<T> {
-    Response::builder()
-        .status(500)
-        .body(Default::default())
-        .unwrap()
+    #[test]
+    fn test_pkt_line() {
+        assert_eq!("0006a\n", pkt_line("a\n"));
+        assert_eq!("0005a", pkt_line("a"));
+        assert_eq!("000bfoobar\n", pkt_line("foobar\n"));
+        assert_eq!("0004", pkt_line(""));
+    }
 }

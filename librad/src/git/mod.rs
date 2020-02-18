@@ -14,7 +14,6 @@ use crate::{
     peer::PeerId,
 };
 
-pub mod h3;
 pub mod server;
 
 const PROJECT_METADATA_BRANCH: &str = "rad/project";
@@ -91,7 +90,7 @@ impl From<surf::error::Error> for Error {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectId(git2::Oid);
 
 impl ProjectId {

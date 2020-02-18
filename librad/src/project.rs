@@ -1,5 +1,7 @@
 use std::{fmt, fmt::Display, ops::Deref, path::PathBuf, str::FromStr};
 
+use serde::{Deserializer, Serializer};
+
 use crate::{git, git::GitProject, meta, paths::Paths};
 
 #[derive(Debug, Fail)]
@@ -20,7 +22,7 @@ impl From<git::Error> for Error {
 /// in the future.
 ///
 /// [`git::ProjectId`]: ../git/struct.ProjectId.html
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectId(git::ProjectId);
 
 impl ProjectId {
@@ -62,6 +64,29 @@ impl Display for ProjectId {
 impl From<git::ProjectId> for ProjectId {
     fn from(pid: git::ProjectId) -> Self {
         Self(pid)
+    }
+}
+
+// FIXME(kim): for now, serde via `Display`/`FromStr`. define a compact binary
+// representation.
+
+impl serde::Serialize for ProjectId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ProjectId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
     }
 }
 
