@@ -1,12 +1,11 @@
 use std::{collections::HashSet, io};
 
 use futures::{sink::SinkExt, stream::TryStreamExt, AsyncRead, AsyncWrite};
-use futures_codec::{CborCodec, CborCodecError, FramedRead, FramedWrite};
+use futures_codec::{CborCodec, CborCodecError, Framed};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     paths::Paths,
-    peer::PeerId,
     project::{Project, ProjectId},
 };
 
@@ -19,12 +18,15 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
     PeerInfo(PeerInfo),
+    // TODO(kim): Due to its object model, `serde` has no obvious way to support
+    // indefinite-length arrays (as defined in CBOR). We need to either trick it
+    // into it (like, some kind of `Deserialize` for an iterator type), or
+    // implement pagination for this.
     Projects(Vec<ProjectId>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PeerInfo {
-    peer_id: PeerId,
     listen_port: u16,
     capabilities: HashSet<Capability>,
 }
@@ -52,40 +54,42 @@ impl From<CborCodecError> for Error {
     }
 }
 
+#[derive(Clone)]
 pub struct Protocol {
-    self_info: PeerInfo,
+    my_info: PeerInfo,
     paths: Paths,
 }
 
 impl Protocol {
-    pub async fn handle_incoming<R, W>(&self, recv: R, send: W) -> Result<(), Error>
-    where
-        R: AsyncRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
-        let codec = CborCodec::<Response, Request>::new();
-        let mut framed_recv = FramedRead::new(recv, codec.clone());
-        let mut framed_send = FramedWrite::new(send, codec);
-
-        loop {
-            match framed_recv.try_next().await {
-                Ok(Some(req)) => {
-                    let resp = match req {
-                        Request::GetPeerInfo => Response::PeerInfo(self.self_info.clone()),
-                        Request::GetProjects => {
-                            Response::Projects(Project::list(&self.paths).collect())
-                        },
-                    };
-
-                    match framed_send.send(resp).await {
-                        Ok(()) => {},
-                        Err(CborCodecError::Io(e)) => return Err(Error::Io(e)),
-                        Err(CborCodecError::Cbor(_)) => unreachable!(),
-                    }
-                },
-                Ok(None) => return Ok(()),
-                Err(e) => return Err(e.into()),
-            }
+    pub fn new(my_info: PeerInfo, paths: &Paths) -> Self {
+        Self {
+            my_info,
+            paths: paths.clone(),
         }
+    }
+
+    pub async fn outgoing<S>(&self, stream: S) -> Result<(), Error>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
+        let mut stream = Framed::new(stream, CborCodec::<Request, Response>::new());
+        unimplemented!()
+    }
+
+    pub async fn incoming<S>(&self, stream: S) -> Result<(), Error>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
+        let mut stream = Framed::new(stream, CborCodec::<Response, Request>::new());
+        while let Some(req) = stream.try_next().await? {
+            let resp = match req {
+                Request::GetPeerInfo => Response::PeerInfo(self.my_info.clone()),
+                Request::GetProjects => Response::Projects(Project::list(&self.paths).collect()),
+            };
+
+            stream.send(resp).await?
+        }
+
+        Ok(())
     }
 }

@@ -5,6 +5,7 @@ authors = ["Monadic <team@monadic.xyz>"]
 edition = "2018"
 
 [dependencies]
+async-std = "1.5"
 bit-vec = "0.6"
 bs58 = { version = "0.3", features = ["check"] }
 bytes = "0.5"
@@ -34,7 +35,8 @@ serde_json = "1.0"
 sha2 = "0.8"
 sodiumoxide = "0.2"
 tempfile = "3.1"
-tokio = { version = "0.2", features = ["io-util", "macros", "process"] }
+tokio = { git = "https://github.com/tokio-rs/tokio", rev = "7b8ce356c31aa8887ba4aa84fbceb3d64114785c", features = ["process"] }
+tokio-util = { git = "https://github.com/tokio-rs/tokio", rev = "7b8ce356c31aa8887ba4aa84fbceb3d64114785c", features = ["compat"] }
 url = { version = "2.1", features = ["serde"] }
 urltemplate = "0.1"
 webpki = "0.21"

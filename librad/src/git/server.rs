@@ -1,11 +1,12 @@
 use std::{io, path::PathBuf, process::Stdio};
 
-use log::error;
-use tokio::{
+use futures::{
     self,
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
-    process::Command,
 };
+use log::error;
+use tokio::process::Command;
+use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
 #[derive(Clone)]
 pub struct GitServer {
@@ -15,7 +16,7 @@ pub struct GitServer {
 }
 
 impl GitServer {
-    pub async fn invoke_service<'a, R, W>(&self, recv: R, mut send: W) -> Result<(), io::Error>
+    pub async fn invoke_service<'a, R, W>(&self, (recv, mut send): (R, W)) -> Result<(), io::Error>
     where
         R: AsyncRead + Unpin,
         W: AsyncWrite + Unpin,
@@ -64,16 +65,16 @@ impl GitServer {
         match cmd {
             Err(e) => {
                 error!("Error forking upload-pack: {}", e);
-                return send_err(&mut send, "internal server error").await;
+                send_err(&mut send, "internal server error").await
             },
 
             Ok(child) => {
-                let mut stdin = child.stdin.unwrap();
-                let mut stdout = child.stdout.unwrap();
+                let mut stdin = child.stdin.unwrap().compat_write();
+                let mut stdout = child.stdout.unwrap().compat();
 
-                tokio::try_join!(
-                    tokio::io::copy(&mut recv, &mut stdin),
-                    tokio::io::copy(&mut stdout, &mut send)
+                futures::try_join!(
+                    futures::io::copy(&mut recv, &mut stdin),
+                    futures::io::copy(&mut stdout, &mut send)
                 )
                 .map(|_| ())
             },
