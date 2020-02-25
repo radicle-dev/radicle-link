@@ -3,14 +3,76 @@ use std::{io, net::SocketAddr, pin::Pin};
 use failure::Error;
 use futures::{
     io::{AsyncRead, AsyncWrite},
+    stream::StreamExt,
     task::{Context, Poll},
 };
 use futures_codec::{Decoder, Encoder, Framed};
-use quinn::VarInt;
+use quinn::{NewConnection, VarInt};
 
-use crate::peer::PeerId;
+use crate::{
+    keys::device,
+    net::{quic, tls},
+    peer::PeerId,
+};
 
 pub type IncomingStreams = quinn::IncomingBiStreams;
+
+#[derive(Clone)]
+pub struct Endpoint {
+    endpoint: quinn::Endpoint,
+}
+
+impl Endpoint {
+    pub fn new(
+        local_key: &device::Key,
+        listen_addr: &SocketAddr,
+    ) -> Result<
+        (
+            Self,
+            impl futures::Stream<Item = (Connection, IncomingStreams)>,
+        ),
+        Error,
+    > {
+        let (endpoint, incoming) = quic::make_endpoint(local_key, listen_addr)?;
+
+        let incoming = incoming.filter_map(|connecting| async move {
+            connecting.await.ok().and_then(
+                |NewConnection {
+                     connection,
+                     bi_streams,
+                     ..
+                 }| {
+                    let cert = &connection
+                        .presented_certs()
+                        .expect("Certificates must be presented. qed")[0];
+                    let peer_id = tls::extract_peer_id(cert.as_der())
+                        .expect("TLS layer ensures the cert contains a PeerId. qed");
+
+                    Some((Connection::new(&peer_id, connection), bi_streams))
+                },
+            )
+        });
+
+        Ok((Self { endpoint }, incoming))
+    }
+
+    pub async fn connect(
+        &mut self,
+        peer: &PeerId,
+        addr: &SocketAddr,
+    ) -> Result<(Connection, IncomingStreams), Error> {
+        let NewConnection {
+            connection,
+            bi_streams,
+            ..
+        } = self
+            .endpoint
+            .connect(addr, &format!("{}.radicle", peer))?
+            .await?;
+
+        Ok((Connection::new(peer, connection), bi_streams))
+    }
+}
 
 #[derive(Clone)]
 pub struct Connection {
@@ -36,7 +98,11 @@ impl Connection {
 
     pub async fn open_stream(&self) -> Result<Stream, Error> {
         let (send, recv) = self.conn.open_bi().await?;
-        Ok(Stream { recv, send })
+        Ok(Stream {
+            peer: self.peer.clone(),
+            recv,
+            send,
+        })
     }
 
     pub fn close(&self, reason: CloseReason) {
@@ -63,11 +129,20 @@ impl CloseReason {
 }
 
 pub struct Stream {
+    peer: PeerId,
     recv: quinn::RecvStream,
     send: quinn::SendStream,
 }
 
 impl Stream {
+    pub fn new(peer: PeerId, recv: quinn::RecvStream, send: quinn::SendStream) -> Self {
+        Self { peer, recv, send }
+    }
+
+    pub fn peer_id(&self) -> &PeerId {
+        &self.peer
+    }
+
     pub fn recv(self) -> impl AsyncRead {
         self.recv
     }
@@ -81,12 +156,6 @@ impl Stream {
         C: Decoder + Encoder,
     {
         Framed::new(self, codec)
-    }
-}
-
-impl From<(quinn::SendStream, quinn::RecvStream)> for Stream {
-    fn from((send, recv): (quinn::SendStream, quinn::RecvStream)) -> Self {
-        Self { recv, send }
     }
 }
 

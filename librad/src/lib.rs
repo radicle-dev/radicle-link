@@ -1,3 +1,5 @@
+#![feature(str_strip)]
+
 extern crate radicle_keystore as keystore;
 extern crate sequoia_openpgp as pgp;
 extern crate sodiumoxide;

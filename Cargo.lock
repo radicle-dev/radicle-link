@@ -138,6 +138,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base-x"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b20b618342cf9891c292c4f5ac2cde7287cc5c87e87e9c769d617793607dec1"
+
+[[package]]
 name = "base64"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -228,15 +234,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa79dedbb091f449f1f39e53edf88d5dbe95f895dae6135a8d7b881fb5af73f5"
 dependencies = [
  "byte-tools",
-]
-
-[[package]]
-name = "bs58"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b170cd256a3f9fa6b9edae3e44a7dfdfc77e8124dbc3e2612d75f9c3e2396dae"
-dependencies = [
- "sha2",
 ]
 
 [[package]]
@@ -455,6 +452,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d3686f5fa27dbc1d76c751300376e167c5a43387f44bb451fd1c24776e49113"
 dependencies = [
  "sct",
+]
+
+[[package]]
+name = "data-encoding"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11c0346158a19b3627234e15596f5e465c360fcdb97d817bcb255e0510f5a788"
+
+[[package]]
+name = "data-encoding-macro"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de6489dde5128f5ab2f71f88f8807a237cecf08d96dc7ca4be64e0730dc7d961"
+dependencies = [
+ "data-encoding",
+ "data-encoding-macro-internal",
+ "proc-macro-hack",
+]
+
+[[package]]
+name = "data-encoding-macro-internal"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d2d6daefd5f1d4b74a891a5d2ab7dccba028d423107c074232a0c5dc0d40a9e"
+dependencies = [
+ "data-encoding",
+ "proc-macro-hack",
+ "syn 1.0.14",
 ]
 
 [[package]]
@@ -988,7 +1013,6 @@ version = "0.1.0"
 dependencies = [
  "async-std",
  "bit-vec 0.6.1",
- "bs58",
  "bytes",
  "directories",
  "failure",
@@ -1000,6 +1024,7 @@ dependencies = [
  "lazy_static",
  "log",
  "matches",
+ "multibase",
  "nettle",
  "nonempty",
  "olpc-cjson",
@@ -1016,6 +1041,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
+ "serde_repr",
  "sha2",
  "sodiumoxide",
  "tempfile",
@@ -1192,6 +1218,17 @@ checksum = "396aa0f2003d7df8395cb93e09871561ccc3e785f0acb369170e8cc74ddf9226"
 dependencies = [
  "socket2",
  "winapi 0.3.8",
+]
+
+[[package]]
+name = "multibase"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b78c60039650ff12e140ae867ef5299a58e19dded4d334c849dc7177083667e2"
+dependencies = [
+ "base-x",
+ "data-encoding",
+ "data-encoding-macro",
 ]
 
 [[package]]
@@ -1556,7 +1593,7 @@ dependencies = [
 [[package]]
 name = "quinn"
 version = "0.5.0"
-source = "git+https://github.com/djc/quinn?rev=fc1035ff3c0690e49ecad415641e711215de4c9f#fc1035ff3c0690e49ecad415641e711215de4c9f"
+source = "git+https://github.com/radicle-dev/quinn?rev=3de173ae266a729e0ed6b809448539cb9df846af#3de173ae266a729e0ed6b809448539cb9df846af"
 dependencies = [
  "bytes",
  "ct-logs",
@@ -1575,7 +1612,7 @@ dependencies = [
 [[package]]
 name = "quinn-proto"
 version = "0.5.0"
-source = "git+https://github.com/djc/quinn?rev=fc1035ff3c0690e49ecad415641e711215de4c9f#fc1035ff3c0690e49ecad415641e711215de4c9f"
+source = "git+https://github.com/radicle-dev/quinn?rev=3de173ae266a729e0ed6b809448539cb9df846af#3de173ae266a729e0ed6b809448539cb9df846af"
 dependencies = [
  "bytes",
  "err-derive",
@@ -2106,6 +2143,17 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_repr"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd02c7587ec314570041b2754829f84d873ced14a96d1fd1823531e11db40573"
+dependencies = [
+ "proc-macro2 1.0.8",
+ "quote 1.0.2",
+ "syn 1.0.14",
 ]
 
 [[package]]

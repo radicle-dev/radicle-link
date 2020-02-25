@@ -11,7 +11,9 @@ use rustls::{
     TLSError,
 };
 
-use crate::keys::device;
+use crate::{keys::device, peer::PeerId};
+
+use yasna::{ASN1Error, ASN1ErrorKind, ASN1Result};
 
 /// Generate a TLS certificate.
 ///
@@ -19,7 +21,7 @@ use crate::keys::device;
 /// a subject alt name of "<base58btc-encoded-public-key>.radicle".
 fn gen_cert(key: &device::Key) -> rcgen::Certificate {
     let params = {
-        let mut params = CertificateParams::new(vec![format!("{}.radicle", key)]);
+        let mut params = CertificateParams::new(vec![PeerId::from(key.clone()).to_string()]);
 
         params.alg = &PKCS_ED25519;
         params.distinguished_name = {
@@ -59,7 +61,7 @@ pub fn make_client_config(key: &device::Key) -> rustls::ClientConfig {
         rustls::PrivateKey(cert.serialize_private_key_der()),
     );
     cfg.dangerous()
-        .set_certificate_verifier(Arc::new(RadServerCertVerifier::new()));
+        .set_certificate_verifier(Arc::new(RadServerCertVerifier::new(key.clone().into())));
 
     cfg
 }
@@ -67,7 +69,8 @@ pub fn make_client_config(key: &device::Key) -> rustls::ClientConfig {
 pub fn make_server_config(key: &device::Key) -> rustls::ServerConfig {
     let cert = gen_cert(key);
 
-    let mut cfg = rustls::ServerConfig::new(Arc::new(RadClientCertVerifier::new()));
+    let mut cfg =
+        rustls::ServerConfig::new(Arc::new(RadClientCertVerifier::new(key.clone().into())));
     cfg.versions = vec![rustls::ProtocolVersion::TLSv1_3];
     cfg.set_single_cert(
         vec![rustls::Certificate(cert.serialize_der().unwrap())],
@@ -78,15 +81,69 @@ pub fn make_server_config(key: &device::Key) -> rustls::ServerConfig {
     cfg
 }
 
+pub fn extract_peer_id(cert_der: &[u8]) -> ASN1Result<PeerId> {
+    yasna::parse_der(&cert_der, |reader| {
+        reader.read_sequence(|reader| {
+            let pk = reader.next().read_sequence(|reader| {
+                // X.509 version
+                reader.next().read_der()?;
+                // serial number
+                reader.next().read_der()?;
+                // signature algorithm
+                reader.next().read_der()?;
+                // issuer
+                reader.next().read_der()?;
+                // validity
+                reader.next().read_der()?;
+                // subject
+                reader.next().read_der()?;
+
+                // THE MEAT: subjectPublicKeyInfo
+                let pk = reader.next().read_sequence(|reader| {
+                    // subject key algorithm
+                    reader.next().read_der()?;
+                    // here we go
+                    let (value, bits) = reader.next().read_bitvec_bytes()?;
+                    // check for overflow
+                    if bits % 8 == 0 {
+                        Ok(value)
+                    } else {
+                        Err(ASN1Error::new(ASN1ErrorKind::Invalid))
+                    }
+                })?;
+
+                // Must consume the rest (extensions)
+                reader.next().read_der()?;
+
+                Ok(pk)
+            })?;
+
+            let peer_id = device::PublicKey::from_slice(&pk)
+                .map(PeerId::from)
+                .ok_or_else(|| ASN1Error::new(ASN1ErrorKind::Invalid))?;
+
+            // Consume the rest
+            // signatureAlgorithm
+            reader.next().read_der()?;
+            // signature
+            reader.next().read_der()?;
+
+            Ok(peer_id)
+        })
+    })
+}
+
 /// A certificte verifier for both server and client certificates which applies
 /// our own validation logic.
 ///
 /// From the standpoint of proper TLS, this is unutterably insecure.
-struct AccursedUnutterableUnsafeInsecureCertificateVerifier;
+struct AccursedUnutterableUnsafeInsecureCertificateVerifier {
+    local_id: PeerId,
+}
 
 impl AccursedUnutterableUnsafeInsecureCertificateVerifier {
-    fn new() -> Self {
-        AccursedUnutterableUnsafeInsecureCertificateVerifier
+    fn new(local_id: PeerId) -> Self {
+        AccursedUnutterableUnsafeInsecureCertificateVerifier { local_id }
     }
 }
 
@@ -115,10 +172,35 @@ impl ServerCertVerifier for AccursedUnutterableUnsafeInsecureCertificateVerifier
         cert.verify_is_valid_for_dns_name(dns_name)
             .map_err(TLSError::WebPKIError)?;
 
-        // TODO(kim): Should we check that the SNI is a valid radicle peer id?
-        // ie. it matches the cert's pub key
-        // TODO(kim): Verify that the TLS handshake obtains a proof of ownership
-        // of the cert's private key
+        // Verify that the DNS name is a radicle `PeerId`
+        let peer_id_dns = PeerId::try_from(dns_name).map_err(|_| {
+            TLSError::PeerIncompatibleError(format!(
+                "Presented DNS name `{:?}` is not a radicle peer id",
+                dns_name
+            ))
+        })?;
+
+        // Verify that the certificate's public key is also a `PeerId`
+        let peer_id_cert = extract_peer_id(&presented_certs[0].0).map_err(|e| {
+            println!("{:?}", e);
+            TLSError::PeerIncompatibleError(
+                "Certificate subjectPublicKeyInfo is not a valid radicle PeerId".into(),
+            )
+        })?;
+
+        // Both must be equal
+        if peer_id_dns != peer_id_cert {
+            return Err(TLSError::PeerIncompatibleError(
+                "DNS name and subjectPublicKeyInfo must be equal".into(),
+            ));
+        }
+
+        // We don't allow self-connections
+        if peer_id_cert == self.local_id {
+            return Err(TLSError::PeerMisbehavedError(
+                "Self-connections are not permitted".into(),
+            ));
+        }
 
         Ok(ServerCertVerified::assertion())
     }
@@ -155,7 +237,19 @@ impl ClientCertVerifier for AccursedUnutterableUnsafeInsecureCertificateVerifier
         )
         .map_err(TLSError::WebPKIError)?;
 
-        // TODO(kim): same as for server cert
+        // Verify the presented cert's public key is a `PeerId`
+        let peer_id = extract_peer_id(&presented_certs[0].0).map_err(|_| {
+            TLSError::PeerIncompatibleError(
+                "Certificate subjectPublicKeyInfo is not a valid radicle PeerId".into(),
+            )
+        })?;
+
+        // We don't allow self-connections
+        if peer_id == self.local_id {
+            return Err(TLSError::PeerMisbehavedError(
+                "Self-connections are not permitted".into(),
+            ));
+        }
 
         Ok(ClientCertVerified::assertion())
     }
@@ -202,12 +296,11 @@ mod tests {
         let client_key = device::Key::new();
         let server_key = device::Key::new();
 
+        let server_id = PeerId::from(server_key.clone()).to_string();
+
         let client_config = Arc::new(make_client_config(&client_key));
-        let mut client_session = ClientSession::new(
-            &client_config,
-            webpki::DNSNameRef::try_from_ascii(format!("{}.radicle", server_key).as_bytes())
-                .unwrap(),
-        );
+        let sni = webpki::DNSNameRef::try_from_ascii_str(&server_id).unwrap();
+        let mut client_session = ClientSession::new(&client_config, sni);
 
         let server_config = Arc::new(make_server_config(&server_key));
         let mut server_session = ServerSession::new(&server_config);

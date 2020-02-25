@@ -6,51 +6,52 @@ use std::{
 
 use ::pgp::conversions::Time;
 use bit_vec::BitVec;
-use bs58;
 use hex::decode;
 use secstr::SecStr;
 use serde::{Deserialize, Serialize};
-use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto::sign::ed25519;
 
 use keystore::SecretKeyExt;
 
 use crate::keys::pgp;
 
+pub use ed25519::PUBLICKEYBYTES;
+
 /// A device-specific signing key
 #[derive(Clone, Eq, PartialEq)]
 pub struct Key {
-    sk: sign::SecretKey,
+    sk: ed25519::SecretKey,
     /// Time this key was created, normalised seconds precision.
     created_at: SystemTime,
 }
 
 /// The public part of a `Key``
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct PublicKey(sign::PublicKey);
+pub struct PublicKey(ed25519::PublicKey);
 
 /// A signature produced by `Key::sign`
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Signature(sign::Signature);
+pub struct Signature(ed25519::Signature);
 
 // Key
 
 impl Key {
     pub fn new() -> Self {
-        let (_, sk) = sign::gen_keypair();
+        let (_, sk) = ed25519::gen_keypair();
         let created_at = SystemTime::now().canonicalize();
         Key { sk, created_at }
     }
 
     #[cfg(test)]
-    pub fn from_seed(seed: &sign::Seed, created_at: SystemTime) -> Self {
-        let (_, sk) = sign::keypair_from_seed(seed);
+    pub fn from_seed(seed: &ed25519::Seed, created_at: SystemTime) -> Self {
+        let (_, sk) = ed25519::keypair_from_seed(seed);
         Key {
             sk,
             created_at: created_at.canonicalize(),
         }
     }
 
-    pub(crate) fn from_secret(sk: sign::SecretKey, created_at: SystemTime) -> Self {
+    pub(crate) fn from_secret(sk: ed25519::SecretKey, created_at: SystemTime) -> Self {
         Key {
             sk,
             created_at: created_at.canonicalize(),
@@ -66,7 +67,7 @@ impl Key {
     }
 
     pub fn sign(&self, data: &[u8]) -> Signature {
-        Signature(sign::sign_detached(data, &self.sk))
+        Signature(ed25519::sign_detached(data, &self.sk))
     }
 
     pub fn into_pgp(
@@ -146,7 +147,7 @@ impl SecretKeyExt for Key {
     type Error = IntoSecretKeyError;
 
     fn from_bytes_and_meta(bytes: SecStr, metadata: &Self::Metadata) -> Result<Self, Self::Error> {
-        let sk = sign::SecretKey::from_slice(bytes.unsecure())
+        let sk = ed25519::SecretKey::from_slice(bytes.unsecure())
             .ok_or(IntoSecretKeyError::InvalidSliceLength)?;
         Ok(Self::from_secret(sk, *metadata))
     }
@@ -160,16 +161,16 @@ impl SecretKeyExt for Key {
 
 impl PublicKey {
     pub fn verify(&self, sig: &Signature, data: &[u8]) -> bool {
-        sign::verify_detached(sig, &data, self)
+        ed25519::verify_detached(sig, &data, self)
     }
 
     pub fn from_slice(bs: &[u8]) -> Option<PublicKey> {
-        sign::PublicKey::from_slice(&bs).map(PublicKey)
+        ed25519::PublicKey::from_slice(&bs).map(PublicKey)
     }
 }
 
-impl From<sign::PublicKey> for PublicKey {
-    fn from(pk: sign::PublicKey) -> Self {
+impl From<ed25519::PublicKey> for PublicKey {
+    fn from(pk: ed25519::PublicKey) -> Self {
         Self(pk)
     }
 }
@@ -182,13 +183,7 @@ impl From<Key> for PublicKey {
 
 impl fmt::Display for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            bs58::encode(self)
-                .with_alphabet(bs58::alphabet::BITCOIN)
-                .into_string()
-        )
+        f.write_str(&hex::encode(self.as_ref()))
     }
 }
 
@@ -199,7 +194,7 @@ impl AsRef<[u8]> for PublicKey {
 }
 
 impl Deref for PublicKey {
-    type Target = sign::PublicKey;
+    type Target = ed25519::PublicKey;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -210,7 +205,7 @@ impl Deref for PublicKey {
 
 impl Signature {
     pub fn verify(&self, data: &[u8], pk: &PublicKey) -> bool {
-        sign::verify_detached(self, &data, pk)
+        ed25519::verify_detached(self, &data, pk)
     }
 
     pub fn from_hex_string(s: &str) -> Result<Self, failure::Error> {
@@ -228,7 +223,7 @@ impl Signature {
                 bytes.len()
             ));
         };
-        Ok(Self(sodiumoxide::crypto::sign::Signature(buffer)))
+        Ok(Self(sodiumoxide::crypto::sign::ed25519::Signature(buffer)))
     }
 }
 
@@ -239,7 +234,7 @@ impl AsRef<[u8]> for Signature {
 }
 
 impl Deref for Signature {
-    type Target = sign::Signature;
+    type Target = ed25519::Signature;
 
     fn deref(&self) -> &Self::Target {
         &self.0

@@ -22,7 +22,7 @@ impl From<git::Error> for Error {
 /// in the future.
 ///
 /// [`git::ProjectId`]: ../git/struct.ProjectId.html
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectId(git::ProjectId);
 
 impl ProjectId {

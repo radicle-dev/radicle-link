@@ -90,7 +90,7 @@ impl From<surf::error::Error> for Error {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectId(git2::Oid);
 
 impl ProjectId {
