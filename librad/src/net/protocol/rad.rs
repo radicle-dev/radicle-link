@@ -20,13 +20,13 @@ pub enum Membership {
     Join(PeerInfo),
     ForwardJoin {
         joined: (PeerId, PeerAddrInfo),
-        hops: u8,
+        ttl: u8,
     },
     Neighbour(PeerInfo),
     Shuffle {
         origin: (PeerId, PeerInfo),
         peers: Vec<(PeerId, PeerAddrInfo)>,
-        hops: u8,
+        ttl: u8,
     },
     ShuffleReply {
         peers: Vec<(PeerId, PeerAddrInfo)>,
@@ -35,9 +35,7 @@ pub enum Membership {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Gossip {
-    Have(ProjectId),
-    Want(ProjectId),
-    Prune,
+    Have(ProjectId), // TODO: refs
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -202,44 +200,51 @@ impl Protocol {
     where
         T: AsyncRead + AsyncWrite + Unpin,
     {
+        use Membership::*;
+        use Gossip::*;
+
+        let remote_id = conn.peer_id();
+
         while let Some(rpc) = stream.try_next().await? {
             match rpc {
                 Rpc::Membership(msg) => match msg {
-                    Membership::Join(info) => {
+                    Join(info) => {
                         let addr_info = {
                             let mut addr = conn.remote_address();
                             addr.set_port(info.listen_port);
+
                             PeerAddrInfo {
                                 capabilities: info.capabilities,
                                 addrs: vec![addr].into_iter().collect(),
                             }
                         };
 
-                        self.add_to_known((conn.peer_id().clone(), addr_info.clone()));
-                        self.broadcast(Membership::ForwardJoin {
-                            joined: (conn.peer_id().clone(), addr_info),
-                            hops: self.config.prwl,
-                        })
+                        self.add_known_peer((remote_id.clone(), addr_info.clone()));
+                        self.broadcast(ForwardJoin {
+                            joined: (remote_id.clone(), addr_info),
+                            ttl: self.config.prwl,
+                        }, remote_id)
                         .await
                     },
 
-                    Membership::ForwardJoin { joined, hops } => {
-                        if hops == 0 {
+                    ForwardJoin { joined, ttl } => {
+                        if ttl == 0 {
                             self.try_connect(joined).await
                         } else {
-                            self.broadcast(Membership::ForwardJoin {
+                            self.broadcast(ForwardJoin {
                                 joined,
-                                hops: hops - 1,
-                            })
+                                ttl: ttl - 1,
+                            }, remote_id)
                             .await
                         }
                     },
 
-                    Membership::Neighbour(info) => {
+                    Neighbour(info) => {
                         let mut addr = conn.remote_address();
                         addr.set_port(info.listen_port);
-                        self.add_to_known((
-                            conn.peer_id().clone(),
+
+                        self.add_known_peer((
+                            remote_id.clone(),
                             PeerAddrInfo {
                                 capabilities: info.capabilities.clone(),
                                 addrs: vec![addr].into_iter().collect(),
@@ -247,33 +252,44 @@ impl Protocol {
                         ));
                     },
 
-                    Membership::Shuffle {
+                    Shuffle {
                         origin: (origin_peer, origin_info),
                         peers,
-                        hops,
+                        ttl,
                     } => {
                         // We're supposed to only remember shuffled peers at
                         // the end of the random walk. Do it anyway for now.
-                        peers.into_iter().for_each(|peer| self.add_to_known(peer));
+                        peers.into_iter().for_each(|peer| self.add_known_peer(peer));
 
-                        if hops > 0 {
+                        if ttl > 0 {
+                            // TODO: get random sample of active/passive peers
                             self.try_send_to(origin_peer, origin_info.listen_port).await
                         }
                     },
 
-                    Membership::ShuffleReply { peers } => {
-                        peers.into_iter().for_each(|peer| self.add_to_known(peer))
+                    ShuffleReply { peers } => {
+                        peers.into_iter().for_each(|peer| self.add_known_peer(peer))
                     },
                 },
 
-                Rpc::Gossip(msg) => {},
+                Rpc::Gossip(Have(pid)) =>
+                    // TODO: we need a callback to check if we're uptodate. if
+                    // not, broadcast the `Have` to active peers, otherwise do
+                    // nothing
+                    self.add_provider(&conn.peer_id(), pid),
             }
         }
 
         Ok(())
     }
 
-    fn add_to_known(&mut self, (peer, addr_info): (PeerId, PeerAddrInfo)) {
+    fn add_provider(&mut self, peer: &PeerId, project: ProjectId) {
+        self.providers.entry(project)
+            .or_insert_with(HashSet::new)
+            .insert(peer.clone());
+    }
+
+    fn add_known_peer(&mut self, (peer, addr_info): (PeerId, PeerAddrInfo)) {
         let entry = self
             .known_peers
             .entry(peer)
@@ -281,7 +297,7 @@ impl Protocol {
         entry.addrs = entry.addrs.union(&addr_info.addrs).cloned().collect();
     }
 
-    async fn broadcast(&mut self, msg: Membership) {
+    async fn broadcast(&mut self, msg: Membership, excluding: &PeerId) {
         unimplemented!()
     }
 
