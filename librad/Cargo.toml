@@ -24,6 +24,8 @@ olpc-cjson = "0.1"
 quinn = { git = "https://github.com/radicle-dev/quinn", rev = "3de173ae266a729e0ed6b809448539cb9df846af" }
 radicle-keystore = { path = "../radicle-keystore" }
 radicle-surf = { git = "https://github.com/radicle-dev/radicle-surf", rev = "58a0e6680d61cc312eee3255abe5d0d494f631d2" }
+rand = "0.7"
+rand_pcg = "0.2"
 rcgen = "0.7"
 regex = "1.3"
 rustls = { version = "0.16.1", features = ["logging", "dangerous_configuration"] }

@@ -1,35 +1,57 @@
 use std::{
     collections::{HashMap, HashSet},
     io,
+    iter,
+    mem,
     net::SocketAddr,
+    sync::{Arc, Mutex},
 };
 
-use futures::{sink::SinkExt, stream::TryStreamExt, AsyncRead, AsyncWrite};
-use futures_codec::{CborCodec, CborCodecError, Framed};
+use futures::{
+    channel::mpsc,
+    sink::{Sink, SinkExt},
+    stream::{StreamExt, TryStreamExt},
+};
+use futures_codec::{CborCodec, CborCodecError, Framed, FramedRead, FramedWrite};
+use rand::{seq::IteratorRandom, Rng};
+use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    net::connection::{CloseReason, Connection, Stream},
-    paths::Paths,
-    peer::PeerId,
-    project::{Project, ProjectId},
-};
+use crate::{net::connection::Stream, paths::Paths, peer::PeerId, project::ProjectId};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Rpc {
+    Membership(Membership),
+    Gossip(Gossip),
+}
+
+impl From<Membership> for Rpc {
+    fn from(m: Membership) -> Self {
+        Self::Membership(m)
+    }
+}
+
+impl From<Gossip> for Rpc {
+    fn from(g: Gossip) -> Self {
+        Self::Gossip(g)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Membership {
-    Join(PeerInfo),
+    Join(PeerAdvertisement),
     ForwardJoin {
-        joined: (PeerId, PeerAddrInfo),
-        ttl: u8,
+        joined: PeerInfo,
+        ttl: usize,
     },
-    Neighbour(PeerInfo),
+    Neighbour(PeerAdvertisement),
     Shuffle {
-        origin: (PeerId, PeerInfo),
-        peers: Vec<(PeerId, PeerAddrInfo)>,
-        ttl: u8,
+        origin: PeerInfo,
+        peers: Vec<PeerInfo>,
+        ttl: usize,
     },
     ShuffleReply {
-        peers: Vec<(PeerId, PeerAddrInfo)>,
+        peers: Vec<PeerInfo>,
     },
 }
 
@@ -39,31 +61,16 @@ pub enum Gossip {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Rpc {
-    Membership(Membership),
-    Gossip(Gossip),
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Request {
-    GetPeerInfo,
-    GetProjects,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Response {
-    PeerInfo(PeerInfo),
-    // TODO(kim): Due to its object model, `serde` has no obvious way to support
-    // indefinite-length arrays (as defined in CBOR). We need to either trick it
-    // into it (like, some kind of `Deserialize` for an iterator type), or
-    // implement pagination for this.
-    Projects(Vec<ProjectId>),
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PeerInfo {
-    listen_port: u16,
-    capabilities: HashSet<Capability>,
+    pub peer_id: PeerId,
+    pub advertised_info: PeerAdvertisement,
+    pub seen_addrs: HashSet<SocketAddr>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PeerAdvertisement {
+    pub listen_port: u16,
+    pub capabilities: HashSet<Capability>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,13 +78,15 @@ pub enum Capability {
     Reserved = 0,
 }
 
+#[derive(Clone)]
+pub enum ProtocolEvent {
+    DialAndSend(PeerInfo, Rpc),
+}
+
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display = "Invalid payload")]
     InvalidPayload(#[fail(cause)] serde_cbor::Error),
-
-    #[fail(display = "No answer to request {:?} from {}", req, from)]
-    NoAnswerTo { req: Request, from: PeerId },
 
     #[fail(display = "Connection to self")]
     SelfConnection,
@@ -95,272 +104,331 @@ impl From<CborCodecError> for Error {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PeerAddrInfo {
-    capabilities: HashSet<Capability>,
-    // TODO(kim): make this a priority set
-    addrs: HashSet<SocketAddr>,
-}
-
-impl PeerAddrInfo {
-    pub fn new(capabilities: HashSet<Capability>) -> Self {
-        Self {
-            capabilities,
-            addrs: HashSet::new(),
-        }
-    }
-}
-
-pub type NegotiatedStream<T> = Framed<T, CborCodec<Rpc, Rpc>>;
-
 #[derive(Debug, Clone)]
 struct Config {
-    prwl: u8,
+    /// The number of hops a [`Membership::ForwardJoin`] should be propageted
+    /// before it is inserted into the peer's membership table.
+    random_walk_length: usize,
+    /// The maximum number of peers to include in a shuffle.
+    shuffle_sample_size: usize,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { prwl: 3 }
+        Self {
+            random_walk_length: 3,
+            shuffle_sample_size: 7,
+        }
     }
 }
+
+/// Placeholder for a datastructure reoresenting the currently connected-to
+/// peers
+///
+/// The number of entries should be bounded.
+#[derive(Clone, Default)]
+struct ConnectedPeers<S>(HashMap<PeerId, S>);
+
+impl<S> ConnectedPeers<S>
+where
+    S: Sink<Rpc> + Unpin,
+{
+    fn new() -> Self {
+        Self(HashMap::default())
+    }
+
+    fn insert(&mut self, peer_id: &PeerId, sink: S) {
+        if let Some(mut old) = self.0.insert(peer_id.clone(), sink) {
+            let _ = old.close();
+        }
+    }
+
+    fn remove(&mut self, peer_id: &PeerId) {
+        if let Some(mut old) = self.0.remove(peer_id) {
+            let _ = old.close();
+        }
+    }
+
+    fn iter_mut(&mut self) -> impl Iterator<Item = (&PeerId, &mut S)> {
+        self.0.iter_mut()
+    }
+}
+
+/// Placeholder for a datastructure with the following properties:
+///
+/// * Keeps a bounded number of `(PeerId, [SocketAddr])` pairs
+/// * The list of addresses is itself bounded, and keeps track of the `n` most
+///   recently seen "good" IP/port tuples
+/// * The list is prioritised by recently-seen, and treats peer info relayed by
+///   other peers (`Shuffle`d) with the least priority
+#[derive(Clone, Default)]
+struct KnownPeers(HashMap<PeerId, PeerInfo>);
+
+impl KnownPeers {
+    fn new() -> Self {
+        Self(HashMap::default())
+    }
+
+    fn insert<I: IntoIterator<Item = PeerInfo>>(&mut self, peers: I) {
+        for info in peers {
+            let entry = self
+                .0
+                .entry(info.peer_id.clone())
+                .or_insert_with(|| info.clone());
+            entry.seen_addrs = entry.seen_addrs.union(&info.seen_addrs).cloned().collect();
+        }
+    }
+
+    fn sample<R: Rng>(&mut self, rng: &mut R, n: usize) -> Vec<PeerInfo> {
+        self.0.values().cloned().choose_multiple(rng, n)
+    }
+}
+
+#[derive(Clone, Default)]
+struct Providers(HashMap<ProjectId, HashSet<PeerId>>);
+
+impl Providers {
+    fn new() -> Self {
+        Self(HashMap::default())
+    }
+
+    fn insert(&mut self, peer: &PeerId, project: ProjectId) {
+        self.0
+            .entry(project)
+            .or_insert_with(HashSet::new)
+            .insert(peer.clone());
+    }
+}
+
+pub type NegotiatedStream = Framed<Stream, CborCodec<Rpc, Rpc>>;
+type SendStream = FramedWrite<quinn::SendStream, CborCodec<Rpc, Rpc>>;
 
 #[derive(Clone)]
 pub struct Protocol {
     local_id: PeerId,
-    local_info: PeerInfo,
+    local_ad: PeerAdvertisement,
     paths: Paths,
+
     config: Config,
 
-    connected_peers: HashMap<PeerId, Connection>,
-    known_peers: HashMap<PeerId, PeerAddrInfo>,
-    providers: HashMap<ProjectId, HashSet<PeerId>>,
+    prng: Pcg64Mcg,
+
+    event_subscribers: Arc<Mutex<Vec<mpsc::UnboundedSender<ProtocolEvent>>>>,
+
+    // TODO: parametrise over SendStream
+    connected_peers: Arc<Mutex<ConnectedPeers<SendStream>>>,
+    known_peers: Arc<Mutex<KnownPeers>>,
+    providers: Arc<Mutex<Providers>>,
 }
 
+// TODO(kim): initiate periodic shuffle
 impl Protocol {
-    pub fn new(local_id: &PeerId, local_info: PeerInfo, paths: &Paths) -> Self {
+    pub fn new(local_id: &PeerId, local_ad: PeerAdvertisement, paths: &Paths) -> Self {
         Self {
             local_id: local_id.clone(),
-            local_info,
+            local_ad,
             paths: paths.clone(),
-            config: Default::default(),
 
-            connected_peers: Default::default(),
-            known_peers: Default::default(),
-            providers: Default::default(),
+            config: Config::default(),
+
+            prng: Pcg64Mcg::new(rand::random()),
+
+            event_subscribers: Arc::new(Mutex::new(Vec::with_capacity(1))),
+
+            connected_peers: Arc::new(Mutex::new(ConnectedPeers::new())),
+            known_peers: Arc::new(Mutex::new(KnownPeers::new())),
+            providers: Arc::new(Mutex::new(Providers::new())),
         }
     }
 
-    pub async fn on_outgoing<T>(
-        &mut self,
-        conn: Connection,
-        mut stream: NegotiatedStream<T>,
-        joining: bool,
-    ) -> Result<(), Error>
-    where
-        T: AsyncRead + AsyncWrite + Unpin,
-    {
-        let remote_id = conn.peer_id();
+    pub fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent> {
+        let (tx, rx) = mpsc::unbounded();
+        self.event_subscribers.lock().unwrap().push(tx);
+        rx
+    }
+
+    pub async fn outgoing(
+        &self,
+        mut stream: NegotiatedStream,
+        hello: impl Into<Option<Rpc>>,
+    ) -> Result<(), Error> {
+        let remote_id = stream.peer_id().clone();
         // This should not be possible, as we prevent it in the TLS handshake.
         // Leaving it here regardless as a sanity check.
-        if remote_id == &self.local_id {
+        if remote_id == self.local_id {
             return Err(Error::SelfConnection);
         }
 
-        {
-            let hello = Rpc::Membership(if joining {
-                Membership::Join(self.local_info.clone())
-            } else {
-                Membership::Neighbour(self.local_info.clone())
-            });
+        stream
+            .send(
+                hello
+                    .into()
+                    .unwrap_or_else(|| Membership::Join(self.local_ad.clone()).into()),
+            )
+            .await?;
 
-            stream.send(hello).await?;
-        }
-
-        if let Some(old) = self.connected_peers.insert(remote_id.clone(), conn.clone()) {
-            old.close(CloseReason::DuplicateConnection)
-        }
-
-        // TODO(kim): initiate periodic shuffle
-        let res = self.handle_incoming(&conn, stream).await;
-
-        if let Some(conn) = self.connected_peers.remove(remote_id) {
-            if res.is_ok() {
-                conn.close(CloseReason::ProtocolDisconnect)
-            }
-        }
-
-        res
+        self.incoming(stream).await
     }
 
-    async fn handle_incoming<T>(
-        &mut self,
-        conn: &Connection,
-        mut stream: NegotiatedStream<T>,
-    ) -> Result<(), Error>
-    where
-        T: AsyncRead + AsyncWrite + Unpin,
-    {
-        use Membership::*;
+    pub async fn incoming(&self, stream: NegotiatedStream) -> Result<(), Error> {
         use Gossip::*;
+        use Membership::*;
 
-        let remote_id = conn.peer_id();
+        let remote_id = stream.peer_id().clone();
 
-        while let Some(rpc) = stream.try_next().await? {
+        let (conn, mut recv) = {
+            let (stream, codec) = stream.release();
+            let (conn, recv, send) = stream.into();
+
+            self.connected_peers
+                .lock()
+                .unwrap()
+                .insert(&remote_id, FramedWrite::new(send, codec.clone()));
+
+            (conn, FramedRead::new(recv, codec))
+        };
+
+        // This is a closure because QUIC connections can migrate their network
+        // address.
+        let seen_addr = |listen_port| {
+            let mut addr = conn.remote_address();
+            addr.set_port(listen_port);
+            addr
+        };
+
+        let make_peer_info = |ad: PeerAdvertisement| {
+            let seen_as = seen_addr(ad.listen_port);
+            PeerInfo {
+                peer_id: remote_id.clone(),
+                advertised_info: ad,
+                seen_addrs: iter::once(seen_as).collect(),
+            }
+        };
+
+        while let Some(rpc) = recv.try_next().await? {
             match rpc {
                 Rpc::Membership(msg) => match msg {
-                    Join(info) => {
-                        let addr_info = {
-                            let mut addr = conn.remote_address();
-                            addr.set_port(info.listen_port);
+                    Join(ad) => {
+                        let peer_info = make_peer_info(ad);
 
-                            PeerAddrInfo {
-                                capabilities: info.capabilities,
-                                addrs: vec![addr].into_iter().collect(),
-                            }
-                        };
+                        self.known_peers
+                            .lock()
+                            .unwrap()
+                            .insert(iter::once(peer_info.clone()));
 
-                        self.add_known_peer((remote_id.clone(), addr_info.clone()));
-                        self.broadcast(ForwardJoin {
-                            joined: (remote_id.clone(), addr_info),
-                            ttl: self.config.prwl,
-                        }, remote_id)
+                        self.broadcast(
+                            ForwardJoin {
+                                joined: peer_info,
+                                ttl: self.config.random_walk_length,
+                            },
+                            &remote_id,
+                        )
                         .await
                     },
 
                     ForwardJoin { joined, ttl } => {
                         if ttl == 0 {
-                            self.try_connect(joined).await
+                            self.dial_and_send(&joined, Neighbour(self.local_ad.clone()))
+                                .await
                         } else {
-                            self.broadcast(ForwardJoin {
-                                joined,
-                                ttl: ttl - 1,
-                            }, remote_id)
+                            self.broadcast(
+                                ForwardJoin {
+                                    joined,
+                                    ttl: ttl - 1,
+                                },
+                                &remote_id,
+                            )
                             .await
                         }
                     },
 
-                    Neighbour(info) => {
-                        let mut addr = conn.remote_address();
-                        addr.set_port(info.listen_port);
+                    Neighbour(ad) => self
+                        .known_peers
+                        .lock()
+                        .unwrap()
+                        .insert(iter::once(make_peer_info(ad))),
 
-                        self.add_known_peer((
-                            remote_id.clone(),
-                            PeerAddrInfo {
-                                capabilities: info.capabilities.clone(),
-                                addrs: vec![addr].into_iter().collect(),
-                            },
-                        ));
-                    },
-
-                    Shuffle {
-                        origin: (origin_peer, origin_info),
-                        peers,
-                        ttl,
-                    } => {
+                    Shuffle { origin, peers, ttl } => {
                         // We're supposed to only remember shuffled peers at
                         // the end of the random walk. Do it anyway for now.
-                        peers.into_iter().for_each(|peer| self.add_known_peer(peer));
+                        self.known_peers.lock().unwrap().insert(peers);
 
                         if ttl > 0 {
-                            // TODO: get random sample of active/passive peers
-                            self.try_send_to(origin_peer, origin_info.listen_port).await
+                            let sample = self
+                                .known_peers
+                                .lock()
+                                .unwrap()
+                                .sample(&mut self.prng.clone(), self.config.shuffle_sample_size);
+
+                            self.dial_and_send(&origin, ShuffleReply { peers: sample })
+                                .await
                         }
                     },
 
-                    ShuffleReply { peers } => {
-                        peers.into_iter().for_each(|peer| self.add_known_peer(peer))
-                    },
+                    ShuffleReply { peers } => self.known_peers.lock().unwrap().insert(peers),
                 },
 
                 Rpc::Gossip(Have(pid)) =>
-                    // TODO: we need a callback to check if we're uptodate. if
-                    // not, broadcast the `Have` to active peers, otherwise do
-                    // nothing
-                    self.add_provider(&conn.peer_id(), pid),
+                // TODO: we need a callback to check if we're uptodate. if
+                // not, broadcast the `Have` to active peers, otherwise do
+                // nothing
+                {
+                    self.providers.lock().unwrap().insert(&remote_id, pid)
+                },
             }
         }
 
-        Ok(())
-    }
-
-    fn add_provider(&mut self, peer: &PeerId, project: ProjectId) {
-        self.providers.entry(project)
-            .or_insert_with(HashSet::new)
-            .insert(peer.clone());
-    }
-
-    fn add_known_peer(&mut self, (peer, addr_info): (PeerId, PeerAddrInfo)) {
-        let entry = self
-            .known_peers
-            .entry(peer)
-            .or_insert_with(|| addr_info.clone());
-        entry.addrs = entry.addrs.union(&addr_info.addrs).cloned().collect();
-    }
-
-    async fn broadcast(&mut self, msg: Membership, excluding: &PeerId) {
-        unimplemented!()
-    }
-
-    async fn try_connect(&self, to: (PeerId, PeerAddrInfo)) {
-        unimplemented!()
-    }
-
-    async fn try_send_to(&self, peer: PeerId, port: u16) {
-        unimplemented!()
-    }
-
-    pub async fn outgoing(&mut self, conn: Connection, stream: Stream) -> Result<(), Error> {
-        if conn.peer_id() == &self.local_id {
-            return Err(Error::SelfConnection);
-        }
-
-        let mut stream = Framed::new(stream, CborCodec::<Request, Response>::new());
-
-        stream.send(Request::GetPeerInfo).await?;
-        match stream.try_next().await? {
-            Some(Response::PeerInfo(info)) => {
-                {
-                    let mut addr = conn.remote_address();
-                    addr.set_port(info.listen_port);
-
-                    self.known_peers
-                        .entry(conn.peer_id().clone())
-                        .or_insert_with(|| PeerAddrInfo::new(info.capabilities))
-                        .addrs
-                        .insert(addr);
-                }
-
-                if let Some(old) = self.connected_peers.insert(conn.peer_id().clone(), conn) {
-                    old.close(CloseReason::DuplicateConnection)
-                }
-
-                Ok(())
-            },
-
-            // hrm
-            Some(_) => Ok(()),
-
-            None => Err(Error::NoAnswerTo {
-                req: Request::GetPeerInfo,
-                from: conn.peer_id().clone(),
-            }),
-        }
-    }
-
-    pub async fn incoming<S>(&self, stream: S) -> Result<(), Error>
-    where
-        S: AsyncRead + AsyncWrite + Unpin,
-    {
-        let mut stream = Framed::new(stream, CborCodec::<Response, Request>::new());
-        while let Some(req) = stream.try_next().await? {
-            let resp = match req {
-                Request::GetPeerInfo => Response::PeerInfo(self.local_info.clone()),
-                Request::GetProjects => Response::Projects(Project::list(&self.paths).collect()),
-            };
-
-            stream.send(resp).await?
-        }
+        self.connected_peers.lock().unwrap().remove(&remote_id);
 
         Ok(())
+    }
+
+    /// Send an [`Rpc`] to all currently connected peers, except `excluding`
+    async fn broadcast<R: Into<Rpc>>(&self, rpc: R, excluding: &PeerId) {
+        let rpc = rpc.into();
+        let mut connected_peers = self.connected_peers.lock().unwrap();
+        futures::stream::iter(
+            connected_peers
+                .iter_mut()
+                .filter(|(peer_id, _)| peer_id != &excluding),
+        )
+        .for_each_concurrent(None, |(_, out)| {
+            let rpc = rpc.clone();
+            async move {
+                // If this returns an error, it is likely the receiving end has
+                // stopped working, too. Hence, we don't need to propagate
+                // errors here. This statement will need some empirical
+                // evidence.
+                let _ = out.send(rpc).await;
+            }
+        })
+        .await
+    }
+
+    /// Try to establish an ad-hoc connection to `peer`, and send it `rpc`
+    async fn dial_and_send<R: Into<Rpc>>(&self, peer: &PeerInfo, rpc: R) {
+        self.emit_event(ProtocolEvent::DialAndSend(peer.clone(), rpc.into()))
+            .await
+    }
+
+    async fn emit_event(&self, evt: ProtocolEvent) {
+        let mut subscribers = self.event_subscribers.lock().unwrap();
+
+        // Gawd, why is there no `retain` on streams?
+        let subscribers1: Vec<_> = futures::stream::iter(subscribers.iter_mut())
+            .filter_map(|ch| {
+                let evt = evt.clone();
+                async move {
+                    if ch.send(evt).await.is_err() {
+                        Some(ch.clone())
+                    } else {
+                        None
+                    }
+                }
+            })
+            .collect()
+            .await;
+
+        mem::replace(&mut *subscribers, subscribers1);
     }
 }

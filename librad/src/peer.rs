@@ -48,6 +48,10 @@ impl PeerId {
             .map(PeerId)
             .ok_or_else(|| InvalidPublicKey)
     }
+
+    pub fn as_dns_name(&self) -> webpki::DNSName {
+        self.clone().into()
+    }
 }
 
 impl From<device::PublicKey> for PeerId {

@@ -1,9 +1,11 @@
+use std::net::SocketAddr;
+
 use failure::{format_err, Error};
 use futures::{
     sink::SinkExt,
     stream::{StreamExt, TryStreamExt},
 };
-use futures_codec::CborCodec;
+use futures_codec::{CborCodec, Framed};
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -11,9 +13,10 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use crate::{
     git::server::GitServer,
     net::{
-        connection::{CloseReason, Connection, Endpoint, IncomingStreams, Stream},
+        connection::{CloseReason, Connection, Endpoint, Stream},
         discovery::Discovery,
     },
+    peer::PeerId,
 };
 
 pub mod rad;
@@ -29,7 +32,7 @@ pub enum Upgrade {
 pub enum UpgradeResponse {
     // TODO(kim): Technically, we don't need a confirmation. Keeping it here for
     // now, so we can send back an error. Maybe we'll also need some additional
-    // configuration value in the response. Let's see.
+    // response payload in the future, who knows.
     SwitchingProtocols(Upgrade),
     Error(UpgradeError),
 }
@@ -52,55 +55,92 @@ impl Protocol {
     }
 
     pub async fn run<D: Discovery>(&mut self, endpoint: Endpoint, disco: D) {
-        // attempt to connect
-        let peers: Vec<(Connection, IncomingStreams)> = futures::stream::iter(disco.collect())
-            .filter_map(|(peer_id, addrs)| {
-                let mut ep = endpoint.clone();
-                async move {
-                    for addr in addrs {
-                        match ep.connect(&peer_id, &addr).await {
-                            Ok(conn) => return Some(conn),
-                            Err(e) => warn!("Could not connect to {} at {}: {}", peer_id, addr, e),
-                        }
+        let bootstrap = futures::stream::iter(disco.collect()).filter_map(|(peer_id, addrs)| {
+            let endpoint = endpoint.clone();
+            async move {
+                Self::try_connect(&endpoint, &peer_id, &addrs)
+                    .await
+                    .map(|conn| (conn, None))
+            }
+        });
+
+        let rad_events =
+            self.rad
+                .subscribe()
+                .filter_map(|rad::ProtocolEvent::DialAndSend(peer_info, rpc)| {
+                    let endpoint = endpoint.clone();
+                    async move {
+                        Self::try_connect(
+                            &endpoint,
+                            &peer_info.peer_id,
+                            &peer_info
+                                .seen_addrs
+                                .iter()
+                                .cloned()
+                                .collect::<Vec<SocketAddr>>(),
+                        )
+                        .await
+                        .map(|conn| (conn, Some(rpc)))
                     }
-                    None
-                }
-            })
-            .collect()
-            .await;
+                });
 
-        if peers.is_empty() {
-            warn!("No connection to a seed node could be established!");
-        }
-
-        futures::stream::iter(peers)
-            .for_each_concurrent(/* limit */ 32, |(conn, mut incoming)| {
-                let mut self1 = self.clone();
-                let self2 = self.clone();
-                async move {
-                    futures::try_join!(self1.outgoing(conn.clone()), async {
-                        while let Some((send, recv)) = incoming.try_next().await? {
-                            self2
-                                .incoming(Stream::new(conn.peer_id().clone(), recv, send))
-                                .await?
-                        }
-                        Ok(())
-                    })
-                    .map(|_| ())
-                    .unwrap_or_else(|e| {
-                        error!(
-                            "Closing outgoing connection to {}, because: {}",
-                            conn.peer_id(),
-                            e
-                        );
-                        conn.close(CloseReason::ConnectionError)
-                    })
-                }
+        futures::stream::select(rad_events, bootstrap)
+            .for_each_concurrent(/* limit */ None, |((conn, incoming), hello)| {
+                let mut this = self.clone();
+                async move { this.drive_connection(conn, incoming, hello).await }
             })
             .await
     }
 
-    async fn outgoing(&mut self, conn: Connection) -> Result<(), Error> {
+    async fn try_connect(
+        endpoint: &Endpoint,
+        peer_id: &PeerId,
+        addrs: &[SocketAddr],
+    ) -> Option<(Connection, impl futures::Stream<Item = Stream> + Unpin)> {
+        futures::stream::iter(addrs)
+            .filter_map(|addr| {
+                let mut endpoint = endpoint.clone();
+                Box::pin(async move {
+                    match endpoint.connect(peer_id, &addr).await {
+                        Ok(conn) => Some(conn),
+                        Err(e) => {
+                            warn!("Could not connect to {} at {}: {}", peer_id, addr, e);
+                            None
+                        },
+                    }
+                })
+            })
+            .next()
+            .await
+    }
+
+    async fn drive_connection(
+        &mut self,
+        conn: Connection,
+        mut incoming: impl futures::Stream<Item = Stream> + Unpin,
+        outgoing_hello: impl Into<Option<rad::Rpc>>,
+    ) {
+        let mut this1 = self.clone();
+        let this2 = self.clone();
+
+        futures::try_join!(this1.outgoing(conn.clone(), outgoing_hello), async {
+            while let Some(stream) = incoming.next().await {
+                this2.incoming(stream).await?
+            }
+            Ok(())
+        })
+        .map(|_| ())
+        .unwrap_or_else(|e| {
+            error!("Closing connection with {}, because: {}", conn.peer_id(), e);
+            conn.close(CloseReason::ConnectionError)
+        })
+    }
+
+    async fn outgoing(
+        &mut self,
+        conn: Connection,
+        hello: impl Into<Option<rad::Rpc>>,
+    ) -> Result<(), Error> {
         let mut stream = conn
             .open_stream()
             .await?
@@ -115,7 +155,7 @@ impl Protocol {
             Ok(resp) => match resp {
                 Some(UpgradeResponse::SwitchingProtocols(Upgrade::Rad)) => self
                     .rad
-                    .outgoing(conn, stream.release().0)
+                    .outgoing(Framed::new(stream.release().0, CborCodec::new()), hello)
                     .await
                     .map_err(|e| e.into()),
 
@@ -149,7 +189,7 @@ impl Protocol {
                     match upgrade {
                         Upgrade::Rad => self
                             .rad
-                            .incoming(stream)
+                            .incoming(stream.framed(CborCodec::new()))
                             .await
                             .map_err(|e| format_err!("Error handling rad upgrade: {}", e)),
 
