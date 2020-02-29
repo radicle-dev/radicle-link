@@ -1,7 +1,9 @@
 use std::{
     collections::{HashMap, HashSet},
+    hash::Hash,
     io,
     iter,
+    marker::PhantomData,
     mem,
     net::SocketAddr,
     sync::{Arc, Mutex},
@@ -17,22 +19,22 @@ use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
 
-use crate::{net::connection::Stream, paths::Paths, peer::PeerId, project::ProjectId};
+use crate::{net::connection::Stream, paths::Paths, peer::PeerId};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Rpc {
+pub enum Rpc<A> {
     Membership(Membership),
-    Gossip(Gossip),
+    Gossip(Gossip<A>),
 }
 
-impl From<Membership> for Rpc {
+impl<A> From<Membership> for Rpc<A> {
     fn from(m: Membership) -> Self {
         Self::Membership(m)
     }
 }
 
-impl From<Gossip> for Rpc {
-    fn from(g: Gossip) -> Self {
+impl<A> From<Gossip<A>> for Rpc<A> {
+    fn from(g: Gossip<A>) -> Self {
         Self::Gossip(g)
     }
 }
@@ -56,8 +58,8 @@ pub enum Membership {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Gossip {
-    Have(ProjectId), // TODO: refs
+pub enum Gossip<A> {
+    Have(A),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -79,8 +81,8 @@ pub enum Capability {
 }
 
 #[derive(Clone)]
-pub enum ProtocolEvent {
-    DialAndSend(PeerInfo, Rpc),
+pub enum ProtocolEvent<A> {
+    DialAndSend(PeerInfo, Rpc<A>),
 }
 
 #[derive(Debug, Fail)]
@@ -127,30 +129,36 @@ impl Default for Config {
 ///
 /// The number of entries should be bounded.
 #[derive(Clone, Default)]
-struct ConnectedPeers<S>(HashMap<PeerId, S>);
+struct ConnectedPeers<A, S> {
+    peers: HashMap<PeerId, S>,
+    _marker: PhantomData<A>,
+}
 
-impl<S> ConnectedPeers<S>
+impl<A, S> ConnectedPeers<A, S>
 where
-    S: Sink<Rpc> + Unpin,
+    S: Sink<A> + Unpin,
 {
     fn new() -> Self {
-        Self(HashMap::default())
+        Self {
+            peers: HashMap::default(),
+            _marker: PhantomData,
+        }
     }
 
     fn insert(&mut self, peer_id: &PeerId, sink: S) {
-        if let Some(mut old) = self.0.insert(peer_id.clone(), sink) {
+        if let Some(mut old) = self.peers.insert(peer_id.clone(), sink) {
             let _ = old.close();
         }
     }
 
     fn remove(&mut self, peer_id: &PeerId) {
-        if let Some(mut old) = self.0.remove(peer_id) {
+        if let Some(mut old) = self.peers.remove(peer_id) {
             let _ = old.close();
         }
     }
 
     fn iter_mut(&mut self) -> impl Iterator<Item = (&PeerId, &mut S)> {
-        self.0.iter_mut()
+        self.peers.iter_mut()
     }
 }
 
@@ -185,26 +193,31 @@ impl KnownPeers {
 }
 
 #[derive(Clone, Default)]
-struct Providers(HashMap<ProjectId, HashSet<PeerId>>);
+struct Providers<A: Eq + Hash>(HashMap<A, HashSet<PeerId>>);
 
-impl Providers {
+impl<A> Providers<A>
+where
+    A: Eq + Hash,
+{
     fn new() -> Self {
         Self(HashMap::default())
     }
 
-    fn insert(&mut self, peer: &PeerId, project: ProjectId) {
+    fn insert(&mut self, peer: &PeerId, provides: A) {
         self.0
-            .entry(project)
+            .entry(provides)
             .or_insert_with(HashSet::new)
             .insert(peer.clone());
     }
 }
 
-pub type NegotiatedStream = Framed<Stream, CborCodec<Rpc, Rpc>>;
-type SendStream = FramedWrite<quinn::SendStream, CborCodec<Rpc, Rpc>>;
+// TODO: generalise over `Stream` / `quinn::SendStream` (ie. `AsyncRead +
+// AsyncWrite`)
+pub type NegotiatedStream<A> = Framed<Stream, CborCodec<Rpc<A>, Rpc<A>>>;
+type SendStream<A> = FramedWrite<quinn::SendStream, CborCodec<Rpc<A>, Rpc<A>>>;
 
 #[derive(Clone)]
-pub struct Protocol {
+pub struct Protocol<A: Eq + Hash> {
     local_id: PeerId,
     local_ad: PeerAdvertisement,
     paths: Paths,
@@ -213,16 +226,19 @@ pub struct Protocol {
 
     prng: Pcg64Mcg,
 
-    event_subscribers: Arc<Mutex<Vec<mpsc::UnboundedSender<ProtocolEvent>>>>,
+    event_subscribers: Arc<Mutex<Vec<mpsc::UnboundedSender<ProtocolEvent<A>>>>>,
 
     // TODO: parametrise over SendStream
-    connected_peers: Arc<Mutex<ConnectedPeers<SendStream>>>,
+    connected_peers: Arc<Mutex<ConnectedPeers<Rpc<A>, SendStream<A>>>>,
     known_peers: Arc<Mutex<KnownPeers>>,
-    providers: Arc<Mutex<Providers>>,
+    providers: Arc<Mutex<Providers<A>>>,
 }
 
 // TODO(kim): initiate periodic shuffle
-impl Protocol {
+impl<A> Protocol<A>
+where
+    for<'de> A: Clone + Eq + Hash + Deserialize<'de> + Serialize + 'static,
+{
     pub fn new(local_id: &PeerId, local_ad: PeerAdvertisement, paths: &Paths) -> Self {
         Self {
             local_id: local_id.clone(),
@@ -241,7 +257,7 @@ impl Protocol {
         }
     }
 
-    pub fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent> {
+    pub fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent<A>> {
         let (tx, rx) = mpsc::unbounded();
         self.event_subscribers.lock().unwrap().push(tx);
         rx
@@ -249,8 +265,8 @@ impl Protocol {
 
     pub async fn outgoing(
         &self,
-        mut stream: NegotiatedStream,
-        hello: impl Into<Option<Rpc>>,
+        mut stream: NegotiatedStream<A>,
+        hello: impl Into<Option<Rpc<A>>>,
     ) -> Result<(), Error> {
         let remote_id = stream.peer_id().clone();
         // This should not be possible, as we prevent it in the TLS handshake.
@@ -270,7 +286,7 @@ impl Protocol {
         self.incoming(stream).await
     }
 
-    pub async fn incoming(&self, stream: NegotiatedStream) -> Result<(), Error> {
+    pub async fn incoming(&self, stream: NegotiatedStream<A>) -> Result<(), Error> {
         use Gossip::*;
         use Membership::*;
 
@@ -384,7 +400,7 @@ impl Protocol {
     }
 
     /// Send an [`Rpc`] to all currently connected peers, except `excluding`
-    async fn broadcast<R: Into<Rpc>>(&self, rpc: R, excluding: &PeerId) {
+    async fn broadcast<R: Into<Rpc<A>>>(&self, rpc: R, excluding: &PeerId) {
         let rpc = rpc.into();
         let mut connected_peers = self.connected_peers.lock().unwrap();
         futures::stream::iter(
@@ -406,12 +422,12 @@ impl Protocol {
     }
 
     /// Try to establish an ad-hoc connection to `peer`, and send it `rpc`
-    async fn dial_and_send<R: Into<Rpc>>(&self, peer: &PeerInfo, rpc: R) {
+    async fn dial_and_send<R: Into<Rpc<A>>>(&self, peer: &PeerInfo, rpc: R) {
         self.emit_event(ProtocolEvent::DialAndSend(peer.clone(), rpc.into()))
             .await
     }
 
-    async fn emit_event(&self, evt: ProtocolEvent) {
+    async fn emit_event(&self, evt: ProtocolEvent<A>) {
         let mut subscribers = self.event_subscribers.lock().unwrap();
 
         // Gawd, why is there no `retain` on streams?

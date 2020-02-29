@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{hash::Hash, net::SocketAddr};
 
 use failure::{format_err, Error};
 use futures::{
@@ -44,13 +44,16 @@ pub enum UpgradeError {
 }
 
 #[derive(Clone)]
-pub struct Protocol {
-    rad: rad::Protocol,
+pub struct Protocol<A: Eq + Hash> {
+    rad: rad::Protocol<A>,
     git: GitServer,
 }
 
-impl Protocol {
-    pub fn new(rad: rad::Protocol, git: GitServer) -> Self {
+impl<A> Protocol<A>
+where
+    for<'de> A: Clone + Eq + Hash + Deserialize<'de> + Serialize + 'static,
+{
+    pub fn new(rad: rad::Protocol<A>, git: GitServer) -> Self {
         Self { rad, git }
     }
 
@@ -118,7 +121,7 @@ impl Protocol {
         &mut self,
         conn: Connection,
         mut incoming: impl futures::Stream<Item = Stream> + Unpin,
-        outgoing_hello: impl Into<Option<rad::Rpc>>,
+        outgoing_hello: impl Into<Option<rad::Rpc<A>>>,
     ) {
         let mut this1 = self.clone();
         let this2 = self.clone();
@@ -139,7 +142,7 @@ impl Protocol {
     async fn outgoing(
         &mut self,
         conn: Connection,
-        hello: impl Into<Option<rad::Rpc>>,
+        hello: impl Into<Option<rad::Rpc<A>>>,
     ) -> Result<(), Error> {
         let mut stream = conn
             .open_stream()
