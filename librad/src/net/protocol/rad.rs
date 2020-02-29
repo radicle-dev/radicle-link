@@ -9,12 +9,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use async_trait::async_trait;
 use futures::{
     channel::mpsc,
     sink::{Sink, SinkExt},
     stream::{StreamExt, TryStreamExt},
 };
 use futures_codec::{CborCodec, CborCodecError, Framed, FramedRead, FramedWrite};
+use log::warn;
 use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
@@ -60,6 +62,19 @@ pub enum Membership {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Gossip<A> {
     Have(A),
+    Want(A),
+}
+
+pub enum PutResult {
+    Applied,
+    Stale,
+}
+
+#[async_trait]
+pub trait Storage<A>: Clone + Send + Sync {
+    // TODO: does this have to be async?
+    async fn put(&self, have: A) -> PutResult;
+    async fn ask(&self, want: &A) -> bool;
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -157,6 +172,10 @@ where
         }
     }
 
+    fn get_mut(&mut self, peer_id: &PeerId) -> Option<&mut S> {
+        self.peers.get_mut(peer_id)
+    }
+
     fn iter_mut(&mut self) -> impl Iterator<Item = (&PeerId, &mut S)> {
         self.peers.iter_mut()
     }
@@ -192,32 +211,13 @@ impl KnownPeers {
     }
 }
 
-#[derive(Clone, Default)]
-struct Providers<A: Eq + Hash>(HashMap<A, HashSet<PeerId>>);
-
-impl<A> Providers<A>
-where
-    A: Eq + Hash,
-{
-    fn new() -> Self {
-        Self(HashMap::default())
-    }
-
-    fn insert(&mut self, peer: &PeerId, provides: A) {
-        self.0
-            .entry(provides)
-            .or_insert_with(HashSet::new)
-            .insert(peer.clone());
-    }
-}
-
 // TODO: generalise over `Stream` / `quinn::SendStream` (ie. `AsyncRead +
 // AsyncWrite`)
 pub type NegotiatedStream<A> = Framed<Stream, CborCodec<Rpc<A>, Rpc<A>>>;
 type SendStream<A> = FramedWrite<quinn::SendStream, CborCodec<Rpc<A>, Rpc<A>>>;
 
 #[derive(Clone)]
-pub struct Protocol<A: Eq + Hash> {
+pub struct Protocol<A: Eq + Hash, S> {
     local_id: PeerId,
     local_ad: PeerAdvertisement,
     paths: Paths,
@@ -226,20 +226,21 @@ pub struct Protocol<A: Eq + Hash> {
 
     prng: Pcg64Mcg,
 
+    storage: S,
     event_subscribers: Arc<Mutex<Vec<mpsc::UnboundedSender<ProtocolEvent<A>>>>>,
 
     // TODO: parametrise over SendStream
     connected_peers: Arc<Mutex<ConnectedPeers<Rpc<A>, SendStream<A>>>>,
     known_peers: Arc<Mutex<KnownPeers>>,
-    providers: Arc<Mutex<Providers<A>>>,
 }
 
 // TODO(kim): initiate periodic shuffle
-impl<A> Protocol<A>
+impl<A, S> Protocol<A, S>
 where
     for<'de> A: Clone + Eq + Hash + Deserialize<'de> + Serialize + 'static,
+    S: Storage<A>,
 {
-    pub fn new(local_id: &PeerId, local_ad: PeerAdvertisement, paths: &Paths) -> Self {
+    pub fn new(local_id: &PeerId, local_ad: PeerAdvertisement, paths: &Paths, storage: S) -> Self {
         Self {
             local_id: local_id.clone(),
             local_ad,
@@ -249,21 +250,29 @@ where
 
             prng: Pcg64Mcg::new(rand::random()),
 
+            storage,
             event_subscribers: Arc::new(Mutex::new(Vec::with_capacity(1))),
 
             connected_peers: Arc::new(Mutex::new(ConnectedPeers::new())),
             known_peers: Arc::new(Mutex::new(KnownPeers::new())),
-            providers: Arc::new(Mutex::new(Providers::new())),
         }
     }
 
-    pub fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent<A>> {
+    pub async fn announce(&self, have: A) {
+        self.broadcast(Gossip::Have(have), None).await
+    }
+
+    pub async fn query(&self, want: A) {
+        self.broadcast(Gossip::Want(want), None).await
+    }
+
+    pub(super) fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent<A>> {
         let (tx, rx) = mpsc::unbounded();
         self.event_subscribers.lock().unwrap().push(tx);
         rx
     }
 
-    pub async fn outgoing(
+    pub(super) async fn outgoing(
         &self,
         mut stream: NegotiatedStream<A>,
         hello: impl Into<Option<Rpc<A>>>,
@@ -286,7 +295,7 @@ where
         self.incoming(stream).await
     }
 
-    pub async fn incoming(&self, stream: NegotiatedStream<A>) -> Result<(), Error> {
+    pub(super) async fn incoming(&self, stream: NegotiatedStream<A>) -> Result<(), Error> {
         use Gossip::*;
         use Membership::*;
 
@@ -384,12 +393,22 @@ where
                     ShuffleReply { peers } => self.known_peers.lock().unwrap().insert(peers),
                 },
 
-                Rpc::Gossip(Have(pid)) =>
-                // TODO: we need a callback to check if we're uptodate. if
-                // not, broadcast the `Have` to active peers, otherwise do
-                // nothing
-                {
-                    self.providers.lock().unwrap().insert(&remote_id, pid)
+                Rpc::Gossip(msg) => match msg {
+                    Have(val) => {
+                        // If `val` was new to us, forward to others as it may
+                        // be new to them, too. Otherwise, terminate the flood
+                        // here.
+                        if let PutResult::Applied = self.storage.put(val.clone()).await {
+                            self.broadcast(Have(val), &remote_id).await
+                        }
+                    },
+                    Want(val) => {
+                        if self.storage.ask(&val).await {
+                            self.reply(&remote_id, Have(val)).await
+                        } else {
+                            self.broadcast(Want(val), &remote_id).await
+                        }
+                    },
                 },
             }
         }
@@ -400,25 +419,47 @@ where
     }
 
     /// Send an [`Rpc`] to all currently connected peers, except `excluding`
-    async fn broadcast<R: Into<Rpc<A>>>(&self, rpc: R, excluding: &PeerId) {
+    async fn broadcast<'a, R, X>(&self, rpc: R, excluding: X)
+    where
+        R: Into<Rpc<A>>,
+        X: Into<Option<&'a PeerId>>,
+    {
         let rpc = rpc.into();
+        let excluding = excluding.into();
+
         let mut connected_peers = self.connected_peers.lock().unwrap();
         futures::stream::iter(
             connected_peers
                 .iter_mut()
-                .filter(|(peer_id, _)| peer_id != &excluding),
+                .filter(|(peer_id, _)| Some(*peer_id) != excluding),
         )
-        .for_each_concurrent(None, |(_, out)| {
+        .for_each_concurrent(None, |(peer, out)| {
             let rpc = rpc.clone();
             async move {
                 // If this returns an error, it is likely the receiving end has
                 // stopped working, too. Hence, we don't need to propagate
                 // errors here. This statement will need some empirical
                 // evidence.
-                let _ = out.send(rpc).await;
+                if let Err(e) = out.send(rpc).await {
+                    warn!("Failed to send broadcast message to {}: {:?}", peer, e)
+                }
             }
         })
         .await
+    }
+
+    async fn reply<R: Into<Rpc<A>>>(&self, to: &PeerId, rpc: R) {
+        let rpc = rpc.into();
+        futures::stream::iter(self.connected_peers.lock().unwrap().get_mut(to))
+            .for_each(|out| {
+                let rpc = rpc.clone();
+                async move {
+                    if let Err(e) = out.send(rpc).await {
+                        warn!("Failed to reply to {}: {:?}", to, e);
+                    }
+                }
+            })
+            .await
     }
 
     /// Try to establish an ad-hoc connection to `peer`, and send it `rpc`

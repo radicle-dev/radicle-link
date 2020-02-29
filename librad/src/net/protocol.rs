@@ -44,16 +44,17 @@ pub enum UpgradeError {
 }
 
 #[derive(Clone)]
-pub struct Protocol<A: Eq + Hash> {
-    rad: rad::Protocol<A>,
+pub struct Protocol<A: Eq + Hash, S> {
+    rad: rad::Protocol<A, S>,
     git: GitServer,
 }
 
-impl<A> Protocol<A>
+impl<A, S> Protocol<A, S>
 where
     for<'de> A: Clone + Eq + Hash + Deserialize<'de> + Serialize + 'static,
+    S: rad::Storage<A>,
 {
-    pub fn new(rad: rad::Protocol<A>, git: GitServer) -> Self {
+    pub fn new(rad: rad::Protocol<A, S>, git: GitServer) -> Self {
         Self { rad, git }
     }
 
@@ -93,6 +94,14 @@ where
                 async move { this.drive_connection(conn, incoming, hello).await }
             })
             .await
+    }
+
+    pub async fn announce(&self, have: A) {
+        self.rad.announce(have).await
+    }
+
+    pub async fn query(&self, want: A) {
+        self.rad.query(want).await
     }
 
     async fn try_connect(
