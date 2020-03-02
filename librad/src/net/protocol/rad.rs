@@ -4,14 +4,12 @@ use std::{
     io,
     iter,
     marker::PhantomData,
-    mem,
     net::SocketAddr,
     sync::{Arc, Mutex},
 };
 
 use async_trait::async_trait;
 use futures::{
-    channel::mpsc,
     sink::{Sink, SinkExt},
     stream::{StreamExt, TryStreamExt},
 };
@@ -21,7 +19,12 @@ use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
 
-use crate::{net::connection::Stream, paths::Paths, peer::PeerId};
+use crate::{
+    internal::channel::Fanout,
+    net::connection::{SendStream, Stream},
+    paths::Paths,
+    peer::PeerId,
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Rpc<A> {
@@ -68,12 +71,29 @@ pub enum Gossip<A> {
 pub enum PutResult {
     Applied,
     Stale,
+    Error,
 }
 
+// TODO: does this have to be async?
 #[async_trait]
-pub trait Storage<A>: Clone + Send + Sync {
-    // TODO: does this have to be async?
-    async fn put(&self, have: A) -> PutResult;
+pub trait LocalStorage<A>: Clone + Send + Sync {
+    /// Notify the local storage that a new value is available.
+    ///
+    /// If the value was stored locally already, [`PutResult::Stale`] must be
+    /// returned. Otherwise, [`PutResult::Applied`] indicates that we _now_
+    /// have the value locally, and other peers may fetch it from us.
+    ///
+    /// [`PutResult::Error`] indicates that a storage error occurred -- either
+    /// the implementer wasn't able to determine if the local storage is
+    /// up-to-date, or it was not possible to fetch the actual state from
+    /// the `provider`. In this case, the network is asked to retransmit
+    /// [`Gossip::Have`], so we can eventually try again.
+    async fn put(&self, provider: &PeerId, has: A) -> PutResult;
+
+    /// Ask the local storage is value `A` is available.
+    ///
+    /// This is used to notify the asking peer that they may fetch value `A`
+    /// from us.
     async fn ask(&self, want: &A) -> bool;
 }
 
@@ -98,6 +118,7 @@ pub enum Capability {
 #[derive(Clone)]
 pub enum ProtocolEvent<A> {
     DialAndSend(PeerInfo, Rpc<A>),
+    Disconnect(PeerId),
 }
 
 #[derive(Debug, Fail)]
@@ -123,6 +144,8 @@ impl From<CborCodecError> for Error {
 
 #[derive(Debug, Clone)]
 struct Config {
+    /// Maximum number of active connections.
+    max_active: usize,
     /// The number of hops a [`Membership::ForwardJoin`] should be propageted
     /// before it is inserted into the peer's membership table.
     random_walk_length: usize,
@@ -133,6 +156,7 @@ struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            max_active: 23,
             random_walk_length: 3,
             shuffle_sample_size: 7,
         }
@@ -141,28 +165,47 @@ impl Default for Config {
 
 /// Placeholder for a datastructure reoresenting the currently connected-to
 /// peers
-///
-/// The number of entries should be bounded.
 #[derive(Clone, Default)]
-struct ConnectedPeers<A, S> {
+struct ConnectedPeers<A, S, R> {
+    max_peers: usize,
+    rng: R,
     peers: HashMap<PeerId, S>,
     _marker: PhantomData<A>,
 }
 
-impl<A, S> ConnectedPeers<A, S>
+impl<A, S, R> ConnectedPeers<A, S, R>
 where
     S: Sink<A> + Unpin,
+    R: Rng,
 {
-    fn new() -> Self {
+    fn new(max_peers: usize, rng: R) -> Self {
         Self {
+            max_peers,
+            rng,
             peers: HashMap::default(),
             _marker: PhantomData,
         }
     }
 
-    fn insert(&mut self, peer_id: &PeerId, sink: S) {
-        if let Some(mut old) = self.peers.insert(peer_id.clone(), sink) {
-            let _ = old.close();
+    fn insert(&mut self, peer_id: &PeerId, sink: S) -> Option<PeerId> {
+        if !self.peers.contains_key(&peer_id) && self.peers.len() + 1 > self.max_peers {
+            let eject = self
+                .peers
+                .keys()
+                .choose(&mut self.rng)
+                .expect("Iterator must contain at least 1 element, as per the if condition. qed")
+                .clone();
+
+            self.peers.insert(peer_id.clone(), sink);
+            self.peers.remove(&eject).iter_mut().for_each(|ejected| {
+                let _ = ejected.close();
+            });
+            Some(eject)
+        } else {
+            self.peers.insert(peer_id.clone(), sink).map(|mut old| {
+                let _ = old.close();
+                peer_id.clone()
+            })
         }
     }
 
@@ -211,10 +254,10 @@ impl KnownPeers {
     }
 }
 
-// TODO: generalise over `Stream` / `quinn::SendStream` (ie. `AsyncRead +
-// AsyncWrite`)
+// TODO: generalise over `Stream` / `SendStream` (ie. `AsyncRead + AsyncWrite`)
 pub type NegotiatedStream<A> = Framed<Stream, CborCodec<Rpc<A>, Rpc<A>>>;
-type SendStream<A> = FramedWrite<quinn::SendStream, CborCodec<Rpc<A>, Rpc<A>>>;
+type NegotiatedSendStream<A> = FramedWrite<SendStream, CborCodec<Rpc<A>, Rpc<A>>>;
+type ConnectedPeersImpl<A> = ConnectedPeers<Rpc<A>, NegotiatedSendStream<A>, Pcg64Mcg>;
 
 #[derive(Clone)]
 pub struct Protocol<A: Eq + Hash, S> {
@@ -227,10 +270,10 @@ pub struct Protocol<A: Eq + Hash, S> {
     prng: Pcg64Mcg,
 
     storage: S,
-    event_subscribers: Arc<Mutex<Vec<mpsc::UnboundedSender<ProtocolEvent<A>>>>>,
+    subscribers: Fanout<ProtocolEvent<A>>,
 
     // TODO: parametrise over SendStream
-    connected_peers: Arc<Mutex<ConnectedPeers<Rpc<A>, SendStream<A>>>>,
+    connected_peers: Arc<Mutex<ConnectedPeersImpl<A>>>,
     known_peers: Arc<Mutex<KnownPeers>>,
 }
 
@@ -238,22 +281,28 @@ pub struct Protocol<A: Eq + Hash, S> {
 impl<A, S> Protocol<A, S>
 where
     for<'de> A: Clone + Eq + Hash + Deserialize<'de> + Serialize + 'static,
-    S: Storage<A>,
+    S: LocalStorage<A>,
 {
     pub fn new(local_id: &PeerId, local_ad: PeerAdvertisement, paths: &Paths, storage: S) -> Self {
+        let prng = Pcg64Mcg::new(rand::random());
+        let config = Config::default();
+        let connected_peers = Arc::new(Mutex::new(ConnectedPeers::new(
+            config.max_active,
+            prng.clone(),
+        )));
+
         Self {
             local_id: local_id.clone(),
             local_ad,
             paths: paths.clone(),
 
-            config: Config::default(),
-
-            prng: Pcg64Mcg::new(rand::random()),
-
+            config,
+            prng,
             storage,
-            event_subscribers: Arc::new(Mutex::new(Vec::with_capacity(1))),
 
-            connected_peers: Arc::new(Mutex::new(ConnectedPeers::new())),
+            subscribers: Fanout::new(),
+
+            connected_peers,
             known_peers: Arc::new(Mutex::new(KnownPeers::new())),
         }
     }
@@ -267,9 +316,7 @@ where
     }
 
     pub(super) fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent<A>> {
-        let (tx, rx) = mpsc::unbounded();
-        self.event_subscribers.lock().unwrap().push(tx);
-        rx
+        self.subscribers.subscribe()
     }
 
     pub(super) async fn outgoing(
@@ -301,32 +348,38 @@ where
 
         let remote_id = stream.peer_id().clone();
 
-        let (conn, mut recv) = {
+        // This is a bit of a hack: in order to keep track of the connected
+        // peers, and to be able to broadcast messages to them, we need to move
+        // out the send stream again. Ie. we loop over the recv stream here, and
+        // use `ConnectedPeers` when we want to send something.
+        let mut recv = {
             let (stream, codec) = stream.release();
-            let (conn, recv, send) = stream.into();
+            let (send, recv) = stream.split();
 
-            self.connected_peers
-                .lock()
-                .unwrap()
-                .insert(&remote_id, FramedWrite::new(send, codec.clone()));
+            if let Some(ejected) =
+                self.add_connected(&remote_id, FramedWrite::new(send, codec.clone()))
+            {
+                // Note: if the ejected peer never sent us a `Join` or
+                // `Neighbour`, it isn't behaving well, so we can forget about
+                // it here. Otherwise, we should already have it in
+                // `known_peers`.
+                self.subscribers
+                    .emit(ProtocolEvent::Disconnect(ejected))
+                    .await
+            }
 
-            (conn, FramedRead::new(recv, codec))
+            FramedRead::new(recv, codec)
         };
 
-        // This is a closure because QUIC connections can migrate their network
-        // address.
-        let seen_addr = |listen_port| {
-            let mut addr = conn.remote_address();
-            addr.set_port(listen_port);
-            addr
-        };
+        let make_peer_info = |ad: PeerAdvertisement, addr: SocketAddr| {
+            // Remember both the advertised and the actually seen port
+            let mut addr1 = addr; // `SocketAddr` is `Copy`
+            addr1.set_port(ad.listen_port);
 
-        let make_peer_info = |ad: PeerAdvertisement| {
-            let seen_as = seen_addr(ad.listen_port);
             PeerInfo {
                 peer_id: remote_id.clone(),
                 advertised_info: ad,
-                seen_addrs: iter::once(seen_as).collect(),
+                seen_addrs: vec![addr1, addr].into_iter().collect(),
             }
         };
 
@@ -334,13 +387,9 @@ where
             match rpc {
                 Rpc::Membership(msg) => match msg {
                     Join(ad) => {
-                        let peer_info = make_peer_info(ad);
+                        let peer_info = make_peer_info(ad, recv.remote_address());
 
-                        self.known_peers
-                            .lock()
-                            .unwrap()
-                            .insert(iter::once(peer_info.clone()));
-
+                        self.add_known(iter::once(peer_info.clone()));
                         self.broadcast(
                             ForwardJoin {
                                 joined: peer_info,
@@ -367,39 +416,39 @@ where
                         }
                     },
 
-                    Neighbour(ad) => self
-                        .known_peers
-                        .lock()
-                        .unwrap()
-                        .insert(iter::once(make_peer_info(ad))),
+                    Neighbour(ad) => {
+                        self.add_known(iter::once(make_peer_info(ad, recv.remote_address())))
+                    },
 
                     Shuffle { origin, peers, ttl } => {
                         // We're supposed to only remember shuffled peers at
                         // the end of the random walk. Do it anyway for now.
-                        self.known_peers.lock().unwrap().insert(peers);
+                        self.add_known(peers);
 
                         if ttl > 0 {
-                            let sample = self
-                                .known_peers
-                                .lock()
-                                .unwrap()
-                                .sample(&mut self.prng.clone(), self.config.shuffle_sample_size);
-
+                            let sample = self.random_known();
                             self.dial_and_send(&origin, ShuffleReply { peers: sample })
                                 .await
                         }
                     },
 
-                    ShuffleReply { peers } => self.known_peers.lock().unwrap().insert(peers),
+                    ShuffleReply { peers } => self.add_known(peers),
                 },
 
                 Rpc::Gossip(msg) => match msg {
                     Have(val) => {
-                        // If `val` was new to us, forward to others as it may
-                        // be new to them, too. Otherwise, terminate the flood
-                        // here.
-                        if let PutResult::Applied = self.storage.put(val.clone()).await {
-                            self.broadcast(Have(val), &remote_id).await
+                        match self.storage.put(&remote_id, val.clone()).await {
+                            // `val` was new, and is now fetched to local
+                            // storage. Let connected peers know they can now
+                            // fetch it from us.
+                            PutResult::Applied => self.broadcast(Have(val), &remote_id).await,
+                            // Meh. Request retransmission.
+                            // TODO: actually... we may only want to ask the
+                            // peer we got the `Have` from in the first place.
+                            // But what if that went away in the meantime?
+                            PutResult::Error => self.broadcast(Want(val), None).await,
+                            // We are up-to-date, don't do anything
+                            PutResult::Stale => {},
                         }
                     },
                     Want(val) => {
@@ -413,9 +462,28 @@ where
             }
         }
 
-        self.connected_peers.lock().unwrap().remove(&remote_id);
+        self.remove_connected(&remote_id);
 
         Ok(())
+    }
+
+    fn add_connected(&self, peer_id: &PeerId, out: NegotiatedSendStream<A>) -> Option<PeerId> {
+        self.connected_peers.lock().unwrap().insert(peer_id, out)
+    }
+
+    fn remove_connected(&self, peer_id: &PeerId) {
+        self.connected_peers.lock().unwrap().remove(peer_id)
+    }
+
+    fn add_known<I: IntoIterator<Item = PeerInfo>>(&self, peers: I) {
+        self.known_peers.lock().unwrap().insert(peers)
+    }
+
+    fn random_known(&self) -> Vec<PeerInfo> {
+        self.known_peers
+            .lock()
+            .unwrap()
+            .sample(&mut self.prng.clone(), self.config.shuffle_sample_size)
     }
 
     /// Send an [`Rpc`] to all currently connected peers, except `excluding`
@@ -464,28 +532,8 @@ where
 
     /// Try to establish an ad-hoc connection to `peer`, and send it `rpc`
     async fn dial_and_send<R: Into<Rpc<A>>>(&self, peer: &PeerInfo, rpc: R) {
-        self.emit_event(ProtocolEvent::DialAndSend(peer.clone(), rpc.into()))
+        self.subscribers
+            .emit(ProtocolEvent::DialAndSend(peer.clone(), rpc.into()))
             .await
-    }
-
-    async fn emit_event(&self, evt: ProtocolEvent<A>) {
-        let mut subscribers = self.event_subscribers.lock().unwrap();
-
-        // Gawd, why is there no `retain` on streams?
-        let subscribers1: Vec<_> = futures::stream::iter(subscribers.iter_mut())
-            .filter_map(|ch| {
-                let evt = evt.clone();
-                async move {
-                    if ch.send(evt).await.is_err() {
-                        Some(ch.clone())
-                    } else {
-                        None
-                    }
-                }
-            })
-            .collect()
-            .await;
-
-        mem::replace(&mut *subscribers, subscribers1);
     }
 }

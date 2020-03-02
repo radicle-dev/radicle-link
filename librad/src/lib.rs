@@ -18,6 +18,8 @@ pub mod paths;
 pub mod peer;
 pub mod project;
 
+pub(crate) mod internal;
+
 pub fn init() -> bool {
     sodiumoxide::init().is_ok()
 }

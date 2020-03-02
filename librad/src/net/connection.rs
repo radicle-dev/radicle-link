@@ -175,22 +175,23 @@ impl Stream {
         Framed::new(self, codec)
     }
 
-    pub fn close(&mut self, reason: CloseReason) {
-        let code = VarInt::from_u32(reason as u32);
-        let _ = self.recv.stop(code);
-        self.send.reset(code);
+    pub fn split(self) -> (SendStream, RecvStream) {
+        (
+            SendStream {
+                conn: self.conn.clone(),
+                send: self.send,
+            },
+            RecvStream {
+                conn: self.conn,
+                recv: self.recv,
+            },
+        )
     }
 }
 
 impl Into<(quinn::RecvStream, quinn::SendStream)> for Stream {
     fn into(self) -> (quinn::RecvStream, quinn::SendStream) {
         (self.recv, self.send)
-    }
-}
-
-impl Into<(Connection, quinn::RecvStream, quinn::SendStream)> for Stream {
-    fn into(self) -> (Connection, quinn::RecvStream, quinn::SendStream) {
-        (self.conn, self.recv, self.send)
     }
 }
 
@@ -205,6 +206,64 @@ impl AsyncRead for Stream {
 }
 
 impl AsyncWrite for Stream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        quinn::SendStream::poll_write(Pin::new(&mut self.get_mut().send), cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
+        quinn::SendStream::poll_flush(Pin::new(&mut self.get_mut().send), cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
+        quinn::SendStream::poll_close(Pin::new(&mut self.get_mut().send), cx)
+    }
+}
+
+pub struct RecvStream {
+    conn: Connection,
+    recv: quinn::RecvStream,
+}
+
+impl RecvStream {
+    pub fn peer_id(&self) -> &PeerId {
+        &self.conn.peer_id()
+    }
+
+    pub fn remote_address(&self) -> SocketAddr {
+        self.conn.remote_address()
+    }
+}
+
+impl AsyncRead for RecvStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        quinn::RecvStream::poll_read(Pin::new(&mut self.get_mut().recv), cx, buf)
+    }
+}
+
+pub struct SendStream {
+    conn: Connection,
+    send: quinn::SendStream,
+}
+
+impl SendStream {
+    pub fn peer_id(&self) -> &PeerId {
+        &self.conn.peer_id()
+    }
+
+    pub fn remote_address(&self) -> SocketAddr {
+        self.conn.remote_address()
+    }
+}
+
+impl AsyncWrite for SendStream {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context,

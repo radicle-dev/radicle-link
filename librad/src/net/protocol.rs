@@ -1,17 +1,26 @@
-use std::{hash::Hash, net::SocketAddr};
+use std::{
+    collections::HashMap,
+    hash::Hash,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+};
 
 use failure::{format_err, Error};
 use futures::{
+    future::TryFutureExt,
     sink::SinkExt,
     stream::{StreamExt, TryStreamExt},
+    AsyncRead,
+    AsyncWrite,
 };
-use futures_codec::{CborCodec, Framed};
+use futures_codec::CborCodec;
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{
     git::server::GitServer,
+    internal::channel::Fanout,
     net::{
         connection::{CloseReason, Connection, Endpoint, Stream},
         discovery::Discovery,
@@ -43,57 +52,117 @@ pub enum UpgradeError {
     UnsupportedUpgrade(Upgrade), // reserved
 }
 
+#[derive(Debug, Clone)]
+pub enum ProtocolEvent {
+    Connected(PeerId),
+    Disconnected(PeerId),
+}
+
 #[derive(Clone)]
-pub struct Protocol<A: Eq + Hash, S> {
+pub struct Protocol<A: Clone + Eq + Hash, S> {
     rad: rad::Protocol<A, S>,
     git: GitServer,
+
+    connections: Arc<Mutex<HashMap<PeerId, Connection>>>,
+    subscribers: Fanout<ProtocolEvent>,
 }
 
 impl<A, S> Protocol<A, S>
 where
     for<'de> A: Clone + Eq + Hash + Deserialize<'de> + Serialize + 'static,
-    S: rad::Storage<A>,
+    S: rad::LocalStorage<A>,
 {
     pub fn new(rad: rad::Protocol<A, S>, git: GitServer) -> Self {
-        Self { rad, git }
+        Self {
+            rad,
+            git,
+            connections: Arc::new(Mutex::new(HashMap::default())),
+            subscribers: Fanout::new(),
+        }
     }
 
     pub async fn run<D: Discovery>(&mut self, endpoint: Endpoint, disco: D) {
+        enum Run<A, S> {
+            Outgoing {
+                conn: Connection,
+                incoming: S,
+                hello: Option<rad::Rpc<A>>,
+            },
+            Disconnect {
+                peer: PeerId,
+            },
+        }
+
         let bootstrap = futures::stream::iter(disco.collect()).filter_map(|(peer_id, addrs)| {
             let endpoint = endpoint.clone();
             async move {
                 Self::try_connect(&endpoint, &peer_id, &addrs)
                     .await
-                    .map(|conn| (conn, None))
+                    .map(|(conn, incoming)| Run::Outgoing {
+                        conn,
+                        incoming,
+                        hello: None,
+                    })
             }
         });
 
-        let rad_events =
-            self.rad
-                .subscribe()
-                .filter_map(|rad::ProtocolEvent::DialAndSend(peer_info, rpc)| {
-                    let endpoint = endpoint.clone();
-                    async move {
-                        Self::try_connect(
-                            &endpoint,
-                            &peer_info.peer_id,
-                            &peer_info
-                                .seen_addrs
-                                .iter()
-                                .cloned()
-                                .collect::<Vec<SocketAddr>>(),
-                        )
-                        .await
-                        .map(|conn| (conn, Some(rpc)))
-                    }
-                });
+        let rad_events = self.rad.subscribe().filter_map(|evt| {
+            let endpoint = endpoint.clone();
+            async move {
+                match evt {
+                    rad::ProtocolEvent::DialAndSend(peer_info, rpc) => Self::try_connect(
+                        &endpoint,
+                        &peer_info.peer_id,
+                        &peer_info
+                            .seen_addrs
+                            .iter()
+                            .cloned()
+                            .collect::<Vec<SocketAddr>>(),
+                    )
+                    .await
+                    .map(|(conn, incoming)| Run::Outgoing {
+                        conn,
+                        incoming,
+                        hello: Some(rpc),
+                    }),
+
+                    rad::ProtocolEvent::Disconnect(peer) => Some(Run::Disconnect { peer }),
+                }
+            }
+        });
 
         futures::stream::select(rad_events, bootstrap)
-            .for_each_concurrent(/* limit */ None, |((conn, incoming), hello)| {
+            .for_each_concurrent(/* limit */ None, |run| {
                 let mut this = self.clone();
-                async move { this.drive_connection(conn, incoming, hello).await }
+                async move {
+                    match run {
+                        Run::Outgoing {
+                            conn,
+                            incoming,
+                            hello,
+                        } => {
+                            this.subscribers
+                                .emit(ProtocolEvent::Connected(conn.peer_id().clone()))
+                                .await;
+                            this.drive_connection(conn, incoming, hello).await
+                        },
+
+                        Run::Disconnect { peer } => {
+                            if let Some(conn) = this.connections.lock().unwrap().remove(&peer) {
+                                conn.close(CloseReason::ProtocolDisconnect);
+                                this.subscribers
+                                    .emit(ProtocolEvent::Disconnected(peer))
+                                    .await
+                            }
+                        },
+                    }
+                }
             })
             .await
+    }
+
+    pub fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent> {
+        self.subscribers.subscribe()
     }
 
     pub async fn announce(&self, have: A) {
@@ -102,6 +171,20 @@ where
 
     pub async fn query(&self, want: A) {
         self.rad.query(want).await
+    }
+
+    pub async fn open_git(&self, to: &PeerId) -> Option<impl AsyncRead + AsyncWrite + Unpin> {
+        async {
+            if let Some(conn) = self.connections.lock().unwrap().get(to) {
+                conn.open_stream()
+                    .and_then(|stream| Self::upgrade(stream, Upgrade::Git))
+                    .await
+                    .ok()
+            } else {
+                None
+            }
+        }
+        .await
     }
 
     async fn try_connect(
@@ -135,47 +218,58 @@ where
         let mut this1 = self.clone();
         let this2 = self.clone();
 
-        futures::try_join!(this1.outgoing(conn.clone(), outgoing_hello), async {
-            while let Some(stream) = incoming.next().await {
-                this2.incoming(stream).await?
+        futures::try_join!(
+            async {
+                let outgoing = conn.open_stream().await?;
+                this1.outgoing(outgoing, outgoing_hello).await
+            },
+            async {
+                while let Some(stream) = incoming.next().await {
+                    this2.incoming(stream).await?
+                }
+                Ok(())
             }
-            Ok(())
-        })
+        )
         .map(|_| ())
         .unwrap_or_else(|e| {
             error!("Closing connection with {}, because: {}", conn.peer_id(), e);
-            conn.close(CloseReason::ConnectionError)
+            conn.close(CloseReason::ConnectionError);
         })
     }
 
     async fn outgoing(
         &mut self,
-        conn: Connection,
+        stream: Stream,
         hello: impl Into<Option<rad::Rpc<A>>>,
     ) -> Result<(), Error> {
-        let mut stream = conn
-            .open_stream()
-            .await?
-            .framed(CborCodec::<Upgrade, UpgradeResponse>::new());
+        let upgraded = Self::upgrade(stream, Upgrade::Rad).await?;
+        self.rad
+            .outgoing(upgraded.framed(CborCodec::new()), hello)
+            .await
+            .map_err(|e| e.into())
+    }
+
+    async fn upgrade(stream: Stream, upgrade: Upgrade) -> Result<Stream, Error> {
+        let mut stream = stream.framed(CborCodec::<Upgrade, UpgradeResponse>::new());
 
         stream
-            .send(Upgrade::Rad)
+            .send(upgrade.clone())
             .await
-            .map_err(|e| format_err!("Failed to send rad upgrade: {:?}", e))?;
+            .map_err(|e| format_err!("Failed to send upgrade {:?}: {:?}", upgrade, e))?;
 
         match stream.try_next().await {
             Ok(resp) => match resp {
-                Some(UpgradeResponse::SwitchingProtocols(Upgrade::Rad)) => self
-                    .rad
-                    .outgoing(Framed::new(stream.release().0, CborCodec::new()), hello)
-                    .await
-                    .map_err(|e| e.into()),
-
-                Some(UpgradeResponse::SwitchingProtocols(upgrade)) => Err(format_err!(
-                    "Protocol mismatch: requested {:?}, got {:?}",
-                    Upgrade::Rad,
-                    upgrade
-                )),
+                Some(UpgradeResponse::SwitchingProtocols(proto)) => {
+                    if proto == upgrade {
+                        Ok(stream.release().0)
+                    } else {
+                        Err(format_err!(
+                            "Protocol mismatch: requested {:?}, got {:?}",
+                            Upgrade::Rad,
+                            upgrade
+                        ))
+                    }
+                },
                 Some(UpgradeResponse::Error(e)) => {
                     Err(format_err!("Peer denied rad upgrade: {:?}", e))
                 },
