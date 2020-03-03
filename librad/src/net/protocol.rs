@@ -321,7 +321,7 @@ where
 
 impl<A, S> GitStreamFactory for Protocol<A, S>
 where
-    for<'de> A: Clone + Eq + Hash + Deserialize<'de> + Serialize + 'static,
+    for<'de> A: Clone + Eq + Send + Hash + Deserialize<'de> + Serialize + 'static,
     S: rad::LocalStorage<A>,
 {
     fn open_stream(&self, to: &PeerId) -> Option<Stream> {

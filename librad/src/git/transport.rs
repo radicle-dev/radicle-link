@@ -13,57 +13,55 @@ use url::Url;
 
 use crate::{net::connection::Stream, peer::PeerId};
 
-static mut FACTORY: Vec<Box<dyn GitStreamFactory>> = Vec::new();
+pub type Factories = Arc<RwLock<Vec<Box<dyn GitStreamFactory>>>>;
 
-pub trait GitStreamFactory {
+lazy_static! {
+    static ref FACTORIES: Factories = Arc::new(RwLock::new(Vec::new()));
+}
+
+pub trait GitStreamFactory: Sync + Send {
     fn open_stream(&self, to: &PeerId) -> Option<Stream>;
 }
 
-#[derive(Clone)]
-pub struct Lock(Arc<RwLock<()>>);
-
-pub unsafe fn register() -> Option<Lock> {
-    static mut LOCK: Option<Lock> = None;
+pub fn register() -> RadTransport {
     static INIT: Once = Once::new();
 
-    INIT.call_once(|| {
-        git2::transport::register("rad", move |remote| {
-            let lock = Lock(Arc::new(RwLock::new(())));
-            LOCK = Some(lock.clone());
-            Transport::smart(&remote, true, RadTransport::new(lock))
+    unsafe {
+        INIT.call_once(|| {
+            git2::transport::register("rad", move |remote| {
+                Transport::smart(&remote, true, RadTransport::new())
+            })
+            .unwrap();
         })
-        .unwrap();
-    });
+    }
 
-    LOCK.clone()
+    RadTransport::new()
 }
 
-pub fn register_stream_factory(lock: Lock, fac: Box<dyn GitStreamFactory>) {
-    let lock = lock.0.write().unwrap();
-    unsafe { FACTORY.push(fac) };
-    drop(lock);
+#[derive(Clone)]
+pub struct RadTransport {
+    fac: Factories,
 }
 
-fn open_stream(lock: Lock, to: &PeerId) -> Option<Stream> {
-    let lock = lock.0.read().unwrap();
-    let stream = unsafe {
-        FACTORY
+impl RadTransport {
+    fn new() -> Self {
+        Self {
+            fac: FACTORIES.clone(),
+        }
+    }
+
+    pub fn register_stream_factory(&self, fac: Box<dyn GitStreamFactory>) {
+        self.fac.write().unwrap().push(fac)
+    }
+
+    fn open_stream(&self, to: &PeerId) -> Option<Stream> {
+        self.fac
+            .read()
+            .unwrap()
             .iter()
             .filter_map(|fac| fac.open_stream(to))
             .fuse()
             .next()
-    };
-    drop(lock);
-    stream
-}
-
-struct RadTransport {
-    lock: Lock,
-}
-
-impl RadTransport {
-    fn new(lock: Lock) -> Self {
-        Self { lock }
     }
 }
 
@@ -73,13 +71,14 @@ impl SmartSubtransport for RadTransport {
         url: &str,
         action: Service,
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        let url = Url::parse(url).map_err(as_git2_error)?;
+        let url = Url::parse(url).map_err(git_error)?;
 
         let peer: PeerId = url
             .host_str()
-            .ok_or_else(|| git2::Error::from_str("Missing host"))?
+            .ok_or_else(|| git_error("Missing host"))?
             .parse()
-            .map_err(as_git2_error)?;
+            .map_err(git_error)?;
+
         let service_header = {
             let repo = url.path();
             match action {
@@ -92,9 +91,11 @@ impl SmartSubtransport for RadTransport {
             }
         };
 
-        let mut stream = open_stream(self.lock.clone(), &peer)
-            .ok_or_else(|| git2::Error::from_str(&format!("No connection to {}", peer)))?;
-        block_on(stream.write_all(service_header.as_bytes())).map_err(as_git2_error)?;
+        let mut stream = self
+            .open_stream(&peer)
+            .ok_or_else(|| git_error(format!("No connection to {}", peer)))?;
+
+        block_on(stream.write_all(service_header.as_bytes())).map_err(git_error)?;
 
         Ok(Box::new(RadSubTransport { stream }))
     }
@@ -124,6 +125,6 @@ impl Write for RadSubTransport {
     }
 }
 
-fn as_git2_error<E: Display>(err: E) -> git2::Error {
+fn git_error<E: Display>(err: E) -> git2::Error {
     git2::Error::from_str(&err.to_string())
 }
