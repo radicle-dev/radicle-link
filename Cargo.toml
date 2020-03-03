@@ -1,2 +1,2 @@
 [workspace]
-members = [ "librad", "rad2", "radicle-keystore" ]
+members = [ "librad", "rad2", "radicle-keystore", "radicle-tracker" ]
