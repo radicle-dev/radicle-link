@@ -175,23 +175,17 @@ impl Stream {
         Framed::new(self, codec)
     }
 
-    pub fn split(self) -> (SendStream, RecvStream) {
+    pub fn split(self) -> (RecvStream, SendStream) {
         (
-            SendStream {
-                conn: self.conn.clone(),
-                send: self.send,
-            },
             RecvStream {
-                conn: self.conn,
+                conn: self.conn.clone(),
                 recv: self.recv,
             },
+            SendStream {
+                conn: self.conn,
+                send: self.send,
+            },
         )
-    }
-}
-
-impl Into<(quinn::RecvStream, quinn::SendStream)> for Stream {
-    fn into(self) -> (quinn::RecvStream, quinn::SendStream) {
-        (self.recv, self.send)
     }
 }
 

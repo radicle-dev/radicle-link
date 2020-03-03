@@ -69,7 +69,6 @@ pub struct Protocol<A, S> {
 impl<A, S> Protocol<A, S>
 where
     for<'de> A: Clone + Eq + Send + Hash + Deserialize<'de> + Serialize + 'static,
-    S: rad::LocalStorage<A>,
 {
     pub fn new(rad: rad::Protocol<A, S>, git: GitServer) -> Self {
         Self {
@@ -80,7 +79,11 @@ where
         }
     }
 
-    pub async fn run<D: Discovery>(&mut self, endpoint: Endpoint, disco: D) {
+    pub async fn run<D>(&mut self, endpoint: Endpoint, disco: D)
+    where
+        D: Discovery,
+        S: rad::LocalStorage<A>,
+    {
         enum Run<A, S> {
             Outgoing {
                 conn: Connection,
@@ -213,7 +216,9 @@ where
         conn: Connection,
         mut incoming: impl futures::Stream<Item = Stream> + Unpin,
         outgoing_hello: impl Into<Option<rad::Rpc<A>>>,
-    ) {
+    ) where
+        S: rad::LocalStorage<A>,
+    {
         let mut this1 = self.clone();
         let this2 = self.clone();
 
@@ -240,7 +245,10 @@ where
         &mut self,
         stream: Stream,
         hello: impl Into<Option<rad::Rpc<A>>>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>
+    where
+        S: rad::LocalStorage<A>,
+    {
         let upgraded = Self::upgrade(stream, Upgrade::Rad).await?;
         self.rad
             .outgoing(upgraded.framed(CborCodec::new()), hello)
@@ -279,7 +287,10 @@ where
         }
     }
 
-    async fn incoming(&self, stream: Stream) -> Result<(), Error> {
+    async fn incoming(&self, stream: Stream) -> Result<(), Error>
+    where
+        S: rad::LocalStorage<A>,
+    {
         let mut stream = stream.framed(CborCodec::<UpgradeResponse, Upgrade>::new());
         match stream.try_next().await {
             Ok(resp) => match resp {
@@ -300,7 +311,7 @@ where
 
                         Upgrade::Git => self
                             .git
-                            .invoke_service(stream.into())
+                            .invoke_service(stream.split())
                             .await
                             .map_err(|e| format_err!("Error handling git upgrade: {}", e)),
                     }
@@ -322,7 +333,7 @@ where
 impl<A, S> GitStreamFactory for Protocol<A, S>
 where
     for<'de> A: Clone + Eq + Hash + Send + Deserialize<'de> + Serialize + 'static,
-    S: rad::LocalStorage<A>,
+    S: Send + Sync,
 {
     fn open_stream(&self, to: &PeerId) -> Option<Stream> {
         block_on(self.open_git(to))

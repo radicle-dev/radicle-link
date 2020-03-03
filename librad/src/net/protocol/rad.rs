@@ -26,11 +26,11 @@ use log::warn;
 use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{
     internal::channel::Fanout,
     net::connection::{SendStream, Stream},
-    paths::Paths,
     peer::PeerId,
 };
 
@@ -98,7 +98,7 @@ pub trait LocalStorage<A>: Clone + Send + Sync {
     /// [`Gossip::Have`], so we can eventually try again.
     async fn put(&self, provider: &PeerId, has: A) -> PutResult;
 
-    /// Ask the local storage is value `A` is available.
+    /// Ask the local storage if value `A` is available.
     ///
     /// This is used to notify the asking peer that they may fetch value `A`
     /// from us.
@@ -118,7 +118,8 @@ pub struct PeerAdvertisement {
     pub capabilities: HashSet<Capability>,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
 pub enum Capability {
     Reserved = 0,
 }
@@ -151,21 +152,21 @@ impl From<CborCodecError> for Error {
 }
 
 #[derive(Debug, Clone)]
-struct Config {
+pub struct MembershipParams {
     /// Maximum number of active connections.
-    max_active: usize,
+    pub max_active: usize,
     /// The number of hops a [`Membership::ForwardJoin`] or
     /// [`Membership::Shuffle`] should be propageted.
-    random_walk_length: usize,
+    pub random_walk_length: usize,
     /// The maximum number of peers to include in a shuffle.
-    shuffle_sample_size: usize,
+    pub shuffle_sample_size: usize,
     /// Interval in which to perform a shuffle.
-    shuffle_interval: Duration,
+    pub shuffle_interval: Duration,
     /// Interval in which to attempt to promote a passive peer.
-    promote_interval: Duration,
+    pub promote_interval: Duration,
 }
 
-impl Default for Config {
+impl Default for MembershipParams {
     fn default() -> Self {
         Self {
             max_active: 23,
@@ -302,9 +303,8 @@ type ConnectedPeersImpl<A> = ConnectedPeers<Rpc<A>, NegotiatedSendStream<A>, Pcg
 pub struct Protocol<A, S> {
     local_id: PeerId,
     local_ad: PeerAdvertisement,
-    paths: Paths,
 
-    config: Config,
+    mparams: MembershipParams,
 
     prng: Pcg64Mcg,
 
@@ -317,19 +317,22 @@ pub struct Protocol<A, S> {
     dropped: Arc<AtomicBool>,
 }
 
-// TODO(kim): initiate periodic shuffle
 impl<A, S> Protocol<A, S>
 where
     for<'de> A: Clone + Eq + Send + Hash + Deserialize<'de> + Serialize + 'static,
 {
-    pub fn new(local_id: &PeerId, local_ad: PeerAdvertisement, paths: &Paths, storage: S) -> Self
+    pub fn new(
+        local_id: &PeerId,
+        local_ad: PeerAdvertisement,
+        mparams: MembershipParams,
+        storage: S,
+    ) -> Self
     where
         S: LocalStorage<A> + 'static,
     {
         let prng = Pcg64Mcg::new(rand::random());
-        let config = Config::default();
         let connected_peers = Arc::new(Mutex::new(ConnectedPeers::new(
-            config.max_active,
+            mparams.max_active,
             prng.clone(),
         )));
         let known_peers = Arc::new(Mutex::new(KnownPeers::new(prng.clone())));
@@ -337,9 +340,8 @@ where
         let this = Self {
             local_id: local_id.clone(),
             local_ad,
-            paths: paths.clone(),
 
-            config,
+            mparams,
             prng,
             storage,
 
@@ -411,7 +413,7 @@ where
         // use `ConnectedPeers` when we want to send something.
         let mut recv = {
             let (stream, codec) = stream.release();
-            let (send, recv) = stream.split();
+            let (recv, send) = stream.split();
 
             if let Some(ejected) =
                 self.add_connected(&remote_id, FramedWrite::new(send, codec.clone()))
@@ -450,7 +452,7 @@ where
                         self.broadcast(
                             ForwardJoin {
                                 joined: peer_info,
-                                ttl: self.config.random_walk_length,
+                                ttl: self.mparams.random_walk_length,
                             },
                             &remote_id,
                         )
@@ -480,12 +482,28 @@ where
                     Shuffle { origin, peers, ttl } => {
                         // We're supposed to only remember shuffled peers at
                         // the end of the random walk. Do it anyway for now.
-                        self.add_known(peers);
+                        self.add_known(peers.clone());
 
                         if ttl > 0 {
                             let sample = self.sample_known();
                             self.dial_and_send(&origin, ShuffleReply { peers: sample })
                                 .await
+                        } else {
+                            let origin = if origin.peer_id == remote_id {
+                                make_peer_info(origin.advertised_info, recv.remote_address())
+                            } else {
+                                origin
+                            };
+
+                            self.broadcast(
+                                Shuffle {
+                                    origin,
+                                    peers,
+                                    ttl: ttl - 1,
+                                },
+                                &remote_id,
+                            )
+                            .await
                         }
                     },
 
@@ -540,7 +558,7 @@ where
         self.known_peers
             .lock()
             .unwrap()
-            .sample(self.config.shuffle_sample_size)
+            .sample(self.mparams.shuffle_sample_size)
     }
 
     async fn run_periodic_tasks(&self) {
@@ -550,19 +568,19 @@ where
             }
 
             let shuffle = async {
-                Delay::new(self.config.shuffle_interval).await;
+                Delay::new(self.mparams.shuffle_interval).await;
                 self.shuffle().await;
             };
 
             let promote = async {
-                Delay::new(self.config.promote_interval).await;
+                Delay::new(self.mparams.promote_interval).await;
                 self.promote_random().await;
             };
 
             // FIXME(kim): I would think we actually want `futures::select!`,
-            // in order to break already when the quicker one resolves. I don't
-            // get the semantics of the `FusedFuture` + `Unpin` requirements,
-            // tho.
+            // in order to be able break as soon as the quicker one resolves.
+            // I don't get the semantics of the `FusedFuture` + `Unpin`
+            // requirements, tho.
             futures::join!(shuffle, promote);
         }
     }
@@ -588,7 +606,7 @@ where
                             seen_addrs: HashSet::with_capacity(0),
                         },
                         peers: sample,
-                        ttl: self.config.random_walk_length,
+                        ttl: self.mparams.random_walk_length,
                     }
                     .into(),
                 )

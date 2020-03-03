@@ -60,7 +60,6 @@ impl RadTransport {
             .unwrap()
             .iter()
             .filter_map(|fac| fac.open_stream(to))
-            .fuse()
             .next()
     }
 }
@@ -83,10 +82,10 @@ impl SmartSubtransport for RadTransport {
             let repo = url.path();
             match action {
                 Service::UploadPackLs | Service::UploadPack => {
-                    format!("git-upload-pack {}\0\n", repo)
+                    format!("git-upload-pack {}\0host={}\0\n", repo, peer)
                 },
                 Service::ReceivePackLs | Service::ReceivePack => {
-                    format!("git-receive-pack {}\0\n", repo)
+                    format!("git-receive-pack {}\0host={}\0\n", repo, peer)
                 },
             }
         };
