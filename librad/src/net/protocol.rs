@@ -7,11 +7,10 @@ use std::{
 
 use failure::{format_err, Error};
 use futures::{
+    executor::block_on,
     future::TryFutureExt,
     sink::SinkExt,
     stream::{StreamExt, TryStreamExt},
-    AsyncRead,
-    AsyncWrite,
 };
 use futures_codec::CborCodec;
 use log::{error, warn};
@@ -19,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{
-    git::server::GitServer,
+    git::{server::GitServer, transport::GitStreamFactory},
     internal::channel::Fanout,
     net::{
         connection::{CloseReason, Connection, Endpoint, Stream},
@@ -173,7 +172,7 @@ where
         self.rad.query(want).await
     }
 
-    pub async fn open_git(&self, to: &PeerId) -> Option<impl AsyncRead + AsyncWrite + Unpin> {
+    pub async fn open_git(&self, to: &PeerId) -> Option<Stream> {
         async {
             if let Some(conn) = self.connections.lock().unwrap().get(to) {
                 conn.open_stream()
@@ -317,5 +316,15 @@ where
                 Err(format_err!("Error deserialising upgrade request: {:?}", e))
             },
         }
+    }
+}
+
+impl<A, S> GitStreamFactory for Protocol<A, S>
+where
+    for<'de> A: Clone + Eq + Hash + Deserialize<'de> + Serialize + 'static,
+    S: rad::LocalStorage<A>,
+{
+    fn open_stream(&self, to: &PeerId) -> Option<Stream> {
+        block_on(self.open_git(to))
     }
 }
