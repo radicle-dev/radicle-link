@@ -6,6 +6,7 @@ use std::{collections::HashMap, hash};
 /// thread.reply(comment).delete(comment) === thread
 /// Thread::new(comment).delete(comment) === None
 /// Thread::new(comment).edit(f, comment) === Thread::new(f(comment).unwrap())
+#[derive(Debug, Clone)]
 pub struct Thread<A> {
     lut: HashMap<Path, NodeIndex>,
     tree: RoseTree<A>,
@@ -43,9 +44,9 @@ impl<A> Thread<A> {
         }
     }
 
-    pub fn edit<F>(&mut self, f: F, path: &Path) -> Option<A>
+    pub fn edit<F>(&mut self, path: &Path, f: F) -> Option<A>
     where
-        F: FnOnce(&mut A) -> Option<A>,
+        F: FnOnce(&A) -> Option<A>,
     {
         let ix = self.lut.get(path)?;
         let node = self.tree.node_weight_mut(*ix)?;
@@ -91,8 +92,71 @@ impl<A> Thread<A> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// forall a. Thread::new(a).first() === a
+    fn prop_first_of_new<A: Eq + Clone>(a: A) -> bool {
+        *Thread::new(a.clone()).0.first() == a
+    }
+
+    /// { new_path = thread.reply(path, comment)?
+    ///   thread.delete(new_path)
+    /// } === thread
+    fn prop_deleting_a_replied_comment_is_noop<A: Clone>(
+        thread: &mut Thread<A>,
+        path: &Path,
+        a: A,
+    ) -> Result<bool, ()> {
+        let old_thread = thread.clone();
+        let new_path = thread.reply(path, a)?;
+        thread.delete(&new_path)?;
+
+        // TODO: Also check that all NodeIndexes are equal
+        Ok(thread.lut == old_thread.lut)
+    }
+
+    /// Thread::new(comment).delete(comment) === None
+    fn prop_deleting_root_should_not_be_possible<A: Eq>(a: A) -> bool {
+        Thread::new(a).0.delete(&Path::new(0)) == Err(())
+    }
+
+    /// Thread::new(comment).edit(f, comment) ===
+    /// Thread::new(f(comment).unwrap())
+    fn prop_new_followed_by_edit_is_same_as_editing_followed_by_new<A, F>(a: A, f: &F) -> bool
+    where
+        A: Eq + Clone,
+        F: Fn(&A) -> Option<A>,
+    {
+        let mut lhs = Thread::new(a.clone()).0;
+        lhs.edit(&Path::new(0), f);
+
+        let rhs = Thread::new(f(&a).unwrap()).0;
+
+        lhs.lut == rhs.lut
+    }
+
     #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    fn check_first_of_new() {
+        assert!(prop_first_of_new("New thread"))
+    }
+
+    #[test]
+    fn check_deleting_a_replied_comment_is_noop() -> Result<(), ()> {
+        let (mut thread, path) = Thread::new("New thread");
+        prop_deleting_a_replied_comment_is_noop(&mut thread, &path, "New comment").map(|_| ())
+    }
+
+    #[test]
+    fn check_deleting_root_should_not_be_possible() {
+        assert!(prop_deleting_root_should_not_be_possible("New thread"))
+    }
+
+    #[test]
+    fn check_new_followed_by_edit_is_same_as_editing_followed_by_new() {
+        assert!(
+            prop_new_followed_by_edit_is_same_as_editing_followed_by_new("new thread", &|_| {
+                Some("edit: New thread")
+            })
+        )
     }
 }
