@@ -12,7 +12,7 @@ pub struct Issue<Author> {
 
 impl<Author> Issue<Author> {
     /// ```
-    /// use radicle_ticket::Issue;
+    /// use radicle_tracker::Issue;
     ///
     /// let issue = Issue::new(
     ///     String::from("Monadic"),
