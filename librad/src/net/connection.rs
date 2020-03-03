@@ -51,6 +51,10 @@ impl Endpoint {
 
         Ok(new_connection(conn))
     }
+
+    pub fn local_addr(&self) -> Result<SocketAddr, Error> {
+        self.endpoint.local_addr().map_err(|e| e.into())
+    }
 }
 
 fn new_connection<'a>(

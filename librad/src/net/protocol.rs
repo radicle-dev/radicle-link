@@ -10,7 +10,7 @@ use futures::{
     executor::block_on,
     future::TryFutureExt,
     sink::SinkExt,
-    stream::{StreamExt, TryStreamExt},
+    stream::{BoxStream, StreamExt, TryStreamExt},
 };
 use futures_codec::CborCodec;
 use log::{error, warn};
@@ -79,13 +79,19 @@ where
         }
     }
 
-    pub async fn run<D>(&mut self, endpoint: Endpoint, disco: D)
-    where
+    pub async fn run<D>(
+        &mut self,
+        (endpoint, incoming): (
+            Endpoint,
+            impl futures::Stream<Item = (Connection, impl futures::Stream<Item = Stream> + Unpin)>,
+        ),
+        disco: D,
+    ) where
         D: Discovery,
         S: rad::LocalStorage<A>,
     {
         enum Run<A, S> {
-            Outgoing {
+            Connect {
                 conn: Connection,
                 incoming: S,
                 hello: Option<rad::Rpc<A>>,
@@ -95,50 +101,61 @@ where
             },
         }
 
-        let bootstrap = futures::stream::iter(disco.collect()).filter_map(|(peer_id, addrs)| {
-            let endpoint = endpoint.clone();
-            async move {
-                Self::try_connect(&endpoint, &peer_id, &addrs)
-                    .await
-                    .map(|(conn, incoming)| Run::Outgoing {
-                        conn,
-                        incoming,
-                        hello: None,
-                    })
-            }
-        });
+        let incoming1: dyn futures::Stream<Item = Run<A, S>> + Sized + Unpin =
+            incoming.filter_map(|(conn, i)| async move {
+                Some(Run::Connect {
+                    conn,
+                    incoming: i,
+                    hello: None,
+                })
+            });
 
-        let rad_events = self.rad.subscribe().filter_map(|evt| {
-            let endpoint = endpoint.clone();
-            async move {
-                match evt {
-                    rad::ProtocolEvent::DialAndSend(peer_info, rpc) => Self::try_connect(
-                        &endpoint,
-                        &peer_info.peer_id,
-                        &peer_info
-                            .seen_addrs
-                            .iter()
-                            .cloned()
-                            .collect::<Vec<SocketAddr>>(),
-                    )
-                    .await
-                    .map(|(conn, incoming)| Run::Outgoing {
-                        conn,
-                        incoming,
-                        hello: Some(rpc),
-                    }),
-
-                    rad::ProtocolEvent::Disconnect(peer) => Some(Run::Disconnect { peer }),
+        let bootstrap: dyn futures::Stream<Item = Run<A, S>> + Sized + Unpin =
+            futures::stream::iter(disco.collect()).filter_map(|(peer_id, addrs)| {
+                let endpoint = endpoint.clone();
+                async move {
+                    Self::try_connect(&endpoint, &peer_id, &addrs)
+                        .await
+                        .map(|(conn, incoming)| Run::Connect {
+                            conn,
+                            incoming,
+                            hello: None,
+                        })
                 }
-            }
-        });
+            });
 
-        futures::stream::select(rad_events, bootstrap)
+        let rad_events: dyn futures::Stream<Item = Run<A, S>> + Sized + Unpin =
+            self.rad.subscribe().filter_map(|evt| {
+                let endpoint = endpoint.clone();
+                async move {
+                    match evt {
+                        rad::ProtocolEvent::DialAndSend(peer_info, rpc) => Self::try_connect(
+                            &endpoint,
+                            &peer_info.peer_id,
+                            &peer_info
+                                .seen_addrs
+                                .iter()
+                                .cloned()
+                                .collect::<Vec<SocketAddr>>(),
+                        )
+                        .await
+                        .map(|(conn, incoming)| Run::Connect {
+                            conn,
+                            incoming,
+                            hello: Some(rpc),
+                        }),
+
+                        rad::ProtocolEvent::Disconnect(peer) => Some(Run::Disconnect { peer }),
+                    }
+                }
+            });
+
+        futures::stream::select_all(&[incoming1, rad_events, bootstrap])
             .for_each_concurrent(/* limit */ None, |run| {
                 let mut this = self.clone();
                 async move {
                     match run {
-                        Run::Outgoing {
+                        Run::Connect {
                             conn,
                             incoming,
                             hello,

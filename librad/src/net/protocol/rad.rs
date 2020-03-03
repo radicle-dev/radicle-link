@@ -371,7 +371,7 @@ where
         self.broadcast(Gossip::Want(want), None).await
     }
 
-    pub(super) fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent<A>> {
+    pub(super) fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent<A>> + Unpin {
         self.subscribers.subscribe()
     }
 
