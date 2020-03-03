@@ -58,7 +58,7 @@ pub enum ProtocolEvent {
 }
 
 #[derive(Clone)]
-pub struct Protocol<A: Clone + Eq + Hash, S> {
+pub struct Protocol<A, S> {
     rad: rad::Protocol<A, S>,
     git: GitServer,
 
@@ -68,7 +68,7 @@ pub struct Protocol<A: Clone + Eq + Hash, S> {
 
 impl<A, S> Protocol<A, S>
 where
-    for<'de> A: Clone + Eq + Hash + Deserialize<'de> + Serialize + 'static,
+    for<'de> A: Clone + Eq + Send + Hash + Deserialize<'de> + Serialize + 'static,
     S: rad::LocalStorage<A>,
 {
     pub fn new(rad: rad::Protocol<A, S>, git: GitServer) -> Self {
@@ -321,7 +321,7 @@ where
 
 impl<A, S> GitStreamFactory for Protocol<A, S>
 where
-    for<'de> A: Clone + Eq + Send + Hash + Deserialize<'de> + Serialize + 'static,
+    for<'de> A: Clone + Eq + Hash + Send + Deserialize<'de> + Serialize + 'static,
     S: rad::LocalStorage<A>,
 {
     fn open_stream(&self, to: &PeerId) -> Option<Stream> {

@@ -14,6 +14,7 @@ failure = { version = "0.1", features = ["backtrace"] }
 failure_derive = "0.1"
 futures = "0.3"
 futures_codec = { version = "0.4", features = ["cbor"] }
+futures-timer = "3.0"
 git2 = "0.10"
 hex = "0.4"
 lazy_static = "1.4"
