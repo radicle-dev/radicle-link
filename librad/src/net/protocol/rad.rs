@@ -351,6 +351,10 @@ where
             dropped: Arc::new(AtomicBool::new(false)),
         };
 
+        // FIXME(kim): One would think that the proper way to do this is to
+        // pass in an executor onto which we can spawn tasks. But then, dear
+        // Rust community, can we have a common interface for these things, so
+        // we don't have to commit on an implementation in a library?
         let this1 = this.clone();
         thread::spawn(move || block_on(this1.run_periodic_tasks()));
 
