@@ -992,6 +992,17 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
+=======
+name = "radicle-tracker"
+version = "0.1.0"
+dependencies = [
+ "nonempty 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rose_tree 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+>>>>>>> Add nonempty dep to tracker
 name = "rand"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
