@@ -72,6 +72,22 @@ impl From<Vec<u32>> for Path {
 }
 
 impl<A> Thread<A> {
+    /// Create a new `Thread` with `a` as the root of the `Thread`.
+    ///
+    /// The return value includes the [`Path`] to reach the root.
+    /// This should always be equal to `Path::new(0)`, and can
+    /// be used to [`Thread::view`] the value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use radicle_tracker::{Path, Thread};
+    ///
+    /// let (thread, root_path) = Thread::new(String::from("Discussing rose trees"));
+    ///
+    /// assert_eq!(thread.view(&root_path), Ok(&String::from("Discussing rose trees")));
+    /// assert_eq!(root_path, Path::new(0));
+    /// ```
     pub fn new(a: A) -> (Self, Path)
     where
         A: Eq,
