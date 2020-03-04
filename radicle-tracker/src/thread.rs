@@ -238,7 +238,7 @@ mod tests {
         thread: &mut Thread<A>,
         path: &Path,
         a: A,
-    ) -> Result<bool, ()> {
+    ) -> Result<bool, Error> {
         let old_thread = thread.clone();
         let new_path = thread.reply(path, a)?;
         thread.delete(&new_path)?;
@@ -249,7 +249,7 @@ mod tests {
 
     /// Thread::new(comment).delete(comment) === None
     fn prop_deleting_root_should_not_be_possible<A: Eq>(a: A) -> bool {
-        Thread::new(a).0.delete(&Path::new(0)) == Err(())
+        Thread::new(a).0.delete(&Path::new(0)) == Err(Error::MissingPath(Path::new(0)))
     }
 
     /// Thread::new(comment).edit(f, comment) ===
@@ -260,11 +260,29 @@ mod tests {
         F: Fn(&A) -> Option<A>,
     {
         let mut lhs = Thread::new(a.clone()).0;
-        lhs.edit(&Path::new(0), f);
+        lhs.edit(&Path::new(0), f).unwrap();
 
         let rhs = Thread::new(f(&a).unwrap()).0;
 
         lhs.lut == rhs.lut
+    }
+
+    /// Thread::new(a).1 == Path::new(0)
+    fn prop_root_path_is_constant<A>(a: A) -> bool
+    where
+        A: Eq,
+    {
+        Thread::new(a).1 == Path::new(0)
+    }
+
+    /// let (thread, path) = Thread::new(a)
+    /// => thread.view(path) == a
+    fn prop_root_followed_by_view<A>(a: A) -> bool
+    where
+        A: Eq + Clone,
+    {
+        let (thread, path) = Thread::new(a.clone());
+        *thread.view(&path).unwrap() == a
     }
 
     #[test]
@@ -273,7 +291,17 @@ mod tests {
     }
 
     #[test]
-    fn check_deleting_a_replied_comment_is_noop() -> Result<(), ()> {
+    fn check_root_path_is_constant() {
+        assert!(prop_root_path_is_constant("New thread"))
+    }
+
+    #[test]
+    fn check_root_followed_by_view() {
+        assert!(prop_root_followed_by_view("New thread"))
+    }
+
+    #[test]
+    fn check_deleting_a_replied_comment_is_noop() -> Result<(), Error> {
         let (mut thread, path) = Thread::new("New thread");
         prop_deleting_a_replied_comment_is_noop(&mut thread, &path, "New comment").map(|_| ())
     }
@@ -290,5 +318,31 @@ mod tests {
                 Some("edit: New thread")
             })
         )
+    }
+
+    mod path {
+        use super::*;
+
+        #[test]
+        fn test_prefix_keys() {
+            let test_path = Path::new(0);
+            let test_paths = vec![
+                Path::from(vec![0]),
+                Path::from(vec![0, 1]),
+                Path::from(vec![0, 1, 1]),
+                Path::from(vec![0, 2]),
+                Path::from(vec![0, 3]),
+                Path::from(vec![1]),
+            ];
+
+            assert_eq!(
+                test_path.prefix_keys(test_paths.iter()),
+                vec![
+                    Path::from(vec![0, 1]),
+                    Path::from(vec![0, 2]),
+                    Path::from(vec![0, 3]),
+                ]
+            );
+        }
     }
 }
