@@ -152,6 +152,13 @@ impl<A> Thread<A> {
 
     /// Delete a node that exists on the provided [`Path`].
     ///
+    /// TODO(fintan): Need to figure out what happens when we delete a node that
+    /// has children as a thread. In RoseTree it says that the parent of the
+    /// deleted node becomes the parent of all the deleted nodes children.
+    /// What would this mean for a comment thread? Maybe we want "immutable"
+    /// comments, where comments are marked as deleted but not actually deleted
+    /// from the graph.
+    ///
     /// # Error
     ///
     /// If the node does not exist on the provided [`Path`].
@@ -159,6 +166,31 @@ impl<A> Thread<A> {
     /// # Examples
     ///
     /// ```
+    /// use radicle_tracker::{ThreadError, Path, Thread};
+    ///
+    /// let (mut thread, root_path) = Thread::new(String::from("Discussing rose trees"));
+    ///
+    /// // Reply to the main thread
+    /// thread.reply(&root_path, String::from("I love rose trees!"));
+    /// thread.reply(&root_path, String::from("What should we use them for?"));
+    ///
+    /// // Reply to the 1st comment on the main thread
+    /// let mut first_comment_path = root_path.clone();
+    /// first_comment_path.push(1);
+    /// thread.reply(
+    ///     &first_comment_path,
+    ///     String::from("Did you know rose trees are equivalent to Cofree []?")
+    /// );
+    ///
+    /// // Delete the last comment on the main thread
+    /// thread.delete(&Path::from(vec![0, 2]));
+    ///
+    /// assert_eq!(thread.view(&root_path), Ok(&String::from("Discussing rose trees")));
+    /// assert_eq!(thread.view(&first_comment_path), Ok(&String::from("I love rose trees!")));
+    /// assert_eq!(
+    ///     thread.view(&Path::from(vec![0, 2])),
+    ///     Err(ThreadError::MissingPath(Path::from(vec![0,2])))
+    /// );
     /// ```
     pub fn delete(&mut self, path: &Path) -> Result<A, Error> {
         match self.lut.remove(&path) {
