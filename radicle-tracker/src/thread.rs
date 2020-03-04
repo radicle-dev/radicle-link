@@ -100,7 +100,51 @@ impl<A> Thread<A> {
         (Thread { lut, tree }, path)
     }
 
-    pub fn delete(&mut self, path: &Path) -> Result<A, ()> {
+    /// Reply to an existing `Thread`. The reply is made to where the [`Path`]
+    /// points to. For example, if we want to reply to the main thread, we will
+    /// always use the "root path", `Path::new(0)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use radicle_tracker::{Path, Thread};
+    ///
+    /// let (mut thread, root_path) = Thread::new(String::from("Discussing rose trees"));
+    ///
+    /// // Reply to the main thread
+    /// thread.reply(&root_path, String::from("I love rose trees!"));
+    /// thread.reply(&root_path, String::from("What should we use them for?"));
+    ///
+    /// // Reply to the 1st comment on the main thread
+    /// let mut first_comment_path = root_path.clone();
+    /// first_comment_path.push(1);
+    /// thread.reply(&first_comment_path, String::from("Did you know rose trees are equivalent to Cofree []?"));
+    ///
+    /// assert_eq!(thread.view(&root_path), Ok(&String::from("Discussing rose trees")));
+    /// assert_eq!(thread.view(&first_comment_path), Ok(&String::from("I love rose trees!")));
+    ///
+    /// let mut first_of_first_path = first_comment_path.clone();
+    /// first_of_first_path.push(1);
+    /// assert_eq!(
+    ///     thread.view(&first_of_first_path),
+    ///     Ok(&String::from("Did you know rose trees are equivalent to Cofree []?"))
+    /// );
+    /// ```
+    pub fn reply(&mut self, path: &Path, a: A) -> Result<Path, Error> {
+        match self.lut.get(path) {
+            Some(ix) => {
+                let new_ix = self.tree.add_child(*ix, a);
+                let mut new_path = path.clone();
+                let new_node = Path::max_node(&path.prefix_keys(self.lut.keys()));
+                new_path.push(new_node + 1);
+                self.lut.insert(new_path.clone(), new_ix);
+                Ok(new_path)
+            },
+            None => Err(Error::MissingPath(path.clone())),
+        }
+    }
+
+    pub fn delete(&mut self, path: &Path) -> Result<A, Error> {
         match self.lut.remove(&path) {
             Some(ix) => self.tree.remove_node(ix).ok_or(()),
             None => Err(()),
@@ -127,19 +171,6 @@ impl<A> Thread<A> {
             nodes.push(self.tree.node_weight(ix).unwrap().clone())
         }
         nodes
-    }
-
-    pub fn reply(&mut self, path: &Path, a: A) -> Result<Path, ()> {
-        match self.lut.get(path) {
-            Some(ix) => {
-                let new_ix = self.tree.add_child(*ix, a);
-                let mut new_path = path.clone();
-                new_path.push(0);
-                self.lut.insert(new_path.clone(), new_ix);
-                Ok(new_path)
-            },
-            None => Err(()),
-        }
     }
 
     /* This is tricky because basically we want to calculate
