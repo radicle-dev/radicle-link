@@ -209,6 +209,17 @@ impl<A> Thread<A> {
     pub fn first(&self) -> &A {
         &self.tree[NodeIndex::new(ROOT)]
     }
+
+    pub fn view(&self, path: &Path) -> Result<&A, Error> {
+        match self.lut.get(path) {
+            Some(ix) => Ok(&self.tree[*ix]),
+            None => Err(Error::MissingPath(path.clone())),
+        }
+    }
+
+    pub fn paths(&self) -> Vec<Path> {
+        self.lut.keys().cloned().collect()
+    }
 }
 
 #[cfg(test)]
