@@ -23,6 +23,52 @@ impl Path {
     pub fn push(&mut self, index: u32) {
         self.0.push(index);
     }
+
+    pub fn pop(&mut self) -> Option<u32> {
+        self.0.pop()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub(crate) fn max_node(paths: &[Self]) -> u32 {
+        let mut max_n = 0;
+
+        for path in paths {
+            let last = path.clone().pop();
+            max_n = max_n.max(last.unwrap_or(max_n));
+        }
+
+        max_n
+    }
+
+    // Get the prefix keys of path that differ by 1
+    pub(crate) fn prefix_keys<'a, P>(&self, paths: P) -> Vec<Path>
+    where
+        P: Iterator<Item = &'a Path>,
+    {
+        let mut prefixes = vec![];
+        for path in paths {
+            let mut prefix = path.clone();
+            prefix.pop();
+            if *self == prefix {
+                prefixes.push(path.clone())
+            }
+        }
+
+        prefixes
+    }
+}
+
+impl From<Vec<u32>> for Path {
+    fn from(path: Vec<u32>) -> Self {
+        Path(path)
+    }
 }
 
 impl<A> Thread<A> {
