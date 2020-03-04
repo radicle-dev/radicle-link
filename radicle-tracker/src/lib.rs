@@ -1,7 +1,7 @@
 use std::hash;
 
-pub mod thread;
-use thread::*;
+mod thread;
+pub use thread::{Error as ThreadError, Path, Thread};
 
 pub struct Issue<Author> {
     pub author: Author,
@@ -43,7 +43,11 @@ impl<Author> Issue<Author> {
         }
     }
 
-    pub fn reply_to_thread(&mut self, path: Path, comment: Comment<Author>) -> Result<Path, ()> {
+    pub fn reply_to_thread(
+        &mut self,
+        path: Path,
+        comment: Comment<Author>,
+    ) -> Result<Path, ThreadError> {
         self.thread.reply(&path, comment)
     }
 }
