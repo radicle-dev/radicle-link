@@ -1,3 +1,4 @@
+use nonempty::NonEmpty;
 use rose_tree::{NodeIndex, RoseTree, ROOT};
 use std::{collections::HashMap, hash};
 
@@ -115,12 +116,14 @@ impl<A> Thread<A> {
         f(node)
     }
 
-    pub fn expand(&self) -> Vec<A>
+    pub fn expand(&self) -> NonEmpty<A>
     where
         A: Clone,
     {
-        let mut nodes = vec![];
+        let mut nodes = NonEmpty::new(self.first().clone());
         for ix in self.tree.children(NodeIndex::new(ROOT)) {
+            // TODO: this assumes we have an existing index.
+            // Technically we should because we're walking over the children...
             nodes.push(self.tree.node_weight(ix).unwrap().clone())
         }
         nodes
