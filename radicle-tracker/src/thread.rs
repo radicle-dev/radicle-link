@@ -13,6 +13,12 @@ pub struct Thread<A> {
     tree: RoseTree<A>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum Error {
+    MissingPath(Path),
+    MissingNode,
+}
+
 #[derive(Debug, PartialEq, Eq, hash::Hash, Clone)]
 pub struct Path(Vec<u32>);
 
@@ -144,20 +150,39 @@ impl<A> Thread<A> {
         }
     }
 
+    /// Delete a node that exists on the provided [`Path`].
+    ///
+    /// # Error
+    ///
+    /// If the node does not exist on the provided [`Path`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// ```
     pub fn delete(&mut self, path: &Path) -> Result<A, Error> {
         match self.lut.remove(&path) {
-            Some(ix) => self.tree.remove_node(ix).ok_or(()),
-            None => Err(()),
+            Some(ix) => self
+                .tree
+                .remove_node(ix)
+                .ok_or_else(|| Error::MissingPath(path.clone())),
+            None => Err(Error::MissingPath(path.clone())),
         }
     }
 
-    pub fn edit<F>(&mut self, path: &Path, f: F) -> Option<A>
+    pub fn edit<F>(&mut self, path: &Path, f: F) -> Result<Option<A>, Error>
     where
         F: FnOnce(&A) -> Option<A>,
     {
-        let ix = self.lut.get(path)?;
-        let node = self.tree.node_weight_mut(*ix)?;
-        f(node)
+        let ix = self
+            .lut
+            .get(path)
+            .ok_or_else(|| Error::MissingPath(path.clone()))?;
+        let node = self
+            .tree
+            .node_weight_mut(*ix)
+            .ok_or_else(|| Error::MissingNode)?;
+        Ok(f(node))
     }
 
     pub fn expand(&self) -> NonEmpty<A>
