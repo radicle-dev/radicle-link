@@ -11,9 +11,9 @@ pub struct Static<S: ToSocketAddrs> {
 }
 
 impl<S: ToSocketAddrs> Static<S> {
-    pub fn new(peers: impl Iterator<Item = (PeerId, S)>) -> Self {
+    pub fn new<I: IntoIterator<Item = (PeerId, S)>>(peers: I) -> Self {
         Self {
-            peers: peers.collect(),
+            peers: peers.into_iter().collect(),
         }
     }
 }

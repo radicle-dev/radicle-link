@@ -22,21 +22,17 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    pub fn new<'a>(
+    pub async fn bind<'a>(
         local_key: &device::Key,
-        listen_addr: &SocketAddr,
-    ) -> Result<
-        (
-            Self,
-            impl futures::Stream<Item = (Connection, BoxStream<'a, Stream>)>,
-        ),
-        Error,
-    > {
-        let (endpoint, incoming) = quic::make_endpoint(local_key, listen_addr)?;
+        listen_addr: SocketAddr,
+    ) -> Result<BoundEndpoint<'a>, Error> {
+        let (endpoint, incoming) = quic::make_endpoint(local_key, listen_addr).await?;
+        let endpoint = Endpoint { endpoint };
         let incoming = incoming
-            .filter_map(|connecting| async move { connecting.await.ok().map(new_connection) });
+            .filter_map(|connecting| async move { connecting.await.ok().map(new_connection) })
+            .boxed();
 
-        Ok((Self { endpoint }, incoming))
+        Ok(BoundEndpoint { endpoint, incoming })
     }
 
     pub async fn connect<'a>(
@@ -54,6 +50,17 @@ impl Endpoint {
 
     pub fn local_addr(&self) -> Result<SocketAddr, Error> {
         self.endpoint.local_addr().map_err(|e| e.into())
+    }
+}
+
+pub struct BoundEndpoint<'a> {
+    pub endpoint: Endpoint,
+    pub incoming: BoxStream<'a, (Connection, BoxStream<'a, Stream>)>,
+}
+
+impl<'a> BoundEndpoint<'a> {
+    pub fn local_addr(&self) -> Result<SocketAddr, Error> {
+        self.endpoint.local_addr()
     }
 }
 

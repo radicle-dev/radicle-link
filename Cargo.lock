@@ -2472,13 +2472,20 @@ version = "0.2.11"
 source = "git+https://github.com/tokio-rs/tokio?rev=7b8ce356c31aa8887ba4aa84fbceb3d64114785c#7b8ce356c31aa8887ba4aa84fbceb3d64114785c"
 dependencies = [
  "bytes",
+ "fnv",
+ "futures-core",
+ "iovec",
  "lazy_static",
  "libc",
+ "memchr",
  "mio",
  "mio-named-pipes",
  "mio-uds",
+ "num_cpus",
  "pin-project-lite",
  "signal-hook-registry",
+ "slab",
+ "tokio-macros",
  "winapi 0.3.8",
 ]
 
@@ -2493,6 +2500,16 @@ dependencies = [
  "mio",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "0.2.4"
+source = "git+https://github.com/tokio-rs/tokio?rev=7b8ce356c31aa8887ba4aa84fbceb3d64114785c#7b8ce356c31aa8887ba4aa84fbceb3d64114785c"
+dependencies = [
+ "proc-macro2 1.0.8",
+ "quote 1.0.2",
+ "syn 1.0.14",
 ]
 
 [[package]]

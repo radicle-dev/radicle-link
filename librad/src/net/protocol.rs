@@ -1,14 +1,10 @@
-use std::{
-    collections::HashMap,
-    hash::Hash,
-    net::SocketAddr,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use failure::{format_err, Error};
 use futures::{
     executor::block_on,
     future::TryFutureExt,
+    lock::Mutex,
     sink::SinkExt,
     stream::{BoxStream, StreamExt, TryStreamExt},
 };
@@ -21,7 +17,7 @@ use crate::{
     git::{server::GitServer, transport::GitStreamFactory},
     internal::channel::Fanout,
     net::{
-        connection::{CloseReason, Connection, Endpoint, Stream},
+        connection::{BoundEndpoint, CloseReason, Connection, Endpoint, Stream},
         discovery::Discovery,
     },
     peer::PeerId,
@@ -57,20 +53,31 @@ pub enum ProtocolEvent {
     Disconnected(PeerId),
 }
 
+enum Run<'a> {
+    Connect {
+        conn: Connection,
+        incoming: BoxStream<'a, Stream>,
+        hello: Option<rad::Rpc>,
+    },
+    Disconnect {
+        peer: PeerId,
+    },
+}
+
 #[derive(Clone)]
-pub struct Protocol<A, S> {
-    rad: rad::Protocol<A, S>,
+pub struct Protocol<S> {
+    rad: rad::Protocol<S>,
     git: GitServer,
 
     connections: Arc<Mutex<HashMap<PeerId, Connection>>>,
     subscribers: Fanout<ProtocolEvent>,
 }
 
-impl<A, S> Protocol<A, S>
+impl<S> Protocol<S>
 where
-    for<'de> A: Clone + Eq + Send + Hash + Deserialize<'de> + Serialize + 'static,
+    S: rad::LocalStorage,
 {
-    pub fn new(rad: rad::Protocol<A, S>, git: GitServer) -> Self {
+    pub fn new(rad: rad::Protocol<S>, git: GitServer) -> Self {
         Self {
             rad,
             git,
@@ -81,26 +88,11 @@ where
 
     pub async fn run<'a, D>(
         &mut self,
-        (endpoint, incoming): (
-            Endpoint,
-            impl futures::Stream<Item = (Connection, BoxStream<'a, Stream>)> + Send,
-        ),
+        BoundEndpoint { endpoint, incoming }: BoundEndpoint<'a>,
         disco: D,
     ) where
         D: Discovery,
-        S: rad::LocalStorage<A>,
     {
-        enum Run<'a, A> {
-            Connect {
-                conn: Connection,
-                incoming: BoxStream<'a, Stream>,
-                hello: Option<rad::Rpc<A>>,
-            },
-            Disconnect {
-                peer: PeerId,
-            },
-        }
-
         let incoming = incoming.filter_map(|(conn, i)| async move {
             Some(Run::Connect {
                 conn,
@@ -122,7 +114,7 @@ where
             }
         });
 
-        let rad_events = self.rad.subscribe().filter_map(|evt| {
+        let rad_events = self.rad.subscribe().await.filter_map(|evt| {
             let endpoint = endpoint.clone();
             async move {
                 match evt {
@@ -151,50 +143,53 @@ where
             incoming.boxed(),
             futures::stream::select(bootstrap.boxed(), rad_events.boxed()),
         )
-        .for_each_concurrent(None, |run| {
+        .for_each(|run| {
             let mut this = self.clone();
-            async move {
-                match run {
-                    Run::Connect {
-                        conn,
-                        incoming,
-                        hello,
-                    } => {
-                        this.subscribers
-                            .emit(ProtocolEvent::Connected(conn.peer_id().clone()))
-                            .await;
-                        this.drive_connection(conn, incoming, hello).await
-                    },
-
-                    Run::Disconnect { peer } => {
-                        if let Some(conn) = this.connections.lock().unwrap().remove(&peer) {
-                            conn.close(CloseReason::ProtocolDisconnect);
-                            this.subscribers
-                                .emit(ProtocolEvent::Disconnected(peer))
-                                .await
-                        }
-                    },
-                }
-            }
+            async move { this.eval_run(run).await }
         })
         .await;
     }
 
-    pub fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent> {
-        self.subscribers.subscribe()
+    async fn eval_run<'a>(&mut self, run: Run<'a>) {
+        match run {
+            Run::Connect {
+                conn,
+                incoming,
+                hello,
+            } => {
+                self.subscribers
+                    .emit(ProtocolEvent::Connected(conn.peer_id().clone()))
+                    .await;
+                self.drive_connection(conn, incoming, hello).await
+            },
+
+            Run::Disconnect { peer } => {
+                if let Some(conn) = self.connections.lock().await.remove(&peer) {
+                    // FIXME: make this more graceful
+                    conn.close(CloseReason::ProtocolDisconnect);
+                    self.subscribers
+                        .emit(ProtocolEvent::Disconnected(peer))
+                        .await
+                }
+            },
+        }
     }
 
-    pub async fn announce(&self, have: A) {
+    pub async fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent> {
+        self.subscribers.subscribe().await
+    }
+
+    pub async fn announce(&self, have: rad::Update) {
         self.rad.announce(have).await
     }
 
-    pub async fn query(&self, want: A) {
+    pub async fn query(&self, want: rad::Update) {
         self.rad.query(want).await
     }
 
     pub async fn open_git(&self, to: &PeerId) -> Option<Stream> {
         async {
-            if let Some(conn) = self.connections.lock().unwrap().get(to) {
+            if let Some(conn) = self.connections.lock().await.get(to) {
                 conn.open_stream()
                     .and_then(|stream| Self::upgrade(stream, Upgrade::Git))
                     .await
@@ -232,10 +227,8 @@ where
         &mut self,
         conn: Connection,
         mut incoming: impl futures::Stream<Item = Stream> + Unpin,
-        outgoing_hello: impl Into<Option<rad::Rpc<A>>>,
-    ) where
-        S: rad::LocalStorage<A>,
-    {
+        outgoing_hello: impl Into<Option<rad::Rpc>>,
+    ) {
         let mut this1 = self.clone();
         let this2 = self.clone();
 
@@ -261,11 +254,8 @@ where
     async fn outgoing(
         &mut self,
         stream: Stream,
-        hello: impl Into<Option<rad::Rpc<A>>>,
-    ) -> Result<(), Error>
-    where
-        S: rad::LocalStorage<A>,
-    {
+        hello: impl Into<Option<rad::Rpc>>,
+    ) -> Result<(), Error> {
         let upgraded = Self::upgrade(stream, Upgrade::Rad).await?;
         self.rad
             .outgoing(upgraded.framed(CborCodec::new()), hello)
@@ -304,10 +294,7 @@ where
         }
     }
 
-    async fn incoming(&self, stream: Stream) -> Result<(), Error>
-    where
-        S: rad::LocalStorage<A>,
-    {
+    async fn incoming(&self, stream: Stream) -> Result<(), Error> {
         let mut stream = stream.framed(CborCodec::<UpgradeResponse, Upgrade>::new());
         match stream.try_next().await {
             Ok(resp) => match resp {
@@ -347,11 +334,7 @@ where
     }
 }
 
-impl<A, S> GitStreamFactory for Protocol<A, S>
-where
-    for<'de> A: Clone + Eq + Hash + Send + Deserialize<'de> + Serialize + 'static,
-    S: Send + Sync,
-{
+impl<S: rad::LocalStorage> GitStreamFactory for Protocol<S> {
     fn open_stream(&self, to: &PeerId) -> Option<Stream> {
         block_on(self.open_git(to))
     }

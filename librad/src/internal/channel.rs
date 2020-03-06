@@ -1,9 +1,6 @@
-use std::{
-    mem,
-    sync::{Arc, Mutex},
-};
+use std::{mem, sync::Arc};
 
-use futures::{channel::mpsc, sink::SinkExt, stream::StreamExt, Stream};
+use futures::{channel::mpsc, lock::Mutex, sink::SinkExt, stream::StreamExt};
 
 #[derive(Clone, Default)]
 pub struct Fanout<A> {
@@ -17,14 +14,14 @@ impl<A: Clone> Fanout<A> {
         }
     }
 
-    pub fn subscribe(&self) -> impl Stream<Item = A> {
+    pub async fn subscribe(&self) -> mpsc::UnboundedReceiver<A> {
         let (tx, rx) = mpsc::unbounded();
-        self.subscribers.lock().unwrap().push(tx);
+        self.subscribers.lock().await.push(tx);
         rx
     }
 
     pub async fn emit(&self, event: A) {
-        let mut subscribers = self.subscribers.lock().unwrap();
+        let mut subscribers = self.subscribers.lock().await;
 
         // Why is there no `retain` on streams?
         let subscribers1: Vec<_> = futures::stream::iter(subscribers.iter_mut())
