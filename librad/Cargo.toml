@@ -23,14 +23,14 @@ multibase = "0.8"
 nettle = { version = "5.0", features = ["vendored"]  }
 nonempty = "0.2"
 olpc-cjson = "0.1"
-quinn = { git = "https://github.com/radicle-dev/quinn", rev = "3de173ae266a729e0ed6b809448539cb9df846af" }
+quinn = { git = "https://github.com/djc/quinn", rev = "752693e4d0025879128f28121a0bbd4c1934b105" }
 radicle-keystore = { path = "../radicle-keystore" }
 radicle-surf = { git = "https://github.com/radicle-dev/radicle-surf", rev = "58a0e6680d61cc312eee3255abe5d0d494f631d2" }
 rand = "0.7"
 rand_pcg = "0.2"
 rcgen = "0.7"
 regex = "1.3"
-rustls = { version = "0.16.1", features = ["logging", "dangerous_configuration"] }
+rustls = { version = "0.17", features = ["logging", "dangerous_configuration"] }
 secstr = "0.3"
 sequoia-openpgp = "0.12"
 serde = { version = "1.0", features = ["derive"] }
@@ -40,8 +40,8 @@ serde_repr = "0.1"
 sha2 = "0.8"
 sodiumoxide = "0.2"
 tempfile = "3.1"
-tokio = { git = "https://github.com/tokio-rs/tokio", rev = "7b8ce356c31aa8887ba4aa84fbceb3d64114785c", features = ["full"] }
-tokio-util = { git = "https://github.com/tokio-rs/tokio", rev = "7b8ce356c31aa8887ba4aa84fbceb3d64114785c", features = ["compat"] }
+tokio = { version = "0.2.11", features = ["full"] }
+tokio-util = { version = "0.3.0", features = ["compat"] }
 url = { version = "2.1", features = ["serde"] }
 urltemplate = "0.1"
 webpki = "0.21"

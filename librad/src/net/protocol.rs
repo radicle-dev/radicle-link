@@ -2,6 +2,7 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use failure::{format_err, Error};
 use futures::{
+    channel::oneshot,
     executor::block_on,
     future::TryFutureExt,
     lock::Mutex,
@@ -62,6 +63,7 @@ enum Run<'a> {
     Disconnect {
         peer: PeerId,
     },
+    Shutdown,
 }
 
 #[derive(Clone)]
@@ -90,6 +92,7 @@ where
         &mut self,
         BoundEndpoint { endpoint, incoming }: BoundEndpoint<'a>,
         disco: D,
+        shutdown: oneshot::Receiver<()>,
     ) where
         D: Discovery,
     {
@@ -100,6 +103,8 @@ where
                 hello: None,
             })
         });
+
+        let shutdown = futures::stream::once(shutdown).map(|_| Run::Shutdown);
 
         let bootstrap = futures::stream::iter(disco.collect()).filter_map(|(peer_id, addrs)| {
             let endpoint = endpoint.clone();
@@ -140,17 +145,21 @@ where
         });
 
         futures::stream::select(
-            incoming.boxed(),
-            futures::stream::select(bootstrap.boxed(), rad_events.boxed()),
+            shutdown.map(Ok).boxed(),
+            futures::stream::select(
+                incoming.map(Ok).boxed(),
+                futures::stream::select(bootstrap.map(Ok).boxed(), rad_events.map(Ok).boxed()),
+            ),
         )
-        .for_each(|run| {
+        .try_for_each(|run| {
             let mut this = self.clone();
             async move { this.eval_run(run).await }
         })
-        .await;
+        .await
+        .unwrap_or_else(|()| warn!("Shutting down"))
     }
 
-    async fn eval_run<'a>(&mut self, run: Run<'a>) {
+    async fn eval_run<'a>(&mut self, run: Run<'a>) -> Result<(), ()> {
         match run {
             Run::Connect {
                 conn,
@@ -160,7 +169,8 @@ where
                 self.subscribers
                     .emit(ProtocolEvent::Connected(conn.peer_id().clone()))
                     .await;
-                self.drive_connection(conn, incoming, hello).await
+                self.drive_connection(conn, incoming, hello).await;
+                Ok(())
             },
 
             Run::Disconnect { peer } => {
@@ -171,7 +181,11 @@ where
                         .emit(ProtocolEvent::Disconnected(peer))
                         .await
                 }
+
+                Ok(())
             },
+
+            Run::Shutdown => Err(()),
         }
     }
 

@@ -59,7 +59,8 @@ pub fn make_client_config(key: &device::Key) -> rustls::ClientConfig {
     cfg.set_single_client_cert(
         vec![rustls::Certificate(cert.serialize_der().unwrap())],
         rustls::PrivateKey(cert.serialize_private_key_der()),
-    );
+    )
+    .expect("A valid private key is valid. qed");
     cfg.dangerous()
         .set_certificate_verifier(Arc::new(RadServerCertVerifier::new(key.clone().into())));
 

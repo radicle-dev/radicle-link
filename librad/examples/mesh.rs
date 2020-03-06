@@ -1,6 +1,7 @@
 use std::{error::Error, net::SocketAddr, path::Path};
 
 use async_trait::async_trait;
+use futures::channel::oneshot;
 use git2::Repository;
 use tempfile::tempdir;
 use tokio::task;
@@ -13,6 +14,7 @@ use librad::{
         connection::{BoundEndpoint, Endpoint},
         discovery,
         protocol::{rad, Protocol},
+        quic,
     },
     paths::Paths,
     peer::PeerId,
@@ -112,90 +114,120 @@ async fn bootstrap<'a>(
     })
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     librad::init();
 
-    let tmp1 = tempdir().unwrap();
-    println!("boostrapping peer1");
-    let Bootstrap {
-        peer: peer1,
-        proto: proto1,
-        endpoint: endpoint1,
-    } = bootstrap("peer1", device::Key::new(), tmp1.path())
-        .await
-        .expect("Could not boostrap peer1");
+    let mut rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        println!("enter");
+        {
+            let key = device::Key::new();
+            let mut builder = quinn::Endpoint::builder();
+            builder.default_client_config(quic::make_client_config(&key));
+            builder.listen(quic::make_server_config(&key));
 
-    println!("peer1 ready");
+            let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let _ = builder.bind(&addr).unwrap();
+        }
+        println!("sandman");
 
-    let tmp2 = tempdir().unwrap();
-    println!("boostrapping peer3");
-    let Bootstrap {
-        peer: peer2,
-        proto: mut proto2,
-        endpoint: endpoint2,
-    } = bootstrap("peer2", device::Key::new(), tmp2.path())
-        .await
-        .expect("Could not boostrap peer2");
+        let tmp1 = tempdir().unwrap();
+        println!("boostrapping peer1");
+        let Bootstrap {
+            peer: peer1,
+            proto: proto1,
+            endpoint: endpoint1,
+        } = bootstrap("peer1", device::Key::new(), tmp1.path())
+            .await
+            .expect("Could not boostrap peer1");
 
-    println!("peer2 ready");
+        println!("peer1 ready");
 
-    let tmp3 = tempdir().unwrap();
-    println!("boostrapping peer3");
-    let Bootstrap {
-        peer: peer3,
-        proto: mut proto3,
-        endpoint: endpoint3,
-    } = bootstrap("peer3", device::Key::new(), tmp3.path())
-        .await
-        .expect("Could not boostrap peer3");
+        let tmp2 = tempdir().unwrap();
+        println!("boostrapping peer3");
+        let Bootstrap {
+            peer: peer2,
+            proto: mut proto2,
+            endpoint: endpoint2,
+        } = bootstrap("peer2", device::Key::new(), tmp2.path())
+            .await
+            .expect("Could not boostrap peer2");
 
-    println!("peer3 ready");
+        println!("peer2 ready");
 
-    let disco1 = discovery::Static::<SocketAddr>::new(vec![]);
-    let disco2 = discovery::Static::new(vec![
-        (peer1.peer_id(), endpoint1.local_addr().unwrap()),
-        (peer3.peer_id(), endpoint3.local_addr().unwrap()),
-    ]);
-    let disco3 = discovery::Static::new(vec![
-        (peer1.peer_id(), endpoint1.local_addr().unwrap()),
-        (peer2.peer_id(), endpoint2.local_addr().unwrap()),
-    ]);
+        let tmp3 = tempdir().unwrap();
+        println!("boostrapping peer3");
+        let Bootstrap {
+            peer: peer3,
+            proto: mut proto3,
+            endpoint: endpoint3,
+        } = bootstrap("peer3", device::Key::new(), tmp3.path())
+            .await
+            .expect("Could not boostrap peer3");
 
-    let transport = git::transport::register();
-    transport.register_stream_factory(Box::new(proto1.clone()));
-    transport.register_stream_factory(Box::new(proto2.clone()));
-    transport.register_stream_factory(Box::new(proto3.clone()));
+        println!("peer3 ready");
 
-    task::spawn({
-        let mut proto1 = proto1.clone();
-        async move { proto1.run(endpoint1, disco1).await }
+        let disco1 = discovery::Static::<SocketAddr>::new(vec![]);
+        let disco2 = discovery::Static::new(vec![
+            (peer1.peer_id(), endpoint1.local_addr().unwrap()),
+            (peer3.peer_id(), endpoint3.local_addr().unwrap()),
+        ]);
+        let disco3 = discovery::Static::new(vec![
+            (peer1.peer_id(), endpoint1.local_addr().unwrap()),
+            (peer2.peer_id(), endpoint2.local_addr().unwrap()),
+        ]);
+
+        let transport = git::transport::register();
+        transport.register_stream_factory(Box::new(proto1.clone()));
+        transport.register_stream_factory(Box::new(proto2.clone()));
+        transport.register_stream_factory(Box::new(proto3.clone()));
+
+        let p1 = {
+            let (tx, rx) = oneshot::channel();
+            task::spawn({
+                let mut proto1 = proto1.clone();
+                async move { proto1.run(endpoint1, disco1, rx).await }
+            });
+            tx
+        };
+        let p2 = {
+            let (tx, rx) = oneshot::channel();
+            task::spawn(async move { proto2.run(endpoint2, disco2, rx).await });
+            tx
+        };
+        let p3 = {
+            let (tx, rx) = oneshot::channel();
+            task::spawn(async move { proto3.run(endpoint3, disco3, rx).await });
+            tx
+        };
+
+        let project1 = {
+            let repo = peer1.create_repo(tmp1.path().join("repo1")).unwrap();
+            GitProject::init(
+                &peer1.paths,
+                &peer1.key,
+                &repo,
+                meta::Project::new("mini1", &peer1.peer_id()),
+                meta::Contributor::new(),
+            )
+            .unwrap()
+            .into()
+        };
+
+        proto1
+            .announce(rad::Update::Project {
+                project: project1,
+                head: None,
+            })
+            .await;
+
+        assert_eq!(
+            Project::list(&peer1.paths).collect::<Vec<ProjectId>>(),
+            Project::list(&peer2.paths).collect::<Vec<ProjectId>>()
+        );
+
+        p1.send(()).unwrap();
+        p2.send(()).unwrap();
+        p3.send(()).unwrap();
     });
-    task::spawn(async move { proto2.run(endpoint2, disco2).await });
-    task::spawn(async move { proto3.run(endpoint3, disco3).await });
-
-    let project1 = {
-        let repo = peer1.create_repo(tmp1.path().join("repo1")).unwrap();
-        GitProject::init(
-            &peer1.paths,
-            &peer1.key,
-            &repo,
-            meta::Project::new("mini1", &peer1.peer_id()),
-            meta::Contributor::new(),
-        )
-        .unwrap()
-        .into()
-    };
-
-    proto1
-        .announce(rad::Update::Project {
-            project: project1,
-            head: None,
-        })
-        .await;
-
-    assert_eq!(
-        Project::list(&peer1.paths).collect::<Vec<ProjectId>>(),
-        Project::list(&peer2.paths).collect::<Vec<ProjectId>>()
-    );
 }
