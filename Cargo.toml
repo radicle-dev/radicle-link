@@ -4,5 +4,5 @@ members = [ "librad", "rad2", "radicle-keystore" ]
 [patch.crates-io]
 # FIXME: we need this obscure patch to get ed25519-signed certs.
 # See https://github.com/ctz/rustls/pull/292
-rustls = { path = "../../vendor/rustls/rustls" }
-#rustls = { git = "https://github.com/kim/rustls", rev = "259f9732fb59dd57a641b6dd00834bac0ca8afd3" }
+#rustls = { path = "../../vendor/rustls/rustls" }
+rustls = { git = "https://github.com/kim/rustls", rev = "558405ac3c229947ca17b9285d60368ce67835ce" }
