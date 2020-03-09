@@ -23,7 +23,7 @@ use futures::{
 };
 use futures_codec::{CborCodec, CborCodecError, Framed, FramedRead, FramedWrite};
 use futures_timer::Delay;
-use log::warn;
+use log::{trace, warn};
 use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
@@ -150,6 +150,7 @@ pub enum Capability {
 }
 
 #[derive(Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum ProtocolEvent {
     DialAndSend(PeerInfo, Rpc),
     Disconnect(PeerId),
@@ -406,6 +407,7 @@ impl<S> Protocol<S> {
         S: LocalStorage,
     {
         let remote_id = stream.peer_id().clone();
+        trace!("{}: Outgoing to {}", self.local_id, remote_id);
         // This should not be possible, as we prevent it in the TLS handshake.
         // Leaving it here regardless as a sanity check.
         if remote_id == self.local_id {
@@ -415,6 +417,7 @@ impl<S> Protocol<S> {
         let hello = hello
             .into()
             .unwrap_or_else(|| Membership::Join(self.local_ad.clone()).into());
+        trace!("{}: Hello: {:?}", self.local_id, hello);
         stream.send(hello).await?;
 
         self.incoming(stream).await
@@ -428,6 +431,7 @@ impl<S> Protocol<S> {
         use Membership::*;
 
         let remote_id = stream.peer_id().clone();
+        trace!("{}: Incoming from {}", self.local_id, remote_id);
 
         // This is a bit of a hack: in order to keep track of the connected
         // peers, and to be able to broadcast messages to them, we need to move
@@ -441,6 +445,7 @@ impl<S> Protocol<S> {
                 .add_connected(&remote_id, FramedWrite::new(send, codec.clone()))
                 .await
             {
+                trace!("{}: Ejecting connected peer {:?}", self.local_id, ejected);
                 // Note: if the ejected peer never sent us a `Join` or
                 // `Neighbour`, it isn't behaving well, so we can forget about
                 // it here. Otherwise, we should already have it in
@@ -465,102 +470,129 @@ impl<S> Protocol<S> {
             }
         };
 
-        while let Some(rpc) = recv.try_next().await? {
-            match rpc {
-                Rpc::Membership(msg) => match msg {
-                    Join(ad) => {
-                        let peer_info = make_peer_info(ad, recv.remote_address());
+        loop {
+            match recv.try_next().await {
+                Err(e) => {
+                    warn!("{}: Recv error: {:?}", self.local_id, e);
+                    break;
+                },
+                Ok(None) => {},
+                Ok(Some(rpc)) => match rpc {
+                    Rpc::Membership(msg) => match msg {
+                        Join(ad) => {
+                            let peer_info = make_peer_info(ad, recv.remote_address());
+                            trace!("{}: Join with peer_info: {:?}", self.local_id, peer_info);
 
-                        self.add_known(iter::once(peer_info.clone())).await;
-                        self.broadcast(
-                            ForwardJoin {
-                                joined: peer_info,
-                                ttl: self.mparams.random_walk_length,
-                            },
-                            &remote_id,
-                        )
-                        .await
-                    },
-
-                    ForwardJoin { joined, ttl } => {
-                        if ttl == 0 {
-                            self.dial_and_send(&joined, Neighbour(self.local_ad.clone()))
-                                .await
-                        } else {
+                            self.add_known(iter::once(peer_info.clone())).await;
                             self.broadcast(
                                 ForwardJoin {
-                                    joined,
-                                    ttl: ttl - 1,
+                                    joined: peer_info,
+                                    ttl: self.mparams.random_walk_length,
                                 },
                                 &remote_id,
                             )
                             .await
-                        }
-                    },
+                        },
 
-                    Neighbour(ad) => {
-                        self.add_known(iter::once(make_peer_info(ad, recv.remote_address())))
-                            .await
-                    },
-
-                    Shuffle { origin, peers, ttl } => {
-                        // We're supposed to only remember shuffled peers at
-                        // the end of the random walk. Do it anyway for now.
-                        self.add_known(peers.clone()).await;
-
-                        if ttl > 0 {
-                            let sample = self.sample_known().await;
-                            self.dial_and_send(&origin, ShuffleReply { peers: sample })
-                                .await
-                        } else {
-                            let origin = if origin.peer_id == remote_id {
-                                make_peer_info(origin.advertised_info, recv.remote_address())
+                        ForwardJoin { joined, ttl } => {
+                            trace!("{}: ForwardJoin: {:?}, {}", self.local_id, joined, ttl);
+                            if ttl == 0 {
+                                self.dial_and_send(&joined, Neighbour(self.local_ad.clone()))
+                                    .await
                             } else {
-                                origin
-                            };
+                                self.broadcast(
+                                    ForwardJoin {
+                                        joined,
+                                        ttl: ttl - 1,
+                                    },
+                                    &remote_id,
+                                )
+                                .await
+                            }
+                        },
 
-                            self.broadcast(
-                                Shuffle {
-                                    origin,
-                                    peers,
-                                    ttl: ttl - 1,
-                                },
-                                &remote_id,
-                            )
-                            .await
-                        }
+                        Neighbour(ad) => {
+                            trace!("{}: Neighbour: {:?}", self.local_id, ad);
+                            self.add_known(iter::once(make_peer_info(ad, recv.remote_address())))
+                                .await
+                        },
+
+                        Shuffle { origin, peers, ttl } => {
+                            trace!(
+                                "{}: Shuffle: {:?}, {:?}, {}",
+                                self.local_id,
+                                origin,
+                                peers,
+                                ttl
+                            );
+                            // We're supposed to only remember shuffled peers at
+                            // the end of the random walk. Do it anyway for now.
+                            self.add_known(peers.clone()).await;
+
+                            if ttl > 0 {
+                                let sample = self.sample_known().await;
+                                self.dial_and_send(&origin, ShuffleReply { peers: sample })
+                                    .await
+                            } else {
+                                let origin = if origin.peer_id == remote_id {
+                                    make_peer_info(origin.advertised_info, recv.remote_address())
+                                } else {
+                                    origin
+                                };
+
+                                self.broadcast(
+                                    Shuffle {
+                                        origin,
+                                        peers,
+                                        ttl: ttl - 1,
+                                    },
+                                    &remote_id,
+                                )
+                                .await
+                            }
+                        },
+
+                        ShuffleReply { peers } => {
+                            trace!("{}: ShuffleReply: {:?}", self.local_id, peers);
+                            self.add_known(peers).await
+                        },
                     },
 
-                    ShuffleReply { peers } => self.add_known(peers).await,
-                },
-
-                Rpc::Gossip(msg) => match msg {
-                    Have(val) => {
-                        match self.storage.put(&remote_id, val.clone()).await {
-                            // `val` was new, and is now fetched to local
-                            // storage. Let connected peers know they can now
-                            // fetch it from us.
-                            PutResult::Applied => self.broadcast(Have(val), &remote_id).await,
-                            // Meh. Request retransmission.
-                            // TODO: actually... we may only want to ask the
-                            // peer we got the `Have` from in the first place.
-                            // But what if that went away in the meantime?
-                            PutResult::Error => self.broadcast(Want(val), None).await,
-                            // We are up-to-date, don't do anything
-                            PutResult::Stale => {},
-                        }
-                    },
-                    Want(val) => {
-                        if self.storage.ask(&val).await {
-                            self.reply(&remote_id, Have(val)).await
-                        } else {
-                            self.broadcast(Want(val), &remote_id).await
-                        }
+                    Rpc::Gossip(msg) => match msg {
+                        Have(val) => {
+                            trace!("{}: Have {:?}", self.local_id, val);
+                            match self.storage.put(&remote_id, val.clone()).await {
+                                // `val` was new, and is now fetched to local
+                                // storage. Let connected peers know they can now
+                                // fetch it from us.
+                                PutResult::Applied => self.broadcast(Have(val), &remote_id).await,
+                                // Meh. Request retransmission.
+                                // TODO: actually... we may only want to ask the
+                                // peer we got the `Have` from in the first place.
+                                // But what if that went away in the meantime?
+                                PutResult::Error => self.broadcast(Want(val), None).await,
+                                // We are up-to-date, don't do anything
+                                PutResult::Stale => {},
+                            }
+                        },
+                        Want(val) => {
+                            trace!("{}: Want {:?}", self.local_id, val);
+                            if self.storage.ask(&val).await {
+                                self.reply(&remote_id, Have(val)).await
+                            } else {
+                                self.broadcast(Want(val), &remote_id).await
+                            }
+                        },
                     },
                 },
             }
         }
 
+        trace!(
+            "{}: Recv stream from {} done, disconnecting",
+            self.local_id,
+            remote_id
+        );
         self.remove_connected(&remote_id).await;
 
         Ok(())
@@ -610,6 +642,7 @@ impl<S> Protocol<S> {
     }
 
     async fn shuffle(&self) {
+        trace!("{}: Initiating shuffle", self.local_id);
         let mut connected = self.connected_peers.lock().await;
         if let Some((recipient, recipient_send)) = connected.random() {
             // Note: we should pick from the connected peers first, padding with
@@ -641,6 +674,7 @@ impl<S> Protocol<S> {
 
     async fn promote_random(&self) {
         if let Some(candidate) = self.known_peers.lock().await.random() {
+            trace!("{}: Promoting: {:?}", self.local_id, candidate);
             self.dial_and_send(&candidate, Membership::Neighbour(self.local_ad.clone()))
                 .await
         }
@@ -664,12 +698,16 @@ impl<S> Protocol<S> {
         .for_each_concurrent(None, |(peer, out)| {
             let rpc = rpc.clone();
             async move {
+                trace!("{}: Broadcast {:?} to {}", self.local_id, rpc, peer);
                 // If this returns an error, it is likely the receiving end has
                 // stopped working, too. Hence, we don't need to propagate
                 // errors here. This statement will need some empirical
                 // evidence.
                 if let Err(e) = out.send(rpc).await {
-                    warn!("Failed to send broadcast message to {}: {:?}", peer, e)
+                    warn!(
+                        "{}: Failed to send broadcast message to {}: {:?}",
+                        self.local_id, peer, e
+                    )
                 }
             }
         })
@@ -682,8 +720,9 @@ impl<S> Protocol<S> {
             .for_each(|out| {
                 let rpc = rpc.clone();
                 async move {
+                    trace!("{}: Reply with {:?} to {}", self.local_id, rpc, to);
                     if let Err(e) = out.send(rpc).await {
-                        warn!("Failed to reply to {}: {:?}", to, e);
+                        warn!("{}: Failed to reply to {}: {:?}", self.local_id, to, e);
                     }
                 }
             })

@@ -48,6 +48,7 @@ webpki = "0.21"
 yasna = { version = "0.3", features = ["bit-vec"] }
 
 [dev-dependencies]
+env_logger = "0.7"
 matches = "0.1"
 proptest = "0.9"
 proptest-derive = "0.1"

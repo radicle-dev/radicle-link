@@ -17,6 +17,7 @@ pub mod net;
 pub mod paths;
 pub mod peer;
 pub mod project;
+pub mod util;
 
 pub(crate) mod internal;
 

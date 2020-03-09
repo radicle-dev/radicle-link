@@ -1,8 +1,7 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, future::Future, net::SocketAddr, sync::Arc};
 
 use failure::{format_err, Error};
 use futures::{
-    channel::oneshot,
     executor::block_on,
     future::TryFutureExt,
     lock::Mutex,
@@ -10,7 +9,7 @@ use futures::{
     stream::{BoxStream, StreamExt, TryStreamExt},
 };
 use futures_codec::CborCodec;
-use log::{error, warn};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
@@ -54,6 +53,7 @@ pub enum ProtocolEvent {
     Disconnected(PeerId),
 }
 
+#[allow(clippy::large_enum_variant)]
 enum Run<'a> {
     Connect {
         conn: Connection,
@@ -88,14 +88,18 @@ where
         }
     }
 
-    pub async fn run<'a, D>(
+    // TODO: move into ADT
+    pub async fn run<Disco, Shutdown>(
         &mut self,
-        BoundEndpoint { endpoint, incoming }: BoundEndpoint<'a>,
-        disco: D,
-        shutdown: oneshot::Receiver<()>,
+        BoundEndpoint { endpoint, incoming }: BoundEndpoint<'_>,
+        disco: Disco,
+        shutdown: Shutdown,
     ) where
-        D: Discovery,
+        Disco: Discovery,
+        Shutdown: Future<Output = ()> + Send,
     {
+        debug!("Listening on {:?}", endpoint.local_addr());
+
         let incoming = incoming.filter_map(|(conn, i)| async move {
             Some(Run::Connect {
                 conn,
@@ -151,7 +155,7 @@ where
                 futures::stream::select(bootstrap.map(Ok).boxed(), rad_events.map(Ok).boxed()),
             ),
         )
-        .try_for_each(|run| {
+        .try_for_each_concurrent(None, |run| {
             let mut this = self.clone();
             async move { this.eval_run(run).await }
         })
@@ -159,13 +163,17 @@ where
         .unwrap_or_else(|()| warn!("Shutting down"))
     }
 
-    async fn eval_run<'a>(&mut self, run: Run<'a>) -> Result<(), ()> {
+    async fn eval_run(&mut self, run: Run<'_>) -> Result<(), ()> {
+        debug!("Processing Run event");
+
         match run {
             Run::Connect {
                 conn,
                 incoming,
                 hello,
             } => {
+                debug!("Run::Connect");
+                info!("New connection: {}", conn.remote_address());
                 self.subscribers
                     .emit(ProtocolEvent::Connected(conn.peer_id().clone()))
                     .await;
@@ -174,7 +182,9 @@ where
             },
 
             Run::Disconnect { peer } => {
+                debug!("Run::Disconnect");
                 if let Some(conn) = self.connections.lock().await.remove(&peer) {
+                    info!("Disconnecting: {}", conn.remote_address());
                     // FIXME: make this more graceful
                     conn.close(CloseReason::ProtocolDisconnect);
                     self.subscribers
@@ -185,7 +195,10 @@ where
                 Ok(())
             },
 
-            Run::Shutdown => Err(()),
+            Run::Shutdown => {
+                debug!("Run::Shutdown");
+                Err(())
+            },
         }
     }
 
@@ -223,6 +236,7 @@ where
         futures::stream::iter(addrs)
             .filter_map(|addr| {
                 let mut endpoint = endpoint.clone();
+                info!("Connecting to: {}@{}", peer_id, addr);
                 Box::pin(async move {
                     match endpoint.connect(peer_id, &addr).await {
                         Ok(conn) => Some(conn),
