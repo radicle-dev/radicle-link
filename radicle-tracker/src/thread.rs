@@ -67,8 +67,6 @@ pub enum Error {
     NextMainOutOfBounds,
     #[error("Tried to move to next item in the reply thread, but we are at the last")]
     NextRepliesOutOfBound,
-    #[error("The replies to this item are empty")]
-    EmptyReplies,
     #[error("Cannot delete the main item of the thread")]
     DeleteFirstMain,
 }
@@ -89,16 +87,15 @@ impl<A> Replies<A> {
         self.0.push(Status::Live(a))
     }
 
-    fn delete(&mut self, index: usize)
+    fn delete(&mut self, index: usize) -> Option<&mut Status<A>>
     where
         A: Clone,
     {
-        let node = self
-            .0
-            .get_mut(index)
-            .unwrap_or_else(|| panic!("Index out of bounds: {}", index));
+        let node = self.0.get_mut(index)?;
 
         node.kill();
+
+        Some(node)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -168,12 +165,14 @@ impl<A> Thread<A> {
     /// ```
     pub fn new(a: A) -> Self {
         Thread {
-            _finger: Either::Left(0),
+            _finger: ROOT_FINGER,
             main_thread: NonEmpty::new((Status::Live(a), Replies::new())),
         }
     }
 
-    /// Look at the previous reply of the thread.
+    /// Look at the previous reply of the thread. If it's the case that we are
+    /// looking at the first reply to an item on the main thread, then we
+    /// will point to the main thread item.
     ///
     /// # Errors
     ///
@@ -203,6 +202,29 @@ impl<A> Thread<A> {
     /// #     Ok(())
     /// # }
     /// ```
+    ///
+    /// ```
+    /// # use std::error::Error;
+    /// #
+    /// # fn main() -> Result<(), Box<dyn Error>> {
+    /// use radicle_tracker::{ReplyTo, Status, Thread};
+    ///
+    /// let (mut thread) = Thread::new(String::from("Discussing rose trees"));
+    ///
+    /// // Reply to the main thread
+    /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
+    ///
+    /// // Reply to the 1st comment
+    /// thread.reply(String::from("Is this about flowers?"), ReplyTo::Thread);
+    ///
+    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Is this about flowers?"))));
+    ///
+    /// thread.previous_reply(ReplyTo::Thread)?;
+    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("I love rose trees!"))));
+    /// #
+    /// #     Ok(())
+    /// # }
+    /// ```
     pub fn previous_reply(&mut self, reply_to: ReplyTo) -> Result<(), Error> {
         match self._finger.as_mut() {
             Either::Left(main_ix) if *main_ix == 0 => Err(Error::PreviousMainOutOfBounds),
@@ -215,10 +237,15 @@ impl<A> Thread<A> {
             },
             Either::Right((main_ix, replies_ix)) => match reply_to {
                 ReplyTo::Main => {
+                    if *main_ix == 0 {
+                        return Err(Error::PreviousMainOutOfBounds);
+                    }
+
                     self._finger = Either::Left(*main_ix - 1);
                     Ok(())
                 },
                 ReplyTo::Thread => {
+                    // If we're at the first reply, then we move to the main thread.
                     if *replies_ix == 0 {
                         self._finger = Either::Left(*main_ix);
                     } else {
@@ -261,17 +288,19 @@ impl<A> Thread<A> {
     /// # }
     /// ```
     pub fn next_reply(&mut self, reply_to: ReplyTo) -> Result<(), Error> {
-        let replies_bound = if self.replies_count() == 0 {
+        let replies_count = self.replies_count();
+        let main_bound = self.main_thread.len() - 1;
+
+        let replies_bound = if replies_count == 0 {
             None
         } else {
-            Some(self.replies_count() - 1)
+            Some(replies_count - 1)
         };
 
         match self._finger.as_mut() {
             Either::Left(main_ix) => match reply_to {
                 ReplyTo::Main => {
-                    let bound = self.main_thread.len() - 1;
-                    if *main_ix == bound {
+                    if *main_ix == main_bound {
                         return Err(Error::NextMainOutOfBounds);
                     }
 
@@ -280,6 +309,7 @@ impl<A> Thread<A> {
                 },
                 ReplyTo::Thread => match replies_bound {
                     None => Err(Error::NextRepliesOutOfBound),
+                    // We're ensuring that we have replies
                     Some(_) => {
                         self._finger = Either::Right((*main_ix, 0));
                         Ok(())
@@ -288,8 +318,7 @@ impl<A> Thread<A> {
             },
             Either::Right((main_ix, replies_ix)) => match reply_to {
                 ReplyTo::Main => {
-                    let bound = self.main_thread.len() - 1;
-                    if *main_ix == bound {
+                    if *main_ix == main_bound {
                         return Err(Error::NextMainOutOfBounds);
                     }
 
@@ -342,6 +371,10 @@ impl<A> Thread<A> {
     ///
     /// Once we have replied we will be pointing to the latest reply, whether it
     /// is on the main thread or the reply thread.
+    ///
+    /// # Panics
+    ///
+    /// If the internal finger into the thread is out of bounds.
     ///
     /// # Examples
     ///
@@ -399,6 +432,10 @@ impl<A> Thread<A> {
     /// Delete the item that we are looking at. This does not remove the item
     /// from the thread but rather marks it as [`Status::Dead`].
     ///
+    /// # Panics
+    ///
+    /// If the internal finger into the thread is out of bounds.
+    ///
     /// # Error
     ///
     /// Fails with [`Error::DeleteFirstMain`] if we attempt to delete the first
@@ -447,37 +484,80 @@ impl<A> Thread<A> {
         match self._finger {
             Either::Left(main_ix) if main_ix == 0 => Err(Error::DeleteFirstMain),
             Either::Left(main_ix) => {
-                let (node, _) = self.main_thread.get_mut(main_ix).unwrap();
+                let (node, _) = self.index_main_mut(main_ix);
                 node.kill();
                 Ok(())
             },
             Either::Right((main_ix, replies_ix)) => {
-                let (_, replies) = self.main_thread.get_mut(main_ix).unwrap();
-                replies.delete(replies_ix);
+                let (_, replies) = self.index_main_mut(main_ix);
+                replies
+                    .delete(replies_ix)
+                    .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", replies_ix));
                 Ok(())
             },
         }
     }
 
+    /// Edit the item we are looking at with the function `f`.
+    ///
+    /// # Panics
+    ///
+    /// If the internal finger into the thread is out of bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::error::Error;
+    /// #
+    /// # fn main() -> Result<(), Box<dyn Error>> {
+    /// use radicle_tracker::{ReplyTo, Status, Thread, ThreadError};
+    ///
+    /// let mut thread = Thread::new(String::from("Discussing rose trees"));
+    ///
+    /// // Reply to the main thread
+    /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
+    ///
+    /// // Reply to the 1st comment on the main thread
+    /// thread.reply(
+    ///     String::from("Did you know rose trees are equivalent to Cofree []?"),
+    ///     ReplyTo::Thread
+    /// );
+    ///
+    /// thread.reply(String::from("What should we use them for?"), ReplyTo::Main);
+    /// thread.edit(|body| *body = String::from("How can we use them?"));
+    ///
+    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("How can we use them?"))));
+    /// #
+    /// #     Ok(())
+    /// # }
+    /// ```
     pub fn edit<F>(&mut self, f: F) -> Result<(), Error>
     where
         F: FnOnce(&mut A) -> (),
     {
         match self._finger {
             Either::Left(main_ix) => {
-                let (node, _) = self.main_thread.get_mut(main_ix).unwrap();
+                let (node, _) = self.index_main_mut(main_ix);
                 f(node.get_mut());
                 Ok(())
             },
             Either::Right((main_ix, replies_ix)) => {
-                let (_, replies) = self.main_thread.get_mut(main_ix).unwrap();
-                let node = replies.get_mut(replies_ix).unwrap();
+                let (_, replies) = self.index_main_mut(main_ix);
+                let node = replies
+                    .get_mut(replies_ix)
+                    .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", replies_ix));
                 f(node.get_mut());
                 Ok(())
             },
         }
     }
 
+    /// Expand the current main thread item we are looking at into the full
+    /// non-empty view of items.
+    ///
+    /// # Panics
+    ///
+    /// If the internal finger into the thread is out of bounds.
     pub fn expand(&self) -> NonEmpty<Status<A>>
     where
         A: Clone,
@@ -487,21 +567,46 @@ impl<A> Thread<A> {
             Either::Right((main_ix, _)) => main_ix,
         };
 
-        let (node, replies) = self.main_thread.get(main_ix).unwrap();
+        let (node, replies) = self.index_main(main_ix);
         NonEmpty::from((node.clone(), replies.clone().0))
     }
 
+    /// Look at the current item we are pointing to in the thread.
+    ///
+    /// # Panics
+    ///
+    /// If the internal finger into the thread is out of bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use radicle_tracker::{Status, Thread};
+    ///
+    /// let (thread) = Thread::new(String::from("Discussing rose trees"));
+    ///
+    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Discussing rose trees"))));
+    /// ```
     pub fn view(&self) -> Result<&Status<A>, Error> {
         match self._finger {
-            Either::Left(main_ix) => Ok(&self.main_thread.get(main_ix).unwrap().0),
+            Either::Left(main_ix) => Ok(&self.index_main(main_ix).0),
             Either::Right((main_ix, replies_ix)) => Ok(self
-                .main_thread
-                .get(main_ix)
-                .unwrap()
+                .index_main(main_ix)
                 .1
                 .get(replies_ix)
-                .unwrap()),
+                .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", replies_ix))),
         }
+    }
+
+    fn index_main(&self, main_ix: usize) -> &(Status<A>, Replies<A>) {
+        self.main_thread
+            .get(main_ix)
+            .unwrap_or_else(|| panic!("Main index is out of bounds: {}", main_ix))
+    }
+
+    fn index_main_mut(&mut self, main_ix: usize) -> &mut (Status<A>, Replies<A>) {
+        self.main_thread
+            .get_mut(main_ix)
+            .unwrap_or_else(|| panic!("Main index is out of bounds: {}", main_ix))
     }
 
     fn replies(&self, index: usize) -> &Replies<A> {
