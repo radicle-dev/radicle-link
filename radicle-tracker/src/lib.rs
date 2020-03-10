@@ -1,7 +1,7 @@
 use std::hash;
 
 mod thread;
-pub use thread::{Error as ThreadError, Path, Thread};
+pub use thread::{Error as ThreadError, Replies, ReplyTo, Status, Thread};
 
 pub struct Issue<Author> {
     pub author: Author,
@@ -22,8 +22,8 @@ impl<Author> Issue<Author> {
     ///
     /// assert_eq!(issue.author, String::from("Monadic"));
     /// assert_eq!(issue.title, String::from("Buggy Boeuf"));
-    /// assert_eq!(issue.thread.first().content, String::from("We have bugs in our boeuf"));
-    /// assert!(issue.thread.first().author == issue.author);
+    /// assert_eq!(issue.thread.view().unwrap().get().content, String::from("We have bugs in our boeuf"));
+    /// assert!(issue.thread.view().unwrap().get().author == issue.author);
     /// assert_eq!(issue.meta, ());
     /// ```
     pub fn new(author: Author, title: String, content: String) -> Self
@@ -38,17 +38,13 @@ impl<Author> Issue<Author> {
         Issue {
             author,
             title,
-            thread: Thread::new(comment).0,
+            thread: Thread::new(comment),
             meta: (),
         }
     }
 
-    pub fn reply_to_thread(
-        &mut self,
-        path: Path,
-        comment: Comment<Author>,
-    ) -> Result<Path, ThreadError> {
-        self.thread.reply(&path, comment)
+    pub fn reply(&mut self, comment: Comment<Author>, reply_to: ReplyTo) {
+        self.thread.reply(comment, reply_to)
     }
 }
 
