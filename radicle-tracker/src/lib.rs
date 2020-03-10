@@ -53,11 +53,3 @@ pub struct Comment<Author> {
     pub author: Author,
     pub content: String,
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
