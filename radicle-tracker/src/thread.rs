@@ -174,14 +174,6 @@ impl<A> Thread<A> {
         }
     }
 
-    fn replies(&self, index: usize) -> &Replies<A> {
-        &self.main_thread.get(index).unwrap().1
-    }
-
-    fn replies_mut(&mut self, index: usize) -> &mut Replies<A> {
-        &mut self.main_thread.get_mut(index).unwrap().1
-    }
-
     pub fn previous_reply(&mut self, reply_to: ReplyTo) -> Result<(), Error> {
         match self._finger.as_mut() {
             Either::Left(main_ix) if *main_ix == 0 => Err(Error::PreviousMainOutOfBounds),
@@ -207,15 +199,6 @@ impl<A> Thread<A> {
                 },
             },
         }
-    }
-
-    fn replies_count(&self) -> usize {
-        let main_ix = match self._finger {
-            Either::Left(main_ix) => main_ix,
-            Either::Right((main_ix, _)) => main_ix,
-        };
-
-        self.main_thread.get(main_ix).unwrap().1.len()
     }
 
     pub fn next_reply(&mut self, reply_to: ReplyTo) -> Result<(), Error> {
@@ -267,34 +250,6 @@ impl<A> Thread<A> {
                 },
             },
         }
-    }
-
-    pub fn sub_thread(&mut self) -> Result<(), Error> {
-        match self._finger {
-            Either::Left(main_ix) => {
-                let replies = self.replies(main_ix);
-                if self.replies(main_ix).is_empty() {
-                    return Err(Error::EmptyReplies);
-                }
-
-                self._finger = Either::Right((main_ix, replies.len() - 1));
-
-                Ok(())
-            },
-            Either::Right(_) => Ok(()),
-        }
-    }
-
-    fn reply_main(&mut self, a: A) {
-        self.main_thread.push((Status::Live(a), Replies::new()));
-        self._finger = Either::Left(self.main_thread.len() - 1);
-    }
-
-    fn reply_thread(&mut self, main_ix: usize, a: A) {
-        let replies = self.replies_mut(main_ix);
-        replies.reply(a);
-        let replies_ix = replies.len() - 1;
-        self._finger = Either::Right((main_ix, replies_ix));
     }
 
     pub fn root(&mut self) {
@@ -458,14 +413,6 @@ impl<A> Thread<A> {
         NonEmpty::from((node.clone(), replies.clone().0))
     }
 
-    /* This is tricky because basically we want to calculate
-     * the sub-LUT of a thread and create a new RoseTree
-    pub fn sub_thread(&self, path: &Path) -> Option<RoseTree> {
-        let ix = self.lut.get(path)?;
-        self.tree.node_weight(*ix)
-    }
-    */
-
     pub fn view(&self) -> Result<&Status<A>, Error> {
         match self._finger {
             Either::Left(main_ix) => Ok(&self.main_thread.get(main_ix).unwrap().0),
@@ -477,6 +424,35 @@ impl<A> Thread<A> {
                 .get(replies_ix)
                 .unwrap()),
         }
+    }
+
+    fn replies(&self, index: usize) -> &Replies<A> {
+        &self.main_thread.get(index).unwrap().1
+    }
+
+    fn replies_mut(&mut self, index: usize) -> &mut Replies<A> {
+        &mut self.main_thread.get_mut(index).unwrap().1
+    }
+
+    fn replies_count(&self) -> usize {
+        let main_ix = match self._finger {
+            Either::Left(main_ix) => main_ix,
+            Either::Right((main_ix, _)) => main_ix,
+        };
+
+        self.replies(main_ix).len()
+    }
+
+    fn reply_main(&mut self, a: A) {
+        self.main_thread.push((Status::Live(a), Replies::new()));
+        self._finger = Either::Left(self.main_thread.len() - 1);
+    }
+
+    fn reply_thread(&mut self, main_ix: usize, a: A) {
+        let replies = self.replies_mut(main_ix);
+        replies.reply(a);
+        let replies_ix = replies.len() - 1;
+        self._finger = Either::Right((main_ix, replies_ix));
     }
 
     #[cfg(test)]
