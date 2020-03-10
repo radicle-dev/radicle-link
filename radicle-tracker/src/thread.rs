@@ -70,7 +70,7 @@ pub enum Error {
     #[error("The replies to this item are empty")]
     EmptyReplies,
     #[error("Cannot delete the main item of the thread")]
-    DeleteMain,
+    DeleteFirstMain,
 }
 
 /// A collection of replies where a reply is any item that has a [`Status`].
@@ -89,7 +89,7 @@ impl<A> Replies<A> {
         self.0.push(Status::Live(a))
     }
 
-    fn delete(&mut self, index: usize) -> Result<(), Error>
+    fn delete(&mut self, index: usize)
     where
         A: Clone,
     {
@@ -99,7 +99,6 @@ impl<A> Replies<A> {
             .unwrap_or_else(|| panic!("Index out of bounds: {}", index));
 
         node.kill();
-        Ok(())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -174,6 +173,36 @@ impl<A> Thread<A> {
         }
     }
 
+    /// Look at the previous reply of the thread.
+    ///
+    /// # Errors
+    ///
+    /// The function will fail with:
+    ///     * [`Error::PreviousMainOutOfBounds`] if we are looking at the start
+    ///       of the main thread.
+    ///     * [`Error::PreviousThreadOnMain`] if we use [`ReplyTo::Thread`]
+    ///       while on the main
+    ///     thread.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::error::Error;
+    /// #
+    /// # fn main() -> Result<(), Box<dyn Error>> {
+    /// use radicle_tracker::{ReplyTo, Status, Thread};
+    ///
+    /// let (mut thread) = Thread::new(String::from("Discussing rose trees"));
+    ///
+    /// // Reply to the main thread
+    /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
+    ///
+    /// thread.previous_reply(ReplyTo::Main)?;
+    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Discussing rose trees"))));
+    /// #
+    /// #     Ok(())
+    /// # }
+    /// ```
     pub fn previous_reply(&mut self, reply_to: ReplyTo) -> Result<(), Error> {
         match self._finger.as_mut() {
             Either::Left(main_ix) if *main_ix == 0 => Err(Error::PreviousMainOutOfBounds),
@@ -201,6 +230,36 @@ impl<A> Thread<A> {
         }
     }
 
+    /// Look at the next reply of the thread.
+    ///
+    /// # Errors
+    ///
+    /// The function will fail with:
+    ///     * [`Error::NextMainOutOfBounds`] if we are at the end of the main
+    ///       thread and attempt to go to the next item.
+    ///     * [`Error::NextRepliesOutOfBound`] if we are at the end of the reply
+    ///       thread and attempt to go to the next item.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::error::Error;
+    /// #
+    /// # fn main() -> Result<(), Box<dyn Error>> {
+    /// use radicle_tracker::{ReplyTo, Status, Thread};
+    ///
+    /// let (mut thread) = Thread::new(String::from("Discussing rose trees"));
+    ///
+    /// // Reply to the main thread
+    /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
+    ///
+    /// thread.root();
+    /// thread.next_reply(ReplyTo::Main)?;
+    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("I love rose trees!"))));
+    /// #
+    /// #     Ok(())
+    /// # }
+    /// ```
     pub fn next_reply(&mut self, reply_to: ReplyTo) -> Result<(), Error> {
         let replies_bound = if self.replies_count() == 0 {
             None
@@ -252,13 +311,37 @@ impl<A> Thread<A> {
         }
     }
 
+    /// Look at the root of the thread.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::error::Error;
+    /// #
+    /// # fn main() -> Result<(), Box<dyn Error>> {
+    /// use radicle_tracker::{ReplyTo, Status, Thread};
+    ///
+    /// let (mut thread) = Thread::new(String::from("Discussing rose trees"));
+    ///
+    /// // Reply to the main thread
+    /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
+    ///
+    /// thread.root();
+    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Discussing rose trees"))));
+    /// #
+    /// #     Ok(())
+    /// # }
+    /// ```
     pub fn root(&mut self) {
         self._finger = ROOT_FINGER;
     }
 
-    /// Reply to an existing `Thread`. The reply is made to where the [`Path`]
-    /// points to. For example, if we want to reply to the main thread, we will
-    /// always use the "root path", `Path::new(0)`.
+    /// Reply to the thread. Depending on what type of [`ReplyTo`] value we pass
+    /// we will either reply to the main thread or we will reply to the
+    /// reply thread.
+    ///
+    /// Once we have replied we will be pointing to the latest reply, whether it
+    /// is on the main thread or the reply thread.
     ///
     /// # Examples
     ///
@@ -313,18 +396,13 @@ impl<A> Thread<A> {
         }
     }
 
-    /// Delete a node that exists on the provided [`Path`].
-    ///
-    /// TODO(fintan): Need to figure out what happens when we delete a node that
-    /// has children as a thread. In RoseTree it says that the parent of the
-    /// deleted node becomes the parent of all the deleted nodes children.
-    /// What would this mean for a comment thread? Maybe we want "immutable"
-    /// comments, where comments are marked as deleted but not actually deleted
-    /// from the graph.
+    /// Delete the item that we are looking at. This does not remove the item
+    /// from the thread but rather marks it as [`Status::Dead`].
     ///
     /// # Error
     ///
-    /// If the node does not exist on the provided [`Path`].
+    /// Fails with [`Error::DeleteFirstMain`] if we attempt to delete the first
+    /// item in the main thread.
     ///
     /// # Examples
     ///
@@ -367,7 +445,7 @@ impl<A> Thread<A> {
         A: Clone,
     {
         match self._finger {
-            Either::Left(main_ix) if main_ix == 0 => Err(Error::DeleteMain),
+            Either::Left(main_ix) if main_ix == 0 => Err(Error::DeleteFirstMain),
             Either::Left(main_ix) => {
                 let (node, _) = self.main_thread.get_mut(main_ix).unwrap();
                 node.kill();
@@ -375,7 +453,7 @@ impl<A> Thread<A> {
             },
             Either::Right((main_ix, replies_ix)) => {
                 let (_, replies) = self.main_thread.get_mut(main_ix).unwrap();
-                replies.delete(replies_ix)?;
+                replies.delete(replies_ix);
                 Ok(())
             },
         }
@@ -516,7 +594,7 @@ mod tests {
     where
         A: Clone,
     {
-        Thread::new(a).delete() == Err(Error::DeleteMain)
+        Thread::new(a).delete() == Err(Error::DeleteFirstMain)
     }
 
     /// Thread::new(comment).edit(f, comment) ===
