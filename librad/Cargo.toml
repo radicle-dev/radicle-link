@@ -12,20 +12,22 @@ bytes = "0.5"
 directories = "2.0"
 failure = { version = "0.1", features = ["backtrace"] }
 failure_derive = "0.1"
-futures = "0.3"
+futures = { version = "0.3", features = ["thread-pool"] }
 futures_codec = { version = "0.4", features = ["cbor"] }
 futures-timer = "3.0"
-git2 = "0.10"
+git2 = { version = "0.12", default-features = false, features = [] }
 hex = "0.4"
 lazy_static = "1.4"
+# Need to mention libgit2-sys explicitly in order to disable openssl
+libgit2-sys = { version = "0.11", default-features = false, features = [] }
 log = "0.4"
 multibase = "0.8"
 nettle = { version = "5.0", features = ["vendored"]  }
 nonempty = "0.2"
 olpc-cjson = "0.1"
-quinn = { git = "https://github.com/djc/quinn", rev = "752693e4d0025879128f28121a0bbd4c1934b105" }
+quinn = { git = "https://github.com/kim/quinn", rev = "ab68414e6b87c96fbfa70aaa559c4a24e929c13c", default-features = false, features = ["tls-rustls"] }
 radicle-keystore = { path = "../radicle-keystore" }
-radicle-surf = { git = "https://github.com/radicle-dev/radicle-surf", rev = "58a0e6680d61cc312eee3255abe5d0d494f631d2" }
+radicle-surf = { git = "https://github.com/radicle-dev/radicle-surf", rev = "772503ff9b29ad0ca18cc68b85185cdceeb9cfce" }
 rand = "0.7"
 rand_pcg = "0.2"
 rcgen = "0.7"
@@ -46,6 +48,7 @@ url = { version = "2.1", features = ["serde"] }
 urltemplate = "0.1"
 webpki = "0.21"
 yasna = { version = "0.3", features = ["bit-vec"] }
+
 
 [dev-dependencies]
 env_logger = "0.7"

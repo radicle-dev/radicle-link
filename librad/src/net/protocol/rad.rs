@@ -9,21 +9,18 @@ use std::{
         atomic::{self, AtomicBool},
         Arc,
     },
-    thread,
     time::Duration,
 };
 
-use async_trait::async_trait;
 use futures::{
     channel::mpsc,
-    executor::block_on,
     lock::Mutex,
     sink::{Sink, SinkExt},
     stream::{StreamExt, TryStreamExt},
 };
 use futures_codec::{CborCodec, CborCodecError, Framed, FramedRead, FramedWrite};
 use futures_timer::Delay;
-use log::{trace, warn};
+use log::{info, trace, warn};
 use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
@@ -74,8 +71,8 @@ pub enum Membership {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Gossip {
-    Have(Update),
-    Want(Update),
+    Have { origin: PeerInfo, val: Update },
+    Want { origin: PeerInfo, val: Update },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -92,14 +89,14 @@ pub struct Ref {
     target: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub enum PutResult {
     Applied,
     Stale,
+    Uninteresting,
     Error,
 }
 
-// TODO: does this have to be async?
-#[async_trait]
 pub trait LocalStorage: Clone + Send + Sync {
     /// Notify the local storage that a new value is available.
     ///
@@ -112,13 +109,13 @@ pub trait LocalStorage: Clone + Send + Sync {
     /// up-to-date, or it was not possible to fetch the actual state from
     /// the `provider`. In this case, the network is asked to retransmit
     /// [`Gossip::Have`], so we can eventually try again.
-    async fn put(&self, provider: &PeerId, has: Update) -> PutResult;
+    fn put(&self, provider: &PeerId, has: Update) -> PutResult;
 
     /// Ask the local storage if value `A` is available.
     ///
     /// This is used to notify the asking peer that they may fetch value `A`
     /// from us.
-    async fn ask(&self, want: &Update) -> bool;
+    fn ask(&self, want: &Update) -> bool;
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -130,14 +127,14 @@ pub struct PeerInfo {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PeerAdvertisement {
-    pub listen_port: u16,
+    pub listen_addr: SocketAddr,
     pub capabilities: HashSet<Capability>,
 }
 
 impl PeerAdvertisement {
-    pub fn new(listen_port: u16) -> Self {
+    pub fn new(listen_addr: SocketAddr) -> Self {
         Self {
-            listen_port,
+            listen_addr,
             capabilities: HashSet::default(),
         }
     }
@@ -152,7 +149,8 @@ pub enum Capability {
 #[derive(Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum ProtocolEvent {
-    DialAndSend(PeerInfo, Rpc),
+    SendAdhoc(PeerInfo, Rpc),
+    Connect(PeerInfo, Rpc),
     Disconnect(PeerId),
 }
 
@@ -247,11 +245,13 @@ where
 
             self.peers.insert(peer_id.clone(), sink);
             self.peers.remove(&eject).iter_mut().for_each(|ejected| {
+                trace!("random peer ejection: {}", eject);
                 let _ = ejected.close();
             });
             Some(eject)
         } else {
             self.peers.insert(peer_id.clone(), sink).map(|mut old| {
+                trace!("duplicate peer ejection: {}", peer_id);
                 let _ = old.close();
                 peer_id.clone()
             })
@@ -266,6 +266,10 @@ where
 
     fn random(&mut self) -> Option<(&PeerId, &mut S)> {
         self.peers.iter_mut().choose(&mut self.rng)
+    }
+
+    fn contains(&self, peer_id: &PeerId) -> bool {
+        self.peers.contains_key(peer_id)
     }
 
     fn get_mut(&mut self, peer_id: &PeerId) -> Option<&mut S> {
@@ -376,22 +380,32 @@ impl<S> Protocol<S> {
             dropped: Arc::new(AtomicBool::new(false)),
         };
 
-        // FIXME(kim): One would think that the proper way to do this is to
-        // pass in an executor onto which we can spawn tasks. But then, dear
-        // Rust community, can we have a common interface for these things, so
-        // we don't have to commit on an implementation in a library?
         let this1 = this.clone();
-        thread::spawn(move || block_on(this1.run_periodic_tasks()));
+        tokio::spawn(async move { this1.run_periodic_tasks().await });
 
         this
     }
 
     pub async fn announce(&self, have: Update) {
-        self.broadcast(Gossip::Have(have), None).await
+        self.broadcast(
+            Gossip::Have {
+                origin: self.local_peer_info(),
+                val: have,
+            },
+            None,
+        )
+        .await
     }
 
     pub async fn query(&self, want: Update) {
-        self.broadcast(Gossip::Want(want), None).await
+        self.broadcast(
+            Gossip::Want {
+                origin: self.local_peer_info(),
+                val: want,
+            },
+            None,
+        )
+        .await
     }
 
     pub(super) async fn subscribe(&self) -> mpsc::UnboundedReceiver<ProtocolEvent> {
@@ -427,9 +441,6 @@ impl<S> Protocol<S> {
     where
         S: LocalStorage,
     {
-        use Gossip::*;
-        use Membership::*;
-
         let remote_id = stream.peer_id().clone();
         trace!("{}: Incoming from {}", self.local_id, remote_id);
 
@@ -445,7 +456,7 @@ impl<S> Protocol<S> {
                 .add_connected(&remote_id, FramedWrite::new(send, codec.clone()))
                 .await
             {
-                trace!("{}: Ejecting connected peer {:?}", self.local_id, ejected);
+                trace!("{}: Ejecting connected peer {}", self.local_id, ejected);
                 // Note: if the ejected peer never sent us a `Join` or
                 // `Neighbour`, it isn't behaving well, so we can forget about
                 // it here. Otherwise, we should already have it in
@@ -458,132 +469,19 @@ impl<S> Protocol<S> {
             FramedRead::new(recv, codec)
         };
 
-        let make_peer_info = |ad: PeerAdvertisement, addr: SocketAddr| {
-            // Remember both the advertised and the actually seen port
-            let mut addr1 = addr; // `SocketAddr` is `Copy`
-            addr1.set_port(ad.listen_port);
-
-            PeerInfo {
-                peer_id: remote_id.clone(),
-                advertised_info: ad,
-                seen_addrs: vec![addr1, addr].into_iter().collect(),
-            }
-        };
-
         loop {
             match recv.try_next().await {
+                Ok(Some(rpc)) => match rpc {
+                    Rpc::Membership(msg) => {
+                        self.handle_membership(&remote_id, recv.remote_address(), msg)
+                            .await
+                    },
+                    Rpc::Gossip(msg) => self.handle_gossip(&remote_id, msg).await,
+                },
+                Ok(None) => {},
                 Err(e) => {
                     warn!("{}: Recv error: {:?}", self.local_id, e);
                     break;
-                },
-                Ok(None) => {},
-                Ok(Some(rpc)) => match rpc {
-                    Rpc::Membership(msg) => match msg {
-                        Join(ad) => {
-                            let peer_info = make_peer_info(ad, recv.remote_address());
-                            trace!("{}: Join with peer_info: {:?}", self.local_id, peer_info);
-
-                            self.add_known(iter::once(peer_info.clone())).await;
-                            self.broadcast(
-                                ForwardJoin {
-                                    joined: peer_info,
-                                    ttl: self.mparams.random_walk_length,
-                                },
-                                &remote_id,
-                            )
-                            .await
-                        },
-
-                        ForwardJoin { joined, ttl } => {
-                            trace!("{}: ForwardJoin: {:?}, {}", self.local_id, joined, ttl);
-                            if ttl == 0 {
-                                self.dial_and_send(&joined, Neighbour(self.local_ad.clone()))
-                                    .await
-                            } else {
-                                self.broadcast(
-                                    ForwardJoin {
-                                        joined,
-                                        ttl: ttl - 1,
-                                    },
-                                    &remote_id,
-                                )
-                                .await
-                            }
-                        },
-
-                        Neighbour(ad) => {
-                            trace!("{}: Neighbour: {:?}", self.local_id, ad);
-                            self.add_known(iter::once(make_peer_info(ad, recv.remote_address())))
-                                .await
-                        },
-
-                        Shuffle { origin, peers, ttl } => {
-                            trace!(
-                                "{}: Shuffle: {:?}, {:?}, {}",
-                                self.local_id,
-                                origin,
-                                peers,
-                                ttl
-                            );
-                            // We're supposed to only remember shuffled peers at
-                            // the end of the random walk. Do it anyway for now.
-                            self.add_known(peers.clone()).await;
-
-                            if ttl > 0 {
-                                let sample = self.sample_known().await;
-                                self.dial_and_send(&origin, ShuffleReply { peers: sample })
-                                    .await
-                            } else {
-                                let origin = if origin.peer_id == remote_id {
-                                    make_peer_info(origin.advertised_info, recv.remote_address())
-                                } else {
-                                    origin
-                                };
-
-                                self.broadcast(
-                                    Shuffle {
-                                        origin,
-                                        peers,
-                                        ttl: ttl - 1,
-                                    },
-                                    &remote_id,
-                                )
-                                .await
-                            }
-                        },
-
-                        ShuffleReply { peers } => {
-                            trace!("{}: ShuffleReply: {:?}", self.local_id, peers);
-                            self.add_known(peers).await
-                        },
-                    },
-
-                    Rpc::Gossip(msg) => match msg {
-                        Have(val) => {
-                            trace!("{}: Have {:?}", self.local_id, val);
-                            match self.storage.put(&remote_id, val.clone()).await {
-                                // `val` was new, and is now fetched to local
-                                // storage. Let connected peers know they can now
-                                // fetch it from us.
-                                PutResult::Applied => self.broadcast(Have(val), &remote_id).await,
-                                // Meh. Request retransmission.
-                                // TODO: actually... we may only want to ask the
-                                // peer we got the `Have` from in the first place.
-                                // But what if that went away in the meantime?
-                                PutResult::Error => self.broadcast(Want(val), None).await,
-                                // We are up-to-date, don't do anything
-                                PutResult::Stale => {},
-                            }
-                        },
-                        Want(val) => {
-                            trace!("{}: Want {:?}", self.local_id, val);
-                            if self.storage.ask(&val).await {
-                                self.reply(&remote_id, Have(val)).await
-                            } else {
-                                self.broadcast(Want(val), &remote_id).await
-                            }
-                        },
-                    },
                 },
             }
         }
@@ -596,6 +494,193 @@ impl<S> Protocol<S> {
         self.remove_connected(&remote_id).await;
 
         Ok(())
+    }
+
+    async fn handle_membership(&self, remote_id: &PeerId, remote_addr: SocketAddr, msg: Membership)
+    where
+        S: LocalStorage,
+    {
+        use Membership::*;
+
+        let make_peer_info = |ad: PeerAdvertisement| PeerInfo {
+            peer_id: remote_id.clone(),
+            advertised_info: ad,
+            seen_addrs: vec![remote_addr].into_iter().collect(),
+        };
+
+        match msg {
+            Join(ad) => {
+                let peer_info = make_peer_info(ad);
+                trace!(
+                    "{}: Join with peer_info: \
+                                peer_id: {}, \
+                                advertised_info: {:?}, \
+                                seen_addrs: {:?}",
+                    self.local_id,
+                    peer_info.peer_id,
+                    peer_info.advertised_info,
+                    peer_info.seen_addrs
+                );
+
+                self.add_known(iter::once(peer_info.clone())).await;
+                self.broadcast(
+                    ForwardJoin {
+                        joined: peer_info,
+                        ttl: self.mparams.random_walk_length,
+                    },
+                    remote_id,
+                )
+                .await
+            },
+
+            ForwardJoin { joined, ttl } => {
+                trace!("{}: ForwardJoin: {:?}, {}", self.local_id, joined, ttl);
+                if ttl == 0 {
+                    self.connect(&joined, Neighbour(self.local_ad.clone()))
+                        .await
+                } else {
+                    self.broadcast(
+                        ForwardJoin {
+                            joined,
+                            ttl: ttl.saturating_sub(1),
+                        },
+                        remote_id,
+                    )
+                    .await
+                }
+            },
+
+            Neighbour(ad) => {
+                trace!("{}: Neighbour: {:?}", self.local_id, ad);
+                self.add_known(iter::once(make_peer_info(ad))).await
+            },
+
+            Shuffle { origin, peers, ttl } => {
+                trace!(
+                    "{}: Shuffle: {:?}, {:?}, {}",
+                    self.local_id,
+                    origin,
+                    peers,
+                    ttl
+                );
+                // We're supposed to only remember shuffled peers at
+                // the end of the random walk. Do it anyway for now.
+                self.add_known(peers.clone()).await;
+
+                if ttl > 0 {
+                    let sample = self.sample_known().await;
+                    self.send_adhoc(&origin, ShuffleReply { peers: sample })
+                        .await
+                } else {
+                    let origin = if &origin.peer_id == remote_id {
+                        make_peer_info(origin.advertised_info)
+                    } else {
+                        origin
+                    };
+
+                    self.broadcast(
+                        Shuffle {
+                            origin,
+                            peers,
+                            ttl: ttl.saturating_sub(1),
+                        },
+                        remote_id,
+                    )
+                    .await
+                }
+            },
+
+            ShuffleReply { peers } => {
+                trace!("{}: ShuffleReply: {:?}", self.local_id, peers);
+                self.add_known(peers).await
+            },
+        }
+    }
+
+    async fn handle_gossip(&self, remote_id: &PeerId, msg: Gossip)
+    where
+        S: LocalStorage,
+    {
+        use Gossip::*;
+
+        match msg {
+            Have { origin, val } => {
+                trace!("{}: {} has {:?}", self.local_id, origin.peer_id, val);
+
+                let res = {
+                    let remote_id = remote_id.clone();
+                    let val = val.clone();
+                    tokio::task::block_in_place(move || self.storage.put(&remote_id, val))
+                };
+
+                match res {
+                    // `val` was new, and is now fetched to local storage. Let
+                    // connected peers know they can now fetch it from us.
+                    PutResult::Applied => {
+                        info!("{}: Announcing applied value {:?}", self.local_id, val);
+                        self.broadcast(
+                            Have {
+                                origin: self.local_peer_info(),
+                                val,
+                            },
+                            remote_id,
+                        )
+                        .await
+                    },
+
+                    // Meh. Request retransmission.
+                    // TODO: actually... we may only want to ask the peer we got
+                    // the `Have` from in the first place.  But what if that
+                    // went away in the meantime?
+                    PutResult::Error => {
+                        /*
+                        info!(
+                            "{}: Error applying {:?}, requesting retransmission",
+                            self.local_id, val
+                        );
+                        self.broadcast(
+                            Want {
+                                origin: self.local_peer_info(),
+                                val,
+                            },
+                            None,
+                        )
+                        .await
+                        */
+                    },
+
+                    // Not interesting, forward to others
+                    PutResult::Uninteresting => {
+                        info!("{}: {:?} uninteresting", self.local_id, val);
+                        self.broadcast(Have { origin, val }, remote_id).await
+                    },
+
+                    // We are up-to-date, don't do anything
+                    PutResult::Stale => info!("{}: {:?} up to date", self.local_id, val),
+                }
+            },
+
+            Want { origin, val } => {
+                trace!("{}: {} wants {:?}", self.local_id, origin.peer_id, val);
+                let have = {
+                    let val = val.clone();
+                    tokio::task::block_in_place(move || self.storage.ask(&val))
+                };
+
+                if have {
+                    self.reply(
+                        &remote_id.clone(),
+                        Have {
+                            origin: self.local_peer_info(),
+                            val,
+                        },
+                    )
+                    .await
+                } else {
+                    self.broadcast(Want { origin, val }, remote_id).await
+                }
+            },
+        }
     }
 
     async fn add_connected(&self, peer_id: &PeerId, out: NegotiatedSendStream) -> Option<PeerId> {
@@ -653,30 +738,45 @@ impl<S> Protocol<S> {
             // `KnownPeers` type should make a weighted random choice
             // eventually.
             let sample = self.sample_known().await;
-            recipient_send
-                .send(
-                    Membership::Shuffle {
-                        origin: PeerInfo {
-                            peer_id: self.local_id.clone(),
-                            advertised_info: self.local_ad.clone(),
-                            // We don't know our public addresses
-                            seen_addrs: HashSet::with_capacity(0),
-                        },
-                        peers: sample,
-                        ttl: self.mparams.random_walk_length,
-                    }
-                    .into(),
-                )
-                .await
-                .unwrap_or_else(|e| warn!("Failed to send shuffle to {}: {:?}", recipient, e))
+            if !sample.is_empty() {
+                trace!(
+                    "{}: shuffling sample {:?} with {}",
+                    self.local_id,
+                    sample,
+                    recipient
+                );
+                recipient_send
+                    .send(
+                        Membership::Shuffle {
+                            origin: self.local_peer_info(),
+                            peers: sample,
+                            ttl: self.mparams.random_walk_length,
+                        }
+                        .into(),
+                    )
+                    .await
+                    .unwrap_or_else(|e| warn!("Failed to send shuffle to {}: {:?}", recipient, e))
+            } else {
+                trace!("{}: nothing to shuffle", self.local_id);
+            }
+        } else {
+            trace!("{}: No connected peers to shuffle with", self.local_id);
         }
     }
 
     async fn promote_random(&self) {
+        trace!("{}: Initiating random promotion", self.local_id);
         if let Some(candidate) = self.known_peers.lock().await.random() {
-            trace!("{}: Promoting: {:?}", self.local_id, candidate);
-            self.dial_and_send(&candidate, Membership::Neighbour(self.local_ad.clone()))
+            if !self
+                .connected_peers
+                .lock()
                 .await
+                .contains(&candidate.peer_id)
+            {
+                trace!("{}: Promoting: {}", self.local_id, candidate.peer_id);
+                self.connect(&candidate, Membership::Neighbour(self.local_ad.clone()))
+                    .await
+            }
         }
     }
 
@@ -730,10 +830,25 @@ impl<S> Protocol<S> {
     }
 
     /// Try to establish an ad-hoc connection to `peer`, and send it `rpc`
-    async fn dial_and_send<R: Into<Rpc>>(&self, peer: &PeerInfo, rpc: R) {
+    async fn send_adhoc<R: Into<Rpc>>(&self, peer: &PeerInfo, rpc: R) {
         self.subscribers
-            .emit(ProtocolEvent::DialAndSend(peer.clone(), rpc.into()))
+            .emit(ProtocolEvent::SendAdhoc(peer.clone(), rpc.into()))
             .await
+    }
+
+    /// Try to establish a persistent to `peer` with initial `rpc`
+    async fn connect<R: Into<Rpc>>(&self, peer: &PeerInfo, rpc: R) {
+        self.subscribers
+            .emit(ProtocolEvent::Connect(peer.clone(), rpc.into()))
+            .await
+    }
+
+    fn local_peer_info(&self) -> PeerInfo {
+        PeerInfo {
+            peer_id: self.local_id.clone(),
+            advertised_info: self.local_ad.clone(),
+            seen_addrs: HashSet::with_capacity(0),
+        }
     }
 }
 

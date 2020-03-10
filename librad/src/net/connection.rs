@@ -98,9 +98,14 @@ fn new_connection<'a>(
     };
 
     let peer_id = {
-        let cert = &connection
-            .presented_certs()
-            .expect("Certificates must be presented. qed")[0];
+        let cert: quinn::Certificate = connection
+            .authentication_data()
+            .peer_certificates
+            .expect("Certificates must be presented. qed")
+            .iter()
+            .next()
+            .expect("One certificate must have been presented. qed");
+
         tls::extract_peer_id(cert.as_der())
             .expect("TLS layer ensures the cert contains a PeerId. qed")
     };

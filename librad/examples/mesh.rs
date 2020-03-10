@@ -1,7 +1,7 @@
 use std::{error::Error, net::SocketAddr, path::Path, time::Duration};
 
-use async_trait::async_trait;
 use git2::Repository;
+use log::{info, warn};
 use tempfile::tempdir;
 use tokio::task;
 
@@ -49,24 +49,34 @@ impl MiniPeer {
     }
 }
 
-#[async_trait]
 impl rad::LocalStorage for MiniPeer {
-    async fn put(
+    fn put(
         &self,
         provider: &PeerId,
         rad::Update::Project { project, .. }: rad::Update,
     ) -> rad::PutResult {
+        info!("LocalStorage::put: {}", project);
         let repo = self.paths.projects_dir().join(project.path(&self.paths));
         if repo.exists() {
+            info!("Project {} already present", project);
             rad::PutResult::Stale
         } else {
-            Repository::clone(&format!("rad://{}/{}", provider, project), repo)
-                .map(|_| rad::PutResult::Applied)
+            info!("Cloning project {}", project);
+            let res = Repository::clone(
+                &format!("rad://{}@{}/{}", self.peer_id(), provider, project),
+                repo,
+            );
+
+            if let Err(ref e) = res {
+                warn!("Error cloning: {}", e);
+            }
+
+            res.map(|_| rad::PutResult::Applied)
                 .unwrap_or(rad::PutResult::Error)
         }
     }
 
-    async fn ask(&self, rad::Update::Project { project, .. }: &rad::Update) -> bool {
+    fn ask(&self, rad::Update::Project { project, .. }: &rad::Update) -> bool {
         self.paths
             .projects_dir()
             .join(project.path(&self.paths))
@@ -99,7 +109,7 @@ async fn bootstrap<'a>(
 
     let rad = rad::Protocol::new(
         &PeerId::from(key),
-        rad::PeerAdvertisement::new(endpoint.endpoint.local_addr().unwrap().port()),
+        rad::PeerAdvertisement::new(endpoint.endpoint.local_addr().unwrap()),
         rad::MembershipParams::default(),
         peer.clone(),
     );
@@ -149,19 +159,16 @@ async fn main() {
         .expect("Could not boostrap peer3");
 
     let disco1 = discovery::Static::<SocketAddr>::new(vec![]);
-    let disco2 = discovery::Static::new(vec![
-        (peer1.peer_id(), endpoint1.local_addr().unwrap()),
-        (peer3.peer_id(), endpoint3.local_addr().unwrap()),
-    ]);
+    let disco2 = discovery::Static::new(vec![(peer1.peer_id(), endpoint1.local_addr().unwrap())]);
     let disco3 = discovery::Static::new(vec![
         (peer1.peer_id(), endpoint1.local_addr().unwrap()),
         (peer2.peer_id(), endpoint2.local_addr().unwrap()),
     ]);
 
     let transport = git::transport::register();
-    transport.register_stream_factory(Box::new(proto1.clone()));
-    transport.register_stream_factory(Box::new(proto2.clone()));
-    transport.register_stream_factory(Box::new(proto3.clone()));
+    transport.register_stream_factory(&peer1.peer_id(), Box::new(proto1.clone()));
+    transport.register_stream_factory(&peer2.peer_id(), Box::new(proto2.clone()));
+    transport.register_stream_factory(&peer3.peer_id(), Box::new(proto3.clone()));
 
     let shutdown = Monitor::new();
 
@@ -179,14 +186,10 @@ async fn main() {
     println!("Spawning peer3");
     let _ = task::spawn({
         let shutdown = shutdown.clone();
-        async move {
-            println!("bleep");
-            proto3.run(endpoint3, disco3, shutdown).await;
-            println!("bloop");
-        }
+        async move { proto3.run(endpoint3, disco3, shutdown).await }
     });
 
-    tokio::time::delay_for(Duration::from_secs(5)).await;
+    tokio::time::delay_for(Duration::from_secs(1)).await;
 
     println!("Creating project1");
     let project1 = {
@@ -210,10 +213,20 @@ async fn main() {
         })
         .await;
 
+    // TODO: replace by subscription on protocol events
+    tokio::time::delay_for(Duration::from_secs(2)).await;
+
+    println!("Shutting down");
+    shutdown.put(()).await;
+
     assert_eq!(
         Project::list(&peer1.paths).collect::<Vec<ProjectId>>(),
         Project::list(&peer2.paths).collect::<Vec<ProjectId>>()
     );
+    assert_eq!(
+        Project::list(&peer2.paths).collect::<Vec<ProjectId>>(),
+        Project::list(&peer3.paths).collect::<Vec<ProjectId>>()
+    );
 
-    shutdown.put(()).await;
+    println!("If we got here, all peers have replicated each other's repos");
 }

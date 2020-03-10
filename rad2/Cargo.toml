@@ -8,7 +8,9 @@ description = "The Official Unoffical Radicle CLI"
 [dependencies]
 failure = "0.1"
 failure_derive = "0.1"
-git2 = "0.10"
+git2 = { version = "0.12", default-features = false, features = [] }
+# Need to mention libgit2-sys explicitly in order to disable openssl
+libgit2-sys = { version = "0.11", default-features = false, features = [] }
 librad = { path = "../librad" }
 radicle-keystore = { path = "../radicle-keystore" }
 secstr = "0.3"

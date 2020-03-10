@@ -11,7 +11,7 @@ use futures::{future::FusedFuture, lock::Mutex};
 ///
 /// The value of type `A` can be `put` exactly one. The future will resolve once
 /// the value has been set.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Monitor<A> {
     val: Arc<Mutex<Option<A>>>,
     is_set: Arc<RwLock<bool>>,
