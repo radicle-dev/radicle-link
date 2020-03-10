@@ -2,6 +2,13 @@ use either::Either;
 use nonempty::NonEmpty;
 use thiserror::Error;
 
+/// The "liveness" status of some data.
+///
+/// The data can be:
+///     * `Live` and so it has only been created.
+///     * `Dead` and so it was created and deleted.
+///
+/// TODO: we may want to consider `Modified`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status<A> {
     Live(A),
@@ -9,6 +16,7 @@ pub enum Status<A> {
 }
 
 impl<A> Status<A> {
+    /// Mark the status as `Dead`, no matter what the original status was.
     fn kill(&mut self)
     where
         A: Clone,
@@ -16,6 +24,7 @@ impl<A> Status<A> {
         *self = Status::Dead(self.get().clone())
     }
 
+    /// Get the reference to the value inside the status.
     pub fn get(&self) -> &A {
         match self {
             Status::Live(a) => a,
@@ -23,6 +32,7 @@ impl<A> Status<A> {
         }
     }
 
+    /// Get the mutable reference to the value inside the status.
     fn get_mut(&mut self) -> &mut A {
         match self {
             Status::Live(a) => a,
@@ -30,6 +40,7 @@ impl<A> Status<A> {
         }
     }
 
+    /// If the status is `Live` then return a reference to it.
     pub fn live(&self) -> Option<&A> {
         match self {
             Status::Live(a) => Some(a),
@@ -37,6 +48,7 @@ impl<A> Status<A> {
         }
     }
 
+    /// If the status is `Dead` then return a reference to it.
     pub fn dead(&self) -> Option<&A> {
         match self {
             Status::Dead(a) => Some(a),
@@ -57,33 +69,34 @@ pub enum Error {
     NextRepliesOutOfBound,
     #[error("The replies to this item are empty")]
     EmptyReplies,
-    #[error("Index out of bounds: {0}")]
-    IndexOutOfBounds(usize),
     #[error("Cannot delete the main item of the thread")]
     DeleteMain,
 }
 
+/// A collection of replies where a reply is any item that has a [`Status`].
+///
+/// `Replies` are deliberately opaque as they should mostly be interacted with
+/// via [`Thread`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Replies<A>(Vec<Status<A>>);
 
 impl<A> Replies<A> {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    fn new() -> Self {
         Replies(vec![])
     }
 
-    pub fn reply(&mut self, a: A) {
+    fn reply(&mut self, a: A) {
         self.0.push(Status::Live(a))
     }
 
-    pub fn delete(&mut self, index: usize) -> Result<(), Error>
+    fn delete(&mut self, index: usize) -> Result<(), Error>
     where
         A: Clone,
     {
         let node = self
             .0
             .get_mut(index)
-            .ok_or(Error::IndexOutOfBounds(index))?;
+            .unwrap_or_else(|| panic!("Index out of bounds: {}", index));
 
         node.kill();
         Ok(())
@@ -104,12 +117,25 @@ impl<A> Replies<A> {
     fn get_mut(&mut self, index: usize) -> Option<&mut Status<A>> {
         self.0.get_mut(index)
     }
+
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &Status<A>> + 'a {
+        self.0.iter()
+    }
 }
 
+// This point to the main thread, and the first item in that thread.
 const ROOT_FINGER: Either<usize, (usize, usize)> = Either::Left(0);
 
+/// A `Thread` is non-empty series of items and replies to those items.
+///
+/// TODO: This doesn't correctly capture the design we want. Technically it
+/// should just be a single comment at the top, followed by a series of
+/// "threads".
 #[derive(Debug, Clone)]
 pub struct Thread<A> {
+    // A finger points into the `main_thread` structure.
+    // If it is `Left` then it is pointing to the main thread.
+    // If it is `Right` then it is pointing to a reply to a comment in the main thread.
     _finger: Either<usize, (usize, usize)>,
     main_thread: NonEmpty<(Status<A>, Replies<A>)>,
 }
@@ -120,6 +146,10 @@ impl<A: PartialEq> PartialEq for Thread<A> {
     }
 }
 
+/// `ReplyTo` tells the navigation and reply functions whether they should take
+/// action on the "main thread" or on a "reply thread".
+///
+/// See [`Thread::reply`] for an example of how it is used.
 pub enum ReplyTo {
     Main,
     Thread,
@@ -127,10 +157,6 @@ pub enum ReplyTo {
 
 impl<A> Thread<A> {
     /// Create a new `Thread` with `a` as the root of the `Thread`.
-    ///
-    /// The return value includes the [`Path`] to reach the root.
-    /// This should always be equal to `Path::new(0)`, and can
-    /// be used to [`Thread::view`] the value.
     ///
     /// # Examples
     ///
