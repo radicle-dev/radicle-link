@@ -629,10 +629,9 @@ impl<S> Protocol<S> {
                     },
 
                     // Meh. Request retransmission.
-                    // TODO: actually... we may only want to ask the peer we got
-                    // the `Have` from in the first place.  But what if that
-                    // went away in the meantime?
                     PutResult::Error => {
+                        // FIXME: put this on a queue with a delay. Also drop
+                        // broadcasts if there are too many errors
                         /*
                         info!(
                             "{}: Error applying {:?}, requesting retransmission",
@@ -647,6 +646,8 @@ impl<S> Protocol<S> {
                         )
                         .await
                         */
+
+                        self.broadcast(Have { origin, val }, remote_id).await
                     },
 
                     // Not interesting, forward to others

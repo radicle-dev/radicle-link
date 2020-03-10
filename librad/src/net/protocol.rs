@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future::Future, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, future::Future, iter, net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
 use failure::{format_err, Error};
@@ -103,14 +103,14 @@ where
         Disco: Discovery,
         Shutdown: Future<Output = ()> + Send,
     {
-        debug!("Listening on {:?}", endpoint.local_addr());
-
         let incoming = incoming
             .filter_map(|(conn, i)| async move { Some(Run::Incoming { conn, incoming: i }) });
         let shutdown = futures::stream::once(shutdown).map(|()| Run::Shutdown);
         let bootstrap = futures::stream::iter(disco.collect())
             .map(|(peer, addrs)| Run::Discovered { peer, addrs });
         let rad_events = self.rad.subscribe().await.map(|event| Run::Rad { event });
+
+        info!("Listening on {:?}", endpoint.local_addr());
 
         futures::stream::select(
             shutdown.map(Ok).boxed(),
@@ -142,23 +142,16 @@ where
 
     pub async fn open_git(&self, to: &PeerId) -> Option<Stream> {
         trace!("Opening git stream to {}", to);
-        async {
-            if let Some(conn) = self.connections.lock().await.get(to) {
-                trace!("Got connection to {}, getting stream", to);
-                let s = conn
-                    .open_stream()
-                    .and_then(|stream| upgrade(stream, Upgrade::Git))
-                    .await
-                    .map_err(|e| error!("{}", e));
-
-                trace!("Got git stream to {}: {}", to, s.is_ok());
-                s.ok()
-            } else {
-                warn!("Not connected to {}", to);
-                None
-            }
+        if let Some(conn) = self.connections.lock().await.get(to) {
+            conn.open_stream()
+                .and_then(|stream| upgrade(stream, Upgrade::Git))
+                .await
+                .map_err(|e| error!("{}", e))
+                .ok()
+        } else {
+            warn!("Error opening git stream: not connected to {}", to);
+            None
         }
-        .await
     }
 
     async fn eval_run(&mut self, endpoint: Endpoint, run: Run<'_>) -> Result<(), ()> {
@@ -166,7 +159,7 @@ where
             Run::Discovered { peer, addrs } => {
                 trace!("Run::Discovered: {}@{:?}", peer, addrs);
                 if !self.connections.lock().await.contains_key(&peer) {
-                    if let Some((conn, incoming)) = try_connect(&endpoint, &peer, &addrs).await {
+                    if let Some((conn, incoming)) = connect(&endpoint, &peer, addrs).await {
                         self.handle_connect(conn, incoming.boxed(), None).await;
                     }
                 }
@@ -185,18 +178,9 @@ where
                     trace!("Run::Rad(SendAdhoc): {}", info.peer_id);
                     let conn = match self.connections.lock().await.get(&info.peer_id) {
                         Some(conn) => Some(conn.clone()),
-                        None => {
-                            match try_connect(
-                                &endpoint,
-                                &info.peer_id,
-                                &info.seen_addrs.iter().cloned().collect::<Vec<SocketAddr>>(),
-                            )
+                        None => connect_peer_info(&endpoint, info)
                             .await
-                            {
-                                Some((conn, _)) => Some(conn),
-                                None => None,
-                            }
-                        },
+                            .map(|(conn, _)| conn),
                     };
 
                     if let Some(conn) = conn {
@@ -220,13 +204,7 @@ where
                 rad::ProtocolEvent::Connect(info, rpc) => {
                     trace!("Run::Rad(Connect): {}", info.peer_id);
                     if !self.connections.lock().await.contains_key(&info.peer_id) {
-                        let conn = try_connect(
-                            &endpoint,
-                            &info.peer_id,
-                            &info.seen_addrs.iter().cloned().collect::<Vec<SocketAddr>>(),
-                        )
-                        .await;
-
+                        let conn = connect_peer_info(&endpoint, info).await;
                         if let Some((conn, incoming)) = conn {
                             self.handle_connect(conn, incoming.boxed(), Some(rpc)).await
                         }
@@ -324,7 +302,7 @@ where
         }
 
         while let Some(stream) = incoming.next().await {
-            debug!("New incoming stream");
+            trace!("New incoming stream");
             let this = self.clone();
             tokio::spawn(async move {
                 if let Err(e) = this.incoming(stream).await {
@@ -333,7 +311,7 @@ where
             });
         }
 
-        trace!("Incoming from {} done", remote_addr)
+        debug!("Incoming from {} exhausted", remote_addr)
     }
 
     async fn outgoing(
@@ -402,11 +380,22 @@ where
     }
 }
 
-async fn try_connect(
+async fn connect_peer_info(
+    endpoint: &Endpoint,
+    peer_info: rad::PeerInfo,
+) -> Option<(Connection, impl futures::Stream<Item = Stream> + Unpin)> {
+    let addrs = iter::once(peer_info.advertised_info.listen_addr).chain(peer_info.seen_addrs);
+    connect(endpoint, &peer_info.peer_id, addrs).await
+}
+
+async fn connect<I>(
     endpoint: &Endpoint,
     peer_id: &PeerId,
-    addrs: &[SocketAddr],
-) -> Option<(Connection, impl futures::Stream<Item = Stream> + Unpin)> {
+    addrs: I,
+) -> Option<(Connection, impl futures::Stream<Item = Stream> + Unpin)>
+where
+    I: IntoIterator<Item = SocketAddr>,
+{
     futures::stream::iter(addrs)
         .filter_map(|addr| {
             let mut endpoint = endpoint.clone();

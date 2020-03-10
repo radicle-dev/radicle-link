@@ -8,11 +8,9 @@ use futures::{
     self,
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
 };
-use log::{error, trace, warn};
-use tokio::process::Command;
+use log::{error, trace};
+use tokio::process::{self, Command};
 use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
-
-const ADVERTISE_REFS_HEADER: &[u8] = b"001e# service=git-upload-pack\n0000";
 
 #[derive(Clone)]
 pub struct GitServer {
@@ -70,20 +68,26 @@ impl GitServer {
         );
 
         if mode.is_empty() {
-            self.handle_upload_pack(&repo_path, recv, send).await
+            UploadPack::upload_pack(&repo_path)?.run(recv, send).await
         } else if mode == "advertise" {
-            self.handle_upload_pack_advertise(&repo_path, send).await
+            UploadPack::advertise(&repo_path)?.run(recv, send).await
         } else {
             error!("Invalid mode: expected `advertise`, got `{}`", mode);
             send_err(&mut send, "invalid mode").await
         }
     }
+}
 
-    async fn handle_upload_pack_advertise<W>(&self, repo_path: &Path, mut send: W) -> io::Result<()>
-    where
-        W: AsyncWrite + Unpin,
-    {
-        let cmd = Command::new("git")
+const ADVERTISE_REFS_HEADER: &[u8] = b"001e# service=git-upload-pack\n0000";
+
+enum UploadPack {
+    AdvertiseRefs(process::Child),
+    UploadPack(process::Child),
+}
+
+impl UploadPack {
+    fn advertise(repo_path: &Path) -> io::Result<Self> {
+        Command::new("git")
             .args(&[
                 "upload-pack",
                 "--strict",
@@ -94,39 +98,12 @@ impl GitServer {
             ])
             .current_dir(repo_path)
             .stdout(Stdio::piped())
-            .spawn();
-
-        match cmd {
-            Err(e) => {
-                error!("Error forking upload-pack: {}", e);
-                send_err(&mut send, "internal server error").await
-            },
-
-            Ok(mut child) => {
-                let mut stdout = child.stdout.take().unwrap().compat();
-                tokio::spawn(async {
-                    let _ = child
-                        .await
-                        .map(|status| trace!("upload-pack exited with {:?}", status))
-                        .map_err(|e| warn!("upload-pack error: {}", e));
-                });
-                send.write_all(ADVERTISE_REFS_HEADER).await?;
-                futures::io::copy(&mut stdout, &mut send).await.map(|_| ())
-            },
-        }
+            .spawn()
+            .map(Self::AdvertiseRefs)
     }
 
-    async fn handle_upload_pack<R, W>(
-        &self,
-        repo_path: &Path,
-        mut recv: R,
-        mut send: W,
-    ) -> io::Result<()>
-    where
-        R: AsyncRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
-        let cmd = Command::new("git")
+    fn upload_pack(repo_path: &Path) -> io::Result<Self> {
+        Command::new("git")
             .args(&[
                 "upload-pack",
                 "--strict",
@@ -137,28 +114,30 @@ impl GitServer {
             .current_dir(repo_path)
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
-            .spawn();
+            .spawn()
+            .map(Self::UploadPack)
+    }
 
-        match cmd {
-            Err(e) => {
-                error!("Error forking upload-pack: {}", e);
-                send_err(&mut send, "internal server error").await
+    async fn run<R, W>(self, mut recv: R, mut send: W) -> io::Result<()>
+    where
+        R: AsyncRead + Unpin,
+        W: AsyncWrite + Unpin,
+    {
+        match self {
+            Self::AdvertiseRefs(mut child) => {
+                let mut stdout = child.stdout.take().unwrap().compat();
+
+                spawn_child(child);
+
+                send.write_all(ADVERTISE_REFS_HEADER).await?;
+                futures::io::copy(&mut stdout, &mut send).await.map(|_| ())
             },
 
-            Ok(mut child) => {
+            Self::UploadPack(mut child) => {
                 let mut stdin = child.stdin.take().unwrap().compat_write();
                 let mut stdout = child.stdout.take().unwrap().compat();
 
-                tokio::spawn(async {
-                    let _ = child
-                        .await
-                        .map(|status| {
-                            if !status.success() {
-                                warn!("upload-pack exited non-zero exit status: {:?}", status)
-                            }
-                        })
-                        .map_err(|e| warn!("upload-pack error: {}", e));
-                });
+                spawn_child(child);
 
                 futures::try_join!(
                     futures::io::copy(&mut recv, &mut stdin),
@@ -170,13 +149,26 @@ impl GitServer {
     }
 }
 
-async fn send_err<W>(writer: &mut W, msg: &str) -> Result<(), io::Error>
+async fn send_err<W>(writer: &mut W, msg: &str) -> io::Result<()>
 where
     W: AsyncWrite + Unpin,
 {
     writer
         .write_all(pkt_line(&format!("ERR {}", msg)).as_bytes())
         .await
+}
+
+fn spawn_child(child: process::Child) {
+    tokio::spawn(async {
+        let _ = child
+            .await
+            .map(|status| {
+                if !status.success() {
+                    error!("upload-pack exited non-zero: {:?}", status)
+                }
+            })
+            .map_err(|e| error!("upload-pack error: {}", e));
+    });
 }
 
 fn pkt_line(msg: &str) -> String {

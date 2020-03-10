@@ -11,7 +11,7 @@ use futures::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
-use log::{error, trace};
+use log::error;
 use url::Url;
 
 use crate::{net::connection::Stream, peer::PeerId};
@@ -73,7 +73,6 @@ impl SmartSubtransport for RadTransport {
         url: &str,
         action: Service,
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        trace!("SmartSubtransport::action: {}", url);
         let url = Url::parse(url).map_err(git_error)?;
 
         let local_peer: PeerId = url.username().parse().map_err(git_error)?;
@@ -97,7 +96,6 @@ impl SmartSubtransport for RadTransport {
     }
 
     fn close(&self) -> Result<(), git2::Error> {
-        trace!("SmartSubtransport::close()");
         Ok(())
     }
 }
@@ -114,7 +112,6 @@ impl RadSubTransport {
     async fn ensure_header_sent(&mut self) -> io::Result<()> {
         if !self.header_sent {
             self.header_sent = true;
-            trace!("Writing service header");
             self.stream
                 .write_all(self.service_header().as_bytes())
                 .await
@@ -147,7 +144,6 @@ impl RadSubTransport {
 
 impl Read for RadSubTransport {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        trace!("RadSubTransport::read");
         block_on(async {
             self.ensure_header_sent().await?;
             self.stream.read(buf).await.map_err(io_error)
@@ -157,16 +153,13 @@ impl Read for RadSubTransport {
 
 impl Write for RadSubTransport {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        trace!("RadSubTransport::write");
         block_on(async {
             self.ensure_header_sent().await?;
-            //trace!("write buf: {:?}", std::str::from_utf8(buf));
             self.stream.write(buf).await.map_err(io_error)
         })
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        trace!("RadSubTransport::flush");
         block_on(async {
             self.ensure_header_sent().await?;
             self.stream.flush().await.map_err(io_error)
