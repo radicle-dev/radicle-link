@@ -67,6 +67,7 @@ pub enum Error {
 pub struct Replies<A>(Vec<Status<A>>);
 
 impl<A> Replies<A> {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Replies(vec![])
     }
@@ -563,15 +564,15 @@ mod tests {
         assert!(prop_deleting_root_should_not_be_possible("New thread"))
     }
 
-    /*
     #[test]
     fn check_new_followed_by_edit_is_same_as_editing_followed_by_new() {
         assert!(
             prop_new_followed_by_edit_is_same_as_editing_followed_by_new(
                 String::from("new thread"),
-                &|&mut body: &mut String| { *body = String::from("edit: New thread") }
+                &|body| {
+                    body.insert_str(0, "edit: ");
+                }
             )
         )
     }
-    */
 }
