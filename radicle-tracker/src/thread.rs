@@ -1,4 +1,3 @@
-use either::Either;
 use nonempty::NonEmpty;
 use thiserror::Error;
 
@@ -76,26 +75,23 @@ pub enum Error {
 /// `Replies` are deliberately opaque as they should mostly be interacted with
 /// via [`Thread`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Replies<A>(Vec<Status<A>>);
+pub struct Replies<A>(NonEmpty<Status<A>>);
 
 impl<A> Replies<A> {
-    fn new() -> Self {
-        Replies(vec![])
+    fn new(a: A) -> Self {
+        Replies(NonEmpty::new(Status::Live(a)))
     }
 
     fn reply(&mut self, a: A) {
         self.0.push(Status::Live(a))
     }
 
-    fn delete(&mut self, index: usize) -> Option<&mut Status<A>>
-    where
-        A: Clone,
-    {
-        let node = self.0.get_mut(index)?;
+    fn first(&self) -> &Status<A> {
+        self.0.first()
+    }
 
-        node.kill();
-
-        Some(node)
+    fn first_mut(&mut self) -> &mut Status<A> {
+        self.0.first_mut()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -119,21 +115,27 @@ impl<A> Replies<A> {
     }
 }
 
-// This point to the main thread, and the first item in that thread.
-const ROOT_FINGER: Either<usize, (usize, usize)> = Either::Left(0);
+#[derive(Debug, Clone)]
+enum Finger {
+    Root,
+    Main(usize),
+    Thread((usize, usize)),
+}
 
-/// A `Thread` is non-empty series of items and replies to those items.
-///
-/// TODO: This doesn't correctly capture the design we want. Technically it
-/// should just be a single comment at the top, followed by a series of
-/// "threads".
+// This point to the main thread, and the first item in that thread.
+const ROOT_FINGER: Finger = Finger::Root;
+
+/// A `Thread` is the root item followed by a series of non-empty replies to the
+/// root item. For each item in reply to the root item there may be 0 or more
+/// replies.
 #[derive(Debug, Clone)]
 pub struct Thread<A> {
     // A finger points into the `main_thread` structure.
     // If it is `Left` then it is pointing to the main thread.
     // If it is `Right` then it is pointing to a reply to a comment in the main thread.
-    _finger: Either<usize, (usize, usize)>,
-    main_thread: NonEmpty<(Status<A>, Replies<A>)>,
+    _finger: Finger,
+    root: Status<A>,
+    main_thread: Vec<Replies<A>>,
 }
 
 impl<A: PartialEq> PartialEq for Thread<A> {
@@ -166,7 +168,8 @@ impl<A> Thread<A> {
     pub fn new(a: A) -> Self {
         Thread {
             _finger: ROOT_FINGER,
-            main_thread: NonEmpty::new((Status::Live(a), Replies::new())),
+            root: Status::Live(a),
+            main_thread: vec![],
         }
     }
 
@@ -226,28 +229,32 @@ impl<A> Thread<A> {
     /// # }
     /// ```
     pub fn previous_reply(&mut self, reply_to: ReplyTo) -> Result<(), Error> {
-        match self._finger.as_mut() {
-            Either::Left(main_ix) if *main_ix == 0 => Err(Error::PreviousMainOutOfBounds),
-            Either::Left(main_ix) => match reply_to {
+        match self._finger {
+            Finger::Root => Err(Error::PreviousMainOutOfBounds),
+            Finger::Main(main_ix) if main_ix == 0 => {
+                self._finger = Finger::Root;
+                Ok(())
+            },
+            Finger::Main(ref mut main_ix) => match reply_to {
                 ReplyTo::Main => {
                     *main_ix -= 1;
                     Ok(())
                 },
                 ReplyTo::Thread => Err(Error::PreviousThreadOnMain),
             },
-            Either::Right((main_ix, replies_ix)) => match reply_to {
+            Finger::Thread((ref mut main_ix, ref mut replies_ix)) => match reply_to {
                 ReplyTo::Main => {
                     if *main_ix == 0 {
                         return Err(Error::PreviousMainOutOfBounds);
                     }
 
-                    self._finger = Either::Left(*main_ix - 1);
+                    self._finger = Finger::Main(*main_ix - 1);
                     Ok(())
                 },
                 ReplyTo::Thread => {
                     // If we're at the first reply, then we move to the main thread.
                     if *replies_ix == 0 {
-                        self._finger = Either::Left(*main_ix);
+                        self._finger = Finger::Main(*main_ix);
                     } else {
                         *replies_ix -= 1;
                     }
@@ -280,9 +287,15 @@ impl<A> Thread<A> {
     /// // Reply to the main thread
     /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
     ///
+    /// // Reply to first comment
+    /// thread.reply(String::from("I love rose bushes!"), ReplyTo::Thread);
+    ///
     /// thread.root();
     /// thread.next_reply(ReplyTo::Main)?;
     /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("I love rose trees!"))));
+    ///
+    /// thread.next_reply(ReplyTo::Thread)?;
+    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("I love rose bushes!"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -297,8 +310,16 @@ impl<A> Thread<A> {
             Some(replies_count - 1)
         };
 
-        match self._finger.as_mut() {
-            Either::Left(main_ix) => match reply_to {
+        match self._finger {
+            Finger::Root => {
+                if self.main_thread.is_empty() {
+                    return Err(Error::NextMainOutOfBounds);
+                }
+
+                self._finger = Finger::Main(0);
+                Ok(())
+            },
+            Finger::Main(ref mut main_ix) => match reply_to {
                 ReplyTo::Main => {
                     if *main_ix == main_bound {
                         return Err(Error::NextMainOutOfBounds);
@@ -311,18 +332,20 @@ impl<A> Thread<A> {
                     None => Err(Error::NextRepliesOutOfBound),
                     // We're ensuring that we have replies
                     Some(_) => {
-                        self._finger = Either::Right((*main_ix, 0));
+                        // We start at one because the replies are the tail
+                        // of the non-empty vec in Replies
+                        self._finger = Finger::Thread((*main_ix, 1));
                         Ok(())
                     },
                 },
             },
-            Either::Right((main_ix, replies_ix)) => match reply_to {
+            Finger::Thread((ref mut main_ix, ref mut replies_ix)) => match reply_to {
                 ReplyTo::Main => {
                     if *main_ix == main_bound {
                         return Err(Error::NextMainOutOfBounds);
                     }
 
-                    self._finger = Either::Left(*main_ix + 1);
+                    self._finger = Finger::Main(*main_ix + 1);
                     Ok(())
                 },
                 ReplyTo::Thread => match replies_bound {
@@ -418,11 +441,14 @@ impl<A> Thread<A> {
     /// ```
     pub fn reply(&mut self, a: A, reply_to: ReplyTo) {
         match self._finger {
-            Either::Left(main_ix) => match reply_to {
+            // TODO: Always replies to main if we're at the root.
+            // Is this ok?
+            Finger::Root => self.reply_main(a),
+            Finger::Main(main_ix) => match reply_to {
                 ReplyTo::Main => self.reply_main(a),
                 ReplyTo::Thread => self.reply_thread(main_ix, a),
             },
-            Either::Right((main_ix, _)) => match reply_to {
+            Finger::Thread((main_ix, _)) => match reply_to {
                 ReplyTo::Main => self.reply_main(a),
                 ReplyTo::Thread => self.reply_thread(main_ix, a),
             },
@@ -482,17 +508,19 @@ impl<A> Thread<A> {
         A: Clone,
     {
         match self._finger {
-            Either::Left(main_ix) if main_ix == 0 => Err(Error::DeleteFirstMain),
-            Either::Left(main_ix) => {
-                let (node, _) = self.index_main_mut(main_ix);
+            Finger::Root => Err(Error::DeleteFirstMain),
+            Finger::Main(main_ix) => {
+                let node = self.index_main_mut(main_ix).first_mut();
                 node.kill();
                 Ok(())
             },
-            Either::Right((main_ix, replies_ix)) => {
-                let (_, replies) = self.index_main_mut(main_ix);
-                replies
-                    .delete(replies_ix)
+            Finger::Thread((main_ix, replies_ix)) => {
+                let replies = self.index_main_mut(main_ix);
+                let node = replies
+                    .get_mut(replies_ix)
                     .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", replies_ix));
+
+                node.kill();
                 Ok(())
             },
         }
@@ -536,13 +564,17 @@ impl<A> Thread<A> {
         F: FnOnce(&mut A) -> (),
     {
         match self._finger {
-            Either::Left(main_ix) => {
-                let (node, _) = self.index_main_mut(main_ix);
+            Finger::Root => {
+                f(self.root.get_mut());
+                Ok(())
+            },
+            Finger::Main(main_ix) => {
+                let node = self.index_main_mut(main_ix).first_mut();
                 f(node.get_mut());
                 Ok(())
             },
-            Either::Right((main_ix, replies_ix)) => {
-                let (_, replies) = self.index_main_mut(main_ix);
+            Finger::Thread((main_ix, replies_ix)) => {
+                let replies = self.index_main_mut(main_ix);
                 let node = replies
                     .get_mut(replies_ix)
                     .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", replies_ix));
@@ -563,12 +595,21 @@ impl<A> Thread<A> {
         A: Clone,
     {
         let main_ix = match self._finger {
-            Either::Left(main_ix) => main_ix,
-            Either::Right((main_ix, _)) => main_ix,
+            Finger::Root => {
+                return NonEmpty::from((
+                    self.root.clone(),
+                    self.main_thread
+                        .clone()
+                        .iter()
+                        .map(|thread| thread.first().clone())
+                        .collect(),
+                ));
+            },
+            Finger::Main(main_ix) => main_ix,
+            Finger::Thread((main_ix, _)) => main_ix,
         };
 
-        let (node, replies) = self.index_main(main_ix);
-        NonEmpty::from((node.clone(), replies.clone().0))
+        self.index_main(main_ix).0.clone()
     }
 
     /// Look at the current item we are pointing to in the thread.
@@ -588,82 +629,72 @@ impl<A> Thread<A> {
     /// ```
     pub fn view(&self) -> Result<&Status<A>, Error> {
         match self._finger {
-            Either::Left(main_ix) => Ok(&self.index_main(main_ix).0),
-            Either::Right((main_ix, replies_ix)) => Ok(self
+            Finger::Root => Ok(&self.root),
+            Finger::Main(main_ix) => Ok(self.index_main(main_ix).first()),
+            Finger::Thread((main_ix, replies_ix)) => Ok(self
                 .index_main(main_ix)
-                .1
                 .get(replies_ix)
                 .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", replies_ix))),
         }
     }
 
-    fn index_main(&self, main_ix: usize) -> &(Status<A>, Replies<A>) {
+    fn index_main(&self, main_ix: usize) -> &Replies<A> {
         self.main_thread
             .get(main_ix)
             .unwrap_or_else(|| panic!("Main index is out of bounds: {}", main_ix))
     }
 
-    fn index_main_mut(&mut self, main_ix: usize) -> &mut (Status<A>, Replies<A>) {
+    fn index_main_mut(&mut self, main_ix: usize) -> &mut Replies<A> {
         self.main_thread
             .get_mut(main_ix)
             .unwrap_or_else(|| panic!("Main index is out of bounds: {}", main_ix))
     }
 
-    fn replies(&self, index: usize) -> &Replies<A> {
-        &self.main_thread.get(index).unwrap().1
-    }
-
-    fn replies_mut(&mut self, index: usize) -> &mut Replies<A> {
-        &mut self.main_thread.get_mut(index).unwrap().1
-    }
-
     fn replies_count(&self) -> usize {
         let main_ix = match self._finger {
-            Either::Left(main_ix) => main_ix,
-            Either::Right((main_ix, _)) => main_ix,
+            Finger::Root => return self.main_thread.len(),
+            Finger::Main(main_ix) => main_ix,
+            Finger::Thread((main_ix, _)) => main_ix,
         };
 
-        self.replies(main_ix).len()
+        self.index_main(main_ix).len()
     }
 
     fn reply_main(&mut self, a: A) {
-        self.main_thread.push((Status::Live(a), Replies::new()));
-        self._finger = Either::Left(self.main_thread.len() - 1);
+        self.main_thread.push(Replies::new(a));
+        self._finger = Finger::Main(self.main_thread.len() - 1);
     }
 
     fn reply_thread(&mut self, main_ix: usize, a: A) {
-        let replies = self.replies_mut(main_ix);
+        let replies = self.index_main_mut(main_ix);
         replies.reply(a);
         let replies_ix = replies.len() - 1;
-        self._finger = Either::Right((main_ix, replies_ix));
+        self._finger = Finger::Thread((main_ix, replies_ix));
     }
 
+    // Prune the Dead items from the tree so that we can effectively test
+    // the view of deletion compared to another tree that contains the same
+    // Live items.
     #[cfg(test)]
     fn prune(&mut self)
     where
         A: Clone,
     {
         let mut thread = vec![];
-        for (node, replies) in self.main_thread.iter() {
-            if node.dead().is_some() {
-                continue;
-            }
+        for replies in self.main_thread.iter() {
+            let live_replies = replies
+                .iter()
+                .cloned()
+                .filter(|node| node.live().is_some())
+                .collect::<Vec<Status<_>>>();
 
-            thread.push((
-                node.clone(),
-                Replies(
-                    replies
-                        .clone()
-                        .0
-                        .into_iter()
-                        .filter(|node| node.live().is_some())
-                        .collect(),
-                ),
-            ))
+            match NonEmpty::from_slice(&live_replies) {
+                None => {},
+                Some(r) => thread.push(Replies(r)),
+            }
         }
 
-        let main_thread = NonEmpty::from_slice(&thread).unwrap();
-        self.main_thread = main_thread;
+        self.main_thread = thread;
     }
 }
 
@@ -739,9 +770,11 @@ mod tests {
     }
 
     #[test]
-    fn check_deleting_a_replied_comment_is_noop() -> Result<(), Error> {
+    fn check_deleting_a_replied_comment_is_noop() {
         let mut thread = Thread::new("New thread");
-        prop_deleting_a_replied_comment_is_noop(&mut thread, "New comment").map(|_| ())
+        let result =
+            prop_deleting_a_replied_comment_is_noop(&mut thread, "New comment").expect("Error");
+        assert!(result);
     }
 
     #[test]

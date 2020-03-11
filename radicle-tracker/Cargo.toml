@@ -8,5 +8,5 @@ edition = "2018"
 
 [dependencies]
 either = "1.5"
-nonempty = "0.2"
+nonempty = { git = "https://github.com/cloudhead/nonempty", rev = "master" }
 thiserror = "1.0"
