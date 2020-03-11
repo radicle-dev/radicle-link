@@ -380,8 +380,7 @@ impl<S> Protocol<S> {
             dropped: Arc::new(AtomicBool::new(false)),
         };
 
-        let this1 = this.clone();
-        tokio::spawn(async move { this1.run_periodic_tasks().await });
+        this.run_periodic_tasks();
 
         this
     }
@@ -512,10 +511,7 @@ impl<S> Protocol<S> {
             Join(ad) => {
                 let peer_info = make_peer_info(ad);
                 trace!(
-                    "{}: Join with peer_info: \
-                                peer_id: {}, \
-                                advertised_info: {:?}, \
-                                seen_addrs: {:?}",
+                    "{}: Join with peer_info: peer_id: {}, advertised_info: {:?}, seen_addrs: {:?}",
                     self.local_id,
                     peer_info.peer_id,
                     peer_info.advertised_info,
@@ -703,28 +699,31 @@ impl<S> Protocol<S> {
             .sample(self.mparams.shuffle_sample_size)
     }
 
-    async fn run_periodic_tasks(&self) {
-        loop {
-            if self.dropped.load(atomic::Ordering::Relaxed) {
-                break;
+    fn run_periodic_tasks(&self)
+    where
+        S: LocalStorage + 'static,
+    {
+        let this = self.clone();
+        tokio::spawn(async move {
+            loop {
+                if this.dropped.load(atomic::Ordering::Relaxed) {
+                    break;
+                }
+                Delay::new(this.mparams.shuffle_interval).await;
+                this.shuffle().await;
             }
+        });
 
-            let shuffle = async {
-                Delay::new(self.mparams.shuffle_interval).await;
-                self.shuffle().await;
-            };
-
-            let promote = async {
-                Delay::new(self.mparams.promote_interval).await;
-                self.promote_random().await;
-            };
-
-            // FIXME(kim): I would think we actually want `futures::select!`,
-            // in order to be able break as soon as the quicker one resolves.
-            // I don't get the semantics of the `FusedFuture` + `Unpin`
-            // requirements, tho.
-            futures::join!(shuffle, promote);
-        }
+        let this = self.clone();
+        tokio::spawn(async move {
+            loop {
+                if this.dropped.load(atomic::Ordering::Relaxed) {
+                    break;
+                }
+                Delay::new(this.mparams.promote_interval).await;
+                this.promote_random().await;
+            }
+        });
     }
 
     async fn shuffle(&self) {
