@@ -8,7 +8,7 @@ use thiserror::Error;
 ///     * `Dead` and so it was created and deleted.
 ///
 /// TODO: we may want to consider `Modified`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Status<A> {
     Live(A),
     Dead(A),
@@ -56,7 +56,7 @@ impl<A> Status<A> {
     }
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Error {
     #[error("Tried to move to previous item in the main thread, but we are at the first")]
     PreviousMainOutOfBounds,
@@ -74,7 +74,7 @@ pub enum Error {
 ///
 /// `Replies` are deliberately opaque as they should mostly be interacted with
 /// via [`Thread`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Replies<A>(NonEmpty<Status<A>>);
 
 impl<A> Replies<A> {
@@ -115,7 +115,7 @@ impl<A> Replies<A> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Finger {
     Root,
     Main(usize),
