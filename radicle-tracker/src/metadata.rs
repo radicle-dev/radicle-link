@@ -72,6 +72,12 @@ impl std::ops::Deref for Title {
     }
 }
 
+impl From<&str> for Title {
+    fn from(s: &str) -> Self {
+        Title(s.to_string())
+    }
+}
+
 impl FromStr for Title {
     type Err = Infallible;
 
