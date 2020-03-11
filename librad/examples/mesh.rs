@@ -1,12 +1,13 @@
-use std::{error::Error, net::SocketAddr, path::Path, time::Duration};
+use std::{error::Error, iter::Iterator, path::Path, time::Duration};
 
+use futures::stream::{self, StreamExt};
 use git2::Repository;
 use log::{info, warn};
-use tempfile::tempdir;
+use tempfile::{tempdir, TempDir};
 use tokio::task;
 
 use librad::{
-    git::{self, server::GitServer, GitProject},
+    git::{self, server::GitServer, transport::RadTransport, GitProject},
     keys::device,
     meta,
     net::{
@@ -123,82 +124,90 @@ async fn bootstrap<'a>(
     })
 }
 
+struct Spawned {
+    tmp: TempDir,
+    peer: MiniPeer,
+    proto: Protocol<MiniPeer>,
+    endpoint: Endpoint,
+}
+
+async fn spawn(
+    prev: Option<(PeerId, Endpoint)>,
+    transport: RadTransport,
+    shutdown: Monitor<()>,
+    i: usize,
+) -> Spawned {
+    let tmp = tempdir().unwrap();
+    let Bootstrap {
+        peer,
+        proto,
+        endpoint,
+    } = bootstrap(&format!("peer{}", i), device::Key::new(), tmp.path())
+        .await
+        .unwrap();
+
+    let disco = discovery::Static::new(
+        prev.map(|(peer0, endpoint0)| vec![(peer0, endpoint0.local_addr().unwrap())])
+            .unwrap_or_else(|| vec![]),
+    );
+
+    transport.register_stream_factory(&peer.peer_id(), Box::new(proto.clone()));
+
+    let endpoint0 = endpoint.endpoint.clone();
+
+    let _ = task::spawn({
+        let mut proto = proto.clone();
+        async move { proto.run(endpoint, disco, shutdown).await }
+    });
+
+    Spawned {
+        tmp,
+        peer,
+        proto,
+        endpoint: endpoint0,
+    }
+}
+
 #[tokio::main]
 async fn main() {
     librad::init();
     env_logger::init();
 
-    let tmp1 = tempdir().unwrap();
-    println!("Boostrapping peer1");
-    let Bootstrap {
-        peer: peer1,
-        proto: proto1,
-        endpoint: endpoint1,
-    } = bootstrap("peer1", device::Key::new(), tmp1.path())
-        .await
-        .expect("Could not boostrap peer1");
-
-    let tmp2 = tempdir().unwrap();
-    println!("Boostrapping peer3");
-    let Bootstrap {
-        peer: peer2,
-        proto: mut proto2,
-        endpoint: endpoint2,
-    } = bootstrap("peer2", device::Key::new(), tmp2.path())
-        .await
-        .expect("Could not boostrap peer2");
-
-    let tmp3 = tempdir().unwrap();
-    println!("Boostrapping peer3");
-    let Bootstrap {
-        peer: peer3,
-        proto: mut proto3,
-        endpoint: endpoint3,
-    } = bootstrap("peer3", device::Key::new(), tmp3.path())
-        .await
-        .expect("Could not boostrap peer3");
-
-    let disco1 = discovery::Static::<SocketAddr>::new(vec![]);
-    let disco2 = discovery::Static::new(vec![(peer1.peer_id(), endpoint1.local_addr().unwrap())]);
-    let disco3 = discovery::Static::new(vec![
-        (peer1.peer_id(), endpoint1.local_addr().unwrap()),
-        (peer2.peer_id(), endpoint2.local_addr().unwrap()),
-    ]);
-
     let transport = git::transport::register();
-    transport.register_stream_factory(&peer1.peer_id(), Box::new(proto1.clone()));
-    transport.register_stream_factory(&peer2.peer_id(), Box::new(proto2.clone()));
-    transport.register_stream_factory(&peer3.peer_id(), Box::new(proto3.clone()));
-
     let shutdown = Monitor::new();
 
-    println!("Spawning peer1");
-    let _ = task::spawn({
-        let mut proto1 = proto1.clone();
+    let peer1 = spawn(None, transport.clone(), shutdown.clone(), 1).await;
+    let init = (peer1.peer.peer_id(), peer1.endpoint.clone());
+    let peers: Vec<Spawned> = stream::unfold((init, 2), |(prev, i)| {
+        let transport = transport.clone();
         let shutdown = shutdown.clone();
-        async move { proto1.run(endpoint1, disco1, shutdown).await }
-    });
-    println!("Spawning peer2");
-    let _ = task::spawn({
-        let shutdown = shutdown.clone();
-        async move { proto2.run(endpoint2, disco2, shutdown).await }
-    });
-    println!("Spawning peer3");
-    let _ = task::spawn({
-        let shutdown = shutdown.clone();
-        async move { proto3.run(endpoint3, disco3, shutdown).await }
-    });
+        async move {
+            if i <= 3 {
+                let peer = spawn(Some(prev), transport, shutdown, i).await;
+                let next = (peer.peer.peer_id(), peer.endpoint.clone());
+                Some((peer, (next, i + 1)))
+            } else {
+                None
+            }
+        }
+    })
+    .collect()
+    .await;
 
+    // Let it settle for a bit
     tokio::time::delay_for(Duration::from_secs(1)).await;
 
     println!("Creating project1");
-    let project1 = {
-        let repo = peer1.create_repo(tmp1.path().join("repo1")).unwrap();
+    let project1: ProjectId = {
+        let repo = peer1
+            .peer
+            .create_repo(peer1.tmp.path().join("repo1"))
+            .unwrap();
         GitProject::init(
-            &peer1.paths,
-            &peer1.key,
+            &peer1.peer.paths,
+            &peer1.peer.key,
             &repo,
-            meta::Project::new("mini1", &peer1.peer_id()),
+            meta::Project::new("mini1", &peer1.peer.peer_id()),
             meta::Contributor::new(),
         )
         .unwrap()
@@ -206,9 +215,10 @@ async fn main() {
     };
 
     println!("Announcing project1");
-    proto1
+    peer1
+        .proto
         .announce(rad::Update::Project {
-            project: project1,
+            project: project1.clone(),
             head: None,
         })
         .await;
@@ -219,14 +229,14 @@ async fn main() {
     println!("Shutting down");
     shutdown.put(()).await;
 
-    assert_eq!(
-        Project::list(&peer1.paths).collect::<Vec<ProjectId>>(),
-        Project::list(&peer2.paths).collect::<Vec<ProjectId>>()
-    );
-    assert_eq!(
-        Project::list(&peer2.paths).collect::<Vec<ProjectId>>(),
-        Project::list(&peer3.paths).collect::<Vec<ProjectId>>()
-    );
+    let replicated: Vec<ProjectId> = peers
+        .iter()
+        .map(|spawned| Project::list(&spawned.peer.paths).collect::<Vec<ProjectId>>())
+        .flatten()
+        .collect();
+
+    assert_eq!(replicated.len(), peers.len());
+    assert!(replicated.iter().all(|project| project == &project1));
 
     println!("If we got here, all peers have replicated each other's repos");
 }
