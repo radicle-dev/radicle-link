@@ -195,11 +195,10 @@ impl<A> Thread<A> {
     /// # Errors
     ///
     /// The function will fail with:
-    ///     * [`Error::PreviousMainOutOfBounds`] if we are looking at the start
-    ///       of the main thread.
-    ///     * [`Error::PreviousThreadOnMain`] if we use [`ReplyTo::Thread`]
-    ///       while on the main
-    ///     thread.
+    /// * [`Error::PreviousMainOutOfBounds`] if we are looking at the start the
+    ///   main thread.
+    /// * [`Error::PreviousThreadOnMain`] if we use [`ReplyTo::Thread`]
+    /// while on the main thread.
     ///
     /// # Examples
     ///
@@ -284,10 +283,10 @@ impl<A> Thread<A> {
     /// # Errors
     ///
     /// The function will fail with:
-    ///     * [`Error::NextMainOutOfBounds`] if we are at the end of the main
-    ///       thread and attempt to go to the next item.
-    ///     * [`Error::NextRepliesOutOfBound`] if we are at the end of the reply
-    ///       thread and attempt to go to the next item.
+    /// * [`Error::NextMainOutOfBounds`] if we are at the end of the main thread
+    ///   and attempt to go to the next item.
+    /// * [`Error::NextRepliesOutOfBound`] if we are at the end of the reply
+    ///   thread and attempt to go to the next item.
     ///
     /// # Examples
     ///
