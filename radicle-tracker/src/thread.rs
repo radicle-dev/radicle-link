@@ -3,14 +3,12 @@ use thiserror::Error;
 
 /// The "liveness" status of some data.
 ///
-/// The data can be:
-///     * `Live` and so it has only been created.
-///     * `Dead` and so it was created and deleted.
-///
 /// TODO: we may want to consider `Modified`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Status<A> {
+    /// The data has been created.
     Live(A),
+    /// The data has been created and also deleted.
     Dead(A),
 }
 
@@ -32,7 +30,7 @@ impl<A> Status<A> {
     }
 
     /// Get the mutable reference to the value inside the status.
-    fn get_mut(&mut self) -> &mut A {
+    pub fn get_mut(&mut self) -> &mut A {
         match self {
             Status::Live(a) => a,
             Status::Dead(a) => a,
@@ -56,18 +54,30 @@ impl<A> Status<A> {
     }
 }
 
+/// Errors can occur when navigating around a thread or when attempting to
+/// delete the root item of a thread.
 #[derive(Error, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Error {
+    /// An attempt was made to move to the previous item in the main thread, but
+    /// the pointer is already at the root item.
     #[error("Tried to move to previous item in the main thread, but we are at the first")]
     PreviousMainOutOfBounds,
+    /// An attempt was made to move to the previous item in a reply thread, but
+    /// the pointer is on the main thread.
     #[error("Cannot move to previous item in a thread when we are located on the main thread")]
     PreviousThreadOnMain,
+    /// An attempt was made to move to the previous item in the main thread, but
+    /// the pointer is already at the last item.
     #[error("Tried to move to next item in the main thread, but we are at the last")]
     NextMainOutOfBounds,
+    /// An attempt was made to move to the next item in a reply thread, but
+    /// the pointer is already at the last item.
     #[error("Tried to move to next item in the reply thread, but we are at the last")]
     NextRepliesOutOfBound,
+    /// An attempt was made to delete the root of a thread, but the root is
+    /// immutable.
     #[error("Cannot delete the main item of the thread")]
-    DeleteFirstMain,
+    DeleteRoot,
 }
 
 /// A collection of replies where a reply is any item that has a [`Status`].
@@ -94,10 +104,12 @@ impl<A> Replies<A> {
         self.0.first_mut()
     }
 
+    /// Check is the `Replies` are empty. It is always `false`.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// Check the length of the `Replies`.
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -110,6 +122,7 @@ impl<A> Replies<A> {
         self.0.get_mut(index)
     }
 
+    /// Get the [`Iterator`] for the `Replies`.
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = &Status<A>> + 'a {
         self.0.iter()
     }
@@ -149,7 +162,9 @@ impl<A: PartialEq> PartialEq for Thread<A> {
 ///
 /// See [`Thread::reply`] for an example of how it is used.
 pub enum ReplyTo {
+    /// Reply to the main thread.
     Main,
+    /// Reply to the reply thread.
     Thread,
 }
 
@@ -464,7 +479,7 @@ impl<A> Thread<A> {
     ///
     /// # Error
     ///
-    /// Fails with [`Error::DeleteFirstMain`] if we attempt to delete the first
+    /// Fails with [`Error::DeleteRoot`] if we attempt to delete the first
     /// item in the main thread.
     ///
     /// # Examples
@@ -508,7 +523,7 @@ impl<A> Thread<A> {
         A: Clone,
     {
         match self._finger {
-            Finger::Root => Err(Error::DeleteFirstMain),
+            Finger::Root => Err(Error::DeleteRoot),
             Finger::Main(main_ix) => {
                 let node = self.index_main_mut(main_ix).first_mut();
                 node.kill();
@@ -638,6 +653,23 @@ impl<A> Thread<A> {
         }
     }
 
+    /// Look at the current item we are pointing to in the thread via a mutable
+    /// reference.
+    ///
+    /// # Panics
+    ///
+    /// If the internal finger into the thread is out of bounds.
+    pub fn view_mut(&mut self) -> Result<&mut Status<A>, Error> {
+        match self._finger {
+            Finger::Root => Ok(&mut self.root),
+            Finger::Main(main_ix) => Ok(self.index_main_mut(main_ix).first_mut()),
+            Finger::Thread((main_ix, replies_ix)) => Ok(self
+                .index_main_mut(main_ix)
+                .get_mut(replies_ix)
+                .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", replies_ix))),
+        }
+    }
+
     fn index_main(&self, main_ix: usize) -> &Replies<A> {
         self.main_thread
             .get(main_ix)
@@ -730,7 +762,7 @@ mod tests {
     where
         A: Clone,
     {
-        Thread::new(a).delete() == Err(Error::DeleteFirstMain)
+        Thread::new(a).delete() == Err(Error::DeleteRoot)
     }
 
     /// Thread::new(comment).edit(f, comment) ===
