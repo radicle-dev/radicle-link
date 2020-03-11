@@ -124,7 +124,7 @@ impl<IssueId, CommentId, User: Eq + Hash> Issue<IssueId, CommentId, User> {
         }
     }
 
-    /// Get a reference to the author ([`User`]) of this issue.
+    /// Get a reference to the author (`User`) of this issue.
     pub fn author(&self) -> &User {
         &self.author
     }
