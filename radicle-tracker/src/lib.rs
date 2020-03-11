@@ -1,16 +1,23 @@
-use std::hash;
+#![deny(missing_docs, unused_import_braces, unused_qualifications, warnings)]
+#![feature(vec_remove_item)]
+use std::hash::Hash;
 
 mod thread;
 pub use thread::{Error as ThreadError, Replies, ReplyTo, Status, Thread};
 
-pub struct Issue<Author> {
-    pub author: Author,
-    pub title: String,
-    pub thread: Thread<Comment<Author>>,
-    pub meta: (), // TODO(fintan): fill in meta data
+mod metadata;
+pub use metadata::*;
+
+#[derive(Debug, Clone)]
+pub struct Issue<IssueId, CommentId, User: Eq + Hash> {
+    identifier: IssueId,
+    author: User,
+    title: String,
+    thread: Thread<Comment<CommentId, User>>,
+    meta: Metadata<User>,
 }
 
-impl<Author> Issue<Author> {
+impl<IssueId, CommentId, User: Eq + Hash> Issue<IssueId, CommentId, User> {
     /// ```
     /// use radicle_tracker::Issue;
     ///
@@ -26,30 +33,28 @@ impl<Author> Issue<Author> {
     /// assert!(issue.thread.view().unwrap().get().author == issue.author);
     /// assert_eq!(issue.meta, ());
     /// ```
-    pub fn new(author: Author, title: String, content: String) -> Self
+    pub fn new(
+        identifier: IssueId,
+        comment_id: CommentId,
+        author: User,
+        title: String,
+        content: String,
+    ) -> Self
     where
-        Author: Clone + Eq,
+        User: Clone + Eq,
     {
-        let comment = Comment {
-            author: author.clone(),
-            content,
-        };
+        let comment = Comment::new(comment_id, author.clone(), content);
 
         Issue {
+            identifier,
             author,
             title,
             thread: Thread::new(comment),
-            meta: (),
+            meta: Metadata::new(),
         }
     }
 
-    pub fn reply(&mut self, comment: Comment<Author>, reply_to: ReplyTo) {
+    pub fn reply(&mut self, comment: Comment<CommentId, User>, reply_to: ReplyTo) {
         self.thread.reply(comment, reply_to)
     }
-}
-
-#[derive(Debug, PartialEq, Eq, hash::Hash)]
-pub struct Comment<Author> {
-    pub author: Author,
-    pub content: String,
 }
