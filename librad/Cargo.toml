@@ -27,7 +27,7 @@ nonempty = "0.2"
 olpc-cjson = "0.1"
 quinn = { git = "https://github.com/kim/quinn", rev = "ab68414e6b87c96fbfa70aaa559c4a24e929c13c", default-features = false, features = ["tls-rustls"] }
 radicle-keystore = { path = "../radicle-keystore" }
-radicle-surf = { git = "https://github.com/radicle-dev/radicle-surf", rev = "772503ff9b29ad0ca18cc68b85185cdceeb9cfce" }
+radicle-surf = { git = "https://github.com/radicle-dev/radicle-surf", rev = "af474a7ece1b75906906974057e3f89a32f085b4" }
 rand = "0.7"
 rand_pcg = "0.2"
 rcgen = "0.7"
@@ -42,7 +42,7 @@ serde_repr = "0.1"
 sha2 = "0.8"
 sodiumoxide = "0.2"
 tempfile = "3.1"
-tokio = { version = "0.2.11", features = ["full"] }
+tokio = { version = "0.2", features = ["full"] }
 tokio-util = { version = "0.3.0", features = ["compat"] }
 url = { version = "2.1", features = ["serde"] }
 urltemplate = "0.1"
