@@ -19,16 +19,15 @@ use crate::{
     net::{
         connection::{BoundEndpoint, CloseReason, Connection, Endpoint, Stream},
         discovery::Discovery,
+        gossip,
     },
     peer::PeerId,
 };
 
-pub mod rad;
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum Upgrade {
-    Rad = 0,
+    Gossip = 0,
     Git = 1,
 }
 
@@ -65,8 +64,8 @@ enum Run<'a> {
         incoming: BoxStream<'a, Result<Stream, Error>>,
     },
 
-    Rad {
-        event: rad::ProtocolEvent,
+    Gossip {
+        event: gossip::ProtocolEvent,
     },
 
     Shutdown,
@@ -74,7 +73,7 @@ enum Run<'a> {
 
 #[derive(Clone)]
 pub struct Protocol<S> {
-    rad: rad::Protocol<S>,
+    gossip: gossip::Protocol<S>,
     git: GitServer,
 
     connections: Arc<Mutex<HashMap<PeerId, Connection>>>,
@@ -83,11 +82,11 @@ pub struct Protocol<S> {
 
 impl<S> Protocol<S>
 where
-    S: rad::LocalStorage + 'static,
+    S: gossip::LocalStorage + 'static,
 {
-    pub fn new(rad: rad::Protocol<S>, git: GitServer) -> Self {
+    pub fn new(gossip: gossip::Protocol<S>, git: GitServer) -> Self {
         Self {
-            rad,
+            gossip,
             git,
             connections: Arc::new(Mutex::new(HashMap::default())),
             subscribers: Fanout::new(),
@@ -107,11 +106,11 @@ where
         let shutdown = futures::stream::once(shutdown).map(|()| Ok(Run::Shutdown));
         let bootstrap = futures::stream::iter(disco.collect())
             .map(|(peer, addrs)| Ok(Run::Discovered { peer, addrs }));
-        let rad_events = self
-            .rad
+        let gossip_events = self
+            .gossip
             .subscribe()
             .await
-            .map(|event| Ok(Run::Rad { event }));
+            .map(|event| Ok(Run::Gossip { event }));
 
         info!("Listening on {:?}", endpoint.local_addr());
 
@@ -119,7 +118,7 @@ where
             shutdown.boxed(),
             futures::stream::select(
                 incoming.boxed(),
-                futures::stream::select(bootstrap.boxed(), rad_events.boxed()),
+                futures::stream::select(bootstrap.boxed(), gossip_events.boxed()),
             ),
         )
         .try_for_each_concurrent(None, |run| {
@@ -135,12 +134,12 @@ where
         self.subscribers.subscribe().await
     }
 
-    pub async fn announce(&self, have: rad::Update) {
-        self.rad.announce(have).await
+    pub async fn announce(&self, have: gossip::Update) {
+        self.gossip.announce(have).await
     }
 
-    pub async fn query(&self, want: rad::Update) {
-        self.rad.query(want).await
+    pub async fn query(&self, want: gossip::Update) {
+        self.gossip.query(want).await
     }
 
     pub async fn open_git(&self, to: &PeerId) -> Option<Stream> {
@@ -177,8 +176,8 @@ where
                     .map_err(|e| warn!("Error processing incoming connection: {}", e))
             },
 
-            Run::Rad { event } => match event {
-                rad::ProtocolEvent::SendAdhoc(info, rpc) => {
+            Run::Gossip { event } => match event {
+                gossip::ProtocolEvent::SendAdhoc(info, rpc) => {
                     trace!("Run::Rad(SendAdhoc): {}", info.peer_id);
                     let conn = match self.connections.lock().await.get(&info.peer_id) {
                         Some(conn) => Some(conn.clone()),
@@ -205,7 +204,7 @@ where
                     Ok(())
                 },
 
-                rad::ProtocolEvent::Connect(info, rpc) => {
+                gossip::ProtocolEvent::Connect(info, rpc) => {
                     trace!("Run::Rad(Connect): {}", info.peer_id);
                     if !self.connections.lock().await.contains_key(&info.peer_id) {
                         let conn = connect_peer_info(&endpoint, info).await;
@@ -217,7 +216,7 @@ where
                     Ok(())
                 },
 
-                rad::ProtocolEvent::Disconnect(peer) => {
+                gossip::ProtocolEvent::Disconnect(peer) => {
                     trace!("Run::Rad(Disconnect): {}", peer);
                     self.handle_disconnect(peer).await;
                     Ok(())
@@ -235,7 +234,7 @@ where
         &self,
         conn: Connection,
         mut incoming: BoxStream<'_, Result<Stream, Error>>,
-        hello: impl Into<Option<rad::Rpc>>,
+        hello: impl Into<Option<gossip::Rpc>>,
     ) {
         let remote_id = conn.peer_id().clone();
         let remote_addr = conn.remote_address();
@@ -325,10 +324,10 @@ where
     async fn outgoing(
         &mut self,
         stream: Stream,
-        hello: impl Into<Option<rad::Rpc>>,
+        hello: impl Into<Option<gossip::Rpc>>,
     ) -> Result<(), Error> {
-        let upgraded = upgrade(stream, Upgrade::Rad).await?;
-        self.rad
+        let upgraded = upgrade(stream, Upgrade::Gossip).await?;
+        self.gossip
             .outgoing(upgraded.framed(CborCodec::new()), hello)
             .await
             .map_err(|e| e.into())
@@ -344,24 +343,22 @@ where
                         .await
                         .map_err(|e| format_err!("Failed to send upgrade response: {:?}", e))?;
 
+                    trace!("Incoming stream upgraded to {:?}", upgrade);
+
                     // remove framing
                     let stream = stream.release().0;
                     match upgrade {
-                        Upgrade::Rad => {
-                            trace!("Incoming stream updgraded to rad");
-                            self.rad
-                                .incoming(stream.framed(CborCodec::new()))
-                                .await
-                                .map_err(|e| format_err!("Error handling rad upgrade: {}", e))
-                        },
+                        Upgrade::Gossip => self
+                            .gossip
+                            .incoming(stream.framed(CborCodec::new()))
+                            .await
+                            .map_err(|e| format_err!("Error handling gossip upgrade: {}", e)),
 
-                        Upgrade::Git => {
-                            trace!("Incoming stream upgraded to git");
-                            self.git
-                                .invoke_service(stream.split())
-                                .await
-                                .map_err(|e| format_err!("Error handling git upgrade: {}", e))
-                        },
+                        Upgrade::Git => self
+                            .git
+                            .invoke_service(stream.split())
+                            .await
+                            .map_err(|e| format_err!("Error handling git upgrade: {}", e)),
                     }
                 },
 
@@ -381,7 +378,7 @@ where
 #[async_trait]
 impl<S> GitStreamFactory for Protocol<S>
 where
-    S: rad::LocalStorage + 'static,
+    S: gossip::LocalStorage + 'static,
 {
     async fn open_stream(&self, to: &PeerId) -> Option<Stream> {
         self.open_git(to).await
@@ -390,7 +387,7 @@ where
 
 async fn connect_peer_info(
     endpoint: &Endpoint,
-    peer_info: rad::PeerInfo,
+    peer_info: gossip::PeerInfo,
 ) -> Option<(
     Connection,
     impl futures::Stream<Item = Result<Stream, Error>> + Unpin,
@@ -446,7 +443,7 @@ async fn upgrade(stream: Stream, upgrade: Upgrade) -> Result<Stream, Error> {
                 } else {
                     Err(format_err!(
                         "Protocol mismatch: requested {:?}, got {:?}",
-                        Upgrade::Rad,
+                        Upgrade::Gossip,
                         upgrade
                     ))
                 }

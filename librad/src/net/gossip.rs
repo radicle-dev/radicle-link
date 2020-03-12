@@ -1,7 +1,5 @@
 use std::{
     collections::{HashMap, HashSet},
-    hash::Hash,
-    io,
     iter,
     marker::PhantomData,
     net::SocketAddr,
@@ -19,134 +17,30 @@ use futures::{
     sink::{Sink, SinkExt},
     stream::StreamExt,
 };
-use futures_codec::{CborCodec, CborCodecError, Framed, FramedRead, FramedWrite};
+use futures_codec::{CborCodec, Framed, FramedRead, FramedWrite};
 use futures_timer::Delay;
 use governor::{Quota, RateLimiter};
 use log::{info, trace, warn};
 use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
-use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{
     internal::channel::Fanout,
-    net::connection::{SendStream, Stream},
+    net::{
+        connection::{SendStream, Stream},
+        gossip::error::Error,
+    },
     peer::PeerId,
-    project::ProjectId,
 };
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Rpc {
-    Membership(Membership),
-    Gossip(Gossip),
-}
+pub mod error;
+pub mod rpc;
+pub mod storage;
+pub mod types;
 
-impl From<Membership> for Rpc {
-    fn from(m: Membership) -> Self {
-        Self::Membership(m)
-    }
-}
-
-impl From<Gossip> for Rpc {
-    fn from(g: Gossip) -> Self {
-        Self::Gossip(g)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Membership {
-    Join(PeerAdvertisement),
-    ForwardJoin {
-        joined: PeerInfo,
-        ttl: usize,
-    },
-    Neighbour(PeerAdvertisement),
-    Shuffle {
-        origin: PeerInfo,
-        peers: Vec<PeerInfo>,
-        ttl: usize,
-    },
-    ShuffleReply {
-        peers: Vec<PeerInfo>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Gossip {
-    Have { origin: PeerInfo, val: Update },
-    Want { origin: PeerInfo, val: Update },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Update {
-    Project {
-        project: ProjectId,
-        head: Option<Ref>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Ref {
-    name: String,
-    target: Vec<u8>,
-}
-
-#[derive(Debug)]
-pub enum PutResult {
-    Applied,
-    Stale,
-    Uninteresting,
-    Error,
-}
-
-pub trait LocalStorage: Clone + Send + Sync {
-    /// Notify the local storage that a new value is available.
-    ///
-    /// If the value was stored locally already, [`PutResult::Stale`] must be
-    /// returned. Otherwise, [`PutResult::Applied`] indicates that we _now_
-    /// have the value locally, and other peers may fetch it from us.
-    ///
-    /// [`PutResult::Error`] indicates that a storage error occurred -- either
-    /// the implementer wasn't able to determine if the local storage is
-    /// up-to-date, or it was not possible to fetch the actual state from
-    /// the `provider`. In this case, the network is asked to retransmit
-    /// [`Gossip::Have`], so we can eventually try again.
-    fn put(&self, provider: &PeerId, has: Update) -> PutResult;
-
-    /// Ask the local storage if value `A` is available.
-    ///
-    /// This is used to notify the asking peer that they may fetch value `A`
-    /// from us.
-    fn ask(&self, want: &Update) -> bool;
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PeerInfo {
-    pub peer_id: PeerId,
-    pub advertised_info: PeerAdvertisement,
-    pub seen_addrs: HashSet<SocketAddr>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PeerAdvertisement {
-    pub listen_addr: SocketAddr,
-    pub capabilities: HashSet<Capability>,
-}
-
-impl PeerAdvertisement {
-    pub fn new(listen_addr: SocketAddr) -> Self {
-        Self {
-            listen_addr,
-            capabilities: HashSet::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-#[repr(u8)]
-pub enum Capability {
-    Reserved = 0,
-}
+pub use rpc::*;
+pub use storage::*;
+pub use types::*;
 
 #[derive(Clone)]
 #[allow(clippy::large_enum_variant)]
@@ -154,30 +48,6 @@ pub enum ProtocolEvent {
     SendAdhoc(PeerInfo, Rpc),
     Connect(PeerInfo, Rpc),
     Disconnect(PeerId),
-}
-
-#[derive(Debug, Fail)]
-pub enum Error {
-    #[fail(display = "Invalid payload")]
-    InvalidPayload(#[fail(cause)] serde_cbor::Error),
-
-    #[fail(display = "Connection to self")]
-    SelfConnection,
-
-    #[fail(display = "Too many storage errors")]
-    StorageErrorRateLimitExceeded,
-
-    #[fail(display = "{}", 0)]
-    Io(#[fail(cause)] io::Error),
-}
-
-impl From<CborCodecError> for Error {
-    fn from(err: CborCodecError) -> Self {
-        match err {
-            CborCodecError::Cbor(e) => Self::InvalidPayload(e),
-            CborCodecError::Io(e) => Self::Io(e),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
