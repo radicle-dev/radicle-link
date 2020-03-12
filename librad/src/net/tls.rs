@@ -18,10 +18,10 @@ use yasna::{ASN1Error, ASN1ErrorKind, ASN1Result};
 /// Generate a TLS certificate.
 ///
 /// The certificate is self-signed by the given [`device::Key`], and advertises
-/// a subject alt name of "<base58btc-encoded-public-key>.radicle".
+/// the `PeerId::default_encoding` as the subject alt name.
 fn gen_cert(key: &device::Key) -> rcgen::Certificate {
     let params = {
-        let mut params = CertificateParams::new(vec![PeerId::from(key.clone()).to_string()]);
+        let mut params = CertificateParams::new(vec![PeerId::from(key.clone()).default_encoding()]);
 
         params.alg = &PKCS_ED25519;
         params.distinguished_name = {
