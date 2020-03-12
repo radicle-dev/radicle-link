@@ -16,6 +16,7 @@ futures = { version = "0.3", features = ["thread-pool"] }
 futures_codec = { version = "0.4", features = ["cbor"] }
 futures-timer = "3.0"
 git2 = { version = "0.12", default-features = false, features = [] }
+governor = "0.2"
 hex = "0.4"
 lazy_static = "1.4"
 # Need to mention libgit2-sys explicitly in order to disable openssl

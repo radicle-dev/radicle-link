@@ -48,15 +48,18 @@ impl GitServer {
 
         let repo_path = {
             let repo_path = repo
-                .map(|path| self.export.join(path.trim_start_matches('/')))
-                .filter(|path| path.exists());
+                .ok_or_else(|| git2::Error::from_str("No repo specified by client"))
+                .and_then(|path| {
+                    git2::Repository::open_bare(self.export.join(path.trim_start_matches('/')))
+                })
+                .map(|repo| repo.path().to_path_buf());
+
             match repo_path {
-                None => {
-                    error!("Invalid repo path: {:?}", repo_path);
+                Ok(repo_path) => repo_path,
+                Err(e) => {
+                    error!("Error opening repo {:?}: {}", repo, e);
                     return send_err(&mut send, "repo not found or access denied").await;
                 },
-
-                Some(path) => path,
             }
         };
 
@@ -88,6 +91,7 @@ enum UploadPack {
 impl UploadPack {
     fn advertise(repo_path: &Path) -> io::Result<Self> {
         Command::new("git")
+            .current_dir(repo_path)
             .args(&[
                 "upload-pack",
                 "--strict",
@@ -96,7 +100,6 @@ impl UploadPack {
                 "--advertise-refs",
                 ".",
             ])
-            .current_dir(repo_path)
             .stdout(Stdio::piped())
             .spawn()
             .map(Self::AdvertiseRefs)
@@ -104,6 +107,7 @@ impl UploadPack {
 
     fn upload_pack(repo_path: &Path) -> io::Result<Self> {
         Command::new("git")
+            .current_dir(repo_path)
             .args(&[
                 "upload-pack",
                 "--strict",
@@ -111,7 +115,6 @@ impl UploadPack {
                 "--stateless-rpc",
                 ".",
             ])
-            .current_dir(repo_path)
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
             .spawn()

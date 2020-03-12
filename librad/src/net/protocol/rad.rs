@@ -5,6 +5,7 @@ use std::{
     iter,
     marker::PhantomData,
     net::SocketAddr,
+    num::NonZeroU32,
     sync::{
         atomic::{self, AtomicBool},
         Arc,
@@ -16,10 +17,11 @@ use futures::{
     channel::mpsc,
     lock::Mutex,
     sink::{Sink, SinkExt},
-    stream::{StreamExt, TryStreamExt},
+    stream::StreamExt,
 };
 use futures_codec::{CborCodec, CborCodecError, Framed, FramedRead, FramedWrite};
 use futures_timer::Delay;
+use governor::{Quota, RateLimiter};
 use log::{info, trace, warn};
 use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
@@ -161,6 +163,9 @@ pub enum Error {
 
     #[fail(display = "Connection to self")]
     SelfConnection,
+
+    #[fail(display = "Too many storage errors")]
+    StorageErrorRateLimitExceeded,
 
     #[fail(display = "{}", 0)]
     Io(#[fail(cause)] io::Error),
@@ -329,6 +334,12 @@ pub type NegotiatedStream = Framed<Stream, CborCodec<Rpc, Rpc>>;
 type NegotiatedSendStream = FramedWrite<SendStream, CborCodec<Rpc, Rpc>>;
 type ConnectedPeersImpl = ConnectedPeers<Rpc, NegotiatedSendStream, Pcg64Mcg>;
 
+type StorageErrorLimiter = RateLimiter<
+    governor::state::direct::NotKeyed,
+    governor::state::InMemoryState,
+    governor::clock::DefaultClock,
+>;
+
 #[derive(Clone)]
 pub struct Protocol<S> {
     local_id: PeerId,
@@ -339,6 +350,8 @@ pub struct Protocol<S> {
     prng: Pcg64Mcg,
 
     storage: S,
+    storage_error_lim: Arc<StorageErrorLimiter>,
+
     subscribers: Fanout<ProtocolEvent>,
 
     connected_peers: Arc<Mutex<ConnectedPeersImpl>>,
@@ -364,13 +377,19 @@ impl<S> Protocol<S> {
         )));
         let known_peers = Arc::new(Mutex::new(KnownPeers::new(prng.clone())));
 
+        let storage_error_lim = Arc::new(RateLimiter::direct(Quota::per_second(unsafe {
+            NonZeroU32::new_unchecked(5)
+        })));
+
         let this = Self {
             local_id: local_id.clone(),
             local_ad,
 
             mparams,
             prng,
+
             storage,
+            storage_error_lim,
 
             subscribers: Fanout::new(),
 
@@ -442,6 +461,11 @@ impl<S> Protocol<S> {
     {
         let remote_id = stream.peer_id().clone();
         trace!("{}: Incoming from {}", self.local_id, remote_id);
+        // This should not be possible, as we prevent it in the TLS handshake.
+        // Leaving it here regardless as a sanity check.
+        if remote_id == self.local_id {
+            return Err(Error::SelfConnection);
+        }
 
         // This is a bit of a hack: in order to keep track of the connected
         // peers, and to be able to broadcast messages to them, we need to move
@@ -468,16 +492,17 @@ impl<S> Protocol<S> {
             FramedRead::new(recv, codec)
         };
 
-        loop {
-            match recv.try_next().await {
-                Ok(Some(rpc)) => match rpc {
+        while let Some(recvd) = recv.next().await {
+            match recvd {
+                Ok(rpc) => match rpc {
                     Rpc::Membership(msg) => {
                         self.handle_membership(&remote_id, recv.remote_address(), msg)
-                            .await
+                            .await?
                     },
-                    Rpc::Gossip(msg) => self.handle_gossip(&remote_id, msg).await,
+
+                    Rpc::Gossip(msg) => self.handle_gossip(&remote_id, msg).await?,
                 },
-                Ok(None) => {},
+
                 Err(e) => {
                     warn!("{}: Recv error: {:?}", self.local_id, e);
                     break;
@@ -495,7 +520,12 @@ impl<S> Protocol<S> {
         Ok(())
     }
 
-    async fn handle_membership(&self, remote_id: &PeerId, remote_addr: SocketAddr, msg: Membership)
+    async fn handle_membership(
+        &self,
+        remote_id: &PeerId,
+        remote_addr: SocketAddr,
+        msg: Membership,
+    ) -> Result<(), Error>
     where
         S: LocalStorage,
     {
@@ -591,9 +621,11 @@ impl<S> Protocol<S> {
                 self.add_known(peers).await
             },
         }
+
+        Ok(())
     }
 
-    async fn handle_gossip(&self, remote_id: &PeerId, msg: Gossip)
+    async fn handle_gossip(&self, remote_id: &PeerId, msg: Gossip) -> Result<(), Error>
     where
         S: LocalStorage,
     {
@@ -626,13 +658,23 @@ impl<S> Protocol<S> {
 
                     // Meh. Request retransmission.
                     PutResult::Error => {
-                        // FIXME: put this on a queue with a delay. Also drop
-                        // broadcasts if there are too many errors
-                        /*
-                        info!(
-                            "{}: Error applying {:?}, requesting retransmission",
-                            self.local_id, val
-                        );
+                        info!("{}: Error applying {:?}", self.local_id, val);
+                        // Forward in any case
+                        self.broadcast(
+                            Have {
+                                origin,
+                                val: val.clone(),
+                            },
+                            remote_id,
+                        )
+                        .await;
+                        // Exit if we're getting too many errors
+                        self.storage_error_lim
+                            .check()
+                            .map_err(|_| Error::StorageErrorRateLimitExceeded)?;
+                        // Request retransmission
+                        // This could be optimised be enqueuing `val`s and
+                        // sending them in batch later (deduplicating)
                         self.broadcast(
                             Want {
                                 origin: self.local_peer_info(),
@@ -641,9 +683,6 @@ impl<S> Protocol<S> {
                             None,
                         )
                         .await
-                        */
-
-                        self.broadcast(Have { origin, val }, remote_id).await
                     },
 
                     // Not interesting, forward to others
@@ -678,6 +717,8 @@ impl<S> Protocol<S> {
                 }
             },
         }
+
+        Ok(())
     }
 
     async fn add_connected(&self, peer_id: &PeerId, out: NegotiatedSendStream) -> Option<PeerId> {

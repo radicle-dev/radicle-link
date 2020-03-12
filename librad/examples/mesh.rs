@@ -1,7 +1,7 @@
 use std::{error::Error, iter::Iterator, path::Path, time::Duration};
 
 use futures::stream::{self, StreamExt};
-use git2::Repository;
+use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
 use log::{info, warn};
 use tempfile::{tempdir, TempDir};
 use tokio::task;
@@ -57,23 +57,48 @@ impl rad::LocalStorage for MiniPeer {
         rad::Update::Project { project, .. }: rad::Update,
     ) -> rad::PutResult {
         info!("LocalStorage::put: {}", project);
-        let repo = self.paths.projects_dir().join(project.path(&self.paths));
-        if repo.exists() {
-            info!("Project {} already present", project);
+        let repo_path = self.paths.projects_dir().join(project.path(&self.paths));
+        if Repository::open_bare(&repo_path).is_ok() {
+            // Note: we would want to fetch here
+            info!("{}: Project {} already present", self.peer_id(), project);
             rad::PutResult::Stale
         } else {
-            info!("Cloning project {}", project);
-            let res = Repository::clone(
-                &format!("rad://{}@{}/{}", self.peer_id(), provider, project),
-                repo,
+            info!(
+                "{}: Cloning project {} from {} into {}",
+                self.peer_id(),
+                project,
+                provider,
+                repo_path.display()
             );
 
-            if let Err(ref e) = res {
-                warn!("Error cloning: {}", e);
-            }
+            let mut callbacks = RemoteCallbacks::new();
+            callbacks.sideband_progress(|bytes| {
+                eprintln!("{}", String::from_utf8_lossy(&bytes));
+                true
+            });
+            let mut fetch_opts = FetchOptions::new();
+            fetch_opts.remote_callbacks(callbacks);
 
-            res.map(|_| rad::PutResult::Applied)
-                .unwrap_or(rad::PutResult::Error)
+            RepoBuilder::new()
+                .bare(true)
+                .fetch_options(fetch_opts)
+                .clone(
+                    &format!("rad://{}@{}/{}", self.peer_id(), provider, project),
+                    &repo_path,
+                )
+                .map(|repo| {
+                    info!(
+                        "Cloned to {}, HEAD: {}",
+                        repo.path().display(),
+                        repo.head().unwrap().peel_to_commit().unwrap().id()
+                    );
+
+                    rad::PutResult::Applied
+                })
+                .unwrap_or_else(|e| {
+                    warn!("Error cloning: {}", e);
+                    rad::PutResult::Error
+                })
         }
     }
 

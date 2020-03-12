@@ -62,7 +62,7 @@ enum Run<'a> {
 
     Incoming {
         conn: Connection,
-        incoming: BoxStream<'a, Stream>,
+        incoming: BoxStream<'a, Result<Stream, Error>>,
     },
 
     Rad {
@@ -103,20 +103,23 @@ where
         Disco: Discovery,
         Shutdown: Future<Output = ()> + Send,
     {
-        let incoming = incoming
-            .filter_map(|(conn, i)| async move { Some(Run::Incoming { conn, incoming: i }) });
-        let shutdown = futures::stream::once(shutdown).map(|()| Run::Shutdown);
+        let incoming = incoming.map(|(conn, i)| Ok(Run::Incoming { conn, incoming: i }));
+        let shutdown = futures::stream::once(shutdown).map(|()| Ok(Run::Shutdown));
         let bootstrap = futures::stream::iter(disco.collect())
-            .map(|(peer, addrs)| Run::Discovered { peer, addrs });
-        let rad_events = self.rad.subscribe().await.map(|event| Run::Rad { event });
+            .map(|(peer, addrs)| Ok(Run::Discovered { peer, addrs }));
+        let rad_events = self
+            .rad
+            .subscribe()
+            .await
+            .map(|event| Ok(Run::Rad { event }));
 
         info!("Listening on {:?}", endpoint.local_addr());
 
         futures::stream::select(
-            shutdown.map(Ok).boxed(),
+            shutdown.boxed(),
             futures::stream::select(
-                incoming.map(Ok).boxed(),
-                futures::stream::select(bootstrap.map(Ok).boxed(), rad_events.map(Ok).boxed()),
+                incoming.boxed(),
+                futures::stream::select(bootstrap.boxed(), rad_events.boxed()),
             ),
         )
         .try_for_each_concurrent(None, |run| {
@@ -169,8 +172,9 @@ where
 
             Run::Incoming { conn, incoming } => {
                 trace!("Run::Incoming: {}", conn.remote_address());
-                self.handle_incoming(conn, incoming).await;
-                Ok(())
+                self.handle_incoming(conn, incoming)
+                    .await
+                    .map_err(|e| warn!("Error processing incoming connection: {}", e))
             },
 
             Run::Rad { event } => match event {
@@ -230,7 +234,7 @@ where
     async fn handle_connect(
         &self,
         conn: Connection,
-        mut incoming: BoxStream<'_, Stream>,
+        mut incoming: BoxStream<'_, Result<Stream, Error>>,
         hello: impl Into<Option<rad::Rpc>>,
     ) {
         let remote_id = conn.peer_id().clone();
@@ -257,7 +261,7 @@ where
                 this1.outgoing(outgoing, hello).await
             },
             async {
-                while let Some(stream) = incoming.next().await {
+                while let Some(stream) = incoming.try_next().await? {
                     this2.incoming(stream).await?
                 }
 
@@ -267,7 +271,7 @@ where
 
         if let Err(e) = res {
             warn!("Closing connection with {}, because: {}", remote_id, e);
-            conn.close(CloseReason::ConnectionError);
+            conn.close(CloseReason::InternalError);
         };
     }
 
@@ -282,9 +286,13 @@ where
         }
     }
 
-    async fn handle_incoming<Incoming>(&self, conn: Connection, mut incoming: Incoming)
+    async fn handle_incoming<Incoming>(
+        &self,
+        conn: Connection,
+        mut incoming: Incoming,
+    ) -> Result<(), Error>
     where
-        Incoming: futures::Stream<Item = Stream> + Unpin,
+        Incoming: futures::Stream<Item = Result<Stream, Error>> + Unpin,
     {
         let remote_id = conn.peer_id().clone();
         let remote_addr = conn.remote_address();
@@ -301,7 +309,7 @@ where
                 .await;
         }
 
-        while let Some(stream) = incoming.next().await {
+        while let Some(stream) = incoming.try_next().await? {
             trace!("New incoming stream");
             let this = self.clone();
             tokio::spawn(async move {
@@ -311,7 +319,7 @@ where
             });
         }
 
-        debug!("Incoming from {} exhausted", remote_addr)
+        Ok(())
     }
 
     async fn outgoing(
@@ -383,7 +391,10 @@ where
 async fn connect_peer_info(
     endpoint: &Endpoint,
     peer_info: rad::PeerInfo,
-) -> Option<(Connection, impl futures::Stream<Item = Stream> + Unpin)> {
+) -> Option<(
+    Connection,
+    impl futures::Stream<Item = Result<Stream, Error>> + Unpin,
+)> {
     let addrs = iter::once(peer_info.advertised_info.listen_addr).chain(peer_info.seen_addrs);
     connect(endpoint, &peer_info.peer_id, addrs).await
 }
@@ -392,7 +403,10 @@ async fn connect<I>(
     endpoint: &Endpoint,
     peer_id: &PeerId,
     addrs: I,
-) -> Option<(Connection, impl futures::Stream<Item = Stream> + Unpin)>
+) -> Option<(
+    Connection,
+    impl futures::Stream<Item = Result<Stream, Error>> + Unpin,
+)>
 where
     I: IntoIterator<Item = SocketAddr>,
 {

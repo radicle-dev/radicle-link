@@ -3,11 +3,10 @@ use std::{io, net::SocketAddr, pin::Pin};
 use failure::Error;
 use futures::{
     io::{AsyncRead, AsyncWrite},
-    stream::{BoxStream, StreamExt},
+    stream::{BoxStream, StreamExt, TryStreamExt},
     task::{Context, Poll},
 };
 use futures_codec::{Decoder, Encoder, Framed};
-use log::warn;
 use quinn::{NewConnection, VarInt};
 
 use crate::{
@@ -39,7 +38,7 @@ impl Endpoint {
         &mut self,
         peer: &PeerId,
         addr: &SocketAddr,
-    ) -> Result<(Connection, BoxStream<'a, Stream>), Error> {
+    ) -> Result<(Connection, BoxStream<'a, Result<Stream, Error>>), Error> {
         let conn = self
             .endpoint
             .connect(addr, peer.as_dns_name().as_ref().into())?
@@ -55,7 +54,7 @@ impl Endpoint {
 
 pub struct BoundEndpoint<'a> {
     pub endpoint: Endpoint,
-    pub incoming: BoxStream<'a, (Connection, BoxStream<'a, Stream>)>,
+    pub incoming: BoxStream<'a, (Connection, BoxStream<'a, Result<Stream, Error>>)>,
 }
 
 impl<'a> BoundEndpoint<'a> {
@@ -70,33 +69,7 @@ fn new_connection<'a>(
         bi_streams,
         ..
     }: NewConnection,
-) -> (Connection, BoxStream<'a, Stream>) {
-    // Boy, that's how I like to move it move it
-    let incoming_streams = move |peer_id: PeerId, conn: Connection| {
-        bi_streams
-            .filter_map(move |stream| {
-                let peer_id1 = peer_id.clone();
-                let conn1 = conn.clone();
-                async move {
-                    match stream {
-                        Err(e) => {
-                            warn!(
-                                "Connection error in incoming stream from {}: {}",
-                                peer_id1, e
-                            );
-                            None
-                        },
-                        Ok((send, recv)) => Some(Stream {
-                            conn: conn1.clone(),
-                            send,
-                            recv,
-                        }),
-                    }
-                }
-            })
-            .fuse()
-    };
-
+) -> (Connection, BoxStream<'a, Result<Stream, Error>>) {
     let peer_id = {
         let cert: quinn::Certificate = connection
             .authentication_data()
@@ -112,7 +85,18 @@ fn new_connection<'a>(
 
     let conn = Connection::new(&peer_id, connection);
 
-    (conn.clone(), Box::pin(incoming_streams(peer_id, conn)))
+    (
+        conn.clone(),
+        Box::pin(
+            bi_streams
+                .map_ok(move |(send, recv)| Stream {
+                    conn: conn.clone(),
+                    send,
+                    recv,
+                })
+                .map_err(|e| e.into()),
+        ),
+    )
 }
 
 #[derive(Clone)]
@@ -157,6 +141,7 @@ pub enum CloseReason {
     DuplicateConnection = 1,
     ProtocolDisconnect = 2,
     ConnectionError = 3,
+    InternalError = 4,
 }
 
 impl CloseReason {
@@ -165,6 +150,7 @@ impl CloseReason {
             Self::DuplicateConnection => "duplicate connection",
             Self::ProtocolDisconnect => "bye!",
             Self::ConnectionError => "connection error",
+            Self::InternalError => "internal server error",
         }
     }
 }
