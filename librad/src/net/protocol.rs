@@ -115,11 +115,8 @@ where
         info!("Listening on {:?}", endpoint.local_addr());
 
         futures::stream::select(
-            shutdown.boxed(),
-            futures::stream::select(
-                incoming.boxed(),
-                futures::stream::select(bootstrap.boxed(), gossip_events.boxed()),
-            ),
+            shutdown,
+            futures::stream::select(incoming, futures::stream::select(bootstrap, gossip_events)),
         )
         .try_for_each_concurrent(None, |run| {
             let mut this = self.clone();
