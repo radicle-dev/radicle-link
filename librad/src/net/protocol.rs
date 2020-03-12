@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{
+    channel::Fanout,
     git::{server::GitServer, transport::GitStreamFactory},
-    internal::channel::Fanout,
     net::{
         connection::{BoundEndpoint, CloseReason, Connection, Endpoint, Stream},
         discovery::Discovery,

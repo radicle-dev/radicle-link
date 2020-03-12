@@ -25,7 +25,7 @@ use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
 
 use crate::{
-    internal::channel::Fanout,
+    channel::Fanout,
     net::{
         connection::{SendStream, Stream},
         gossip::error::Error,

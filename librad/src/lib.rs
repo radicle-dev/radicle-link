@@ -17,9 +17,9 @@ pub mod net;
 pub mod paths;
 pub mod peer;
 pub mod project;
-pub mod util;
+pub mod sync;
 
-pub(crate) mod internal;
+pub(crate) mod channel;
 
 pub fn init() -> bool {
     sodiumoxide::init().is_ok()
