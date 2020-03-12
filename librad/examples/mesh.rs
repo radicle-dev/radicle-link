@@ -13,12 +13,13 @@ use librad::{
     net::{
         connection::{BoundEndpoint, Endpoint},
         discovery,
-        protocol::{rad, Protocol},
+        gossip,
+        protocol::Protocol,
     },
     paths::Paths,
     peer::PeerId,
     project::{Project, ProjectId},
-    util::monitor::Monitor,
+    sync::Monitor,
 };
 
 #[derive(Clone)]
@@ -50,18 +51,18 @@ impl MiniPeer {
     }
 }
 
-impl rad::LocalStorage for MiniPeer {
+impl gossip::LocalStorage for MiniPeer {
     fn put(
         &self,
         provider: &PeerId,
-        rad::Update::Project { project, .. }: rad::Update,
-    ) -> rad::PutResult {
+        gossip::Update::Project { project, .. }: gossip::Update,
+    ) -> gossip::PutResult {
         info!("LocalStorage::put: {}", project);
         let repo_path = self.paths.projects_dir().join(project.path(&self.paths));
         if Repository::open_bare(&repo_path).is_ok() {
             // Note: we would want to fetch here
             info!("{}: Project {} already present", self.peer_id(), project);
-            rad::PutResult::Stale
+            gossip::PutResult::Stale
         } else {
             info!(
                 "{}: Cloning project {} from {} into {}",
@@ -93,16 +94,16 @@ impl rad::LocalStorage for MiniPeer {
                         repo.head().unwrap().peel_to_commit().unwrap().id()
                     );
 
-                    rad::PutResult::Applied
+                    gossip::PutResult::Applied
                 })
                 .unwrap_or_else(|e| {
                     warn!("Error cloning: {}", e);
-                    rad::PutResult::Error
+                    gossip::PutResult::Error
                 })
         }
     }
 
-    fn ask(&self, rad::Update::Project { project, .. }: &rad::Update) -> bool {
+    fn ask(&self, gossip::Update::Project { project, .. }: &gossip::Update) -> bool {
         self.paths
             .projects_dir()
             .join(project.path(&self.paths))
@@ -133,14 +134,14 @@ async fn bootstrap<'a>(
 
     let endpoint = Endpoint::bind(&key, "127.0.0.1:0".parse().unwrap()).await?;
 
-    let rad = rad::Protocol::new(
+    let gossip = gossip::Protocol::new(
         &PeerId::from(key),
-        rad::PeerAdvertisement::new(endpoint.endpoint.local_addr().unwrap()),
-        rad::MembershipParams::default(),
+        gossip::PeerAdvertisement::new(endpoint.endpoint.local_addr().unwrap()),
+        gossip::MembershipParams::default(),
         peer.clone(),
     );
 
-    let proto = Protocol::new(rad, git);
+    let proto = Protocol::new(gossip, git);
 
     Ok(Bootstrap {
         peer,
@@ -242,7 +243,7 @@ async fn main() {
     println!("Announcing project1");
     peer1
         .proto
-        .announce(rad::Update::Project {
+        .announce(gossip::Update::Project {
             project: project1.clone(),
             head: None,
         })
