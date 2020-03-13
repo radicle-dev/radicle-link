@@ -100,16 +100,16 @@ pub struct Comment<Id, User: Eq + Hash> {
     timestamp: OffsetDateTime,
 }
 
-impl<CommentId, User: Eq + Hash> Comment<CommentId, User> {
+impl<Cid, User: Eq + Hash> Comment<Cid, User> {
     /// Create a new `Comment`.
-    pub fn new(identifier: CommentId, author: User, content: String) -> Self {
+    pub fn new(identifier: Cid, author: User, content: String) -> Self {
         let timestamp = OffsetDateTime::now_local();
         Self::new_with_timestamp(identifier, author, content, timestamp)
     }
 
     /// Create a new `Comment` with a supplied `timestamp`.
     pub fn new_with_timestamp(
-        identifier: CommentId,
+        identifier: Cid,
         author: User,
         content: String,
         timestamp: OffsetDateTime,
