@@ -79,6 +79,7 @@
 #![deny(missing_docs, unused_import_braces, unused_qualifications, warnings)]
 #![feature(vec_remove_item)]
 use std::hash::Hash;
+use time::OffsetDateTime;
 
 mod thread;
 pub use thread::{Error as ThreadError, Replies, ReplyTo, Status, Thread};
@@ -99,6 +100,7 @@ pub struct Issue<IssueId, CommentId, User: Eq + Hash> {
     title: Title,
     thread: Thread<Comment<CommentId, User>>,
     meta: Metadata<User>,
+    timestamp: OffsetDateTime,
 }
 
 impl<IssueId, CommentId, User: Eq + Hash> Issue<IssueId, CommentId, User> {
@@ -113,7 +115,23 @@ impl<IssueId, CommentId, User: Eq + Hash> Issue<IssueId, CommentId, User> {
     where
         User: Clone + Eq,
     {
-        let comment = Comment::new(comment_id, author.clone(), content);
+        let timestamp = OffsetDateTime::now_local();
+        Self::new_with_timestamp(identifier, comment_id, author, title, content, timestamp)
+    }
+
+    /// Create a new `Issue` with a supplied `timestamp`.
+    pub fn new_with_timestamp(
+        identifier: IssueId,
+        comment_id: CommentId,
+        author: User,
+        title: Title,
+        content: String,
+        timestamp: OffsetDateTime,
+    ) -> Self
+    where
+        User: Clone + Eq,
+    {
+        let comment = Comment::new_with_timestamp(comment_id, author.clone(), content, timestamp);
 
         Issue {
             identifier,
@@ -121,6 +139,7 @@ impl<IssueId, CommentId, User: Eq + Hash> Issue<IssueId, CommentId, User> {
             title,
             thread: Thread::new(comment),
             meta: Metadata::new(),
+            timestamp,
         }
     }
 

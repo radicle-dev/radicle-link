@@ -4,6 +4,7 @@ use std::{
     hash::Hash,
     str::FromStr,
 };
+use time::OffsetDateTime;
 
 /// The metadata that is related to an issue.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,16 +97,29 @@ pub struct Comment<Id, User: Eq + Hash> {
     author: User,
     content: String,
     reactions: HashSet<Reaction<User>>,
+    timestamp: OffsetDateTime,
 }
 
 impl<CommentId, User: Eq + Hash> Comment<CommentId, User> {
-    /// Create a new comment.
+    /// Create a new `Comment`.
     pub fn new(identifier: CommentId, author: User, content: String) -> Self {
+        let timestamp = OffsetDateTime::now_local();
+        Self::new_with_timestamp(identifier, author, content, timestamp)
+    }
+
+    /// Create a new `Comment` with a supplied `timestamp`.
+    pub fn new_with_timestamp(
+        identifier: CommentId,
+        author: User,
+        content: String,
+        timestamp: OffsetDateTime,
+    ) -> Self {
         Comment {
             identifier,
             author,
             content,
             reactions: HashSet::new(),
+            timestamp,
         }
     }
 
