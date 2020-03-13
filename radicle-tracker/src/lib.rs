@@ -157,6 +157,8 @@ impl<Id, Cid, User: Eq + Hash> Issue<Id, Cid, User> {
         }
     }
 
+    /// Close an [`Issue`] and get back a [`ClosedIssue`]. This limits the
+    /// functionality on the original `Issue`.
     pub fn close(self) -> ClosedIssue<Id, Cid, User> {
         ClosedIssue(self)
     }
