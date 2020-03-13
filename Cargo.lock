@@ -770,11 +770,11 @@ dependencies = [
 [[package]]
 name = "nonempty"
 version = "0.2.0"
-source = "git+https://github.com/cloudhead/nonempty?rev=master#f7832ddefe2fa51baa85dc555c1a1fe659315750"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "nonempty"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -1031,7 +1031,7 @@ dependencies = [
 name = "radicle-tracker"
 version = "0.1.0"
 dependencies = [
- "nonempty 0.2.0 (git+https://github.com/cloudhead/nonempty?rev=master)",
+ "nonempty 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.11 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -1960,8 +1960,8 @@ dependencies = [
 "checksum nettle-sys 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "b8629333ff5f3b74d251dae253e383cda9242410fac4244a4fe855469be101fb"
 "checksum new_debug_unreachable 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "e4a24736216ec316047a1fc4252e27dabb04218aa4a3f37c6e7ddbf1f9782b54"
 "checksum nom 4.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "2ad2a91a8e869eeb30b9cb3119ae87773a8f4ae617f41b1eb9c154b2905f7bd6"
-"checksum nonempty 0.2.0 (git+https://github.com/cloudhead/nonempty?rev=master)" = "<none>"
 "checksum nonempty 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "6954982ece17426b038f84895b4a6771c541299dc7141fab20ee676b19d9d97f"
+"checksum nonempty 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "7747482c817116898e7aeda0d68c90998d47ee0db28b7030d44584ef7695d355"
 "checksum num-traits 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)" = "c62be47e61d1842b9170f0fdeec8eba98e60e90e5446449a0545e5152acd7096"
 "checksum olpc-cjson 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "9409e2493366c8f19387c98c5189ab9c937541b5bf48f11390d038a59fdfd9c1"
 "checksum opaque-debug 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "2839e79665f131bdb5782e51f2c6c9599c133c6098982a54c794358bf432529c"
