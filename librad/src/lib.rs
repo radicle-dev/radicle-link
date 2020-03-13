@@ -14,6 +14,7 @@ pub mod meta;
 pub mod paths;
 pub mod peer;
 pub mod project;
+pub mod id;
 
 pub fn init() -> bool {
     sodiumoxide::init().is_ok()
