@@ -143,10 +143,11 @@ const ROOT_FINGER: Finger = Finger::Root;
 /// replies.
 #[derive(Debug, Clone)]
 pub struct Thread<A> {
-    // A finger points into the `main_thread` structure.
-    // If it is `Left` then it is pointing to the main thread.
-    // If it is `Right` then it is pointing to a reply to a comment in the main thread.
-    _finger: Finger,
+    // A finger points into the `main_thread` structure. It allows us to efficiently look at the
+    // current item, and gives us a way to move around the data structure as if reading a thread.
+    finger: Finger,
+
+    // root and main_thread make up the actual data of the data structure.
     root: Status<A>,
     main_thread: Vec<Replies<A>>,
 }
@@ -182,7 +183,7 @@ impl<A> Thread<A> {
     /// ```
     pub fn new(a: A) -> Self {
         Thread {
-            _finger: ROOT_FINGER,
+            finger: ROOT_FINGER,
             root: Status::Live(a),
             main_thread: vec![],
         }
@@ -243,10 +244,10 @@ impl<A> Thread<A> {
     /// # }
     /// ```
     pub fn previous_reply(&mut self, reply_to: ReplyTo) -> Result<(), Error> {
-        match self._finger {
+        match self.finger {
             Finger::Root => Err(Error::PreviousMainOutOfBounds),
             Finger::Main(main_ix) if main_ix == 0 => {
-                self._finger = Finger::Root;
+                self.finger = Finger::Root;
                 Ok(())
             },
             Finger::Main(ref mut main_ix) => match reply_to {
@@ -262,13 +263,13 @@ impl<A> Thread<A> {
                         return Err(Error::PreviousMainOutOfBounds);
                     }
 
-                    self._finger = Finger::Main(*main_ix - 1);
+                    self.finger = Finger::Main(*main_ix - 1);
                     Ok(())
                 },
                 ReplyTo::Thread => {
                     // If we're at the first reply, then we move to the main thread.
                     if *replies_ix == 0 {
-                        self._finger = Finger::Main(*main_ix);
+                        self.finger = Finger::Main(*main_ix);
                     } else {
                         *replies_ix -= 1;
                     }
@@ -324,13 +325,13 @@ impl<A> Thread<A> {
             Some(replies_count - 1)
         };
 
-        match self._finger {
+        match self.finger {
             Finger::Root => {
                 if self.main_thread.is_empty() {
                     return Err(Error::NextMainOutOfBounds);
                 }
 
-                self._finger = Finger::Main(0);
+                self.finger = Finger::Main(0);
                 Ok(())
             },
             Finger::Main(ref mut main_ix) => match reply_to {
@@ -348,7 +349,7 @@ impl<A> Thread<A> {
                     Some(_) => {
                         // We start at one because the replies are the tail
                         // of the non-empty vec in Replies
-                        self._finger = Finger::Thread((*main_ix, 1));
+                        self.finger = Finger::Thread((*main_ix, 1));
                         Ok(())
                     },
                 },
@@ -359,7 +360,7 @@ impl<A> Thread<A> {
                         return Err(Error::NextMainOutOfBounds);
                     }
 
-                    self._finger = Finger::Main(*main_ix + 1);
+                    self.finger = Finger::Main(*main_ix + 1);
                     Ok(())
                 },
                 ReplyTo::Thread => match replies_bound {
@@ -399,7 +400,7 @@ impl<A> Thread<A> {
     /// # }
     /// ```
     pub fn root(&mut self) {
-        self._finger = ROOT_FINGER;
+        self.finger = ROOT_FINGER;
     }
 
     /// Reply to the thread. Depending on what type of [`ReplyTo`] value we pass
@@ -454,7 +455,7 @@ impl<A> Thread<A> {
     /// # }
     /// ```
     pub fn reply(&mut self, a: A, reply_to: ReplyTo) {
-        match self._finger {
+        match self.finger {
             // TODO: Always replies to main if we're at the root.
             // Is this ok?
             Finger::Root => self.reply_main(a),
@@ -521,7 +522,7 @@ impl<A> Thread<A> {
     where
         A: Clone,
     {
-        match self._finger {
+        match self.finger {
             Finger::Root => Err(Error::DeleteRoot),
             Finger::Main(main_ix) => {
                 let node = self.index_main_mut(main_ix).first_mut();
@@ -577,7 +578,7 @@ impl<A> Thread<A> {
     where
         F: FnOnce(&mut A) -> (),
     {
-        match self._finger {
+        match self.finger {
             Finger::Root => {
                 f(self.root.get_mut());
                 Ok(())
@@ -608,7 +609,7 @@ impl<A> Thread<A> {
     where
         A: Clone,
     {
-        let main_ix = match self._finger {
+        let main_ix = match self.finger {
             Finger::Root => {
                 return NonEmpty::from((
                     self.root.clone(),
@@ -642,7 +643,7 @@ impl<A> Thread<A> {
     /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Discussing rose trees"))));
     /// ```
     pub fn view(&self) -> Result<&Status<A>, Error> {
-        match self._finger {
+        match self.finger {
             Finger::Root => Ok(&self.root),
             Finger::Main(main_ix) => Ok(self.index_main(main_ix).first()),
             Finger::Thread((main_ix, replies_ix)) => Ok(self
@@ -659,7 +660,7 @@ impl<A> Thread<A> {
     ///
     /// If the internal finger into the thread is out of bounds.
     pub fn view_mut(&mut self) -> Result<&mut Status<A>, Error> {
-        match self._finger {
+        match self.finger {
             Finger::Root => Ok(&mut self.root),
             Finger::Main(main_ix) => Ok(self.index_main_mut(main_ix).first_mut()),
             Finger::Thread((main_ix, replies_ix)) => Ok(self
@@ -682,7 +683,7 @@ impl<A> Thread<A> {
     }
 
     fn replies_count(&self) -> usize {
-        let main_ix = match self._finger {
+        let main_ix = match self.finger {
             Finger::Root => return self.main_thread.len(),
             Finger::Main(main_ix) => main_ix,
             Finger::Thread((main_ix, _)) => main_ix,
@@ -693,14 +694,14 @@ impl<A> Thread<A> {
 
     fn reply_main(&mut self, a: A) {
         self.main_thread.push(Replies::new(a));
-        self._finger = Finger::Main(self.main_thread.len() - 1);
+        self.finger = Finger::Main(self.main_thread.len() - 1);
     }
 
     fn reply_thread(&mut self, main_ix: usize, a: A) {
         let replies = self.index_main_mut(main_ix);
         replies.reply(a);
         let replies_ix = replies.len() - 1;
-        self._finger = Finger::Thread((main_ix, replies_ix));
+        self.finger = Finger::Thread((main_ix, replies_ix));
     }
 
     // Prune the Dead items from the tree so that we can effectively test
