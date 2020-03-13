@@ -5,42 +5,42 @@ use thiserror::Error;
 ///
 /// TODO: we may want to consider `Modified`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Status<A> {
+pub enum DataState<A> {
     /// The data has been created.
     Live(A),
     /// The data has been created and also deleted.
     Dead(A),
 }
 
-impl<A> Status<A> {
+impl<A> DataState<A> {
     /// Mark the status as `Dead`, no matter what the original status was.
     fn kill(&mut self)
     where
         A: Clone,
     {
-        *self = Status::Dead(self.get().clone())
+        *self = Self::Dead(self.get().clone())
     }
 
     /// Get the reference to the value inside the status.
     pub fn get(&self) -> &A {
         match self {
-            Status::Live(a) => a,
-            Status::Dead(a) => a,
+            Self::Live(a) => a,
+            Self::Dead(a) => a,
         }
     }
 
     /// Get the mutable reference to the value inside the status.
     pub fn get_mut(&mut self) -> &mut A {
         match self {
-            Status::Live(a) => a,
-            Status::Dead(a) => a,
+            Self::Live(a) => a,
+            Self::Dead(a) => a,
         }
     }
 
     /// If the status is `Live` then return a reference to it.
     pub fn live(&self) -> Option<&A> {
         match self {
-            Status::Live(a) => Some(a),
+            Self::Live(a) => Some(a),
             _ => None,
         }
     }
@@ -48,7 +48,7 @@ impl<A> Status<A> {
     /// If the status is `Dead` then return a reference to it.
     pub fn dead(&self) -> Option<&A> {
         match self {
-            Status::Dead(a) => Some(a),
+            Self::Dead(a) => Some(a),
             _ => None,
         }
     }
@@ -80,27 +80,27 @@ pub enum Error {
     DeleteRoot,
 }
 
-/// A collection of replies where a reply is any item that has a [`Status`].
+/// A collection of replies where a reply is any item that has a [`DataState`].
 ///
 /// `Replies` are deliberately opaque as they should mostly be interacted with
 /// via [`Thread`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Replies<A>(NonEmpty<Status<A>>);
+pub struct Replies<A>(NonEmpty<DataState<A>>);
 
 impl<A> Replies<A> {
     fn new(a: A) -> Self {
-        Replies(NonEmpty::new(Status::Live(a)))
+        Replies(NonEmpty::new(DataState::Live(a)))
     }
 
     fn reply(&mut self, a: A) {
-        self.0.push(Status::Live(a))
+        self.0.push(DataState::Live(a))
     }
 
-    fn first(&self) -> &Status<A> {
+    fn first(&self) -> &DataState<A> {
         self.0.first()
     }
 
-    fn first_mut(&mut self) -> &mut Status<A> {
+    fn first_mut(&mut self) -> &mut DataState<A> {
         self.0.first_mut()
     }
 
@@ -114,16 +114,16 @@ impl<A> Replies<A> {
         self.0.len()
     }
 
-    fn get(&self, index: usize) -> Option<&Status<A>> {
+    fn get(&self, index: usize) -> Option<&DataState<A>> {
         self.0.get(index)
     }
 
-    fn get_mut(&mut self, index: usize) -> Option<&mut Status<A>> {
+    fn get_mut(&mut self, index: usize) -> Option<&mut DataState<A>> {
         self.0.get_mut(index)
     }
 
     /// Get the [`Iterator`] for the `Replies`.
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &Status<A>> + 'a {
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &DataState<A>> + 'a {
         self.0.iter()
     }
 }
@@ -148,7 +148,7 @@ pub struct Thread<A> {
     finger: Finger,
 
     // root and main_thread make up the actual data of the data structure.
-    root: Status<A>,
+    root: DataState<A>,
     main_thread: Vec<Replies<A>>,
 }
 
@@ -175,16 +175,16 @@ impl<A> Thread<A> {
     /// # Examples
     ///
     /// ```
-    /// use radicle_tracker::{Status, Thread};
+    /// use radicle_tracker::{DataState, Thread};
     ///
     /// let (thread) = Thread::new(String::from("Discussing rose trees"));
     ///
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
     /// ```
     pub fn new(a: A) -> Self {
         Thread {
             finger: ROOT_FINGER,
-            root: Status::Live(a),
+            root: DataState::Live(a),
             main_thread: vec![],
         }
     }
@@ -207,7 +207,7 @@ impl<A> Thread<A> {
     /// # use std::error::Error;
     /// #
     /// # fn main() -> Result<(), Box<dyn Error>> {
-    /// use radicle_tracker::{ReplyTo, Status, Thread};
+    /// use radicle_tracker::{ReplyTo, DataState, Thread};
     ///
     /// let (mut thread) = Thread::new(String::from("Discussing rose trees"));
     ///
@@ -215,7 +215,7 @@ impl<A> Thread<A> {
     /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
     ///
     /// thread.previous_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -225,7 +225,7 @@ impl<A> Thread<A> {
     /// # use std::error::Error;
     /// #
     /// # fn main() -> Result<(), Box<dyn Error>> {
-    /// use radicle_tracker::{ReplyTo, Status, Thread};
+    /// use radicle_tracker::{ReplyTo, DataState, Thread};
     ///
     /// let (mut thread) = Thread::new(String::from("Discussing rose trees"));
     ///
@@ -235,10 +235,10 @@ impl<A> Thread<A> {
     /// // Reply to the 1st comment
     /// thread.reply(String::from("Is this about flowers?"), ReplyTo::Thread);
     ///
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Is this about flowers?"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Is this about flowers?"))));
     ///
     /// thread.previous_reply(ReplyTo::Thread)?;
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("I love rose trees!"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose trees!"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -295,7 +295,7 @@ impl<A> Thread<A> {
     /// # use std::error::Error;
     /// #
     /// # fn main() -> Result<(), Box<dyn Error>> {
-    /// use radicle_tracker::{ReplyTo, Status, Thread};
+    /// use radicle_tracker::{ReplyTo, DataState, Thread};
     ///
     /// let (mut thread) = Thread::new(String::from("Discussing rose trees"));
     ///
@@ -307,10 +307,10 @@ impl<A> Thread<A> {
     ///
     /// thread.root();
     /// thread.next_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("I love rose trees!"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose trees!"))));
     ///
     /// thread.next_reply(ReplyTo::Thread)?;
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("I love rose bushes!"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose bushes!"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -386,7 +386,7 @@ impl<A> Thread<A> {
     /// # use std::error::Error;
     /// #
     /// # fn main() -> Result<(), Box<dyn Error>> {
-    /// use radicle_tracker::{ReplyTo, Status, Thread};
+    /// use radicle_tracker::{ReplyTo, DataState, Thread};
     ///
     /// let (mut thread) = Thread::new(String::from("Discussing rose trees"));
     ///
@@ -394,7 +394,7 @@ impl<A> Thread<A> {
     /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
     ///
     /// thread.root();
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -420,7 +420,7 @@ impl<A> Thread<A> {
     /// # use std::error::Error;
     /// #
     /// # fn main() -> Result<(), Box<dyn Error>> {
-    /// use radicle_tracker::{ReplyTo, Status, Thread};
+    /// use radicle_tracker::{ReplyTo, DataState, Thread};
     ///
     /// let (mut thread) = Thread::new(String::from("Discussing rose trees"));
     ///
@@ -436,19 +436,19 @@ impl<A> Thread<A> {
     /// thread.reply(String::from("What should we use them for?"), ReplyTo::Main);
     ///
     /// thread.root();
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
     ///
     /// thread.next_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("I love rose trees!"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose trees!"))));
     ///
     /// thread.next_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("What should we use them for?"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("What should we use them for?"))));
     ///
     /// thread.previous_reply(ReplyTo::Main)?;
     /// thread.next_reply(ReplyTo::Thread)?;
     /// assert_eq!(
     ///     thread.view(),
-    ///     Ok(&Status::Live(String::from("Did you know rose trees are equivalent to Cofree []?")))
+    ///     Ok(&DataState::Live(String::from("Did you know rose trees are equivalent to Cofree []?")))
     /// );
     /// #
     /// #     Ok(())
@@ -471,7 +471,7 @@ impl<A> Thread<A> {
     }
 
     /// Delete the item that we are looking at. This does not remove the item
-    /// from the thread but rather marks it as [`Status::Dead`].
+    /// from the thread but rather marks it as [`DataState::Dead`].
     ///
     /// # Panics
     ///
@@ -488,7 +488,7 @@ impl<A> Thread<A> {
     /// # use std::error::Error;
     /// #
     /// # fn main() -> Result<(), Box<dyn Error>> {
-    /// use radicle_tracker::{ReplyTo, Status, Thread, ThreadError};
+    /// use radicle_tracker::{ReplyTo, DataState, Thread, ThreadError};
     ///
     /// let mut thread = Thread::new(String::from("Discussing rose trees"));
     ///
@@ -507,13 +507,13 @@ impl<A> Thread<A> {
     /// thread.delete();
     ///
     /// thread.root();
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
     ///
     /// thread.next_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("I love rose trees!"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose trees!"))));
     ///
     /// thread.next_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&Status::Dead(String::from("What should we use them for?"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Dead(String::from("What should we use them for?"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -553,7 +553,7 @@ impl<A> Thread<A> {
     /// # use std::error::Error;
     /// #
     /// # fn main() -> Result<(), Box<dyn Error>> {
-    /// use radicle_tracker::{ReplyTo, Status, Thread, ThreadError};
+    /// use radicle_tracker::{ReplyTo, DataState, Thread, ThreadError};
     ///
     /// let mut thread = Thread::new(String::from("Discussing rose trees"));
     ///
@@ -569,7 +569,7 @@ impl<A> Thread<A> {
     /// thread.reply(String::from("What should we use them for?"), ReplyTo::Main);
     /// thread.edit(|body| *body = String::from("How can we use them?"));
     ///
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("How can we use them?"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("How can we use them?"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -605,7 +605,7 @@ impl<A> Thread<A> {
     /// # Panics
     ///
     /// If the internal finger into the thread is out of bounds.
-    pub fn expand(&self) -> NonEmpty<Status<A>>
+    pub fn expand(&self) -> NonEmpty<DataState<A>>
     where
         A: Clone,
     {
@@ -636,13 +636,13 @@ impl<A> Thread<A> {
     /// # Examples
     ///
     /// ```
-    /// use radicle_tracker::{Status, Thread};
+    /// use radicle_tracker::{DataState, Thread};
     ///
     /// let (thread) = Thread::new(String::from("Discussing rose trees"));
     ///
-    /// assert_eq!(thread.view(), Ok(&Status::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
     /// ```
-    pub fn view(&self) -> Result<&Status<A>, Error> {
+    pub fn view(&self) -> Result<&DataState<A>, Error> {
         match self.finger {
             Finger::Root => Ok(&self.root),
             Finger::Main(main_ix) => Ok(self.index_main(main_ix).first()),
@@ -659,7 +659,7 @@ impl<A> Thread<A> {
     /// # Panics
     ///
     /// If the internal finger into the thread is out of bounds.
-    pub fn view_mut(&mut self) -> Result<&mut Status<A>, Error> {
+    pub fn view_mut(&mut self) -> Result<&mut DataState<A>, Error> {
         match self.finger {
             Finger::Root => Ok(&mut self.root),
             Finger::Main(main_ix) => Ok(self.index_main_mut(main_ix).first_mut()),
@@ -718,7 +718,7 @@ impl<A> Thread<A> {
                 .iter()
                 .cloned()
                 .filter(|node| node.live().is_some())
-                .collect::<Vec<Status<_>>>();
+                .collect::<Vec<DataState<_>>>();
 
             match NonEmpty::from_slice(&live_replies) {
                 None => {},
@@ -736,7 +736,7 @@ mod tests {
 
     /// forall a. Thread::new(a).view() === a
     fn prop_view_of_new<A: Eq + Clone>(a: A) -> bool {
-        Thread::new(a.clone()).view() == Ok(&Status::Live(a))
+        Thread::new(a.clone()).view() == Ok(&DataState::Live(a))
     }
 
     /// { new_path = thread.reply(path, comment)?
@@ -788,7 +788,7 @@ mod tests {
         A: Eq + Clone,
     {
         let thread = Thread::new(a.clone());
-        *thread.view().unwrap() == Status::Live(a)
+        *thread.view().unwrap() == DataState::Live(a)
     }
 
     #[test]
