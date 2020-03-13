@@ -87,6 +87,26 @@ pub use thread::{DataState, Error as ThreadError, Finger, Replies, ReplyTo, Thre
 mod metadata;
 pub use metadata::*;
 
+/// An [`Issue`] that has been closed. The underlying issue cannot be mutated,
+/// and can we can only access the reference of this issue..
+#[derive(Debug, Clone)]
+pub struct ClosedIssue<Id, Cid, User: Eq + Hash>(Issue<Id, Cid, User>);
+
+impl<Id, Cid, User: Eq + Hash> ClosedIssue<Id, Cid, User> {
+    /// Reopen the underlying [`Issue`].
+    pub fn reopen(self) -> Issue<Id, Cid, User> {
+        self.0
+    }
+
+    /// Get a reference to the underlying [`Issue`].
+    /// This can be combined with any functionality that uses the `Issue` as a
+    /// reference. For example, we could follow this call with
+    /// [`Issue::thread`] and `clone` to view a thread's comments.
+    pub fn issue(&self) -> &Issue<Id, Cid, User> {
+        &self.0
+    }
+}
+
 /// An `Issue` is a conversation created by an original [`Issue::author`]. The
 /// issue is kicked off by providing a [`Title`] and an initial [`Comment`] that
 /// starts the main [`Thread`].
@@ -94,24 +114,18 @@ pub use metadata::*;
 /// It also contains [`Metadata`] for which we would like to keep track of and
 /// enhance the experience of the conversation.
 #[derive(Debug, Clone)]
-pub struct Issue<IssueId, CommentId, User: Eq + Hash> {
-    identifier: IssueId,
+pub struct Issue<Id, Cid, User: Eq + Hash> {
+    identifier: Id,
     author: User,
     title: Title,
-    thread: Thread<Comment<CommentId, User>>,
+    thread: Thread<Comment<Cid, User>>,
     meta: Metadata<User>,
     timestamp: OffsetDateTime,
 }
 
-impl<IssueId, CommentId, User: Eq + Hash> Issue<IssueId, CommentId, User> {
+impl<Id, Cid, User: Eq + Hash> Issue<Id, Cid, User> {
     /// Create a new `Issue`.
-    pub fn new(
-        identifier: IssueId,
-        comment_id: CommentId,
-        author: User,
-        title: Title,
-        content: String,
-    ) -> Self
+    pub fn new(identifier: Id, comment_id: Cid, author: User, title: Title, content: String) -> Self
     where
         User: Clone + Eq,
     {
@@ -121,8 +135,8 @@ impl<IssueId, CommentId, User: Eq + Hash> Issue<IssueId, CommentId, User> {
 
     /// Create a new `Issue` with a supplied `timestamp`.
     pub fn new_with_timestamp(
-        identifier: IssueId,
-        comment_id: CommentId,
+        identifier: Id,
+        comment_id: Cid,
         author: User,
         title: Title,
         content: String,
@@ -143,6 +157,10 @@ impl<IssueId, CommentId, User: Eq + Hash> Issue<IssueId, CommentId, User> {
         }
     }
 
+    pub fn close(self) -> ClosedIssue<Id, Cid, User> {
+        ClosedIssue(self)
+    }
+
     /// Get a reference to the author (`User`) of this issue.
     pub fn author(&self) -> &User {
         &self.author
@@ -154,12 +172,12 @@ impl<IssueId, CommentId, User: Eq + Hash> Issue<IssueId, CommentId, User> {
     }
 
     /// Get a reference to the [`Thread`] of this issue.
-    pub fn thread(&self) -> &Thread<Comment<CommentId, User>> {
+    pub fn thread(&self) -> &Thread<Comment<Cid, User>> {
         &self.thread
     }
 
     /// Get a mutable reference to the [`Thread`] of this issue.
-    pub fn thread_mut(&mut self) -> &mut Thread<Comment<CommentId, User>> {
+    pub fn thread_mut(&mut self) -> &mut Thread<Comment<Cid, User>> {
         &mut self.thread
     }
 
