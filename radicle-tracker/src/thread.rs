@@ -58,26 +58,24 @@ impl<A> DataState<A> {
 /// delete the root item of a thread.
 #[derive(Error, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Error {
-    /// An attempt was made to move to the previous item in the main thread, but
-    /// the pointer is already at the root item.
-    #[error("Tried to move to previous item in the main thread, but we are at the first")]
-    PreviousMainOutOfBounds,
-    /// An attempt was made to move to the previous item in a reply thread, but
-    /// the pointer is on the main thread.
-    #[error("Cannot move to previous item in a thread when we are located on the main thread")]
-    PreviousThreadOnMain,
-    /// An attempt was made to move to the previous item in the main thread, but
-    /// the pointer is already at the last item.
-    #[error("Tried to move to next item in the main thread, but we are at the last")]
-    NextMainOutOfBounds,
-    /// An attempt was made to move to the next item in a reply thread, but
-    /// the pointer is already at the last item.
-    #[error("Tried to move to next item in the reply thread, but we are at the last")]
-    NextRepliesOutOfBound,
     /// An attempt was made to delete the root of a thread, but the root is
     /// immutable.
     #[error("Cannot delete the main item of the thread")]
     DeleteRoot,
+    /// An attempt was made to move to the previous item in the main thread, but
+    /// the pointer is already at the root item.
+    #[error("Tried to move to previous item in the main thread, but we are at the first")]
+    PreviousOnRoot,
+    ///
+    #[error("An attempt was made to move to {attempt}, but this is out of bounds where the bounds are {main:?}, {reply:?}.")]
+    OutOfBounds {
+        ///
+        attempt: Finger,
+        ///
+        main: Option<usize>,
+        ///
+        reply: Option<usize>,
+    },
 }
 
 /// A collection of replies where a reply is any item that has a [`DataState`].
@@ -128,11 +126,37 @@ impl<A> Replies<A> {
     }
 }
 
+/// A structure for pointing into a [`Thread`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum Finger {
+pub enum Finger {
+    /// This finger points to the root value in a `Thread`.
     Root,
+    /// This finger points to a single item in the "main thread", i.e. the
+    /// replies to the root item. The index `0` points to the first item in
+    /// the main thread.
     Main(usize),
-    Thread((usize, usize)),
+    /// This finger points to a single item in a "reply thread".
+    Thread {
+        /// This index refers to which sub-thread we are referring to on the
+        /// "main thread". The index `0` points to the first item in the main
+        /// thread.
+        main: usize,
+        /// This index refers to which reply in the sub-thread we are referring
+        /// to on the "reply thread". The index `1` points to the first
+        /// _reply_ in the reply thread. This is because the first item
+        /// is the main thread item.
+        reply: usize,
+    },
+}
+
+impl std::fmt::Display for Finger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Root => write!(f, "ROOT"),
+            Self::Main(main) => write!(f, "main_thread@{{ {} }}", main),
+            Self::Thread { main, reply } => write!(f, "reply_thread@{{ {}, {} }}", main, reply),
+        }
+    }
 }
 
 // This point to the main thread, and the first item in that thread.
@@ -193,13 +217,18 @@ impl<A> Thread<A> {
     /// looking at the first reply to an item on the main thread, then we
     /// will point to the main thread item.
     ///
+    /// The [`ReplyTo`] value will be ignored when we are pointer is
+    /// `Finger::Main`, and we will attempt to move to the previous reply on
+    /// the main thread regardless.
+    ///
     /// # Errors
     ///
-    /// The function will fail with:
-    /// * [`Error::PreviousMainOutOfBounds`] if we are looking at the start the
-    ///   main thread.
-    /// * [`Error::PreviousThreadOnMain`] if we use [`ReplyTo::Thread`]
-    /// while on the main thread.
+    /// * [`Error::OutOfBounds`] - If the navigation to the next item in the
+    ///   thread is out of bounds. This usual means we are at the first item in
+    ///   the thread.
+    ///
+    /// * [`Error::PreviousOnRoot`] - If we are pointing to the root of the
+    ///   thread.
     ///
     /// # Examples
     ///
@@ -245,35 +274,24 @@ impl<A> Thread<A> {
     /// ```
     pub fn previous_reply(&mut self, reply_to: ReplyTo) -> Result<(), Error> {
         match self.finger {
-            Finger::Root => Err(Error::PreviousMainOutOfBounds),
-            Finger::Main(main_ix) if main_ix == 0 => {
+            Finger::Root => Err(Error::PreviousOnRoot),
+            Finger::Main(main) if main == 0 => {
                 self.finger = Finger::Root;
                 Ok(())
             },
-            Finger::Main(ref mut main_ix) => match reply_to {
-                ReplyTo::Main => {
-                    *main_ix -= 1;
-                    Ok(())
-                },
-                ReplyTo::Thread => Err(Error::PreviousThreadOnMain),
-            },
-            Finger::Thread((ref mut main_ix, ref mut replies_ix)) => match reply_to {
-                ReplyTo::Main => {
-                    if *main_ix == 0 {
-                        return Err(Error::PreviousMainOutOfBounds);
-                    }
-
-                    self.finger = Finger::Main(*main_ix - 1);
-                    Ok(())
-                },
+            Finger::Main(main) => self.navigate_to(Finger::Main(main - 1)),
+            Finger::Thread { main, reply } => match reply_to {
+                ReplyTo::Main => self.navigate_to(Finger::Main(main - 1)),
                 ReplyTo::Thread => {
                     // If we're at the first reply, then we move to the main thread.
-                    if *replies_ix == 0 {
-                        self.finger = Finger::Main(*main_ix);
+                    if reply == 0 {
+                        self.navigate_to(Finger::Main(main))
                     } else {
-                        *replies_ix -= 1;
+                        self.navigate_to(Finger::Thread {
+                            main,
+                            reply: reply - 1,
+                        })
                     }
-                    Ok(())
                 },
             },
         }
@@ -283,11 +301,9 @@ impl<A> Thread<A> {
     ///
     /// # Errors
     ///
-    /// The function will fail with:
-    /// * [`Error::NextMainOutOfBounds`] if we are at the end of the main thread
-    ///   and attempt to go to the next item.
-    /// * [`Error::NextRepliesOutOfBound`] if we are at the end of the reply
-    ///   thread and attempt to go to the next item.
+    /// * [`Error::OutOfBounds`] - If the navigation to the next item in the
+    ///   thread is out of bounds. This usual means we are at the last item in
+    ///   the thread.
     ///
     /// # Examples
     ///
@@ -305,7 +321,7 @@ impl<A> Thread<A> {
     /// // Reply to first comment
     /// thread.reply(String::from("I love rose bushes!"), ReplyTo::Thread);
     ///
-    /// thread.root();
+    /// thread.navigate_to_root();
     /// thread.next_reply(ReplyTo::Main)?;
     /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose trees!"))));
     ///
@@ -316,64 +332,18 @@ impl<A> Thread<A> {
     /// # }
     /// ```
     pub fn next_reply(&mut self, reply_to: ReplyTo) -> Result<(), Error> {
-        let replies_count = self.replies_count();
-        let main_bound = self.main_thread.len() - 1;
-
-        let replies_bound = if replies_count == 0 {
-            None
-        } else {
-            Some(replies_count - 1)
-        };
-
         match self.finger {
-            Finger::Root => {
-                if self.main_thread.is_empty() {
-                    return Err(Error::NextMainOutOfBounds);
-                }
-
-                self.finger = Finger::Main(0);
-                Ok(())
+            Finger::Root => self.navigate_to(Finger::Main(0)),
+            Finger::Main(main) => match reply_to {
+                ReplyTo::Main => self.navigate_to(Finger::Main(main + 1)),
+                ReplyTo::Thread => self.navigate_to(Finger::Thread { main, reply: 1 }),
             },
-            Finger::Main(ref mut main_ix) => match reply_to {
-                ReplyTo::Main => {
-                    if *main_ix == main_bound {
-                        return Err(Error::NextMainOutOfBounds);
-                    }
-
-                    *main_ix += 1;
-                    Ok(())
-                },
-                ReplyTo::Thread => match replies_bound {
-                    None => Err(Error::NextRepliesOutOfBound),
-                    // We're ensuring that we have replies
-                    Some(_) => {
-                        // We start at one because the replies are the tail
-                        // of the non-empty vec in Replies
-                        self.finger = Finger::Thread((*main_ix, 1));
-                        Ok(())
-                    },
-                },
-            },
-            Finger::Thread((ref mut main_ix, ref mut replies_ix)) => match reply_to {
-                ReplyTo::Main => {
-                    if *main_ix == main_bound {
-                        return Err(Error::NextMainOutOfBounds);
-                    }
-
-                    self.finger = Finger::Main(*main_ix + 1);
-                    Ok(())
-                },
-                ReplyTo::Thread => match replies_bound {
-                    None => Err(Error::NextRepliesOutOfBound),
-                    Some(bound) => {
-                        if *replies_ix == bound {
-                            return Err(Error::NextRepliesOutOfBound);
-                        } else {
-                            *replies_ix += 1;
-                        }
-                        Ok(())
-                    },
-                },
+            Finger::Thread { main, reply } => match reply_to {
+                ReplyTo::Main => self.navigate_to(Finger::Main(main + 1)),
+                ReplyTo::Thread => self.navigate_to(Finger::Thread {
+                    main,
+                    reply: reply + 1,
+                }),
             },
         }
     }
@@ -393,14 +363,85 @@ impl<A> Thread<A> {
     /// // Reply to the main thread
     /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
     ///
-    /// thread.root();
+    /// thread.navigate_to_root();
     /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
     /// #
     /// #     Ok(())
     /// # }
     /// ```
-    pub fn root(&mut self) {
+    pub fn navigate_to_root(&mut self) {
         self.finger = ROOT_FINGER;
+    }
+
+    /// Absolute navigation to a position in the `Thread` using a [`Finger`].
+    ///
+    /// * [`Error::OutOfBounds`] - If the navigation to the next item in the
+    ///   thread is out of bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::error::Error;
+    /// #
+    /// # fn main() -> Result<(), Box<dyn Error>> {
+    /// use radicle_tracker::{ReplyTo, DataState, Finger, Thread};
+    ///
+    /// let (mut thread) = Thread::new(String::from("Discussing rose trees"));
+    ///
+    /// // Reply to the main thread
+    /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
+    ///
+    /// // Reply to first comment
+    /// thread.reply(String::from("I love rose bushes!"), ReplyTo::Thread);
+    ///
+    /// thread.navigate_to_root();
+    /// thread.navigate_to(Finger::Thread { main: 0, reply: 1 })?;
+    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose bushes!"))));
+    /// #
+    /// #     Ok(())
+    /// # }
+    /// ```
+    pub fn navigate_to(&mut self, finger: Finger) -> Result<(), Error> {
+        match finger {
+            Finger::Root => {
+                self.finger = finger;
+                Ok(())
+            },
+            Finger::Main(main) => {
+                if main > self.main_thread.len() - 1 {
+                    return Err(Error::OutOfBounds {
+                        attempt: finger,
+                        main: Some(self.main_thread.len() - 1),
+                        reply: None,
+                    });
+                }
+
+                self.finger = finger;
+                Ok(())
+            },
+            Finger::Thread { main, reply } => {
+                if main > self.main_thread.len() - 1 {
+                    return Err(Error::OutOfBounds {
+                        attempt: finger,
+                        main: Some(self.main_thread.len() - 1),
+                        reply: None,
+                    });
+                }
+
+                let replies = self.index_main(main);
+
+                if reply > replies.len() {
+                    return Err(Error::OutOfBounds {
+                        attempt: finger,
+                        main: Some(self.main_thread.len() - 1),
+                        reply: Some(replies.len()),
+                    });
+                }
+
+                self.finger = finger;
+                Ok(())
+            },
+        }
     }
 
     /// Reply to the thread. Depending on what type of [`ReplyTo`] value we pass
@@ -435,7 +476,7 @@ impl<A> Thread<A> {
     ///
     /// thread.reply(String::from("What should we use them for?"), ReplyTo::Main);
     ///
-    /// thread.root();
+    /// thread.navigate_to_root();
     /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
     ///
     /// thread.next_reply(ReplyTo::Main)?;
@@ -459,13 +500,13 @@ impl<A> Thread<A> {
             // TODO: Always replies to main if we're at the root.
             // Is this ok?
             Finger::Root => self.reply_main(a),
-            Finger::Main(main_ix) => match reply_to {
+            Finger::Main(main) => match reply_to {
                 ReplyTo::Main => self.reply_main(a),
-                ReplyTo::Thread => self.reply_thread(main_ix, a),
+                ReplyTo::Thread => self.reply_thread(main, a),
             },
-            Finger::Thread((main_ix, _)) => match reply_to {
+            Finger::Thread { main, .. } => match reply_to {
                 ReplyTo::Main => self.reply_main(a),
-                ReplyTo::Thread => self.reply_thread(main_ix, a),
+                ReplyTo::Thread => self.reply_thread(main, a),
             },
         }
     }
@@ -506,7 +547,7 @@ impl<A> Thread<A> {
     /// // Delete the last comment on the main thread
     /// thread.delete();
     ///
-    /// thread.root();
+    /// thread.navigate_to_root();
     /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
     ///
     /// thread.next_reply(ReplyTo::Main)?;
@@ -524,16 +565,16 @@ impl<A> Thread<A> {
     {
         match self.finger {
             Finger::Root => Err(Error::DeleteRoot),
-            Finger::Main(main_ix) => {
-                let node = self.index_main_mut(main_ix).first_mut();
+            Finger::Main(main) => {
+                let node = self.index_main_mut(main).first_mut();
                 node.kill();
                 Ok(())
             },
-            Finger::Thread((main_ix, replies_ix)) => {
-                let replies = self.index_main_mut(main_ix);
+            Finger::Thread { main, reply } => {
+                let replies = self.index_main_mut(main);
                 let node = replies
-                    .get_mut(replies_ix)
-                    .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", replies_ix));
+                    .get_mut(reply)
+                    .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", reply));
 
                 node.kill();
                 Ok(())
@@ -574,27 +615,22 @@ impl<A> Thread<A> {
     /// #     Ok(())
     /// # }
     /// ```
-    pub fn edit<F>(&mut self, f: F) -> Result<(), Error>
+    pub fn edit<F>(&mut self, f: F)
     where
         F: FnOnce(&mut A) -> (),
     {
         match self.finger {
-            Finger::Root => {
-                f(self.root.get_mut());
-                Ok(())
-            },
-            Finger::Main(main_ix) => {
-                let node = self.index_main_mut(main_ix).first_mut();
+            Finger::Root => f(self.root.get_mut()),
+            Finger::Main(main) => {
+                let node = self.index_main_mut(main).first_mut();
                 f(node.get_mut());
-                Ok(())
             },
-            Finger::Thread((main_ix, replies_ix)) => {
-                let replies = self.index_main_mut(main_ix);
+            Finger::Thread { main, reply } => {
+                let replies = self.index_main_mut(main);
                 let node = replies
-                    .get_mut(replies_ix)
-                    .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", replies_ix));
-                f(node.get_mut());
-                Ok(())
+                    .get_mut(reply)
+                    .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", reply));
+                f(node.get_mut())
             },
         }
     }
@@ -609,7 +645,7 @@ impl<A> Thread<A> {
     where
         A: Clone,
     {
-        let main_ix = match self.finger {
+        let main = match self.finger {
             Finger::Root => {
                 return NonEmpty::from((
                     self.root.clone(),
@@ -620,11 +656,11 @@ impl<A> Thread<A> {
                         .collect(),
                 ));
             },
-            Finger::Main(main_ix) => main_ix,
-            Finger::Thread((main_ix, _)) => main_ix,
+            Finger::Main(main) => main,
+            Finger::Thread { main, .. } => main,
         };
 
-        self.index_main(main_ix).0.clone()
+        self.index_main(main).0.clone()
     }
 
     /// Look at the current item we are pointing to in the thread.
@@ -645,11 +681,11 @@ impl<A> Thread<A> {
     pub fn view(&self) -> Result<&DataState<A>, Error> {
         match self.finger {
             Finger::Root => Ok(&self.root),
-            Finger::Main(main_ix) => Ok(self.index_main(main_ix).first()),
-            Finger::Thread((main_ix, replies_ix)) => Ok(self
-                .index_main(main_ix)
-                .get(replies_ix)
-                .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", replies_ix))),
+            Finger::Main(main) => Ok(self.index_main(main).first()),
+            Finger::Thread { main, reply } => Ok(self
+                .index_main(main)
+                .get(reply)
+                .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", reply))),
         }
     }
 
@@ -662,34 +698,24 @@ impl<A> Thread<A> {
     pub fn view_mut(&mut self) -> Result<&mut DataState<A>, Error> {
         match self.finger {
             Finger::Root => Ok(&mut self.root),
-            Finger::Main(main_ix) => Ok(self.index_main_mut(main_ix).first_mut()),
-            Finger::Thread((main_ix, replies_ix)) => Ok(self
-                .index_main_mut(main_ix)
-                .get_mut(replies_ix)
-                .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", replies_ix))),
+            Finger::Main(main) => Ok(self.index_main_mut(main).first_mut()),
+            Finger::Thread { main, reply } => Ok(self
+                .index_main_mut(main)
+                .get_mut(reply)
+                .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", reply))),
         }
     }
 
-    fn index_main(&self, main_ix: usize) -> &Replies<A> {
+    fn index_main(&self, main: usize) -> &Replies<A> {
         self.main_thread
-            .get(main_ix)
-            .unwrap_or_else(|| panic!("Main index is out of bounds: {}", main_ix))
+            .get(main)
+            .unwrap_or_else(|| panic!("Main index is out of bounds: {}", main))
     }
 
-    fn index_main_mut(&mut self, main_ix: usize) -> &mut Replies<A> {
+    fn index_main_mut(&mut self, main: usize) -> &mut Replies<A> {
         self.main_thread
-            .get_mut(main_ix)
-            .unwrap_or_else(|| panic!("Main index is out of bounds: {}", main_ix))
-    }
-
-    fn replies_count(&self) -> usize {
-        let main_ix = match self.finger {
-            Finger::Root => return self.main_thread.len(),
-            Finger::Main(main_ix) => main_ix,
-            Finger::Thread((main_ix, _)) => main_ix,
-        };
-
-        self.index_main(main_ix).len()
+            .get_mut(main)
+            .unwrap_or_else(|| panic!("Main index is out of bounds: {}", main))
     }
 
     fn reply_main(&mut self, a: A) {
@@ -697,11 +723,11 @@ impl<A> Thread<A> {
         self.finger = Finger::Main(self.main_thread.len() - 1);
     }
 
-    fn reply_thread(&mut self, main_ix: usize, a: A) {
-        let replies = self.index_main_mut(main_ix);
+    fn reply_thread(&mut self, main: usize, a: A) {
+        let replies = self.index_main_mut(main);
         replies.reply(a);
-        let replies_ix = replies.len() - 1;
-        self.finger = Finger::Thread((main_ix, replies_ix));
+        let reply = replies.len() - 1;
+        self.finger = Finger::Thread { main, reply };
     }
 
     // Prune the Dead items from the tree so that we can effectively test
@@ -773,7 +799,7 @@ mod tests {
         F: Fn(&mut A) -> (),
     {
         let mut lhs = Thread::new(a.clone());
-        lhs.edit(f).expect("Edit failed");
+        lhs.edit(f);
 
         f(&mut a);
         let rhs = Thread::new(a.clone());

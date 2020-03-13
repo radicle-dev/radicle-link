@@ -82,7 +82,7 @@ use std::hash::Hash;
 use time::OffsetDateTime;
 
 mod thread;
-pub use thread::{DataState, Error as ThreadError, Replies, ReplyTo, Thread};
+pub use thread::{DataState, Error as ThreadError, Finger, Replies, ReplyTo, Thread};
 
 mod metadata;
 pub use metadata::*;
