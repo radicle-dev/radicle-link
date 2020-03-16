@@ -70,18 +70,17 @@ fn new_connection<'a>(
         ..
     }: NewConnection,
 ) -> (Connection, BoxStream<'a, Result<Stream, Error>>) {
-    let peer_id = {
-        let cert: quinn::Certificate = connection
+    let peer_id = tls::extract_peer_id(
+        connection
             .authentication_data()
             .peer_certificates
             .expect("Certificates must be presented. qed")
             .iter()
             .next()
-            .expect("One certificate must have been presented. qed");
-
-        tls::extract_peer_id(cert.as_der())
-            .expect("TLS layer ensures the cert contains a PeerId. qed")
-    };
+            .expect("One certificate must have been presented. qed")
+            .as_ref(),
+    )
+    .expect("TLS layer ensures the cert contains a PeerId. qed");
 
     let conn = Connection::new(&peer_id, connection);
 
