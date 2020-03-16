@@ -11,7 +11,7 @@ use librad::{
     keys::device,
     meta,
     net::{
-        connection::{BoundEndpoint, Endpoint},
+        connection::{BoundEndpoint, Endpoint, LocalInfo},
         discovery,
         gossip,
         protocol::Protocol,

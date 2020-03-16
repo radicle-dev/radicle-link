@@ -27,7 +27,7 @@ use rand_pcg::Pcg64Mcg;
 use crate::{
     channel::Fanout,
     net::{
-        connection::{SendStream, Stream},
+        connection::{RemoteInfo, SendStream, Stream},
         gossip::error::Error,
     },
     peer::PeerId,
@@ -371,7 +371,7 @@ impl<S> Protocol<S> {
             match recvd {
                 Ok(rpc) => match rpc {
                     Rpc::Membership(msg) => {
-                        self.handle_membership(&remote_id, recv.remote_address(), msg)
+                        self.handle_membership(&remote_id, recv.remote_addr(), msg)
                             .await?
                     },
 

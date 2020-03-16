@@ -15,6 +15,15 @@ use crate::{
     peer::PeerId,
 };
 
+pub trait LocalInfo {
+    fn local_addr(&self) -> Result<SocketAddr, Error>;
+}
+
+pub trait RemoteInfo {
+    fn peer_id(&self) -> &PeerId;
+    fn remote_addr(&self) -> SocketAddr;
+}
+
 #[derive(Clone)]
 pub struct Endpoint {
     endpoint: quinn::Endpoint,
@@ -46,8 +55,10 @@ impl Endpoint {
 
         Ok(new_connection(conn))
     }
+}
 
-    pub fn local_addr(&self) -> Result<SocketAddr, Error> {
+impl LocalInfo for Endpoint {
+    fn local_addr(&self) -> Result<SocketAddr, Error> {
         self.endpoint.local_addr().map_err(|e| e.into())
     }
 }
@@ -57,8 +68,8 @@ pub struct BoundEndpoint<'a> {
     pub incoming: BoxStream<'a, (Connection, BoxStream<'a, Result<Stream, Error>>)>,
 }
 
-impl<'a> BoundEndpoint<'a> {
-    pub fn local_addr(&self) -> Result<SocketAddr, Error> {
+impl<'a> LocalInfo for BoundEndpoint<'a> {
+    fn local_addr(&self) -> Result<SocketAddr, Error> {
         self.endpoint.local_addr()
     }
 }
@@ -112,14 +123,6 @@ impl Connection {
         }
     }
 
-    pub fn peer_id(&self) -> &PeerId {
-        &self.peer
-    }
-
-    pub fn remote_address(&self) -> SocketAddr {
-        self.conn.remote_address()
-    }
-
     pub async fn open_stream(&self) -> Result<Stream, Error> {
         let (send, recv) = self.conn.open_bi().await?;
         Ok(Stream {
@@ -132,6 +135,16 @@ impl Connection {
     pub fn close(self, reason: CloseReason) {
         let code = VarInt::from_u32(reason.clone() as u32);
         self.conn.close(code, reason.reason().as_bytes())
+    }
+}
+
+impl RemoteInfo for Connection {
+    fn peer_id(&self) -> &PeerId {
+        &self.peer
+    }
+
+    fn remote_addr(&self) -> SocketAddr {
+        self.conn.remote_address()
     }
 }
 
@@ -161,14 +174,6 @@ pub struct Stream {
 }
 
 impl Stream {
-    pub fn peer_id(&self) -> &PeerId {
-        &self.conn.peer_id()
-    }
-
-    pub fn remote_address(&self) -> SocketAddr {
-        self.conn.remote_address()
-    }
-
     pub fn framed<C>(self, codec: C) -> Framed<Self, C>
     where
         C: Decoder + Encoder,
@@ -187,6 +192,16 @@ impl Stream {
                 send: self.send,
             },
         )
+    }
+}
+
+impl RemoteInfo for Stream {
+    fn peer_id(&self) -> &PeerId {
+        &self.conn.peer_id()
+    }
+
+    fn remote_addr(&self) -> SocketAddr {
+        self.conn.remote_addr()
     }
 }
 
@@ -223,13 +238,13 @@ pub struct RecvStream {
     recv: quinn::RecvStream,
 }
 
-impl RecvStream {
-    pub fn peer_id(&self) -> &PeerId {
+impl RemoteInfo for RecvStream {
+    fn peer_id(&self) -> &PeerId {
         &self.conn.peer_id()
     }
 
-    pub fn remote_address(&self) -> SocketAddr {
-        self.conn.remote_address()
+    fn remote_addr(&self) -> SocketAddr {
+        self.conn.remote_addr()
     }
 }
 
@@ -248,13 +263,13 @@ pub struct SendStream {
     send: quinn::SendStream,
 }
 
-impl SendStream {
-    pub fn peer_id(&self) -> &PeerId {
+impl RemoteInfo for SendStream {
+    fn peer_id(&self) -> &PeerId {
         &self.conn.peer_id()
     }
 
-    pub fn remote_address(&self) -> SocketAddr {
-        self.conn.remote_address()
+    fn remote_addr(&self) -> SocketAddr {
+        self.conn.remote_addr()
     }
 }
 

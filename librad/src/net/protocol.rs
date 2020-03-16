@@ -17,7 +17,15 @@ use crate::{
     channel::Fanout,
     git::{server::GitServer, transport::GitStreamFactory},
     net::{
-        connection::{BoundEndpoint, CloseReason, Connection, Endpoint, Stream},
+        connection::{
+            BoundEndpoint,
+            CloseReason,
+            Connection,
+            Endpoint,
+            LocalInfo,
+            RemoteInfo,
+            Stream,
+        },
         discovery::Discovery,
         gossip,
     },
@@ -166,7 +174,7 @@ where
             },
 
             Run::Incoming { conn, incoming } => {
-                trace!("Run::Incoming: {}", conn.remote_address());
+                trace!("Run::Incoming: {}", conn.remote_addr());
                 self.handle_incoming(conn, incoming)
                     .await
                     .map_err(|e| warn!("Error processing incoming connection: {}", e))
@@ -186,7 +194,7 @@ where
                         let stream = conn.open_stream().await.map_err(|e| {
                             warn!(
                                 "Could not open stream on connection to {}: {}",
-                                conn.remote_address(),
+                                conn.remote_addr(),
                                 e
                             )
                         })?;
@@ -235,7 +243,7 @@ where
         hello: impl Into<Option<gossip::Rpc>>,
     ) {
         let remote_id = conn.peer_id().clone();
-        let remote_addr = conn.remote_address();
+        let remote_addr = conn.remote_addr();
 
         info!("New outgoing connection: {}@{}", remote_id, remote_addr,);
 
@@ -274,7 +282,7 @@ where
 
     async fn handle_disconnect(&self, peer: PeerId) {
         if let Some(conn) = self.connections.lock().await.remove(&peer) {
-            info!("Disconnecting: {}", conn.remote_address());
+            info!("Disconnecting: {}", conn.remote_addr());
             // FIXME: make this more graceful
             conn.close(CloseReason::ProtocolDisconnect);
             self.subscribers
@@ -292,7 +300,7 @@ where
         Incoming: futures::Stream<Item = Result<Stream, Error>> + Unpin,
     {
         let remote_id = conn.peer_id().clone();
-        let remote_addr = conn.remote_address();
+        let remote_addr = conn.remote_addr();
 
         info!("New incoming connection: {}@{}", remote_id, remote_addr);
 
