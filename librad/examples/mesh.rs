@@ -175,7 +175,8 @@ async fn spawn(
     let disco = discovery::Static::new(
         prev.map(|(peer0, endpoint0)| vec![(peer0, endpoint0.local_addr().unwrap())])
             .unwrap_or_else(|| vec![]),
-    );
+    )
+    .into_stream();
 
     transport.register_stream_factory(&peer.peer_id(), Box::new(proto.clone()));
 

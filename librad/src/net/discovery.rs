@@ -1,33 +1,49 @@
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::{
+    marker::PhantomData,
+    net::{SocketAddr, ToSocketAddrs},
+};
 
 use crate::peer::PeerId;
 
-pub trait Discovery {
-    fn collect(&self) -> Vec<(PeerId, Vec<SocketAddr>)>;
+pub struct Static<I, S> {
+    iter: I,
+    _marker: PhantomData<S>,
 }
 
-pub struct Static<S: ToSocketAddrs> {
-    peers: Vec<(PeerId, S)>,
-}
-
-impl<S: ToSocketAddrs> Static<S> {
-    pub fn new<I: IntoIterator<Item = (PeerId, S)>>(peers: I) -> Self {
+impl<I, S> Static<I, S>
+where
+    I: Iterator<Item = (PeerId, S)>,
+    S: ToSocketAddrs,
+{
+    pub fn new<P>(peers: P) -> Self
+    where
+        P: IntoIterator<IntoIter = I, Item = (PeerId, S)>,
+    {
         Self {
-            peers: peers.into_iter().collect(),
+            iter: peers.into_iter(),
+            _marker: PhantomData,
         }
+    }
+
+    pub fn into_stream(self) -> futures::stream::Iter<Self> {
+        futures::stream::iter(self)
     }
 }
 
-impl<S: ToSocketAddrs> Discovery for Static<S> {
-    fn collect(&self) -> Vec<(PeerId, Vec<SocketAddr>)> {
-        self.peers
-            .iter()
-            .filter_map(|(peer_id, addrs)| {
-                addrs
-                    .to_socket_addrs()
-                    .ok()
-                    .map(|resolved| (peer_id.clone(), resolved.collect()))
-            })
-            .collect()
+impl<I, S> Iterator for Static<I, S>
+where
+    I: Iterator<Item = (PeerId, S)>,
+    S: ToSocketAddrs,
+{
+    type Item = (PeerId, Vec<SocketAddr>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.find_map(|(peer_id, addrs)| {
+            // TODO: we might want to log resolver errors somewhere
+            addrs
+                .to_socket_addrs()
+                .ok()
+                .map(|resolved| (peer_id, resolved.collect()))
+        })
     }
 }

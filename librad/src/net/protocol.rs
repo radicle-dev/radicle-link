@@ -26,7 +26,6 @@ use crate::{
             RemoteInfo,
             Stream,
         },
-        discovery::Discovery,
         gossip,
     },
     peer::PeerId,
@@ -106,13 +105,12 @@ where
         disco: Disco,
         shutdown: Shutdown,
     ) where
-        Disco: Discovery,
+        Disco: futures::stream::Stream<Item = (PeerId, Vec<SocketAddr>)>,
         Shutdown: Future<Output = ()> + Send,
     {
         let incoming = incoming.map(|(conn, i)| Ok(Run::Incoming { conn, incoming: i }));
         let shutdown = futures::stream::once(shutdown).map(|()| Ok(Run::Shutdown));
-        let bootstrap = futures::stream::iter(disco.collect())
-            .map(|(peer, addrs)| Ok(Run::Discovered { peer, addrs }));
+        let bootstrap = disco.map(|(peer, addrs)| Ok(Run::Discovered { peer, addrs }));
         let gossip_events = self
             .gossip
             .subscribe()
