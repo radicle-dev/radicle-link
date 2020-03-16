@@ -43,11 +43,16 @@ pub use storage::*;
 pub use types::*;
 
 #[derive(Clone)]
-#[allow(clippy::large_enum_variant)]
 pub enum ProtocolEvent {
-    SendAdhoc(PeerInfo, Rpc),
-    Connect(PeerInfo, Rpc),
+    SendAdhoc(Box<Hello>),
+    Connect(Box<Hello>),
     Disconnect(PeerId),
+}
+
+#[derive(Clone)]
+pub struct Hello {
+    pub to: PeerInfo,
+    pub rpc: Rpc,
 }
 
 #[derive(Debug, Clone)]
@@ -743,14 +748,20 @@ impl<S> Protocol<S> {
     /// Try to establish an ad-hoc connection to `peer`, and send it `rpc`
     async fn send_adhoc<R: Into<Rpc>>(&self, peer: &PeerInfo, rpc: R) {
         self.subscribers
-            .emit(ProtocolEvent::SendAdhoc(peer.clone(), rpc.into()))
+            .emit(ProtocolEvent::SendAdhoc(Box::new(Hello {
+                to: peer.clone(),
+                rpc: rpc.into(),
+            })))
             .await
     }
 
     /// Try to establish a persistent to `peer` with initial `rpc`
     async fn connect<R: Into<Rpc>>(&self, peer: &PeerInfo, rpc: R) {
         self.subscribers
-            .emit(ProtocolEvent::Connect(peer.clone(), rpc.into()))
+            .emit(ProtocolEvent::Connect(Box::new(Hello {
+                to: peer.clone(),
+                rpc: rpc.into(),
+            })))
             .await
     }
 

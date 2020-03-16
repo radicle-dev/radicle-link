@@ -52,7 +52,6 @@ pub enum ProtocolEvent {
     Disconnected(PeerId),
 }
 
-#[allow(clippy::large_enum_variant)]
 enum Run<'a> {
     Discovered {
         peer: PeerId,
@@ -174,13 +173,13 @@ where
             },
 
             Run::Gossip { event } => match event {
-                gossip::ProtocolEvent::SendAdhoc(info, rpc) => {
-                    trace!("Run::Rad(SendAdhoc): {}", info.peer_id);
-                    let conn = match self.connections.lock().await.get(&info.peer_id) {
+                gossip::ProtocolEvent::SendAdhoc(hello) => {
+                    let gossip::Hello { to, rpc } = *hello;
+
+                    trace!("Run::Rad(SendAdhoc): {}", to.peer_id);
+                    let conn = match self.connections.lock().await.get(&to.peer_id) {
                         Some(conn) => Some(conn.clone()),
-                        None => connect_peer_info(&endpoint, info)
-                            .await
-                            .map(|(conn, _)| conn),
+                        None => connect_peer_info(&endpoint, to).await.map(|(conn, _)| conn),
                     };
 
                     if let Some(conn) = conn {
@@ -201,10 +200,12 @@ where
                     Ok(())
                 },
 
-                gossip::ProtocolEvent::Connect(info, rpc) => {
-                    trace!("Run::Rad(Connect): {}", info.peer_id);
-                    if !self.connections.lock().await.contains_key(&info.peer_id) {
-                        let conn = connect_peer_info(&endpoint, info).await;
+                gossip::ProtocolEvent::Connect(hello) => {
+                    let gossip::Hello { to, rpc } = *hello;
+
+                    trace!("Run::Rad(Connect): {}", to.peer_id);
+                    if !self.connections.lock().await.contains_key(&to.peer_id) {
+                        let conn = connect_peer_info(&endpoint, to).await;
                         if let Some((conn, incoming)) = conn {
                             self.handle_connect(conn, incoming.boxed(), Some(rpc)).await
                         }
