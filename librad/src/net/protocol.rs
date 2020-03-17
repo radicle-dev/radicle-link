@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+//! Main protocol dispatch loop
+
 use std::{collections::HashMap, future::Future, iter, net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
@@ -48,6 +50,8 @@ use crate::{
     peer::PeerId,
 };
 
+/// We support on-way protocol upgrades on individual QUIC streams (irrespective
+/// of ALPN, which applies per-connection).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum Upgrade {
@@ -76,6 +80,11 @@ pub enum ProtocolEvent {
     Disconnected(PeerId),
 }
 
+/// Unification of the different inputs the run loop processes.
+///
+/// We do this instead of a hand-rolled `Future` so we can use
+/// `StreamExt::try_for_each_concurrent`, which allows us to retain control over
+/// spawned tasks.
 enum Run<'a> {
     Discovered {
         peer: PeerId,
@@ -116,6 +125,10 @@ where
         }
     }
 
+    /// Start the protocol run loop.
+    ///
+    /// This method terminates when the `Shutdown` future resolves, the program
+    /// is interrupted, or an error occurs.
     pub async fn run<Disco, Shutdown>(
         &mut self,
         BoundEndpoint { endpoint, incoming }: BoundEndpoint<'_>,
@@ -149,18 +162,25 @@ where
         .unwrap_or_else(|()| warn!("Shutting down"))
     }
 
+    /// Subscribe to an infinite stream of [`ProtocolEvent`]s.
+    ///
+    /// The consumer must keep polling the stream, or drop it to cancel the
+    /// subscription.
     pub async fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent> {
         self.subscribers.subscribe().await
     }
 
+    /// Announce an update to the network
     pub async fn announce(&self, have: gossip::Update) {
         self.gossip.announce(have).await
     }
 
+    /// Query the network for an update
     pub async fn query(&self, want: gossip::Update) {
         self.gossip.query(want).await
     }
 
+    /// Open a QUIC stream which is upgraded to expect the git protocol
     pub async fn open_git(&self, to: &PeerId) -> Option<Stream> {
         trace!("Opening git stream to {}", to);
         if let Some(conn) = self.connections.lock().await.get(to) {

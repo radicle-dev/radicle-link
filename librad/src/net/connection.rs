@@ -15,6 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+//! Wrappers for QUIC primitives
+//!
+//! # Note
+//!
+//! Should eventually be replaced by traits, but current circumstances require
+//! concrete types.
+
 use std::{io, net::SocketAddr, pin::Pin};
 
 use failure::Error;

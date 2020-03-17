@@ -37,6 +37,8 @@ pub trait LocalStorage: Clone + Send + Sync {
     /// up-to-date, or it was not possible to fetch the actual state from
     /// the `provider`. In this case, the network is asked to retransmit
     /// [`Gossip::Have`], so we can eventually try again.
+    ///
+    /// [`Gossip::Have`]: ../rpc/enum.Gossip.html
     fn put(&self, provider: &PeerId, has: Update) -> PutResult;
 
     /// Ask the local storage if value `A` is available.

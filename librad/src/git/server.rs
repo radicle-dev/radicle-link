@@ -15,6 +15,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+//! A git server
+//!
+//! This implements the same protocol as [`git-daemon`], with a minor adjustment
+//! due to a (possible) bug in `libgit2` or `git2-rs`, which prevents us from
+//! registering a stateful transport: when parsing the header line, we look for
+//! a null-terminated string "advertise" to decide whether we should wait for
+//! data to be fed into `stdin` of `git upload-pack` or not.
+//!
+//! [`git-daemon`]: https://git-scm.com/docs/git-daemon
+
 use std::{
     io,
     path::{Path, PathBuf},

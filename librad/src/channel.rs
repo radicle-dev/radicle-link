@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+//! A simple async single-producer multi-consumer channel
+
 use std::{mem, sync::Arc};
 
 use futures::{channel::mpsc, lock::Mutex, sink::SinkExt, stream::StreamExt};

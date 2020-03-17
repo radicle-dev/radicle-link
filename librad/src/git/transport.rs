@@ -15,6 +15,37 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+//! A custom git transport
+//!
+//! The `register` function registers a transport which expects URLs of the
+//! form:
+//!
+//! `rad://LOCAL_PEER_ID@REMOTE_PEER_ID/PROJECT_ID`
+//!
+//! The local peer id is needed to support testing with multiple peers:
+//! `libgit2` stores custom transports in a `static` variable, so we can
+//! register ours only once per program.
+//!
+//! # Note
+//!
+//! The wire protocol of the transport conforms to the one [`git-daemon`]
+//! implements. However, there appears to be a bug in either `libgit2` or
+//! `git2-rs` which prevents us from registering as a stateful transport:
+//! apparently, the subtransport is instantiated twice, when it should only be
+//! instantiated once, causing this assertion to fail:
+//!
+//! `libgit2/src/transports/smart.c:349: git_smart__negotiation_step: Assertion
+//! `t->rpc || t->current_stream == stream' failed.`
+//!
+//! To work around this, we pretend to implement a stateless protocol by
+//! indicating in the header line whether we want the remote side to only
+//! advertise the refs, or wait for our haves. Of course, this makes this
+//! transport incompatible with [`git-daemon`] for now, so the other side
+//! needs to run our own [`GitServer`].
+//!
+//! [`git-daemon`]: https://git-scm.com/docs/git-daemon
+//! [`GitServer`]: ../server/struct.GitServer.html
+
 use std::{
     collections::HashMap,
     fmt::Display,
@@ -33,17 +64,32 @@ use url::Url;
 
 use crate::{net::connection::Stream, peer::PeerId};
 
-pub type Factories = Arc<RwLock<HashMap<PeerId, Box<dyn GitStreamFactory>>>>;
+type Factories = Arc<RwLock<HashMap<PeerId, Box<dyn GitStreamFactory>>>>;
 
 lazy_static! {
     static ref FACTORIES: Factories = Arc::new(RwLock::new(HashMap::with_capacity(1)));
 }
 
+/// Trait for types which can provide a [`Stream`] over which we can send /
+/// receive bytes to / from the specified peer.
+///
+/// Note that [`Stream`] technically only needs to be `AsyncRead + AsyncWrite +
+/// Unpin + Send`, but we cannot express this as a trait object as of yet.
 #[async_trait]
 pub trait GitStreamFactory: Sync + Send {
     async fn open_stream(&self, to: &PeerId) -> Option<Stream>;
 }
 
+/// Register the `rad://` transport with `libgit`.
+///
+/// # Safety:
+///
+/// The actual register call to `libgit` is guarded by [`Once`], it is thus safe
+/// to call this function multiple times -- subsequent calls will return a new
+/// [`RadTransport`], which can be used to register additional stream factories.
+///
+/// The first call to this function MUST, however, be externally synchronised
+/// with all other calls to `libgit`.
 pub fn register() -> RadTransport {
     static INIT: Once = Once::new();
 
@@ -71,6 +117,10 @@ impl RadTransport {
         }
     }
 
+    /// Register an additional [`GitStreamFactory`], which can open git streams
+    /// on behalf of `peer_id`.
+    ///
+    /// See the module documentation for why we key stream factories by sender.
     pub fn register_stream_factory(&self, peer_id: &PeerId, fac: Box<dyn GitStreamFactory>) {
         self.fac.write().unwrap().insert(peer_id.clone(), fac);
     }

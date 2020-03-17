@@ -15,6 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+//! Simplified implementation of the seminal [Epidemic Broadcast Trees] paper
+//! and accompanying [HyParView] membership protocol.
+//!
+//! [Epidemic Broadcast Trees]: http://asc.di.fct.unl.pt/~jleitao/pdf/srds07-leitao.pdf
+//! [HyParView]: http://asc.di.fct.unl.pt/~jleitao/pdf/dsn07-leitao.pdf
+
 use std::{
     collections::{HashMap, HashSet},
     iter,
