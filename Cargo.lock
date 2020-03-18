@@ -43,6 +43,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "013a6e0a2cbe3d20f9c60b65458f7a7f7a5e636c5d0f45a5a6aee5d4b1f01785"
+
+[[package]]
 name = "arc-swap"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1016,7 +1022,6 @@ dependencies = [
  "directories",
  "env_logger",
  "failure",
- "failure_derive",
  "futures",
  "futures-timer 3.0.2",
  "futures_codec",
@@ -1049,6 +1054,7 @@ dependencies = [
  "sha2",
  "sodiumoxide",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-util",
  "url 2.1.1",
@@ -1664,8 +1670,7 @@ dependencies = [
 name = "rad2"
 version = "0.1.0"
 dependencies = [
- "failure",
- "failure_derive",
+ "anyhow",
  "git2",
  "libgit2-sys",
  "librad",
@@ -1675,6 +1680,7 @@ dependencies = [
  "serde_yaml",
  "structopt",
  "tempfile",
+ "thiserror",
  "url 2.1.1",
 ]
 
@@ -1693,10 +1699,11 @@ dependencies = [
 [[package]]
 name = "radicle-surf"
 version = "0.2.1"
-source = "git+https://github.com/radicle-dev/radicle-surf?rev=af474a7ece1b75906906974057e3f89a32f085b4#af474a7ece1b75906906974057e3f89a32f085b4"
+source = "git+https://github.com/radicle-dev/radicle-surf?rev=33d4980422bc6a0cb48ccdc6d4b893f9e45bc2b9#33d4980422bc6a0cb48ccdc6d4b893f9e45bc2b9"
 dependencies = [
  "git2",
  "nonempty",
+ "thiserror",
 ]
 
 [[package]]
@@ -2366,6 +2373,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d326610f408c7a4eb6f51c37c330e496b08506c9457c9d34287ecc38809fb060"
 dependencies = [
  "unicode-width",
+]
+
+[[package]]
+name = "thiserror"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee14bf8e6767ab4c687c9e8bc003879e042a96fd67a3ba5934eadb6536bef4db"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7b51e1fbc44b5a0840be594fbc0f960be09050f2617e61e6aa43bef97cd3ef4"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

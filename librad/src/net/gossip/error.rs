@@ -18,22 +18,21 @@
 use std::io;
 
 use futures_codec::CborCodecError;
+use thiserror::Error;
 
-use failure::Fail;
-
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "Invalid payload")]
-    InvalidPayload(#[fail(cause)] serde_cbor::Error),
+    #[error("Invalid payload")]
+    InvalidPayload(#[source] serde_cbor::Error),
 
-    #[fail(display = "Connection to self")]
+    #[error("Connection to self")]
     SelfConnection,
 
-    #[fail(display = "Too many storage errors")]
+    #[error("Too many storage errors")]
     StorageErrorRateLimitExceeded,
 
-    #[fail(display = "{}", 0)]
-    Io(#[fail(cause)] io::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 impl From<CborCodecError> for Error {

@@ -11,7 +11,6 @@ bit-vec = "0.6"
 bytes = "0.5"
 directories = "2.0"
 failure = { version = "0.1", features = ["backtrace"] }
-failure_derive = "0.1"
 futures = { version = "0.3", features = ["thread-pool"] }
 futures_codec = { version = "0.4", features = ["cbor"] }
 futures-timer = "3.0"
@@ -29,7 +28,7 @@ nonempty = "0.2"
 olpc-cjson = "0.1"
 quinn = { version = "0.6", default-features = false, features = ["tls-rustls"] }
 radicle-keystore = { path = "../radicle-keystore" }
-radicle-surf = { git = "https://github.com/radicle-dev/radicle-surf", rev = "af474a7ece1b75906906974057e3f89a32f085b4" }
+radicle-surf = { git = "https://github.com/radicle-dev/radicle-surf", rev = "33d4980422bc6a0cb48ccdc6d4b893f9e45bc2b9" }
 rand = "0.7"
 rand_pcg = "0.2"
 rcgen = "0.7"
@@ -44,6 +43,7 @@ serde_repr = "0.1"
 sha2 = "0.8"
 sodiumoxide = "0.2"
 tempfile = "3.1"
+thiserror = "1.0"
 tokio = { version = "0.2", features = ["full"] }
 tokio-util = { version = "0.3.0", features = ["compat"] }
 url = { version = "2.1", features = ["serde"] }

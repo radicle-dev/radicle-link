@@ -17,12 +17,13 @@
 
 use std::{fmt::Debug, time::SystemTime};
 
+use anyhow::Error;
 use structopt::StructOpt;
 
 use keystore::Keystore;
 use librad::keys::device;
 
-use crate::{config::Config, error::Error};
+use crate::config::Config;
 
 #[derive(StructOpt)]
 /// Manage keys
@@ -34,21 +35,21 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error<K::Error>>
+    pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error>
     where
         K: Keystore<PublicKey = device::PublicKey, SecretKey = device::Key, Metadata = SystemTime>,
-        K::Error: Debug + Send + Sync,
+        K::Error: Debug + Send + Sync + 'static,
     {
         match self {
             Self::New => {
                 let key = device::Key::new();
                 let mut store = cfg.keystore;
-                store.put_key(key).map_err(Error::Keystore)
+                store.put_key(key).map_err(|e| e.into())
             },
             Self::Show => cfg
                 .keystore
                 .show_key()
-                .map_err(Error::Keystore)
+                .map_err(|e| e.into())
                 .map(|key| println!("Device key: {:?}", key)),
         }
     }

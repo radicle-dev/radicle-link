@@ -17,41 +17,23 @@
 
 use std::{env, fs::File, io, path::Path, process::Command};
 
-use failure::Fail;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_yaml as yaml;
 use tempfile::{self, NamedTempFile};
+use thiserror::Error;
 
 const DEFAULT_EDITOR: &str = "nano";
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "Editor error: {}", 0)]
-    Io(io::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
 
-    #[fail(display = "Editor error: {}", 0)]
-    Yaml(yaml::Error),
+    #[error(transparent)]
+    Yaml(#[from] yaml::Error),
 
-    #[fail(display = "Editor error: {:?}", 0)]
-    Persist(tempfile::PersistError),
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Error::Io(err)
-    }
-}
-
-impl From<yaml::Error> for Error {
-    fn from(err: yaml::Error) -> Self {
-        Error::Yaml(err)
-    }
-}
-
-impl From<tempfile::PersistError> for Error {
-    fn from(err: tempfile::PersistError) -> Self {
-        Error::Persist(err)
-    }
+    #[error(transparent)]
+    Persist(#[from] tempfile::PersistError),
 }
 
 pub fn edit_yaml<T, P>(data: T, store_at: Option<P>) -> Result<T, Error>

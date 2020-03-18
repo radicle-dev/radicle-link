@@ -17,20 +17,20 @@
 
 //! Main protocol dispatch loop
 
-use std::{collections::HashMap, future::Future, iter, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, future::Future, io, iter, net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
-use failure::{format_err, Error};
 use futures::{
     future::TryFutureExt,
     lock::Mutex,
     sink::SinkExt,
     stream::{BoxStream, StreamExt, TryStreamExt},
 };
-use futures_codec::CborCodec;
+use futures_codec::{CborCodec, CborCodecError};
 use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use thiserror::Error;
 
 use crate::{
     channel::Fanout,
@@ -40,6 +40,7 @@ use crate::{
             BoundEndpoint,
             CloseReason,
             Connection,
+            ConnectionError,
             Endpoint,
             LocalInfo,
             RemoteInfo,
@@ -93,7 +94,7 @@ enum Run<'a> {
 
     Incoming {
         conn: Connection,
-        incoming: BoxStream<'a, Result<Stream, Error>>,
+        incoming: BoxStream<'a, Result<Stream, ConnectionError>>,
     },
 
     Gossip {
@@ -101,6 +102,44 @@ enum Run<'a> {
     },
 
     Shutdown,
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Upgrade: protocol mismatch, expected {expected:?}, got {actual:?}")]
+    UpgradeProtocolMismatch { expected: Upgrade, actual: Upgrade },
+
+    #[error("Peer denied upgrade: {0:?}")]
+    UpgradeErrorResponse(UpgradeError),
+
+    #[error("Silent server")]
+    SilentServer,
+    #[error("Silent client")]
+    SilentClient,
+
+    #[error(transparent)]
+    Cbor(#[from] serde_cbor::Error),
+
+    #[error("Error handling gossip upgrade: {0}")]
+    Gossip(#[from] gossip::error::Error),
+
+    #[error("Error handling git upgrade: {0}")]
+    Git(#[source] io::Error),
+
+    #[error(transparent)]
+    Connection(#[from] ConnectionError),
+
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+impl From<CborCodecError> for Error {
+    fn from(e: CborCodecError) -> Self {
+        match e {
+            CborCodecError::Cbor(e) => Self::Cbor(e),
+            CborCodecError::Io(e) => Self::Io(e),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -185,6 +224,7 @@ where
         trace!("Opening git stream to {}", to);
         if let Some(conn) = self.connections.lock().await.get(to) {
             conn.open_stream()
+                .map_err(|e| e.into())
                 .and_then(|stream| upgrade(stream, Upgrade::Git))
                 .await
                 .map_err(|e| error!("{}", e))
@@ -274,7 +314,7 @@ where
     async fn handle_connect(
         &self,
         conn: Connection,
-        mut incoming: BoxStream<'_, Result<Stream, Error>>,
+        mut incoming: BoxStream<'_, Result<Stream, ConnectionError>>,
         hello: impl Into<Option<gossip::Rpc>>,
     ) {
         let remote_id = conn.peer_id().clone();
@@ -332,7 +372,7 @@ where
         mut incoming: Incoming,
     ) -> Result<(), Error>
     where
-        Incoming: futures::Stream<Item = Result<Stream, Error>> + Unpin,
+        Incoming: futures::Stream<Item = Result<Stream, ConnectionError>> + Unpin,
     {
         let remote_id = conn.peer_id().clone();
         let remote_addr = conn.remote_addr();
@@ -381,8 +421,7 @@ where
                 Some(upgrade) => {
                     stream
                         .send(UpgradeResponse::SwitchingProtocols(upgrade.clone()))
-                        .await
-                        .map_err(|e| format_err!("Failed to send upgrade response: {:?}", e))?;
+                        .await?;
 
                     trace!("Incoming stream upgraded to {:?}", upgrade);
 
@@ -393,24 +432,24 @@ where
                             .gossip
                             .incoming(stream.framed(CborCodec::new()))
                             .await
-                            .map_err(|e| format_err!("Error handling gossip upgrade: {}", e)),
+                            .map_err(Error::Gossip),
 
                         Upgrade::Git => self
                             .git
                             .invoke_service(stream.split())
                             .await
-                            .map_err(|e| format_err!("Error handling git upgrade: {}", e)),
+                            .map_err(Error::Git),
                     }
                 },
 
-                None => Err(format_err!("Silent client")),
+                None => Err(Error::SilentClient),
             },
 
             Err(e) => {
                 let _ = stream
                     .send(UpgradeResponse::Error(UpgradeError::InvalidPayload))
                     .await;
-                Err(format_err!("Error deserialising upgrade request: {:?}", e))
+                Err(e.into())
             },
         }
     }
@@ -431,7 +470,7 @@ async fn connect_peer_info(
     peer_info: gossip::PeerInfo,
 ) -> Option<(
     Connection,
-    impl futures::Stream<Item = Result<Stream, Error>> + Unpin,
+    impl futures::Stream<Item = Result<Stream, ConnectionError>> + Unpin,
 )> {
     let addrs = iter::once(peer_info.advertised_info.listen_addr).chain(peer_info.seen_addrs);
     connect(endpoint, &peer_info.peer_id, addrs).await
@@ -443,7 +482,7 @@ async fn connect<I>(
     addrs: I,
 ) -> Option<(
     Connection,
-    impl futures::Stream<Item = Result<Stream, Error>> + Unpin,
+    impl futures::Stream<Item = Result<Stream, ConnectionError>> + Unpin,
 )>
 where
     I: IntoIterator<Item = SocketAddr>,
@@ -470,29 +509,23 @@ async fn upgrade(stream: Stream, upgrade: Upgrade) -> Result<Stream, Error> {
     trace!("Upgrade to {:?}", upgrade);
 
     let mut stream = stream.framed(CborCodec::<Upgrade, UpgradeResponse>::new());
-
-    stream
-        .send(upgrade.clone())
-        .await
-        .map_err(|e| format_err!("Failed to send upgrade {:?}: {:?}", upgrade, e))?;
-
-    match stream.try_next().await {
-        Ok(resp) => match resp {
-            Some(UpgradeResponse::SwitchingProtocols(proto)) => {
+    stream.send(upgrade.clone()).await?;
+    let resp = stream.try_next().await?;
+    if let Some(resp) = resp {
+        match resp {
+            UpgradeResponse::SwitchingProtocols(proto) => {
                 if proto == upgrade {
                     Ok(stream.release().0)
                 } else {
-                    Err(format_err!(
-                        "Protocol mismatch: requested {:?}, got {:?}",
-                        Upgrade::Gossip,
-                        upgrade
-                    ))
+                    Err(Error::UpgradeProtocolMismatch {
+                        expected: Upgrade::Gossip,
+                        actual: upgrade,
+                    })
                 }
             },
-            Some(UpgradeResponse::Error(e)) => Err(format_err!("Peer denied rad upgrade: {:?}", e)),
-            None => Err(format_err!("Silent server")),
-        },
-
-        Err(e) => Err(format_err!("Error deserialising upgrade response: {:?}", e)),
+            UpgradeResponse::Error(e) => Err(Error::UpgradeErrorResponse(e)),
+        }
+    } else {
+        Err(Error::SilentServer)
     }
 }

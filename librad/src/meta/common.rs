@@ -54,8 +54,8 @@ impl EmailAddr {
 }
 
 pub mod email {
-    use failure::Fail;
     use regex::RegexSet;
+    use thiserror::Error;
 
     lazy_static! {
         pub static ref LOCAL: RegexSet = {
@@ -83,15 +83,15 @@ pub mod email {
         };
     }
 
-    #[derive(Debug, Fail)]
+    #[derive(Debug, Error)]
     pub enum Error {
-        #[fail(display = "Email address exceeds 254 character limit")]
+        #[error("Email address exceeds 254 character limit")]
         AddrTooLong,
 
-        #[fail(display = "Invalid local-part of email address")]
+        #[error("Invalid local-part of email address")]
         InvalidLocalPart,
 
-        #[fail(display = "Invalid domain of email address")]
+        #[error("Invalid domain of email address")]
         InvalidDomain,
     }
 }
@@ -168,10 +168,11 @@ impl Url {
 
 pub mod url {
     use ::url as the_url;
+    use thiserror::Error;
 
-    #[derive(Debug, Fail)]
-    #[fail(display = "Error parsing Url: {}", 0)]
-    pub struct ParseError(#[fail(cause)] the_url::ParseError);
+    #[derive(Debug, Error)]
+    #[error("Error parsing Url: {0}")]
+    pub struct ParseError(#[source] the_url::ParseError);
 
     impl ParseError {
         pub(crate) fn new(err: the_url::ParseError) -> Self {

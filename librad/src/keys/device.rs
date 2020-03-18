@@ -23,7 +23,6 @@ use std::{
 
 use ::pgp::conversions::Time;
 use bit_vec::BitVec;
-use hex::decode;
 use secstr::SecStr;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::sign::ed25519;
@@ -220,14 +219,26 @@ impl Deref for PublicKey {
 
 // Signature
 
+pub mod signature {
+    use thiserror::Error;
+
+    #[derive(Debug, Error)]
+    pub enum DecodeError {
+        #[error("Could not decode hex string")]
+        InvalidHex(#[from] hex::FromHexError),
+
+        #[error("Expected signature to be 64 bytes, got: {actual}")]
+        InvalidLength { actual: usize },
+    }
+}
+
 impl Signature {
     pub fn verify(&self, data: &[u8], pk: &PublicKey) -> bool {
         ed25519::verify_detached(self, &data, pk)
     }
 
-    pub fn from_hex_string(s: &str) -> Result<Self, failure::Error> {
-        let bytes =
-            decode(s).map_err(|_| failure::format_err!("Cannot decode signature hex string"))?;
+    pub fn from_hex_string(s: &str) -> Result<Self, signature::DecodeError> {
+        let bytes = hex::decode(s)?;
         let buffer = if bytes.len() == 64 {
             let mut buffer = [0u8; 64];
             for (i, v) in bytes.iter().enumerate() {
@@ -235,12 +246,11 @@ impl Signature {
             }
             buffer
         } else {
-            return Err(failure::format_err!(
-                "Signature buffer has length {} instead of 64",
-                bytes.len()
-            ));
+            return Err(signature::DecodeError::InvalidLength {
+                actual: bytes.len(),
+            });
         };
-        Ok(Self(sodiumoxide::crypto::sign::ed25519::Signature(buffer)))
+        Ok(Self(ed25519::Signature(buffer)))
     }
 }
 

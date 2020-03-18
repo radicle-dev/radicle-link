@@ -24,7 +24,6 @@
 
 use std::{io, net::SocketAddr, pin::Pin};
 
-use failure::Error;
 use futures::{
     io::{AsyncRead, AsyncWrite},
     stream::{BoxStream, StreamExt, TryStreamExt},
@@ -32,6 +31,7 @@ use futures::{
 };
 use futures_codec::{Decoder, Encoder, Framed};
 use quinn::{NewConnection, VarInt};
+use thiserror::Error;
 
 use crate::{
     keys::device,
@@ -40,12 +40,22 @@ use crate::{
 };
 
 pub trait LocalInfo {
-    fn local_addr(&self) -> Result<SocketAddr, Error>;
+    fn local_addr(&self) -> io::Result<SocketAddr>;
 }
 
 pub trait RemoteInfo {
     fn peer_id(&self) -> &PeerId;
     fn remote_addr(&self) -> SocketAddr;
+}
+
+#[derive(Debug, Error)]
+pub enum EndpointError {
+    #[error(transparent)]
+    Endpoint(#[from] quinn::EndpointError),
+    #[error(transparent)]
+    Connect(#[from] quinn::ConnectError),
+    #[error(transparent)]
+    Connection(#[from] quinn::ConnectionError),
 }
 
 #[derive(Clone)]
@@ -57,7 +67,7 @@ impl Endpoint {
     pub async fn bind<'a>(
         local_key: &device::Key,
         listen_addr: SocketAddr,
-    ) -> Result<BoundEndpoint<'a>, Error> {
+    ) -> Result<BoundEndpoint<'a>, EndpointError> {
         let (endpoint, incoming) = quic::make_endpoint(local_key, listen_addr).await?;
         let endpoint = Endpoint { endpoint };
         let incoming = incoming
@@ -71,7 +81,7 @@ impl Endpoint {
         &mut self,
         peer: &PeerId,
         addr: &SocketAddr,
-    ) -> Result<(Connection, BoxStream<'a, Result<Stream, Error>>), Error> {
+    ) -> Result<(Connection, BoxStream<'a, Result<Stream, ConnectionError>>), EndpointError> {
         let conn = self
             .endpoint
             .connect(addr, peer.as_dns_name().as_ref().into())?
@@ -82,18 +92,18 @@ impl Endpoint {
 }
 
 impl LocalInfo for Endpoint {
-    fn local_addr(&self) -> Result<SocketAddr, Error> {
-        self.endpoint.local_addr().map_err(|e| e.into())
+    fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.endpoint.local_addr()
     }
 }
 
 pub struct BoundEndpoint<'a> {
     pub endpoint: Endpoint,
-    pub incoming: BoxStream<'a, (Connection, BoxStream<'a, Result<Stream, Error>>)>,
+    pub incoming: BoxStream<'a, (Connection, BoxStream<'a, Result<Stream, ConnectionError>>)>,
 }
 
 impl<'a> LocalInfo for BoundEndpoint<'a> {
-    fn local_addr(&self) -> Result<SocketAddr, Error> {
+    fn local_addr(&self) -> io::Result<SocketAddr> {
         self.endpoint.local_addr()
     }
 }
@@ -104,7 +114,7 @@ fn new_connection<'a>(
         bi_streams,
         ..
     }: NewConnection,
-) -> (Connection, BoxStream<'a, Result<Stream, Error>>) {
+) -> (Connection, BoxStream<'a, Result<Stream, ConnectionError>>) {
     let peer_id = tls::extract_peer_id(
         connection
             .authentication_data()
@@ -133,6 +143,12 @@ fn new_connection<'a>(
     )
 }
 
+#[derive(Debug, Error)]
+pub enum ConnectionError {
+    #[error(transparent)]
+    Connection(#[from] quinn::ConnectionError),
+}
+
 #[derive(Clone)]
 pub struct Connection {
     peer: PeerId,
@@ -147,7 +163,7 @@ impl Connection {
         }
     }
 
-    pub async fn open_stream(&self) -> Result<Stream, Error> {
+    pub async fn open_stream(&self) -> Result<Stream, ConnectionError> {
         let (send, recv) = self.conn.open_bi().await?;
         Ok(Stream {
             conn: self.clone(),

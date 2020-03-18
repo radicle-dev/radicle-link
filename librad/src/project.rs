@@ -18,19 +18,14 @@
 use std::{fmt, fmt::Display, ops::Deref, path::PathBuf, str::FromStr};
 
 use serde::{Deserializer, Serializer};
+use thiserror::Error;
 
 use crate::{git, git::GitProject, meta, paths::Paths};
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "{}", 0)]
-    Git(git::Error),
-}
-
-impl From<git::Error> for Error {
-    fn from(err: git::Error) -> Self {
-        Self::Git(err)
-    }
+    #[error("Failed to open git project: {0}")]
+    Git(#[from] git::Error),
 }
 
 /// An opaque project identifier.
@@ -49,18 +44,13 @@ impl ProjectId {
 }
 
 pub mod projectid {
+    use super::*;
     use crate::git;
 
-    #[derive(Debug, Fail)]
+    #[derive(Debug, Error)]
     pub enum ParseError {
-        #[fail(display = "{}", 0)]
-        Git(git::projectid::ParseError),
-    }
-
-    impl From<git::projectid::ParseError> for ParseError {
-        fn from(err: git::projectid::ParseError) -> Self {
-            Self::Git(err)
-        }
+        #[error(transparent)]
+        Git(#[from] git::projectid::ParseError),
     }
 }
 

@@ -22,6 +22,7 @@ use nonempty::NonEmpty;
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use thiserror::Error;
 
 use crate::{
     keys::device::{Key, Signature},
@@ -38,51 +39,51 @@ pub fn default_branch() -> String {
     DEFAULT_BRANCH.into()
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "Cannot serialize project metadata")]
-    SerializationFailed(serde_json::error::Error),
+    #[error("Cannot serialize project metadata")]
+    SerializationFailed(#[source] serde_json::error::Error),
 
-    #[fail(display = "Invalid UTF8")]
-    InvalidUtf8(std::string::FromUtf8Error),
+    #[error("Invalid UTF8")]
+    InvalidUtf8(#[source] std::string::FromUtf8Error),
 
-    #[fail(display = "Signature already present")]
+    #[error("Signature already present")]
     SignatureAlreadyPresent,
 
-    #[fail(display = "Signature from non maintainer")]
+    #[error("Signature from non maintainer")]
     SignatureFromNonMaintainer,
 
-    #[fail(display = "Signature missing")]
+    #[error("Signature missing")]
     SignatureMissing,
 
-    #[fail(display = "Signature decoding failed")]
+    #[error("Signature decoding failed")]
     SignatureDecodingFailed,
 
-    #[fail(display = "Signature verification failed")]
+    #[error("Signature verification failed")]
     SignatureVerificationFailed,
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum UpdateVerificationError {
-    #[fail(display = "Non monotonic revision")]
+    #[error("Non monotonic revision")]
     NonMonotonicRevision,
 
-    #[fail(display = "Update without previous quorum")]
+    #[error("Update without previous quorum")]
     NoPreviousQuorum,
 
-    #[fail(display = "Update without current quorum")]
+    #[error("Update without current quorum")]
     NoCurrentQuorum,
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum HistoryVerificationError {
-    #[fail(display = "Empty history")]
+    #[error("Empty history")]
     EmptyHistory,
 
-    #[fail(display = "Project error")]
+    #[error("Project error")]
     ProjectError { revision: u64, error: Error },
 
-    #[fail(display = "Update error")]
+    #[error("Update error")]
     UpdateError {
         revision: u64,
         error: UpdateVerificationError,

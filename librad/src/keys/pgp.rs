@@ -37,30 +37,25 @@ use pgp::{
     types::{Features, HashAlgorithm, KeyFlags, SignatureType},
 };
 use sodiumoxide::crypto::sign::ed25519 as sodium;
+use thiserror::Error;
 
 pub use pgp::packet::UserID;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "No secret key (not a TSK)")]
+    #[error("No secret key (not a TSK)")]
     NotATSK,
 
-    #[fail(display = "{}", 0)]
-    PGPError(failure::Error),
+    #[error("PGP error: {0}")]
+    Pgp(failure::Error),
 
-    #[fail(display = "{}", 0)]
-    IoError(io::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 impl From<failure::Error> for Error {
-    fn from(fail: failure::Error) -> Self {
-        Error::PGPError(fail)
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Error::IoError(err)
+    fn from(e: failure::Error) -> Self {
+        Self::Pgp(e)
     }
 }
 

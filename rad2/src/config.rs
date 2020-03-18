@@ -17,12 +17,11 @@
 
 use std::{fmt::Debug, path::PathBuf};
 
+use anyhow::Error;
 use structopt::StructOpt;
 
 use keystore::Keystore;
 use librad::paths::Paths;
-
-use crate::error::Error;
 
 /// Common options
 #[derive(StructOpt)]
@@ -48,7 +47,7 @@ pub struct Config<K> {
 }
 
 impl CommonOpts {
-    pub fn into_config<F, K>(self, init_keystore: F) -> Result<Config<K>, Error<K::Error>>
+    pub fn into_config<F, K>(self, init_keystore: F) -> Result<Config<K>, Error>
     where
         F: FnOnce(&Paths) -> K,
         K: Keystore,

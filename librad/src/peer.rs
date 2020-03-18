@@ -119,25 +119,21 @@ impl<'de> Deserialize<'de> for PeerId {
 }
 
 mod conversion {
-    #[derive(Debug, Fail)]
+    use thiserror::Error;
+
+    #[derive(Debug, Error)]
     pub enum Error {
-        #[fail(display = "Unexpected input length: {}", 0)]
+        #[error("Unexpected input length: {0}")]
         UnexpectedInputLength(usize),
 
-        #[fail(display = "Unknown version: {}", 0)]
+        #[error("Unknown version: {0}")]
         UnknownVersion(u8),
 
-        #[fail(display = "Invalid public key")]
+        #[error("Invalid public key")]
         InvalidPublicKey,
 
-        #[fail(display = "Decode error: {}", 0)]
-        DecodeError(multibase::Error),
-    }
-
-    impl From<multibase::Error> for Error {
-        fn from(e: multibase::Error) -> Self {
-            Self::DecodeError(e)
-        }
+        #[error("Decode error: {0}")]
+        DecodeError(#[from] multibase::Error),
     }
 }
 

@@ -17,17 +17,15 @@
 
 extern crate radicle_keystore as keystore;
 
-use std::{process::exit, time::SystemTime};
+use std::process::exit;
 
 use structopt::StructOpt;
 
-use keystore::{crypto::Pwhash, pinentry::Prompt, Keystore};
-use librad::keys::device;
+use keystore::{crypto::Pwhash, pinentry::Prompt};
 
 mod commands;
 mod config;
 mod editor;
-pub mod error;
 
 use crate::config::CommonOpts;
 
@@ -51,10 +49,7 @@ enum Commands {
     Profiles(commands::profiles::Commands),
 }
 
-type KeystoreImpl =
-    keystore::FileStorage<Pwhash<Prompt<'static>>, device::PublicKey, device::Key, SystemTime>;
-
-fn main() -> Result<(), error::Error<<KeystoreImpl as Keystore>::Error>> {
+fn main() -> Result<(), anyhow::Error> {
     if !librad::init() {
         eprintln!("Failed to initialise librad2");
         exit(1);

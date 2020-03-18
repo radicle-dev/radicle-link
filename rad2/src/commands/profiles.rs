@@ -21,9 +21,9 @@ use std::{
     path::PathBuf,
 };
 
-use failure::Fail;
 use serde_yaml as yaml;
 use structopt::StructOpt;
+use thiserror::Error;
 
 use keystore::Keystore;
 use librad::{
@@ -33,8 +33,8 @@ use librad::{
 
 use crate::{config::Config, editor};
 
-#[derive(StructOpt)]
 /// Manage user profiles
+#[derive(StructOpt)]
 pub enum Commands {
     /// Create a new profile
     New { name: String },
@@ -48,40 +48,22 @@ pub enum Commands {
     List,
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "Profile `{}` already exists", 0)]
+    #[error("Profile `{0}` already exists")]
     AlreadyExists(String),
 
-    #[fail(display = "Profile `{}` does not exist", 0)]
+    #[error("Profile `{0}` does not exist")]
     DoesNotExist(String),
 
-    #[fail(display = "{}", 0)]
-    Editor(editor::Error),
+    #[error(transparent)]
+    Editor(#[from] editor::Error),
 
-    #[fail(display = "{}", 0)]
-    Yaml(yaml::Error),
+    #[error(transparent)]
+    Yaml(#[from] yaml::Error),
 
-    #[fail(display = "{}", 0)]
-    Io(io::Error),
-}
-
-impl From<editor::Error> for Error {
-    fn from(err: editor::Error) -> Self {
-        Self::Editor(err)
-    }
-}
-
-impl From<yaml::Error> for Error {
-    fn from(err: yaml::Error) -> Self {
-        Self::Yaml(err)
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Self::Io(err)
-    }
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 // TODO: generalise this
