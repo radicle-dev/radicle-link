@@ -135,6 +135,23 @@ impl PublicKey {
     pub fn from_slice(bs: &[u8]) -> Option<PublicKey> {
         sign::PublicKey::from_slice(&bs).map(PublicKey)
     }
+
+    pub fn from_bs58(s: &str) -> Option<Self> {
+        let bytes = match bs58::decode(s.as_bytes())
+            .with_alphabet(bs58::alphabet::BITCOIN)
+            .into_vec()
+        {
+            Ok(v) => v,
+            Err(_) => return None,
+        };
+        sign::PublicKey::from_slice(&bytes).map(PublicKey)
+    }
+
+    pub fn to_bs58(&self) -> String {
+        bs58::encode(self.0)
+            .with_alphabet(bs58::alphabet::BITCOIN)
+            .into_string()
+    }
 }
 
 impl From<sign::PublicKey> for PublicKey {
@@ -185,8 +202,8 @@ impl Signature {
     pub fn from_hex_string(s: &str) -> Result<Self, failure::Error> {
         let bytes =
             decode(s).map_err(|_| failure::format_err!("Cannot decode signature hex string"))?;
-        let buffer = if bytes.len() == 64 {
-            let mut buffer = [0u8; 64];
+        let buffer = if bytes.len() == sign::SIGNATUREBYTES {
+            let mut buffer = [0u8; sign::SIGNATUREBYTES];
             for (i, v) in bytes.iter().enumerate() {
                 buffer[i] = *v;
             }
@@ -198,6 +215,32 @@ impl Signature {
             ));
         };
         Ok(Self(sodiumoxide::crypto::sign::Signature(buffer)))
+    }
+
+    pub fn from_bs58(s: &str) -> Option<Self> {
+        let bytes = match bs58::decode(s.as_bytes())
+            .with_alphabet(bs58::alphabet::BITCOIN)
+            .into_vec()
+        {
+            Ok(v) => v,
+            Err(_) => return None,
+        };
+        let buffer = if bytes.len() == sign::SIGNATUREBYTES {
+            let mut buffer = [0u8; sign::SIGNATUREBYTES];
+            for (i, v) in bytes.iter().enumerate() {
+                buffer[i] = *v;
+            }
+            buffer
+        } else {
+            return None;
+        };
+        Some(Self(sodiumoxide::crypto::sign::Signature(buffer)))
+    }
+
+    pub fn to_bs58(&self) -> String {
+        bs58::encode(self.0)
+            .with_alphabet(bs58::alphabet::BITCOIN)
+            .into_string()
     }
 }
 

@@ -1,11 +1,12 @@
-use hex::{decode, encode};
-use multihash::{Multihash, Sha2_256};
-use std::collections::{HashMap, HashSet};
-//use serde::{Deserialize, Serialize};
-//use serde_json;
 use crate::{
     keys::device::{Key, PublicKey, Signature},
     peer::PeerId,
+};
+use hex::{decode, encode};
+use multihash::{Multihash, Sha2_256};
+use std::{
+    collections::{HashMap, HashSet},
+    iter::FromIterator,
 };
 
 pub mod data;
@@ -26,6 +27,9 @@ pub enum Error {
 
     #[fail(display = "Signature already present")]
     SignatureAlreadyPresent(PublicKey),
+
+    #[fail(display = "Invalid data")]
+    InvalidData(String),
 
     #[fail(display = "Key not present")]
     KeyNotPresent(PublicKey),
@@ -105,11 +109,12 @@ where
     fn resolve_revisions(&self, uri: &RadicleUri) -> Box<dyn Iterator<Item = &E>>;
 }
 
-pub trait Entity {
+pub trait Entity: Sized {
     fn name(&self) -> &str;
     fn revision(&self) -> u64;
 
-    fn canonical_data(&self) -> Result<Vec<u8>, Error>;
+    fn from_data(data: &data::EntityData) -> Result<Self, Error>;
+    fn to_data(&self) -> data::EntityData;
 
     fn uri(&self) -> &RadicleUri;
     fn signatures(&self) -> &HashMap<PublicKey, EntitySignature>;
@@ -133,6 +138,30 @@ pub trait Entity {
     }
     fn certifiers(&self) -> Box<dyn Iterator<Item = RadicleUri>> {
         Box::new(std::iter::empty())
+    }
+
+    fn canonical_data(&self) -> Result<Vec<u8>, Error> {
+        Ok(self.to_data().canonical_data()?)
+    }
+    fn to_json_writer<W>(&self, writer: W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        self.to_data().to_json_writer(writer)?;
+        Ok(())
+    }
+    fn to_json_string(&self) -> Result<String, Error> {
+        Ok(self.to_data().to_json_string()?)
+    }
+
+    fn from_json_reader<R>(r: R) -> Result<Self, Error>
+    where
+        R: std::io::Read,
+    {
+        Ok(Self::from_data(&data::EntityData::from_json_reader(r)?)?)
+    }
+    fn from_json_str(s: &str) -> Result<Self, Error> {
+        Ok(Self::from_data(&data::EntityData::from_json_str(s)?)?)
     }
 
     fn compute_hash(&self) -> Result<Multihash, Error> {
@@ -266,6 +295,87 @@ impl Entity for User {
     }
     fn certifiers(&self) -> Box<dyn Iterator<Item = RadicleUri>> {
         Box::new(std::iter::empty())
+    }
+
+    fn from_data(data: &data::EntityData) -> Result<Self, Error> {
+        if let None = data.name {
+            return Err(Error::InvalidData("Missing name".to_owned()));
+        }
+        if let None = data.uri {
+            return Err(Error::InvalidData("Missing URI".to_owned()));
+        }
+        if let None = data.revision {
+            return Err(Error::InvalidData("Missing revision".to_owned()));
+        }
+        if data.keys.len() == 0 {
+            return Err(Error::InvalidData("Missing keys".to_owned()));
+        }
+
+        let mut devices = HashSet::new();
+        for k in data.keys.iter() {
+            let d = PeerId::from(PublicKey::from_bs58(k).ok_or(Error::InvalidData(k.to_owned()))?);
+            devices.insert(d);
+        }
+
+        let mut signatures = HashMap::new();
+        if let Some(s) = &data.signatures {
+            for (k, sig) in s.iter() {
+                let key = PublicKey::from_bs58(k).ok_or(Error::InvalidData(k.to_owned()))?;
+                let signature = EntitySignature {
+                    by: match &sig.user {
+                        Some(uri) => Signatory::User(RadicleUri::from_str(&uri)?),
+                        None => Signatory::OwnedKey,
+                    },
+                    sig: Signature::from_bs58(k).ok_or(Error::InvalidData(k.to_owned()))?,
+                };
+                signatures.insert(key, signature);
+            }
+        }
+
+        Ok(Self {
+            name: data
+                .name
+                .as_deref()
+                .ok_or(Error::InvalidData("Missing name".to_owned()))?
+                .to_owned(),
+            revision: data.revision.unwrap().to_owned(),
+            devices,
+            uri: RadicleUri::from_str(
+                &data
+                    .uri
+                    .as_deref()
+                    .ok_or(Error::InvalidData("Missing name".to_owned()))?,
+            )?,
+            signatures,
+        })
+    }
+
+    fn to_data(&self) -> data::EntityData {
+        let mut signatures = HashMap::new();
+        for (k, s) in self.signatures() {
+            signatures.insert(
+                k.to_bs58(),
+                data::EntitySignatureData {
+                    user: match &s.by {
+                        Signatory::User(uri) => Some(uri.to_string()),
+                        Signatory::OwnedKey => None,
+                    },
+                    sig: s.sig.to_bs58(),
+                },
+            );
+        }
+
+        let keys = HashSet::from_iter(self.keys().map(|k| k.to_bs58()));
+        let owners = HashSet::from_iter(self.certifiers().map(|c| c.to_string()));
+
+        data::EntityData {
+            name: Some(self.name.to_owned()),
+            revision: Some(self.revision()),
+            uri: Some(self.uri().to_string()),
+            signatures: Some(signatures),
+            keys,
+            owners,
+        }
     }
 }
 
