@@ -3,7 +3,7 @@
 # Iterates over all rust source files and ensures they start with the license
 # header as per the `.license-header` file at the root of the repository.
 
-set -euox pipefail
+set -euo pipefail
 IFS=$'\n'
 
 shopt -s globstar extglob
