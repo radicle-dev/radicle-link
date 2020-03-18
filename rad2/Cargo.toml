@@ -1,9 +1,10 @@
 [package]
 name = "rad2"
 version = "0.1.0"
-authors = ["Monadic <team@monadic.xyz>"]
+authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 description = "The Official Unoffical Radicle CLI"
+license = "GPL-3.0-or-later"
 
 [dependencies]
 failure = "0.1"

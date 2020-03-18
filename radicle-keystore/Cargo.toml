@@ -2,8 +2,9 @@
 name = "radicle-keystore"
 description = "Abstraction over storage of cryptographic keys within the Radicle stack"
 version = "0.1.0"
-authors = ["Monadic GmbH <radicle@monadic.xyz>"]
+authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
+license = "GPL-3.0-or-later"
 
 [dependencies]
 secstr = "0.3"

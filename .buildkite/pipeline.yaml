@@ -1,12 +1,12 @@
 steps:
   - label: "Build, lint, test"
     commands:
-      - "./ci-checks"
+      - "ci/run"
     agents:
       production: "true"
       platform: "linux"
     env:
-      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build@sha256:9214c20051acc77b4f18d518176f78f94e003f13b122bd70249f45fb247a27ac"
+      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build@sha256:b50248204078e514b02b3159d4b545942084bc621624a9354e30f1a1f9930bad"
       DOCKER_FILE: .buildkite/docker/rust-nightly/Dockerfile
 
   - label: "Render Spec"
