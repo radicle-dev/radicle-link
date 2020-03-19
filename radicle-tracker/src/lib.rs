@@ -79,13 +79,14 @@
 #![deny(missing_docs, unused_import_braces, unused_qualifications, warnings)]
 #![feature(vec_remove_item)]
 use std::hash::Hash;
-use time::OffsetDateTime;
 
 mod thread;
 pub use thread::{DataState, Error as ThreadError, Finger, Replies, ReplyTo, Thread};
 
 mod metadata;
 pub use metadata::*;
+
+use clock::{Clock, RadicleClock};
 
 /// An [`Issue`] that has been closed. The underlying issue cannot be mutated,
 /// and can we can only access the reference of this issue..
@@ -120,7 +121,7 @@ pub struct Issue<Id, Cid, User: Eq + Hash> {
     title: Title,
     thread: Thread<Comment<Cid, User>>,
     meta: Metadata<User>,
-    timestamp: OffsetDateTime,
+    timestamp: RadicleClock,
 }
 
 impl<Id, Cid, User: Eq + Hash> Issue<Id, Cid, User> {
@@ -129,7 +130,7 @@ impl<Id, Cid, User: Eq + Hash> Issue<Id, Cid, User> {
     where
         User: Clone + Eq,
     {
-        let timestamp = OffsetDateTime::now_local();
+        let timestamp = RadicleClock::current_time();
         Self::new_with_timestamp(identifier, comment_id, author, title, content, timestamp)
     }
 
@@ -140,7 +141,7 @@ impl<Id, Cid, User: Eq + Hash> Issue<Id, Cid, User> {
         author: User,
         title: Title,
         content: String,
-        timestamp: OffsetDateTime,
+        timestamp: RadicleClock,
     ) -> Self
     where
         User: Clone + Eq,

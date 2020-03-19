@@ -9,4 +9,6 @@ edition = "2018"
 [dependencies]
 nonempty = "0.3"
 thiserror = "1.0"
-time = "0.2"
+
+[dev-dependencies]
+proptest = "0.9"

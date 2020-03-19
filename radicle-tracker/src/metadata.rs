@@ -4,7 +4,9 @@ use std::{
     hash::Hash,
     str::FromStr,
 };
-use time::OffsetDateTime;
+
+pub mod clock;
+use clock::{Clock, RadicleClock};
 
 /// The metadata that is related to an issue.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,13 +99,13 @@ pub struct Comment<Id, User: Eq + Hash> {
     author: User,
     content: String,
     reactions: HashSet<Reaction<User>>,
-    timestamp: OffsetDateTime,
+    timestamp: RadicleClock,
 }
 
 impl<Cid, User: Eq + Hash> Comment<Cid, User> {
     /// Create a new `Comment`.
     pub fn new(identifier: Cid, author: User, content: String) -> Self {
-        let timestamp = OffsetDateTime::now_local();
+        let timestamp = RadicleClock::current_time();
         Self::new_with_timestamp(identifier, author, content, timestamp)
     }
 
@@ -112,7 +114,7 @@ impl<Cid, User: Eq + Hash> Comment<Cid, User> {
         identifier: Cid,
         author: User,
         content: String,
-        timestamp: OffsetDateTime,
+        timestamp: RadicleClock,
     ) -> Self {
         Comment {
             identifier,
