@@ -357,7 +357,7 @@ pub mod tests {
         headers.sort();
 
         let mut expected_headers = [
-            "leboeuf@Gbsp8juYVbEWvvdFSreVLC98nS5JRXcVfkpZaiQYu9tW",
+            "leboeuf@e7ce8164de242ede1bd54157e7c303b9981f540d7fb5cea",
             "8D15 5430 2B8F C2D1 B3FE  BC05 236D F80F 84DF 27EA",
         ];
         expected_headers.sort();

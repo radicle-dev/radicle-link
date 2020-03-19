@@ -6,8 +6,8 @@
 set -euo pipefail
 IFS=$'\n'
 
-shopt -s globstar
-for file in */src/**/*.rs
+shopt -s globstar extglob
+for file in */+(src|tests|examples)/**/*.rs
 do
     rustfmt --config license_template_path=".license-header" --color never --quiet --check "$file" || {
         sed -i -e '1r.license-header' -e '1{h;d}' -e '2{x;G}' "$file"
