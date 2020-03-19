@@ -15,7 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{error::Error, iter::Iterator, path::Path, time::Duration};
+use std::{
+    error::Error,
+    iter::Iterator,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    path::Path,
+    time::Duration,
+};
 
 use futures::stream::{self, StreamExt};
 use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
@@ -149,7 +155,11 @@ async fn bootstrap<'a>(
         export: peer.paths.projects_dir().into(),
     };
 
-    let endpoint = Endpoint::bind(&key, "127.0.0.1:0".parse().unwrap()).await?;
+    let endpoint = Endpoint::bind(
+        &key,
+        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0)),
+    )
+    .await?;
 
     let gossip = gossip::Protocol::new(
         &PeerId::from(key),
