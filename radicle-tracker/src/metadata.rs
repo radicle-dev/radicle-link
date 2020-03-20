@@ -6,7 +6,7 @@ use std::{
 };
 
 pub mod clock;
-use clock::{Clock, RadicleClock};
+use clock::{Clock, RadClock};
 
 /// The metadata that is related to an issue.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,13 +99,13 @@ pub struct Comment<Id, User: Eq + Hash> {
     author: User,
     content: String,
     reactions: HashSet<Reaction<User>>,
-    timestamp: RadicleClock,
+    timestamp: RadClock,
 }
 
 impl<Cid, User: Eq + Hash> Comment<Cid, User> {
     /// Create a new `Comment`.
     pub fn new(identifier: Cid, author: User, content: String) -> Self {
-        let timestamp = RadicleClock::current_time();
+        let timestamp = RadClock::current_time();
         Self::new_with_timestamp(identifier, author, content, timestamp)
     }
 
@@ -114,7 +114,7 @@ impl<Cid, User: Eq + Hash> Comment<Cid, User> {
         identifier: Cid,
         author: User,
         content: String,
-        timestamp: RadicleClock,
+        timestamp: RadClock,
     ) -> Self {
         Comment {
             identifier,
