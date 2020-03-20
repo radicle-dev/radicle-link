@@ -1,12 +1,29 @@
+// This file is part of radicle-link
+// <https://github.com/radicle-dev/radicle-link>
+//
+// Copyright (C) 2019-2020 The Radicle Team <dev@radicle.xyz>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License version 3 or
+// later as published by the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 use std::{
     fs::{remove_file, File},
     io,
     path::PathBuf,
 };
 
-use failure::Fail;
 use serde_yaml as yaml;
 use structopt::StructOpt;
+use thiserror::Error;
 
 use keystore::Keystore;
 use librad::{
@@ -16,8 +33,8 @@ use librad::{
 
 use crate::{config::Config, editor};
 
-#[derive(StructOpt)]
 /// Manage user profiles
+#[derive(StructOpt)]
 pub enum Commands {
     /// Create a new profile
     New { name: String },
@@ -31,40 +48,22 @@ pub enum Commands {
     List,
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "Profile `{}` already exists", 0)]
+    #[error("Profile `{0}` already exists")]
     AlreadyExists(String),
 
-    #[fail(display = "Profile `{}` does not exist", 0)]
+    #[error("Profile `{0}` does not exist")]
     DoesNotExist(String),
 
-    #[fail(display = "{}", 0)]
-    Editor(editor::Error),
+    #[error(transparent)]
+    Editor(#[from] editor::Error),
 
-    #[fail(display = "{}", 0)]
-    Yaml(yaml::Error),
+    #[error(transparent)]
+    Yaml(#[from] yaml::Error),
 
-    #[fail(display = "{}", 0)]
-    Io(io::Error),
-}
-
-impl From<editor::Error> for Error {
-    fn from(err: editor::Error) -> Self {
-        Self::Editor(err)
-    }
-}
-
-impl From<yaml::Error> for Error {
-    fn from(err: yaml::Error) -> Self {
-        Self::Yaml(err)
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Self::Io(err)
-    }
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 // TODO: generalise this

@@ -1,6 +1,23 @@
+// This file is part of radicle-link
+// <https://github.com/radicle-dev/radicle-link>
+//
+// Copyright (C) 2019-2020 The Radicle Team <dev@radicle.xyz>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License version 3 or
+// later as published by the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 use std::{env, io, path::PathBuf, time::SystemTime};
 
-use failure::Fail;
+use anyhow::Error;
 use git2;
 use serde_yaml;
 use structopt::StructOpt;
@@ -17,11 +34,10 @@ use librad::{
 use crate::{
     commands::profiles::{load_profile, ProfilePath},
     config::Config,
-    error::Error,
 };
 
-#[derive(StructOpt)]
 /// Manage projects
+#[derive(StructOpt)]
 pub enum Commands {
     /// List available projects
     List,
@@ -48,10 +64,10 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error<K::Error>>
+    pub fn run<K>(self, cfg: Config<K>) -> Result<(), Error>
     where
         K: Keystore<PublicKey = device::PublicKey, SecretKey = device::Key, Metadata = SystemTime>,
-        K::Error: Send + Sync,
+        K::Error: Send + Sync + 'static,
     {
         match self {
             Self::Init {
@@ -59,7 +75,7 @@ impl Commands {
                 profile,
                 git_dir,
             } => {
-                let key = cfg.keystore.get_key().map_err(Error::Keystore)?.secret_key;
+                let key = cfg.keystore.get_key()?.secret_key;
                 let profile = load_profile(ProfilePath::new(&cfg.paths, &profile))?;
                 init_project(&cfg.paths, key, name, profile, git_dir)
             },
@@ -90,13 +106,13 @@ impl Commands {
     }
 }
 
-fn init_project<E: Fail>(
+fn init_project(
     paths: &Paths,
     key: device::Key,
     project_name: Option<String>,
     profile: meta::UserProfile,
     git_dir: Option<PathBuf>,
-) -> Result<(), Error<E>> {
+) -> Result<(), Error> {
     let cwd = env::current_dir()?;
     let sources = match git_dir {
         Some(dir) => git2::Repository::open(dir)?,

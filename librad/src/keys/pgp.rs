@@ -1,3 +1,20 @@
+// This file is part of radicle-link
+// <https://github.com/radicle-dev/radicle-link>
+//
+// Copyright (C) 2019-2020 The Radicle Team <dev@radicle.xyz>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License version 3 or
+// later as published by the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 use std::{fmt, io, io::Write, ops::Deref, time::SystemTime};
 
 use failure;
@@ -20,30 +37,25 @@ use pgp::{
     types::{Features, HashAlgorithm, KeyFlags, SignatureType},
 };
 use sodiumoxide::crypto::sign::ed25519 as sodium;
+use thiserror::Error;
 
 pub use pgp::packet::UserID;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "No secret key (not a TSK)")]
+    #[error("No secret key (not a TSK)")]
     NotATSK,
 
-    #[fail(display = "{}", 0)]
-    PGPError(failure::Error),
+    #[error("PGP error: {0}")]
+    Pgp(failure::Error),
 
-    #[fail(display = "{}", 0)]
-    IoError(io::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 impl From<failure::Error> for Error {
-    fn from(fail: failure::Error) -> Self {
-        Error::PGPError(fail)
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Error::IoError(err)
+    fn from(e: failure::Error) -> Self {
+        Self::Pgp(e)
     }
 }
 
@@ -340,7 +352,7 @@ pub mod tests {
         headers.sort();
 
         let mut expected_headers = [
-            "leboeuf@Gbsp8juYVbEWvvdFSreVLC98nS5JRXcVfkpZaiQYu9tW",
+            "leboeuf@e7ce8164de242ede1bd54157e7c303b9981f540d7fb5cea",
             "8D15 5430 2B8F C2D1 B3FE  BC05 236D F80F 84DF 27EA",
         ];
         expected_headers.sort();

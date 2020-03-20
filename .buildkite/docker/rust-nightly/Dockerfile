@@ -44,7 +44,7 @@ RUN set -eux; \
     cargo --version; \
     rustc --version; \
     rustup component add clippy rustfmt; \
-    cargo install sccache cargo-deb; \
+    cargo install sccache cargo-deb cargo-deny; \
     rm -rf /usr/local/cargo/registry; \
     rm /usr/local/cargo/.package-cache;
 

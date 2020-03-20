@@ -1,3 +1,20 @@
+// This file is part of radicle-link
+// <https://github.com/radicle-dev/radicle-link>
+//
+// Copyright (C) 2019-2020 The Radicle Team <dev@radicle.xyz>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License version 3 or
+// later as published by the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 use std::{fmt, fmt::Display, io, path::Path, str::FromStr};
 
 use git2;
@@ -5,6 +22,7 @@ use olpc_cjson::CanonicalFormatter;
 use radicle_surf::vcs::git as surf;
 use serde::Serialize;
 use serde_json;
+use thiserror::Error;
 
 use crate::{
     keys,
@@ -14,6 +32,9 @@ use crate::{
     peer::PeerId,
 };
 
+pub mod server;
+pub mod transport;
+
 const PROJECT_METADATA_BRANCH: &str = "rad/project";
 const PROJECT_METADATA_FILE: &str = "project.json";
 
@@ -22,73 +43,37 @@ const CONTRIBUTOR_METADATA_FILE: &str = "contributor.json";
 
 const RAD_REMOTE_NAME: &str = "rad";
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "Invalid PGP key: missing UserID packet")]
+    #[error("Invalid PGP key: missing UserID packet")]
     MissingPgpUserId,
 
-    #[fail(display = "Invalid PGP key: missing address")]
+    #[error("Invalid PGP key: missing address")]
     MissingPgpAddr,
 
-    #[fail(display = "Project already exists")]
-    ProjectExists,
+    #[error("Project {0} already exists")]
+    ProjectExists(ProjectId),
 
-    #[fail(display = "Project not found")]
-    NoSuchProject,
+    #[error("Branch {0} specified as default_branch does not exist in the source repo")]
+    MissingDefaultBranch(String, #[source] git2::Error),
 
-    #[fail(
-        display = "Branch {} specified as default_branch does not exist in the source repo",
-        0
-    )]
-    MissingDefaultBranch(String, #[fail(cause)] git2::Error),
+    #[error("Git error: {0:?}")]
+    Libgit(#[from] git2::Error),
 
-    #[fail(display = "{}", 0)]
-    Libgit(git2::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
 
-    #[fail(display = "{}", 0)]
-    Io(io::Error),
+    #[error(transparent)]
+    Serde(#[from] serde_json::error::Error),
 
-    #[fail(display = "{}", 0)]
-    Serde(serde_json::error::Error),
+    #[error(transparent)]
+    Pgp(#[from] keys::pgp::Error),
 
-    #[fail(display = "{}", 0)]
-    Pgp(keys::pgp::Error),
-
-    #[fail(display = "{:?}", 0)]
-    Surf(surf::error::Error),
+    #[error(transparent)]
+    Surf(#[from] surf::error::Error),
 }
 
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Error::Io(err)
-    }
-}
-
-impl From<git2::Error> for Error {
-    fn from(err: git2::Error) -> Self {
-        Error::Libgit(err)
-    }
-}
-
-impl From<serde_json::error::Error> for Error {
-    fn from(err: serde_json::error::Error) -> Self {
-        Error::Serde(err)
-    }
-}
-
-impl From<keys::pgp::Error> for Error {
-    fn from(err: keys::pgp::Error) -> Self {
-        Error::Pgp(err)
-    }
-}
-
-impl From<surf::error::Error> for Error {
-    fn from(err: surf::error::Error) -> Self {
-        Error::Surf(err)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectId(git2::Oid);
 
 impl ProjectId {
@@ -98,18 +83,17 @@ impl ProjectId {
 }
 
 pub mod projectid {
-    #[derive(Debug, Fail)]
+    use thiserror::Error;
+
+    #[derive(Debug, Error)]
     pub enum ParseError {
-        #[fail(display = "Invalid backend: `{}`, expected `git`", 0)]
+        #[error("Invalid backend: `{0}`, expected `git`")]
         InvalidBackend(String),
 
-        #[fail(display = "Invalid oid: `{}` ({})", 0, 1)]
-        InvalidOid(String, git2::Error),
+        #[error("Invalid oid: `{0}` ({1})")]
+        InvalidOid(String, #[source] git2::Error),
 
-        #[fail(
-            display = "Invalid ProjectId format, expected `<identifier> '.' <backend>`: {}",
-            0
-        )]
+        #[error("Invalid ProjectId format, expected `<identifier> '.' <backend>`: {0}")]
         InvalidFormat(String),
     }
 }
@@ -399,7 +383,7 @@ fn register_project(
     // FIXME: It's unfortunate this is duplicated in `project::ProjectId::into_path`
     let dest = paths.projects_dir().join(pid.to_string());
     if dest.is_dir() {
-        Err(Error::ProjectExists)
+        Err(Error::ProjectExists(pid.clone()))
     } else {
         let _ = git2::Repository::init_opts(
             &dest,

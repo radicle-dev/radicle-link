@@ -1,17 +1,31 @@
+// This file is part of radicle-link
+// <https://github.com/radicle-dev/radicle-link>
+//
+// Copyright (C) 2019-2020 The Radicle Team <dev@radicle.xyz>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License version 3 or
+// later as published by the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 use std::{fmt, fmt::Display, ops::Deref, path::PathBuf, str::FromStr};
+
+use serde::{Deserializer, Serializer};
+use thiserror::Error;
 
 use crate::{git, git::GitProject, meta, paths::Paths};
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "{}", 0)]
-    Git(git::Error),
-}
-
-impl From<git::Error> for Error {
-    fn from(err: git::Error) -> Self {
-        Self::Git(err)
-    }
+    #[error("Failed to open git project: {0}")]
+    Git(#[from] git::Error),
 }
 
 /// An opaque project identifier.
@@ -20,7 +34,7 @@ impl From<git::Error> for Error {
 /// in the future.
 ///
 /// [`git::ProjectId`]: ../git/struct.ProjectId.html
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectId(git::ProjectId);
 
 impl ProjectId {
@@ -30,18 +44,13 @@ impl ProjectId {
 }
 
 pub mod projectid {
+    use super::*;
     use crate::git;
 
-    #[derive(Debug, Fail)]
+    #[derive(Debug, Error)]
     pub enum ParseError {
-        #[fail(display = "{}", 0)]
-        Git(git::projectid::ParseError),
-    }
-
-    impl From<git::projectid::ParseError> for ParseError {
-        fn from(err: git::projectid::ParseError) -> Self {
-            Self::Git(err)
-        }
+        #[error(transparent)]
+        Git(#[from] git::projectid::ParseError),
     }
 }
 
@@ -62,6 +71,29 @@ impl Display for ProjectId {
 impl From<git::ProjectId> for ProjectId {
     fn from(pid: git::ProjectId) -> Self {
         Self(pid)
+    }
+}
+
+// FIXME(kim): for now, serde via `Display`/`FromStr`. define a compact binary
+// representation.
+
+impl serde::Serialize for ProjectId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ProjectId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
     }
 }
 

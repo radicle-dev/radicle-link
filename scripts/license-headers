@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#
+# Iterates over all rust source files and ensures they start with the license
+# header as per the `.license-header` file at the root of the repository.
+
+set -euo pipefail
+IFS=$'\n'
+
+shopt -s globstar extglob
+for file in */+(src|tests|examples)/**/*.rs
+do
+    rustfmt --config license_template_path=".license-header" --color never --quiet --check "$file" || {
+        sed -i -e '1r.license-header' -e '1{h;d}' -e '2{x;G}' "$file"
+    }
+done

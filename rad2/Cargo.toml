@@ -1,14 +1,16 @@
 [package]
 name = "rad2"
 version = "0.1.0"
-authors = ["Monadic <team@monadic.xyz>"]
+authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 description = "The Official Unoffical Radicle CLI"
+license = "GPL-3.0-or-later"
 
 [dependencies]
-failure = "0.1"
-failure_derive = "0.1"
-git2 = "0.10"
+anyhow = "1.0"
+git2 = { version = "0.12", default-features = false, features = [] }
+# Need to mention libgit2-sys explicitly in order to disable openssl
+libgit2-sys = { version = "0.11", default-features = false, features = [] }
 librad = { path = "../librad" }
 radicle-keystore = { path = "../radicle-keystore" }
 secstr = "0.3"
@@ -16,5 +18,6 @@ serde = "1.0"
 serde_yaml = "0.8"
 structopt = "0.3"
 tempfile = "3.1"
+thiserror = "1.0"
 url = "2.1"
 
