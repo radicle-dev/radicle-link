@@ -24,6 +24,7 @@
 use std::{
     collections::{HashMap, HashSet},
     iter,
+    marker::PhantomData,
     net::SocketAddr,
     num::NonZeroU32,
     sync::{
@@ -40,7 +41,7 @@ use futures::{
     sink::SinkExt,
     stream::StreamExt,
 };
-use futures_codec::{CborCodec, Framed, FramedRead, FramedWrite};
+use futures_codec::{CborCodec, FramedRead, FramedWrite};
 use futures_timer::Delay;
 use governor::{Quota, RateLimiter};
 use log::{info, trace, warn};
@@ -49,10 +50,7 @@ use rand_pcg::Pcg64Mcg;
 
 use crate::{
     channel::Fanout,
-    net::{
-        connection::{self, RemoteInfo, Stream},
-        gossip::error::Error,
-    },
+    net::{connection::RemoteInfo, gossip::error::Error},
     peer::PeerId,
 };
 
@@ -218,8 +216,6 @@ impl<R: Rng> KnownPeers<R> {
 }
 
 type Codec = CborCodec<Rpc, Rpc>;
-type NegotiatedStream<S> = Framed<S, Codec>;
-type NegotiatedSendStream<W> = FramedWrite<W, Codec>;
 
 type StorageErrorLimiter = RateLimiter<
     governor::state::direct::NotKeyed,
@@ -227,7 +223,7 @@ type StorageErrorLimiter = RateLimiter<
     governor::clock::DefaultClock,
 >;
 
-pub struct Protocol<Storage, Stream: connection::Stream> {
+pub struct Protocol<S, R, W> {
     local_id: PeerId,
     local_ad: PeerAdvertisement,
 
@@ -235,19 +231,21 @@ pub struct Protocol<Storage, Stream: connection::Stream> {
 
     prng: Pcg64Mcg,
 
-    storage: Storage,
+    storage: S,
     storage_error_lim: Arc<StorageErrorLimiter>,
 
     subscribers: Fanout<ProtocolEvent>,
 
-    connected_peers: Arc<Mutex<ConnectedPeers<NegotiatedSendStream<Stream::Write>, Pcg64Mcg>>>,
+    connected_peers: Arc<Mutex<ConnectedPeers<FramedWrite<W, Codec>, Pcg64Mcg>>>,
     known_peers: Arc<Mutex<KnownPeers<Pcg64Mcg>>>,
 
     dropped: Arc<AtomicBool>,
+
+    _marker: PhantomData<R>,
 }
 
 // Inexplicably, Clone cannot be auto-derived
-impl<Storage: Clone, Stream: connection::Stream> Clone for Protocol<Storage, Stream> {
+impl<S: Clone, R, W> Clone for Protocol<S, R, W> {
     fn clone(&self) -> Self {
         Self {
             local_id: self.local_id.clone(),
@@ -260,22 +258,22 @@ impl<Storage: Clone, Stream: connection::Stream> Clone for Protocol<Storage, Str
             connected_peers: self.connected_peers.clone(),
             known_peers: self.known_peers.clone(),
             dropped: self.dropped.clone(),
+            _marker: self._marker,
         }
     }
 }
 
-impl<Storage, StreamT> Protocol<Storage, StreamT>
+impl<S, R, W> Protocol<S, R, W>
 where
-    Storage: LocalStorage + 'static,
-    StreamT: Stream + 'static,
-    StreamT::Read: AsyncRead + RemoteInfo + Unpin + Send + Sync,
-    StreamT::Write: AsyncWrite + RemoteInfo + Unpin + Send + Sync,
+    S: LocalStorage + 'static,
+    R: AsyncRead + RemoteInfo + Unpin + Send + Sync + 'static,
+    W: AsyncWrite + RemoteInfo + Unpin + Send + Sync + 'static,
 {
     pub fn new(
         local_id: &PeerId,
         local_ad: PeerAdvertisement,
         mparams: MembershipParams,
-        storage: Storage,
+        storage: S,
     ) -> Self {
         let prng = Pcg64Mcg::new(rand::random());
         let connected_peers = Arc::new(Mutex::new(ConnectedPeers::new(
@@ -304,6 +302,8 @@ where
             known_peers,
 
             dropped: Arc::new(AtomicBool::new(false)),
+
+            _marker: PhantomData,
         };
 
         this.clone().run_periodic_tasks();
@@ -339,60 +339,47 @@ where
 
     pub(super) async fn outgoing(
         &self,
-        mut stream: NegotiatedStream<StreamT>,
+        recv: FramedRead<R, Codec>,
+        mut send: FramedWrite<W, Codec>,
         hello: impl Into<Option<Rpc>>,
     ) -> Result<(), Error> {
-        let remote_id = stream.remote_peer_id().clone();
-        trace!("{}: Outgoing to {}", self.local_id, remote_id);
-        // This should not be possible, as we prevent it in the TLS handshake.
-        // Leaving it here regardless as a sanity check.
-        if remote_id == self.local_id {
-            return Err(Error::SelfConnection);
-        }
-
         let hello = hello
             .into()
             .unwrap_or_else(|| Membership::Join(self.local_ad.clone()).into());
-        trace!("{}: Hello: {:?}", self.local_id, hello);
-        stream.send(hello).await?;
+        send.send(hello).await?;
 
-        self.incoming(stream).await
+        self.incoming(recv, send).await
     }
 
-    pub(super) async fn incoming(&self, stream: NegotiatedStream<StreamT>) -> Result<(), Error> {
-        let remote_id = stream.remote_peer_id().clone();
-        trace!("{}: Incoming from {}", self.local_id, remote_id);
+    pub(super) async fn incoming(
+        &self,
+        mut recv: FramedRead<R, Codec>,
+        send: FramedWrite<W, Codec>,
+    ) -> Result<(), Error> {
+        let remote_id = recv.remote_peer_id().clone();
         // This should not be possible, as we prevent it in the TLS handshake.
         // Leaving it here regardless as a sanity check.
         if remote_id == self.local_id {
             return Err(Error::SelfConnection);
         }
 
-        let mut recv = {
-            let (stream_inner, codec) = stream.release();
-            let (recv, send) = stream_inner.split();
-
-            if let Some((ejected_peer, mut ejected_send)) = self
-                .add_connected(remote_id.clone(), FramedWrite::new(send, codec.clone()))
+        if let Some((ejected_peer, mut ejected_send)) =
+            self.add_connected(remote_id.clone(), send).await
+        {
+            trace!(
+                "{}: Ejecting connected peer {}",
+                self.local_id,
+                ejected_peer
+            );
+            let _ = ejected_send.close().await;
+            // Note: if the ejected peer never sent us a `Join` or
+            // `Neighbour`, it isn't behaving well, so we can forget about
+            // it here. Otherwise, we should already have it in
+            // `known_peers`.
+            self.subscribers
+                .emit(ProtocolEvent::Disconnect(ejected_peer))
                 .await
-            {
-                trace!(
-                    "{}: Ejecting connected peer {}",
-                    self.local_id,
-                    ejected_peer
-                );
-                let _ = ejected_send.close().await;
-                // Note: if the ejected peer never sent us a `Join` or
-                // `Neighbour`, it isn't behaving well, so we can forget about
-                // it here. Otherwise, we should already have it in
-                // `known_peers`.
-                self.subscribers
-                    .emit(ProtocolEvent::Disconnect(ejected_peer))
-                    .await
-            }
-
-            FramedRead::new(recv, codec)
-        };
+        }
 
         while let Some(recvd) = recv.next().await {
             match recvd {
@@ -620,8 +607,8 @@ where
     async fn add_connected(
         &self,
         peer_id: PeerId,
-        out: NegotiatedSendStream<StreamT::Write>,
-    ) -> Option<(PeerId, NegotiatedSendStream<StreamT::Write>)> {
+        out: FramedWrite<W, Codec>,
+    ) -> Option<(PeerId, FramedWrite<W, Codec>)> {
         self.connected_peers.lock().await.insert(peer_id, out)
     }
 
@@ -720,9 +707,9 @@ where
     }
 
     /// Send an [`Rpc`] to all currently connected peers, except `excluding`
-    async fn broadcast<'a, R, X>(&self, rpc: R, excluding: X)
+    async fn broadcast<'a, M, X>(&self, rpc: M, excluding: X)
     where
-        R: Into<Rpc>,
+        M: Into<Rpc>,
         X: Into<Option<&'a PeerId>>,
     {
         let rpc = rpc.into();
@@ -753,7 +740,7 @@ where
         .await
     }
 
-    async fn reply<R: Into<Rpc>>(&self, to: &PeerId, rpc: R) {
+    async fn reply<M: Into<Rpc>>(&self, to: &PeerId, rpc: M) {
         let rpc = rpc.into();
         futures::stream::iter(self.connected_peers.lock().await.get_mut(to))
             .for_each(|out| {
@@ -769,7 +756,7 @@ where
     }
 
     /// Try to establish an ad-hoc connection to `peer`, and send it `rpc`
-    async fn send_adhoc<R: Into<Rpc>>(&self, peer: &PeerInfo, rpc: R) {
+    async fn send_adhoc<M: Into<Rpc>>(&self, peer: &PeerInfo, rpc: M) {
         self.subscribers
             .emit(ProtocolEvent::SendAdhoc(Box::new(Hello {
                 to: peer.clone(),
@@ -779,7 +766,7 @@ where
     }
 
     /// Try to establish a persistent to `peer` with initial `rpc`
-    async fn connect<R: Into<Rpc>>(&self, peer: &PeerInfo, rpc: R) {
+    async fn connect<M: Into<Rpc>>(&self, peer: &PeerInfo, rpc: M) {
         self.subscribers
             .emit(ProtocolEvent::Connect(Box::new(Hello {
                 to: peer.clone(),
@@ -797,10 +784,7 @@ where
     }
 }
 
-impl<Storage, Stream> Drop for Protocol<Storage, Stream>
-where
-    Stream: connection::Stream,
-{
+impl<S, R, W> Drop for Protocol<S, R, W> {
     fn drop(&mut self) {
         self.dropped.store(true, atomic::Ordering::Relaxed)
     }

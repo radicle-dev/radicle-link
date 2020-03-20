@@ -26,7 +26,7 @@ use futures::{
     sink::SinkExt,
     stream::{BoxStream, StreamExt, TryStreamExt},
 };
-use futures_codec::{CborCodec, CborCodecError};
+use futures_codec::{CborCodec, CborCodecError, FramedRead, FramedWrite};
 use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -136,7 +136,7 @@ impl From<CborCodecError> for Error {
 
 #[derive(Clone)]
 pub struct Protocol<S> {
-    gossip: gossip::Protocol<S, quic::Stream>,
+    gossip: gossip::Protocol<S, quic::RecvStream, quic::SendStream>,
     git: GitServer,
 
     connections: Arc<Mutex<HashMap<PeerId, quic::Connection>>>,
@@ -147,7 +147,10 @@ impl<S> Protocol<S>
 where
     S: gossip::LocalStorage + 'static,
 {
-    pub fn new(gossip: gossip::Protocol<S, quic::Stream>, git: GitServer) -> Self {
+    pub fn new(
+        gossip: gossip::Protocol<S, quic::RecvStream, quic::SendStream>,
+        git: GitServer,
+    ) -> Self {
         Self {
             gossip,
             git,
@@ -400,8 +403,13 @@ where
         hello: impl Into<Option<gossip::Rpc>>,
     ) -> Result<(), Error> {
         let upgraded = upgrade(stream, Upgrade::Gossip).await?;
+        let (recv, send) = upgraded.split();
         self.gossip
-            .outgoing(upgraded.framed(CborCodec::new()), hello)
+            .outgoing(
+                FramedRead::new(recv, CborCodec::new()),
+                FramedWrite::new(send, CborCodec::new()),
+                hello,
+            )
             .await
             .map_err(|e| e.into())
     }
@@ -420,11 +428,16 @@ where
                     // remove framing
                     let stream = stream.release().0;
                     match upgrade {
-                        Upgrade::Gossip => self
-                            .gossip
-                            .incoming(stream.framed(CborCodec::new()))
-                            .await
-                            .map_err(Error::Gossip),
+                        Upgrade::Gossip => {
+                            let (recv, send) = stream.split();
+                            self.gossip
+                                .incoming(
+                                    FramedRead::new(recv, CborCodec::new()),
+                                    FramedWrite::new(send, CborCodec::new()),
+                                )
+                                .await
+                                .map_err(Error::Gossip)
+                        },
 
                         Upgrade::Git => self
                             .git
