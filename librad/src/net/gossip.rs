@@ -24,6 +24,7 @@
 use std::{
     collections::{HashMap, HashSet},
     iter,
+    marker::PhantomData,
     net::SocketAddr,
     num::NonZeroU32,
     sync::{
@@ -33,8 +34,14 @@ use std::{
     time::Duration,
 };
 
-use futures::{channel::mpsc, lock::Mutex, sink::SinkExt, stream::StreamExt};
-use futures_codec::{CborCodec, Framed, FramedRead, FramedWrite};
+use futures::{
+    channel::mpsc,
+    io::{AsyncRead, AsyncWrite},
+    lock::Mutex,
+    sink::SinkExt,
+    stream::StreamExt,
+};
+use futures_codec::{CborCodec, FramedRead, FramedWrite};
 use futures_timer::Delay;
 use governor::{Quota, RateLimiter};
 use log::{info, trace, warn};
@@ -43,10 +50,7 @@ use rand_pcg::Pcg64Mcg;
 
 use crate::{
     channel::Fanout,
-    net::{
-        connection::{RemoteInfo, SendStream, Stream},
-        gossip::error::Error,
-    },
+    net::{connection::RemoteInfo, gossip::error::Error},
     peer::PeerId,
 };
 
@@ -211,10 +215,7 @@ impl<R: Rng> KnownPeers<R> {
     }
 }
 
-// TODO: generalise over `Stream` / `SendStream` (ie. `AsyncRead + AsyncWrite`)
-pub type NegotiatedStream = Framed<Stream, CborCodec<Rpc, Rpc>>;
-type NegotiatedSendStream = FramedWrite<SendStream, CborCodec<Rpc, Rpc>>;
-type ConnectedPeersImpl = ConnectedPeers<NegotiatedSendStream, Pcg64Mcg>;
+type Codec = CborCodec<Rpc, Rpc>;
 
 type StorageErrorLimiter = RateLimiter<
     governor::state::direct::NotKeyed,
@@ -222,8 +223,7 @@ type StorageErrorLimiter = RateLimiter<
     governor::clock::DefaultClock,
 >;
 
-#[derive(Clone)]
-pub struct Protocol<S> {
+pub struct Protocol<S, R, W> {
     local_id: PeerId,
     local_ad: PeerAdvertisement,
 
@@ -236,22 +236,47 @@ pub struct Protocol<S> {
 
     subscribers: Fanout<ProtocolEvent>,
 
-    connected_peers: Arc<Mutex<ConnectedPeersImpl>>,
+    connected_peers: Arc<Mutex<ConnectedPeers<FramedWrite<W, Codec>, Pcg64Mcg>>>,
     known_peers: Arc<Mutex<KnownPeers<Pcg64Mcg>>>,
 
     dropped: Arc<AtomicBool>,
+
+    _marker: PhantomData<R>,
 }
 
-impl<S> Protocol<S> {
+// `Clone` cannot be auto-derived, because the compiler can't see that `R` is
+// only `PhantomData`, and `W` is behind an `Arc`. It places `Clone` constraints
+// on `R` and `W`, which we can't (and don't want to) satisfy.
+impl<S: Clone, R, W> Clone for Protocol<S, R, W> {
+    fn clone(&self) -> Self {
+        Self {
+            local_id: self.local_id.clone(),
+            local_ad: self.local_ad.clone(),
+            mparams: self.mparams.clone(),
+            prng: self.prng.clone(),
+            storage: self.storage.clone(),
+            storage_error_lim: self.storage_error_lim.clone(),
+            subscribers: self.subscribers.clone(),
+            connected_peers: self.connected_peers.clone(),
+            known_peers: self.known_peers.clone(),
+            dropped: self.dropped.clone(),
+            _marker: self._marker,
+        }
+    }
+}
+
+impl<S, R, W> Protocol<S, R, W>
+where
+    S: LocalStorage + 'static,
+    R: AsyncRead + RemoteInfo + Unpin + Send + Sync + 'static,
+    W: AsyncWrite + RemoteInfo + Unpin + Send + Sync + 'static,
+{
     pub fn new(
         local_id: &PeerId,
         local_ad: PeerAdvertisement,
         mparams: MembershipParams,
         storage: S,
-    ) -> Self
-    where
-        S: LocalStorage + 'static,
-    {
+    ) -> Self {
         let prng = Pcg64Mcg::new(rand::random());
         let connected_peers = Arc::new(Mutex::new(ConnectedPeers::new(
             mparams.max_active,
@@ -279,9 +304,11 @@ impl<S> Protocol<S> {
             known_peers,
 
             dropped: Arc::new(AtomicBool::new(false)),
+
+            _marker: PhantomData,
         };
 
-        this.run_periodic_tasks();
+        this.clone().run_periodic_tasks();
 
         this
     }
@@ -314,70 +341,47 @@ impl<S> Protocol<S> {
 
     pub(super) async fn outgoing(
         &self,
-        mut stream: NegotiatedStream,
+        recv: FramedRead<R, Codec>,
+        mut send: FramedWrite<W, Codec>,
         hello: impl Into<Option<Rpc>>,
-    ) -> Result<(), Error>
-    where
-        S: LocalStorage,
-    {
-        let remote_id = stream.peer_id().clone();
-        trace!("{}: Outgoing to {}", self.local_id, remote_id);
-        // This should not be possible, as we prevent it in the TLS handshake.
-        // Leaving it here regardless as a sanity check.
-        if remote_id == self.local_id {
-            return Err(Error::SelfConnection);
-        }
-
+    ) -> Result<(), Error> {
         let hello = hello
             .into()
             .unwrap_or_else(|| Membership::Join(self.local_ad.clone()).into());
-        trace!("{}: Hello: {:?}", self.local_id, hello);
-        stream.send(hello).await?;
+        send.send(hello).await?;
 
-        self.incoming(stream).await
+        self.incoming(recv, send).await
     }
 
-    pub(super) async fn incoming(&self, stream: NegotiatedStream) -> Result<(), Error>
-    where
-        S: LocalStorage,
-    {
-        let remote_id = stream.peer_id().clone();
-        trace!("{}: Incoming from {}", self.local_id, remote_id);
+    pub(super) async fn incoming(
+        &self,
+        mut recv: FramedRead<R, Codec>,
+        send: FramedWrite<W, Codec>,
+    ) -> Result<(), Error> {
+        let remote_id = recv.remote_peer_id().clone();
         // This should not be possible, as we prevent it in the TLS handshake.
         // Leaving it here regardless as a sanity check.
         if remote_id == self.local_id {
             return Err(Error::SelfConnection);
         }
 
-        // This is a bit of a hack: in order to keep track of the connected
-        // peers, and to be able to broadcast messages to them, we need to move
-        // out the send stream again. Ie. we loop over the recv stream here, and
-        // use `ConnectedPeers` when we want to send something.
-        let mut recv = {
-            let (stream, codec) = stream.release();
-            let (recv, send) = stream.split();
-
-            if let Some((ejected_peer, mut ejected_send)) = self
-                .add_connected(remote_id.clone(), FramedWrite::new(send, codec.clone()))
+        if let Some((ejected_peer, mut ejected_send)) =
+            self.add_connected(remote_id.clone(), send).await
+        {
+            trace!(
+                "{}: Ejecting connected peer {}",
+                self.local_id,
+                ejected_peer
+            );
+            let _ = ejected_send.close().await;
+            // Note: if the ejected peer never sent us a `Join` or
+            // `Neighbour`, it isn't behaving well, so we can forget about
+            // it here. Otherwise, we should already have it in
+            // `known_peers`.
+            self.subscribers
+                .emit(ProtocolEvent::Disconnect(ejected_peer))
                 .await
-            {
-                trace!(
-                    "{}: Ejecting connected peer {}",
-                    self.local_id,
-                    ejected_peer
-                );
-                let _ = ejected_send.close().await;
-                // Note: if the ejected peer never sent us a `Join` or
-                // `Neighbour`, it isn't behaving well, so we can forget about
-                // it here. Otherwise, we should already have it in
-                // `known_peers`.
-                self.subscribers
-                    .emit(ProtocolEvent::Disconnect(ejected_peer))
-                    .await
-            }
-
-            FramedRead::new(recv, codec)
-        };
+        }
 
         while let Some(recvd) = recv.next().await {
             match recvd {
@@ -412,10 +416,7 @@ impl<S> Protocol<S> {
         remote_id: &PeerId,
         remote_addr: SocketAddr,
         msg: Membership,
-    ) -> Result<(), Error>
-    where
-        S: LocalStorage,
-    {
+    ) -> Result<(), Error> {
         use Membership::*;
 
         let make_peer_info = |ad: PeerAdvertisement| PeerInfo {
@@ -512,10 +513,7 @@ impl<S> Protocol<S> {
         Ok(())
     }
 
-    async fn handle_gossip(&self, remote_id: &PeerId, msg: Gossip) -> Result<(), Error>
-    where
-        S: LocalStorage,
-    {
+    async fn handle_gossip(&self, remote_id: &PeerId, msg: Gossip) -> Result<(), Error> {
         use Gossip::*;
 
         match msg {
@@ -611,8 +609,8 @@ impl<S> Protocol<S> {
     async fn add_connected(
         &self,
         peer_id: PeerId,
-        out: NegotiatedSendStream,
-    ) -> Option<(PeerId, NegotiatedSendStream)> {
+        out: FramedWrite<W, Codec>,
+    ) -> Option<(PeerId, FramedWrite<W, Codec>)> {
         self.connected_peers.lock().await.insert(peer_id, out)
     }
 
@@ -633,10 +631,7 @@ impl<S> Protocol<S> {
             .sample(self.mparams.shuffle_sample_size)
     }
 
-    fn run_periodic_tasks(&self)
-    where
-        S: LocalStorage + 'static,
-    {
+    fn run_periodic_tasks(self) {
         let this = self.clone();
         tokio::spawn(async move {
             loop {
@@ -648,14 +643,13 @@ impl<S> Protocol<S> {
             }
         });
 
-        let this = self.clone();
         tokio::spawn(async move {
             loop {
-                if this.dropped.load(atomic::Ordering::Relaxed) {
+                if self.dropped.load(atomic::Ordering::Relaxed) {
                     break;
                 }
-                Delay::new(this.mparams.promote_interval).await;
-                this.promote_random().await;
+                Delay::new(self.mparams.promote_interval).await;
+                self.promote_random().await;
             }
         });
     }
@@ -715,9 +709,9 @@ impl<S> Protocol<S> {
     }
 
     /// Send an [`Rpc`] to all currently connected peers, except `excluding`
-    async fn broadcast<'a, R, X>(&self, rpc: R, excluding: X)
+    async fn broadcast<'a, M, X>(&self, rpc: M, excluding: X)
     where
-        R: Into<Rpc>,
+        M: Into<Rpc>,
         X: Into<Option<&'a PeerId>>,
     {
         let rpc = rpc.into();
@@ -748,7 +742,7 @@ impl<S> Protocol<S> {
         .await
     }
 
-    async fn reply<R: Into<Rpc>>(&self, to: &PeerId, rpc: R) {
+    async fn reply<M: Into<Rpc>>(&self, to: &PeerId, rpc: M) {
         let rpc = rpc.into();
         futures::stream::iter(self.connected_peers.lock().await.get_mut(to))
             .for_each(|out| {
@@ -764,7 +758,7 @@ impl<S> Protocol<S> {
     }
 
     /// Try to establish an ad-hoc connection to `peer`, and send it `rpc`
-    async fn send_adhoc<R: Into<Rpc>>(&self, peer: &PeerInfo, rpc: R) {
+    async fn send_adhoc<M: Into<Rpc>>(&self, peer: &PeerInfo, rpc: M) {
         self.subscribers
             .emit(ProtocolEvent::SendAdhoc(Box::new(Hello {
                 to: peer.clone(),
@@ -774,7 +768,7 @@ impl<S> Protocol<S> {
     }
 
     /// Try to establish a persistent to `peer` with initial `rpc`
-    async fn connect<R: Into<Rpc>>(&self, peer: &PeerInfo, rpc: R) {
+    async fn connect<M: Into<Rpc>>(&self, peer: &PeerInfo, rpc: M) {
         self.subscribers
             .emit(ProtocolEvent::Connect(Box::new(Hello {
                 to: peer.clone(),
@@ -792,7 +786,7 @@ impl<S> Protocol<S> {
     }
 }
 
-impl<S> Drop for Protocol<S> {
+impl<S, R, W> Drop for Protocol<S, R, W> {
     fn drop(&mut self) {
         self.dropped.store(true, atomic::Ordering::Relaxed)
     }

@@ -83,6 +83,12 @@ impl From<device::Key> for PeerId {
     }
 }
 
+impl From<&device::Key> for PeerId {
+    fn from(k: &device::Key) -> Self {
+        Self(k.public())
+    }
+}
+
 impl Serialize for PeerId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
