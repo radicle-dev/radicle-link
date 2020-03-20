@@ -33,7 +33,13 @@ use std::{
     time::Duration,
 };
 
-use futures::{channel::mpsc, lock::Mutex, sink::SinkExt, stream::StreamExt};
+use futures::{
+    channel::mpsc,
+    io::{AsyncRead, AsyncWrite},
+    lock::Mutex,
+    sink::SinkExt,
+    stream::StreamExt,
+};
 use futures_codec::{CborCodec, Framed, FramedRead, FramedWrite};
 use futures_timer::Delay;
 use governor::{Quota, RateLimiter};
@@ -44,7 +50,7 @@ use rand_pcg::Pcg64Mcg;
 use crate::{
     channel::Fanout,
     net::{
-        connection::{RemoteInfo, SendStream, Stream},
+        connection::{self, RemoteInfo, Stream},
         gossip::error::Error,
     },
     peer::PeerId,
@@ -211,10 +217,9 @@ impl<R: Rng> KnownPeers<R> {
     }
 }
 
-// TODO: generalise over `Stream` / `SendStream` (ie. `AsyncRead + AsyncWrite`)
-pub type NegotiatedStream = Framed<Stream, CborCodec<Rpc, Rpc>>;
-type NegotiatedSendStream = FramedWrite<SendStream, CborCodec<Rpc, Rpc>>;
-type ConnectedPeersImpl = ConnectedPeers<NegotiatedSendStream, Pcg64Mcg>;
+type Codec = CborCodec<Rpc, Rpc>;
+type NegotiatedStream<S> = Framed<S, Codec>;
+type NegotiatedSendStream<W> = FramedWrite<W, Codec>;
 
 type StorageErrorLimiter = RateLimiter<
     governor::state::direct::NotKeyed,
@@ -222,8 +227,7 @@ type StorageErrorLimiter = RateLimiter<
     governor::clock::DefaultClock,
 >;
 
-#[derive(Clone)]
-pub struct Protocol<S> {
+pub struct Protocol<Storage, Stream: connection::Stream> {
     local_id: PeerId,
     local_ad: PeerAdvertisement,
 
@@ -231,27 +235,48 @@ pub struct Protocol<S> {
 
     prng: Pcg64Mcg,
 
-    storage: S,
+    storage: Storage,
     storage_error_lim: Arc<StorageErrorLimiter>,
 
     subscribers: Fanout<ProtocolEvent>,
 
-    connected_peers: Arc<Mutex<ConnectedPeersImpl>>,
+    connected_peers: Arc<Mutex<ConnectedPeers<NegotiatedSendStream<Stream::Write>, Pcg64Mcg>>>,
     known_peers: Arc<Mutex<KnownPeers<Pcg64Mcg>>>,
 
     dropped: Arc<AtomicBool>,
 }
 
-impl<S> Protocol<S> {
+// Inexplicably, Clone cannot be auto-derived
+impl<Storage: Clone, Stream: connection::Stream> Clone for Protocol<Storage, Stream> {
+    fn clone(&self) -> Self {
+        Self {
+            local_id: self.local_id.clone(),
+            local_ad: self.local_ad.clone(),
+            mparams: self.mparams.clone(),
+            prng: self.prng.clone(),
+            storage: self.storage.clone(),
+            storage_error_lim: self.storage_error_lim.clone(),
+            subscribers: self.subscribers.clone(),
+            connected_peers: self.connected_peers.clone(),
+            known_peers: self.known_peers.clone(),
+            dropped: self.dropped.clone(),
+        }
+    }
+}
+
+impl<Storage, StreamT> Protocol<Storage, StreamT>
+where
+    Storage: LocalStorage + 'static,
+    StreamT: Stream + 'static,
+    StreamT::Read: AsyncRead + RemoteInfo + Unpin + Send + Sync,
+    StreamT::Write: AsyncWrite + RemoteInfo + Unpin + Send + Sync,
+{
     pub fn new(
         local_id: &PeerId,
         local_ad: PeerAdvertisement,
         mparams: MembershipParams,
-        storage: S,
-    ) -> Self
-    where
-        S: LocalStorage + 'static,
-    {
+        storage: Storage,
+    ) -> Self {
         let prng = Pcg64Mcg::new(rand::random());
         let connected_peers = Arc::new(Mutex::new(ConnectedPeers::new(
             mparams.max_active,
@@ -281,7 +306,7 @@ impl<S> Protocol<S> {
             dropped: Arc::new(AtomicBool::new(false)),
         };
 
-        this.run_periodic_tasks();
+        this.clone().run_periodic_tasks();
 
         this
     }
@@ -314,13 +339,10 @@ impl<S> Protocol<S> {
 
     pub(super) async fn outgoing(
         &self,
-        mut stream: NegotiatedStream,
+        mut stream: NegotiatedStream<StreamT>,
         hello: impl Into<Option<Rpc>>,
-    ) -> Result<(), Error>
-    where
-        S: LocalStorage,
-    {
-        let remote_id = stream.peer_id().clone();
+    ) -> Result<(), Error> {
+        let remote_id = stream.remote_peer_id().clone();
         trace!("{}: Outgoing to {}", self.local_id, remote_id);
         // This should not be possible, as we prevent it in the TLS handshake.
         // Leaving it here regardless as a sanity check.
@@ -337,11 +359,8 @@ impl<S> Protocol<S> {
         self.incoming(stream).await
     }
 
-    pub(super) async fn incoming(&self, stream: NegotiatedStream) -> Result<(), Error>
-    where
-        S: LocalStorage,
-    {
-        let remote_id = stream.peer_id().clone();
+    pub(super) async fn incoming(&self, stream: NegotiatedStream<StreamT>) -> Result<(), Error> {
+        let remote_id = stream.remote_peer_id().clone();
         trace!("{}: Incoming from {}", self.local_id, remote_id);
         // This should not be possible, as we prevent it in the TLS handshake.
         // Leaving it here regardless as a sanity check.
@@ -349,13 +368,9 @@ impl<S> Protocol<S> {
             return Err(Error::SelfConnection);
         }
 
-        // This is a bit of a hack: in order to keep track of the connected
-        // peers, and to be able to broadcast messages to them, we need to move
-        // out the send stream again. Ie. we loop over the recv stream here, and
-        // use `ConnectedPeers` when we want to send something.
         let mut recv = {
-            let (stream, codec) = stream.release();
-            let (recv, send) = stream.split();
+            let (stream_inner, codec) = stream.release();
+            let (recv, send) = stream_inner.split();
 
             if let Some((ejected_peer, mut ejected_send)) = self
                 .add_connected(remote_id.clone(), FramedWrite::new(send, codec.clone()))
@@ -412,10 +427,7 @@ impl<S> Protocol<S> {
         remote_id: &PeerId,
         remote_addr: SocketAddr,
         msg: Membership,
-    ) -> Result<(), Error>
-    where
-        S: LocalStorage,
-    {
+    ) -> Result<(), Error> {
         use Membership::*;
 
         let make_peer_info = |ad: PeerAdvertisement| PeerInfo {
@@ -512,10 +524,7 @@ impl<S> Protocol<S> {
         Ok(())
     }
 
-    async fn handle_gossip(&self, remote_id: &PeerId, msg: Gossip) -> Result<(), Error>
-    where
-        S: LocalStorage,
-    {
+    async fn handle_gossip(&self, remote_id: &PeerId, msg: Gossip) -> Result<(), Error> {
         use Gossip::*;
 
         match msg {
@@ -611,8 +620,8 @@ impl<S> Protocol<S> {
     async fn add_connected(
         &self,
         peer_id: PeerId,
-        out: NegotiatedSendStream,
-    ) -> Option<(PeerId, NegotiatedSendStream)> {
+        out: NegotiatedSendStream<StreamT::Write>,
+    ) -> Option<(PeerId, NegotiatedSendStream<StreamT::Write>)> {
         self.connected_peers.lock().await.insert(peer_id, out)
     }
 
@@ -633,10 +642,7 @@ impl<S> Protocol<S> {
             .sample(self.mparams.shuffle_sample_size)
     }
 
-    fn run_periodic_tasks(&self)
-    where
-        S: LocalStorage + 'static,
-    {
+    fn run_periodic_tasks(self) {
         let this = self.clone();
         tokio::spawn(async move {
             loop {
@@ -648,14 +654,13 @@ impl<S> Protocol<S> {
             }
         });
 
-        let this = self.clone();
         tokio::spawn(async move {
             loop {
-                if this.dropped.load(atomic::Ordering::Relaxed) {
+                if self.dropped.load(atomic::Ordering::Relaxed) {
                     break;
                 }
-                Delay::new(this.mparams.promote_interval).await;
-                this.promote_random().await;
+                Delay::new(self.mparams.promote_interval).await;
+                self.promote_random().await;
             }
         });
     }
@@ -792,7 +797,10 @@ impl<S> Protocol<S> {
     }
 }
 
-impl<S> Drop for Protocol<S> {
+impl<Storage, Stream> Drop for Protocol<Storage, Stream>
+where
+    Stream: connection::Stream,
+{
     fn drop(&mut self) {
         self.dropped.store(true, atomic::Ordering::Relaxed)
     }

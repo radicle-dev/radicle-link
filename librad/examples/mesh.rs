@@ -34,10 +34,11 @@ use librad::{
     keys::device,
     meta,
     net::{
-        connection::{BoundEndpoint, Endpoint, LocalInfo},
+        connection::LocalInfo,
         discovery,
         gossip,
         protocol::Protocol,
+        quic::{BoundEndpoint, Endpoint},
     },
     paths::Paths,
     peer::PeerId,

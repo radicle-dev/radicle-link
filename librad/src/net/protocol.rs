@@ -36,17 +36,9 @@ use crate::{
     channel::Fanout,
     git::{server::GitServer, transport::GitStreamFactory},
     net::{
-        connection::{
-            BoundEndpoint,
-            CloseReason,
-            Connection,
-            ConnectionError,
-            Endpoint,
-            LocalInfo,
-            RemoteInfo,
-            Stream,
-        },
+        connection::{CloseReason, LocalInfo, RemoteInfo, Stream},
         gossip,
+        quic,
     },
     peer::PeerId,
 };
@@ -93,8 +85,8 @@ enum Run<'a> {
     },
 
     Incoming {
-        conn: Connection,
-        incoming: BoxStream<'a, Result<Stream, ConnectionError>>,
+        conn: quic::Connection,
+        incoming: BoxStream<'a, quic::Result<quic::Stream>>,
     },
 
     Gossip {
@@ -127,7 +119,7 @@ pub enum Error {
     Git(#[source] io::Error),
 
     #[error(transparent)]
-    Connection(#[from] ConnectionError),
+    Quic(#[from] quic::Error),
 
     #[error(transparent)]
     Io(#[from] io::Error),
@@ -144,10 +136,10 @@ impl From<CborCodecError> for Error {
 
 #[derive(Clone)]
 pub struct Protocol<S> {
-    gossip: gossip::Protocol<S>,
+    gossip: gossip::Protocol<S, quic::Stream>,
     git: GitServer,
 
-    connections: Arc<Mutex<HashMap<PeerId, Connection>>>,
+    connections: Arc<Mutex<HashMap<PeerId, quic::Connection>>>,
     subscribers: Fanout<ProtocolEvent>,
 }
 
@@ -155,7 +147,7 @@ impl<S> Protocol<S>
 where
     S: gossip::LocalStorage + 'static,
 {
-    pub fn new(gossip: gossip::Protocol<S>, git: GitServer) -> Self {
+    pub fn new(gossip: gossip::Protocol<S, quic::Stream>, git: GitServer) -> Self {
         Self {
             gossip,
             git,
@@ -170,7 +162,7 @@ where
     /// is interrupted, or an error occurs.
     pub async fn run<Disco, Shutdown>(
         &mut self,
-        BoundEndpoint { endpoint, incoming }: BoundEndpoint<'_>,
+        quic::BoundEndpoint { endpoint, incoming }: quic::BoundEndpoint<'_>,
         disco: Disco,
         shutdown: Shutdown,
     ) where
@@ -220,7 +212,7 @@ where
     }
 
     /// Open a QUIC stream which is upgraded to expect the git protocol
-    pub async fn open_git(&self, to: &PeerId) -> Option<Stream> {
+    pub async fn open_git(&self, to: &PeerId) -> Option<quic::Stream> {
         trace!("Opening git stream to {}", to);
         if let Some(conn) = self.connections.lock().await.get(to) {
             conn.open_stream()
@@ -235,7 +227,7 @@ where
         }
     }
 
-    async fn eval_run(&mut self, endpoint: Endpoint, run: Run<'_>) -> Result<(), ()> {
+    async fn eval_run(&mut self, endpoint: quic::Endpoint, run: Run<'_>) -> Result<(), ()> {
         match run {
             Run::Discovered { peer, addrs } => {
                 trace!("Run::Discovered: {}@{:?}", peer, addrs);
@@ -313,11 +305,11 @@ where
 
     async fn handle_connect(
         &self,
-        conn: Connection,
-        mut incoming: BoxStream<'_, Result<Stream, ConnectionError>>,
+        conn: quic::Connection,
+        mut incoming: BoxStream<'_, quic::Result<quic::Stream>>,
         hello: impl Into<Option<gossip::Rpc>>,
     ) {
-        let remote_id = conn.peer_id().clone();
+        let remote_id = conn.remote_peer_id().clone();
         let remote_addr = conn.remote_addr();
 
         info!("New outgoing connection: {}@{}", remote_id, remote_addr,);
@@ -368,13 +360,13 @@ where
 
     async fn handle_incoming<Incoming>(
         &self,
-        conn: Connection,
+        conn: quic::Connection,
         mut incoming: Incoming,
     ) -> Result<(), Error>
     where
-        Incoming: futures::Stream<Item = Result<Stream, ConnectionError>> + Unpin,
+        Incoming: futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
     {
-        let remote_id = conn.peer_id().clone();
+        let remote_id = conn.remote_peer_id().clone();
         let remote_addr = conn.remote_addr();
 
         info!("New incoming connection: {}@{}", remote_id, remote_addr);
@@ -404,7 +396,7 @@ where
 
     async fn outgoing(
         &mut self,
-        stream: Stream,
+        stream: quic::Stream,
         hello: impl Into<Option<gossip::Rpc>>,
     ) -> Result<(), Error> {
         let upgraded = upgrade(stream, Upgrade::Gossip).await?;
@@ -414,7 +406,7 @@ where
             .map_err(|e| e.into())
     }
 
-    async fn incoming(&self, stream: Stream) -> Result<(), Error> {
+    async fn incoming(&self, stream: quic::Stream) -> Result<(), Error> {
         let mut stream = stream.framed(CborCodec::<UpgradeResponse, Upgrade>::new());
         match stream.try_next().await {
             Ok(resp) => match resp {
@@ -460,29 +452,29 @@ impl<S> GitStreamFactory for Protocol<S>
 where
     S: gossip::LocalStorage + 'static,
 {
-    async fn open_stream(&self, to: &PeerId) -> Option<Stream> {
+    async fn open_stream(&self, to: &PeerId) -> Option<quic::Stream> {
         self.open_git(to).await
     }
 }
 
 async fn connect_peer_info(
-    endpoint: &Endpoint,
+    endpoint: &quic::Endpoint,
     peer_info: gossip::PeerInfo,
 ) -> Option<(
-    Connection,
-    impl futures::Stream<Item = Result<Stream, ConnectionError>> + Unpin,
+    quic::Connection,
+    impl futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
 )> {
     let addrs = iter::once(peer_info.advertised_info.listen_addr).chain(peer_info.seen_addrs);
     connect(endpoint, &peer_info.peer_id, addrs).await
 }
 
 async fn connect<I>(
-    endpoint: &Endpoint,
+    endpoint: &quic::Endpoint,
     peer_id: &PeerId,
     addrs: I,
 ) -> Option<(
-    Connection,
-    impl futures::Stream<Item = Result<Stream, ConnectionError>> + Unpin,
+    quic::Connection,
+    impl futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
 )>
 where
     I: IntoIterator<Item = SocketAddr>,
@@ -505,7 +497,7 @@ where
         .await
 }
 
-async fn upgrade(stream: Stream, upgrade: Upgrade) -> Result<Stream, Error> {
+async fn upgrade(stream: quic::Stream, upgrade: Upgrade) -> Result<quic::Stream, Error> {
     trace!("Upgrade to {:?}", upgrade);
 
     let mut stream = stream.framed(CborCodec::<Upgrade, UpgradeResponse>::new());
