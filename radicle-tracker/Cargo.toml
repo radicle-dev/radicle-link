@@ -1,8 +1,9 @@
 [package]
 name = "radicle-tracker"
 version = "0.1.0"
-authors = ["FintanH <fintan.halpenny@gmail.com>"]
+authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
+license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
