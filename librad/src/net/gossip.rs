@@ -24,7 +24,6 @@
 use std::{
     collections::{HashMap, HashSet},
     iter,
-    marker::PhantomData,
     net::SocketAddr,
     num::NonZeroU32,
     sync::{
@@ -34,12 +33,7 @@ use std::{
     time::Duration,
 };
 
-use futures::{
-    channel::mpsc,
-    lock::Mutex,
-    sink::{Sink, SinkExt},
-    stream::StreamExt,
-};
+use futures::{channel::mpsc, lock::Mutex, sink::SinkExt, stream::StreamExt};
 use futures_codec::{CborCodec, Framed, FramedRead, FramedWrite};
 use futures_timer::Delay;
 use governor::{Quota, RateLimiter};
@@ -116,16 +110,15 @@ impl Default for MembershipParams {
 /// The random choice should be replaced by a weighted selection, which takes
 /// metrics such as uptime, bandwidth, etc. into account.
 #[derive(Clone, Default)]
-struct ConnectedPeers<A, S, R> {
+struct ConnectedPeers<S, R> {
     max_peers: usize,
     rng: R,
     peers: HashMap<PeerId, S>,
-    _marker: PhantomData<A>,
 }
 
-impl<A, S, R> ConnectedPeers<A, S, R>
+impl<S, R> ConnectedPeers<S, R>
 where
-    S: Sink<A> + Unpin,
+    S: Unpin,
     R: Rng,
 {
     fn new(max_peers: usize, rng: R) -> Self {
@@ -133,38 +126,29 @@ where
             max_peers,
             rng,
             peers: HashMap::default(),
-            _marker: PhantomData,
         }
     }
 
-    fn insert(&mut self, peer_id: &PeerId, sink: S) -> Option<PeerId> {
+    fn insert(&mut self, peer_id: PeerId, sink: S) -> Option<(PeerId, S)> {
         if !self.peers.contains_key(&peer_id) && self.peers.len() + 1 > self.max_peers {
+            self.peers.insert(peer_id, sink);
+
             let eject = self
                 .peers
                 .keys()
                 .choose(&mut self.rng)
                 .expect("Iterator must contain at least 1 element, as per the if condition. qed")
                 .clone();
-
-            self.peers.insert(peer_id.clone(), sink);
-            self.peers.remove(&eject).iter_mut().for_each(|ejected| {
-                trace!("random peer ejection: {}", eject);
-                let _ = ejected.close();
-            });
-            Some(eject)
+            self.remove(&eject)
         } else {
-            self.peers.insert(peer_id.clone(), sink).map(|mut old| {
-                trace!("duplicate peer ejection: {}", peer_id);
-                let _ = old.close();
-                peer_id.clone()
-            })
+            self.peers
+                .insert(peer_id.clone(), sink)
+                .map(|s| (peer_id, s))
         }
     }
 
-    fn remove(&mut self, peer_id: &PeerId) {
-        if let Some(mut old) = self.peers.remove(peer_id) {
-            let _ = old.close();
-        }
+    fn remove(&mut self, peer_id: &PeerId) -> Option<(PeerId, S)> {
+        self.peers.remove(peer_id).map(|s| (peer_id.to_owned(), s))
     }
 
     fn random(&mut self) -> Option<(&PeerId, &mut S)> {
@@ -230,7 +214,7 @@ impl<R: Rng> KnownPeers<R> {
 // TODO: generalise over `Stream` / `SendStream` (ie. `AsyncRead + AsyncWrite`)
 pub type NegotiatedStream = Framed<Stream, CborCodec<Rpc, Rpc>>;
 type NegotiatedSendStream = FramedWrite<SendStream, CborCodec<Rpc, Rpc>>;
-type ConnectedPeersImpl = ConnectedPeers<Rpc, NegotiatedSendStream, Pcg64Mcg>;
+type ConnectedPeersImpl = ConnectedPeers<NegotiatedSendStream, Pcg64Mcg>;
 
 type StorageErrorLimiter = RateLimiter<
     governor::state::direct::NotKeyed,
@@ -373,17 +357,22 @@ impl<S> Protocol<S> {
             let (stream, codec) = stream.release();
             let (recv, send) = stream.split();
 
-            if let Some(ejected) = self
-                .add_connected(&remote_id, FramedWrite::new(send, codec.clone()))
+            if let Some((ejected_peer, mut ejected_send)) = self
+                .add_connected(remote_id.clone(), FramedWrite::new(send, codec.clone()))
                 .await
             {
-                trace!("{}: Ejecting connected peer {}", self.local_id, ejected);
+                trace!(
+                    "{}: Ejecting connected peer {}",
+                    self.local_id,
+                    ejected_peer
+                );
+                let _ = ejected_send.close().await;
                 // Note: if the ejected peer never sent us a `Join` or
                 // `Neighbour`, it isn't behaving well, so we can forget about
                 // it here. Otherwise, we should already have it in
                 // `known_peers`.
                 self.subscribers
-                    .emit(ProtocolEvent::Disconnect(ejected))
+                    .emit(ProtocolEvent::Disconnect(ejected_peer))
                     .await
             }
 
@@ -619,12 +608,18 @@ impl<S> Protocol<S> {
         Ok(())
     }
 
-    async fn add_connected(&self, peer_id: &PeerId, out: NegotiatedSendStream) -> Option<PeerId> {
+    async fn add_connected(
+        &self,
+        peer_id: PeerId,
+        out: NegotiatedSendStream,
+    ) -> Option<(PeerId, NegotiatedSendStream)> {
         self.connected_peers.lock().await.insert(peer_id, out)
     }
 
     async fn remove_connected(&self, peer_id: &PeerId) {
-        self.connected_peers.lock().await.remove(peer_id)
+        if let Some((_, mut stream)) = self.connected_peers.lock().await.remove(peer_id) {
+            let _ = stream.close().await;
+        }
     }
 
     async fn add_known<I: IntoIterator<Item = PeerInfo>>(&self, peers: I) {
