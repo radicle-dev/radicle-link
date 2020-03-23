@@ -17,25 +17,23 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    net::gossip::types::{PeerAdvertisement, PeerInfo},
-    project::ProjectId,
-};
+use crate::net::gossip::types::{PeerAdvertisement, PeerInfo};
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Rpc {
+pub enum Rpc<A> {
     Membership(Membership),
-    Gossip(Gossip),
+    Gossip(Gossip<A>),
 }
 
-impl From<Membership> for Rpc {
+impl<A> From<Membership> for Rpc<A> {
     fn from(m: Membership) -> Self {
         Self::Membership(m)
     }
 }
 
-impl From<Gossip> for Rpc {
-    fn from(g: Gossip) -> Self {
+impl<A> From<Gossip<A>> for Rpc<A> {
+    fn from(g: Gossip<A>) -> Self {
         Self::Gossip(g)
     }
 }
@@ -59,21 +57,7 @@ pub enum Membership {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Gossip {
-    Have { origin: PeerInfo, val: Update },
-    Want { origin: PeerInfo, val: Update },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Update {
-    Project {
-        project: ProjectId,
-        head: Option<Ref>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Ref {
-    name: String,
-    target: Vec<u8>,
+pub enum Gossip<A> {
+    Have { origin: PeerInfo, val: A },
+    Want { origin: PeerInfo, val: A },
 }

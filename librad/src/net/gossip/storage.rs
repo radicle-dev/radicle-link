@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{net::gossip::rpc::Update, peer::PeerId};
+use crate::peer::PeerId;
 
 #[derive(Debug)]
 pub enum PutResult {
@@ -26,6 +26,8 @@ pub enum PutResult {
 }
 
 pub trait LocalStorage: Clone + Send + Sync {
+    type Update;
+
     /// Notify the local storage that a new value is available.
     ///
     /// If the value was stored locally already, [`PutResult::Stale`] must be
@@ -36,14 +38,12 @@ pub trait LocalStorage: Clone + Send + Sync {
     /// the implementer wasn't able to determine if the local storage is
     /// up-to-date, or it was not possible to fetch the actual state from
     /// the `provider`. In this case, the network is asked to retransmit
-    /// [`Gossip::Have`], so we can eventually try again.
-    ///
-    /// [`Gossip::Have`]: ../rpc/enum.Gossip.html
-    fn put(&self, provider: &PeerId, has: Update) -> PutResult;
+    /// [`Self::Update`], so we can eventually try again.
+    fn put(&self, provider: &PeerId, has: Self::Update) -> PutResult;
 
     /// Ask the local storage if value `A` is available.
     ///
     /// This is used to notify the asking peer that they may fetch value `A`
     /// from us.
-    fn ask(&self, want: &Update) -> bool;
+    fn ask(&self, want: &Self::Update) -> bool;
 }
