@@ -244,7 +244,9 @@ pub struct Protocol<S, R, W> {
     _marker: PhantomData<R>,
 }
 
-// Inexplicably, Clone cannot be auto-derived
+// `Clone` cannot be auto-derived, because the compiler can't see that `R` is
+// only `PhantomData`, and `W` is behind an `Arc`. It places `Clone` constraints
+// on `R` and `W`, which we can't (and don't want to) satisfy.
 impl<S: Clone, R, W> Clone for Protocol<S, R, W> {
     fn clone(&self) -> Self {
         Self {
