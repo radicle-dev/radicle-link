@@ -212,6 +212,10 @@ pub trait Clock {
 ///
 /// For usability, it also provides a function [`RadClock::elapsed`] which
 /// returns an [`Elapsed`] value for presentation purposes.
+///
+/// **NB**: `RadClock` does not implement [`PartialOrd`] nor [`Ord`] since the
+/// use of these time types is imprecise and used for _displaying_ purposes
+/// only (via [`TimeDiff`] and [`Elapsed`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct RadClock(SystemTime);
 
