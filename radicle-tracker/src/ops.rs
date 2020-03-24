@@ -103,10 +103,7 @@ pub enum ThreadOp<A, F: FnOnce(&mut A) -> ()> {
 }
 
 impl<A, F: FnOnce(&mut A) -> ()> ThreadOp<A, F> {
-    pub fn effect(self, finger: Finger, thread: &mut Thread<A>) -> Result<(), Error>
-    where
-        A: Clone,
-    {
+    pub fn effect(self, finger: Finger, thread: &mut Thread<A>) -> Result<(), Error> {
         thread.navigate_to(finger)?;
         match self {
             ThreadOp::Reply(a, reply_to) => {
