@@ -17,7 +17,7 @@
 
 #![allow(missing_docs)]
 
-use crate::{metadata::*, thread::*};
+use crate::{issue::*, metadata::*, thread::*};
 use std::hash::Hash;
 
 trait Commute {
@@ -96,23 +96,77 @@ impl<A> NewThread<A> {
     }
 }
 
-pub enum ThreadOp<A, F: FnOnce(&mut A) -> ()> {
-    Reply(A, ReplyTo),
-    Delete,
-    Edit(F),
+pub trait Mut<A> {
+    fn mutate(self, a: &mut A);
 }
 
-impl<A, F: FnOnce(&mut A) -> ()> ThreadOp<A, F> {
-    pub fn effect(self, finger: Finger, thread: &mut Thread<A>) -> Result<(), Error> {
-        thread.navigate_to(finger)?;
+impl<Id, User: Eq + Hash> Mut<Comment<Id, User>> for CommentOp<User> {
+    fn mutate(self, comment: &mut Comment<Id, User>) {
+        self.effect(comment);
+    }
+}
+
+pub enum ThreadOp<A, F: Mut<A>> {
+    Reply(Finger, A, ReplyTo),
+    Delete(Finger),
+    Edit(Finger, F),
+}
+
+impl<A, F: Mut<A>> ThreadOp<A, F> {
+    pub fn effect(self, thread: &mut Thread<A>) -> Result<(), Error> {
         match self {
-            ThreadOp::Reply(a, reply_to) => {
+            ThreadOp::Reply(finger, a, reply_to) => {
+                thread.navigate_to(finger)?;
                 thread.reply(a, reply_to);
                 Ok(())
             },
-            ThreadOp::Delete => thread.delete(),
-            ThreadOp::Edit(f) => {
-                thread.edit(f);
+            ThreadOp::Delete(finger) => {
+                thread.navigate_to(finger)?;
+                thread.delete()
+            },
+            ThreadOp::Edit(finger, f) => {
+                thread.navigate_to(finger)?;
+                thread.edit(|a| f.mutate(a));
+                Ok(())
+            },
+        }
+    }
+}
+
+pub struct NewIssue<Id, Cid, User> {
+    identifier: Id,
+    comment_id: Cid,
+    author: User,
+    title: Title,
+    content: String,
+}
+
+impl<Id, Cid, User: Eq + Hash> NewIssue<Id, Cid, User> {
+    pub fn effect(self) -> Issue<Id, Cid, User>
+    where
+        User: Clone,
+    {
+        Issue::new(
+            self.identifier,
+            self.comment_id,
+            self.author,
+            self.title,
+            self.content,
+        )
+    }
+}
+
+pub enum IssueOp<Cid, User: Eq + Hash> {
+    Thread(ThreadOp<Comment<Cid, User>, CommentOp<User>>),
+    Meta(MetaOp<User>),
+}
+
+impl<Cid, User: Eq + Hash> IssueOp<Cid, User> {
+    pub fn effect<Id>(self, issue: &mut Issue<Id, Cid, User>) -> Result<(), Error> {
+        match self {
+            IssueOp::Thread(op) => op.effect(issue.thread_mut()),
+            IssueOp::Meta(op) => {
+                op.effect(issue.meta_mut());
                 Ok(())
             },
         }
