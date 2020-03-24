@@ -18,54 +18,68 @@
 use nonempty::NonEmpty;
 use thiserror::Error;
 
+/// Capture the state of some data's life.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum State {
+    /// The data has been created.
+    Live,
+    /// The data has been created and also deleted.
+    Dead,
+}
+
 /// The "liveness" status of some data.
 ///
 /// TODO: we may want to consider `Modified`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum DataState<A> {
-    /// The data has been created.
-    Live(A),
-    /// The data has been created and also deleted.
-    Dead(A),
+pub struct DataState<A> {
+    data: A,
+    state: State,
 }
 
 impl<A> DataState<A> {
+    /// Create a new [`State::Live`] data.
+    pub fn new(data: A) -> Self {
+        DataState {
+            data,
+            state: State::Live,
+        }
+    }
+
+    /// Create a new [`State::Dead`] data.
+    pub fn new_dead(data: A) -> Self {
+        DataState {
+            data,
+            state: State::Dead,
+        }
+    }
+
     /// Mark the status as `Dead`, no matter what the original status was.
-    fn kill(&mut self)
-    where
-        A: Clone,
-    {
-        *self = Self::Dead(self.get().clone())
+    fn kill(&mut self) {
+        self.state = State::Dead
     }
 
     /// Get the reference to the value inside the status.
     pub fn get(&self) -> &A {
-        match self {
-            Self::Live(a) => a,
-            Self::Dead(a) => a,
-        }
+        &self.data
     }
 
     /// Get the mutable reference to the value inside the status.
     pub fn get_mut(&mut self) -> &mut A {
-        match self {
-            Self::Live(a) => a,
-            Self::Dead(a) => a,
-        }
+        &mut self.data
     }
 
     /// If the status is `Live` then return a reference to it.
     pub fn live(&self) -> Option<&A> {
-        match self {
-            Self::Live(a) => Some(a),
+        match self.state {
+            State::Live => Some(&self.data),
             _ => None,
         }
     }
 
     /// If the status is `Dead` then return a reference to it.
     pub fn dead(&self) -> Option<&A> {
-        match self {
-            Self::Dead(a) => Some(a),
+        match self.state {
+            State::Dead => Some(&self.data),
             _ => None,
         }
     }
@@ -104,11 +118,11 @@ pub struct Replies<A>(NonEmpty<DataState<A>>);
 
 impl<A> Replies<A> {
     fn new(a: A) -> Self {
-        Replies(NonEmpty::new(DataState::Live(a)))
+        Replies(NonEmpty::new(DataState::new(a)))
     }
 
     fn reply(&mut self, a: A) {
-        self.0.push(DataState::Live(a))
+        self.0.push(DataState::new(a))
     }
 
     fn first(&self) -> &DataState<A> {
@@ -280,13 +294,13 @@ impl<A> Thread<A> {
     /// # fn main() -> Result<(), Box<dyn Error>> {
     /// use radicle_tracker::{ReplyTo, DataState, Thread};
     ///
-    /// let (mut thread) = Thread::new(String::from("Discussing rose trees"));
+    /// let mut thread = Thread::new(String::from("Discussing rose trees"));
     ///
     /// // Reply to the main thread
     /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
     ///
     /// thread.previous_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("Discussing rose trees"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -306,10 +320,10 @@ impl<A> Thread<A> {
     /// // Reply to the 1st comment
     /// thread.reply(String::from("Is this about flowers?"), ReplyTo::Thread);
     ///
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Is this about flowers?"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("Is this about flowers?"))));
     ///
     /// thread.previous_reply(ReplyTo::Thread)?;
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose trees!"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("I love rose trees!"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -365,10 +379,10 @@ impl<A> Thread<A> {
     ///
     /// thread.navigate_to_root();
     /// thread.next_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose trees!"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("I love rose trees!"))));
     ///
     /// thread.next_reply(ReplyTo::Thread)?;
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose bushes!"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("I love rose bushes!"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -406,7 +420,7 @@ impl<A> Thread<A> {
     /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
     ///
     /// thread.navigate_to_root();
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("Discussing rose trees"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -438,7 +452,7 @@ impl<A> Thread<A> {
     ///
     /// thread.navigate_to_root();
     /// thread.navigate_to(Finger::Thread { main: 0, reply: 1 })?;
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose bushes!"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("I love rose bushes!"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -519,19 +533,19 @@ impl<A> Thread<A> {
     /// thread.reply(String::from("What should we use them for?"), ReplyTo::Main);
     ///
     /// thread.navigate_to_root();
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("Discussing rose trees"))));
     ///
     /// thread.next_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose trees!"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("I love rose trees!"))));
     ///
     /// thread.next_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("What should we use them for?"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("What should we use them for?"))));
     ///
     /// thread.previous_reply(ReplyTo::Main)?;
     /// thread.next_reply(ReplyTo::Thread)?;
     /// assert_eq!(
     ///     thread.view(),
-    ///     Ok(&DataState::Live(String::from("Did you know rose trees are equivalent to Cofree []?")))
+    ///     Ok(&DataState::new(String::from("Did you know rose trees are equivalent to Cofree []?")))
     /// );
     /// #
     /// #     Ok(())
@@ -571,7 +585,7 @@ impl<A> Thread<A> {
     /// # use std::error::Error;
     /// #
     /// # fn main() -> Result<(), Box<dyn Error>> {
-    /// use radicle_tracker::{ReplyTo, DataState, Thread, ThreadError};
+    /// use radicle_tracker::{ReplyTo, DataState, State, Thread};
     ///
     /// let mut thread = Thread::new(String::from("Discussing rose trees"));
     ///
@@ -590,21 +604,21 @@ impl<A> Thread<A> {
     /// thread.delete();
     ///
     /// thread.navigate_to_root();
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("Discussing rose trees"))));
     ///
     /// thread.next_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("I love rose trees!"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("I love rose trees!"))));
     ///
     /// thread.next_reply(ReplyTo::Main)?;
-    /// assert_eq!(thread.view(), Ok(&DataState::Dead(String::from("What should we use them for?"))));
+    /// assert_eq!(
+    ///     thread.view(),
+    ///     Ok(&DataState::new_dead(String::from("What should we use them for?")))
+    /// );
     /// #
     /// #     Ok(())
     /// # }
     /// ```
-    pub fn delete(&mut self) -> Result<(), Error>
-    where
-        A: Clone,
-    {
+    pub fn delete(&mut self) -> Result<(), Error> {
         match self.finger {
             Finger::Root => Err(Error::DeleteRoot),
             Finger::Main(main) => {
@@ -617,7 +631,6 @@ impl<A> Thread<A> {
                 let node = replies
                     .get_mut(reply)
                     .unwrap_or_else(|| panic!("Reply index is out of bounds: {}", reply));
-
                 node.kill();
                 Ok(())
             },
@@ -636,7 +649,7 @@ impl<A> Thread<A> {
     /// # use std::error::Error;
     /// #
     /// # fn main() -> Result<(), Box<dyn Error>> {
-    /// use radicle_tracker::{ReplyTo, DataState, Thread, ThreadError};
+    /// use radicle_tracker::{ReplyTo, DataState, Thread};
     ///
     /// let mut thread = Thread::new(String::from("Discussing rose trees"));
     ///
@@ -652,7 +665,7 @@ impl<A> Thread<A> {
     /// thread.reply(String::from("What should we use them for?"), ReplyTo::Main);
     /// thread.edit(|body| *body = String::from("How can we use them?"));
     ///
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("How can we use them?"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("How can we use them?"))));
     /// #
     /// #     Ok(())
     /// # }
@@ -718,7 +731,7 @@ impl<A> Thread<A> {
     ///
     /// let (thread) = Thread::new(String::from("Discussing rose trees"));
     ///
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("Discussing rose trees"))));
     /// ```
     pub fn view(&self) -> Result<&DataState<A>, Error> {
         match self.finger {
@@ -804,7 +817,7 @@ mod tests {
 
     /// forall a. Thread::new(a).view() === a
     fn prop_view_of_new<A: Eq + Clone>(a: A) -> bool {
-        Thread::new(a.clone()).view() == Ok(&DataState::Live(a))
+        Thread::new(a.clone()).view() == Ok(&DataState::new(a))
     }
 
     /// { new_path = thread.reply(path, comment)?
@@ -826,10 +839,7 @@ mod tests {
     }
 
     /// Thread::new(comment).delete(comment) === None
-    fn prop_deleting_root_should_not_be_possible<A: Eq>(a: A) -> bool
-    where
-        A: Clone,
-    {
+    fn prop_deleting_root_should_not_be_possible<A: Eq>(a: A) -> bool {
         Thread::new(a).delete() == Err(Error::DeleteRoot)
     }
 
@@ -856,7 +866,7 @@ mod tests {
         A: Eq + Clone,
     {
         let thread = Thread::new(a.clone());
-        *thread.view().unwrap() == DataState::Live(a)
+        *thread.view().unwrap() == DataState::new(a)
     }
 
     #[test]
