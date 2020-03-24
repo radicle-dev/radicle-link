@@ -94,3 +94,4 @@ pub use metadata::*;
 pub mod ops;
 mod thread;
 pub use thread::*;
+pub mod defunc;

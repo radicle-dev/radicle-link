@@ -20,21 +20,6 @@
 use crate::{issue::*, metadata::*, thread::*};
 use std::hash::Hash;
 
-trait Commute {
-    type Input;
-    type Item;
-    fn op(a: Self::Input, b: Self::Item) -> Self;
-}
-
-impl Commute for i8 {
-    type Input = i8;
-    type Item = i8;
-
-    fn op(a: Self::Input, b: Self::Item) -> Self {
-        a + b
-    }
-}
-
 pub enum MetaOp<User> {
     AddAssignee(User),
     RemoveAssignee(User),
