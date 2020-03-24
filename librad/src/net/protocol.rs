@@ -34,7 +34,10 @@ use thiserror::Error;
 
 use crate::{
     channel::Fanout,
-    git::{server::GitServer, transport::GitStreamFactory},
+    git::{
+        server::GitServer,
+        transport::{GitStream, GitStreamFactory},
+    },
     net::{
         connection::{CloseReason, LocalInfo, RemoteInfo, Stream},
         gossip,
@@ -465,8 +468,12 @@ impl<S> GitStreamFactory for Protocol<S>
 where
     S: gossip::LocalStorage + 'static,
 {
-    async fn open_stream(&self, to: &PeerId) -> Option<quic::Stream> {
-        self.open_git(to).await
+    async fn open_stream(&self, to: &PeerId) -> Option<Box<dyn GitStream>> {
+        // Nb.: type inference fails if this is not a pattern match (ie. `map`)
+        match self.open_git(to).await {
+            Some(s) => Some(Box::new(s)),
+            None => None,
+        }
     }
 }
 
