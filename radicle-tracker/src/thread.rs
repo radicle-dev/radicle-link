@@ -218,16 +218,41 @@ impl<A> Thread<A> {
     /// ```
     /// use radicle_tracker::{DataState, Thread};
     ///
-    /// let (thread) = Thread::new(String::from("Discussing rose trees"));
+    /// let thread = Thread::new(String::from("Discussing rose trees"));
     ///
-    /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
+    /// assert_eq!(thread.view(), Ok(&DataState::new(String::from("Discussing rose trees"))));
     /// ```
     pub fn new(a: A) -> Self {
         Thread {
             finger: ROOT_FINGER,
-            root: DataState::Live(a),
+            root: DataState::new(a),
             main_thread: vec![],
         }
+    }
+
+    /// Get the [`Finger`] of where we currently are in the `Thread`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use radicle_tracker::{Finger, ReplyTo, Thread};
+    ///
+    /// let mut thread = Thread::new(String::from("Discussing rose trees"));
+    ///
+    /// assert_eq!(*thread.finger(), Finger::Root);
+    ///
+    /// // Reply to the main thread
+    /// thread.reply(String::from("I love rose trees!"), ReplyTo::Main);
+    ///
+    /// assert_eq!(*thread.finger(), Finger::Main(0));
+    ///
+    /// // Reply to the 1st comment
+    /// thread.reply(String::from("Is this about flowers?"), ReplyTo::Thread);
+    ///
+    /// assert_eq!(*thread.finger(), Finger::Thread { main: 0, reply: 1 });
+    /// ```
+    pub fn finger(&self) -> &Finger {
+        &self.finger
     }
 
     /// Look at the previous reply of the thread. If it's the case that we are
