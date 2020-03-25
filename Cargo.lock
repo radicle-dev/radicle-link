@@ -1034,7 +1034,7 @@ dependencies = [
  "matches",
  "multibase",
  "nettle",
- "nonempty",
+ "nonempty 0.2.0",
  "olpc-cjson",
  "proptest",
  "quinn",
@@ -1316,10 +1316,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6954982ece17426b038f84895b4a6771c541299dc7141fab20ee676b19d9d97f"
 
 [[package]]
+name = "nonempty"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7747482c817116898e7aeda0d68c90998d47ee0db28b7030d44584ef7695d355"
+
+[[package]]
 name = "nonzero_ext"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db1b4163932b207be6e3a06412aed4d84cca40dc087419f231b3a38cba2ca8e9"
+
+[[package]]
+name = "num-bigint"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "090c7f9998ee0ff65aa5b723e4009f7b217707f1fb5ea551329cc4d6231fb304"
+dependencies = [
+ "autocfg 1.0.0",
+ "num-integer",
+ "num-traits",
+]
 
 [[package]]
 name = "num-integer"
@@ -1697,7 +1714,17 @@ version = "0.2.1"
 source = "git+https://github.com/radicle-dev/radicle-surf?rev=33d4980422bc6a0cb48ccdc6d4b893f9e45bc2b9#33d4980422bc6a0cb48ccdc6d4b893f9e45bc2b9"
 dependencies = [
  "git2",
- "nonempty",
+ "nonempty 0.2.0",
+ "thiserror",
+]
+
+[[package]]
+name = "radicle-tracker"
+version = "0.1.0"
+dependencies = [
+ "nonempty 0.3.0",
+ "num-bigint",
+ "proptest",
  "thiserror",
 ]
 
