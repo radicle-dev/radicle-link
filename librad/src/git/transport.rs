@@ -56,13 +56,13 @@ use std::{
 use async_trait::async_trait;
 use futures::{
     executor::block_on,
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
 use log::error;
 use url::Url;
 
-use crate::{net::connection::Stream, peer::PeerId};
+use crate::peer::PeerId;
 
 type Factories = Arc<RwLock<HashMap<PeerId, Box<dyn GitStreamFactory>>>>;
 
@@ -70,14 +70,17 @@ lazy_static! {
     static ref FACTORIES: Factories = Arc::new(RwLock::new(HashMap::with_capacity(1)));
 }
 
-/// Trait for types which can provide a [`Stream`] over which we can send /
-/// receive bytes to / from the specified peer.
+/// The underlying [`AsyncRead`] + [`AsyncRead`] of a [`RadSubTransport`]
 ///
-/// Note that [`Stream`] technically only needs to be `AsyncRead + AsyncWrite +
-/// Unpin + Send`, but we cannot express this as a trait object as of yet.
+/// We need this as a trait because we can't write `Box<dyn AsyncRead +
+/// AsyncWrite + Unpin + Send>` directly.
+pub trait GitStream: AsyncRead + AsyncWrite + Unpin + Send {}
+
+/// Trait for types which can provide a [`GitStream`] over which we can send
+/// / receive bytes to / from the specified peer.
 #[async_trait]
 pub trait GitStreamFactory: Sync + Send {
-    async fn open_stream(&self, to: &PeerId) -> Option<Stream>;
+    async fn open_stream(&self, to: &PeerId) -> Option<Box<dyn GitStream>>;
 }
 
 /// Register the `rad://` transport with `libgit`.
@@ -125,7 +128,7 @@ impl RadTransport {
         self.fac.write().unwrap().insert(peer_id.clone(), fac);
     }
 
-    fn open_stream(&self, from: &PeerId, to: &PeerId) -> Option<Stream> {
+    fn open_stream(&self, from: &PeerId, to: &PeerId) -> Option<Box<dyn GitStream>> {
         self.fac
             .read()
             .unwrap()
@@ -172,7 +175,7 @@ struct RadSubTransport {
     remote_peer: PeerId,
     remote_repo: String,
     service: Service,
-    stream: Stream,
+    stream: Box<dyn GitStream>,
 }
 
 impl RadSubTransport {
