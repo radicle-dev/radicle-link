@@ -17,7 +17,7 @@
 
 //! Main protocol dispatch loop
 
-use std::{collections::HashMap, future::Future, io, iter, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, future::Future, io, iter, net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
 use futures::{
@@ -34,7 +34,10 @@ use thiserror::Error;
 
 use crate::{
     channel::Fanout,
-    git::{server::GitServer, transport::GitStreamFactory},
+    git::{
+        server::GitServer,
+        transport::{GitStream, GitStreamFactory},
+    },
     net::{
         connection::{CloseReason, LocalInfo, RemoteInfo, Stream},
         gossip,
@@ -78,7 +81,7 @@ pub enum ProtocolEvent {
 /// We do this instead of a hand-rolled `Future` so we can use
 /// `StreamExt::try_for_each_concurrent`, which allows us to retain control over
 /// spawned tasks.
-enum Run<'a> {
+enum Run<'a, A> {
     Discovered {
         peer: PeerId,
         addrs: Vec<SocketAddr>,
@@ -90,7 +93,7 @@ enum Run<'a> {
     },
 
     Gossip {
-        event: gossip::ProtocolEvent,
+        event: gossip::ProtocolEvent<A>,
     },
 
     Shutdown,
@@ -135,20 +138,21 @@ impl From<CborCodecError> for Error {
 }
 
 #[derive(Clone)]
-pub struct Protocol<S> {
-    gossip: gossip::Protocol<S, quic::RecvStream, quic::SendStream>,
+pub struct Protocol<S, A> {
+    gossip: gossip::Protocol<S, A, quic::RecvStream, quic::SendStream>,
     git: GitServer,
 
     connections: Arc<Mutex<HashMap<PeerId, quic::Connection>>>,
     subscribers: Fanout<ProtocolEvent>,
 }
 
-impl<S> Protocol<S>
+impl<S, A> Protocol<S, A>
 where
-    S: gossip::LocalStorage + 'static,
+    S: gossip::LocalStorage<Update = A> + 'static,
+    for<'de> A: Serialize + Deserialize<'de> + Clone + Debug + Send + Sync + 'static,
 {
     pub fn new(
-        gossip: gossip::Protocol<S, quic::RecvStream, quic::SendStream>,
+        gossip: gossip::Protocol<S, A, quic::RecvStream, quic::SendStream>,
         git: GitServer,
     ) -> Self {
         Self {
@@ -205,12 +209,12 @@ where
     }
 
     /// Announce an update to the network
-    pub async fn announce(&self, have: gossip::Update) {
+    pub async fn announce(&self, have: A) {
         self.gossip.announce(have).await
     }
 
     /// Query the network for an update
-    pub async fn query(&self, want: gossip::Update) {
+    pub async fn query(&self, want: A) {
         self.gossip.query(want).await
     }
 
@@ -230,7 +234,7 @@ where
         }
     }
 
-    async fn eval_run(&mut self, endpoint: quic::Endpoint, run: Run<'_>) -> Result<(), ()> {
+    async fn eval_run(&mut self, endpoint: quic::Endpoint, run: Run<'_, A>) -> Result<(), ()> {
         match run {
             Run::Discovered { peer, addrs } => {
                 trace!("Run::Discovered: {}@{:?}", peer, addrs);
@@ -251,9 +255,7 @@ where
             },
 
             Run::Gossip { event } => match event {
-                gossip::ProtocolEvent::SendAdhoc(hello) => {
-                    let gossip::Hello { to, rpc } = *hello;
-
+                gossip::ProtocolEvent::SendAdhoc { to, rpc } => {
                     trace!("Run::Rad(SendAdhoc): {}", to.peer_id);
                     let conn = match self.connections.lock().await.get(&to.peer_id) {
                         Some(conn) => Some(conn.clone()),
@@ -278,14 +280,13 @@ where
                     Ok(())
                 },
 
-                gossip::ProtocolEvent::Connect(hello) => {
-                    let gossip::Hello { to, rpc } = *hello;
-
+                gossip::ProtocolEvent::Connect { to, hello } => {
                     trace!("Run::Rad(Connect): {}", to.peer_id);
                     if !self.connections.lock().await.contains_key(&to.peer_id) {
                         let conn = connect_peer_info(&endpoint, to).await;
                         if let Some((conn, incoming)) = conn {
-                            self.handle_connect(conn, incoming.boxed(), Some(rpc)).await
+                            self.handle_connect(conn, incoming.boxed(), Some(hello))
+                                .await
                         }
                     }
 
@@ -310,7 +311,7 @@ where
         &self,
         conn: quic::Connection,
         mut incoming: BoxStream<'_, quic::Result<quic::Stream>>,
-        hello: impl Into<Option<gossip::Rpc>>,
+        hello: impl Into<Option<gossip::Rpc<A>>>,
     ) {
         let remote_id = conn.remote_peer_id().clone();
         let remote_addr = conn.remote_addr();
@@ -400,7 +401,7 @@ where
     async fn outgoing(
         &mut self,
         stream: quic::Stream,
-        hello: impl Into<Option<gossip::Rpc>>,
+        hello: impl Into<Option<gossip::Rpc<A>>>,
     ) -> Result<(), Error> {
         let upgraded = upgrade(stream, Upgrade::Gossip).await?;
         let (recv, send) = upgraded.split();
@@ -461,12 +462,17 @@ where
 }
 
 #[async_trait]
-impl<S> GitStreamFactory for Protocol<S>
+impl<S, A> GitStreamFactory for Protocol<S, A>
 where
-    S: gossip::LocalStorage + 'static,
+    S: gossip::LocalStorage<Update = A> + 'static,
+    for<'de> A: Serialize + Deserialize<'de> + Clone + Debug + Send + Sync + 'static,
 {
-    async fn open_stream(&self, to: &PeerId) -> Option<quic::Stream> {
-        self.open_git(to).await
+    async fn open_stream(&self, to: &PeerId) -> Option<Box<dyn GitStream>> {
+        // Nb.: type inference fails if this is not a pattern match (ie. `map`)
+        match self.open_git(to).await {
+            Some(s) => Some(Box::new(s)),
+            None => None,
+        }
     }
 }
 

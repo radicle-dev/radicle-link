@@ -26,6 +26,7 @@ use std::{
 use futures::stream::{self, StreamExt};
 use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
 use log::{info, warn};
+use serde::{Deserialize, Serialize};
 use tempfile::{tempdir, TempDir};
 use tokio::task;
 
@@ -45,6 +46,11 @@ use librad::{
     project::{Project, ProjectId},
     sync::Monitor,
 };
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct ProjectCreated {
+    id: ProjectId,
+}
 
 #[derive(Clone)]
 struct MiniPeer {
@@ -76,22 +82,20 @@ impl MiniPeer {
 }
 
 impl gossip::LocalStorage for MiniPeer {
-    fn put(
-        &self,
-        provider: &PeerId,
-        gossip::Update::Project { project, .. }: gossip::Update,
-    ) -> gossip::PutResult {
-        info!("LocalStorage::put: {}", project);
-        let repo_path = self.paths.projects_dir().join(project.path(&self.paths));
+    type Update = ProjectCreated;
+
+    fn put(&self, provider: &PeerId, ProjectCreated { id }: ProjectCreated) -> gossip::PutResult {
+        info!("LocalStorage::put: {}", id);
+        let repo_path = self.paths.projects_dir().join(id.path(&self.paths));
         if Repository::open_bare(&repo_path).is_ok() {
             // Note: we would want to fetch here
-            info!("{}: Project {} already present", self.peer_id(), project);
+            info!("{}: Project {} already present", self.peer_id(), id);
             gossip::PutResult::Stale
         } else {
             info!(
                 "{}: Cloning project {} from {} into {}",
                 self.peer_id(),
-                project,
+                id,
                 provider,
                 repo_path.display()
             );
@@ -108,7 +112,7 @@ impl gossip::LocalStorage for MiniPeer {
                 .bare(true)
                 .fetch_options(fetch_opts)
                 .clone(
-                    &format!("rad://{}@{}/{}", self.peer_id(), provider, project),
+                    &format!("rad://{}@{}/{}", self.peer_id(), provider, id),
                     &repo_path,
                 )
                 .map(|repo| {
@@ -127,17 +131,17 @@ impl gossip::LocalStorage for MiniPeer {
         }
     }
 
-    fn ask(&self, gossip::Update::Project { project, .. }: &gossip::Update) -> bool {
+    fn ask(&self, ProjectCreated { id }: &ProjectCreated) -> bool {
         self.paths
             .projects_dir()
-            .join(project.path(&self.paths))
+            .join(id.path(&self.paths))
             .exists()
     }
 }
 
 struct Bootstrap<'a> {
     peer: MiniPeer,
-    proto: Protocol<MiniPeer>,
+    proto: Protocol<MiniPeer, ProjectCreated>,
     endpoint: BoundEndpoint<'a>,
 }
 
@@ -164,7 +168,7 @@ async fn bootstrap<'a>(
 
     let gossip = gossip::Protocol::new(
         &PeerId::from(key),
-        gossip::PeerAdvertisement::new(endpoint.endpoint.local_addr().unwrap()),
+        gossip::PeerAdvertisement::new(endpoint.local_addr().unwrap()),
         gossip::MembershipParams::default(),
         peer.clone(),
     );
@@ -181,7 +185,7 @@ async fn bootstrap<'a>(
 struct Spawned {
     tmp: TempDir,
     peer: MiniPeer,
-    proto: Protocol<MiniPeer>,
+    proto: Protocol<MiniPeer, ProjectCreated>,
     endpoint: Endpoint,
 }
 
@@ -272,9 +276,8 @@ async fn main() {
     println!("Announcing project1");
     peer1
         .proto
-        .announce(gossip::Update::Project {
-            project: project1.clone(),
-            head: None,
+        .announce(ProjectCreated {
+            id: project1.clone(),
         })
         .await;
 

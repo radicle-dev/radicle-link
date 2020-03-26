@@ -27,6 +27,7 @@ use quinn::{self, NewConnection, VarInt};
 use thiserror::Error;
 
 use crate::{
+    git::transport::GitStream,
     keys::device,
     net::{
         connection::{self, CloseReason, LocalInfo, RemoteInfo},
@@ -227,6 +228,8 @@ impl RemoteInfo for Stream {
         self.conn.remote_addr()
     }
 }
+
+impl GitStream for Stream {}
 
 impl connection::Stream for Stream {
     type Read = RecvStream;
