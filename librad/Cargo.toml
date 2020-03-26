@@ -23,6 +23,7 @@ lazy_static = "1.4"
 libgit2-sys = { version = "0.11", default-features = false, features = [] }
 log = "0.4"
 multibase = "0.8"
+multihash = "0.10"
 nettle = { version = "5.0", features = ["vendored"]  }
 nonempty = "0.2"
 olpc-cjson = "0.1"
