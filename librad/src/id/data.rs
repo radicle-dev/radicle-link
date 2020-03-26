@@ -1,12 +1,19 @@
 use crate::id::Error;
 use olpc_cjson::CanonicalFormatter;
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-
+use serde::{Deserialize, Serialize, Serializer};
+use std::collections::{BTreeSet, HashMap, HashSet};
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct EntitySignatureData {
     pub user: Option<String>,
     pub sig: String,
+}
+
+fn ordered_set<S>(value: &HashSet<String>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let ordered: BTreeSet<String> = value.iter().cloned().collect();
+    ordered.serialize(serializer)
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, Default)]
@@ -21,9 +28,17 @@ pub struct EntityData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signatures: Option<HashMap<String, EntitySignatureData>>,
 
-    #[serde(skip_serializing_if = "HashSet::is_empty", default)]
+    #[serde(
+        skip_serializing_if = "HashSet::is_empty",
+        serialize_with = "ordered_set",
+        default
+    )]
     pub keys: HashSet<String>,
-    #[serde(skip_serializing_if = "HashSet::is_empty", default)]
+    #[serde(
+        skip_serializing_if = "HashSet::is_empty",
+        serialize_with = "ordered_set",
+        default
+    )]
     pub owners: HashSet<String>,
 }
 

@@ -2,7 +2,6 @@ use crate::{
     keys::device::{Key, PublicKey, Signature},
     peer::PeerId,
 };
-use hex::{decode, encode};
 use multihash::{Multihash, Sha2_256};
 use std::{
     collections::{HashMap, HashSet},
@@ -53,7 +52,34 @@ pub enum Error {
     ResolutionFailed(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Fail)]
+pub enum UpdateVerificationError {
+    #[fail(display = "Non monotonic revision")]
+    NonMonotonicRevision,
+
+    #[fail(display = "Update without previous quorum")]
+    NoPreviousQuorum,
+
+    #[fail(display = "Update without current quorum")]
+    NoCurrentQuorum,
+}
+
+#[derive(Debug, Fail)]
+pub enum HistoryVerificationError {
+    #[fail(display = "Empty history")]
+    EmptyHistory,
+
+    #[fail(display = "Error at revsion")]
+    ErrorAtRevision { revision: u64, error: Error },
+
+    #[fail(display = "Update error")]
+    UpdateError {
+        revision: u64,
+        error: UpdateVerificationError,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RadicleUri {
     hash: Multihash,
     /* pub repo: Multihash,
@@ -71,15 +97,25 @@ impl RadicleUri {
     }
 
     pub fn from_str(s: &str) -> Result<Self, Error> {
-        let bytes = decode(s).map_err(|_| Error::InvalidHex(s.to_owned()))?;
+        let bytes = bs58::decode(s.as_bytes())
+            .with_alphabet(bs58::alphabet::BITCOIN)
+            .into_vec()
+            .map_err(|_| Error::InvalidHex(s.to_owned()))?;
         let hash = Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?;
         Ok(Self { hash })
     }
 }
 
+lazy_static! {
+    static ref EMPTY_HASH: Multihash = Sha2_256::digest(&[]);
+    static ref EMPTY_URI: RadicleUri = RadicleUri::new(EMPTY_HASH.to_owned());
+}
+
 impl ToString for RadicleUri {
     fn to_string(&self) -> String {
-        encode(self.hash.to_vec())
+        bs58::encode(&self.hash)
+            .with_alphabet(bs58::alphabet::BITCOIN)
+            .into_string()
     }
 }
 
@@ -102,11 +138,13 @@ where
     fn resolve(&self, uri: &RadicleUri) -> Result<E, Error>;
 }
 
-pub trait RevisionsResolver<E>
+pub trait RevisionsResolver<E, I, II>
 where
     E: Entity,
+    I: Iterator<Item = E>,
+    II: IntoIterator<Item = E, IntoIter = I> + Sized,
 {
-    fn resolve_revisions(&self, uri: &RadicleUri) -> Box<dyn Iterator<Item = &E>>;
+    fn resolve_revisions(&self, uri: &RadicleUri) -> Box<II>;
 }
 
 pub trait Entity: Sized {
@@ -220,6 +258,9 @@ pub trait Entity: Sized {
         resolver: &impl Resolver<User>,
     ) -> Result<(), Error> {
         let public_key = key.public();
+        if self.signatures().contains_key(&public_key) {
+            return Err(Error::SignatureAlreadyPresent(public_key.to_owned()));
+        }
         self.check_key(&public_key, by, resolver)?;
         let signature = EntitySignature {
             by: by.to_owned(),
@@ -230,7 +271,7 @@ pub trait Entity: Sized {
     }
 
     fn check_signature(
-        &mut self,
+        &self,
         key: &PublicKey,
         by: &Signatory,
         signature: &Signature,
@@ -243,8 +284,109 @@ pub trait Entity: Sized {
             Err(Error::SignatureVerificationFailed)
         }
     }
+
+    fn check_validity(&self, resolver: &impl Resolver<User>) -> Result<(), Error> {
+        let mut keys = HashSet::<PublicKey>::from_iter(self.keys());
+        let mut users = HashSet::<RadicleUri>::from_iter(self.certifiers());
+
+        for (k, s) in self.signatures() {
+            self.check_signature(k, &s.by, &s.sig, resolver)?;
+            match &s.by {
+                Signatory::OwnedKey => {
+                    keys.remove(k);
+                },
+                Signatory::User(user) => {
+                    users.remove(&user);
+                },
+            }
+        }
+        if keys.len() > 0 || users.len() > 0 {
+            Err(Error::SignatureMissing)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn is_valid(&self, resolver: &impl Resolver<User>) -> bool {
+        self.check_validity(resolver).is_ok()
+    }
+
+    fn check_update(&self, previous: &Self) -> Result<(), UpdateVerificationError> {
+        if self.revision() <= previous.revision() {
+            return Err(UpdateVerificationError::NonMonotonicRevision);
+        }
+
+        let retained_keys = self.keys().filter(|k| previous.has_key(k)).count();
+        let total_keys = self.keys_count();
+        let added_keys = total_keys - retained_keys;
+        let removed_keys = previous.keys_count() - retained_keys;
+        let quorum_keys = total_keys / 2;
+
+        if added_keys > quorum_keys {
+            return Err(UpdateVerificationError::NoCurrentQuorum);
+        } else if removed_keys > quorum_keys {
+            return Err(UpdateVerificationError::NoPreviousQuorum);
+        }
+
+        let retained_certifiers = self
+            .certifiers()
+            .filter(|c| previous.has_certifier(c))
+            .count();
+        let total_certifiers = self.certifiers_count();
+        let added_certifiers = total_certifiers - retained_certifiers;
+        let removed_certifiers = previous.certifiers_count() - retained_certifiers;
+        let quorum_certifiers = total_certifiers / 2;
+
+        if added_certifiers > quorum_certifiers {
+            return Err(UpdateVerificationError::NoCurrentQuorum);
+        } else if removed_certifiers > quorum_certifiers {
+            return Err(UpdateVerificationError::NoPreviousQuorum);
+        }
+
+        Ok(())
+    }
+
+    fn check_history<E, I, II>(
+        uri: &RadicleUri,
+        resolver: &impl Resolver<User>,
+        revisions_resolver: &impl RevisionsResolver<E, I, II>,
+    ) -> Result<(), HistoryVerificationError>
+    where
+        E: Entity,
+        I: Iterator<Item = E>,
+        II: IntoIterator<Item = E, IntoIter = I> + Sized,
+    {
+        let mut revisions = revisions_resolver.resolve_revisions(uri).into_iter();
+
+        let current = revisions.next();
+        let mut current = match current {
+            None => {
+                return Err(HistoryVerificationError::EmptyHistory);
+            },
+            Some(entity) => entity,
+        };
+
+        let revision = current.revision();
+        current
+            .check_validity(resolver)
+            .map_err(|error| HistoryVerificationError::ErrorAtRevision { revision, error })?;
+
+        for previous in revisions {
+            let revision = current.revision();
+            previous
+                .check_validity(resolver)
+                .map_err(|error| HistoryVerificationError::ErrorAtRevision { revision, error })?;
+            current
+                .check_update(&previous)
+                .map_err(|error| HistoryVerificationError::UpdateError { revision, error })?;
+            current = previous;
+        }
+
+        Ok(())
+    }
 }
 
+#[derive(Debug, Clone)]
 pub struct User {
     pub name: String,
     pub revision: u64,
@@ -255,16 +397,24 @@ pub struct User {
     pub signatures: HashMap<PublicKey, EntitySignature>,
 }
 
+impl User {
+    pub fn new(name: &str, devices: impl Iterator<Item = &'static PeerId>) -> Self {
+        Self {
+            name: name.to_owned(),
+            revision: 1,
+            devices: HashSet::from_iter(devices.cloned()),
+            uri: EMPTY_URI.to_owned(),
+            signatures: HashMap::new(),
+        }
+    }
+}
+
 impl Entity for User {
     fn name(&self) -> &str {
         &self.name
     }
     fn revision(&self) -> u64 {
         self.revision
-    }
-
-    fn canonical_data(&self) -> Result<Vec<u8>, Error> {
-        unimplemented!()
     }
 
     fn uri(&self) -> &RadicleUri {
