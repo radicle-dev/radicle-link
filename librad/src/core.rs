@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fmt::{self, Display},
     path::{Path, PathBuf},
 };
 
@@ -7,10 +8,9 @@ use async_trait::async_trait;
 use futures::Stream;
 use multibase::Base;
 use multihash::Multihash;
-use sodiumoxide::crypto::sign::ed25519;
 use url::Url;
 
-use crate::peer::PeerId;
+use crate::{keys::device::Signature, peer::PeerId};
 
 /// A `RadUrn` identifies a verifiable history in a version control system,
 /// where:
@@ -50,6 +50,22 @@ impl RadUrn {
     }
 }
 
+impl Display for RadUrn {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "rad:{}/{}",
+            multibase::encode(Base::Base32Z, &self.id),
+            self.path.to_str().unwrap()
+        )?;
+        if let Some(file) = &self.file {
+            write!(f, "#{}", file)?
+        }
+
+        Ok(())
+    }
+}
+
 /// Placeholder for a version in a history
 type Version<'a> = &'a [u8];
 
@@ -76,7 +92,7 @@ pub trait Verifier {
 
 pub struct Refsig<'a> {
     pub refs: HashMap<&'a Path, &'a [u8]>,
-    pub signature: ed25519::Signature,
+    pub signature: Signature,
 }
 
 pub enum BrowseError {
