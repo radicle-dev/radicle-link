@@ -40,7 +40,9 @@ use crate::{keys::device::Signature, peer::PeerId};
 ///
 /// The textual representation of a `RadUrn` is of the form:
 ///
-///     'rad:' MULTIBASE(<id>) ':' <path> '#' <file>
+/// ```text
+/// 'rad:' MULTIBASE(<id>) ':' <path> '#' <file>
+/// ```
 ///
 /// where the preferred base is `z-base32`.
 ///
