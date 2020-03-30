@@ -18,6 +18,7 @@
 use std::{
     collections::HashMap,
     fmt::{self, Display},
+    io,
     path::{Path, PathBuf},
 };
 
@@ -29,43 +30,36 @@ use url::Url;
 
 use crate::{keys::device::Signature, peer::PeerId};
 
-/// A `RadUrn` identifies a verifiable history in a version control system,
+/// A `RadUrn` identifies a branch in a verifiabe `radicle-link` repository,
 /// where:
 ///
 /// * The repository is named `id`
-/// * There exists a branch pointer in the repository to the most recent
-///   revision named `path`
-/// * The initial (parent-less) revision of blob `file` has the content address
-///   `id`
+/// * The initial (parent-less) revision of an identity document (defined by
+///   [`Verifier`]) has the content address `id`
+/// * There exists a branch named `rad/id` pointing to the most recent revision
+///   of the identity document
+/// * There MAY exist a branch named `path`
 ///
 /// The textual representation of a `RadUrn` is of the form:
 ///
 /// ```text
-/// 'rad:' MULTIBASE(<id>) ':' <path> '#' <file>
+/// 'rad' ':' MULTIBASE(<id>) ':' <path>
 /// ```
 ///
 /// where the preferred base is `z-base32`.
 ///
-/// For example: `rad:deadbeefdeaddeafbeef/rad/project#project.json`
+/// For example: `rad:deadbeefdeaddeafbeef/rad/issues`
 pub struct RadUrn {
     pub id: Multihash,
     pub path: PathBuf,
-    pub file: Option<String>,
 }
 
 impl RadUrn {
-    pub fn into_url(self, peer: &PeerId) -> Url {
-        let mut url = Url::parse(&format!("rad://{}", peer.default_encoding())).unwrap();
-        url.set_path(
-            Path::new(&multibase::encode(Base::Base32Z, self.id))
-                .join(self.path)
-                .to_str()
-                .unwrap(),
-        );
-        if let Some(file) = self.file {
-            url.set_fragment(Some(&file));
+    pub fn into_rad_url(self, peer: PeerId) -> RadUrl {
+        RadUrl {
+            authority: peer,
+            urn: self,
         }
-        url
     }
 }
 
@@ -76,12 +70,41 @@ impl Display for RadUrn {
             "rad:{}/{}",
             multibase::encode(Base::Base32Z, &self.id),
             self.path.to_str().unwrap()
-        )?;
-        if let Some(file) = &self.file {
-            write!(f, "#{}", file)?
-        }
+        )
+    }
+}
 
-        Ok(())
+/// A `RadUrl` is a URL with the scheme `rad://`.
+///
+/// The authority of a rad URL is a [`PeerId`], from which to retrieve the
+/// `radicle-link` repository and branch identified by [`RadUrn`].
+pub struct RadUrl {
+    authority: PeerId,
+    urn: RadUrn,
+}
+
+impl RadUrl {
+    pub fn into_url(self) -> Url {
+        self.into()
+    }
+
+    // TODO: like `Gossip::fetch`, we should also be able to open a `RadUrl` from
+    // local storage:
+    // pub fn open(&self) -> Result<impl Iterator<Item = Commit>, ??>
+}
+
+impl Into<Url> for RadUrl {
+    fn into(self) -> Url {
+        let mut url = Url::parse(&format!("rad://{}", self.authority.default_encoding())).unwrap();
+
+        url.set_path(
+            Path::new(&multibase::encode(Base::Base32Z, self.urn.id))
+                .join(self.urn.path)
+                .to_str()
+                .unwrap(),
+        );
+
+        url
     }
 }
 
@@ -101,10 +124,11 @@ pub struct Rev<'a> {
 ///
 /// In order to satisfy the verification requirements, `Verifier::verify` may
 /// call `Core::fetch` recursively.
+#[async_trait]
 pub trait Verifier {
     type Error;
 
-    fn verify<'a>(
+    async fn verify<'a>(
         history: Box<dyn Iterator<Item = Rev<'a>>>,
     ) -> Result<&'a Version<'a>, Self::Error>;
 }
@@ -160,29 +184,43 @@ pub trait Gossip {
     fn query(&self, urn: &RadUrn, head: &Multihash) -> Self::QueryStream;
 }
 
+#[non_exhaustive]
+pub enum FetchError<V> {
+    Verification(V),
+    NoSuchBranch(PathBuf),
+    Io(io::Error),
+    // ...
+}
+
+#[non_exhaustive]
+pub enum ShallowFetchError {
+    NoSuchBranch(PathBuf),
+    Io(io::Error),
+    // ...
+}
+
 #[async_trait]
 pub trait Fetch {
-    type FetchError; // morally: FetchError<V::Error>, pending GATs
-    type ShallowFetchError;
+    /// Iterator over the commit graph starting at the head of the branch
+    /// specified by a [`RadUrl`].
+    type Revwalk: Iterator;
 
-    /// Given a known `RadUrn` and a `Verifier` function, attempt to fetch the
-    /// corresponding repository from the peer `PeerId`.
+    /// Given a known [`RadUrl`] and a [`Verifier`] function, attempt to fetch
+    /// the corresponding repository from the URLs `authority` (peer).
     ///
     /// Fetch proceeds as follows:
     ///
-    /// * A peer is identified which claims to serve `urn`, or the one specified
-    ///   by `peer`
+    /// * A connection to the peer corresponding to the [`RadUrl`] is
+    ///   established
     ///
-    /// * The branch corresponding to `urn` is fetched
+    /// * The branches `rad/id` and `rad/refsig` are fetched
     ///
     ///     * If the repository already exists locally, the existing one is
     ///       used, otherwise a new one is created in a temporary location
     ///
-    /// * Additionally, the branch `rad/refsig` is fetched
-    ///
-    /// * After fetching, the branch is traversed to the first (parent-less)
-    ///   revision, and it is verified that the content address of the specified
-    ///   blob equals the `RadUrn`'s hash
+    /// * After fetching, the `rad/id` branch is traversed to the first
+    ///   (parent-less) revision, and it is verified that the content address of
+    ///   the specified blob equals the `RadUrn`'s hash
     ///
     /// * The verification function is invoked, supplying an oldest-first
     ///   iterator over the history of the branch
@@ -218,20 +256,20 @@ pub trait Fetch {
     ///
     ///   Remote tracking branches of `A` present locally, but not on the remote
     ///   peer, are pruned.
+    ///
+    /// * Finally, the branch corresponding to [`RadUrn::path`] is looked up and
+    ///   an [`Iterator`] over its commit graph is returned, or an error if the
+    ///   branch doesn't exist. If the `path` was empty, `None` is returned.
     async fn fetch<V: Verifier>(
         &self,
-        peer: &PeerId,
-        urn: &RadUrn,
+        url: &RadUrl,
         verifier: V,
-    ) -> Result<(), Self::FetchError>;
+    ) -> Result<Option<Self::Revwalk>, FetchError<V::Error>>;
 
     /// Fetch only the most recent version of [`RadUrn`], without verification.
     ///
     /// This proceeds similar to [`Self::fetch`], but only performs a "shallow
     /// clone" of all remote heads and remote tracking branches.
-    async fn fetch_shallow(
-        &self,
-        peer: &PeerId,
-        urn: &RadUrn,
-    ) -> Result<(), Self::ShallowFetchError>;
+    async fn fetch_shallow(&self, url: &RadUrl)
+        -> Result<Option<Self::Revwalk>, ShallowFetchError>;
 }
