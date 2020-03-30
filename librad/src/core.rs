@@ -30,12 +30,13 @@ use url::Url;
 
 use crate::{keys::device::Signature, peer::PeerId};
 
-/// A `RadUrn` identifies a branch in a verifiabe `radicle-link` repository,
+/// A `RadUrn` identifies a branch in a verifiable `radicle-link` repository,
 /// where:
 ///
 /// * The repository is named `id`
-/// * The initial (parent-less) revision of an identity document (defined by
-///   [`Verifier`]) has the content address `id`
+/// * The initial (parent-less) revision of some identity document has the
+///   content address `id` -- where the identity document is located in the
+///   tree, and what its content schema is, is define by the [`Verifier`].
 /// * There exists a branch named `rad/id` pointing to the most recent revision
 ///   of the identity document
 /// * There MAY exist a branch named `path`
@@ -43,7 +44,7 @@ use crate::{keys::device::Signature, peer::PeerId};
 /// The textual representation of a `RadUrn` is of the form:
 ///
 /// ```text
-/// 'rad' ':' MULTIBASE(<id>) ':' <path>
+/// 'rad' ':' MULTIBASE(<id>) '/' <path>
 /// ```
 ///
 /// where the preferred base is `z-base32`.
