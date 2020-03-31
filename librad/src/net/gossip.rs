@@ -45,10 +45,10 @@ use futures::{
 use futures_codec::{CborCodec, FramedRead, FramedWrite};
 use futures_timer::Delay;
 use governor::{Quota, RateLimiter};
-use log::{info, trace, warn};
 use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
+use tracing;
 
 use crate::{
     channel::Fanout,
@@ -292,6 +292,9 @@ where
         mparams: MembershipParams,
         storage: S,
     ) -> Self {
+        let span = tracing::trace_span!("Protocol", local.id = %local_id);
+        let _guard = span.enter();
+
         let prng = Pcg64Mcg::new(rand::random());
         let connected_peers = Arc::new(Mutex::new(ConnectedPeers::new(
             mparams.max_active,
@@ -329,6 +332,9 @@ where
     }
 
     pub async fn announce(&self, have: A) {
+        let span = tracing::trace_span!("Protocol::announce", local.id = %self.local_id);
+        let _guard = span.enter();
+
         self.broadcast(
             Gossip::Have {
                 origin: self.local_peer_info(),
@@ -340,6 +346,9 @@ where
     }
 
     pub async fn query(&self, want: A) {
+        let span = tracing::trace_span!("Protocol::query", local.id = %self.local_id);
+        let _guard = span.enter();
+
         self.broadcast(
             Gossip::Want {
                 origin: self.local_peer_info(),
@@ -373,6 +382,9 @@ where
         mut recv: FramedRead<R, Codec<A>>,
         send: FramedWrite<W, Codec<A>>,
     ) -> Result<(), Error> {
+        let span = tracing::trace_span!("Protocol::incoming", local.id = %self.local_id);
+        let _guard = span.enter();
+
         let remote_id = recv.remote_peer_id().clone();
         // This should not be possible, as we prevent it in the TLS handshake.
         // Leaving it here regardless as a sanity check.
@@ -383,10 +395,9 @@ where
         if let Some((ejected_peer, mut ejected_send)) =
             self.add_connected(remote_id.clone(), send).await
         {
-            trace!(
-                "{}: Ejecting connected peer {}",
-                self.local_id,
-                ejected_peer
+            tracing::trace!(
+                msg = "Ejecting connected peer",
+                peer = %ejected_peer,
             );
             let _ = ejected_send.close().await;
             // Note: if the ejected peer never sent us a `Join` or
@@ -410,17 +421,13 @@ where
                 },
 
                 Err(e) => {
-                    warn!("{}: Recv error: {:?}", self.local_id, e);
+                    tracing::warn!("Recv error: {:?}", e);
                     break;
                 },
             }
         }
 
-        trace!(
-            "{}: Recv stream from {} done, disconnecting",
-            self.local_id,
-            remote_id
-        );
+        tracing::trace!(msg = "Recv stream is done, disconnecting",);
         self.remove_connected(&remote_id).await;
 
         Ok(())
@@ -443,12 +450,10 @@ where
         match msg {
             Join(ad) => {
                 let peer_info = make_peer_info(ad);
-                trace!(
-                    "{}: Join with peer_info: peer_id: {}, advertised_info: {:?}, seen_addrs: {:?}",
-                    self.local_id,
-                    peer_info.peer_id,
-                    peer_info.advertised_info,
-                    peer_info.seen_addrs
+                tracing::trace!(
+                    msg = "Join with peer information",
+                    peer.info.advertised = ?peer_info.advertised_info,
+                    peer.info.addrs = ?peer_info.seen_addrs,
                 );
 
                 self.add_known(iter::once(peer_info.clone())).await;
@@ -463,7 +468,7 @@ where
             },
 
             ForwardJoin { joined, ttl } => {
-                trace!("{}: ForwardJoin: {:?}, {}", self.local_id, joined, ttl);
+                tracing::trace!(msg = "ForwardJoin", joined = ?joined, ttl = ?ttl);
                 if ttl == 0 {
                     self.connect(&joined, Neighbour(self.local_ad.clone()))
                         .await
@@ -480,18 +485,12 @@ where
             },
 
             Neighbour(ad) => {
-                trace!("{}: Neighbour: {:?}", self.local_id, ad);
+                tracing::trace!(msg = "Neighbour advertisement", peer.info.advertised = ?ad);
                 self.add_known(iter::once(make_peer_info(ad))).await
             },
 
             Shuffle { origin, peers, ttl } => {
-                trace!(
-                    "{}: Shuffle: {:?}, {:?}, {}",
-                    self.local_id,
-                    origin,
-                    peers,
-                    ttl
-                );
+                tracing::trace!(msg = "Shuffle", origin = ?origin, peer.neighbours = ?peers, peer.ttl = ttl);
                 // We're supposed to only remember shuffled peers at
                 // the end of the random walk. Do it anyway for now.
                 self.add_known(peers.clone()).await;
@@ -520,7 +519,7 @@ where
             },
 
             ShuffleReply { peers } => {
-                trace!("{}: ShuffleReply: {:?}", self.local_id, peers);
+                tracing::trace!(msg = "ShuffleReply", peer.neighbours = ?peers);
                 self.add_known(peers).await
             },
         }
@@ -531,9 +530,12 @@ where
     async fn handle_gossip(&self, remote_id: &PeerId, msg: Gossip<A>) -> Result<(), Error> {
         use Gossip::*;
 
+        let span = tracing::trace_span!("Protocol::handle_gossip");
+        let _guard = span.enter();
+
         match msg {
             Have { origin, val } => {
-                trace!("{}: {} has {:?}", self.local_id, origin.peer_id, val);
+                tracing::trace!(msg = "Have", origin.peer.id = %origin.peer_id, origin.value=?val);
 
                 self.subscribers
                     .emit(ProtocolEvent::Info(Info::Has(Has {
@@ -552,7 +554,10 @@ where
                     // `val` was new, and is now fetched to local storage. Let
                     // connected peers know they can now fetch it from us.
                     PutResult::Applied => {
-                        info!("{}: Announcing applied value {:?}", self.local_id, val);
+                        tracing::info!(
+                            msg = "Announcing applied value",
+                            value = ?val,
+                        );
                         self.broadcast(
                             Have {
                                 origin: self.local_peer_info(),
@@ -565,7 +570,10 @@ where
 
                     // Meh. Request retransmission.
                     PutResult::Error => {
-                        info!("{}: Error applying {:?}", self.local_id, val);
+                        tracing::info!(
+                            msg = "Error applying value",
+                            value = ?val,
+                        );
                         // Forward in any case
                         self.broadcast(
                             Have {
@@ -594,17 +602,25 @@ where
 
                     // Not interesting, forward to others
                     PutResult::Uninteresting => {
-                        info!("{}: {:?} uninteresting", self.local_id, val);
+                        tracing::info!(
+                            msg = "Value is uninteresting",
+                            value = ?val,
+                        );
                         self.broadcast(Have { origin, val }, remote_id).await
                     },
 
                     // We are up-to-date, don't do anything
-                    PutResult::Stale => info!("{}: {:?} up to date", self.local_id, val),
+                    PutResult::Stale => {
+                        tracing::info!(
+                            msg = "Value is up to date",
+                            value = ?val,
+                        );
+                    },
                 }
             },
 
             Want { origin, val } => {
-                trace!("{}: {} wants {:?}", self.local_id, origin.peer_id, val);
+                tracing::trace!(msg = "Want", origin.peer.id = %origin.peer_id, origin.value = ?val);
                 let have = {
                     let val = val.clone();
                     tokio::task::block_in_place(move || self.storage.ask(&val))
@@ -677,7 +693,7 @@ where
     }
 
     async fn shuffle(&self) {
-        trace!("{}: Initiating shuffle", self.local_id);
+        tracing::trace!("Initiating shuffle");
         let mut connected = self.connected_peers.lock().await;
         if let Some((recipient, recipient_send)) = connected.random() {
             // Note: we should pick from the connected peers first, padding with
@@ -689,11 +705,10 @@ where
             // eventually.
             let sample = self.sample_known().await;
             if !sample.is_empty() {
-                trace!(
-                    "{}: shuffling sample {:?} with {}",
-                    self.local_id,
-                    sample,
-                    recipient
+                tracing::trace!(
+                    msg = "Shuffling sample",
+                    shuffle.sample = ?sample,
+                    shuffle.recipient = %recipient,
                 );
                 recipient_send
                     .send(
@@ -705,17 +720,19 @@ where
                         .into(),
                     )
                     .await
-                    .unwrap_or_else(|e| warn!("Failed to send shuffle to {}: {:?}", recipient, e))
+                    .unwrap_or_else(|e| {
+                        tracing::warn!("Failed to send shuffle to {}: {:?}", recipient, e)
+                    })
             } else {
-                trace!("{}: nothing to shuffle", self.local_id);
+                tracing::trace!("Nothing to shuffle");
             }
         } else {
-            trace!("{}: No connected peers to shuffle with", self.local_id);
+            tracing::trace!("No connected peers to shuffle with");
         }
     }
 
     async fn promote_random(&self) {
-        trace!("{}: Initiating random promotion", self.local_id);
+        tracing::trace!(msg = "Initiating random promotion",);
         if let Some(candidate) = self.known_peers.lock().await.random() {
             if !self
                 .connected_peers
@@ -723,7 +740,7 @@ where
                 .await
                 .contains(&candidate.peer_id)
             {
-                trace!("{}: Promoting: {}", self.local_id, candidate.peer_id);
+                tracing::trace!(msg = "Promoting candidate", candidate.id = %candidate.peer_id);
                 self.connect(&candidate, Membership::Neighbour(self.local_ad.clone()))
                     .await
             }
@@ -748,15 +765,17 @@ where
         .for_each_concurrent(None, |(peer, out)| {
             let rpc = rpc.clone();
             async move {
-                trace!("{}: Broadcast {:?} to {}", self.local_id, rpc, peer);
+                tracing::trace!(msg = "Broadcast", broadcast.rpc = ?rpc, broadcast.peer = %peer);
                 // If this returns an error, it is likely the receiving end has
                 // stopped working, too. Hence, we don't need to propagate
                 // errors here. This statement will need some empirical
                 // evidence.
                 if let Err(e) = out.send(rpc).await {
-                    warn!(
+                    tracing::warn!(
                         "{}: Failed to send broadcast message to {}: {:?}",
-                        self.local_id, peer, e
+                        self.local_id,
+                        peer,
+                        e
                     )
                 }
             }
@@ -770,9 +789,9 @@ where
             .for_each(|out| {
                 let rpc = rpc.clone();
                 async move {
-                    trace!("{}: Reply with {:?} to {}", self.local_id, rpc, to);
+                    tracing::trace!(msg= "Reply with", reply.rpc = ?rpc, reply.peer = %to);
                     if let Err(e) = out.send(rpc).await {
-                        warn!("{}: Failed to reply to {}: {:?}", self.local_id, to, e);
+                        tracing::warn!("{}: Failed to reply to {}: {:?}", self.local_id, to, e);
                     }
                 }
             })

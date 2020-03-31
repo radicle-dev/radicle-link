@@ -25,10 +25,11 @@ use std::{
 
 use futures::stream::{self, StreamExt};
 use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
-use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use tempfile::{tempdir, TempDir};
 use tokio::task;
+use tracing;
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 use librad::{
     git::{self, server::GitServer, transport::RadTransport, GitProject},
@@ -85,14 +86,16 @@ impl gossip::LocalStorage for MiniPeer {
     type Update = ProjectCreated;
 
     fn put(&self, provider: &PeerId, ProjectCreated { id }: ProjectCreated) -> gossip::PutResult {
-        info!("LocalStorage::put: {}", id);
+        let span = tracing::info_span!("MiniPeer::put", project.id = %id);
+        let _guard = span.enter();
+
         let repo_path = self.paths.projects_dir().join(id.path(&self.paths));
         if Repository::open_bare(&repo_path).is_ok() {
             // Note: we would want to fetch here
-            info!("{}: Project {} already present", self.peer_id(), id);
+            tracing::info!("{}: Project {} already present", self.peer_id(), id);
             gossip::PutResult::Stale
         } else {
-            info!(
+            tracing::info!(
                 "{}: Cloning project {} from {} into {}",
                 self.peer_id(),
                 id,
@@ -116,16 +119,16 @@ impl gossip::LocalStorage for MiniPeer {
                     &repo_path,
                 )
                 .map(|repo| {
-                    info!(
-                        "Cloned to {}, HEAD: {}",
-                        repo.path().display(),
-                        repo.head().unwrap().peel_to_commit().unwrap().id()
+                    tracing::info!(
+                        msg = "Successfully Cloned",
+                        repo.path = %repo.path().display(),
+                        repo.head = ?repo.head().unwrap().peel_to_commit().unwrap().id(),
                     );
 
                     gossip::PutResult::Applied
                 })
                 .unwrap_or_else(|e| {
-                    warn!("Error cloning: {}", e);
+                    tracing::warn!(msg = "Error cloning", error = %e);
                     gossip::PutResult::Error
                 })
         }
@@ -231,6 +234,12 @@ async fn spawn(
 async fn main() {
     librad::init();
     env_logger::init();
+
+    let subscriber = FmtSubscriber::builder()
+        .with_env_filter(EnvFilter::from_default_env())
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).expect("setting tracing default failed");
 
     let transport = git::transport::register();
     let shutdown = Monitor::new();

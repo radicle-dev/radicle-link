@@ -35,9 +35,9 @@ use futures::{
     self,
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
 };
-use log::{error, trace};
 use tokio::process::{self, Command};
 use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
+use tracing;
 
 #[derive(Clone)]
 pub struct GitServer {
@@ -55,7 +55,7 @@ impl GitServer {
         let mut recv = BufReader::new(recv);
         let mut header = String::with_capacity(512);
         if let Err(e) = recv.read_line(&mut header).await {
-            error!("Error reading git service header: {}", e);
+            tracing::error!("Error reading git service header: {}", e);
             return send_err(&mut send, "garbage header").await;
         }
 
@@ -69,7 +69,7 @@ impl GitServer {
         };
 
         if service != Some("git-upload-pack") {
-            error!("Invalid git service: {:?}", service);
+            tracing::error!("Invalid git service: {:?}", service);
             return send_err(&mut send, "service not enabled").await;
         }
 
@@ -84,17 +84,16 @@ impl GitServer {
             match repo_path {
                 Ok(repo_path) => repo_path,
                 Err(e) => {
-                    error!("Error opening repo {:?}: {}", repo, e);
+                    tracing::error!("Error opening repo {:?}: {}", repo, e);
                     return send_err(&mut send, "repo not found or access denied").await;
                 },
             }
         };
 
-        trace!(
-            "git service: {:?}, repo: {}, mode: {}",
-            service,
-            repo_path.display(),
-            mode
+        tracing::trace!(
+            git.service = ?service,
+            git.repo.path = %repo_path.display(),
+            git.mode = %mode
         );
 
         if mode.is_empty() {
@@ -102,7 +101,7 @@ impl GitServer {
         } else if mode == "advertise" {
             UploadPack::advertise(&repo_path)?.run(recv, send).await
         } else {
-            error!("Invalid mode: expected `advertise`, got `{}`", mode);
+            tracing::error!("Invalid mode: expected `advertise`, got `{}`", mode);
             send_err(&mut send, "invalid mode").await
         }
     }
@@ -194,10 +193,10 @@ fn spawn_child(child: process::Child) {
             .await
             .map(|status| {
                 if !status.success() {
-                    error!("upload-pack exited non-zero: {:?}", status)
+                    tracing::error!("upload-pack exited non-zero: {:?}", status)
                 }
             })
-            .map_err(|e| error!("upload-pack error: {}", e));
+            .map_err(|e| tracing::error!("upload-pack error: {}", e));
     });
 }
 
