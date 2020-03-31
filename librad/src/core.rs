@@ -36,7 +36,7 @@ use crate::{keys::device::Signature, peer::PeerId};
 /// * The repository is named `id`
 /// * The initial (parent-less) revision of some identity document has the
 ///   content address `id` -- where the identity document is located in the
-///   tree, and what its content schema is, is define by the [`Verifier`].
+///   tree, and what its content schema is, is defined by the [`Verifier`].
 /// * There exists a branch named `rad/id` pointing to the most recent revision
 ///   of the identity document
 /// * There MAY exist a branch named `path`
