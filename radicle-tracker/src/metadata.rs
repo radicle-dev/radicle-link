@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use hashbrown;
 use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
@@ -22,39 +23,52 @@ use std::{
     str::FromStr,
 };
 
+use crdts::{
+    self,
+    orswot::{self, Orswot},
+    vclock::Actor,
+};
+
 pub mod clock;
 use clock::{Clock, RadClock};
 
 /// The metadata that is related to an issue.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Metadata<User: Eq + Hash> {
-    labels: HashSet<Label>,
+pub struct Metadata<User: Actor> {
+    labels: Orswot<Label, User>,
     assignees: Assignees<User>,
 }
 
-impl<User: Eq + Hash> Metadata<User> {
+impl<User: Actor> Metadata<User> {
     /// Initialise empty metadata.
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Metadata {
-            labels: HashSet::new(),
+            labels: Orswot::new(),
             assignees: Assignees::new(),
         }
     }
 
     /// Get a reference to the [`Label`]s in the metadata.
-    pub fn labels(&self) -> &HashSet<Label> {
-        &self.labels
+    pub fn labels(&self) -> hashbrown::HashSet<Label> {
+        self.labels.read().val
     }
 
     /// Add a [`Label`] to the set of labels in the metadata.
-    pub fn add_label(&mut self, label: Label) -> bool {
-        self.labels.insert(label)
+    pub fn add_label(&mut self, user: User, label: Label) -> orswot::Op<Label, User>
+    where
+        User: Clone + Ord + std::fmt::Debug,
+    {
+        let read = self.labels.read();
+        let add_ctx = read.derive_add_ctx(user);
+        self.labels.add(label, add_ctx)
     }
 
     /// Remove a [`Label`] from the set of labels in the metadata.
-    pub fn remove_label(&mut self, label: &Label) -> bool {
-        self.labels.remove(label)
+    pub fn remove_label(&mut self, label: Label) -> orswot::Op<Label, User> {
+        let read = self.labels.read();
+        let rm_ctx = read.derive_rm_ctx();
+        self.labels.rm(label, rm_ctx)
     }
 
     /// Get a reference to the [`Assignees`] in the metadata.
