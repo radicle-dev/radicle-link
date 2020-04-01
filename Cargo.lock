@@ -1054,6 +1054,7 @@ dependencies = [
  "nettle",
  "nonempty 0.2.0",
  "olpc-cjson",
+ "percent-encoding 2.1.0",
  "proptest",
  "quinn",
  "radicle-keystore",

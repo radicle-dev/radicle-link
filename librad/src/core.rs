@@ -26,17 +26,38 @@ use async_trait::async_trait;
 use futures::Stream;
 use multibase::Base;
 use multihash::Multihash;
+use percent_encoding::percent_encode;
 use url::Url;
+
+// FIXME: `Path`/`PathBuf` are poor types for use with `RadUrn` -- there's no
+// equivalent to `OsStrExt::as_bytes()` on Windows.
+use std::os::unix::ffi::OsStrExt;
 
 use crate::{keys::device::Signature, peer::PeerId};
 
-/// A `RadUrn` identifies a branch in a verifiable `radicle-link` repository,
+pub enum Protocol {
+    Git,
+    //Pijul,
+}
+
+impl Protocol {
+    /// The "NSS" (namespace-specific string) of the [`Protocol`] in the context
+    /// of a URN
+    pub fn nss(&self) -> &str {
+        match self {
+            Self::Git => "git",
+            //Self::Pijul => "pijul",
+        }
+    }
+}
+
+/// A `RadUrn` identifies a branch in a verifiabe `radicle-link` repository,
 /// where:
 ///
 /// * The repository is named `id`
-/// * The initial (parent-less) revision of some identity document has the
-///   content address `id` -- where the identity document is located in the
-///   tree, and what its content schema is, is defined by the [`Verifier`].
+/// * The backend / protocol is [`Protocol`]
+/// * The initial (parent-less) revision of an identity document (defined by
+///   [`Verifier`]) has the content address `id`
 /// * There exists a branch named `rad/id` pointing to the most recent revision
 ///   of the identity document
 /// * There MAY exist a branch named `path`
@@ -49,9 +70,10 @@ use crate::{keys::device::Signature, peer::PeerId};
 ///
 /// where the preferred base is `z-base32`.
 ///
-/// For example: `rad:deadbeefdeaddeafbeef/rad/issues`
+/// For example: `rad:git:deadbeefdeaddeafbeef/rad/issues`
 pub struct RadUrn {
     pub id: Multihash,
+    pub proto: Protocol,
     pub path: PathBuf,
 }
 
@@ -68,7 +90,8 @@ impl Display for RadUrn {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "rad:{}/{}",
+            "rad:{}:{}/{}",
+            self.proto.nss(),
             multibase::encode(Base::Base32Z, &self.id),
             self.path.to_str().unwrap()
         )
@@ -96,13 +119,22 @@ impl RadUrl {
 
 impl Into<Url> for RadUrl {
     fn into(self) -> Url {
-        let mut url = Url::parse(&format!("rad://{}", self.authority.default_encoding())).unwrap();
+        let mut url = Url::parse(&format!(
+            "rad+{}://{}",
+            self.urn.proto.nss(),
+            self.authority.default_encoding()
+        ))
+        .unwrap();
 
         url.set_path(
-            Path::new(&multibase::encode(Base::Base32Z, self.urn.id))
-                .join(self.urn.path)
-                .to_str()
-                .unwrap(),
+            &percent_encode(
+                Path::new(&multibase::encode(Base::Base32Z, self.urn.id))
+                    .join(self.urn.path)
+                    .as_os_str()
+                    .as_bytes(),
+                percent_encoding::CONTROLS,
+            )
+            .to_string(),
         );
 
         url
