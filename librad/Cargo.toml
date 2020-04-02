@@ -52,7 +52,8 @@ url = { version = "2.1", features = ["serde"] }
 urltemplate = "0.1"
 webpki = "0.21"
 yasna = { version = "0.3", features = ["bit-vec"] }
-
+bs58 = "0.3.0"
+multihash = "0.10.1"
 
 [dev-dependencies]
 env_logger = "0.7"

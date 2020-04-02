@@ -242,6 +242,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bs58"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b170cd256a3f9fa6b9edae3e44a7dfdfc77e8124dbc3e2612d75f9c3e2396dae"
+
+[[package]]
 name = "buffered-reader"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1035,6 +1041,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bit-vec 0.6.1",
+ "bs58",
  "bytes",
  "directories",
  "env_logger",
