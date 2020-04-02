@@ -93,6 +93,7 @@
 //! # }
 //! ```
 
+#![allow(clippy::new_without_default)]
 #![deny(missing_docs, unused_import_braces, unused_qualifications, warnings)]
 #![feature(vec_remove_item)]
 use crdts::vclock::Actor;
@@ -102,6 +103,8 @@ pub use thread::{DataState, Error as ThreadError, Finger, Replies, ReplyTo, Thre
 
 mod metadata;
 pub use metadata::*;
+
+pub mod ops;
 
 use clock::{Clock, RadClock};
 
