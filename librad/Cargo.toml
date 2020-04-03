@@ -8,6 +8,7 @@ license = "GPL-3.0-or-later"
 [dependencies]
 async-trait = "0.1"
 bit-vec = "0.6"
+bs58 = "0.3"
 bytes = "0.5"
 directories = "2.0"
 failure = { version = "0.1", features = ["backtrace"] }
@@ -54,7 +55,6 @@ url = { version = "2.1", features = ["serde"] }
 urltemplate = "0.1"
 webpki = "0.21"
 yasna = { version = "0.3", features = ["bit-vec"] }
-bs58 = "0.3"
 
 [dev-dependencies]
 env_logger = "0.7"
