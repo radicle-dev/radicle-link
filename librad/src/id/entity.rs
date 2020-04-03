@@ -335,25 +335,6 @@ where
         Ok(Sha2_256::digest(&self.canonical_data()?))
     }
 
-    pub async fn check_user_key(
-        &self,
-        user_uri: &RadicleUri,
-        key: &PublicKey,
-        resolver: &impl Resolver<User>,
-    ) -> Result<(), Error> {
-        if !self.has_key(key) {
-            return Err(Error::KeyNotPresent(key.to_owned()));
-        }
-        let user = resolver.resolve(user_uri).await?;
-        if !user.has_key(key) {
-            return Err(Error::UserKeyNotPresentWIP(
-                user_uri.to_owned(),
-                key.to_owned(),
-            ));
-        }
-        Ok(())
-    }
-
     pub async fn check_key(
         &self,
         key: &PublicKey,
