@@ -278,16 +278,7 @@ impl Signature {
             Ok(v) => v,
             Err(_) => return None,
         };
-        let buffer = if bytes.len() == ed25519::SIGNATUREBYTES {
-            let mut buffer = [0u8; ed25519::SIGNATUREBYTES];
-            for (i, v) in bytes.iter().enumerate() {
-                buffer[i] = *v;
-            }
-            buffer
-        } else {
-            return None;
-        };
-        Some(Self(sodiumoxide::crypto::sign::Signature(buffer)))
+        sodiumoxide::crypto::sign::Signature::from_slice(&bytes).map(|sig| Self(sig))
     }
 
     pub fn to_bs58(&self) -> String {

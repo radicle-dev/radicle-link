@@ -304,7 +304,7 @@ where
     }
 
     pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
-        Ok(self.to_data().canonical_data()?)
+        self.to_data().canonical_data()
     }
     pub fn to_json_writer<W>(&self, writer: W) -> Result<(), Error>
     where
@@ -314,21 +314,17 @@ where
         Ok(())
     }
     pub fn to_json_string(&self) -> Result<String, Error> {
-        Ok(self.to_data().to_json_string()?)
+        self.to_data().to_json_string()
     }
 
     pub fn from_json_reader<R>(r: R) -> Result<Self, Error>
     where
         R: std::io::Read,
     {
-        Ok(Self::from_data(
-            data::EntityData::from_json_reader(r)?.to_owned(),
-        )?)
+        Self::from_data(data::EntityData::from_json_reader(r)?.to_owned())
     }
     pub fn from_json_str(s: &str) -> Result<Self, Error> {
-        Ok(Self::from_data(
-            data::EntityData::from_json_str(s)?.to_owned(),
-        )?)
+        Self::from_data(data::EntityData::from_json_str(s)?.to_owned())
     }
 
     pub fn compute_hash(&self) -> Result<Multihash, Error> {

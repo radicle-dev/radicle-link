@@ -84,10 +84,10 @@ where
     where
         R: std::io::Read,
     {
-        Ok(serde_json::from_reader(r).map_err(Error::SerializationFailed)?)
+        serde_json::from_reader(r).map_err(Error::SerializationFailed)
     }
     pub fn from_json_str(s: &str) -> Result<Self, Error> {
-        Ok(serde_json::from_str(s).map_err(Error::SerializationFailed)?)
+        serde_json::from_str(s).map_err(Error::SerializationFailed)
     }
 
     pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
