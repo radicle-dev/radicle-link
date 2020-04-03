@@ -33,6 +33,7 @@ pub mod paths;
 pub mod peer;
 pub mod project;
 pub mod sync;
+pub mod uri;
 
 pub(crate) mod channel;
 
