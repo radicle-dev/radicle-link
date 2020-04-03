@@ -172,7 +172,7 @@ impl<Cid, User: Actor> Comment<Cid, User> {
 
 enum COP<User: Actor> {
     ReactionOp(orswot::Op<Reaction<User>, User>),
-    EditOp(bool),
+    EditOp(Result<bool, crdts::Error>),
 }
 
 impl<Id, User: Actor> CommentOp<User, COP<User>> for Comment<Id, User> {
@@ -199,12 +199,13 @@ impl<Id, User: Actor> CommentOp<User, COP<User>> for Comment<Id, User> {
         if is_author {
             let mut new_val = self.content.val.clone();
             f(&mut new_val);
-            self.content
-                .update(new_val, self.content.marker + 1)
-                .expect("Marker is monotonic due to incremenent qed.");
-            COP::EditOp(is_author)
+            COP::EditOp(
+                self.content
+                    .update(new_val, self.content.marker + 1)
+                    .map(|_| is_author),
+            )
         } else {
-            COP::EditOp(is_author)
+            COP::EditOp(Ok(is_author))
         }
     }
 }
