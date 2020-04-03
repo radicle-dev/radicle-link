@@ -265,8 +265,8 @@ impl<User: Eq + Hash> std::ops::Deref for Assignees<User> {
 /// A reaction is the pair of a user and a free-form reaction.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Reaction<User> {
-    user: User,
-    value: String,
+    pub(crate) user: User,
+    pub(crate) value: String,
 }
 
 impl<User> Reaction<User> {

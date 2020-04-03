@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::metadata::Label;
+use crate::metadata::{Label, Reaction};
 
 pub trait LabelOp<Op> {
     fn add(&mut self, label: Label) -> Op;
@@ -27,4 +27,10 @@ pub trait AssigneeOp<User, Op> {
     fn add(&mut self, user: User) -> Op;
     fn remove(&mut self, user: User) -> Op;
     fn contains(&self, user: &User) -> bool;
+}
+
+pub trait CommentOp<User, Op> {
+    fn react(&mut self, reaction: Reaction<User>) -> Op;
+    fn unreact(&mut self, reaction: Reaction<User>) -> Op;
+    fn edit<F: FnOnce(&mut String)>(&mut self, user: User, f: F) -> Op;
 }

@@ -15,15 +15,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{
-    metadata::Label,
-    ops::metadata::{AssigneeOp, LabelOp},
-};
+use std::collections::HashMap;
 
 use crdts::{
     self,
+    lwwreg::LWWReg,
     orswot::{self, Orswot},
     vclock::Actor,
+};
+
+use crate::{
+    metadata::{
+        clock::{Clock, RadClock},
+        Label,
+        Reaction,
+    },
+    ops::metadata::{AssigneeOp, CommentOp, LabelOp},
 };
 
 pub struct Labels<User: Actor> {
@@ -95,5 +102,109 @@ impl<User: Actor> AssigneeOp<User, orswot::Op<User, User>> for Assignees<User> {
 
     fn contains(&self, user: &User) -> bool {
         self.assignees.contains(user).val
+    }
+}
+
+/// A comment of an issue is composed of its [`Comment::author`], the
+/// [`Comment::content`] of the comment, and its [`Comment::reactions`].
+///
+/// It has a unique identifier (of type `Id`) chosen by the implementor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Comment<Id, User: Actor> {
+    identifier: Id,
+    author: User,
+    content: LWWReg<String, usize>,
+    reactions: Orswot<Reaction<User>, User>,
+    timestamp: RadClock,
+}
+
+impl<Cid, User: Actor> Comment<Cid, User> {
+    /// Create a new `Comment`.
+    pub fn new(identifier: Cid, author: User, content: String) -> Self {
+        let timestamp = RadClock::current_time();
+        Self::new_with_timestamp(identifier, author, content, timestamp)
+    }
+
+    /// Create a new `Comment` with a supplied `timestamp`.
+    pub fn new_with_timestamp(
+        identifier: Cid,
+        author: User,
+        content: String,
+        timestamp: RadClock,
+    ) -> Self {
+        Comment {
+            identifier,
+            author,
+            content: LWWReg {
+                val: content,
+                marker: 0,
+            },
+            reactions: Orswot::new(),
+            timestamp,
+        }
+    }
+
+    /// Get a reference to to the author of this comment.
+    pub fn author(&self) -> &User {
+        &self.author
+    }
+
+    /// Get a reference to to the content of this comment.
+    pub fn content(&self) -> &String {
+        &self.content.val
+    }
+
+    /// Get the map of reactions to this comment.
+    pub fn reactions(&self) -> HashMap<String, Vec<User>>
+    where
+        User: Clone,
+    {
+        let mut reaction_map = HashMap::new();
+        for reaction in self.reactions.read().val.into_iter() {
+            reaction_map
+                .entry(reaction.value.clone())
+                .and_modify(|users: &mut Vec<User>| users.push(reaction.user.clone()))
+                .or_insert_with(|| vec![reaction.user]);
+        }
+        reaction_map
+    }
+}
+
+enum COP<User: Actor> {
+    ReactionOp(orswot::Op<Reaction<User>, User>),
+    EditOp(bool),
+}
+
+impl<Id, User: Actor> CommentOp<User, COP<User>> for Comment<Id, User> {
+    /// Add a new reaction to the set of reactions on the comment.
+    /// Returns `true` if the reaction was new.
+    /// Returns `false` if the reaction already existed.
+    fn react(&mut self, reaction: Reaction<User>) -> COP<User> {
+        let read_ctx = self.reactions.read();
+        let add_ctx = read_ctx.derive_add_ctx(reaction.user.clone());
+        COP::ReactionOp(self.reactions.add(reaction, add_ctx))
+    }
+
+    /// Add a new reaction to the set of reactions on the comment.
+    /// Returns `true` if the reaction was in the set and is now removed.
+    /// Returns `false` if the reaction was not in the set to begin with.
+    fn unreact(&mut self, reaction: Reaction<User>) -> COP<User> {
+        let read_ctx = self.reactions.read();
+        let rm_ctx = read_ctx.derive_rm_ctx();
+        COP::ReactionOp(self.reactions.rm(reaction, rm_ctx))
+    }
+
+    fn edit<F: FnOnce(&mut String)>(&mut self, user: User, f: F) -> COP<User> {
+        let is_author = self.author == user;
+        if is_author {
+            let mut new_val = self.content.val.clone();
+            f(&mut new_val);
+            self.content
+                .update(new_val, self.content.marker + 1)
+                .expect("Marker is monotonic due to incremenent qed.");
+            COP::EditOp(is_author)
+        } else {
+            COP::EditOp(is_author)
+        }
     }
 }
