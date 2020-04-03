@@ -278,7 +278,7 @@ impl Signature {
             Ok(v) => v,
             Err(_) => return None,
         };
-        sodiumoxide::crypto::sign::Signature::from_slice(&bytes).map(|sig| Self(sig))
+        sodiumoxide::crypto::sign::Signature::from_slice(&bytes).map(Self)
     }
 
     pub fn to_bs58(&self) -> String {

@@ -30,8 +30,11 @@ impl RadicleUri {
     pub fn hash(&self) -> &Multihash {
         &self.hash
     }
+}
 
-    pub fn from_str(s: &str) -> Result<Self, Error> {
+impl std::str::FromStr for RadicleUri {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Error> {
         if s.len() < 4 {
             return Err(Error::InvalidUri(s.to_owned()));
         }
@@ -43,8 +46,7 @@ impl RadicleUri {
             .with_alphabet(bs58::alphabet::BITCOIN)
             .into_vec()
             .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
-        let hash =
-            Multihash::from_bytes(bytes.to_owned()).map_err(|_| Error::InvalidUri(s.to_owned()))?;
+        let hash = Multihash::from_bytes(bytes).map_err(|_| Error::InvalidUri(s.to_owned()))?;
         Ok(Self { hash })
     }
 }

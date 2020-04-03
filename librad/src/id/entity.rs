@@ -28,6 +28,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     iter::FromIterator,
+    str::FromStr,
 };
 use thiserror::Error;
 
@@ -151,19 +152,21 @@ where
     }
 
     pub fn from_data(data: data::EntityData<T>) -> Result<Self, Error> {
-        if let None = data.name {
+        if data.name.is_none() {
             return Err(Error::InvalidData("Missing name".to_owned()));
         }
-        if let None = data.revision {
+        if data.revision.is_none() {
             return Err(Error::InvalidData("Missing revision".to_owned()));
         }
-        if data.keys.len() == 0 {
+        if data.keys.is_empty() {
             return Err(Error::InvalidData("Missing keys".to_owned()));
         }
 
         let mut keys = HashSet::new();
         for k in data.keys.iter() {
-            keys.insert(PublicKey::from_bs58(k).ok_or(Error::InvalidData(format!("key: {}", k)))?);
+            keys.insert(
+                PublicKey::from_bs58(k).ok_or_else(|| Error::InvalidData(format!("key: {}", k)))?,
+            );
         }
 
         let mut certifiers = HashSet::new();
@@ -178,14 +181,15 @@ where
         if let Some(s) = &data.signatures {
             for (k, sig) in s.iter() {
                 let key = PublicKey::from_bs58(k)
-                    .ok_or(Error::InvalidData(format!("signature key: {}", k)))?;
+                    .ok_or_else(|| Error::InvalidData(format!("signature key: {}", k)))?;
                 let signature = EntitySignature {
                     by: match &sig.user {
                         Some(uri) => Signatory::User(RadicleUri::from_str(&uri)?),
                         None => Signatory::OwnedKey,
                     },
-                    sig: Signature::from_bs58(&sig.sig)
-                        .ok_or(Error::InvalidData(format!("signature data: {}", &sig.sig)))?,
+                    sig: Signature::from_bs58(&sig.sig).ok_or_else(|| {
+                        Error::InvalidData(format!("signature data: {}", &sig.sig))
+                    })?,
                 };
                 signatures.insert(key, signature);
             }
@@ -219,7 +223,7 @@ where
         };
 
         Ok(Self {
-            name: data.name.unwrap().to_owned(),
+            name: data.name.unwrap(),
             revision: data.revision.unwrap().to_owned(),
             hash: actual_hash,
             parent_hash,
@@ -321,10 +325,10 @@ where
     where
         R: std::io::Read,
     {
-        Self::from_data(data::EntityData::from_json_reader(r)?.to_owned())
+        Self::from_data(data::EntityData::from_json_reader(r)?)
     }
     pub fn from_json_str(s: &str) -> Result<Self, Error> {
-        Self::from_data(data::EntityData::from_json_str(s)?.to_owned())
+        Self::from_data(data::EntityData::from_json_str(s)?)
     }
 
     pub fn compute_hash(&self) -> Result<Multihash, Error> {
@@ -425,10 +429,10 @@ where
                 },
             }
         }
-        if keys.len() > 0 || users.len() > 0 {
-            Err(Error::SignatureMissing)
-        } else {
+        if keys.is_empty() && users.is_empty() {
             Ok(())
+        } else {
+            Err(Error::SignatureMissing)
         }
     }
 

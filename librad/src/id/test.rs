@@ -26,6 +26,7 @@ use futures::stream::{iter, Iter};
 use futures_await_test::async_test;
 use lazy_static::lazy_static;
 use sodiumoxide::crypto::sign::ed25519::Seed;
+use std::str::FromStr;
 
 const SEED: Seed = Seed([
     20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81, 181,
@@ -132,7 +133,7 @@ fn new_user(name: &str, revision: u64, devices: &[&'static str]) -> Result<User,
     let mut data = UserData::default()
         .set_name(name.to_owned())
         .set_revision(revision);
-    for s in devices.into_iter() {
+    for s in devices.iter() {
         data = data.add_key((*s).to_owned());
     }
     data.build()
