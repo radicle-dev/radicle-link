@@ -17,7 +17,7 @@
 
 use super::{
     entity::*,
-    uri::RadicleUri,
+    uri::{RadicleUri, EMPTY_HASH},
     user::{User, UserData},
 };
 use crate::{keys::device::Key, peer::PeerId};
@@ -100,15 +100,33 @@ impl UserHistory {
     }
 }
 
-/*
-impl RevisionsResolver<User, <std::vec::Vec<User> as IntoIterator>::IntoIter, Vec<User>>
-    for UserHistory
-{
-    fn resolve_revisions(&self, _uri: &RadicleUri) -> std::boxed::Box<Vec<User>> {
-        Box::new(self.revisions.iter().rev().cloned().collect())
-    }
+#[test]
+fn test_invalid_uri() {
+    assert!(matches!(
+        RadicleUri::from_str("foo"),
+        Err(Error::InvalidUri(_))
+    ));
+    assert!(matches!(
+        RadicleUri::from_str("http://radicle.xyz"),
+        Err(Error::InvalidUri(_))
+    ));
+    assert!(matches!(
+        RadicleUri::from_str("rad:"),
+        Err(Error::InvalidUri(_))
+    ));
+    assert!(matches!(
+        RadicleUri::from_str("rad:ABC"),
+        Err(Error::InvalidUri(_))
+    ));
 }
-*/
+
+#[test]
+fn test_valid_uri() {
+    let u1 = RadicleUri::new((*EMPTY_HASH).to_owned());
+    let s = u1.to_string();
+    let u2 = RadicleUri::from_str(&s).unwrap();
+    assert_eq!(u1, u2);
+}
 
 fn new_user(name: &str, revision: u64, devices: &[&'static str]) -> Result<User, Error> {
     let mut data = UserData::default()

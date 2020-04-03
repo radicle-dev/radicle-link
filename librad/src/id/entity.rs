@@ -33,31 +33,34 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Serialization failed")]
+    #[error("Serialization failed ({0})")]
     SerializationFailed(serde_json::error::Error),
 
-    #[error("Invalid UTF8")]
+    #[error("Invalid UTF8 ({0})")]
     InvalidUtf8(std::string::FromUtf8Error),
 
-    #[error("Invalid buffer encoding")]
+    #[error("Invalid buffer encoding ({0})")]
     InvalidBufferEncoding(String),
 
-    #[error("Invalid hash")]
+    #[error("Invalid hash ({0})")]
     InvalidHash(String),
 
-    #[error("Signature already present")]
+    #[error("Invalid URI ({0})")]
+    InvalidUri(String),
+
+    #[error("Signature already present ({0})")]
     SignatureAlreadyPresent(PublicKey),
 
-    #[error("Invalid data")]
+    #[error("Invalid data ({0})")]
     InvalidData(String),
 
-    #[error("Key not present")]
+    #[error("Key not present ({0})")]
     KeyNotPresent(PublicKey),
 
-    #[error("User not present")]
+    #[error("User not present ({0})")]
     UserNotPresent(RadicleUri),
 
-    #[error("User key not present")]
+    #[error("User key not present (uri {0}, key {1})")]
     UserKeyNotPresent(RadicleUri, PublicKey),
 
     #[error("User key not present")]
@@ -72,7 +75,7 @@ pub enum Error {
     #[error("Signature verification failed")]
     SignatureVerificationFailed,
 
-    #[error("Resolution failed")]
+    #[error("Resolution failed (uri {0})")]
     ResolutionFailed(String),
 }
 
@@ -96,10 +99,10 @@ pub enum HistoryVerificationError {
     #[error("Empty history")]
     EmptyHistory,
 
-    #[error("Error at revsion")]
+    #[error("Error at revsion (rev {revision:?}, err {error:?})")]
     ErrorAtRevision { revision: u64, error: Error },
 
-    #[error("Update error")]
+    #[error("Update error (rev {revision:?}, err {error:?})")]
     UpdateError {
         revision: u64,
         error: UpdateVerificationError,
