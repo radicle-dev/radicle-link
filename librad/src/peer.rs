@@ -124,7 +124,7 @@ impl<'de> Deserialize<'de> for PeerId {
     }
 }
 
-mod conversion {
+pub mod conversion {
     use thiserror::Error;
 
     #[derive(Debug, Error)]

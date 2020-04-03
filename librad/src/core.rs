@@ -17,129 +17,19 @@
 
 use std::{
     collections::HashMap,
-    fmt::{self, Display},
     io,
     path::{Path, PathBuf},
 };
 
 use async_trait::async_trait;
 use futures::Stream;
-use multibase::Base;
 use multihash::Multihash;
-use percent_encoding::percent_encode;
-use url::Url;
 
-// FIXME: `Path`/`PathBuf` are poor types for use with `RadUrn` -- there's no
-// equivalent to `OsStrExt::as_bytes()` on Windows.
-use std::os::unix::ffi::OsStrExt;
-
-use crate::{keys::device::Signature, peer::PeerId};
-
-pub enum Protocol {
-    Git,
-    //Pijul,
-}
-
-impl Protocol {
-    /// The "NSS" (namespace-specific string) of the [`Protocol`] in the context
-    /// of a URN
-    pub fn nss(&self) -> &str {
-        match self {
-            Self::Git => "git",
-            //Self::Pijul => "pijul",
-        }
-    }
-}
-
-/// A `RadUrn` identifies a branch in a verifiabe `radicle-link` repository,
-/// where:
-///
-/// * The repository is named `id`
-/// * The backend / protocol is [`Protocol`]
-/// * The initial (parent-less) revision of an identity document (defined by
-///   [`Verifier`]) has the content address `id`
-/// * There exists a branch named `rad/id` pointing to the most recent revision
-///   of the identity document
-/// * There MAY exist a branch named `path`
-///
-/// The textual representation of a `RadUrn` is of the form:
-///
-/// ```text
-/// 'rad' ':' MULTIBASE(<id>) '/' <path>
-/// ```
-///
-/// where the preferred base is `z-base32`.
-///
-/// For example: `rad:git:deadbeefdeaddeafbeef/rad/issues`
-pub struct RadUrn {
-    pub id: Multihash,
-    pub proto: Protocol,
-    pub path: PathBuf,
-}
-
-impl RadUrn {
-    pub fn into_rad_url(self, peer: PeerId) -> RadUrl {
-        RadUrl {
-            authority: peer,
-            urn: self,
-        }
-    }
-}
-
-impl Display for RadUrn {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "rad:{}:{}/{}",
-            self.proto.nss(),
-            multibase::encode(Base::Base32Z, &self.id),
-            self.path.to_str().unwrap()
-        )
-    }
-}
-
-/// A `RadUrl` is a URL with the scheme `rad://`.
-///
-/// The authority of a rad URL is a [`PeerId`], from which to retrieve the
-/// `radicle-link` repository and branch identified by [`RadUrn`].
-pub struct RadUrl {
-    authority: PeerId,
-    urn: RadUrn,
-}
-
-impl RadUrl {
-    pub fn into_url(self) -> Url {
-        self.into()
-    }
-
-    // TODO: like `Gossip::fetch`, we should also be able to open a `RadUrl` from
-    // local storage:
-    // pub fn open(&self) -> Result<impl Iterator<Item = Commit>, ??>
-}
-
-impl Into<Url> for RadUrl {
-    fn into(self) -> Url {
-        let mut url = Url::parse(&format!(
-            "rad+{}://{}",
-            self.urn.proto.nss(),
-            self.authority.default_encoding()
-        ))
-        .unwrap();
-
-        url.set_path(
-            &percent_encode(
-                Path::new(&multibase::encode(Base::Base32Z, self.urn.id))
-                    .join(self.urn.path)
-                    .as_os_str()
-                    .as_bytes(),
-                percent_encoding::CONTROLS,
-            )
-            .to_string(),
-        );
-
-        url
-    }
-}
+use crate::{
+    keys::device::Signature,
+    peer::PeerId,
+    uri::{RadUrl, RadUrn},
+};
 
 /// Placeholder for a version in a history
 type Version<'a> = &'a [u8];
