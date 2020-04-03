@@ -15,12 +15,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use futures_await_test::async_test;
+
 use super::{
     entity::*,
     uri::{RadicleUri, EMPTY_URI},
     user::{User, UserData},
 };
 use crate::{keys::device::Key, peer::PeerId};
+use async_trait::async_trait;
 use lazy_static::lazy_static;
 use sodiumoxide::crypto::sign::ed25519::Seed;
 
@@ -73,8 +76,9 @@ lazy_static! {
 
 struct EmptyResolver {}
 
+#[async_trait]
 impl Resolver<User> for EmptyResolver {
-    fn resolve(&self, uri: &RadicleUri) -> Result<User, Error> {
+    async fn resolve(&self, uri: &RadicleUri) -> Result<User, Error> {
         Err(Error::UserNotPresent(uri.to_owned()))
     }
 }
@@ -109,25 +113,27 @@ fn new_user(name: &str, revision: u64, devices: &[&'static str]) -> Result<User,
     data.build()
 }
 
-#[test]
-fn test_user_signatures() {
+#[async_test]
+async fn test_user_signatures() {
     // Keep signing the user while adding devices
     let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
 
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     let sig1 = user.compute_signature(&K1).unwrap();
 
     let mut user = user.to_builder().add_key((*D2K).clone()).build().unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     let sig2 = user.compute_signature(&K1).unwrap();
 
     assert_ne!(&sig1, &sig2);
 }
 
-#[test]
-fn test_adding_user_signatures() {
+#[async_test]
+async fn test_adding_user_signatures() {
     let user = new_user("foo", 1, &[&*D1K]).unwrap();
 
     // Check that canonical data changes while adding devices
@@ -142,12 +148,15 @@ fn test_adding_user_signatures() {
 
     // Check that canonical data does not change manipulating signatures
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     let data4 = user.canonical_data().unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     let data5 = user.canonical_data().unwrap();
     user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     let data6 = user.canonical_data().unwrap();
 
@@ -168,20 +177,21 @@ fn test_adding_user_signatures() {
     }
 }
 
-#[test]
-fn test_user_verification() {
+#[async_test]
+async fn test_user_verification() {
     // A new user is not valid because no key has signed it
     let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
     assert!(matches!(
-        user.check_validity(&EMPTY_RESOLVER),
+        user.check_validity(&EMPTY_RESOLVER).await,
         Err(Error::SignatureMissing)
     ));
-    assert!(!user.is_valid(&EMPTY_RESOLVER));
+    assert!(!user.is_valid(&EMPTY_RESOLVER).await);
     // Adding the signature fixes it
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
-    assert!(matches!(user.check_validity(&EMPTY_RESOLVER), Ok(())));
-    assert!(user.is_valid(&EMPTY_RESOLVER));
+    assert!(matches!(user.check_validity(&EMPTY_RESOLVER).await, Ok(())));
+    assert!(user.is_valid(&EMPTY_RESOLVER).await);
     // Adding keys without signatures invalidates it
     let mut user = user
         .to_data()
@@ -190,20 +200,22 @@ fn test_user_verification() {
         .add_key((*D3K).clone())
         .build()
         .unwrap();
-    assert!(matches!(user.check_validity(&EMPTY_RESOLVER), Err(_)));
+    assert!(matches!(user.check_validity(&EMPTY_RESOLVER).await, Err(_)));
     // Adding the missing signatures does not fix it: D1 signed a previous
     // revision
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     assert!(matches!(
-        user.check_validity(&EMPTY_RESOLVER),
+        user.check_validity(&EMPTY_RESOLVER).await,
         Err(Error::SignatureVerificationFailed)
     ));
     // Cannot sign a project twice with the same key
     assert!(matches!(
-        user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER),
+        user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER).await,
         Err(Error::SignatureAlreadyPresent(_))
     ));
     // Removing the signature and re adding it fixes the project
@@ -219,8 +231,9 @@ fn test_user_verification() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
-    assert!(user.is_valid(&EMPTY_RESOLVER));
+    assert!(user.is_valid(&EMPTY_RESOLVER).await);
     // Removing a maintainer invalidates it again
     let user = user
         .to_data()
@@ -228,15 +241,15 @@ fn test_user_verification() {
         .remove_key(&*D1K)
         .build()
         .unwrap();
-    assert!(matches!(user.check_validity(&EMPTY_RESOLVER), Err(_)));
+    assert!(matches!(user.check_validity(&EMPTY_RESOLVER).await, Err(_)));
 }
 
-#[test]
-fn test_project_update() {
+#[async_test]
+async fn test_project_update() {
     // Empty history is invalid
     let mut history = UserHistory::new();
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history),
+        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
         Err(HistoryVerificationError::EmptyHistory)
     ));
 
@@ -245,7 +258,7 @@ fn test_project_update() {
     history.revisions.push(user);
 
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history),
+        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
         Err(HistoryVerificationError::ErrorAtRevision {
             revision: 1,
             error: Error::SignatureMissing,
@@ -258,9 +271,10 @@ fn test_project_update() {
         .last_mut()
         .unwrap()
         .sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history),
+        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
         Ok(())
     ));
 
@@ -275,12 +289,14 @@ fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history),
+        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
         Ok(())
     ));
 
@@ -297,14 +313,17 @@ fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history),
+        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
         Err(HistoryVerificationError::UpdateError {
             revision: 2,
             error: UpdateVerificationError::NoCurrentQuorum,
@@ -323,12 +342,14 @@ fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history),
+        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
         Ok(())
     ));
     let mut user = history
@@ -341,14 +362,17 @@ fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history),
+        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
         Ok(())
     ));
 
@@ -366,14 +390,17 @@ fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     user.sign(&K4, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     user.sign(&K5, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history),
+        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
         Err(HistoryVerificationError::UpdateError {
             revision: 4,
             error: UpdateVerificationError::NoCurrentQuorum,
@@ -393,10 +420,11 @@ fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history),
+        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
         Err(HistoryVerificationError::UpdateError {
             revision: 4,
             error: UpdateVerificationError::NoPreviousQuorum,

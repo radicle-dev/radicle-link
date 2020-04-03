@@ -21,6 +21,8 @@ use crate::{
     id::{uri::RadicleUri, user::User},
     keys::device::{Key, PublicKey, Signature},
 };
+use async_trait::async_trait;
+// use futures::stream::Stream;
 use multihash::{Multihash, Sha2_256};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
@@ -116,8 +118,9 @@ pub struct EntitySignature {
     pub sig: Signature,
 }
 
+#[async_trait]
 pub trait Resolver<T> {
-    fn resolve(&self, uri: &RadicleUri) -> Result<T, Error>;
+    async fn resolve(&self, uri: &RadicleUri) -> Result<T, Error>;
 }
 
 pub trait RevisionsResolver<T, I, II>
@@ -337,7 +340,7 @@ where
         Ok(Sha2_256::digest(&self.canonical_data()?))
     }
 
-    pub fn check_user_key(
+    pub async fn check_user_key(
         &self,
         user_uri: &RadicleUri,
         key: &PublicKey,
@@ -346,7 +349,7 @@ where
         if !self.has_key(key) {
             return Err(Error::KeyNotPresent(key.to_owned()));
         }
-        let user = resolver.resolve(user_uri)?;
+        let user = resolver.resolve(user_uri).await?;
         if !user.has_key(key) {
             return Err(Error::UserKeyNotPresentWIP(
                 user_uri.to_owned(),
@@ -356,7 +359,7 @@ where
         Ok(())
     }
 
-    pub fn check_key(
+    pub async fn check_key(
         &self,
         key: &PublicKey,
         by: &Signatory,
@@ -369,7 +372,7 @@ where
                 }
             },
             Signatory::User(uri) => {
-                let user = resolver.resolve(&uri)?;
+                let user = resolver.resolve(&uri).await?;
                 if !user.has_key(key) {
                     return Err(Error::UserKeyNotPresentWIP(uri.to_owned(), key.to_owned()));
                 }
@@ -382,7 +385,7 @@ where
         Ok(key.sign(&self.canonical_data()?))
     }
 
-    pub fn sign(
+    pub async fn sign(
         &mut self,
         key: &Key,
         by: &Signatory,
@@ -392,7 +395,7 @@ where
         if self.signatures().contains_key(&public_key) {
             return Err(Error::SignatureAlreadyPresent(public_key.to_owned()));
         }
-        self.check_key(&public_key, by, resolver)?;
+        self.check_key(&public_key, by, resolver).await?;
         let signature = EntitySignature {
             by: by.to_owned(),
             sig: self.compute_signature(key)?,
@@ -401,14 +404,14 @@ where
         Ok(())
     }
 
-    pub fn check_signature(
+    pub async fn check_signature(
         &self,
         key: &PublicKey,
         by: &Signatory,
         signature: &Signature,
         resolver: &impl Resolver<User>,
     ) -> Result<(), Error> {
-        self.check_key(key, by, resolver)?;
+        self.check_key(key, by, resolver).await?;
         if signature.verify(&self.canonical_data()?, key) {
             Ok(())
         } else {
@@ -416,12 +419,12 @@ where
         }
     }
 
-    pub fn check_validity(&self, resolver: &impl Resolver<User>) -> Result<(), Error> {
+    pub async fn check_validity(&self, resolver: &impl Resolver<User>) -> Result<(), Error> {
         let mut keys = HashSet::<PublicKey>::from_iter(self.keys().iter().cloned());
         let mut users = HashSet::<RadicleUri>::from_iter(self.certifiers().iter().cloned());
 
         for (k, s) in self.signatures() {
-            self.check_signature(k, &s.by, &s.sig, resolver)?;
+            self.check_signature(k, &s.by, &s.sig, resolver).await?;
             match &s.by {
                 Signatory::OwnedKey => {
                     keys.remove(k);
@@ -438,8 +441,8 @@ where
         }
     }
 
-    pub fn is_valid(&self, resolver: &impl Resolver<User>) -> bool {
-        self.check_validity(resolver).is_ok()
+    pub async fn is_valid(&self, resolver: &impl Resolver<User>) -> bool {
+        self.check_validity(resolver).await.is_ok()
     }
 
     pub fn check_update(&self, previous: &Self) -> Result<(), UpdateVerificationError> {
@@ -478,7 +481,7 @@ where
         Ok(())
     }
 
-    pub fn check_history<I, II>(
+    pub async fn check_history<I, II>(
         uri: &RadicleUri,
         resolver: &impl Resolver<User>,
         revisions_resolver: &impl RevisionsResolver<Entity<T>, I, II>,
@@ -500,12 +503,14 @@ where
         let revision = current.revision();
         current
             .check_validity(resolver)
+            .await
             .map_err(|error| HistoryVerificationError::ErrorAtRevision { revision, error })?;
 
         for previous in revisions {
             let revision = current.revision();
             previous
                 .check_validity(resolver)
+                .await
                 .map_err(|error| HistoryVerificationError::ErrorAtRevision { revision, error })?;
             current
                 .check_update(&previous)

@@ -59,4 +59,5 @@ multihash = "0.10.1"
 env_logger = "0.7"
 matches = "0.1"
 proptest = "0.9"
+futures-await-test = "0.3.0"
 
