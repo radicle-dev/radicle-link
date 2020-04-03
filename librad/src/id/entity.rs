@@ -22,7 +22,7 @@ use crate::{
     keys::device::{Key, PublicKey, Signature},
 };
 use async_trait::async_trait;
-// use futures::stream::Stream;
+use futures::stream::{Stream, StreamExt};
 use multihash::{Multihash, Sha2_256};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
@@ -121,14 +121,6 @@ pub struct EntitySignature {
 #[async_trait]
 pub trait Resolver<T> {
     async fn resolve(&self, uri: &RadicleUri) -> Result<T, Error>;
-}
-
-pub trait RevisionsResolver<T, I, II>
-where
-    I: Iterator<Item = T>,
-    II: IntoIterator<Item = T, IntoIter = I> + Sized,
-{
-    fn resolve_revisions(&self, uri: &RadicleUri) -> Box<II>;
 }
 
 // Sized
@@ -481,18 +473,15 @@ where
         Ok(())
     }
 
-    pub async fn check_history<I, II>(
-        uri: &RadicleUri,
+    pub async fn check_history<R>(
         resolver: &impl Resolver<User>,
-        revisions_resolver: &impl RevisionsResolver<Entity<T>, I, II>,
+        revisions: R,
     ) -> Result<(), HistoryVerificationError>
     where
-        I: Iterator<Item = Entity<T>>,
-        II: IntoIterator<Item = Entity<T>, IntoIter = I> + Sized,
+        R: Stream<Item = Entity<T>> + Unpin,
     {
-        let mut revisions = revisions_resolver.resolve_revisions(uri).into_iter();
-
-        let current = revisions.next();
+        let mut revisions = revisions;
+        let current = revisions.next().await;
         let mut current = match current {
             None => {
                 return Err(HistoryVerificationError::EmptyHistory);
@@ -506,7 +495,7 @@ where
             .await
             .map_err(|error| HistoryVerificationError::ErrorAtRevision { revision, error })?;
 
-        for previous in revisions {
+        while let Some(previous) = revisions.next().await {
             let revision = current.revision();
             previous
                 .check_validity(resolver)

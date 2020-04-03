@@ -15,15 +15,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use futures_await_test::async_test;
-
 use super::{
     entity::*,
-    uri::{RadicleUri, EMPTY_URI},
+    uri::RadicleUri,
     user::{User, UserData},
 };
 use crate::{keys::device::Key, peer::PeerId};
 use async_trait::async_trait;
+use futures::stream::{iter, Iter};
+use futures_await_test::async_test;
 use lazy_static::lazy_static;
 use sodiumoxide::crypto::sign::ed25519::Seed;
 
@@ -93,8 +93,14 @@ impl UserHistory {
     fn new() -> Self {
         Self { revisions: vec![] }
     }
+
+    fn as_stream(&self) -> Iter<std::vec::IntoIter<User>> {
+        let reversed: Vec<User> = self.revisions.iter().rev().cloned().collect();
+        iter(reversed)
+    }
 }
 
+/*
 impl RevisionsResolver<User, <std::vec::Vec<User> as IntoIterator>::IntoIter, Vec<User>>
     for UserHistory
 {
@@ -102,6 +108,7 @@ impl RevisionsResolver<User, <std::vec::Vec<User> as IntoIterator>::IntoIter, Ve
         Box::new(self.revisions.iter().rev().cloned().collect())
     }
 }
+*/
 
 fn new_user(name: &str, revision: u64, devices: &[&'static str]) -> Result<User, Error> {
     let mut data = UserData::default()
@@ -249,7 +256,7 @@ async fn test_project_update() {
     // Empty history is invalid
     let mut history = UserHistory::new();
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
+        User::check_history(&EMPTY_RESOLVER, history.as_stream()).await,
         Err(HistoryVerificationError::EmptyHistory)
     ));
 
@@ -258,7 +265,7 @@ async fn test_project_update() {
     history.revisions.push(user);
 
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
+        User::check_history(&EMPTY_RESOLVER, history.as_stream()).await,
         Err(HistoryVerificationError::ErrorAtRevision {
             revision: 1,
             error: Error::SignatureMissing,
@@ -274,7 +281,7 @@ async fn test_project_update() {
         .await
         .unwrap();
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
+        User::check_history(&EMPTY_RESOLVER, history.as_stream()).await,
         Ok(())
     ));
 
@@ -296,7 +303,7 @@ async fn test_project_update() {
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
+        User::check_history(&EMPTY_RESOLVER, history.as_stream()).await,
         Ok(())
     ));
 
@@ -323,7 +330,7 @@ async fn test_project_update() {
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
+        User::check_history(&EMPTY_RESOLVER, history.as_stream()).await,
         Err(HistoryVerificationError::UpdateError {
             revision: 2,
             error: UpdateVerificationError::NoCurrentQuorum,
@@ -349,7 +356,7 @@ async fn test_project_update() {
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
+        User::check_history(&EMPTY_RESOLVER, history.as_stream()).await,
         Ok(())
     ));
     let mut user = history
@@ -372,7 +379,7 @@ async fn test_project_update() {
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
+        User::check_history(&EMPTY_RESOLVER, history.as_stream()).await,
         Ok(())
     ));
 
@@ -400,7 +407,7 @@ async fn test_project_update() {
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
+        User::check_history(&EMPTY_RESOLVER, history.as_stream()).await,
         Err(HistoryVerificationError::UpdateError {
             revision: 4,
             error: UpdateVerificationError::NoCurrentQuorum,
@@ -424,7 +431,7 @@ async fn test_project_update() {
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        User::check_history(&EMPTY_URI, &EMPTY_RESOLVER, &history).await,
+        User::check_history(&EMPTY_RESOLVER, history.as_stream()).await,
         Err(HistoryVerificationError::UpdateError {
             revision: 4,
             error: UpdateVerificationError::NoPreviousQuorum,
