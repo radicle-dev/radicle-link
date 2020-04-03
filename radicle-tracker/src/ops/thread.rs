@@ -15,8 +15,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#![allow(missing_docs)]
-pub mod crdt;
-pub mod memory;
-pub mod metadata;
-pub mod thread;
+use crate::thread::{Finger, ReplyTo};
+
+/* So here's the thing... What do we do here?
+ * Do we use a crdt::Map for the thread replies instead of a NonEmpty?
+ * How much of the logic will be duplicated?
+ * So many questions!
+ */
+pub trait ThreadOp<A, Op> {
+    fn reply(&mut self, a: A, reply_to: ReplyTo) -> Op;
+    fn delete(&mut self, finger: Finger) -> Op;
+    fn edit<F: FnOnce(&mut A)>(&mut self, finger: Finger, f: F) -> Op;
+}
