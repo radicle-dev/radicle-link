@@ -64,9 +64,6 @@ pub enum Error {
     #[error("User key not present (uri {0}, key {1})")]
     UserKeyNotPresent(RadicleUri, PublicKey),
 
-    #[error("User key not present")]
-    UserKeyNotPresentWIP(RadicleUri, PublicKey),
-
     #[error("Signature missing")]
     SignatureMissing,
 
@@ -354,7 +351,7 @@ where
             Signatory::User(uri) => {
                 let user = resolver.resolve(&uri).await?;
                 if !user.has_key(key) {
-                    return Err(Error::UserKeyNotPresentWIP(uri.to_owned(), key.to_owned()));
+                    return Err(Error::UserKeyNotPresent(uri.to_owned(), key.to_owned()));
                 }
             },
         }
