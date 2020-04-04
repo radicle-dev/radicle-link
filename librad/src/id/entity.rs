@@ -283,6 +283,10 @@ where
         RadicleUri::new(self.hash.to_owned())
     }
 
+    pub fn parent_hash(&self) -> &Option<Multihash> {
+        &self.parent_hash
+    }
+
     pub fn signatures(&self) -> &HashMap<PublicKey, EntitySignature> {
         &self.signatures
     }
@@ -424,6 +428,17 @@ where
     pub fn check_update(&self, previous: &Self) -> Result<(), UpdateVerificationError> {
         if self.revision() <= previous.revision() {
             return Err(UpdateVerificationError::NonMonotonicRevision);
+        }
+
+        match &self.parent_hash {
+            Some(parent_hash) => {
+                if &previous.hash != parent_hash {
+                    return Err(UpdateVerificationError::WrongParentHash);
+                }
+            },
+            None => {
+                return Err(UpdateVerificationError::WrongParentHash);
+            },
         }
 
         let retained_keys = self.keys().iter().filter(|k| previous.has_key(k)).count();

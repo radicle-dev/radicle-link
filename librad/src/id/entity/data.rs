@@ -95,6 +95,7 @@ where
         cleaned.name = self.name.to_owned();
         cleaned.revision = self.revision.to_owned();
         cleaned.hash = self.hash.to_owned();
+        cleaned.parent_hash = self.parent_hash.to_owned();
         cleaned.keys = self.keys.to_owned();
         cleaned.certifiers = self.certifiers.to_owned();
         cleaned.info = self.info.to_owned();

@@ -304,6 +304,53 @@ async fn test_project_update() {
         Ok(())
     ));
 
+    // Having a parent but no parent hash is not ok
+    let mut user = history
+        .revisions
+        .last()
+        .unwrap()
+        .to_builder()
+        .set_parent(history.revisions.last().unwrap())
+        .clear_parent_hash()
+        .build()
+        .unwrap();
+    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
+        .unwrap();
+    let some_random_hash = user.to_data().hash.unwrap().to_owned();
+    history.revisions.push(user);
+    assert!(matches!(
+        User::check_history(&EMPTY_RESOLVER, history.as_stream()).await,
+        Err(HistoryVerificationError::UpdateError {
+            revision: 2,
+            error: UpdateVerificationError::WrongParentHash,
+        })
+    ));
+    history.revisions.pop();
+
+    // Having a parent but wrong parent hash is not ok
+    let mut user = history
+        .revisions
+        .last()
+        .unwrap()
+        .to_builder()
+        .set_parent(history.revisions.last().unwrap())
+        .set_parent_hash(some_random_hash)
+        .build()
+        .unwrap();
+    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .await
+        .unwrap();
+    history.revisions.push(user);
+    assert!(matches!(
+        User::check_history(&EMPTY_RESOLVER, history.as_stream()).await,
+        Err(HistoryVerificationError::UpdateError {
+            revision: 2,
+            error: UpdateVerificationError::WrongParentHash,
+        })
+    ));
+    history.revisions.pop();
+
     // Adding one key is ok
     let mut user = history
         .revisions
