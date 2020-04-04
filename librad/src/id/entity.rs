@@ -107,33 +107,71 @@ pub enum HistoryVerificationError {
     },
 }
 
+/// A type expressing *who* is signing an `Entity`:
+///
+///  * either a specific user (identified by their URN),
+///  * or the entity itself (with an owned key).
 #[derive(Clone, Debug)]
 pub enum Signatory {
     User(RadicleUri),
     OwnedKey,
 }
 
+/// A signature for an `Entity`
 #[derive(Clone, Debug)]
 pub struct EntitySignature {
+    /// Who is producing this signature
     pub by: Signatory,
+    /// The signature data
     pub sig: Signature,
 }
 
+/// An URN resolver that turns URNs into `Entity` instances
+/// (`T` is the entity type)
 #[async_trait]
 pub trait Resolver<T> {
+    /// Resolve the given URN and deserialize the target `Entity`
     async fn resolve(&self, uri: &RadicleUri) -> Result<T, Error>;
 }
 
-// Sized
+/// The base entity definition.
+///
+/// Entities have the following properties:
+///
+/// - They can evolve over time, so they have a sequence of revisions.
+/// - Their identity is stable (it does not change over time), and it is the
+///   hash of their initial revision.
+/// - Each revision contains the hash of the previous revision, which is also
+///   hashed, so that the sequence of revisions is a Merkel tree (actually just
+///   a list).
+/// - They can be signed, either with a key they own, or using a key belonging
+///   to a different entity (the certifier); note that when applying multiple
+///   signatures, signatures are not themselves signed (what is signed is always
+///   only the entity itself).
+/// - Each revision specifies the set of owned keys and trusted certifiers.
+/// - Each revision must be signed by all its owned keys and trusted certifiers.
+/// - Each subsequent revision must be signed by a quorum of the previous keys
+///   and certifiers, to prove that the entity evolution is actually under the
+///   control of its current "owners" (the idea is taken from TUF).
 #[derive(Clone)]
 pub struct Entity<T> {
+    /// The entity name (useful for humans because the hash is unreadable)
     name: String,
+    /// Entity revision, to be incremented at each entity update
     revision: u64,
+    /// Entity hash, computed on everything except the signatures and
+    /// (obviously) the hash itself
     hash: Multihash,
+    /// Hash of the previous revision, `None` for the initial revision
+    /// (in this case the entity hash is actually the entity ID)
     parent_hash: Option<Multihash>,
+    /// Set of signatures
     signatures: HashMap<PublicKey, EntitySignature>,
+    /// Set of owned keys
     keys: HashSet<PublicKey>,
+    /// Set of certifiers (entities identified by their URN)
     certifiers: HashSet<RadicleUri>,
+    /// Specific `Entity` data
     info: T,
 }
 
@@ -141,13 +179,18 @@ impl<T> Entity<T>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
 {
+    /// `name` getter
     pub fn name(&self) -> &str {
         &self.name
     }
+
+    /// `revision` getter
     pub fn revision(&self) -> u64 {
         self.revision
     }
 
+    /// Build and `Entity` from its data (the second step of deserialization)
+    /// It guarantees that the `hash` is correct
     pub fn from_data(data: data::EntityData<T>) -> Result<Self, Error> {
         if data.name.is_none() {
             return Err(Error::InvalidData("Missing name".to_owned()));
@@ -231,6 +274,8 @@ where
         })
     }
 
+    /// Turn the entity in to its raw data
+    /// (first step of serialization and reverse of `from_data`)
     pub fn to_data(&self) -> data::EntityData<T> {
         let mut signatures = HashMap::new();
         for (k, s) in self.signatures() {
@@ -269,48 +314,65 @@ where
         }
     }
 
+    /// Helper to build a new entity cloning the current one
+    /// (signatures are cleared because they would be invalid anyway)
     pub fn to_builder(&self) -> data::EntityData<T> {
         self.to_data().clear_hash().clear_signatures()
     }
 
+    /// `hash` getter
     pub fn hash(&self) -> &Multihash {
         &self.hash
     }
+
+    /// `uri` getter
     pub fn uri(&self) -> RadicleUri {
         RadicleUri::new(self.hash.to_owned())
     }
 
+    /// `parent_hash` getter
     pub fn parent_hash(&self) -> &Option<Multihash> {
         &self.parent_hash
     }
 
+    /// `signatures` getter
     pub fn signatures(&self) -> &HashMap<PublicKey, EntitySignature> {
         &self.signatures
     }
 
+    /// `keys` getter
     pub fn keys(&self) -> &HashSet<PublicKey> {
         &self.keys
     }
+    /// Keys count
     fn keys_count(&self) -> usize {
         self.keys.len()
     }
+    /// Check key presence
     fn has_key(&self, key: &PublicKey) -> bool {
         self.keys.contains(key)
     }
 
+    /// `certifiers` getter
     pub fn certifiers(&self) -> &HashSet<RadicleUri> {
         &self.certifiers
     }
+    /// Certifiers count
     fn certifiers_count(&self) -> usize {
         self.certifiers.len()
     }
+    /// Check certifier presence
     fn has_certifier(&self, c: &RadicleUri) -> bool {
         self.certifiers.contains(c)
     }
 
+    /// Turn the entity into its canonical data representation
+    /// (for hashing or signing)
     pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
         self.to_data().canonical_data()
     }
+
+    /// Helper serialization to JSON writer
     pub fn to_json_writer<W>(&self, writer: W) -> Result<(), Error>
     where
         W: std::io::Write,
@@ -318,24 +380,37 @@ where
         self.to_data().to_json_writer(writer)?;
         Ok(())
     }
+
+    /// Helper serialization to JSON string
     pub fn to_json_string(&self) -> Result<String, Error> {
         self.to_data().to_json_string()
     }
 
+    /// Helper deserialization from JSON reader
     pub fn from_json_reader<R>(r: R) -> Result<Self, Error>
     where
         R: std::io::Read,
     {
         Self::from_data(data::EntityData::from_json_reader(r)?)
     }
+
+    /// Helper deserialization from JSON strng
     pub fn from_json_str(s: &str) -> Result<Self, Error> {
         Self::from_data(data::EntityData::from_json_str(s)?)
     }
 
+    /// Compute the entity hash (for validation)
+    /// FIXME: this is useless and should be removed: the hash is checked and
+    /// eventually computed in `from_data` and cannot be changed after that
     pub fn compute_hash(&self) -> Result<Multihash, Error> {
         Ok(Sha2_256::digest(&self.canonical_data()?))
     }
 
+    /// Check that this key is allowed to sign the entity by checking that the
+    /// `by` argument is correct:
+    ///
+    /// - either the key is owned by `self`
+    /// - or it belongs to the given certifier
     pub async fn check_key(
         &self,
         key: &PublicKey,
@@ -358,10 +433,20 @@ where
         Ok(())
     }
 
+    /// Given a private key, compute the signature of the entity canonical data
+    /// FIXME: we should check the hash instead: it is cheaper and makes also
+    /// verification way faster because we would not need to rebuild the
+    /// canonical data at every check (we can trust the hash correctness)
     pub fn compute_signature(&self, key: &Key) -> Result<Signature, Error> {
         Ok(key.sign(&self.canonical_data()?))
     }
 
+    /// Given a private key, sign the current entity
+    ///
+    /// The following checks are performed:
+    ///
+    /// - the entity has not been already signed using this same key
+    /// - this key is allowed to sign the entity (using `check_key`)
     pub async fn sign(
         &mut self,
         key: &Key,
@@ -381,6 +466,7 @@ where
         Ok(())
     }
 
+    /// Check that an entity signature is valid
     pub async fn check_signature(
         &self,
         key: &PublicKey,
@@ -396,6 +482,11 @@ where
         }
     }
 
+    /// Check the validity of this entty (only this revision is checked)
+    ///
+    /// This checks that:
+    /// - every owned key and certifier has a corresponding signature
+    /// - only owned keys and certifiers have signed the entity
     pub async fn check_validity(&self, resolver: &impl Resolver<User>) -> Result<(), Error> {
         let mut keys = HashSet::<PublicKey>::from_iter(self.keys().iter().cloned());
         let mut users = HashSet::<RadicleUri>::from_iter(self.certifiers().iter().cloned());
@@ -418,10 +509,22 @@ where
         }
     }
 
+    /// Convenience method to check if an entity is valid
     pub async fn is_valid(&self, resolver: &impl Resolver<User>) -> bool {
         self.check_validity(resolver).await.is_ok()
     }
 
+    /// Given an entity and its previous revision check that the update is
+    /// valid:
+    ///
+    /// - the revision has been incremented
+    /// - the parent hash is correct
+    /// - the TUF quorum rules have been observed
+    ///
+    /// FIXME: only allow exact `+1`increments so that the revision history has
+    /// no holes
+    /// FIXME: probably we should merge owned keys and certifiers when checking
+    /// the quorum rules (now we are handling them separately)
     pub fn check_update(&self, previous: &Self) -> Result<(), UpdateVerificationError> {
         if self.revision() <= previous.revision() {
             return Err(UpdateVerificationError::NonMonotonicRevision);
@@ -469,6 +572,9 @@ where
         Ok(())
     }
 
+    /// Checks that the whole revision history of an entity is valid
+    ///
+    /// FIXME: also check that the first revision hash matches the entity URN
     pub async fn check_history<R>(
         resolver: &impl Resolver<User>,
         revisions: R,

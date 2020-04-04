@@ -21,12 +21,16 @@ use olpc_cjson::CanonicalFormatter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+/// Raw data for an entity signature
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct EntitySignatureData {
+    /// `None` for signatures by owned keys, otherwise the certifier URN
     pub user: Option<String>,
+    /// The signature data
     pub sig: String,
 }
 
+/// Helper to serialize `HashSet` in a canonical way
 fn ordered_set<S>(value: &HashSet<String>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -35,6 +39,15 @@ where
     ordered.serialize(serializer)
 }
 
+/// Raw data for an `Entity
+///
+/// This is used in two ways:
+///
+/// - as an intermediate step in deserialization so that invariants can be
+///   enforced more explicitly
+/// - as a "builder" when creating new entities (or entity revisions), again so
+///   that invariants can be enforced at `build` time when all the data has been
+///   collected
 #[derive(Clone, Deserialize, Serialize, Debug, Default)]
 pub struct EntityData<T> {
     #[serde(skip_serializing_if = "Option::is_none")]
