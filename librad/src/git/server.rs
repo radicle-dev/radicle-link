@@ -52,6 +52,9 @@ impl GitServer {
         R: AsyncRead + Unpin,
         W: AsyncWrite + Unpin,
     {
+        let span = tracing::trace_span!("GitServer::invoke_service", git.server.path = %self.export.display());
+        let _guard = span.enter();
+
         let mut recv = BufReader::new(recv);
         let mut header = String::with_capacity(512);
         if let Err(e) = recv.read_line(&mut header).await {
