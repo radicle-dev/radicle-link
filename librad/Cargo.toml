@@ -12,6 +12,7 @@ bs58 = "0.3"
 bytes = "0.5"
 directories = "2.0"
 failure = { version = "0.1", features = ["backtrace"] }
+fnv = "1.0"
 futures = { version = "0.3", features = ["thread-pool"] }
 futures_codec = { version = "0.4", features = ["cbor"] }
 futures-timer = "3.0"

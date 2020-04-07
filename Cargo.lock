@@ -1067,6 +1067,7 @@ dependencies = [
  "directories",
  "env_logger",
  "failure",
+ "fnv",
  "futures",
  "futures-await-test",
  "futures-timer 3.0.2",
