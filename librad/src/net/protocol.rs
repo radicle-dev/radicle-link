@@ -283,7 +283,7 @@ where
             Run::Gossip { event } => match event {
                 gossip::ProtocolEvent::Control(ctrl) => match ctrl {
                     gossip::Control::SendAdhoc { to, rpc } => {
-                        tracing::trace!("Run::Rad(SendAdhoc): {}", to.peer_id);
+                        tracing::trace!("Run::Rad(SendAdhoc)");
                         let conn = match self.connections.lock().await.get(&to.peer_id) {
                             Some(conn) => Some(conn.clone()),
                             None => connect_peer_info(&endpoint, to).await.map(|(conn, _)| conn),
