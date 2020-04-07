@@ -67,9 +67,26 @@ pub use types::*;
 
 #[derive(Clone)]
 pub enum ProtocolEvent<A> {
+    Control(Control<A>),
+    Info(Info<A>),
+}
+
+#[derive(Clone)]
+pub enum Control<A> {
     SendAdhoc { to: PeerInfo, rpc: Rpc<A> },
     Connect { to: PeerInfo, hello: Rpc<A> },
     Disconnect(PeerId),
+}
+
+#[derive(Clone)]
+pub enum Info<A> {
+    Has(Has<A>),
+}
+
+#[derive(Clone)]
+pub struct Has<A> {
+    provider: PeerId,
+    val: A,
 }
 
 #[derive(Debug, Clone)]
@@ -377,7 +394,7 @@ where
             // it here. Otherwise, we should already have it in
             // `known_peers`.
             self.subscribers
-                .emit(ProtocolEvent::Disconnect(ejected_peer))
+                .emit(ProtocolEvent::Control(Control::Disconnect(ejected_peer)))
                 .await
         }
 
@@ -517,6 +534,13 @@ where
         match msg {
             Have { origin, val } => {
                 trace!("{}: {} has {:?}", self.local_id, origin.peer_id, val);
+
+                self.subscribers
+                    .emit(ProtocolEvent::Info(Info::Has(Has {
+                        provider: origin.peer_id.clone(),
+                        val: val.clone(),
+                    })))
+                    .await;
 
                 let res = {
                     let remote_id = remote_id.clone();
@@ -758,20 +782,20 @@ where
     /// Try to establish an ad-hoc connection to `peer`, and send it `rpc`
     async fn send_adhoc<M: Into<Rpc<A>>>(&self, peer: &PeerInfo, rpc: M) {
         self.subscribers
-            .emit(ProtocolEvent::SendAdhoc {
+            .emit(ProtocolEvent::Control(Control::SendAdhoc {
                 to: peer.clone(),
                 rpc: rpc.into(),
-            })
+            }))
             .await
     }
 
     /// Try to establish a persistent to `peer` with initial `rpc`
     async fn connect<M: Into<Rpc<A>>>(&self, peer: &PeerInfo, rpc: M) {
         self.subscribers
-            .emit(ProtocolEvent::Connect {
+            .emit(ProtocolEvent::Control(Control::Connect {
                 to: peer.clone(),
                 hello: rpc.into(),
-            })
+            }))
             .await
     }
 

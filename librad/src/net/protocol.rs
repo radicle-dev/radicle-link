@@ -214,8 +214,22 @@ where
     }
 
     /// Query the network for an update
-    pub async fn query(&self, want: A) {
-        self.gossip.query(want).await
+    ///
+    /// The returned stream will yield an infinite sequence of reponses from
+    /// peers claiming to provide the requested value. The stream can safely
+    /// be dropped at any point.
+    ///
+    /// Note that responses will also cause [`gossip::LocalStorage::put`] to be
+    /// invoked, i.e. the local storage will be converged towards the
+    /// requested state.
+    pub async fn query(&self, want: A) -> impl futures::Stream<Item = gossip::Has<A>> {
+        self.gossip.query(want).await;
+        self.gossip.subscribe().await.filter_map(|evt| async move {
+            match evt {
+                gossip::ProtocolEvent::Info(gossip::Info::Has(has)) => Some(has),
+                _ => None,
+            }
+        })
     }
 
     /// Open a QUIC stream which is upgraded to expect the git protocol
@@ -255,49 +269,53 @@ where
             },
 
             Run::Gossip { event } => match event {
-                gossip::ProtocolEvent::SendAdhoc { to, rpc } => {
-                    trace!("Run::Rad(SendAdhoc): {}", to.peer_id);
-                    let conn = match self.connections.lock().await.get(&to.peer_id) {
-                        Some(conn) => Some(conn.clone()),
-                        None => connect_peer_info(&endpoint, to).await.map(|(conn, _)| conn),
-                    };
+                gossip::ProtocolEvent::Control(ctrl) => match ctrl {
+                    gossip::Control::SendAdhoc { to, rpc } => {
+                        trace!("Run::Rad(SendAdhoc): {}", to.peer_id);
+                        let conn = match self.connections.lock().await.get(&to.peer_id) {
+                            Some(conn) => Some(conn.clone()),
+                            None => connect_peer_info(&endpoint, to).await.map(|(conn, _)| conn),
+                        };
 
-                    if let Some(conn) = conn {
-                        let stream = conn.open_stream().await.map_err(|e| {
-                            warn!(
-                                "Could not open stream on connection to {}: {}",
-                                conn.remote_addr(),
-                                e
-                            )
-                        })?;
+                        if let Some(conn) = conn {
+                            let stream = conn.open_stream().await.map_err(|e| {
+                                warn!(
+                                    "Could not open stream on connection to {}: {}",
+                                    conn.remote_addr(),
+                                    e
+                                )
+                            })?;
 
-                        return self
-                            .outgoing(stream, rpc)
-                            .await
-                            .map_err(|e| warn!("Error processing outgoing stream: {}", e));
-                    }
-
-                    Ok(())
-                },
-
-                gossip::ProtocolEvent::Connect { to, hello } => {
-                    trace!("Run::Rad(Connect): {}", to.peer_id);
-                    if !self.connections.lock().await.contains_key(&to.peer_id) {
-                        let conn = connect_peer_info(&endpoint, to).await;
-                        if let Some((conn, incoming)) = conn {
-                            self.handle_connect(conn, incoming.boxed(), Some(hello))
+                            return self
+                                .outgoing(stream, rpc)
                                 .await
+                                .map_err(|e| warn!("Error processing outgoing stream: {}", e));
                         }
-                    }
 
-                    Ok(())
+                        Ok(())
+                    },
+
+                    gossip::Control::Connect { to, hello } => {
+                        trace!("Run::Rad(Connect): {}", to.peer_id);
+                        if !self.connections.lock().await.contains_key(&to.peer_id) {
+                            let conn = connect_peer_info(&endpoint, to).await;
+                            if let Some((conn, incoming)) = conn {
+                                self.handle_connect(conn, incoming.boxed(), Some(hello))
+                                    .await
+                            }
+                        }
+
+                        Ok(())
+                    },
+
+                    gossip::Control::Disconnect(peer) => {
+                        trace!("Run::Rad(Disconnect): {}", peer);
+                        self.handle_disconnect(peer).await;
+                        Ok(())
+                    },
                 },
 
-                gossip::ProtocolEvent::Disconnect(peer) => {
-                    trace!("Run::Rad(Disconnect): {}", peer);
-                    self.handle_disconnect(peer).await;
-                    Ok(())
-                },
+                gossip::ProtocolEvent::Info(_) => Ok(()),
             },
 
             Run::Shutdown => {
