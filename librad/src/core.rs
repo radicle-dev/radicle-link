@@ -15,11 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    collections::HashMap,
-    io,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, io};
 
 use async_trait::async_trait;
 use futures::Stream;
@@ -28,32 +24,23 @@ use multihash::Multihash;
 use crate::{
     keys::device::Signature,
     peer::PeerId,
-    uri::{RadUrl, RadUrn},
+    uri::{Path, RadUrl, RadUrn},
 };
-
-/// Placeholder for a version in a history
-type Version<'a> = &'a [u8];
-
-/// Placeholder for the data passed to `Verifier::verify`
-pub struct Rev<'a> {
-    pub version: &'a Version<'a>,
-    pub payload: &'a [u8],
-}
 
 /// A verification function for an identity history as named by a `RadUrn`.
 ///
-/// The supplied iterator traverses the history in reverse order, i.e.
-/// oldest-first.
+/// The supplied iterator traverses the history in newest-first order.
 ///
 /// In order to satisfy the verification requirements, `Verifier::verify` may
 /// call `Core::fetch` recursively.
 #[async_trait]
 pub trait Verifier {
+    type Identity;
     type Error;
 
-    async fn verify<'a>(
-        history: Box<dyn Iterator<Item = Rev<'a>>>,
-    ) -> Result<&'a Version<'a>, Self::Error>;
+    async fn verify<Commit>(
+        history: Box<dyn Iterator<Item = Commit>>,
+    ) -> Result<Self::Identity, Self::Error>;
 }
 
 pub struct Refsig<'a> {
@@ -66,7 +53,7 @@ pub enum BrowseError {
 }
 
 #[async_trait]
-pub trait Browse {
+pub trait Browser {
     type Stream: Stream<Item = RadUrn>;
 
     /// Given a known peer, ask it to enumerate all [`RadUrn`]s it knows about.
@@ -74,11 +61,6 @@ pub trait Browse {
     /// This is an online query: if no connection to the peer exists, or could
     /// be established, an error is returned.
     async fn browse(&self, peer: &PeerId) -> Result<Self::Stream, BrowseError>;
-
-    /// Peek at the most recent `Rev` of the `RadUrn`.
-    ///
-    /// See also [`Fetch::fetch`].
-    async fn peek<'a>(&self, peer: &PeerId, urn: &RadUrn) -> Result<Rev<'a>, BrowseError>;
 }
 
 pub struct Have {
@@ -87,7 +69,7 @@ pub struct Have {
 }
 
 #[async_trait]
-pub trait Gossip {
+pub trait Gossiper {
     type QueryStream: Stream<Item = PeerId>;
 
     /// Announce an update to a local repository to the network.
@@ -110,20 +92,20 @@ pub trait Gossip {
 #[non_exhaustive]
 pub enum FetchError<V> {
     Verification(V),
-    NoSuchBranch(PathBuf),
+    NoSuchBranch(Path),
     Io(io::Error),
     // ...
 }
 
 #[non_exhaustive]
 pub enum ShallowFetchError {
-    NoSuchBranch(PathBuf),
+    NoSuchBranch(Path),
     Io(io::Error),
     // ...
 }
 
 #[async_trait]
-pub trait Fetch {
+pub trait Fetcher {
     /// Iterator over the commit graph starting at the head of the branch
     /// specified by a [`RadUrl`].
     type Revwalk: Iterator;
@@ -141,14 +123,10 @@ pub trait Fetch {
     ///     * If the repository already exists locally, the existing one is
     ///       used, otherwise a new one is created in a temporary location
     ///
-    /// * After fetching, the `rad/id` branch is traversed to the first
-    ///   (parent-less) revision, and it is verified that the content address of
-    ///   the specified blob equals the `RadUrn`'s hash
-    ///
-    /// * The verification function is invoked, supplying an oldest-first
+    /// * The verification function is invoked, supplying a newest-first
     ///   iterator over the history of the branch
     ///
-    /// * If the verification function succeeds, the `urn`'s branch is reset to
+    /// * If the verification function succeeds, the `rad/id` branch is reset to
     ///   the returned `Version`
     ///
     /// * The `rad/refsig` branch is walked backwards (newest-first), at each
