@@ -170,13 +170,12 @@ impl VerificationStatus {
     }
 }
 
-/// A type expressing *who* is signing an `Entity`:
-///
-///  * either a specific user (identified by their URN),
-///  * or the entity itself (with an owned key).
+/// A type expressing *who* is signing an `Entity`
 #[derive(Clone, Debug)]
 pub enum Signatory {
+    /// A specific user (identified by their URN)
     User(RadicleUri),
+    /// The entity itself (with an owned key)
     OwnedKey,
 }
 
@@ -206,7 +205,7 @@ pub trait Resolver<T> {
 /// - Their identity is stable (it does not change over time), and it is the
 ///   hash of their initial revision.
 /// - Each revision contains the hash of the previous revision, which is also
-///   hashed, so that the sequence of revisions is a Merkel tree (actually just
+///   hashed, so that the sequence of revisions is a Merkle tree (actually just
 ///   a list).
 /// - They can be signed, either with a key they own, or using a key belonging
 ///   to a different entity (the certifier); note that when applying multiple
@@ -262,7 +261,7 @@ where
         self.revision
     }
 
-    /// Build and `Entity` from its data (the second step of deserialization)
+    /// Build an `Entity` from its data (the second step of deserialization)
     /// It guarantees that the `hash` is correct
     pub fn from_data(data: data::EntityData<T>) -> Result<Self, Error> {
         if data.name.is_none() {
@@ -377,7 +376,7 @@ where
     }
 
     /// Turn the entity in to its raw data
-    /// (first step of serialization and reverse of `from_data`)
+    /// (first step of serialization and reverse of [`Entity::from_data`])
     pub fn to_data(&self) -> data::EntityData<T> {
         let mut signatures = HashMap::new();
         for (k, s) in self.signatures() {
