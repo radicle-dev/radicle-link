@@ -57,6 +57,8 @@ pub struct EntityData<T> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_hash: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -86,21 +88,22 @@ where
     where
         W: std::io::Write,
     {
-        serde_json::to_writer(writer, self).map_err(Error::SerializationFailed)?;
+        serde_json::to_writer(writer, self)
+            .map_err(|e| Error::SerializationFailed(e.to_string()))?;
         Ok(())
     }
     pub fn to_json_string(&self) -> Result<String, Error> {
-        Ok(serde_json::to_string(self).map_err(Error::SerializationFailed)?)
+        Ok(serde_json::to_string(self).map_err(|e| Error::SerializationFailed(e.to_string()))?)
     }
 
     pub fn from_json_reader<R>(r: R) -> Result<Self, Error>
     where
         R: std::io::Read,
     {
-        serde_json::from_reader(r).map_err(Error::SerializationFailed)
+        serde_json::from_reader(r).map_err(|e| Error::SerializationFailed(e.to_string()))
     }
     pub fn from_json_str(s: &str) -> Result<Self, Error> {
-        serde_json::from_str(s).map_err(Error::SerializationFailed)
+        serde_json::from_str(s).map_err(|e| Error::SerializationFailed(e.to_string()))
     }
 
     pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
@@ -108,6 +111,11 @@ where
         cleaned.name = self.name.to_owned();
         cleaned.revision = self.revision.to_owned();
         cleaned.hash = self.hash.to_owned();
+        cleaned.root_hash = if self.parent_hash.is_some() {
+            self.root_hash.to_owned()
+        } else {
+            None
+        };
         cleaned.parent_hash = self.parent_hash.to_owned();
         cleaned.keys = self.keys.to_owned();
         cleaned.certifiers = self.certifiers.to_owned();
@@ -118,7 +126,7 @@ where
             serde_json::Serializer::with_formatter(&mut buffer, CanonicalFormatter::new());
         cleaned
             .serialize(&mut ser)
-            .map_err(Error::SerializationFailed)?;
+            .map_err(|e| Error::SerializationFailed(e.to_string()))?;
         Ok(buffer)
     }
 
@@ -156,6 +164,15 @@ where
         self
     }
 
+    pub fn set_root_hash(mut self, root_hash: String) -> Self {
+        self.root_hash = Some(root_hash);
+        self
+    }
+    pub fn clear_root_hash(mut self) -> Self {
+        self.root_hash = None;
+        self
+    }
+
     pub fn set_parent_hash(mut self, parent_hash: String) -> Self {
         self.parent_hash = Some(parent_hash);
         self
@@ -166,10 +183,14 @@ where
     }
 
     pub fn set_parent(mut self, parent: &Entity<T>) -> Self {
-        let hash_text = bs58::encode(parent.hash())
+        let parent_hash_text = bs58::encode(parent.hash())
             .with_alphabet(bs58::alphabet::BITCOIN)
             .into_string();
-        self.parent_hash = Some(hash_text);
+        self.parent_hash = Some(parent_hash_text);
+        let root_hash_text = bs58::encode(parent.root_hash())
+            .with_alphabet(bs58::alphabet::BITCOIN)
+            .into_string();
+        self.root_hash = Some(root_hash_text);
         self.revision = Some(parent.revision() + 1);
         self
     }

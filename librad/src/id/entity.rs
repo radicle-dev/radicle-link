@@ -22,7 +22,6 @@ use crate::{
     keys::device::{Key, PublicKey, Signature},
 };
 use async_trait::async_trait;
-use futures::stream::{Stream, StreamExt};
 use multihash::{Multihash, Sha2_256};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
@@ -32,19 +31,25 @@ use std::{
 };
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 pub enum Error {
     #[error("Serialization failed ({0})")]
-    SerializationFailed(serde_json::error::Error),
+    SerializationFailed(String),
 
     #[error("Invalid UTF8 ({0})")]
-    InvalidUtf8(std::string::FromUtf8Error),
+    InvalidUtf8(String),
 
     #[error("Invalid buffer encoding ({0})")]
     InvalidBufferEncoding(String),
 
     #[error("Invalid hash ({0})")]
     InvalidHash(String),
+
+    #[error("Invalid root hash")]
+    InvalidRootHash,
+
+    #[error("Missing root hash")]
+    MissingRootHash,
 
     #[error("Invalid URI ({0})")]
     InvalidUri(String),
@@ -58,14 +63,11 @@ pub enum Error {
     #[error("Key not present ({0})")]
     KeyNotPresent(PublicKey),
 
-    #[error("User not present ({0})")]
-    UserNotPresent(RadicleUri),
-
     #[error("User key not present (uri {0}, key {1})")]
     UserKeyNotPresent(RadicleUri, PublicKey),
 
     #[error("Signature missing")]
-    SignatureMissing,
+    SignatureMissingXXX,
 
     #[error("Signature decoding failed")]
     SignatureDecodingFailed,
@@ -73,17 +75,23 @@ pub enum Error {
     #[error("Signature verification failed")]
     SignatureVerificationFailed,
 
-    #[error("Resolution failed (uri {0})")]
-    ResolutionFailed(String),
+    #[error("Resolution failed ({0})")]
+    ResolutionFailed(RadicleUri),
+
+    #[error("Resolution at revision failed ({0}, revision {1})")]
+    RevisionResolutionFailed(RadicleUri, u64),
 }
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 pub enum UpdateVerificationError {
     #[error("Non monotonic revision")]
     NonMonotonicRevision,
 
     #[error("Wrong parent hash")]
     WrongParentHash,
+
+    #[error("Wrong root hash")]
+    WrongRootHash,
 
     #[error("Update without previous quorum")]
     NoPreviousQuorum,
@@ -92,7 +100,7 @@ pub enum UpdateVerificationError {
     NoCurrentQuorum,
 }
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 pub enum HistoryVerificationError {
     #[error("Empty history")]
     EmptyHistory,
@@ -105,6 +113,61 @@ pub enum HistoryVerificationError {
         revision: u64,
         error: UpdateVerificationError,
     },
+}
+
+#[derive(Clone, Debug)]
+pub enum VerificationStatus {
+    Verified,
+    Signed,
+    SignaturesMissing,
+    VerificationFailed(Error),
+    HistoryVerificationFailed(HistoryVerificationError),
+    Unknown,
+}
+
+impl VerificationStatus {
+    pub fn verified(&self) -> bool {
+        if let VerificationStatus::Verified = self {
+            true
+        } else {
+            false
+        }
+    }
+    pub fn signed(&self) -> bool {
+        if let VerificationStatus::Signed = self {
+            true
+        } else {
+            false
+        }
+    }
+    pub fn signatures_missing(&self) -> bool {
+        if let VerificationStatus::SignaturesMissing = self {
+            true
+        } else {
+            false
+        }
+    }
+    pub fn verification_failed(&self) -> bool {
+        if let VerificationStatus::VerificationFailed(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+    pub fn history_verification_failed(&self) -> bool {
+        if let VerificationStatus::HistoryVerificationFailed(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+    pub fn unknown(&self) -> bool {
+        if let VerificationStatus::Unknown = self {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 /// A type expressing *who* is signing an `Entity`:
@@ -132,6 +195,7 @@ pub struct EntitySignature {
 pub trait Resolver<T> {
     /// Resolve the given URN and deserialize the target `Entity`
     async fn resolve(&self, uri: &RadicleUri) -> Result<T, Error>;
+    async fn resolve_revision(&self, uri: &RadicleUri, revision: u64) -> Result<T, Error>;
 }
 
 /// The base entity definition.
@@ -155,13 +219,17 @@ pub trait Resolver<T> {
 ///   control of its current "owners" (the idea is taken from TUF).
 #[derive(Clone)]
 pub struct Entity<T> {
+    /// Entity verification status
+    status: VerificationStatus,
     /// The entity name (useful for humans because the hash is unreadable)
     name: String,
     /// Entity revision, to be incremented at each entity update
     revision: u64,
     /// Entity hash, computed on everything except the signatures and
-    /// (obviously) the hash itself
+    /// the hash itself
     hash: Multihash,
+    /// Hash of the root of the revision Merkle tree (the entity ID)
+    root_hash: Multihash,
     /// Hash of the previous revision, `None` for the initial revision
     /// (in this case the entity hash is actually the entity ID)
     parent_hash: Option<Multihash>,
@@ -179,6 +247,11 @@ impl<T> Entity<T>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
 {
+    /// `status` getter
+    pub fn status(&self) -> &VerificationStatus {
+        &self.status
+    }
+
     /// `name` getter
     pub fn name(&self) -> &str {
         &self.name
@@ -200,6 +273,10 @@ where
         }
         if data.keys.is_empty() {
             return Err(Error::InvalidData("Missing keys".to_owned()));
+        }
+
+        if data.revision.unwrap() < 1 {
+            return Err(Error::InvalidData("Invalid revision".to_owned()));
         }
 
         let mut keys = HashSet::new();
@@ -262,10 +339,35 @@ where
             None => None,
         };
 
+        let root_hash = match data.root_hash {
+            Some(s) => {
+                let bytes = bs58::decode(s.as_bytes())
+                    .with_alphabet(bs58::alphabet::BITCOIN)
+                    .into_vec()
+                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
+                let hash =
+                    Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?;
+                Some(hash)
+            },
+            None => None,
+        };
+        let root_hash = match root_hash {
+            Some(h) => h,
+            None => {
+                if parent_hash.is_none() && data.revision.unwrap() == 1 {
+                    actual_hash.clone()
+                } else {
+                    return Err(Error::MissingRootHash);
+                }
+            },
+        };
+
         Ok(Self {
+            status: VerificationStatus::Unknown,
             name: data.name.unwrap(),
             revision: data.revision.unwrap().to_owned(),
             hash: actual_hash,
+            root_hash,
             parent_hash,
             keys,
             certifiers,
@@ -302,6 +404,11 @@ where
                     .with_alphabet(bs58::alphabet::BITCOIN)
                     .into_string(),
             ),
+            root_hash: Some(
+                bs58::encode(&self.root_hash)
+                    .with_alphabet(bs58::alphabet::BITCOIN)
+                    .into_string(),
+            ),
             parent_hash: self.parent_hash.to_owned().map(|h| {
                 bs58::encode(h)
                     .with_alphabet(bs58::alphabet::BITCOIN)
@@ -323,6 +430,11 @@ where
     /// `hash` getter
     pub fn hash(&self) -> &Multihash {
         &self.hash
+    }
+
+    /// `root_hash` getter
+    pub fn root_hash(&self) -> &Multihash {
+        &self.root_hash
     }
 
     /// `uri` getter
@@ -482,17 +594,29 @@ where
         }
     }
 
-    /// Check the validity of this entty (only this revision is checked)
+    /// Compute the status of this entity (only this revision is checked)
     ///
     /// This checks that:
     /// - every owned key and certifier has a corresponding signature
     /// - only owned keys and certifiers have signed the entity
-    pub async fn check_validity(&self, resolver: &impl Resolver<User>) -> Result<(), Error> {
+    /// - the first revision has no parent and a matching root hash
+    pub async fn compute_status(&mut self, resolver: &impl Resolver<User>) -> Result<(), Error> {
         let mut keys = HashSet::<PublicKey>::from_iter(self.keys().iter().cloned());
         let mut users = HashSet::<RadicleUri>::from_iter(self.certifiers().iter().cloned());
+        self.status = VerificationStatus::Unknown;
+
+        if self.revision == 1 && (self.parent_hash.is_some() || self.root_hash != self.hash) {
+            // TODO: define a better error if `self.parent_hash.is_some()`
+            // (should be "revision 1 cannot have a parent hash")
+            self.status = VerificationStatus::VerificationFailed(Error::InvalidRootHash);
+            return Err(Error::InvalidRootHash);
+        }
 
         for (k, s) in self.signatures() {
-            self.check_signature(k, &s.by, &s.sig, resolver).await?;
+            if let Err(e) = self.check_signature(k, &s.by, &s.sig, resolver).await {
+                self.status = VerificationStatus::VerificationFailed(e.clone());
+                return Err(e);
+            }
             match &s.by {
                 Signatory::OwnedKey => {
                     keys.remove(k);
@@ -503,15 +627,11 @@ where
             }
         }
         if keys.is_empty() && users.is_empty() {
-            Ok(())
+            self.status = VerificationStatus::Signed;
         } else {
-            Err(Error::SignatureMissing)
+            self.status = VerificationStatus::SignaturesMissing;
         }
-    }
-
-    /// Convenience method to check if an entity is valid
-    pub async fn is_valid(&self, resolver: &impl Resolver<User>) -> bool {
-        self.check_validity(resolver).await.is_ok()
+        Ok(())
     }
 
     /// Given an entity and its previous revision check that the update is
@@ -519,13 +639,14 @@ where
     ///
     /// - the revision has been incremented
     /// - the parent hash is correct
+    /// - the root hash is correct
     /// - the TUF quorum rules have been observed
     ///
     /// FIXME: only allow exact `+1`increments so that the revision history has
     /// no holes
     /// FIXME: probably we should merge owned keys and certifiers when checking
     /// the quorum rules (now we are handling them separately)
-    pub fn check_update(&self, previous: &Self) -> Result<(), UpdateVerificationError> {
+    fn check_update(&self, previous: &Self) -> Result<(), UpdateVerificationError> {
         if self.revision() <= previous.revision() {
             return Err(UpdateVerificationError::NonMonotonicRevision);
         }
@@ -539,6 +660,10 @@ where
             None => {
                 return Err(UpdateVerificationError::WrongParentHash);
             },
+        }
+
+        if self.root_hash != previous.root_hash {
+            return Err(UpdateVerificationError::WrongRootHash);
         }
 
         let retained_keys = self.keys().iter().filter(|k| previous.has_key(k)).count();
@@ -572,43 +697,71 @@ where
         Ok(())
     }
 
-    /// Checks that the whole revision history of an entity is valid
+    /// Compute the entity status checking that the whole revision history is
+    /// valid
     ///
-    /// FIXME: also check that the first revision hash matches the entity URN
-    pub async fn check_history<R>(
-        resolver: &impl Resolver<User>,
-        revisions: R,
-    ) -> Result<(), HistoryVerificationError>
-    where
-        R: Stream<Item = Entity<T>> + Unpin,
-    {
-        let mut revisions = revisions;
-        let current = revisions.next().await;
-        let mut current = match current {
-            None => {
-                return Err(HistoryVerificationError::EmptyHistory);
-            },
-            Some(entity) => entity,
-        };
+    /// FIXME: allow certifiers that are not `User` entities
+    pub async fn compute_history_status(
+        &mut self,
+        resolver: &impl Resolver<Entity<T>>,
+        certifier_resolver: &impl Resolver<User>,
+    ) -> Result<(), HistoryVerificationError> {
+        let mut current = self.clone();
 
-        let revision = current.revision();
-        current
-            .check_validity(resolver)
-            .await
-            .map_err(|error| HistoryVerificationError::ErrorAtRevision { revision, error })?;
-
-        while let Some(previous) = revisions.next().await {
+        loop {
             let revision = current.revision();
-            previous
-                .check_validity(resolver)
-                .await
-                .map_err(|error| HistoryVerificationError::ErrorAtRevision { revision, error })?;
-            current
-                .check_update(&previous)
-                .map_err(|error| HistoryVerificationError::UpdateError { revision, error })?;
-            current = previous;
-        }
+            // Check current status
+            if let Err(err) = current.compute_status(certifier_resolver).await {
+                let err = HistoryVerificationError::ErrorAtRevision {
+                    revision,
+                    error: err,
+                };
+                self.status = VerificationStatus::HistoryVerificationFailed(err.clone());
+                return Err(err);
+            }
+            // Also check that no signature is missing
+            if current.status.signatures_missing() {
+                let err = HistoryVerificationError::ErrorAtRevision {
+                    revision,
+                    error: Error::SignatureMissingXXX,
+                };
+                self.status = VerificationStatus::HistoryVerificationFailed(err.clone());
+                return Err(err);
+            }
 
-        Ok(())
+            // End at root revision
+            if revision == 1 {
+                return Ok(());
+            }
+
+            // Resolve previous revision
+            match resolver.resolve_revision(&self.uri(), revision - 1).await {
+                // Check update between current and previous
+                Ok(previous) => match current.check_update(&previous) {
+                    // Update verification failed
+                    Err(err) => {
+                        let err = HistoryVerificationError::UpdateError {
+                            revision,
+                            error: err,
+                        };
+                        self.status = VerificationStatus::HistoryVerificationFailed(err.clone());
+                        return Err(err);
+                    },
+                    // Continue traversing revisions
+                    Ok(()) => {
+                        current = previous;
+                    },
+                },
+                // Resoltion failed
+                Err(err) => {
+                    let err = HistoryVerificationError::ErrorAtRevision {
+                        revision,
+                        error: err,
+                    };
+                    self.status = VerificationStatus::HistoryVerificationFailed(err.clone());
+                    return Err(err);
+                },
+            }
+        }
     }
 }
