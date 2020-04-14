@@ -8,7 +8,6 @@ license = "GPL-3.0-or-later"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hashbrown = "0.1"
 nonempty = "0.3"
 num-bigint = "0.2"
 crdts = { git = "http://github.com/FintanH/rust-crdt", rev = "551895bc99668062980d69cabcb15cb879284b41" }
