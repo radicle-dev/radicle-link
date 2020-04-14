@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::thread::{Finger, ReplyTo};
+use crate::thread::{DataState, Finger, ReplyTo};
 
 /* So here's the thing... What do we do here?
  * Do we use a crdt::Map for the thread replies instead of a NonEmpty?
@@ -23,7 +23,10 @@ use crate::thread::{Finger, ReplyTo};
  * So many questions!
  */
 pub trait ThreadOp<A, Op> {
-    fn reply(&mut self, a: A, reply_to: ReplyTo) -> Op;
-    fn delete(&mut self, finger: Finger) -> Op;
-    fn edit<F: FnOnce(&mut A)>(&mut self, finger: Finger, f: F) -> Op;
+    type Error;
+
+    fn reply(&mut self, finger: Finger, a: A, reply_to: ReplyTo) -> Result<Op, Self::Error>;
+    fn delete(&mut self, finger: Finger) -> Result<Op, Self::Error>;
+    fn edit<F: FnOnce(&mut A)>(&mut self, finger: Finger, f: F) -> Result<Op, Self::Error>;
+    fn view(&mut self, finger: Finger) -> Result<&DataState<A>, Self::Error>;
 }

@@ -11,7 +11,7 @@ license = "GPL-3.0-or-later"
 hashbrown = "0.1"
 nonempty = "0.3"
 num-bigint = "0.2"
-crdts = "2.0"
+crdts = { git = "http://github.com/FintanH/rust-crdt", rev = "551895bc99668062980d69cabcb15cb879284b41" }
 thiserror = "1.0"
 
 [dev-dependencies]

@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use crate::ops::thread::ThreadOp;
 use nonempty::NonEmpty;
 use thiserror::Error;
 
@@ -51,6 +52,14 @@ impl<A> DataState<A> {
         match self {
             Self::Live(a) => a,
             Self::Dead(a) => a,
+        }
+    }
+
+    /// Map a function over the `DataState`.
+    pub fn map<B, F: FnOnce(A) -> B>(self, f: F) -> DataState<B> {
+        match self {
+            DataState::Live(a) => DataState::Dead(f(a)),
+            DataState::Dead(a) => DataState::Dead(f(a)),
         }
     }
 
@@ -196,6 +205,32 @@ pub struct Thread<A> {
 impl<A: PartialEq> PartialEq for Thread<A> {
     fn eq(&self, other: &Self) -> bool {
         self.main_thread == other.main_thread
+    }
+}
+
+impl<A: Clone> ThreadOp<A, ()> for Thread<A> {
+    type Error = Error;
+
+    fn reply(&mut self, finger: Finger, a: A, reply_to: ReplyTo) -> Result<(), Self::Error> {
+        self.navigate_to(finger)?;
+        self.reply(a, reply_to);
+        Ok(())
+    }
+
+    fn delete(&mut self, finger: Finger) -> Result<(), Self::Error> {
+        self.navigate_to(finger)?;
+        self.delete()
+    }
+
+    fn edit<F: FnOnce(&mut A)>(&mut self, finger: Finger, f: F) -> Result<(), Self::Error> {
+        self.navigate_to(finger)?;
+        self.edit(f);
+        Ok(())
+    }
+
+    fn view(&mut self, finger: Finger) -> Result<&DataState<A>, Self::Error> {
+        self.navigate_to(finger)?;
+        Thread::view(self)
     }
 }
 
@@ -695,7 +730,10 @@ impl<A> Thread<A> {
     ///
     /// assert_eq!(thread.view(), Ok(&DataState::Live(String::from("Discussing rose trees"))));
     /// ```
-    pub fn view(&self) -> Result<&DataState<A>, Error> {
+    pub fn view(&self) -> Result<&DataState<A>, Error>
+    where
+        A: Clone,
+    {
         match self.finger {
             Finger::Root => Ok(&self.root),
             Finger::Main(main) => Ok(self.index_main(main).first()),

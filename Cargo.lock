@@ -199,6 +199,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 
 [[package]]
+name = "bitvec"
+version = "0.17.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41262f11d771fd4a61aa3ce019fca363b4b6c282fca9da2a31186d3965a47a5c"
+dependencies = [
+ "either",
+ "radium",
+]
+
+[[package]]
 name = "blake2b_simd"
 version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -409,12 +419,12 @@ dependencies = [
 
 [[package]]
 name = "crdts"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65b26d25ab6e3ec42bfe77b805b62ccb024aad0c4d899ecd22cf05ebd68eb397"
+version = "3.0.0"
+source = "git+http://github.com/FintanH/rust-crdt?rev=551895bc99668062980d69cabcb15cb879284b41#551895bc99668062980d69cabcb15cb879284b41"
 dependencies = [
- "hashbrown 0.1.8",
+ "bitvec",
  "num-bigint",
+ "rand 0.7.3",
  "serde",
 ]
 
@@ -873,7 +883,6 @@ checksum = "3bae29b6653b3412c2e71e9d486db9f9df5d701941d86683005efb9f2d28e3da"
 dependencies = [
  "byteorder",
  "scopeguard 0.3.3",
- "serde",
 ]
 
 [[package]]
@@ -1827,6 +1836,12 @@ dependencies = [
  "proptest",
  "thiserror",
 ]
+
+[[package]]
+name = "radium"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "def50a86306165861203e7f84ecffbbdfdea79f0e51039b33de1e952358c47ac"
 
 [[package]]
 name = "rand"

@@ -15,7 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use hashbrown;
 use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
@@ -50,7 +49,7 @@ impl<User: Actor> Metadata<User> {
     }
 
     /// Get a reference to the [`Label`]s in the metadata.
-    pub fn labels(&self) -> hashbrown::HashSet<Label> {
+    pub fn labels(&self) -> HashSet<Label> {
         self.labels.read().val
     }
 
