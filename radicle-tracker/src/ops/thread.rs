@@ -30,3 +30,11 @@ pub trait ThreadOp<A, Op> {
     fn edit<F: FnOnce(&mut A)>(&mut self, finger: Finger, f: F) -> Result<Op, Self::Error>;
     fn view(&mut self, finger: Finger) -> Result<&DataState<A>, Self::Error>;
 }
+
+pub trait Navigate<A> {
+    type Error;
+
+    fn navigate_to(&mut self, finger: Finger) -> Result<(), Self::Error>;
+    fn previous_reply(&mut self, reply_to: ReplyTo) -> Result<(), Self::Error>;
+    fn next_reply(&mut self, reply_to: ReplyTo) -> Result<(), Self::Error>;
+}

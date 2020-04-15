@@ -105,6 +105,7 @@ mod metadata;
 pub use metadata::*;
 
 pub mod ops;
+use ops::memory::{Comment, Metadata};
 
 use clock::{Clock, RadClock};
 

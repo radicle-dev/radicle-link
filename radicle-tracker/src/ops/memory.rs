@@ -131,6 +131,14 @@ impl<User: Eq + Hash> AssigneeOp<User, bool> for Assignees<User> {
     }
 }
 
+impl<User: Eq + Hash> std::ops::Deref for Assignees<User> {
+    type Target = HashSet<User>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// A comment of an issue is composed of its [`Comment::author`], the
 /// [`Comment::content`] of the comment, and its [`Comment::reactions`].
 ///

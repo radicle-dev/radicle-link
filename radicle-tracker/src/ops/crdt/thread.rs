@@ -27,9 +27,23 @@ use crate::ops::thread::ThreadOp;
 
 use crate::thread::{DataState, Finger, ReplyTo};
 
-type SubThread<A: Clone, User: Actor> = LSeq<DataState<A>, User>;
+pub enum Op<A, User: Actor> {
+    ReplyMain {
+        create: lseq::Op<DataState<A>, User>,
+        insert: lseq::Op<Replies<A, User>, User>,
+    },
+    /// Since this is a hack for editing, the deletion should happen before
+    /// the insertion.
+    ReplyThread {
+        edit_delete: lseq::Op<Replies<A, User>, User>,
+        edit_insert: lseq::Op<Replies<A, User>, User>,
+        insert: lseq::Op<DataState<A>, User>,
+    },
+}
 
-struct MainThread<A: Clone, User: Actor>(LSeq<SubThread<A, User>, User>);
+type Replies<A: Clone, User: Actor> = LSeq<DataState<A>, User>;
+
+struct MainThread<A: Clone, User: Actor>(LSeq<Replies<A, User>, User>);
 
 impl<A: Clone, User: Actor> MainThread<A, User> {
     fn len(&self) -> usize {
@@ -84,20 +98,6 @@ pub struct Thread<A: Clone, User: Actor> {
     main_thread: MainThread<A, User>,
 }
 
-pub enum Op<A, User: Actor> {
-    /// Since this is a hack for editing, the deletion should happen before
-    /// the insertion.
-    ReplyThread {
-        edit_delete: lseq::Op<LSeq<DataState<A>, User>, User>,
-        edit_insert: lseq::Op<LSeq<DataState<A>, User>, User>,
-        insert: lseq::Op<DataState<A>, User>,
-    },
-    ReplyMain {
-        create: lseq::Op<DataState<A>, User>,
-        insert: lseq::Op<LSeq<DataState<A>, User>, User>,
-    },
-}
-
 impl<A: Clone, User: Actor> ThreadOp<A, Op<A, User>> for Thread<A, User> {
     type Error = ();
 
@@ -115,7 +115,11 @@ impl<A: Clone, User: Actor> ThreadOp<A, Op<A, User>> for Thread<A, User> {
     }
 
     fn delete(&mut self, finger: Finger) -> Result<Op<A, User>, Self::Error> {
-        unimplemented!()
+        match finger {
+            Finger::Root => unimplemented!(),
+            Finger::Main(main) => unimplemented!(),
+            Finger::Thread { main, reply } => unimplemented!(),
+        }
     }
 
     fn edit<F: FnOnce(&mut A)>(
@@ -123,7 +127,11 @@ impl<A: Clone, User: Actor> ThreadOp<A, Op<A, User>> for Thread<A, User> {
         finger: Finger,
         f: F,
     ) -> Result<Op<A, User>, Self::Error> {
-        unimplemented!()
+        match finger {
+            Finger::Root => unimplemented!(),
+            Finger::Main(main) => unimplemented!(),
+            Finger::Thread { main, reply } => unimplemented!(),
+        }
     }
 
     fn view(&mut self, finger: Finger) -> Result<&DataState<A>, Self::Error> {
