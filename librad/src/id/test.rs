@@ -297,10 +297,7 @@ async fn test_user_verification() {
         .remove_key(&*D1K)
         .build()
         .unwrap();
-    assert!(matches!(
-        user.compute_status(&EMPTY_RESOLVER).await,
-        Err(Error::SignatureVerificationFailed)
-    ));
+    assert!(matches!(user.compute_status(&EMPTY_RESOLVER).await, Err(_)));
     assert!(user.status().verification_failed());
 }
 
