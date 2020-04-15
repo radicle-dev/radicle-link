@@ -183,6 +183,23 @@ impl PublicKey {
     pub fn from_slice(bs: &[u8]) -> Option<PublicKey> {
         ed25519::PublicKey::from_slice(&bs).map(PublicKey)
     }
+
+    pub fn from_bs58(s: &str) -> Option<Self> {
+        let bytes = match bs58::decode(s.as_bytes())
+            .with_alphabet(bs58::alphabet::BITCOIN)
+            .into_vec()
+        {
+            Ok(v) => v,
+            Err(_) => return None,
+        };
+        ed25519::PublicKey::from_slice(&bytes).map(PublicKey)
+    }
+
+    pub fn to_bs58(&self) -> String {
+        bs58::encode(self.0)
+            .with_alphabet(bs58::alphabet::BITCOIN)
+            .into_string()
+    }
 }
 
 impl From<ed25519::PublicKey> for PublicKey {
@@ -251,6 +268,23 @@ impl Signature {
             });
         };
         Ok(Self(ed25519::Signature(buffer)))
+    }
+
+    pub fn from_bs58(s: &str) -> Option<Self> {
+        let bytes = match bs58::decode(s.as_bytes())
+            .with_alphabet(bs58::alphabet::BITCOIN)
+            .into_vec()
+        {
+            Ok(v) => v,
+            Err(_) => return None,
+        };
+        sodiumoxide::crypto::sign::Signature::from_slice(&bytes).map(Self)
+    }
+
+    pub fn to_bs58(&self) -> String {
+        bs58::encode(self.0)
+            .with_alphabet(bs58::alphabet::BITCOIN)
+            .into_string()
     }
 }
 

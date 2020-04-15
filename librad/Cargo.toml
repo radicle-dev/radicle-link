@@ -52,10 +52,10 @@ url = { version = "2.1", features = ["serde"] }
 urltemplate = "0.1"
 webpki = "0.21"
 yasna = { version = "0.3", features = ["bit-vec"] }
-
+bs58 = "0.3"
 
 [dev-dependencies]
 env_logger = "0.7"
 matches = "0.1"
 proptest = "0.9"
-
+futures-await-test = "0.3"

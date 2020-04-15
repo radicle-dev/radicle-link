@@ -242,6 +242,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bs58"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b170cd256a3f9fa6b9edae3e44a7dfdfc77e8124dbc3e2612d75f9c3e2396dae"
+
+[[package]]
 name = "buffered-reader"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -661,6 +667,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures-await-test"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae0d3d05bce73a572ba581e4f4a7f20164c18150169c3a67f406aada3e48c7e8"
+dependencies = [
+ "futures-await-test-macro",
+ "futures-executor",
+]
+
+[[package]]
+name = "futures-await-test-macro"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f150175e6832600500334550e00e4dc563a0b32f58a9d1ad407f6473378c839"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1035,11 +1062,13 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bit-vec 0.6.1",
+ "bs58",
  "bytes",
  "directories",
  "env_logger",
  "failure",
  "futures",
+ "futures-await-test",
  "futures-timer 3.0.2",
  "futures_codec",
  "git2",
