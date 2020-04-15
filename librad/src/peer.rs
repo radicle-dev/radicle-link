@@ -17,9 +17,9 @@
 
 use std::{convert::TryFrom, fmt, str::FromStr};
 
-use log::trace;
 use multibase::Base::Base32Z;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
+use tracing;
 
 use crate::keys::device;
 
@@ -163,7 +163,7 @@ impl<'a> TryFrom<webpki::DNSNameRef<'a>> for PeerId {
     fn try_from(dns_name: webpki::DNSNameRef) -> Result<Self, Self::Error> {
         let dns_name: &str = dns_name.into();
         PeerId::from_str(dns_name).map_err(|e| {
-            trace!("PeerId::from_str({}) failed: {}", dns_name, e);
+            tracing::trace!(msg = "PeerId::from_str failed", dns.name = %dns_name, error = %e);
             webpki::Error::NameConstraintViolation
         })
     }

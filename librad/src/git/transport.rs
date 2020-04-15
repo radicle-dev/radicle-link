@@ -59,7 +59,7 @@ use futures::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
-use log::error;
+use tracing;
 use url::Url;
 
 use crate::peer::PeerId;
@@ -240,7 +240,7 @@ impl Write for RadSubTransport {
 fn git_error<E: Display>(err: E) -> git2::Error {
     // libgit will always tell us "an unknown error occurred", so log them out
     // here
-    error!("git transport error: {}", err);
+    tracing::error!("git transport error: {}", err);
     git2::Error::from_str(&err.to_string())
 }
 

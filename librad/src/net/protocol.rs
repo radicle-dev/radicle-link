@@ -27,10 +27,11 @@ use futures::{
     stream::{BoxStream, StreamExt, TryStreamExt},
 };
 use futures_codec::{CborCodec, CborCodecError, FramedRead, FramedWrite};
-use log::{debug, error, info, trace, warn};
+// use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use thiserror::Error;
+use tracing;
 
 use crate::{
     channel::Fanout,
@@ -176,6 +177,9 @@ where
         Disco: futures::stream::Stream<Item = (PeerId, Vec<SocketAddr>)>,
         Shutdown: Future<Output = ()> + Send,
     {
+        let span = tracing::trace_span!("Protocol::run");
+        let _guard = span.enter();
+
         let incoming = incoming.map(|(conn, i)| Ok(Run::Incoming { conn, incoming: i }));
         let shutdown = futures::stream::once(shutdown).map(|()| Ok(Run::Shutdown));
         let bootstrap = disco.map(|(peer, addrs)| Ok(Run::Discovered { peer, addrs }));
@@ -185,7 +189,7 @@ where
             .await
             .map(|event| Ok(Run::Gossip { event }));
 
-        info!("Listening on {:?}", endpoint.local_addr());
+        tracing::info!(msg = "Listening", local.addr = ?endpoint.local_addr());
 
         futures::stream::select(
             shutdown,
@@ -197,7 +201,7 @@ where
             async move { this.eval_run(endpoint, run).await }
         })
         .await
-        .unwrap_or_else(|()| warn!("Shutting down"))
+        .unwrap_or_else(|()| tracing::warn!("Shutting down"))
     }
 
     /// Subscribe to an infinite stream of [`ProtocolEvent`]s.
@@ -234,16 +238,16 @@ where
 
     /// Open a QUIC stream which is upgraded to expect the git protocol
     pub async fn open_git(&self, to: &PeerId) -> Option<quic::Stream> {
-        trace!("Opening git stream to {}", to);
+        tracing::trace!("Opening git stream");
         if let Some(conn) = self.connections.lock().await.get(to) {
             conn.open_stream()
                 .map_err(|e| e.into())
                 .and_then(|stream| upgrade(stream, Upgrade::Git))
                 .await
-                .map_err(|e| error!("{}", e))
+                .map_err(|e| tracing::error!("{}", e))
                 .ok()
         } else {
-            warn!("Error opening git stream: not connected to {}", to);
+            tracing::warn!("Error opening git stream: not connected to {}", to);
             None
         }
     }
@@ -251,7 +255,13 @@ where
     async fn eval_run(&mut self, endpoint: quic::Endpoint, run: Run<'_, A>) -> Result<(), ()> {
         match run {
             Run::Discovered { peer, addrs } => {
-                trace!("Run::Discovered: {}@{:?}", peer, addrs);
+                let span = tracing::trace_span!(
+                    "Run::Discovered",
+                    peer.id = %peer,
+                    peer.addrs = ?addrs
+                );
+                let _guard = span.enter();
+
                 if !self.connections.lock().await.contains_key(&peer) {
                     if let Some((conn, incoming)) = connect(&endpoint, &peer, addrs).await {
                         self.handle_connect(conn, incoming.boxed(), None).await;
@@ -262,16 +272,18 @@ where
             },
 
             Run::Incoming { conn, incoming } => {
-                trace!("Run::Incoming: {}", conn.remote_addr());
+                let span = tracing::trace_span!("Run::Incoming", peer.id = %conn.remote_peer_id(), peer.addrs = %conn.remote_addr());
+                let _guard = span.enter();
+
                 self.handle_incoming(conn, incoming)
                     .await
-                    .map_err(|e| warn!("Error processing incoming connection: {}", e))
+                    .map_err(|e| tracing::warn!("Error processing incoming connection: {}", e))
             },
 
             Run::Gossip { event } => match event {
                 gossip::ProtocolEvent::Control(ctrl) => match ctrl {
                     gossip::Control::SendAdhoc { to, rpc } => {
-                        trace!("Run::Rad(SendAdhoc): {}", to.peer_id);
+                        tracing::trace!("Run::Rad(SendAdhoc)");
                         let conn = match self.connections.lock().await.get(&to.peer_id) {
                             Some(conn) => Some(conn.clone()),
                             None => connect_peer_info(&endpoint, to).await.map(|(conn, _)| conn),
@@ -279,24 +291,23 @@ where
 
                         if let Some(conn) = conn {
                             let stream = conn.open_stream().await.map_err(|e| {
-                                warn!(
+                                tracing::warn!(
                                     "Could not open stream on connection to {}: {}",
                                     conn.remote_addr(),
                                     e
                                 )
                             })?;
 
-                            return self
-                                .outgoing(stream, rpc)
-                                .await
-                                .map_err(|e| warn!("Error processing outgoing stream: {}", e));
+                            return self.outgoing(stream, rpc).await.map_err(|e| {
+                                tracing::warn!("Error processing outgoing stream: {}", e)
+                            });
                         }
 
                         Ok(())
                     },
 
                     gossip::Control::Connect { to, hello } => {
-                        trace!("Run::Rad(Connect): {}", to.peer_id);
+                        tracing::trace!("Run::Rad(Connect)");
                         if !self.connections.lock().await.contains_key(&to.peer_id) {
                             let conn = connect_peer_info(&endpoint, to).await;
                             if let Some((conn, incoming)) = conn {
@@ -309,7 +320,7 @@ where
                     },
 
                     gossip::Control::Disconnect(peer) => {
-                        trace!("Run::Rad(Disconnect): {}", peer);
+                        tracing::trace!("Run::Rad(Disconnect)");
                         self.handle_disconnect(peer).await;
                         Ok(())
                     },
@@ -319,7 +330,7 @@ where
             },
 
             Run::Shutdown => {
-                debug!("Run::Shutdown");
+                tracing::debug!("Run::Shutdown");
                 Err(())
             },
         }
@@ -331,10 +342,8 @@ where
         mut incoming: BoxStream<'_, quic::Result<quic::Stream>>,
         hello: impl Into<Option<gossip::Rpc<A>>>,
     ) {
+        tracing::info!("New outgoing connection");
         let remote_id = conn.remote_peer_id().clone();
-        let remote_addr = conn.remote_addr();
-
-        info!("New outgoing connection: {}@{}", remote_id, remote_addr,);
 
         {
             self.connections
@@ -364,14 +373,14 @@ where
         );
 
         if let Err(e) = res {
-            warn!("Closing connection with {}, because: {}", remote_id, e);
+            tracing::warn!("Closing connection with {}, because: {}", remote_id, e);
             conn.close(CloseReason::InternalError);
         };
     }
 
     async fn handle_disconnect(&self, peer: PeerId) {
         if let Some(conn) = self.connections.lock().await.remove(&peer) {
-            info!("Disconnecting: {}", conn.remote_addr());
+            tracing::info!(msg = "Disconnecting", remote.addr = %conn.remote_addr());
             // FIXME: make this more graceful
             conn.close(CloseReason::ProtocolDisconnect);
             self.subscribers
@@ -389,9 +398,8 @@ where
         Incoming: futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
     {
         let remote_id = conn.remote_peer_id().clone();
-        let remote_addr = conn.remote_addr();
 
-        info!("New incoming connection: {}@{}", remote_id, remote_addr);
+        tracing::info!("New incoming connection");
 
         {
             self.connections
@@ -404,11 +412,11 @@ where
         }
 
         while let Some(stream) = incoming.try_next().await? {
-            trace!("New incoming stream");
+            tracing::trace!("New incoming stream");
             let this = self.clone();
             tokio::spawn(async move {
                 if let Err(e) = this.incoming(stream).await {
-                    warn!("Incoming stream error: {}", e);
+                    tracing::warn!("Incoming stream error: {}", e);
                 }
             });
         }
@@ -442,7 +450,7 @@ where
                         .send(UpgradeResponse::SwitchingProtocols(upgrade.clone()))
                         .await?;
 
-                    trace!("Incoming stream upgraded to {:?}", upgrade);
+                    tracing::trace!(msg = "Incoming stream upgraded", upgrade = ?upgrade);
 
                     // remove framing
                     let stream = stream.release().0;
@@ -486,6 +494,9 @@ where
     for<'de> A: Serialize + Deserialize<'de> + Clone + Debug + Send + Sync + 'static,
 {
     async fn open_stream(&self, to: &PeerId) -> Option<Box<dyn GitStream>> {
+        let span = tracing::trace_span!("GitStreamFactory::open_stream", peer.id = %to);
+        let _guard = span.enter();
+
         // Nb.: type inference fails if this is not a pattern match (ie. `map`)
         match self.open_git(to).await {
             Some(s) => Some(Box::new(s)),
@@ -519,12 +530,12 @@ where
     futures::stream::iter(addrs)
         .filter_map(|addr| {
             let mut endpoint = endpoint.clone();
-            info!("Connecting to: {}@{}", peer_id, addr);
+            tracing::info!("Establishing connection");
             Box::pin(async move {
                 match endpoint.connect(peer_id, &addr).await {
                     Ok(conn) => Some(conn),
                     Err(e) => {
-                        warn!("Could not connect to {} at {}: {}", peer_id, addr, e);
+                        tracing::warn!("Could not connect to {} at {}: {}", peer_id, addr, e);
                         None
                     },
                 }
@@ -535,7 +546,7 @@ where
 }
 
 async fn upgrade(stream: quic::Stream, upgrade: Upgrade) -> Result<quic::Stream, Error> {
-    trace!("Upgrade to {:?}", upgrade);
+    tracing::trace!(msg = "Upgrade", upgrade = ?upgrade);
 
     let mut stream = stream.framed(CborCodec::<Upgrade, UpgradeResponse>::new());
     stream.send(upgrade.clone()).await?;
