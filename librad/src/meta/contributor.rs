@@ -15,22 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use pgp;
 use serde::{Deserialize, Serialize};
 use urltemplate::UrlTemplate;
 
-use crate::meta::{
-    common::{Url, RAD_VERSION},
-    profile::UserProfile,
-    serde_helpers,
-};
+use crate::meta::{common::Url, profile::UserProfile, serde_helpers};
 
 #[derive(Clone, Deserialize, Serialize, Debug, Default, PartialEq)]
 pub struct Contributor {
-    rad_version: u8,
-
-    revision: u64,
-
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<ProfileRef>,
 
@@ -40,32 +31,14 @@ pub struct Contributor {
         deserialize_with = "serde_helpers::urltemplate::deserialize_opt"
     )]
     pub largefiles: Option<UrlTemplate>,
-
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        serialize_with = "serde_helpers::pgp_fingerprint::serialize_opt",
-        deserialize_with = "serde_helpers::pgp_fingerprint::deserialize_opt"
-    )]
-    pub signing_key: Option<pgp::Fingerprint>,
 }
 
 impl Contributor {
     pub fn new() -> Self {
         Self {
-            rad_version: RAD_VERSION,
-            revision: 0,
             profile: None,
             largefiles: None,
-            signing_key: None,
         }
-    }
-
-    pub fn rad_version(&self) -> u8 {
-        self.rad_version
-    }
-
-    pub fn revision(&self) -> u64 {
-        self.revision
     }
 }
 
@@ -92,18 +65,12 @@ pub mod tests {
     }
 
     pub fn gen_contributor() -> impl Strategy<Value = Contributor> {
-        (any::<u64>(), proptest::option::of(gen_profile_ref())).prop_map(|(revision, profile)| {
+        proptest::option::of(gen_profile_ref()).prop_map(|profile| {
             let largefiles = Some(UrlTemplate::from("https://git-lfs.github.com/{SHA512}"));
-            let signing_key = Some(
-                pgp::Fingerprint::from_hex("3E8877C877274692975189F5D03F6F865226FE8B").unwrap(),
-            );
 
             Contributor {
-                rad_version: RAD_VERSION,
-                revision,
                 profile,
                 largefiles,
-                signing_key,
             }
         })
     }

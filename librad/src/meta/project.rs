@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     meta::{
-        common::{Label, Url, RAD_VERSION},
+        common::{Label, Url},
         serde_helpers,
     },
     peer::PeerId,
@@ -36,10 +36,6 @@ pub fn default_branch() -> String {
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct Project {
-    rad_version: u8,
-
-    revision: u64,
-
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 
@@ -62,22 +58,12 @@ pub struct Project {
 impl Project {
     pub fn new(name: &str, founder: &PeerId) -> Self {
         Self {
-            rad_version: RAD_VERSION,
-            revision: 0,
             name: Some(name.to_string()),
             description: None,
             default_branch: DEFAULT_BRANCH.into(),
             maintainers: NonEmpty::new(founder.clone()),
             rel: vec![],
         }
-    }
-
-    pub fn rad_version(&self) -> u8 {
-        self.rad_version
-    }
-
-    pub fn revision(&self) -> u64 {
-        self.revision
     }
 
     pub fn add_rel(&mut self, rel: Relation) {
@@ -126,24 +112,19 @@ pub mod tests {
 
     fn gen_project() -> impl Strategy<Value = Project> {
         (
-            any::<u64>(),
             proptest::option::of(".*"),
             proptest::option::of(".*"),
             ".*",
             proptest::collection::vec(Just(PeerId::from(device::Key::new().public())), 1..32),
             proptest::collection::vec(gen_relation(), 0..16),
         )
-            .prop_map(
-                |(revision, name, description, branch, maintainers, rel)| Project {
-                    rad_version: RAD_VERSION,
-                    revision,
-                    name,
-                    description,
-                    default_branch: branch,
-                    maintainers: NonEmpty::from_slice(&maintainers).unwrap(),
-                    rel,
-                },
-            )
+            .prop_map(|(name, description, branch, maintainers, rel)| Project {
+                name,
+                description,
+                default_branch: branch,
+                maintainers: NonEmpty::from_slice(&maintainers).unwrap(),
+                rel,
+            })
     }
 
     fn gen_relation() -> impl Strategy<Value = Relation> {
