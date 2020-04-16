@@ -18,8 +18,8 @@
 pub mod data;
 
 use crate::{
-    id::user::User,
     keys::device::{Key, PublicKey, Signature},
+    meta::user::User,
     uri::RadUrn,
 };
 use async_trait::async_trait;

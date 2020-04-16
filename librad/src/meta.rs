@@ -17,8 +17,11 @@
 
 pub mod common;
 pub mod contributor;
+pub mod entity;
 pub mod profile;
 pub mod project;
+pub mod user;
+
 #[allow(dead_code)]
 mod serde_helpers;
 
@@ -27,3 +30,6 @@ pub use common::*;
 pub use contributor::{Contributor, ProfileRef};
 pub use profile::{Geo, ProfileImage, UserProfile};
 pub use project::{default_branch, Project, Relation};
+
+#[cfg(test)]
+pub mod entity_test;

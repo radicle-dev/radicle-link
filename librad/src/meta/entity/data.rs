@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::id::entity::{Entity, Error};
+use crate::meta::entity::{Entity, Error};
 use multihash::{Multihash, Sha2_256};
 use olpc_cjson::CanonicalFormatter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};

@@ -15,9 +15,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod entity;
-pub mod project;
-pub mod user;
+use crate::meta::entity::{data::EntityData, Entity, Error};
+use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
-pub mod test;
+#[derive(Clone, Serialize, Deserialize, Default)]
+pub struct UserInfo {
+    pub email: String,
+}
+
+pub type UserData = EntityData<UserInfo>;
+
+impl UserData {
+    pub fn set_email(mut self, email: String) -> Self {
+        self.info.email = email;
+        self
+    }
+
+    pub fn build(self) -> Result<User, Error> {
+        User::from_data(self)
+    }
+}
+
+pub type User = Entity<UserInfo>;
