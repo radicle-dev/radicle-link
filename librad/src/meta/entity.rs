@@ -225,6 +225,8 @@ pub struct Entity<T> {
     name: String,
     /// Entity revision, to be incremented at each entity update
     revision: u64,
+    /// Radicle software version used to serialize the entity
+    rad_version: u8,
     /// Entity hash, computed on everything except the signatures and
     /// the hash itself
     hash: Multihash,
@@ -260,6 +262,11 @@ where
     /// `revision` getter
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// `rad_version` getter
+    pub fn rad_version(&self) -> u8 {
+        self.rad_version
     }
 
     /// Build an `Entity` from its data (the second step of deserialization)
@@ -368,6 +375,7 @@ where
             status: VerificationStatus::Unknown,
             name: data.name.unwrap(),
             revision: data.revision.unwrap().to_owned(),
+            rad_version: data.rad_version,
             hash: actual_hash,
             root_hash,
             parent_hash,
@@ -401,6 +409,7 @@ where
         data::EntityData {
             name: Some(self.name.to_owned()),
             revision: Some(self.revision),
+            rad_version: self.rad_version,
             hash: Some(
                 bs58::encode(&self.hash)
                     .with_alphabet(bs58::alphabet::BITCOIN)

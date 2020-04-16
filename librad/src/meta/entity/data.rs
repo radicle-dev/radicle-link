@@ -15,7 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::meta::entity::{Entity, Error};
+use crate::meta::{
+    entity::{Entity, Error},
+    RAD_VERSION,
+};
 use multihash::{Multihash, Sha2_256};
 use olpc_cjson::CanonicalFormatter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};
@@ -50,6 +53,7 @@ where
 ///   collected
 #[derive(Clone, Deserialize, Serialize, Debug, Default)]
 pub struct EntityData<T> {
+    pub rad_version: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -138,6 +142,7 @@ where
         let mut result = Self::default();
         result.name = Some(name);
         result.revision = Some(revision);
+        result.rad_version = RAD_VERSION;
         result
     }
 
