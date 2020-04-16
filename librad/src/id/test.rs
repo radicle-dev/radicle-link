@@ -17,15 +17,20 @@
 
 use super::{
     entity::*,
-    uri::{RadicleUri, EMPTY_HASH},
     user::{User, UserData},
 };
-use crate::{keys::device::Key, peer::PeerId};
+use crate::{keys::device::Key, peer::PeerId, uri::RadUrn};
 use async_trait::async_trait;
 use futures_await_test::async_test;
 use lazy_static::lazy_static;
+use multihash::{Multihash, Sha2_256};
 use sodiumoxide::crypto::sign::ed25519::Seed;
 use std::str::FromStr;
+
+lazy_static! {
+    pub static ref EMPTY_HASH: Multihash = Sha2_256::digest(&[]);
+    pub static ref EMPTY_URI: RadUrn = RadUrn::new(EMPTY_HASH.to_owned());
+}
 
 const SEED: Seed = Seed([
     20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81, 181,
@@ -78,10 +83,10 @@ struct EmptyResolver {}
 
 #[async_trait]
 impl Resolver<User> for EmptyResolver {
-    async fn resolve(&self, uri: &RadicleUri) -> Result<User, Error> {
+    async fn resolve(&self, uri: &RadUrn) -> Result<User, Error> {
         Err(Error::ResolutionFailed(uri.to_owned()))
     }
-    async fn resolve_revision(&self, uri: &RadicleUri, revision: u64) -> Result<User, Error> {
+    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User, Error> {
         Err(Error::RevisionResolutionFailed(uri.to_owned(), revision))
     }
 }
@@ -111,13 +116,13 @@ impl UserHistory {
 
 #[async_trait]
 impl Resolver<User> for UserHistory {
-    async fn resolve(&self, uri: &RadicleUri) -> Result<User, Error> {
+    async fn resolve(&self, uri: &RadUrn) -> Result<User, Error> {
         match self.revisions.last() {
             Some(user) => Ok(user.to_owned()),
             None => Err(Error::ResolutionFailed(uri.to_owned())),
         }
     }
-    async fn resolve_revision(&self, uri: &RadicleUri, revision: u64) -> Result<User, Error> {
+    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User, Error> {
         if revision >= 1 && revision <= self.revisions.len() as u64 {
             Ok(self.revisions[revision as usize - 1].clone())
         } else {
@@ -127,30 +132,11 @@ impl Resolver<User> for UserHistory {
 }
 
 #[test]
-fn test_invalid_uri() {
-    assert!(matches!(
-        RadicleUri::from_str("foo"),
-        Err(Error::InvalidUri(_))
-    ));
-    assert!(matches!(
-        RadicleUri::from_str("http://radicle.xyz"),
-        Err(Error::InvalidUri(_))
-    ));
-    assert!(matches!(
-        RadicleUri::from_str("rad:"),
-        Err(Error::InvalidUri(_))
-    ));
-    assert!(matches!(
-        RadicleUri::from_str("rad:ABC"),
-        Err(Error::InvalidUri(_))
-    ));
-}
-
 #[test]
 fn test_valid_uri() {
-    let u1 = RadicleUri::new((*EMPTY_HASH).to_owned());
+    let u1 = RadUrn::new((*EMPTY_HASH).to_owned());
     let s = u1.to_string();
-    let u2 = RadicleUri::from_str(&s).unwrap();
+    let u2 = RadUrn::from_str(&s).unwrap();
     assert_eq!(u1, u2);
 }
 

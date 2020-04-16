@@ -18,8 +18,9 @@
 pub mod data;
 
 use crate::{
-    id::{uri::RadicleUri, user::User},
+    id::user::User,
     keys::device::{Key, PublicKey, Signature},
+    uri::RadUrn,
 };
 use async_trait::async_trait;
 use multihash::{Multihash, Sha2_256};
@@ -64,7 +65,7 @@ pub enum Error {
     KeyNotPresent(PublicKey),
 
     #[error("User key not present (uri {0}, key {1})")]
-    UserKeyNotPresent(RadicleUri, PublicKey),
+    UserKeyNotPresent(RadUrn, PublicKey),
 
     #[error("Signature missing")]
     SignatureMissingXXX,
@@ -76,10 +77,10 @@ pub enum Error {
     SignatureVerificationFailed,
 
     #[error("Resolution failed ({0})")]
-    ResolutionFailed(RadicleUri),
+    ResolutionFailed(RadUrn),
 
     #[error("Resolution at revision failed ({0}, revision {1})")]
-    RevisionResolutionFailed(RadicleUri, u64),
+    RevisionResolutionFailed(RadUrn, u64),
 }
 
 #[derive(Clone, Debug, Error)]
@@ -174,7 +175,7 @@ impl VerificationStatus {
 #[derive(Clone, Debug)]
 pub enum Signatory {
     /// A specific user (identified by their URN)
-    User(RadicleUri),
+    User(RadUrn),
     /// The entity itself (with an owned key)
     OwnedKey,
 }
@@ -193,8 +194,8 @@ pub struct EntitySignature {
 #[async_trait]
 pub trait Resolver<T> {
     /// Resolve the given URN and deserialize the target `Entity`
-    async fn resolve(&self, uri: &RadicleUri) -> Result<T, Error>;
-    async fn resolve_revision(&self, uri: &RadicleUri, revision: u64) -> Result<T, Error>;
+    async fn resolve(&self, uri: &RadUrn) -> Result<T, Error>;
+    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<T, Error>;
 }
 
 /// The base entity definition.
@@ -237,7 +238,7 @@ pub struct Entity<T> {
     /// Set of owned keys
     keys: HashSet<PublicKey>,
     /// Set of certifiers (entities identified by their URN)
-    certifiers: HashSet<RadicleUri>,
+    certifiers: HashSet<RadUrn>,
     /// Specific `Entity` data
     info: T,
 }
@@ -288,8 +289,7 @@ where
         let mut certifiers = HashSet::new();
         for c in data.certifiers.iter() {
             certifiers.insert(
-                RadicleUri::from_str(c)
-                    .map_err(|_| Error::InvalidData(format!("certifier: {}", c)))?,
+                RadUrn::from_str(c).map_err(|_| Error::InvalidData(format!("certifier: {}", c)))?,
             );
         }
 
@@ -300,7 +300,10 @@ where
                     .ok_or_else(|| Error::InvalidData(format!("signature key: {}", k)))?;
                 let signature = EntitySignature {
                     by: match &sig.user {
-                        Some(uri) => Signatory::User(RadicleUri::from_str(&uri)?),
+                        Some(uri) => Signatory::User(
+                            RadUrn::from_str(&uri)
+                                .map_err(|_| Error::InvalidUri(uri.to_owned()))?,
+                        ),
                         None => Signatory::OwnedKey,
                     },
                     sig: Signature::from_bs58(&sig.sig).ok_or_else(|| {
@@ -437,8 +440,8 @@ where
     }
 
     /// `uri` getter
-    pub fn uri(&self) -> RadicleUri {
-        RadicleUri::new(self.hash.to_owned())
+    pub fn uri(&self) -> RadUrn {
+        RadUrn::new(self.hash.to_owned())
     }
 
     /// `parent_hash` getter
@@ -465,7 +468,7 @@ where
     }
 
     /// `certifiers` getter
-    pub fn certifiers(&self) -> &HashSet<RadicleUri> {
+    pub fn certifiers(&self) -> &HashSet<RadUrn> {
         &self.certifiers
     }
     /// Certifiers count
@@ -473,7 +476,7 @@ where
         self.certifiers.len()
     }
     /// Check certifier presence
-    fn has_certifier(&self, c: &RadicleUri) -> bool {
+    fn has_certifier(&self, c: &RadUrn) -> bool {
         self.certifiers.contains(c)
     }
 
@@ -601,7 +604,7 @@ where
     /// - the first revision has no parent and a matching root hash
     pub async fn compute_status(&mut self, resolver: &impl Resolver<User>) -> Result<(), Error> {
         let mut keys = HashSet::<PublicKey>::from_iter(self.keys().iter().cloned());
-        let mut users = HashSet::<RadicleUri>::from_iter(self.certifiers().iter().cloned());
+        let mut users = HashSet::<RadUrn>::from_iter(self.certifiers().iter().cloned());
         self.status = VerificationStatus::Unknown;
 
         if self.revision == 1 && (self.parent_hash.is_some() || self.root_hash != self.hash) {
