@@ -27,7 +27,6 @@ use futures::{
     stream::{BoxStream, StreamExt, TryStreamExt},
 };
 use futures_codec::{CborCodec, CborCodecError, FramedRead, FramedWrite};
-// use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use thiserror::Error;
