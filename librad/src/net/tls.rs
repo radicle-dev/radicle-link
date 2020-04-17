@@ -38,7 +38,7 @@ use yasna::{ASN1Error, ASN1ErrorKind, ASN1Result};
 /// the `PeerId::default_encoding` as the subject alt name.
 fn gen_cert(key: &device::Key) -> rcgen::Certificate {
     let params = {
-        let mut params = CertificateParams::new(vec![PeerId::from(key.clone()).default_encoding()]);
+        let mut params = CertificateParams::new(vec![PeerId::from(key).default_encoding()]);
 
         params.alg = &PKCS_ED25519;
         params.distinguished_name = {
@@ -318,7 +318,7 @@ mod tests {
         let client_key = device::Key::new();
         let server_key = device::Key::new();
 
-        let server_id = PeerId::from(server_key.clone()).to_string();
+        let server_id = PeerId::from(&server_key).to_string();
 
         let client_config = Arc::new(make_client_config(&client_key));
         let sni = webpki::DNSNameRef::try_from_ascii_str(&server_id).unwrap();

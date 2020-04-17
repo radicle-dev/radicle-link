@@ -56,6 +56,12 @@ pub enum Protocol {
     //Pijul,
 }
 
+impl Default for Protocol {
+    fn default() -> Self {
+        Self::Git
+    }
+}
+
 impl Protocol {
     /// The "NSS" (namespace-specific string) of the [`Protocol`] in the context
     /// of a URN
@@ -140,6 +146,10 @@ impl Path {
         Self(String::with_capacity(capacity))
     }
 
+    pub fn empty() -> Self {
+        Self::with_capacity(0)
+    }
+
     pub fn parse<S: AsRef<str>>(s: S) -> Result<Self, path::ParseError> {
         Self::parse_str(s).map(Path)
     }
@@ -211,7 +221,7 @@ impl Deref for Path {
 ///
 /// ```rust
 /// use librad::{
-///     hash::{Hash, Hasher},
+///     hash::Hash,
 ///     uri::{Path, Protocol, RadUrn},
 /// };
 ///
@@ -228,9 +238,9 @@ impl Deref for Path {
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RadUrn {
-    id: Hash,
-    proto: Protocol,
-    path: Path,
+    pub id: Hash,
+    pub proto: Protocol,
+    pub path: Path,
 }
 
 impl RadUrn {
@@ -238,20 +248,15 @@ impl RadUrn {
         Self { id, proto, path }
     }
 
-    pub fn id(&self) -> &Hash {
-        &self.id
-    }
-
-    pub fn proto(&self) -> &Protocol {
-        &self.proto
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
     pub fn into_rad_url(self, authority: PeerId) -> RadUrl {
         RadUrl {
+            authority,
+            urn: self,
+        }
+    }
+
+    pub fn as_rad_url_ref<'a>(&'a self, authority: &'a PeerId) -> RadUrlRef<'a> {
+        RadUrlRef {
             authority,
             urn: self,
         }
@@ -346,7 +351,7 @@ impl Serialize for RadUrn {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        self.to_string().serialize(serializer)
     }
 }
 
@@ -368,7 +373,7 @@ impl<'de> Deserialize<'de> for RadUrn {
             where
                 E: serde::de::Error,
             {
-                RadUrn::from_str(s).map_err(serde::de::Error::custom)
+                s.parse().map_err(serde::de::Error::custom)
             }
         }
 
@@ -382,25 +387,22 @@ impl<'de> Deserialize<'de> for RadUrn {
 /// `radicle-link` repository and branch identified by [`RadUrn`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct RadUrl {
-    authority: PeerId,
-    urn: RadUrn,
+    pub authority: PeerId,
+    pub urn: RadUrn,
 }
 
 impl RadUrl {
-    // TODO: we should be able to open a `RadUrl` from local storage
-    // pub fn open(&self) -> Result<impl Iterator<Item = Commit>, ??>
+    pub fn as_ref(&self) -> RadUrlRef {
+        RadUrlRef {
+            authority: &self.authority,
+            urn: &self.urn,
+        }
+    }
 }
 
 impl Display for RadUrl {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "rad+{}://{}/{}/{}",
-            self.urn.proto.nss(),
-            self.authority.default_encoding(),
-            self.urn.id,
-            percent_encode(self.urn.path.as_bytes(), PATH_PERCENT_ENCODE_SET,).to_string()
-        )
+        self.as_ref().fmt(f)
     }
 }
 
@@ -519,6 +521,33 @@ impl<'de> Deserialize<'de> for RadUrl {
     }
 }
 
+pub struct RadUrlRef<'a> {
+    pub authority: &'a PeerId,
+    pub urn: &'a RadUrn,
+}
+
+impl<'a> RadUrlRef<'a> {
+    pub fn to_owned(&self) -> RadUrl {
+        RadUrl {
+            authority: self.authority.clone(),
+            urn: self.urn.clone(),
+        }
+    }
+}
+
+impl<'a> Display for RadUrlRef<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "rad+{}://{}/{}/{}",
+            self.urn.proto.nss(),
+            self.authority.default_encoding(),
+            self.urn.id,
+            percent_encode(self.urn.path.as_bytes(), PATH_PERCENT_ENCODE_SET,).to_string()
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -526,7 +555,7 @@ mod tests {
 
     use sodiumoxide::crypto::sign::Seed;
 
-    use crate::{hash::Hasher, keys::device, peer::PeerId};
+    use crate::{keys::device, peer::PeerId};
 
     const SEED: Seed = Seed([
         20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81,

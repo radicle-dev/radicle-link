@@ -603,7 +603,10 @@ where
                 let res = {
                     let remote_id = remote_id.clone();
                     let val = val.clone();
-                    tokio::task::block_in_place(move || self.storage.put(&remote_id, val))
+                    let storage = self.storage.clone();
+                    tokio::task::spawn_blocking(move || storage.put(&remote_id, val))
+                        .await
+                        .expect("storage.put panicked")
                 };
 
                 match res {
@@ -679,7 +682,10 @@ where
                 tracing::trace!(msg = "Want", origin.peer.id = %origin.peer_id, origin.value = ?val);
                 let have = {
                     let val = val.clone();
-                    tokio::task::block_in_place(move || self.storage.ask(&val))
+                    let storage = self.storage.clone();
+                    tokio::task::spawn_blocking(move || storage.ask(val))
+                        .await
+                        .expect("storage.ask panicked")
                 };
 
                 if have {

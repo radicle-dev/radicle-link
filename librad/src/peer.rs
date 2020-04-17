@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{convert::TryFrom, fmt, str::FromStr};
+use std::{convert::TryFrom, fmt, ops::Deref, str::FromStr};
 
 use multibase::Base::Base32Z;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
@@ -174,6 +174,14 @@ impl Into<webpki::DNSName> for PeerId {
         webpki::DNSNameRef::try_from_ascii_str(&self.to_string())
             .unwrap()
             .to_owned()
+    }
+}
+
+impl Deref for PeerId {
+    type Target = device::PublicKey;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

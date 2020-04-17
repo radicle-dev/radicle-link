@@ -46,11 +46,12 @@ pub struct Key {
 pub struct PublicKey(ed25519::PublicKey);
 
 /// A signature produced by `Key::sign`
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Signature(ed25519::Signature);
 
 // Key
 
+#[allow(clippy::new_without_default)]
 impl Key {
     pub fn new() -> Self {
         let (_, sk) = ed25519::gen_keypair();
@@ -124,12 +125,6 @@ impl Key {
                     })
             })
         })
-    }
-}
-
-impl Default for Key {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

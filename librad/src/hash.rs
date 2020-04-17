@@ -46,9 +46,19 @@ pub struct AlgorithmMismatch {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Hash(Multihash);
 
+impl Hash {
+    pub fn hash(data: &[u8]) -> Self {
+        Hash(Blake2b256::digest(data))
+    }
+
+    pub fn as_ref(&self) -> HashRef {
+        HashRef(&self.0)
+    }
+}
+
 impl Hasher for Hash {
     fn hash(data: &[u8]) -> Self {
-        Hash(Blake2b256::digest(data))
+        Self::hash(data)
     }
 }
 
@@ -56,19 +66,13 @@ impl TryFrom<Multihash> for Hash {
     type Error = AlgorithmMismatch;
 
     fn try_from(mh: Multihash) -> Result<Self, Self::Error> {
-        match mh.algorithm() {
-            multihash::Code::Blake2b256 => Ok(Self(mh)),
-            c => Err(AlgorithmMismatch {
-                expected: multihash::Code::Blake2b256,
-                actual: c,
-            }),
-        }
+        HashRef::try_from(&mh).map(|h| h.to_owned())
     }
 }
 
 impl Display for Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&multibase::encode(Base::Base32Z, &self.0))
+        self.as_ref().fmt(f)
     }
 }
 
@@ -113,6 +117,35 @@ impl<'de> Deserialize<'de> for Hash {
         let bytes: Vec<u8> = Deserialize::deserialize(deserializer)?;
         let mhash = Multihash::from_bytes(bytes).map_err(serde::de::Error::custom)?;
         Self::try_from(mhash).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct HashRef<'a>(&'a Multihash);
+
+impl<'a> HashRef<'a> {
+    pub fn to_owned(&self) -> Hash {
+        Hash(self.0.clone())
+    }
+}
+
+impl<'a> TryFrom<&'a Multihash> for HashRef<'a> {
+    type Error = AlgorithmMismatch;
+
+    fn try_from(mh: &'a Multihash) -> Result<HashRef<'a>, Self::Error> {
+        match mh.algorithm() {
+            multihash::Code::Blake2b256 => Ok(Self(mh)),
+            c => Err(AlgorithmMismatch {
+                expected: multihash::Code::Blake2b256,
+                actual: c,
+            }),
+        }
+    }
+}
+
+impl<'a> Display for HashRef<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&multibase::encode(Base::Base32Z, self.0))
     }
 }
 

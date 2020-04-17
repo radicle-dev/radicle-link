@@ -16,6 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #![feature(str_strip)]
+#![feature(bool_to_option)]
 
 extern crate radicle_keystore as keystore;
 extern crate sequoia_openpgp as pgp;
@@ -36,6 +37,7 @@ pub mod project;
 pub mod sync;
 pub mod uri;
 
+pub(crate) mod canonical;
 pub(crate) mod channel;
 
 pub fn init() -> bool {

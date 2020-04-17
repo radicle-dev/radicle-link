@@ -387,8 +387,8 @@ where
         &self.root_hash
     }
 
-    /// `uri` getter
-    pub fn uri(&self) -> RadUrn {
+    /// `urn` getter
+    pub fn urn(&self) -> RadUrn {
         RadUrn::new(self.hash.to_owned(), Protocol::Git, Path::new())
     }
 
@@ -651,7 +651,7 @@ where
             }
 
             // Resolve previous revision
-            match resolver.resolve_revision(&self.uri(), revision - 1).await {
+            match resolver.resolve_revision(&self.urn(), revision - 1).await {
                 // Check update between current and previous
                 Ok(previous) => match current.check_update(&previous) {
                     // Update verification failed

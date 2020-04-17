@@ -158,7 +158,7 @@ impl Project {
 pub mod tests {
     use super::*;
     use crate::{
-        hash::{Hash, Hasher},
+        hash::Hash,
         uri::{Path, Protocol},
     };
 

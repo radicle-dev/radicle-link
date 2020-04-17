@@ -62,7 +62,7 @@ struct MiniPeer {
 
 impl MiniPeer {
     fn peer_id(&self) -> PeerId {
-        PeerId::from(self.key.clone())
+        PeerId::from(&self.key)
     }
 
     fn create_repo<P: AsRef<Path>>(&self, path: P) -> Result<git2::Repository, Box<dyn Error>> {
@@ -134,7 +134,7 @@ impl gossip::LocalStorage for MiniPeer {
         }
     }
 
-    fn ask(&self, ProjectCreated { id }: &ProjectCreated) -> bool {
+    fn ask(&self, ProjectCreated { id }: ProjectCreated) -> bool {
         self.paths
             .projects_dir()
             .join(id.path(&self.paths))
@@ -282,7 +282,7 @@ async fn main() {
             &peer1.peer.paths,
             &peer1.peer.key,
             &repo,
-            &meta::Project::new("mini1".to_owned(), &project_owner.uri()).unwrap(),
+            &meta::Project::new("mini1".to_owned(), &project_owner.urn()).unwrap(),
             &project_owner,
         )
         .unwrap()

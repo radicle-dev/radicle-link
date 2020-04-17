@@ -45,5 +45,5 @@ pub trait LocalStorage: Clone + Send + Sync {
     ///
     /// This is used to notify the asking peer that they may fetch value `A`
     /// from us.
-    fn ask(&self, want: &Self::Update) -> bool;
+    fn ask(&self, want: Self::Update) -> bool;
 }

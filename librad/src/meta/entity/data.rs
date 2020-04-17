@@ -16,7 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::{
-    hash::{Hash, Hasher},
+    hash::Hash,
     meta::{
         entity::{Entity, Error},
         RAD_VERSION,

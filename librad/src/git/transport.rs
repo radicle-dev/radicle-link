@@ -60,9 +60,8 @@ use futures::{
 };
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
 use tracing;
-use url::Url;
 
-use crate::peer::PeerId;
+use crate::{git::url::GitUrl, hash::Hash, peer::PeerId};
 
 type Factories = Arc<RwLock<HashMap<PeerId, Box<dyn GitStreamFactory>>>>;
 
@@ -83,7 +82,7 @@ pub trait GitStreamFactory: Sync + Send {
     async fn open_stream(&self, to: &PeerId) -> Option<Box<dyn GitStream>>;
 }
 
-/// Register the `rad://` transport with `libgit`.
+/// Register the `rad+git://` transport with `libgit`.
 ///
 /// # Safety:
 ///
@@ -98,7 +97,7 @@ pub fn register() -> RadTransport {
 
     unsafe {
         INIT.call_once(|| {
-            git2::transport::register("rad", move |remote| {
+            git2::transport::register("rad+git", move |remote| {
                 Transport::smart(&remote, true, RadTransport::new())
             })
             .unwrap();
@@ -143,23 +142,15 @@ impl SmartSubtransport for RadTransport {
         url: &str,
         action: Service,
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        let url = Url::parse(url).map_err(git_error)?;
-
-        let local_peer: PeerId = url.username().parse().map_err(git_error)?;
-        let remote_peer: PeerId = url
-            .host_str()
-            .ok_or_else(|| git_error("Missing host"))?
-            .parse()
-            .map_err(git_error)?;
-
+        let url: GitUrl = url.parse().map_err(git_error)?;
         let stream = self
-            .open_stream(&local_peer, &remote_peer)
-            .ok_or_else(|| git_error(format!("No connection to {}", remote_peer)))?;
+            .open_stream(&url.local_peer, &url.remote_peer)
+            .ok_or_else(|| git_error(format!("No connection to {}", url.remote_peer)))?;
 
         Ok(Box::new(RadSubTransport {
             header_sent: false,
-            remote_peer,
-            remote_repo: url.path().to_string(),
+            remote_peer: url.remote_peer,
+            remote_repo: url.repo,
             service: action,
             stream,
         }))
@@ -173,7 +164,7 @@ impl SmartSubtransport for RadTransport {
 struct RadSubTransport {
     header_sent: bool,
     remote_peer: PeerId,
-    remote_repo: String,
+    remote_repo: Hash,
     service: Service,
     stream: Box<dyn GitStream>,
 }
@@ -193,19 +184,19 @@ impl RadSubTransport {
     fn service_header(&self) -> String {
         match self.service {
             Service::UploadPackLs => format!(
-                "git-upload-pack {}\0advertise\0host={}\0\n",
+                "git-upload-pack {}.git\0advertise\0host={}\0\n",
                 self.remote_repo, self.remote_peer
             ),
             Service::UploadPack => format!(
-                "git-upload-pack {}\0\0host={}\0\n",
+                "git-upload-pack {}.git\0\0host={}\0\n",
                 self.remote_repo, self.remote_peer
             ),
             Service::ReceivePackLs => format!(
-                "git-receive-pack {}\0advertise\0host={}\0\n",
+                "git-receive-pack {}.git\0advertise\0host={}\0\n",
                 self.remote_repo, self.remote_peer
             ),
             Service::ReceivePack => format!(
-                "git-receive-pack {}\0\0host={}\0\n",
+                "git-receive-pack {}.git\0\0host={}\0\n",
                 self.remote_repo, self.remote_peer
             ),
         }

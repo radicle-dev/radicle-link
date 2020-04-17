@@ -10,6 +10,7 @@ RUN set -eux; \
         dpkg \
         file \
         gcc \
+        git \
         jq \
         libc6-dev \
         libclang-dev \

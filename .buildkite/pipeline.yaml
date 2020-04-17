@@ -6,7 +6,7 @@ steps:
       production: "true"
       platform: "linux"
     env:
-      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-build@sha256:b50248204078e514b02b3159d4b545942084bc621624a9354e30f1a1f9930bad"
+      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-seedling-build@sha256:f53c35f65541d91b7665003a6362be48d6b2687a5a9e46adaadccaf3129da51f"
       DOCKER_FILE: .buildkite/docker/rust-nightly/Dockerfile
 
   - label: "Render Spec"

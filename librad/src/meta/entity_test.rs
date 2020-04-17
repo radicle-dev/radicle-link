@@ -20,7 +20,7 @@ use super::{
     user::{User, UserData},
 };
 use crate::{
-    hash::{Hash, Hasher},
+    hash::Hash,
     keys::device::Key,
     peer::PeerId,
     uri::{Path, Protocol, RadUrn},
