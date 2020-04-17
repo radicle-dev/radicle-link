@@ -21,14 +21,15 @@ use std::{
     str::{FromStr, Utf8Error},
 };
 
-use multibase::Base;
-use multihash::Multihash;
 use percent_encoding::{percent_decode_str, percent_encode, AsciiSet};
 use regex::RegexSet;
 use thiserror::Error;
 use url::Url;
 
-use crate::peer::{self, PeerId};
+use crate::{
+    hash::{self, Hash},
+    peer::{self, PeerId},
+};
 
 /// https://url.spec.whatwg.org/#fragment-percent-encode-set
 const FRAGMENT_PERCENT_ENCODE_SET: &AsciiSet = &percent_encoding::CONTROLS
@@ -207,13 +208,16 @@ impl Deref for Path {
 /// where the preferred base is `z-base32`.
 ///
 /// ```rust
-/// use librad::uri::{Path, Protocol, RadUrn};
-///
-/// let urn = RadUrn {
-///     id: multihash::Blake2b256::digest(b"geez"),
-///     proto: Protocol::Git,
-///     path: Path::parse("rad/issues/42").unwrap(),
+/// use librad::{
+///     hash::{Hash, Hasher},
+///     uri::{Path, Protocol, RadUrn},
 /// };
+///
+/// let urn = RadUrn::new(
+///     Hash::hash(b"geez"),
+///     Protocol::Git,
+///     Path::parse("rad/issues/42").unwrap(),
+/// );
 ///
 /// assert_eq!(
 ///     "rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/rad/issues/42",
@@ -222,12 +226,28 @@ impl Deref for Path {
 /// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct RadUrn {
-    pub id: Multihash,
-    pub proto: Protocol,
-    pub path: Path,
+    id: Hash,
+    proto: Protocol,
+    path: Path,
 }
 
 impl RadUrn {
+    pub fn new(id: Hash, proto: Protocol, path: Path) -> Self {
+        Self { id, proto, path }
+    }
+
+    pub fn id(&self) -> &Hash {
+        &self.id
+    }
+
+    pub fn proto(&self) -> &Protocol {
+        &self.proto
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     pub fn into_rad_url(self, authority: PeerId) -> RadUrl {
         RadUrl {
             authority,
@@ -238,12 +258,7 @@ impl RadUrn {
 
 impl Display for RadUrn {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "rad:{}:{}",
-            self.proto.nss(),
-            multibase::encode(Base::Base32Z, &self.id)
-        )?;
+        write!(f, "rad:{}:{}", self.proto.nss(), self.id)?;
 
         if !self.path.is_empty() {
             write!(
@@ -281,8 +296,8 @@ pub mod rad_urn {
         #[error("Invalid encoding")]
         Encoding(#[from] multibase::Error),
 
-        #[error("Invalid multihash")]
-        Hash(#[from] multihash::DecodeOwnedError),
+        #[error("Invalid hash")]
+        Hash(#[from] hash::ParseError),
     }
 }
 
@@ -313,12 +328,7 @@ impl FromStr for RadUrn {
                 let id = iter
                     .next()
                     .ok_or_else(|| Self::Err::Missing("id"))
-                    .and_then(|id| {
-                        multibase::decode(id)
-                            .map(|(_, bytes)| bytes)
-                            .map_err(|e| e.into())
-                    })
-                    .and_then(|bytes| Multihash::from_bytes(bytes).map_err(|e| e.into()))?;
+                    .and_then(|id| Hash::from_str(id).map_err(|e| e.into()))?;
                 let path = match iter.next() {
                     None => Ok(Path::new()),
                     Some(path) => Path::parse(path),
@@ -351,7 +361,7 @@ impl Display for RadUrl {
             "rad+{}://{}/{}/{}",
             self.urn.proto.nss(),
             self.authority.default_encoding(),
-            multibase::encode(Base::Base32Z, &self.urn.id),
+            self.urn.id,
             percent_encode(self.urn.path.as_bytes(), PATH_PERCENT_ENCODE_SET,).to_string()
         )
     }
@@ -384,8 +394,8 @@ pub mod rad_url {
         #[error("Invalid encoding")]
         Encoding(#[from] multibase::Error),
 
-        #[error("Invalid multihash")]
-        Hash(#[from] multihash::DecodeOwnedError),
+        #[error("Invalid hash")]
+        Hash(#[from] hash::ParseError),
 
         #[error("Malformed URL")]
         MalformedUrl(#[from] url::ParseError),
@@ -421,12 +431,7 @@ impl FromStr for RadUrl {
         let id = path_segments
             .next()
             .ok_or_else(|| Self::Err::Missing("id"))
-            .and_then(|id| {
-                multibase::decode(id)
-                    .map(|(_, bytes)| bytes)
-                    .map_err(|e| e.into())
-            })
-            .and_then(|bytes| Multihash::from_bytes(bytes).map_err(|e| e.into()))?;
+            .and_then(|id| Hash::from_str(id).map_err(|e| e.into()))?;
         let path = path_segments.try_fold::<_, _, Result<Path, rad_url::ParseError>>(
             Path::new(),
             |buf, segment| {
@@ -449,7 +454,7 @@ mod tests {
 
     use sodiumoxide::crypto::sign::Seed;
 
-    use crate::{keys::device, peer::PeerId};
+    use crate::{hash::Hasher, keys::device, peer::PeerId};
 
     const SEED: Seed = Seed([
         20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81,
@@ -460,7 +465,7 @@ mod tests {
     #[test]
     fn test_urn_roundtrip() {
         let urn = RadUrn {
-            id: multihash::Blake2b256::digest(b"geez"),
+            id: Hash::hash(b"geez"),
             proto: Protocol::Git,
             path: Path::parse("rad/issues/42").unwrap(),
         };
@@ -471,7 +476,7 @@ mod tests {
     #[test]
     fn test_url_example() {
         let url = RadUrn {
-            id: multihash::Blake2b256::digest(b"geez"),
+            id: Hash::hash(b"geez"),
             proto: Protocol::Git,
             path: Path::parse("rad/issues/42").unwrap(),
         }
@@ -491,7 +496,7 @@ mod tests {
     #[test]
     fn test_url_roundtrip() {
         let url = RadUrn {
-            id: multihash::Blake2b256::digest(b"geez"),
+            id: Hash::hash(b"geez"),
             proto: Protocol::Git,
             path: Path::parse("rad/issue#foos/42").unwrap(),
         }

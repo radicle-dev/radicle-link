@@ -15,6 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::{
+    convert::TryFrom,
+    fmt::{self, Display},
+    str::FromStr,
+};
+
+use multibase::Base;
 use multihash::{Blake2b256, Multihash};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
@@ -45,6 +52,48 @@ impl Hasher for Hash {
     }
 }
 
+impl TryFrom<Multihash> for Hash {
+    type Error = AlgorithmMismatch;
+
+    fn try_from(mh: Multihash) -> Result<Self, Self::Error> {
+        match mh.algorithm() {
+            multihash::Code::Blake2b256 => Ok(Self(mh)),
+            c => Err(AlgorithmMismatch {
+                expected: multihash::Code::Blake2b256,
+                actual: c,
+            }),
+        }
+    }
+}
+
+impl Display for Hash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&multibase::encode(Base::Base32Z, &self.0))
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ParseError {
+    #[error(transparent)]
+    Algo(#[from] AlgorithmMismatch),
+
+    #[error(transparent)]
+    Encoding(#[from] multibase::Error),
+
+    #[error(transparent)]
+    Multihash(#[from] multihash::DecodeOwnedError),
+}
+
+impl FromStr for Hash {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = multibase::decode(s).map(|(_base, bytes)| bytes)?;
+        let mhash = Multihash::from_bytes(bytes)?;
+        Self::try_from(mhash).map_err(|e| e.into())
+    }
+}
+
 impl Serialize for Hash {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -63,19 +112,18 @@ impl<'de> Deserialize<'de> for Hash {
         // need to go through an owned sequence here.
         let bytes: Vec<u8> = Deserialize::deserialize(deserializer)?;
         let mhash = Multihash::from_bytes(bytes).map_err(serde::de::Error::custom)?;
-        match mhash.algorithm() {
-            multihash::Code::Blake2b256 => Ok(Self(mhash)),
-            c => Err(serde::de::Error::custom(AlgorithmMismatch {
-                expected: multihash::Code::Blake2b256,
-                actual: c,
-            })),
-        }
+        Self::try_from(mhash).map_err(serde::de::Error::custom)
     }
 }
 
 #[cfg(test)]
 mod fast {
-    use std::hash::Hasher;
+    use std::{
+        fmt::{self, Display},
+        hash::Hasher,
+        num::ParseIntError,
+        str::FromStr,
+    };
 
     use fnv::FnvHasher;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -92,6 +140,20 @@ mod fast {
             let mut hasher = FnvHasher::default();
             hasher.write(data);
             Self(hasher.finish())
+        }
+    }
+
+    impl Display for FastHash {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
+    impl FromStr for FastHash {
+        type Err = ParseIntError;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            s.parse().map(Self)
         }
     }
 
@@ -144,6 +206,17 @@ mod tests {
         assert_eq!(hash, de1);
     }
 
+    fn can_display_from_str<H>()
+    where
+        H: Hasher + Debug + Display + FromStr,
+        H::Err: Debug,
+    {
+        let data: [u8; 32] = random();
+        let hash1 = H::hash(&data);
+        let hash2 = hash1.to_string().parse().unwrap();
+        assert_eq!(hash1, hash2)
+    }
+
     #[test]
     fn test_determinism() {
         is_a_deterministic_function::<Hash>();
@@ -173,5 +246,11 @@ mod tests {
             &expect_err,
             "Invalid hash algorithm, expected Blake2b256, actual Sha3_256"
         )
+    }
+
+    #[test]
+    fn test_str_roundtrip() {
+        can_display_from_str::<Hash>();
+        can_display_from_str::<FastHash>();
     }
 }
