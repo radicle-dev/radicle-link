@@ -17,11 +17,6 @@
 
 use crate::thread::{DataState, Finger, ReplyTo};
 
-/* So here's the thing... What do we do here?
- * Do we use a crdt::Map for the thread replies instead of a NonEmpty?
- * How much of the logic will be duplicated?
- * So many questions!
- */
 pub trait ThreadOp<A, Op> {
     type Error;
 

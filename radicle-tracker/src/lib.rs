@@ -95,8 +95,7 @@
 
 #![allow(clippy::new_without_default)]
 #![deny(missing_docs, unused_import_braces, unused_qualifications, warnings)]
-#![feature(vec_remove_item)]
-use crdts::vclock::Actor;
+use std::hash::Hash;
 
 mod thread;
 pub use thread::{DataState, Error as ThreadError, Finger, Replies, ReplyTo, Thread};
@@ -112,9 +111,9 @@ use clock::{Clock, RadClock};
 /// An [`Issue`] that has been closed. The underlying issue cannot be mutated,
 /// and can we can only access the reference of this issue..
 #[derive(Debug, Clone)]
-pub struct ClosedIssue<Id, Cid, User: Actor>(Issue<Id, Cid, User>);
+pub struct ClosedIssue<Id, Cid, User: Eq + Hash>(Issue<Id, Cid, User>);
 
-impl<Id, Cid, User: Actor> ClosedIssue<Id, Cid, User> {
+impl<Id, Cid, User: Eq + Hash> ClosedIssue<Id, Cid, User> {
     /// Reopen the underlying [`Issue`].
     pub fn reopen(self) -> Issue<Id, Cid, User> {
         self.0
@@ -136,7 +135,7 @@ impl<Id, Cid, User: Actor> ClosedIssue<Id, Cid, User> {
 /// It also contains [`Metadata`] for which we would like to keep track of and
 /// enhance the experience of the conversation.
 #[derive(Debug, Clone)]
-pub struct Issue<Id, Cid, User: Actor> {
+pub struct Issue<Id, Cid, User: Eq + Hash> {
     identifier: Id,
     author: User,
     title: Title,
@@ -145,7 +144,7 @@ pub struct Issue<Id, Cid, User: Actor> {
     timestamp: RadClock,
 }
 
-impl<Id, Cid, User: Actor> Issue<Id, Cid, User> {
+impl<Id, Cid, User: Eq + Hash> Issue<Id, Cid, User> {
     /// Create a new `Issue`.
     pub fn new(identifier: Id, comment_id: Cid, author: User, title: Title, content: String) -> Self
     where
