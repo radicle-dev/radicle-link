@@ -215,7 +215,7 @@ pub trait Resolver<T> {
 /// - Each revision must be signed by all its owned keys and trusted certifiers.
 /// - Each subsequent revision must be signed by a quorum of the previous keys
 ///   and certifiers, to prove that the entity evolution is actually under the
-///   control of its current "owners" (the idea is taken from TUF).
+///   control of its current "owners" (the idea is taken from [TUF](https://theupdateframework.io/)).
 #[derive(Clone)]
 pub struct Entity<T> {
     /// Entity verification status
