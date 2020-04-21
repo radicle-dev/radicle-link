@@ -23,12 +23,10 @@ use async_trait::async_trait;
 use futures::{
     future::TryFutureExt,
     lock::Mutex,
-    sink::SinkExt,
     stream::{BoxStream, StreamExt, TryStreamExt},
 };
-use futures_codec::{CborCodec, CborCodecError, FramedRead, FramedWrite};
+use futures_codec::CborCodecError;
 use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
 use thiserror::Error;
 use tracing;
 
@@ -42,33 +40,10 @@ use crate::{
         connection::{CloseReason, LocalInfo, RemoteInfo, Stream},
         gossip,
         quic,
+        upgrade::{self, upgrade, with_upgrade, UpgradeRequest, Upgraded, WithUpgrade},
     },
     peer::PeerId,
 };
-
-/// We support on-way protocol upgrades on individual QUIC streams (irrespective
-/// of ALPN, which applies per-connection).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-#[repr(u8)]
-pub enum Upgrade {
-    Gossip = 0,
-    Git = 1,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum UpgradeResponse {
-    // TODO(kim): Technically, we don't need a confirmation. Keeping it here for
-    // now, so we can send back an error. Maybe we'll also need some additional
-    // response payload in the future, who knows.
-    SwitchingProtocols(Upgrade),
-    Error(UpgradeError),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum UpgradeError {
-    InvalidPayload,
-    UnsupportedUpgrade(Upgrade), // reserved
-}
 
 #[derive(Debug, Clone)]
 pub enum ProtocolEvent {
@@ -93,7 +68,7 @@ enum Run<'a, A> {
     },
 
     Gossip {
-        event: gossip::ProtocolEvent<A>,
+        event: gossip::ProtocolEvent<SocketAddr, A>,
     },
 
     Shutdown,
@@ -101,24 +76,19 @@ enum Run<'a, A> {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Upgrade: protocol mismatch, expected {expected:?}, got {actual:?}")]
-    UpgradeProtocolMismatch { expected: Upgrade, actual: Upgrade },
+    #[error("No connection to {0}")]
+    NoConnection(PeerId),
 
-    #[error("Peer denied upgrade: {0:?}")]
-    UpgradeErrorResponse(UpgradeError),
-
-    #[error("Silent server")]
-    SilentServer,
-    #[error("Silent client")]
-    SilentClient,
+    #[error(transparent)]
+    Upgrade(#[from] upgrade::Error),
 
     #[error(transparent)]
     Cbor(#[from] serde_cbor::Error),
 
-    #[error("Error handling gossip upgrade: {0}")]
+    #[error("Error handling gossip upgrade")]
     Gossip(#[from] gossip::error::Error),
 
-    #[error("Error handling git upgrade: {0}")]
+    #[error("Error handling git upgrade")]
     Git(#[source] io::Error),
 
     #[error(transparent)]
@@ -139,7 +109,7 @@ impl From<CborCodecError> for Error {
 
 #[derive(Clone)]
 pub struct Protocol<S, A> {
-    gossip: gossip::Protocol<S, A, quic::RecvStream, quic::SendStream>,
+    gossip: gossip::Protocol<S, A, SocketAddr, quic::RecvStream, quic::SendStream>,
     git: GitServer,
 
     connections: Arc<Mutex<HashMap<PeerId, quic::Connection>>>,
@@ -152,7 +122,7 @@ where
     for<'de> A: Serialize + Deserialize<'de> + Clone + Debug + Send + Sync + 'static,
 {
     pub fn new(
-        gossip: gossip::Protocol<S, A, quic::RecvStream, quic::SendStream>,
+        gossip: gossip::Protocol<S, A, SocketAddr, quic::RecvStream, quic::SendStream>,
         git: GitServer,
     ) -> Self {
         Self {
@@ -236,19 +206,11 @@ where
     }
 
     /// Open a QUIC stream which is upgraded to expect the git protocol
-    pub async fn open_git(&self, to: &PeerId) -> Option<quic::Stream> {
-        tracing::trace!("Opening git stream");
-        if let Some(conn) = self.connections.lock().await.get(to) {
-            conn.open_stream()
-                .map_err(|e| e.into())
-                .and_then(|stream| upgrade(stream, Upgrade::Git))
-                .await
-                .map_err(|e| tracing::error!("{}", e))
-                .ok()
-        } else {
-            tracing::warn!("Error opening git stream: not connected to {}", to);
-            None
-        }
+    pub async fn open_git(
+        &self,
+        to: &PeerId,
+    ) -> Result<Upgraded<quic::Stream, upgrade::Git>, Error> {
+        self.open_stream(to, upgrade::Git).await
     }
 
     async fn eval_run(&mut self, endpoint: quic::Endpoint, run: Run<'_, A>) -> Result<(), ()> {
@@ -339,7 +301,7 @@ where
         &self,
         conn: quic::Connection,
         mut incoming: BoxStream<'_, quic::Result<quic::Stream>>,
-        hello: impl Into<Option<gossip::Rpc<A>>>,
+        hello: impl Into<Option<gossip::Rpc<SocketAddr, A>>>,
     ) {
         tracing::info!("New outgoing connection");
         let remote_id = conn.remote_peer_id().clone();
@@ -426,62 +388,44 @@ where
     async fn outgoing(
         &mut self,
         stream: quic::Stream,
-        hello: impl Into<Option<gossip::Rpc<A>>>,
+        hello: impl Into<Option<gossip::Rpc<SocketAddr, A>>>,
     ) -> Result<(), Error> {
-        let upgraded = upgrade(stream, Upgrade::Gossip).await?;
-        let (recv, send) = upgraded.split();
+        let upgraded = upgrade(stream, upgrade::Gossip).await?;
         self.gossip
-            .outgoing(
-                FramedRead::new(recv, CborCodec::new()),
-                FramedWrite::new(send, CborCodec::new()),
-                hello,
-            )
+            .outgoing(upgraded, hello)
             .await
             .map_err(|e| e.into())
     }
 
     async fn incoming(&self, stream: quic::Stream) -> Result<(), Error> {
-        let mut stream = stream.framed(CborCodec::<UpgradeResponse, Upgrade>::new());
-        match stream.try_next().await {
-            Ok(resp) => match resp {
-                Some(upgrade) => {
-                    stream
-                        .send(UpgradeResponse::SwitchingProtocols(upgrade.clone()))
-                        .await?;
+        match with_upgrade(stream).await? {
+            WithUpgrade::Gossip(upgraded) => self
+                .gossip
+                .incoming(upgraded.await?)
+                .await
+                .map_err(Error::Gossip),
 
-                    tracing::trace!(msg = "Incoming stream upgraded", upgrade = ?upgrade);
+            WithUpgrade::Git(upgraded) => self
+                .git
+                .invoke_service(upgraded.await?.into_stream().split())
+                .await
+                .map_err(Error::Git),
+        }
+    }
 
-                    // remove framing
-                    let stream = stream.release().0;
-                    match upgrade {
-                        Upgrade::Gossip => {
-                            let (recv, send) = stream.split();
-                            self.gossip
-                                .incoming(
-                                    FramedRead::new(recv, CborCodec::new()),
-                                    FramedWrite::new(send, CborCodec::new()),
-                                )
-                                .await
-                                .map_err(Error::Gossip)
-                        },
-
-                        Upgrade::Git => self
-                            .git
-                            .invoke_service(stream.split())
-                            .await
-                            .map_err(Error::Git),
-                    }
-                },
-
-                None => Err(Error::SilentClient),
+    async fn open_stream<U>(&self, to: &PeerId, up: U) -> Result<Upgraded<quic::Stream, U>, Error>
+    where
+        U: Into<UpgradeRequest>,
+    {
+        match self.connections.lock().await.get(to) {
+            Some(conn) => {
+                conn.open_stream()
+                    .map_err(|e| e.into())
+                    .and_then(|stream| upgrade(stream, up))
+                    .map_err(|e| e.into())
+                    .await
             },
-
-            Err(e) => {
-                let _ = stream
-                    .send(UpgradeResponse::Error(UpgradeError::InvalidPayload))
-                    .await;
-                Err(e.into())
-            },
+            None => Err(Error::NoConnection(to.clone())),
         }
     }
 }
@@ -496,17 +440,19 @@ where
         let span = tracing::trace_span!("GitStreamFactory::open_stream", peer.id = %to);
         let _guard = span.enter();
 
-        // Nb.: type inference fails if this is not a pattern match (ie. `map`)
         match self.open_git(to).await {
-            Some(s) => Some(Box::new(s)),
-            None => None,
+            Ok(s) => Some(Box::new(s)),
+            Err(e) => {
+                tracing::warn!("Error opening git stream: {}", e);
+                None
+            },
         }
     }
 }
 
 async fn connect_peer_info(
     endpoint: &quic::Endpoint,
-    peer_info: gossip::PeerInfo,
+    peer_info: gossip::PeerInfo<SocketAddr>,
 ) -> Option<(
     quic::Connection,
     impl futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
@@ -542,29 +488,4 @@ where
         })
         .next()
         .await
-}
-
-async fn upgrade(stream: quic::Stream, upgrade: Upgrade) -> Result<quic::Stream, Error> {
-    tracing::trace!(msg = "Upgrade", upgrade = ?upgrade);
-
-    let mut stream = stream.framed(CborCodec::<Upgrade, UpgradeResponse>::new());
-    stream.send(upgrade.clone()).await?;
-    let resp = stream.try_next().await?;
-    if let Some(resp) = resp {
-        match resp {
-            UpgradeResponse::SwitchingProtocols(proto) => {
-                if proto == upgrade {
-                    Ok(stream.release().0)
-                } else {
-                    Err(Error::UpgradeProtocolMismatch {
-                        expected: Upgrade::Gossip,
-                        actual: upgrade,
-                    })
-                }
-            },
-            UpgradeResponse::Error(e) => Err(Error::UpgradeErrorResponse(e)),
-        }
-    } else {
-        Err(Error::SilentServer)
-    }
 }

@@ -791,6 +791,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures_ringbuf"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0db4573ce52d14108926537b3dd52797530da0b4c9e0b28d29b75fce6af4fa30"
+dependencies = [
+ "futures",
+ "ringbuf",
+ "rustc_version",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1060,6 +1071,7 @@ dependencies = [
 name = "librad"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "bit-vec 0.6.1",
  "bs58",
@@ -1072,6 +1084,7 @@ dependencies = [
  "futures-await-test",
  "futures-timer 3.0.2",
  "futures_codec",
+ "futures_ringbuf",
  "git2",
  "governor",
  "hex",
@@ -2051,6 +2064,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ringbuf"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c2b29d87cfbdce39849012bb5020fff88b8f01f4f5b55846a0b6ef360774eae"
+
+[[package]]
 name = "rle-decode-fast"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2089,6 +2108,15 @@ name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
+
+[[package]]
+name = "rustc_version"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "138e3e0acb6c9fb258b19b67cb8abd63c00679d2851805ea151465464fe9030a"
+dependencies = [
+ "semver",
+]
 
 [[package]]
 name = "rustls"
@@ -2155,6 +2183,21 @@ checksum = "fb003d53cef244a97516226b01155057c7fa6eb52914933c32f6c98a84182188"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "semver"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d7eb9ef2c18661902cc47e535f9bc51b78acd254da71d375c2f6720d9a40403"
+dependencies = [
+ "semver-parser",
+]
+
+[[package]]
+name = "semver-parser"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
 name = "sequoia-openpgp"
