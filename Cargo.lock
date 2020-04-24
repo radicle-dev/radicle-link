@@ -1393,9 +1393,9 @@ checksum = "6954982ece17426b038f84895b4a6771c541299dc7141fab20ee676b19d9d97f"
 
 [[package]]
 name = "nonempty"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7747482c817116898e7aeda0d68c90998d47ee0db28b7030d44584ef7695d355"
+checksum = "ab47dfd48409c1c38b632639cce6e919d1ad2771ddbb5e338e12ae6f42de2f2d"
 
 [[package]]
 name = "nonzero_ext"
@@ -1798,7 +1798,7 @@ dependencies = [
 name = "radicle-tracker"
 version = "0.1.0"
 dependencies = [
- "nonempty 0.3.0",
+ "nonempty 0.4.0",
  "num-bigint",
  "proptest",
  "thiserror",
