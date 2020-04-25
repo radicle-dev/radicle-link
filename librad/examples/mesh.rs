@@ -265,6 +265,8 @@ async fn main() {
     // Let it settle for a bit
     tokio::time::delay_for(Duration::from_secs(1)).await;
 
+    // FIXME: Replace PeerId with RadUrn
+    /*
     println!("Creating project1");
     let project1: ProjectId = {
         let repo = peer1
@@ -306,4 +308,5 @@ async fn main() {
     assert!(replicated.iter().all(|project| project == &project1));
 
     println!("If we got here, all peers have replicated each other's repos");
+    */
 }

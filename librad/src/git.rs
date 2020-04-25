@@ -28,8 +28,9 @@ use crate::{
     keys,
     keys::{device, pgp},
     meta,
+    meta::{entity, project::ProjectData, Project},
     paths::Paths,
-    peer::PeerId,
+    uri::RadUrn,
 };
 
 pub mod server;
@@ -62,6 +63,9 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] io::Error),
+
+    #[error(transparent)]
+    Entity(#[from] entity::Error),
 
     #[error(transparent)]
     Serde(#[from] serde_json::error::Error),
@@ -149,16 +153,17 @@ impl GitProject {
         let mut pgp_key = key.clone().into_pgp(&nickname, fullname)?;
 
         // Link all metadata to the tip of the default branch
-        let default_branch = metadata.default_branch.clone();
+        let default_branch = metadata.default_branch().to_owned();
         let parent = sources
             .find_branch(&default_branch, git2::BranchType::Local)
-            .map_err(|e| Error::MissingDefaultBranch(default_branch.clone(), e))?
+            .map_err(|e| Error::MissingDefaultBranch(metadata.default_branch().to_owned(), e))?
             .into_reference()
             .peel_to_commit()?;
 
         // Ensure the signing key is a maintainer
         let mut metadata = metadata;
-        metadata.add_maintainer(&PeerId::from(key.clone()));
+        // FIXME: add certifier instead of peer
+        // metadata.add_maintainer(&PeerId::from(key.clone()));
 
         // Create the metadata in the sources repo
         let pid = commit_project_meta(
@@ -209,7 +214,7 @@ impl GitProject {
                 .to_object(&self.0)?
                 .peel_to_blob()
         }?;
-        let meta = serde_json::from_slice(blob.content())?;
+        let meta = Project::from_json_slice(blob.content())?;
         Ok(meta)
     }
 
@@ -286,10 +291,13 @@ pub mod project {
             paths: &Paths,
             sources: &git2::Repository,
         ) -> Result<ProjectId, Error> {
-            let mut meta = meta::Project::new(&self.name, &PeerId::from(self.key.clone()));
-            meta.default_branch = self.default_branch;
-            meta.description = self.description;
-            meta.rel = self.rel;
+            // FIXME: add certifier instead of peer
+            let mut meta = ProjectData::new()
+                .set_name(self.name.to_owned())
+                .set_default_branch(self.default_branch.to_owned())
+                .set_optional_description(self.description.to_owned())
+                .add_rels(&self.rel)
+                .build()?;
 
             GitProject::init(paths, &self.key, sources, meta, self.founder.clone())
         }

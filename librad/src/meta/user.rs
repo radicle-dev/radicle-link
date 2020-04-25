@@ -26,6 +26,13 @@ pub struct UserInfo {
 pub type UserData = EntityData<UserInfo>;
 
 impl UserData {
+    pub fn new(name: String, revision: u64) -> Self {
+        let mut result = Self::default();
+        result.name = Some(name);
+        result.revision = Some(revision);
+        result
+    }
+
     pub fn set_email(mut self, email: String) -> Self {
         self.info.email = email;
         self

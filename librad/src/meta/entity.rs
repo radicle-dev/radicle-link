@@ -23,16 +23,22 @@ use crate::{
     uri::RadUrn,
 };
 use async_trait::async_trait;
+use data::EntityData;
 use multihash::{Multihash, Sha2_256};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{
+    de::{DeserializeOwned, Error as SerdeDeserializationError},
+    Deserialize,
+    Serialize,
+};
 use std::{
     collections::{HashMap, HashSet},
+    convert::{Into, TryFrom},
     iter::FromIterator,
     str::FromStr,
 };
 use thiserror::Error;
 
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum Error {
     #[error("Serialization failed ({0})")]
     SerializationFailed(String),
@@ -45,6 +51,9 @@ pub enum Error {
 
     #[error("Invalid hash ({0})")]
     InvalidHash(String),
+
+    #[error("Wrong hash (claimed {claimed:?}, actual {actual:?})")]
+    WrongHash { claimed: String, actual: String },
 
     #[error("Invalid root hash")]
     InvalidRootHash,
@@ -83,7 +92,7 @@ pub enum Error {
     RevisionResolutionFailed(RadUrn, u64),
 }
 
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum UpdateVerificationError {
     #[error("Non monotonic revision")]
     NonMonotonicRevision,
@@ -101,7 +110,7 @@ pub enum UpdateVerificationError {
     NoCurrentQuorum,
 }
 
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum HistoryVerificationError {
     #[error("Empty history")]
     EmptyHistory,
@@ -116,7 +125,7 @@ pub enum HistoryVerificationError {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VerificationStatus {
     Verified,
     Signed,
@@ -172,7 +181,7 @@ impl VerificationStatus {
 }
 
 /// A type expressing *who* is signing an `Entity`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Signatory {
     /// A specific user (identified by their URN)
     User(RadUrn),
@@ -180,8 +189,8 @@ pub enum Signatory {
     OwnedKey,
 }
 
-/// A signature for an `Entity`
-#[derive(Clone, Debug)]
+/// A signature for an `Entity``
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EntitySignature {
     /// Who is producing this signature
     pub by: Signatory,
@@ -217,7 +226,7 @@ pub trait Resolver<T> {
 /// - Each subsequent revision must be signed by a quorum of the previous keys
 ///   and certifiers, to prove that the entity evolution is actually under the
 ///   control of its current "owners" (the idea is taken from [TUF](https://theupdateframework.io/)).
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entity<T> {
     /// Entity verification status
     status: VerificationStatus,
@@ -245,6 +254,53 @@ pub struct Entity<T> {
     info: T,
 }
 
+impl<T> TryFrom<EntityData<T>> for Entity<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+{
+    type Error = Error;
+    fn try_from(data: EntityData<T>) -> Result<Entity<T>, Error> {
+        // FIXME: check invariants
+        Self::from_data(data)
+    }
+}
+
+impl<T> Into<EntityData<T>> for Entity<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+{
+    fn into(self) -> EntityData<T> {
+        self.to_data()
+    }
+}
+
+impl<T> Serialize for Entity<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_data().serialize(serializer)
+    }
+}
+
+impl<'de, T> Deserialize<'de> for Entity<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+        D::Error: SerdeDeserializationError,
+    {
+        let data = EntityData::<T>::deserialize(deserializer)?;
+        let res = Entity::<T>::try_from(data);
+        res.map_err(|err| D::Error::custom(err))
+    }
+}
+
 impl<T> Entity<T>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
@@ -269,6 +325,11 @@ where
         self.rad_version
     }
 
+    /// `info` getter
+    pub fn info(&self) -> &T {
+        &self.info
+    }
+
     /// Build an `Entity` from its data (the second step of deserialization)
     /// It guarantees that the `hash` is correct
     pub fn from_data(data: data::EntityData<T>) -> Result<Self, Error> {
@@ -278,9 +339,11 @@ where
         if data.revision.is_none() {
             return Err(Error::InvalidData("Missing revision".to_owned()));
         }
-        if data.keys.is_empty() {
-            return Err(Error::InvalidData("Missing keys".to_owned()));
-        }
+
+        // FIXME: this check should be specific to the User data
+        // if data.keys.is_empty() {
+        //     return Err(Error::InvalidData("Missing keys".to_owned()));
+        // }
 
         if data.revision.unwrap() < 1 {
             return Err(Error::InvalidData("Invalid revision".to_owned()));
@@ -331,7 +394,13 @@ where
                 Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?
             };
             if claimed_hash != actual_hash {
-                return Err(Error::InvalidHash(s.to_owned()));
+                let actual_hash_string = bs58::encode(&actual_hash)
+                    .with_alphabet(bs58::alphabet::BITCOIN)
+                    .into_string();
+                return Err(Error::WrongHash {
+                    claimed: s.to_owned(),
+                    actual: actual_hash_string,
+                });
             }
         }
 
@@ -517,9 +586,14 @@ where
         Self::from_data(data::EntityData::from_json_reader(r)?)
     }
 
-    /// Helper deserialization from JSON strng
+    /// Helper deserialization from JSON string
     pub fn from_json_str(s: &str) -> Result<Self, Error> {
         Self::from_data(data::EntityData::from_json_str(s)?)
+    }
+
+    /// Helper deserialization from JSON slice
+    pub fn from_json_slice(s: &[u8]) -> Result<Self, Error> {
+        Self::from_data(data::EntityData::from_json_slice(s)?)
     }
 
     /// Compute the entity hash (for validation)

@@ -109,12 +109,15 @@ where
     pub fn from_json_str(s: &str) -> Result<Self, Error> {
         serde_json::from_str(s).map_err(|e| Error::SerializationFailed(e.to_string()))
     }
+    pub fn from_json_slice(s: &[u8]) -> Result<Self, Error> {
+        serde_json::from_slice(s).map_err(|e| Error::SerializationFailed(e.to_string()))
+    }
 
     pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
         let mut cleaned = EntityData::<T>::default();
         cleaned.name = self.name.to_owned();
         cleaned.revision = self.revision.to_owned();
-        cleaned.hash = self.hash.to_owned();
+        cleaned.hash = None;
         cleaned.root_hash = if self.parent_hash.is_some() {
             self.root_hash.to_owned()
         } else {
@@ -138,20 +141,16 @@ where
         Ok(Sha2_256::digest(&self.canonical_data()?))
     }
 
-    pub fn new(name: String, revision: u64) -> Self {
-        let mut result = Self::default();
-        result.name = Some(name);
-        result.revision = Some(revision);
-        result.rad_version = RAD_VERSION;
-        result
-    }
-
     pub fn set_name(mut self, name: String) -> Self {
         self.name = Some(name);
         self
     }
     pub fn clear_name(mut self) -> Self {
         self.name = None;
+        self
+    }
+    pub fn set_optional_name(mut self, name: Option<String>) -> Self {
+        self.name = name;
         self
     }
 

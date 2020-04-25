@@ -17,15 +17,15 @@
 
 use std::path::PathBuf;
 
-use nonempty::NonEmpty;
 use serde::{Deserialize, Serialize};
+use serde_json;
 
 use crate::{
     meta::{
         common::{Label, Url},
-        serde_helpers,
+        entity::{data::EntityData, Entity, Error},
     },
-    peer::PeerId,
+    uri::RadUrn,
 };
 
 pub const DEFAULT_BRANCH: &str = "master";
@@ -34,34 +34,23 @@ pub fn default_branch() -> String {
     DEFAULT_BRANCH.into()
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
-pub struct Project {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
+#[derive(Clone, Default, Deserialize, Serialize, Debug, PartialEq)]
+pub struct ProjectInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
     #[serde(default = "default_branch")]
     pub default_branch: String,
 
-    #[serde(
-        serialize_with = "serde_helpers::nonempty::serialize",
-        deserialize_with = "serde_helpers::nonempty::deserialize"
-    )]
-    maintainers: NonEmpty<PeerId>,
-
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub rel: Vec<Relation>,
 }
 
-impl Project {
-    pub fn new(name: &str, founder: &PeerId) -> Self {
+impl ProjectInfo {
+    pub fn new() -> Self {
         Self {
-            name: Some(name.to_string()),
             description: None,
             default_branch: DEFAULT_BRANCH.into(),
-            maintainers: NonEmpty::new(founder.clone()),
             rel: vec![],
         }
     }
@@ -70,25 +59,8 @@ impl Project {
         self.rel.push(rel)
     }
 
-    pub fn add_rels(&mut self, rels: &mut Vec<Relation>) {
-        self.rel.append(rels)
-    }
-
-    pub fn add_maintainer(&mut self, maintainer: &PeerId) {
-        self.maintainers.push(maintainer.clone());
-        self.dedup_maintainers();
-    }
-
-    pub fn add_maintainers(&mut self, maintainers: &mut Vec<PeerId>) {
-        self.maintainers.append(maintainers);
-        self.dedup_maintainers();
-    }
-
-    fn dedup_maintainers(&mut self) {
-        let mut xs: Vec<PeerId> = self.maintainers.iter().cloned().collect();
-        xs.sort();
-        xs.dedup();
-        self.maintainers = NonEmpty::from_slice(&xs).unwrap();
+    pub fn add_rels(&mut self, rels: &[Relation]) {
+        self.rel.extend_from_slice(rels)
     }
 }
 
@@ -100,30 +72,133 @@ pub enum Relation {
     Path(Label, PathBuf),
 }
 
+pub type ProjectData = EntityData<ProjectInfo>;
+
+impl ProjectData {
+    pub fn new() -> Self {
+        let result = Self::default();
+        result
+    }
+
+    pub fn set_optional_description(mut self, description: Option<String>) -> Self {
+        self.info.description = description;
+        self
+    }
+
+    pub fn set_description(mut self, description: String) -> Self {
+        self.info.description = Some(description);
+        self
+    }
+
+    pub fn clear_description(mut self) -> Self {
+        self.info.description = None;
+        self
+    }
+
+    pub fn set_default_branch(mut self, default_branch: String) -> Self {
+        self.info.default_branch = default_branch;
+        self
+    }
+
+    pub fn add_rel(mut self, rel: Relation) -> Self {
+        self.info.add_rel(rel);
+        self
+    }
+
+    pub fn add_rels(mut self, rels: &[Relation]) -> Self {
+        self.info.add_rels(rels);
+        self
+    }
+
+    pub fn add_maintainer(mut self, maintainer: RadUrn) -> Self {
+        self.add_certifier(maintainer.to_string())
+    }
+
+    pub fn add_maintainers(mut self, maintainers: &[RadUrn]) -> Self {
+        self.add_certifiers(maintainers.iter().map(|urn| urn.to_string()))
+    }
+
+    pub fn build(self) -> Result<Project, Error> {
+        Project::from_data(self)
+    }
+}
+
+pub type Project = Entity<ProjectInfo>;
+
+impl Project {
+    pub fn maintainers(&self) -> &std::collections::HashSet<RadUrn> {
+        self.certifiers()
+    }
+
+    pub fn description(&self) -> &Option<String> {
+        &self.info().description
+    }
+
+    pub fn default_branch(&self) -> &str {
+        &self.info().default_branch
+    }
+
+    pub fn rels(&self) -> &[Relation] {
+        &self.info().rel
+    }
+
+    pub fn new(name: String, owner: &RadUrn) -> Result<Self, Error> {
+        /*
+        ProjectData::new()
+            .set_name(name)
+            .set_revision(1)
+            .add_certifier(owner.to_string())
+            .build()
+        */
+        let data = ProjectData::new()
+            .set_name(name)
+            .set_revision(1)
+            .add_certifier(owner.to_string());
+        println!("TMP: {}", data.to_json_string().unwrap());
+        data.build()
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
 
+    use lazy_static;
+    use multihash::{Multihash, Sha2_256};
     use proptest::prelude::*;
     use serde_json;
-    use sodiumoxide::crypto::sign::Seed;
 
-    use crate::keys::device;
+    lazy_static! {
+        pub static ref EMPTY_HASH: Multihash = Sha2_256::digest(&[]);
+        pub static ref EMPTY_URI: RadUrn = RadUrn::new(EMPTY_HASH.to_owned());
+    }
+
+    #[test]
+    fn test_project_serde() {
+        let proj = Project::new("foo".to_owned(), &EMPTY_URI).unwrap();
+        let proj_ser = serde_json::to_string(&proj).unwrap();
+        let proj_de = serde_json::from_str(&proj_ser).unwrap();
+        assert_eq!(proj, proj_de)
+    }
 
     fn gen_project() -> impl Strategy<Value = Project> {
         (
-            proptest::option::of(".*"),
+            ".*",
             proptest::option::of(".*"),
             ".*",
-            proptest::collection::vec(Just(PeerId::from(device::Key::new().public())), 1..32),
+            proptest::collection::vec(Just(EMPTY_URI.to_owned()), 1..32),
             proptest::collection::vec(gen_relation(), 0..16),
         )
-            .prop_map(|(name, description, branch, maintainers, rel)| Project {
-                name,
-                description,
-                default_branch: branch,
-                maintainers: NonEmpty::from_slice(&maintainers).unwrap(),
-                rel,
+            .prop_map(|(name, description, branch, maintainers, rels)| {
+                ProjectData::new()
+                    .set_revision(1)
+                    .set_name(name)
+                    .set_optional_description(description)
+                    .set_default_branch(branch)
+                    .add_maintainers(&maintainers)
+                    .add_rels(&rels)
+                    .build()
+                    .unwrap()
             })
     }
 
@@ -153,39 +228,5 @@ pub mod tests {
                 .unwrap();
             assert_eq!(proj, proj_de)
         }
-    }
-
-    const SEED: Seed = Seed([
-        20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81,
-        181, 134, 74, 88, 174, 254, 78, 69, 84, 149, 84, 167,
-    ]);
-    const CREATED_AT: u64 = 1_576_843_598;
-
-    fn new_peer_with_key(seed_value: u8) -> (PeerId, device::Key) {
-        let mut seed = SEED;
-        seed.0[0] = seed_value;
-        let created_at = std::time::SystemTime::UNIX_EPOCH
-            .checked_add(std::time::Duration::from_secs(CREATED_AT))
-            .expect("SystemTime overflow o.O");
-        let key = device::Key::from_seed(&seed, created_at);
-        (PeerId::from(key.public()), key)
-    }
-
-    fn new_peer(seed_value: u8) -> PeerId {
-        let (peer, _) = new_peer_with_key(seed_value);
-        peer
-    }
-
-    #[test]
-    fn test_dedup_maintainers() {
-        let founder = new_peer(42);
-        let mut prj = Project::new("foo", &founder);
-        let m1 = new_peer(1);
-        let m2 = new_peer(2);
-        prj.add_maintainer(&m1);
-        prj.add_maintainer(&m2);
-        assert_eq!(3, prj.maintainers.len());
-        prj.add_maintainer(&m1);
-        assert_eq!(3, prj.maintainers.len());
     }
 }
