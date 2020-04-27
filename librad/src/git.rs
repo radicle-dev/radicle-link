@@ -144,7 +144,7 @@ impl GitProject {
         founder: meta::Contributor,
     ) -> Result<ProjectId, Error> {
         // TODO: resolve URL ref iff rad://
-        let (nickname, fullname) = match founder.profile {
+        let (nickname, fullname) = match founder.profile() {
             Some(meta::ProfileRef::UserProfile(meta::UserProfile {
                 ref nick, ref name, ..
             })) => (nick.to_owned(), name.to_owned()),

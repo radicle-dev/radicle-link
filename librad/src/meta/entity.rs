@@ -77,7 +77,7 @@ pub enum Error {
     UserKeyNotPresent(RadUrn, PublicKey),
 
     #[error("Signature missing")]
-    SignatureMissingXXX,
+    SignatureMissing,
 
     #[error("Signature decoding failed")]
     SignatureDecodingFailed,
@@ -808,7 +808,7 @@ where
             if current.status.signatures_missing() {
                 let err = HistoryVerificationError::ErrorAtRevision {
                     revision,
-                    error: Error::SignatureMissingXXX,
+                    error: Error::SignatureMissing,
                 };
                 self.status = VerificationStatus::HistoryVerificationFailed(err.clone());
                 return Err(err);

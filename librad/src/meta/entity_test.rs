@@ -304,7 +304,7 @@ async fn test_project_update() {
         history.check().await,
         Err(HistoryVerificationError::ErrorAtRevision {
             revision: 1,
-            error: Error::SignatureMissingXXX,
+            error: Error::SignatureMissing,
         })
     ));
 
