@@ -141,7 +141,7 @@ impl GitProject {
         key: &device::Key,
         sources: &git2::Repository,
         metadata: meta::Project,
-        founder: meta::Contributor,
+        founder: meta::User,
     ) -> Result<ProjectId, Error> {
         // TODO: resolve URL ref iff rad://
         let (nickname, fullname) = match founder.profile() {
@@ -221,7 +221,7 @@ impl GitProject {
     pub fn builder(
         project_name: &str,
         founder_key: &device::Key,
-        founder_meta: meta::Contributor,
+        founder_meta: meta::User,
     ) -> project::Builder {
         project::Builder::new(project_name, founder_key, founder_meta)
     }
@@ -242,7 +242,7 @@ pub mod project {
 
     pub struct Builder {
         key: device::Key,
-        founder: meta::Contributor,
+        founder: meta::User,
         name: String,
         description: Option<String>,
         default_branch: String,
@@ -250,7 +250,7 @@ pub mod project {
     }
 
     impl Builder {
-        pub fn new(name: &str, key: &device::Key, founder: meta::Contributor) -> Self {
+        pub fn new(name: &str, key: &device::Key, founder: meta::User) -> Self {
             Self {
                 key: key.clone(),
                 founder,
@@ -319,7 +319,7 @@ fn commit_contributor_meta(
     parent: &git2::Commit,
     pgp_key: &mut pgp::Key,
     msg: &str,
-    meta: meta::Contributor,
+    meta: meta::User,
 ) -> Result<git2::Oid, Error> {
     commit_meta(repo, parent, pgp_key, msg, meta, CONTRIBUTOR_METADATA_FILE)
 }

@@ -16,7 +16,6 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub mod common;
-pub mod contributor;
 pub mod entity;
 pub mod profile;
 pub mod project;
@@ -27,9 +26,9 @@ mod serde_helpers;
 
 // Re-exports
 pub use common::*;
-pub use contributor::{Contributor, ProfileRef};
 pub use profile::{Geo, ProfileImage, UserProfile};
-pub use project::{default_branch, Project, Relation};
+pub use project::{default_branch, Project, ProjectData, Relation};
+pub use user::{ProfileRef, User, UserData};
 
 #[cfg(test)]
 pub mod entity_test;

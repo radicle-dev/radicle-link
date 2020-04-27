@@ -278,7 +278,7 @@ async fn main() {
             &peer1.peer.key,
             &repo,
             meta::Project::new("mini1", &peer1.peer.peer_id()),
-            meta::Contributor::new(),
+            meta::User::new(),
         )
         .unwrap()
         .into()
