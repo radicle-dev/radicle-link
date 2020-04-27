@@ -381,14 +381,16 @@ impl<A> Thread<A> {
                 }
             },
             Op::Thread { main, op } => {
-                // TODO: unsafe index
-                let thread = &mut self.replies.0[main];
+                let thread = self
+                    .replies
+                    .0
+                    .ix_mut(main)
+                    .ok_or(appendage::Error::IndexOutOfBounds(main))?;
                 thread.apply(op)
             },
         }
     }
 
-    /*
     #[cfg(test)]
     fn to_vec(&self) -> Vec<NonEmpty<Item<A>>>
     where
@@ -407,13 +409,12 @@ impl<A> Thread<A> {
         );
         result
     }
-    */
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::convert::Infallible;
+    use std::{convert::Infallible, error};
 
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
     struct Int(u32);
@@ -431,12 +432,10 @@ mod tests {
         }
     }
 
-    /*
-    #[test]
-    fn commutative_ints() {
-        let append1 = Op::main_append(0, Int(2));
-        let append2 = Op::main_append(1, Int(3));
+    type TestResult = Result<(), Box<dyn error::Error + 'static>>;
 
+    #[test]
+    fn sync_appends() -> TestResult {
         let expected = vec![
             NonEmpty::new(Item::new(Int(1))),
             NonEmpty::new(Item::new(Int(2))),
@@ -444,18 +443,21 @@ mod tests {
         ];
 
         let mut left = Thread::new(Int(1));
-        left.apply(append1.clone());
-        left.apply(append2.clone());
+        let append1 = left.append(AppendTo::Main, Int(2));
+        let append2 = left.append(AppendTo::Main, Int(3));
 
         let mut right = Thread::new(Int(1));
-        right.apply(append2);
-        right.apply(append1);
+        right.apply(append1)?;
+        right.apply(append2)?;
 
         assert_eq!(left.to_vec(), expected);
         assert_eq!(right.to_vec(), expected);
         assert_eq!(left, right);
+
+        Ok(())
     }
 
+    /*
     #[test]
     fn commutative_ints_with_edit() {
         let append1 = Op::main_append(0, Int(2));

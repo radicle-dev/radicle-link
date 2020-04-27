@@ -197,6 +197,10 @@ impl<V: Appendable> Appendage<V> {
         Appendage { val }
     }
 
+    pub(crate) fn ix_mut(&mut self, index: usize) -> Option<&mut V::Item> {
+        self.val.ix_mut(index)
+    }
+
     /// Append a new `item` to the `Appendage`. We get back the [`Op`] to pass
     /// onto other `Appendage`s.
     pub fn append<M>(&mut self, item: V::Item) -> Op<M, V::Item>
