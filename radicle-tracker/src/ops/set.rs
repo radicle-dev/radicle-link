@@ -15,34 +15,46 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{collections::HashSet, hash::Hash};
+use crate::ops::Apply;
+use std::{collections::HashSet, convert::Infallible, hash::Hash};
 
-pub enum SetOp<A> {
+pub enum Op<A> {
     Insert(A),
     Remove(A),
 }
 
 #[derive(Debug, Clone)]
-pub struct Set<A: Eq + Hash>(HashSet<A>);
+pub struct Set<A: Eq + Hash>(pub(crate) HashSet<A>);
 
 impl<A: Eq + Hash> Set<A> {
-    pub fn insert(&mut self, a: A) -> SetOp<A>
+    pub fn new() -> Self {
+        Set(HashSet::new())
+    }
+
+    pub fn insert(&mut self, a: A) -> Op<A>
     where
         A: Clone,
     {
         self.0.insert(a.clone());
-        SetOp::Insert(a)
+        Op::Insert(a)
     }
 
-    pub fn remove(&mut self, a: A) -> SetOp<A> {
+    pub fn remove(&mut self, a: A) -> Op<A> {
         self.0.remove(&a);
-        SetOp::Remove(a)
+        Op::Remove(a)
     }
+}
 
-    pub fn apply(&mut self, op: SetOp<A>) -> bool {
+impl<A: Eq + Hash> Apply for Set<A> {
+    type Op = Op<A>;
+    type Error = Infallible;
+
+    fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
         match op {
-            SetOp::Insert(a) => self.0.insert(a),
-            SetOp::Remove(a) => self.0.remove(&a),
-        }
+            Op::Insert(a) => self.0.insert(a),
+            Op::Remove(a) => self.0.remove(&a),
+        };
+
+        Ok(())
     }
 }
