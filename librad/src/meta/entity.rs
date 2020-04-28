@@ -441,8 +441,9 @@ where
     }
 
     /// Compute the entity hash (for validation)
-    /// FIXME: this is useless and should be removed: the hash is checked and
-    /// eventually computed in `from_data` and cannot be changed after that
+    /// FIXME[ENTITY]: this is useless and should be removed: the hash is
+    /// checked and eventually computed in `from_data` and cannot be changed
+    /// after that
     pub fn compute_hash(&self) -> Result<Multihash, Error> {
         Ok(Sha2_256::digest(&self.canonical_data()?))
     }
@@ -475,8 +476,8 @@ where
     }
 
     /// Given a private key, compute the signature of the entity canonical data
-    /// FIXME: we should check the hash instead: it is cheaper and makes also
-    /// verification way faster because we would not need to rebuild the
+    /// FIXME[ENTITY]: we should check the hash instead: it is cheaper and makes
+    /// also verification way faster because we would not need to rebuild the
     /// canonical data at every check (we can trust the hash correctness)
     pub fn compute_signature(&self, key: &Key) -> Result<Signature, Error> {
         Ok(key.sign(&self.canonical_data()?))
@@ -571,10 +572,10 @@ where
     /// - the root hash is correct
     /// - the TUF quorum rules have been observed
     ///
-    /// FIXME: only allow exact `+1`increments so that the revision history has
-    /// no holes
-    /// FIXME: probably we should merge owned keys and certifiers when checking
-    /// the quorum rules (now we are handling them separately)
+    /// FIXME[ENTITY]: only allow exact `+1`increments so that the revision
+    /// history has no holes
+    /// FIXME[ENTITY]: probably we should merge owned keys and certifiers when
+    /// checking the quorum rules (now we are handling them separately)
     fn check_update(&self, previous: &Self) -> Result<(), UpdateVerificationError> {
         if self.revision() <= previous.revision() {
             return Err(UpdateVerificationError::NonMonotonicRevision);
@@ -629,7 +630,7 @@ where
     /// Compute the entity status checking that the whole revision history is
     /// valid
     ///
-    /// FIXME: allow certifiers that are not `User` entities
+    /// FIXME[ENTITY]: should we allow certifiers that are not `User` entities?
     pub async fn compute_history_status(
         &mut self,
         resolver: &impl Resolver<Entity<T>>,
@@ -703,18 +704,13 @@ where
     /// Build an `Entity` from its data (the second step of deserialization)
     /// It guarantees that the `hash` is correct
     pub fn from_data(data: data::EntityData<T>) -> Result<Self, Error> {
-        // FIXME: do we want this? it makes `default` harder to get right...
+        // FIXME[ENTITY]: do we want this? it makes `default` harder to get right...
         if data.name.is_none() {
             return Err(Error::InvalidData("Missing name".to_owned()));
         }
         if data.revision.is_none() {
             return Err(Error::InvalidData("Missing revision".to_owned()));
         }
-
-        // FIXME: this check should be specific to the User data
-        // if data.keys.is_empty() {
-        //     return Err(Error::InvalidData("Missing keys".to_owned()));
-        // }
 
         if data.revision.unwrap() < 1 {
             return Err(Error::InvalidData("Invalid revision".to_owned()));

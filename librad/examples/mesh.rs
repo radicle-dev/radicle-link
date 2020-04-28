@@ -265,7 +265,7 @@ async fn main() {
     // Let it settle for a bit
     tokio::time::delay_for(Duration::from_secs(1)).await;
 
-    // FIXME: Replace PeerId with RadUrn
+    // FIXME[ENTITY]: Replace PeerId with RadUrn
     /*
     println!("Creating project1");
     let project1: ProjectId = {

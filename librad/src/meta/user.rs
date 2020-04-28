@@ -157,7 +157,7 @@ impl EntityBuilder for UserData {
 pub type User = Entity<UserInfo>;
 
 impl User {
-    // FIXME: require at least one key!
+    // FIXME[ENTITY]: require at least one key!
     pub fn new() -> Result<Self, Error> {
         UserData::new().build()
     }

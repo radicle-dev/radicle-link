@@ -124,7 +124,7 @@ impl ProjectData {
 
 impl EntityBuilder for ProjectData {
     fn check_invariants(&self) -> Result<(), Error> {
-        // FIXME: Require at least one certifier
+        // FIXME[ENTITY]: Require at least one certifier
         /*
         if self.certifiers.is_empty() {
             return Err(Error::InvalidData("Missing certifier".to_owned()));

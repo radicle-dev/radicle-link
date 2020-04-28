@@ -162,7 +162,7 @@ impl GitProject {
 
         // Ensure the signing key is a maintainer
         let mut metadata = metadata;
-        // FIXME: add certifier instead of peer
+        // FIXME[ENTITY]: add certifier instead of peer
         // metadata.add_maintainer(&PeerId::from(key.clone()));
 
         // Create the metadata in the sources repo
@@ -291,7 +291,7 @@ pub mod project {
             paths: &Paths,
             sources: &git2::Repository,
         ) -> Result<ProjectId, Error> {
-            // FIXME: add certifier instead of peer
+            // FIXME[ENTITY]: add certifier instead of peer
             let meta = ProjectData::new()
                 .set_name(self.name.to_owned())
                 .set_default_branch(self.default_branch.to_owned())
