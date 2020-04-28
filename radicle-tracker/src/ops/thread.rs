@@ -16,12 +16,15 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::ops::{
-    appendage::{self, Appendage},
+    appendage::{self, OrdSequence},
+    id::{Gen, UniqueTimestamp},
     visibility::{absurd, Hide},
     Apply,
 };
-use nonempty::NonEmpty;
 use std::ops::{Deref, DerefMut};
+
+#[cfg(test)]
+use nonempty::NonEmpty;
 
 mod item;
 pub use item::{Item, Modifier};
@@ -54,13 +57,27 @@ impl<M> Error<M> {
 /// It represents where we replied to the main thread and now has the
 /// opportunity to become a thread of items itself.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SubThread<A>(Appendage<NonEmpty<Item<A>>>);
+pub struct SubThread<A>(OrdSequence<UniqueTimestamp, Item<A>>);
+
+impl<T> Deref for SubThread<T> {
+    type Target = OrdSequence<UniqueTimestamp, Item<T>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for SubThread<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 impl<M, A> Apply for SubThread<A>
 where
     A: Apply<Op = M> + Ord,
 {
-    type Op = appendage::Op<Modifier<M>, Item<A>>;
+    type Op = appendage::Op<Modifier<M>, UniqueTimestamp, Item<A>>;
     type Error = appendage::Error<A::Error>;
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
@@ -68,24 +85,10 @@ where
     }
 }
 
-impl<A> Deref for SubThread<A> {
-    type Target = Appendage<NonEmpty<Item<A>>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<A> DerefMut for SubThread<A> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 /// `Replies` is the structure that represents the replies to the main thread.
 /// Each one of these can is potentially a sub-thread itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Replies<A>(Appendage<Vec<SubThread<A>>>);
+pub struct Replies<A>(OrdSequence<UniqueTimestamp, SubThread<A>>);
 
 impl<A> Default for Replies<A> {
     fn default() -> Self {
@@ -95,15 +98,16 @@ impl<A> Default for Replies<A> {
 
 impl<A> Replies<A> {
     fn new() -> Self {
-        Replies(Appendage::new(Vec::new()))
+        Replies(OrdSequence::new())
     }
 
-    fn push<M>(&mut self, a: A) -> appendage::Op<appendage::Op<Modifier<M>, Item<A>>, SubThread<A>>
+    fn push<M>(&mut self, a: A) -> MainOp<M, A>
     where
         A: Clone,
         M: Clone,
     {
-        let thread = SubThread(Appendage::new(NonEmpty::new(Item::new(a))));
+        let mut thread = SubThread(OrdSequence::new());
+        thread.append::<M>(Item::new(a));
         self.0.append(thread)
     }
 
@@ -112,14 +116,19 @@ impl<A> Replies<A> {
         A: Clone,
     {
         // TODO: unsafe index here
-        let thread = &mut self.0[ix];
+        let thread = &mut self.0[ix].1;
         let reply = thread.len();
-        thread.push(Item::new(new.clone()));
-        Op::thread_append(ix, reply, new)
+        let id = UniqueTimestamp::gen();
+        thread.push((id.clone(), Item::new(new.clone())));
+        Op::thread_append(ix, id, reply, new)
     }
 }
 
-type MainOp<M, A> = appendage::Op<appendage::Op<Modifier<M>, Item<A>>, SubThread<A>>;
+type MainOp<M, A> = appendage::Op<
+    appendage::Op<Modifier<M>, UniqueTimestamp, Item<A>>,
+    UniqueTimestamp,
+    SubThread<A>,
+>;
 
 /// Operations on a [`Thread`] can be performed on any of the items in thread.
 /// This structure allows us to focus in on what part of the structure we're
@@ -136,7 +145,7 @@ pub enum Op<M, A> {
     /// modify one the sub-thread's items.
     Thread {
         main: usize,
-        op: appendage::Op<Modifier<M>, Item<A>>,
+        op: appendage::Op<Modifier<M>, UniqueTimestamp, Item<A>>,
     },
 }
 
@@ -201,10 +210,11 @@ impl<M, A> Op<M, A> {
     }
     */
 
-    fn thread_append(main: usize, ix: usize, a: A) -> Self {
+    fn thread_append(main: usize, id: UniqueTimestamp, ix: usize, a: A) -> Self {
         Op::Thread {
             main,
             op: appendage::Op::Append {
+                id,
                 ix,
                 val: Item::new(a),
             },
@@ -304,6 +314,7 @@ impl<A> Thread<A> {
                     .modify(
                         ix,
                         appendage::Op::Modify {
+                            id: UniqueTimestamp::gen(),
                             ix: 0,
                             op: Modifier::Edit(op),
                         },
@@ -311,7 +322,7 @@ impl<A> Thread<A> {
                     .map(Op::Main)
                     .map_err(Error::flatten_main),
                 ReplyFinger::Thread { main, reply } => {
-                    let thread = &mut self.replies.0[main];
+                    let thread = &mut self.replies.0[main].1;
                     thread
                         .modify(reply, Modifier::Edit(op))
                         .map(|op| Op::Thread { main, op })
@@ -341,6 +352,7 @@ impl<A> Thread<A> {
                     .modify(
                         ix,
                         appendage::Op::Modify {
+                            id: UniqueTimestamp::gen(),
                             ix: 0,
                             op: Modifier::Delete(Hide {}),
                         },
@@ -348,7 +360,7 @@ impl<A> Thread<A> {
                     .map(Op::Main)
                     .map_err(Error::flatten_main),
                 ReplyFinger::Thread { main, reply } => {
-                    let thread = &mut self.replies.0[main];
+                    let thread = &mut self.replies.0[main].1;
                     thread
                         .modify(reply, Modifier::Delete(Hide {}))
                         .map(|op| Op::Thread { main, op })
@@ -381,11 +393,12 @@ impl<A> Thread<A> {
                 }
             },
             Op::Thread { main, op } => {
-                let thread = self
+                let thread = &mut self
                     .replies
                     .0
-                    .ix_mut(main)
-                    .ok_or(appendage::Error::IndexOutOfBounds(main))?;
+                    .get_mut(main)
+                    .ok_or(appendage::Error::IndexOutOfBounds(main))?
+                    .1;
                 thread.apply(op)
             },
         }
@@ -404,7 +417,8 @@ impl<A> Thread<A> {
                 .val
                 .iter()
                 .cloned()
-                .map(|t| t.val.clone())
+                .map(|(_, v)| v.iter().cloned().map(|(_, v)| v).collect::<Vec<_>>())
+                .filter_map(|t| NonEmpty::from_slice(&t))
                 .collect(),
         );
         result

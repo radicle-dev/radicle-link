@@ -11,6 +11,7 @@ license = "GPL-3.0-or-later"
 nonempty = "0.4"
 num-bigint = "0.2"
 thiserror = "1.0"
+uuid = { version = "0.8", features = ["v4"] }
 
 [dev-dependencies]
 proptest = "0.9"

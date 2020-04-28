@@ -1802,6 +1802,7 @@ dependencies = [
  "num-bigint",
  "proptest",
  "thiserror",
+ "uuid",
 ]
 
 [[package]]
@@ -2778,6 +2779,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c61050c4dbd3f0b1191a9d4865860387a12441bce79ddb03fc42d690acf5ba9"
 dependencies = [
  "url 1.7.2",
+]
+
+[[package]]
+name = "uuid"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fde2f6a4bea1d6e007c4ad38c6839fa71cbb63b6dbf5b595aa38dc9b1093c11"
+dependencies = [
+ "rand 0.7.3",
 ]
 
 [[package]]
