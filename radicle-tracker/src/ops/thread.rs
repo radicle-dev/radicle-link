@@ -29,29 +29,8 @@ use nonempty::NonEmpty;
 mod item;
 pub use item::{Item, Modifier};
 
-pub enum Error<M> {
-    Root(M),
-    Main(appendage::Error<M>),
-    Thread(appendage::Error<M>),
-}
-
-impl<M> From<M> for Error<M> {
-    fn from(m: M) -> Self {
-        Error::Root(m)
-    }
-}
-
-impl<M> Error<M> {
-    fn flatten_main(error: appendage::Error<appendage::Error<M>>) -> Self {
-        match error {
-            appendage::Error::IndexOutOfBounds(ix) => {
-                Error::Main(appendage::Error::IndexOutOfBounds(ix))
-            },
-            appendage::Error::IndexExists(ix) => Error::Main(appendage::Error::IndexExists(ix)),
-            appendage::Error::Modify(err) => Error::Main(err),
-        }
-    }
-}
+mod error;
+pub use error::Error;
 
 /// A `SubThread` is an [`Appendage`] of `NonEmpty` [`Item`]s.
 /// It represents where we replied to the main thread and now has the
@@ -111,16 +90,20 @@ impl<A> Replies<A> {
         self.0.append(thread)
     }
 
-    fn append<M>(&mut self, ix: usize, new: A) -> Op<M, A>
+    fn append<M, E>(&mut self, ix: usize, new: A) -> Result<Op<M, A>, Error<E>>
     where
         A: Clone,
     {
-        // TODO: unsafe index here
-        let thread = &mut self.0[ix].1;
-        let reply = thread.len();
-        let id = UniqueTimestamp::gen();
-        thread.push((id.clone(), Item::new(new.clone())));
-        Op::thread_append(ix, id, reply, new)
+        let thread = &mut self
+            .0
+            .get_mut(ix)
+            .ok_or(Error::Thread(appendage::Error::IndexOutOfBounds(ix)))?
+            .1;
+
+        Ok(Op::Thread {
+            main: ix,
+            op: thread.append(Item::new(new)),
+        })
     }
 }
 
@@ -160,65 +143,6 @@ impl<M, A> Op<M, A> {
 
     fn root_delete() -> Self {
         Self::root_modifier(Modifier::Delete(Hide {}))
-    }
-
-    /*
-    #[cfg(test)]
-    fn main_modifier(ix: usize, m: Modifier<M>) -> Self {
-        Op::Main(appendage::Op::Modify {
-            ix,
-            op: appendage::Op::Modify { ix: 0, op: m },
-        })
-    }
-
-    #[cfg(test)]
-    fn main_edit(ix: usize, e: M) -> Self {
-        Self::main_modifier(ix, Modifier::Edit(e))
-    }
-
-    #[cfg(test)]
-    fn main_append(ix: usize, a: A) -> Self {
-        Op::Main(appendage::Op::Append {
-            ix,
-            val: SubThread(Appendage::new(NonEmpty::new(Item::new(a)))),
-        })
-    }
-    */
-
-    /*
-    #[cfg(test)]
-    fn main_delete(ix: usize) -> Self {
-        Self::main_modifier(ix, Modifier::Delete(Hide {}))
-    }
-
-    #[cfg(test)]
-    fn thread_modifier(main: usize, ix: usize, m: Modifier<M>) -> Self {
-        Op::Thread {
-            main,
-            op: appendage::Op::Modify { ix, op: m },
-        }
-    }
-
-    #[cfg(test)]
-    fn thread_edit(main: usize, ix: usize, e: M) -> Self {
-        Self::thread_modifier(main, ix, Modifier::Edit(e))
-    }
-
-    #[cfg(test)]
-    fn thread_delete(main: usize, ix: usize) -> Self {
-        Self::thread_modifier(main, ix, Modifier::Delete(Hide {}))
-    }
-    */
-
-    fn thread_append(main: usize, id: UniqueTimestamp, ix: usize, a: A) -> Self {
-        Op::Thread {
-            main,
-            op: appendage::Op::Append {
-                id,
-                ix,
-                val: Item::new(a),
-            },
-        }
     }
 }
 
@@ -276,7 +200,7 @@ pub enum AppendTo {
     Thread(usize),
 }
 
-impl<A> Thread<A> {
+impl<A: Apply> Thread<A> {
     // TODO: there should be ops that tell us how the structure was initialised as
     // well.
     pub fn new(a: A) -> Self {
@@ -286,13 +210,13 @@ impl<A> Thread<A> {
         }
     }
 
-    pub fn append<M>(&mut self, ix: AppendTo, new: A) -> Op<M, A>
+    pub fn append<M>(&mut self, ix: AppendTo, new: A) -> Result<Op<M, A>, Error<A::Error>>
     where
         A: Clone,
         M: Clone,
     {
         match ix {
-            AppendTo::Main => Op::Main(self.replies.push(new)),
+            AppendTo::Main => Ok(Op::Main(self.replies.push(new))),
             AppendTo::Thread(ix) => self.replies.append(ix, new),
         }
     }
@@ -457,8 +381,8 @@ mod tests {
         ];
 
         let mut left = Thread::new(Int(1));
-        let append1 = left.append(AppendTo::Main, Int(2));
-        let append2 = left.append(AppendTo::Main, Int(3));
+        let append1 = left.append(AppendTo::Main, Int(2))?;
+        let append2 = left.append(AppendTo::Main, Int(3))?;
 
         let mut right = Thread::new(Int(1));
         right.apply(append1)?;
