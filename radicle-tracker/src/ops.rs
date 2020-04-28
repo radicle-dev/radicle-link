@@ -17,6 +17,7 @@
 
 #![allow(missing_docs)]
 
+pub mod comment;
 pub mod id;
 pub mod replace;
 pub mod sequence;
@@ -24,8 +25,7 @@ pub mod set;
 pub mod thread;
 pub mod visibility;
 
-use replace::Replace;
-use set::SetOp;
+use crate::metadata::Label;
 
 pub trait Apply {
     type Op;
@@ -34,25 +34,5 @@ pub trait Apply {
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error>;
 }
 
-pub struct Label {} // TODO: use real label
-pub struct Assignee {} // TODO: use real assignee
-pub struct Reaction {} // TODO: use real reaction
-
-pub struct ACL<User> {
-    _user: User,
-} // TODO: fill in
-
-pub type LabelOp = SetOp<Label>;
-pub type AssigneeOp = SetOp<Assignee>;
-pub type ReactionOp = SetOp<Reaction>;
-
-pub struct ReplaceOp<User> {
-    pub author: User,
-    pub replace: Replace<usize, String>,
-}
-
-pub struct NewComment<User> {
-    pub acl: ACL<User>,
-    pub body: String,
-    pub author: User,
-}
+pub type AssigneeOp<User> = set::Op<User>;
+pub type LabelOp = set::Op<Label>;

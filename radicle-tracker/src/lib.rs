@@ -94,7 +94,7 @@
 //! ```
 
 #![deny(missing_docs, unused_import_braces, unused_qualifications, warnings)]
-#![feature(vec_remove_item)]
+#![allow(clippy::new_without_default)]
 use std::hash::Hash;
 
 mod thread;
