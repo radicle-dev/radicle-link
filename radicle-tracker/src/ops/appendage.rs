@@ -30,7 +30,6 @@
 #![allow(clippy::new_without_default)]
 
 use crate::ops::{id::Gen, Apply};
-use nonempty::NonEmpty;
 use std::{
     error,
     fmt,
@@ -67,71 +66,6 @@ impl<Modify: error::Error> error::Error for Error<Modify> {
 impl<Modify> From<Modify> for Error<Modify> {
     fn from(m: Modify) -> Self {
         Error::Modify(m)
-    }
-}
-
-/// A data structure is `Appendable` if it is aware of how to append an item,
-/// access an item by index, and compute the length of the data structure.
-pub trait Appendable {
-    /// The inner item of the data structure.
-    type Item;
-
-    /// Append an item to the end of the data structure.
-    fn append(&mut self, item: Self::Item);
-
-    /// Insert the `item` at the provided `index`, shifting elements to the
-    /// right.
-    fn insert(&mut self, index: usize, item: Self::Item);
-
-    /// Index the data structure, failing if the index does not exist.
-    fn ix_mut(&mut self, index: usize) -> Option<&mut Self::Item>;
-
-    /// Compute the length of the data structure.
-    fn len(&self) -> usize;
-
-    /// Check if the data structure is empty.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
-
-impl<A> Appendable for Vec<A> {
-    type Item = A;
-
-    fn append(&mut self, item: Self::Item) {
-        self.push(item)
-    }
-
-    fn insert(&mut self, index: usize, item: Self::Item) {
-        self.insert(index, item)
-    }
-
-    fn ix_mut(&mut self, index: usize) -> Option<&mut Self::Item> {
-        self.get_mut(index)
-    }
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
-
-impl<A> Appendable for NonEmpty<A> {
-    type Item = A;
-
-    fn append(&mut self, item: Self::Item) {
-        self.push(item)
-    }
-
-    fn ix_mut(&mut self, index: usize) -> Option<&mut Self::Item> {
-        self.get_mut(index)
-    }
-
-    fn insert(&mut self, index: usize, item: Self::Item) {
-        self.insert(index, item)
-    }
-
-    fn len(&self) -> usize {
-        self.len()
     }
 }
 
@@ -229,12 +163,12 @@ impl<O, T> OrdSequence<O, T> {
         M: Clone,
         O: Clone,
     {
-        match self.val.ix_mut(ix) {
+        match self.val.get_mut(ix) {
             None => Err(Error::IndexOutOfBounds(ix)),
-            Some(item) => {
-                item.1.apply(modify.clone())?;
+            Some((id, val)) => {
+                val.apply(modify.clone())?;
                 Ok(Op::Modify {
-                    id: item.0.clone(),
+                    id: id.clone(),
                     ix,
                     op: modify,
                 })
@@ -268,8 +202,8 @@ impl<O, T> OrdSequence<O, T> {
             Op::Modify { id, ix, op } => match self.find_item(&id) {
                 Ok(ix) => {
                     // ix exists because of find_item. qed.
-                    let item = &mut self.val[ix];
-                    item.1.apply(op)?;
+                    let (_, item) = &mut self.val[ix];
+                    item.apply(op)?;
                     Ok(())
                 },
                 Err(_) => Err(Error::IndexOutOfBounds(ix)),
@@ -348,11 +282,8 @@ mod tests {
         let append2 = left.append(Int::new(2));
 
         let mut right = OrdSequence::new();
-        let _failed_append = right.apply(append2.clone());
-        // assert!(failed_append.is_err());
-
+        right.apply(append2)?;
         right.apply(append1)?;
-        // right.apply(append2)?;
 
         assert_eq!(left, right);
 
