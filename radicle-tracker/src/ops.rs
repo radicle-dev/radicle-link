@@ -17,9 +17,9 @@
 
 #![allow(missing_docs)]
 
-pub mod appendage;
 pub mod id;
 pub mod replace;
+pub mod sequence;
 pub mod set;
 pub mod thread;
 pub mod visibility;

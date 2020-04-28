@@ -16,8 +16,8 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::ops::{
-    appendage::{self, OrdSequence},
     id::{Gen, UniqueTimestamp},
+    sequence::{self, OrdSequence},
     visibility::{absurd, Hide},
     Apply,
 };
@@ -56,8 +56,8 @@ impl<M, A> Apply for SubThread<A>
 where
     A: Apply<Op = M> + Ord,
 {
-    type Op = appendage::Op<Modifier<M>, UniqueTimestamp, Item<A>>;
-    type Error = appendage::Error<A::Error>;
+    type Op = sequence::Op<Modifier<M>, UniqueTimestamp, Item<A>>;
+    type Error = sequence::Error<A::Error>;
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
         self.0.apply(op)
@@ -97,7 +97,7 @@ impl<A> Replies<A> {
         let thread = &mut self
             .0
             .get_mut(ix)
-            .ok_or(Error::Thread(appendage::Error::IndexOutOfBounds(ix)))?
+            .ok_or(Error::Thread(sequence::Error::IndexOutOfBounds(ix)))?
             .1;
 
         Ok(Op::Thread {
@@ -107,8 +107,8 @@ impl<A> Replies<A> {
     }
 }
 
-type MainOp<M, A> = appendage::Op<
-    appendage::Op<Modifier<M>, UniqueTimestamp, Item<A>>,
+type MainOp<M, A> = sequence::Op<
+    sequence::Op<Modifier<M>, UniqueTimestamp, Item<A>>,
     UniqueTimestamp,
     SubThread<A>,
 >;
@@ -128,7 +128,7 @@ pub enum Op<M, A> {
     /// modify one the sub-thread's items.
     Thread {
         main: usize,
-        op: appendage::Op<Modifier<M>, UniqueTimestamp, Item<A>>,
+        op: sequence::Op<Modifier<M>, UniqueTimestamp, Item<A>>,
     },
 }
 
@@ -237,7 +237,7 @@ impl<A: Apply> Thread<A> {
                     .0
                     .modify(
                         ix,
-                        appendage::Op::Modify {
+                        sequence::Op::Modify {
                             id: UniqueTimestamp::gen(),
                             ix: 0,
                             op: Modifier::Edit(op),
@@ -275,7 +275,7 @@ impl<A: Apply> Thread<A> {
                     .0
                     .modify(
                         ix,
-                        appendage::Op::Modify {
+                        sequence::Op::Modify {
                             id: UniqueTimestamp::gen(),
                             ix: 0,
                             op: Modifier::Delete(Hide {}),
@@ -294,7 +294,7 @@ impl<A: Apply> Thread<A> {
         }
     }
 
-    pub fn apply<M>(&mut self, op: Op<M, A>) -> Result<(), appendage::Error<A::Error>>
+    pub fn apply<M>(&mut self, op: Op<M, A>) -> Result<(), sequence::Error<A::Error>>
     where
         A: Apply<Op = M> + Ord,
         M: Ord,
@@ -306,13 +306,13 @@ impl<A: Apply> Thread<A> {
                 match main_thread.apply(op) {
                     Ok(_) => Ok(()),
                     Err(err) => match err {
-                        appendage::Error::IndexOutOfBounds(ix) => {
-                            Err(appendage::Error::IndexOutOfBounds(ix))
+                        sequence::Error::IndexOutOfBounds(ix) => {
+                            Err(sequence::Error::IndexOutOfBounds(ix))
                         },
 
-                        appendage::Error::IndexExists(ix) => Err(appendage::Error::IndexExists(ix)),
+                        sequence::Error::IndexExists(ix) => Err(sequence::Error::IndexExists(ix)),
 
-                        appendage::Error::Modify(m) => Err(m),
+                        sequence::Error::Modify(m) => Err(m),
                     },
                 }
             },
@@ -321,7 +321,7 @@ impl<A: Apply> Thread<A> {
                     .replies
                     .0
                     .get_mut(main)
-                    .ok_or(appendage::Error::IndexOutOfBounds(main))?
+                    .ok_or(sequence::Error::IndexOutOfBounds(main))?
                     .1;
                 thread.apply(op)
             },

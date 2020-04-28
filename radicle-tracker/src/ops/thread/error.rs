@@ -15,14 +15,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::ops::appendage;
+use crate::ops::sequence;
 use std::{error, fmt};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error<M> {
     Root(M),
-    Main(appendage::Error<M>),
-    Thread(appendage::Error<M>),
+    Main(sequence::Error<M>),
+    Thread(sequence::Error<M>),
 }
 
 impl<M> From<M> for Error<M> {
@@ -32,13 +32,13 @@ impl<M> From<M> for Error<M> {
 }
 
 impl<M> Error<M> {
-    pub(crate) fn flatten_main(error: appendage::Error<appendage::Error<M>>) -> Self {
+    pub(crate) fn flatten_main(error: sequence::Error<sequence::Error<M>>) -> Self {
         match error {
-            appendage::Error::IndexOutOfBounds(ix) => {
-                Error::Main(appendage::Error::IndexOutOfBounds(ix))
+            sequence::Error::IndexOutOfBounds(ix) => {
+                Error::Main(sequence::Error::IndexOutOfBounds(ix))
             },
-            appendage::Error::IndexExists(ix) => Error::Main(appendage::Error::IndexExists(ix)),
-            appendage::Error::Modify(err) => Error::Main(err),
+            sequence::Error::IndexExists(ix) => Error::Main(sequence::Error::IndexExists(ix)),
+            sequence::Error::Modify(err) => Error::Main(err),
         }
     }
 }
