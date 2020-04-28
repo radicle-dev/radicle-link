@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use crate::metadata::clock::TimeDiff;
 use std::{cmp::Ordering, hash::Hash, time::SystemTime};
 use uuid::Uuid;
 
@@ -51,13 +52,13 @@ impl Gen for Unique {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Timestamp {
-    time: SystemTime,
+    time: TimeDiff,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UniqueTimestamp {
     unique: Unique,
-    time: Timestamp, // TODO: time stamp
+    time: Timestamp,
 }
 
 impl PartialOrd for UniqueTimestamp {
@@ -91,7 +92,7 @@ impl Gen for UniqueTimestamp {
         UniqueTimestamp {
             unique: Unique::gen(),
             time: Timestamp {
-                time: SystemTime::now(),
+                time: TimeDiff::from(SystemTime::now()),
             },
         }
     }

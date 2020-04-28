@@ -62,7 +62,7 @@ const SECONDS_IN_YEAR: u64 = SECONDS_IN_MONTH * 12;
 /// `TimeDiff` is the difference between two points in time. It uses a
 /// [`num_bigint::BigInt`] under the hood. The functionality of this is limited
 /// to `Display` and [`TimeDiff::sign`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TimeDiff(BigInt);
 
 impl TimeDiff {
