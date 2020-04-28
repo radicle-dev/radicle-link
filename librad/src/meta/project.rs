@@ -18,12 +18,15 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use serde_json;
 
 use crate::{
     meta::{
         common::{Label, Url},
-        entity::{data::EntityData, Entity, Error},
+        entity::{
+            data::{EntityBuilder, EntityData},
+            Entity,
+            Error,
+        },
     },
     uri::RadUrn,
 };
@@ -110,16 +113,24 @@ impl ProjectData {
         self
     }
 
-    pub fn add_maintainer(mut self, maintainer: RadUrn) -> Self {
+    pub fn add_maintainer(self, maintainer: RadUrn) -> Self {
         self.add_certifier(maintainer.to_string())
     }
 
-    pub fn add_maintainers(mut self, maintainers: &[RadUrn]) -> Self {
+    pub fn add_maintainers(self, maintainers: &[RadUrn]) -> Self {
         self.add_certifiers(maintainers.iter().map(|urn| urn.to_string()))
     }
+}
 
-    pub fn build(self) -> Result<Project, Error> {
-        Project::from_data(self)
+impl EntityBuilder for ProjectData {
+    fn check_invariants(&self) -> Result<(), Error> {
+        // FIXME: Require at least one certifier
+        /*
+        if self.certifiers.is_empty() {
+            return Err(Error::InvalidData("Missing certifier".to_owned()));
+        }
+        */
+        Ok(())
     }
 }
 

@@ -23,7 +23,7 @@ use crate::{
     uri::RadUrn,
 };
 use async_trait::async_trait;
-use data::EntityData;
+use data::{EntityBuilder, EntityData};
 use multihash::{Multihash, Sha2_256};
 use serde::{
     de::{DeserializeOwned, Error as SerdeDeserializationError},
@@ -257,10 +257,10 @@ pub struct Entity<T> {
 impl<T> TryFrom<EntityData<T>> for Entity<T>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
+    EntityData<T>: EntityBuilder,
 {
     type Error = Error;
     fn try_from(data: EntityData<T>) -> Result<Entity<T>, Error> {
-        // FIXME: check invariants
         Self::from_data(data)
     }
 }
@@ -289,6 +289,7 @@ where
 impl<'de, T> Deserialize<'de> for Entity<T>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
+    EntityData<T>: EntityBuilder,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -328,131 +329,6 @@ where
     /// `info` getter
     pub fn info(&self) -> &T {
         &self.info
-    }
-
-    /// Build an `Entity` from its data (the second step of deserialization)
-    /// It guarantees that the `hash` is correct
-    pub fn from_data(data: data::EntityData<T>) -> Result<Self, Error> {
-        if data.name.is_none() {
-            return Err(Error::InvalidData("Missing name".to_owned()));
-        }
-        if data.revision.is_none() {
-            return Err(Error::InvalidData("Missing revision".to_owned()));
-        }
-
-        // FIXME: this check should be specific to the User data
-        // if data.keys.is_empty() {
-        //     return Err(Error::InvalidData("Missing keys".to_owned()));
-        // }
-
-        if data.revision.unwrap() < 1 {
-            return Err(Error::InvalidData("Invalid revision".to_owned()));
-        }
-
-        let mut keys = HashSet::new();
-        for k in data.keys.iter() {
-            keys.insert(
-                PublicKey::from_bs58(k).ok_or_else(|| Error::InvalidData(format!("key: {}", k)))?,
-            );
-        }
-
-        let mut certifiers = HashSet::new();
-        for c in data.certifiers.iter() {
-            certifiers.insert(
-                RadUrn::from_str(c).map_err(|_| Error::InvalidData(format!("certifier: {}", c)))?,
-            );
-        }
-
-        let mut signatures = HashMap::new();
-        if let Some(s) = &data.signatures {
-            for (k, sig) in s.iter() {
-                let key = PublicKey::from_bs58(k)
-                    .ok_or_else(|| Error::InvalidData(format!("signature key: {}", k)))?;
-                let signature = EntitySignature {
-                    by: match &sig.user {
-                        Some(uri) => Signatory::User(
-                            RadUrn::from_str(&uri)
-                                .map_err(|_| Error::InvalidUri(uri.to_owned()))?,
-                        ),
-                        None => Signatory::OwnedKey,
-                    },
-                    sig: Signature::from_bs58(&sig.sig).ok_or_else(|| {
-                        Error::InvalidData(format!("signature data: {}", &sig.sig))
-                    })?,
-                };
-                signatures.insert(key, signature);
-            }
-        }
-
-        let actual_hash = data.compute_hash()?;
-        if let Some(s) = &data.hash {
-            let claimed_hash = {
-                let bytes = bs58::decode(s.as_bytes())
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_vec()
-                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
-                Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?
-            };
-            if claimed_hash != actual_hash {
-                let actual_hash_string = bs58::encode(&actual_hash)
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_string();
-                return Err(Error::WrongHash {
-                    claimed: s.to_owned(),
-                    actual: actual_hash_string,
-                });
-            }
-        }
-
-        let parent_hash = match data.parent_hash {
-            Some(s) => {
-                let bytes = bs58::decode(s.as_bytes())
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_vec()
-                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
-                let hash =
-                    Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?;
-                Some(hash)
-            },
-            None => None,
-        };
-
-        let root_hash = match data.root_hash {
-            Some(s) => {
-                let bytes = bs58::decode(s.as_bytes())
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_vec()
-                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
-                let hash =
-                    Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?;
-                Some(hash)
-            },
-            None => None,
-        };
-        let root_hash = match root_hash {
-            Some(h) => h,
-            None => {
-                if parent_hash.is_none() && data.revision.unwrap() == 1 {
-                    actual_hash.clone()
-                } else {
-                    return Err(Error::MissingRootHash);
-                }
-            },
-        };
-
-        Ok(Self {
-            status: VerificationStatus::Unknown,
-            name: data.name.unwrap(),
-            revision: data.revision.unwrap().to_owned(),
-            rad_version: data.rad_version,
-            hash: actual_hash,
-            root_hash,
-            parent_hash,
-            keys,
-            certifiers,
-            signatures,
-            info: data.info,
-        })
     }
 
     /// Turn the entity in to its raw data
@@ -562,38 +438,6 @@ where
     /// (for hashing or signing)
     pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
         self.to_data().canonical_data()
-    }
-
-    /// Helper serialization to JSON writer
-    pub fn to_json_writer<W>(&self, writer: W) -> Result<(), Error>
-    where
-        W: std::io::Write,
-    {
-        self.to_data().to_json_writer(writer)?;
-        Ok(())
-    }
-
-    /// Helper serialization to JSON string
-    pub fn to_json_string(&self) -> Result<String, Error> {
-        self.to_data().to_json_string()
-    }
-
-    /// Helper deserialization from JSON reader
-    pub fn from_json_reader<R>(r: R) -> Result<Self, Error>
-    where
-        R: std::io::Read,
-    {
-        Self::from_data(data::EntityData::from_json_reader(r)?)
-    }
-
-    /// Helper deserialization from JSON string
-    pub fn from_json_str(s: &str) -> Result<Self, Error> {
-        Self::from_data(data::EntityData::from_json_str(s)?)
-    }
-
-    /// Helper deserialization from JSON slice
-    pub fn from_json_slice(s: &[u8]) -> Result<Self, Error> {
-        Self::from_data(data::EntityData::from_json_slice(s)?)
     }
 
     /// Compute the entity hash (for validation)
@@ -848,5 +692,169 @@ where
                 },
             }
         }
+    }
+}
+
+impl<T> Entity<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+    EntityData<T>: EntityBuilder,
+{
+    /// Build an `Entity` from its data (the second step of deserialization)
+    /// It guarantees that the `hash` is correct
+    pub fn from_data(data: data::EntityData<T>) -> Result<Self, Error> {
+        // FIXME: do we want this? it makes `default` harder to get right...
+        if data.name.is_none() {
+            return Err(Error::InvalidData("Missing name".to_owned()));
+        }
+        if data.revision.is_none() {
+            return Err(Error::InvalidData("Missing revision".to_owned()));
+        }
+
+        // FIXME: this check should be specific to the User data
+        // if data.keys.is_empty() {
+        //     return Err(Error::InvalidData("Missing keys".to_owned()));
+        // }
+
+        if data.revision.unwrap() < 1 {
+            return Err(Error::InvalidData("Invalid revision".to_owned()));
+        }
+
+        let mut keys = HashSet::new();
+        for k in data.keys.iter() {
+            keys.insert(
+                PublicKey::from_bs58(k).ok_or_else(|| Error::InvalidData(format!("key: {}", k)))?,
+            );
+        }
+
+        let mut certifiers = HashSet::new();
+        for c in data.certifiers.iter() {
+            certifiers.insert(
+                RadUrn::from_str(c).map_err(|_| Error::InvalidData(format!("certifier: {}", c)))?,
+            );
+        }
+
+        let mut signatures = HashMap::new();
+        if let Some(s) = &data.signatures {
+            for (k, sig) in s.iter() {
+                let key = PublicKey::from_bs58(k)
+                    .ok_or_else(|| Error::InvalidData(format!("signature key: {}", k)))?;
+                let signature = EntitySignature {
+                    by: match &sig.user {
+                        Some(uri) => Signatory::User(
+                            RadUrn::from_str(&uri)
+                                .map_err(|_| Error::InvalidUri(uri.to_owned()))?,
+                        ),
+                        None => Signatory::OwnedKey,
+                    },
+                    sig: Signature::from_bs58(&sig.sig).ok_or_else(|| {
+                        Error::InvalidData(format!("signature data: {}", &sig.sig))
+                    })?,
+                };
+                signatures.insert(key, signature);
+            }
+        }
+
+        let actual_hash = data.compute_hash()?;
+        if let Some(s) = &data.hash {
+            let claimed_hash = {
+                let bytes = bs58::decode(s.as_bytes())
+                    .with_alphabet(bs58::alphabet::BITCOIN)
+                    .into_vec()
+                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
+                Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?
+            };
+            if claimed_hash != actual_hash {
+                let actual_hash_string = bs58::encode(&actual_hash)
+                    .with_alphabet(bs58::alphabet::BITCOIN)
+                    .into_string();
+                return Err(Error::WrongHash {
+                    claimed: s.to_owned(),
+                    actual: actual_hash_string,
+                });
+            }
+        }
+
+        let parent_hash = match data.parent_hash {
+            Some(s) => {
+                let bytes = bs58::decode(s.as_bytes())
+                    .with_alphabet(bs58::alphabet::BITCOIN)
+                    .into_vec()
+                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
+                let hash =
+                    Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?;
+                Some(hash)
+            },
+            None => None,
+        };
+
+        let root_hash = match data.root_hash {
+            Some(s) => {
+                let bytes = bs58::decode(s.as_bytes())
+                    .with_alphabet(bs58::alphabet::BITCOIN)
+                    .into_vec()
+                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
+                let hash =
+                    Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?;
+                Some(hash)
+            },
+            None => None,
+        };
+        let root_hash = match root_hash {
+            Some(h) => h,
+            None => {
+                if parent_hash.is_none() && data.revision.unwrap() == 1 {
+                    actual_hash.clone()
+                } else {
+                    return Err(Error::MissingRootHash);
+                }
+            },
+        };
+
+        Ok(Self {
+            status: VerificationStatus::Unknown,
+            name: data.name.unwrap(),
+            revision: data.revision.unwrap().to_owned(),
+            rad_version: data.rad_version,
+            hash: actual_hash,
+            root_hash,
+            parent_hash,
+            keys,
+            certifiers,
+            signatures,
+            info: data.info,
+        })
+    }
+
+    /// Helper serialization to JSON writer
+    pub fn to_json_writer<W>(&self, writer: W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        self.to_data().to_json_writer(writer)?;
+        Ok(())
+    }
+
+    /// Helper serialization to JSON string
+    pub fn to_json_string(&self) -> Result<String, Error> {
+        self.to_data().to_json_string()
+    }
+
+    /// Helper deserialization from JSON reader
+    pub fn from_json_reader<R>(r: R) -> Result<Self, Error>
+    where
+        R: std::io::Read,
+    {
+        Self::from_data(data::EntityData::from_json_reader(r)?)
+    }
+
+    /// Helper deserialization from JSON string
+    pub fn from_json_str(s: &str) -> Result<Self, Error> {
+        Self::from_data(data::EntityData::from_json_str(s)?)
+    }
+
+    /// Helper deserialization from JSON slice
+    pub fn from_json_slice(s: &[u8]) -> Result<Self, Error> {
+        Self::from_data(data::EntityData::from_json_slice(s)?)
     }
 }

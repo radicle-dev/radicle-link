@@ -20,7 +20,11 @@ use urltemplate::UrlTemplate;
 
 use crate::meta::{
     common::{EmailAddr, Label, Url},
-    entity::{data::EntityData, Entity, Error},
+    entity::{
+        data::{EntityBuilder, EntityData},
+        Entity,
+        Error,
+    },
     profile::{Geo, ProfileImage, UserProfile},
     serde_helpers,
 };
@@ -138,10 +142,15 @@ impl UserData {
         self.info.largefiles = largefiles;
         self
     }
+}
 
-    pub fn build(self) -> Result<User, Error> {
-        // FIXME: require at least one key (unify build methods and invariant checks)
-        User::from_data(self)
+impl EntityBuilder for UserData {
+    fn check_invariants(&self) -> Result<(), Error> {
+        // Require at least one signing key
+        if self.keys.is_empty() {
+            return Err(Error::InvalidData("Missing keys".to_owned()));
+        }
+        Ok(())
     }
 }
 

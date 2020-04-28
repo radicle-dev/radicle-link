@@ -292,7 +292,7 @@ pub mod project {
             sources: &git2::Repository,
         ) -> Result<ProjectId, Error> {
             // FIXME: add certifier instead of peer
-            let mut meta = ProjectData::new()
+            let meta = ProjectData::new()
                 .set_name(self.name.to_owned())
                 .set_default_branch(self.default_branch.to_owned())
                 .set_optional_description(self.description.to_owned())

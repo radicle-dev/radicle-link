@@ -246,3 +246,17 @@ where
         f(self)
     }
 }
+
+pub trait EntityBuilder {
+    fn check_invariants(&self) -> Result<(), Error>;
+}
+
+impl<T> EntityData<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+    EntityData<T>: EntityBuilder,
+{
+    pub fn build(self) -> Result<Entity<T>, Error> {
+        Entity::<T>::from_data(self)
+    }
+}
