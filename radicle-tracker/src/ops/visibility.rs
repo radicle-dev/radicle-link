@@ -36,7 +36,3 @@ impl Apply for Visibility {
         Ok(())
     }
 }
-
-pub(crate) fn absurd<A>(_infallible: Infallible) -> A {
-    panic!("Infallible cannot do anything else")
-}

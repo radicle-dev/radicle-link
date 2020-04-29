@@ -16,8 +16,9 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::ops::{
-    visibility::{absurd, Hide, Visibility},
+    visibility::{Hide, Visibility},
     Apply,
+    absurd,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

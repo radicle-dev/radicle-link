@@ -26,6 +26,7 @@ pub mod thread;
 pub mod visibility;
 
 use crate::metadata::Label;
+use std::convert::Infallible;
 
 pub trait Apply {
     type Op;
@@ -36,3 +37,7 @@ pub trait Apply {
 
 pub type AssigneeOp<User> = set::Op<User>;
 pub type LabelOp = set::Op<Label>;
+
+pub(crate) fn absurd<A>(_infallible: Infallible) -> A {
+    panic!("Infallible cannot do anything else")
+}
