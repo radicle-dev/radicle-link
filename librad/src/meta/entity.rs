@@ -440,14 +440,6 @@ where
         self.to_data().canonical_data()
     }
 
-    /// Compute the entity hash (for validation)
-    /// FIXME[ENTITY]: this is useless and should be removed: the hash is
-    /// checked and eventually computed in `from_data` and cannot be changed
-    /// after that
-    pub fn compute_hash(&self) -> Result<Multihash, Error> {
-        Ok(Sha2_256::digest(&self.canonical_data()?))
-    }
-
     /// Check that this key is allowed to sign the entity by checking that the
     /// `by` argument is correct:
     ///
