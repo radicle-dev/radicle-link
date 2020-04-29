@@ -23,7 +23,7 @@ pub enum Op<A> {
     Remove(A),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Set<A: Eq + Hash>(pub(crate) HashSet<A>);
 
 impl<A: Eq + Hash> Set<A> {
