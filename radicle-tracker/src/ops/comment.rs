@@ -21,11 +21,12 @@ use crate::{
         Reaction,
     },
     ops::{
+        Apply,
         replace::Replace,
         set::{self, Set},
     },
 };
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, hash::Hash, convert::Infallible};
 
 pub type ReactionOp<User> = set::Op<Reaction<User>>;
 
@@ -41,6 +42,13 @@ pub struct NewComment<User> {
 
 pub type ReplaceComment = Replace<usize, String>;
 
+pub enum CommentOp<User> {
+    ReplaceComment(ReplaceComment),
+    React(Reaction<User>),
+    UnReact(Reaction<User>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Comment<Id, User: Eq + Hash> {
     identifier: Id,
     author: User,
@@ -125,5 +133,18 @@ impl<Id, User: Eq + Hash> Comment<Id, User> {
                 .or_insert_with(|| vec![reaction.user]);
         }
         reaction_map
+    }
+}
+
+impl<Id, User: Eq + Hash> Apply for Comment<Id, User> {
+    type Op = CommentOp<User>;
+    type Error = Infallible;
+
+    fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
+        match op {
+            CommentOp::ReplaceComment(comment) => self.content.apply(comment),
+            CommentOp::React(reaction) => self.reactions.apply(set::Op::Insert(reaction)),
+            CommentOp::UnReact(reaction) => self.reactions.apply(set::Op::Remove(reaction)),
+        }
     }
 }
