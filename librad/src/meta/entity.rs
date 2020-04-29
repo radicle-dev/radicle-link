@@ -24,7 +24,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use data::{EntityBuilder, EntityData};
-use multihash::{Multihash, Sha2_256};
+use multihash::Multihash;
 use serde::{
     de::{DeserializeOwned, Error as SerdeDeserializationError},
     Deserialize,
@@ -298,7 +298,7 @@ where
     {
         let data = EntityData::<T>::deserialize(deserializer)?;
         let res = Entity::<T>::try_from(data);
-        res.map_err(|err| D::Error::custom(err))
+        res.map_err(D::Error::custom)
     }
 }
 

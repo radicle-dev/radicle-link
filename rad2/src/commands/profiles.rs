@@ -115,6 +115,7 @@ impl Commands {
     }
 }
 
+// FIXME[ENTITY] resolve a User URN and return the User, not just a profile
 pub fn load_profile(path: ProfilePath) -> Result<UserProfile, Error> {
     let path = path.must_exist()?;
     yaml::from_reader(File::open(&path.path)?).map_err(|e| e.into())

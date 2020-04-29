@@ -130,7 +130,7 @@ fn init_project(
         file_name.map(|f| f.to_string_lossy().to_string()).unwrap()
     });
 
-    let contrib_meta = meta::UserData::new().set_profile(profile).build()?;
+    let contrib_meta = meta::UserData::default().set_profile(profile).build()?;
 
     let proj =
         GitProject::builder(&project_name, &key, contrib_meta).init_project(paths, &sources)?;

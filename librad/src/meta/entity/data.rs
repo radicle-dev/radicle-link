@@ -51,7 +51,7 @@ where
 /// - as a "builder" when creating new entities (or entity revisions), again so
 ///   that invariants can be enforced at `build` time when all the data has been
 ///   collected
-#[derive(Clone, Deserialize, Serialize, Debug, Default)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct EntityData<T> {
     pub rad_version: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,6 +82,26 @@ pub struct EntityData<T> {
     pub certifiers: HashSet<String>,
 
     pub info: T,
+}
+
+impl<T> Default for EntityData<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+{
+    fn default() -> Self {
+        Self {
+            rad_version: RAD_VERSION,
+            name: None,
+            revision: Some(1),
+            hash: None,
+            root_hash: None,
+            parent_hash: None,
+            signatures: None,
+            keys: HashSet::default(),
+            certifiers: HashSet::default(),
+            info: T::default(),
+        }
+    }
 }
 
 impl<T> EntityData<T>

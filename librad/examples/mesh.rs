@@ -246,6 +246,13 @@ async fn main() {
 
     let peer1 = spawn(None, transport.clone(), shutdown.clone(), 1).await;
     let init = (peer1.peer.peer_id(), peer1.endpoint.clone());
+
+    let project_owner = meta::User::new(
+        "Foo".to_owned(),
+        peer1.peer.peer_id().device_key().to_owned(),
+    )
+    .unwrap();
+
     let peers: Vec<Spawned> = stream::unfold((init, 2), |(prev, i)| {
         let transport = transport.clone();
         let shutdown = shutdown.clone();
@@ -265,8 +272,6 @@ async fn main() {
     // Let it settle for a bit
     tokio::time::delay_for(Duration::from_secs(1)).await;
 
-    // FIXME[ENTITY]: Replace PeerId with RadUrn
-    /*
     println!("Creating project1");
     let project1: ProjectId = {
         let repo = peer1
@@ -277,8 +282,8 @@ async fn main() {
             &peer1.peer.paths,
             &peer1.peer.key,
             &repo,
-            meta::Project::new("mini1", &peer1.peer.peer_id()),
-            meta::User::new(),
+            &meta::Project::new("mini1".to_owned(), &project_owner.uri()).unwrap(),
+            &project_owner,
         )
         .unwrap()
         .into()
@@ -308,5 +313,4 @@ async fn main() {
     assert!(replicated.iter().all(|project| project == &project1));
 
     println!("If we got here, all peers have replicated each other's repos");
-    */
 }

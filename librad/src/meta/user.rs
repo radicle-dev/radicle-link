@@ -18,15 +18,18 @@
 use serde::{Deserialize, Serialize};
 use urltemplate::UrlTemplate;
 
-use crate::meta::{
-    common::{EmailAddr, Label, Url},
-    entity::{
-        data::{EntityBuilder, EntityData},
-        Entity,
-        Error,
+use crate::{
+    keys::device::PublicKey,
+    meta::{
+        common::{EmailAddr, Label, Url},
+        entity::{
+            data::{EntityBuilder, EntityData},
+            Entity,
+            Error,
+        },
+        profile::{Geo, ProfileImage, UserProfile},
+        serde_helpers,
     },
-    profile::{Geo, ProfileImage, UserProfile},
-    serde_helpers,
 };
 
 #[derive(Clone, Deserialize, Serialize, Debug, Default, PartialEq)]
@@ -54,11 +57,6 @@ impl UserInfo {
 pub type UserData = EntityData<UserInfo>;
 
 impl UserData {
-    pub fn new() -> Self {
-        let result = Self::default();
-        result
-    }
-
     fn profile_ref_mut(&mut self) -> Result<&mut ProfileRef, Error> {
         match &mut self.info.profile {
             Some(p) => Ok(p),
@@ -133,7 +131,7 @@ impl UserData {
         Ok(self)
     }
 
-    pub fn remove_profile_url(mut self, label: &Label) -> Result<Self, Error> {
+    pub fn remove_profile_url(mut self, label: &str) -> Result<Self, Error> {
         self.user_profile_mut()?.urls.remove(label);
         Ok(self)
     }
@@ -157,9 +155,12 @@ impl EntityBuilder for UserData {
 pub type User = Entity<UserInfo>;
 
 impl User {
-    // FIXME[ENTITY]: require at least one key!
-    pub fn new() -> Result<Self, Error> {
-        UserData::new().build()
+    pub fn new(name: String, key: PublicKey) -> Result<Self, Error> {
+        UserData::default()
+            .set_name(name)
+            .set_revision(1)
+            .add_key(key.to_bs58())
+            .build()
     }
 
     pub fn profile(&self) -> &Option<ProfileRef> {
@@ -193,7 +194,7 @@ pub mod tests {
         proptest::option::of(gen_profile_ref()).prop_map(|profile| {
             let largefiles = Some(UrlTemplate::from("https://git-lfs.github.com/{SHA512}"));
 
-            UserData::new()
+            UserData::default()
                 .set_name("foo".to_owned())
                 .set_revision(1)
                 .set_profile_ref(profile)

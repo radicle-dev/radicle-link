@@ -30,7 +30,6 @@ use crate::{
     meta,
     meta::{entity, project::ProjectData, Project},
     paths::Paths,
-    uri::RadUrn,
 };
 
 pub mod server;
@@ -140,8 +139,8 @@ impl GitProject {
         paths: &Paths,
         key: &device::Key,
         sources: &git2::Repository,
-        metadata: meta::Project,
-        founder: meta::User,
+        metadata: &meta::Project,
+        founder: &meta::User,
     ) -> Result<ProjectId, Error> {
         // TODO: resolve URL ref iff rad://
         let (nickname, fullname) = match founder.profile() {
@@ -160,10 +159,7 @@ impl GitProject {
             .into_reference()
             .peel_to_commit()?;
 
-        // Ensure the signing key is a maintainer
-        let mut metadata = metadata;
-        // FIXME[ENTITY]: add certifier instead of peer
-        // metadata.add_maintainer(&PeerId::from(key.clone()));
+        // FIXME[ENTITY]: Verify entity signatures
 
         // Create the metadata in the sources repo
         let pid = commit_project_meta(
@@ -185,7 +181,7 @@ impl GitProject {
             &parent,
             &mut pgp_key,
             "Radicle: initial contributor metadata",
-            founder,
+            &founder,
         )?;
         let mut contrib_branch = sources.branch(
             CONTRIBUTOR_METADATA_BRANCH,
@@ -292,14 +288,14 @@ pub mod project {
             sources: &git2::Repository,
         ) -> Result<ProjectId, Error> {
             // FIXME[ENTITY]: add certifier instead of peer
-            let meta = ProjectData::new()
+            let meta = ProjectData::default()
                 .set_name(self.name.to_owned())
                 .set_default_branch(self.default_branch.to_owned())
                 .set_optional_description(self.description.to_owned())
                 .add_rels(&self.rel)
                 .build()?;
 
-            GitProject::init(paths, &self.key, sources, meta, self.founder.clone())
+            GitProject::init(paths, &self.key, sources, &meta, &self.founder)
         }
     }
 }
@@ -309,7 +305,7 @@ fn commit_project_meta(
     parent: &git2::Commit,
     pgp_key: &mut pgp::Key,
     msg: &str,
-    meta: meta::Project,
+    meta: &meta::Project,
 ) -> Result<git2::Oid, Error> {
     commit_meta(repo, parent, pgp_key, msg, meta, PROJECT_METADATA_FILE)
 }
@@ -319,7 +315,7 @@ fn commit_contributor_meta(
     parent: &git2::Commit,
     pgp_key: &mut pgp::Key,
     msg: &str,
-    meta: meta::User,
+    meta: &meta::User,
 ) -> Result<git2::Oid, Error> {
     commit_meta(repo, parent, pgp_key, msg, meta, CONTRIBUTOR_METADATA_FILE)
 }

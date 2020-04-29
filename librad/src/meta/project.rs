@@ -78,11 +78,6 @@ pub enum Relation {
 pub type ProjectData = EntityData<ProjectInfo>;
 
 impl ProjectData {
-    pub fn new() -> Self {
-        let result = Self::default();
-        result
-    }
-
     pub fn set_optional_description(mut self, description: Option<String>) -> Self {
         self.info.description = description;
         self
@@ -151,7 +146,7 @@ impl Project {
     }
 
     pub fn new(name: String, owner: &RadUrn) -> Result<Self, Error> {
-        ProjectData::new()
+        ProjectData::default()
             .set_name(name)
             .set_revision(1)
             .add_certifier(owner.to_string())
@@ -190,7 +185,7 @@ pub mod tests {
             proptest::collection::vec(gen_relation(), 0..16),
         )
             .prop_map(|(name, description, branch, maintainers, rels)| {
-                ProjectData::new()
+                ProjectData::default()
                     .set_revision(1)
                     .set_name(name)
                     .set_optional_description(description)
