@@ -18,6 +18,7 @@
 use crate::ops::Apply;
 use std::{collections::HashSet, convert::Infallible, hash::Hash};
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Op<A> {
     Insert(A),
     Remove(A),
