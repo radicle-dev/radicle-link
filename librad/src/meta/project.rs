@@ -124,12 +124,9 @@ impl ProjectData {
 
 impl EntityBuilder for ProjectData {
     fn check_invariants(&self) -> Result<(), Error> {
-        // FIXME[ENTITY]: Require at least one certifier
-        /*
         if self.certifiers.is_empty() {
             return Err(Error::InvalidData("Missing certifier".to_owned()));
         }
-        */
         Ok(())
     }
 }
@@ -154,19 +151,11 @@ impl Project {
     }
 
     pub fn new(name: String, owner: &RadUrn) -> Result<Self, Error> {
-        /*
         ProjectData::new()
             .set_name(name)
             .set_revision(1)
             .add_certifier(owner.to_string())
             .build()
-        */
-        let data = ProjectData::new()
-            .set_name(name)
-            .set_revision(1)
-            .add_certifier(owner.to_string());
-        println!("TMP: {}", data.to_json_string().unwrap());
-        data.build()
     }
 }
 
