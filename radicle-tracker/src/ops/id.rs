@@ -63,13 +63,17 @@ pub struct UniqueTimestamp {
 
 impl PartialOrd for UniqueTimestamp {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.time.partial_cmp(&other.time)
+        Some(self.cmp(&other))
     }
 }
 
 impl Ord for UniqueTimestamp {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.time.cmp(&other.time)
+        match self.time.cmp(&other.time) {
+            Ordering::Greater => Ordering::Greater,
+            Ordering::Less => Ordering::Less,
+            Ordering::Equal => self.unique.cmp(&other.unique),
+        }
     }
 }
 
