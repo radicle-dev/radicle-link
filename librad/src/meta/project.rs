@@ -157,15 +157,19 @@ impl Project {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::{
+        hash::{Hash, Hasher},
+        uri::{Path, Protocol},
+    };
 
     use lazy_static;
-    use multihash::{Multihash, Sha2_256};
     use proptest::prelude::*;
     use serde_json;
 
     lazy_static! {
-        pub static ref EMPTY_HASH: Multihash = Sha2_256::digest(&[]);
-        pub static ref EMPTY_URI: RadUrn = RadUrn::new(EMPTY_HASH.to_owned());
+        pub static ref EMPTY_HASH: Hash = Hash::hash(&[]);
+        pub static ref EMPTY_URI: RadUrn =
+            RadUrn::new(EMPTY_HASH.to_owned(), Protocol::Git, Path::new());
     }
 
     #[test]

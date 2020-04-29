@@ -256,14 +256,6 @@ impl RadUrn {
             urn: self,
         }
     }
-
-    pub fn new(id: Multihash) -> Self {
-        Self {
-            id,
-            proto: Protocol::Git,
-            path: Path(String::new()),
-        }
-    }
 }
 
 impl Display for RadUrn {

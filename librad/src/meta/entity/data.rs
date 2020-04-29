@@ -15,11 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::meta::{
-    entity::{Entity, Error},
-    RAD_VERSION,
+use crate::{
+    hash::{Hash, Hasher},
+    meta::{
+        entity::{Entity, Error},
+        RAD_VERSION,
+    },
 };
-use multihash::{Multihash, Sha2_256};
 use olpc_cjson::CanonicalFormatter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -157,8 +159,8 @@ where
         Ok(buffer)
     }
 
-    pub fn compute_hash(&self) -> Result<Multihash, Error> {
-        Ok(Sha2_256::digest(&self.canonical_data()?))
+    pub fn compute_hash(&self) -> Result<Hash, Error> {
+        Ok(Hash::hash(&self.canonical_data()?))
     }
 
     pub fn set_name(mut self, name: String) -> Self {
@@ -207,13 +209,9 @@ where
     }
 
     pub fn set_parent(mut self, parent: &Entity<T>) -> Self {
-        let parent_hash_text = bs58::encode(parent.hash())
-            .with_alphabet(bs58::alphabet::BITCOIN)
-            .into_string();
+        let parent_hash_text = parent.hash().to_string();
         self.parent_hash = Some(parent_hash_text);
-        let root_hash_text = bs58::encode(parent.root_hash())
-            .with_alphabet(bs58::alphabet::BITCOIN)
-            .into_string();
+        let root_hash_text = parent.root_hash().to_string();
         self.root_hash = Some(root_hash_text);
         self.revision = Some(parent.revision() + 1);
         self

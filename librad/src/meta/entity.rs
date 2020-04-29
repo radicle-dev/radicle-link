@@ -18,13 +18,13 @@
 pub mod data;
 
 use crate::{
+    hash::{Hash, ParseError as HashParseError},
     keys::device::{Key, PublicKey, Signature},
     meta::user::User,
-    uri::RadUrn,
+    uri::{Path, Protocol, RadUrn},
 };
 use async_trait::async_trait;
 use data::{EntityBuilder, EntityData};
-use multihash::Multihash;
 use serde::{
     de::{DeserializeOwned, Error as SerdeDeserializationError},
     Deserialize,
@@ -54,6 +54,9 @@ pub enum Error {
 
     #[error("Wrong hash (claimed {claimed:?}, actual {actual:?})")]
     WrongHash { claimed: String, actual: String },
+
+    #[error("Hash parse error ({0})")]
+    HashParseError(#[from] HashParseError),
 
     #[error("Invalid root hash")]
     InvalidRootHash,
@@ -238,12 +241,12 @@ pub struct Entity<T> {
     rad_version: u8,
     /// Entity hash, computed on everything except the signatures and
     /// the hash itself
-    hash: Multihash,
+    hash: Hash,
     /// Hash of the root of the revision Merkle tree (the entity ID)
-    root_hash: Multihash,
+    root_hash: Hash,
     /// Hash of the previous revision, `None` for the initial revision
     /// (in this case the entity hash is actually the entity ID)
-    parent_hash: Option<Multihash>,
+    parent_hash: Option<Hash>,
     /// Set of signatures
     signatures: HashMap<PublicKey, EntitySignature>,
     /// Set of owned keys
@@ -355,21 +358,9 @@ where
             name: Some(self.name.to_owned()),
             revision: Some(self.revision),
             rad_version: self.rad_version,
-            hash: Some(
-                bs58::encode(&self.hash)
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_string(),
-            ),
-            root_hash: Some(
-                bs58::encode(&self.root_hash)
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_string(),
-            ),
-            parent_hash: self.parent_hash.to_owned().map(|h| {
-                bs58::encode(h)
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_string()
-            }),
+            hash: Some(self.hash.to_string()),
+            root_hash: Some(self.root_hash.to_string()),
+            parent_hash: self.parent_hash.to_owned().map(|h| h.to_string()),
             signatures: Some(signatures),
             keys,
             certifiers,
@@ -384,22 +375,22 @@ where
     }
 
     /// `hash` getter
-    pub fn hash(&self) -> &Multihash {
+    pub fn hash(&self) -> &Hash {
         &self.hash
     }
 
     /// `root_hash` getter
-    pub fn root_hash(&self) -> &Multihash {
+    pub fn root_hash(&self) -> &Hash {
         &self.root_hash
     }
 
     /// `uri` getter
     pub fn uri(&self) -> RadUrn {
-        RadUrn::new(self.hash.to_owned())
+        RadUrn::new(self.hash.to_owned(), Protocol::Git, Path::new())
     }
 
     /// `parent_hash` getter
-    pub fn parent_hash(&self) -> &Option<Multihash> {
+    pub fn parent_hash(&self) -> &Option<Hash> {
         &self.parent_hash
     }
 
@@ -745,17 +736,9 @@ where
 
         let actual_hash = data.compute_hash()?;
         if let Some(s) = &data.hash {
-            let claimed_hash = {
-                let bytes = bs58::decode(s.as_bytes())
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_vec()
-                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
-                Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?
-            };
+            let claimed_hash = Hash::from_str(s)?;
             if claimed_hash != actual_hash {
-                let actual_hash_string = bs58::encode(&actual_hash)
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_string();
+                let actual_hash_string = actual_hash.to_string();
                 return Err(Error::WrongHash {
                     claimed: s.to_owned(),
                     actual: actual_hash_string,
@@ -764,28 +747,12 @@ where
         }
 
         let parent_hash = match data.parent_hash {
-            Some(s) => {
-                let bytes = bs58::decode(s.as_bytes())
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_vec()
-                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
-                let hash =
-                    Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?;
-                Some(hash)
-            },
+            Some(s) => Some(Hash::from_str(&s)?),
             None => None,
         };
 
         let root_hash = match data.root_hash {
-            Some(s) => {
-                let bytes = bs58::decode(s.as_bytes())
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_vec()
-                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
-                let hash =
-                    Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?;
-                Some(hash)
-            },
+            Some(s) => Some(Hash::from_str(&s)?),
             None => None,
         };
         let root_hash = match root_hash {

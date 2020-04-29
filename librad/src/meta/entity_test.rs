@@ -19,17 +19,22 @@ use super::{
     entity::*,
     user::{User, UserData},
 };
-use crate::{keys::device::Key, peer::PeerId, uri::RadUrn};
+use crate::{
+    hash::{Hash, Hasher},
+    keys::device::Key,
+    peer::PeerId,
+    uri::{Path, Protocol, RadUrn},
+};
 use async_trait::async_trait;
 use futures_await_test::async_test;
 use lazy_static::lazy_static;
-use multihash::{Multihash, Sha2_256};
 use sodiumoxide::crypto::sign::ed25519::Seed;
 use std::str::FromStr;
 
 lazy_static! {
-    pub static ref EMPTY_HASH: Multihash = Sha2_256::digest(&[]);
-    pub static ref EMPTY_URI: RadUrn = RadUrn::new(EMPTY_HASH.to_owned());
+    pub static ref EMPTY_HASH: Hash = Hash::hash(&[]);
+    pub static ref EMPTY_URI: RadUrn =
+        RadUrn::new(EMPTY_HASH.to_owned(), Protocol::Git, Path::new());
 }
 
 const SEED: Seed = Seed([
@@ -134,7 +139,7 @@ impl Resolver<User> for UserHistory {
 #[test]
 #[test]
 fn test_valid_uri() {
-    let u1 = RadUrn::new((*EMPTY_HASH).to_owned());
+    let u1 = RadUrn::new((*EMPTY_HASH).to_owned(), Protocol::Git, Path::new());
     let s = u1.to_string();
     let u2 = RadUrn::from_str(&s).unwrap();
     assert_eq!(u1, u2);
