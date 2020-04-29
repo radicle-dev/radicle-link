@@ -42,10 +42,10 @@ pub struct NewComment<User> {
 
 pub type ReplaceComment = Replace<usize, String>;
 
-pub enum CommentOp<User> {
-    ReplaceComment(ReplaceComment),
-    React(Reaction<User>),
-    UnReact(Reaction<User>),
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Op<User> {
+    Comment(ReplaceComment),
+    Reaction(set::Op<Reaction<User>>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,14 +137,13 @@ impl<Id, User: Eq + Hash> Comment<Id, User> {
 }
 
 impl<Id, User: Eq + Hash> Apply for Comment<Id, User> {
-    type Op = CommentOp<User>;
+    type Op = Op<User>;
     type Error = Infallible;
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
         match op {
-            CommentOp::ReplaceComment(comment) => self.content.apply(comment),
-            CommentOp::React(reaction) => self.reactions.apply(set::Op::Insert(reaction)),
-            CommentOp::UnReact(reaction) => self.reactions.apply(set::Op::Remove(reaction)),
+            Op::Comment(comment) => self.content.apply(comment),
+            Op::Reaction(reaction) => self.reactions.apply(reaction),
         }
     }
 }
