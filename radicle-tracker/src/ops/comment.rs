@@ -27,10 +27,6 @@ use crate::{
 };
 use std::{collections::HashMap, hash::Hash};
 
-pub struct ACL<User> {
-    _user: User,
-} // TODO: fill in
-
 pub type ReactionOp<User> = set::Op<Reaction<User>>;
 
 pub struct ReplaceOp<User> {
@@ -39,7 +35,6 @@ pub struct ReplaceOp<User> {
 }
 
 pub struct NewComment<User> {
-    pub acl: ACL<User>,
     pub body: String,
     pub author: User,
 }
