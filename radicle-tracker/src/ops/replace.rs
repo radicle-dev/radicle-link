@@ -15,10 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Error<Marker> {
-    ConflictingMarker(Marker),
-}
+use std::convert::Infallible;
+use crate::ops::Apply;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Replace<Marker: Ord, A> {
@@ -48,9 +46,15 @@ impl<Marker: Ord, A: Eq> Replace<Marker, A> {
             self.conflicts.push(val);
         }
     }
+}
 
-    pub fn apply(&mut self, other: Self) {
-        self.replace(other.marker, other.val)
+impl<Marker: Ord, A: Eq> Apply for Replace<Marker, A> {
+    type Op = Replace<Marker, A>;
+    type Error = Infallible;
+
+    fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
+        self.replace(op.marker, op.val);
+        Ok(())
     }
 }
 
