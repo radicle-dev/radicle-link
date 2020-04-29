@@ -16,9 +16,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::ops::{
+    absurd,
     id::{Gen, UniqueTimestamp},
     sequence::{self, OrdSequence},
-    visibility::{absurd, Hide},
+    visibility::Hide,
     Apply,
 };
 use std::ops::{Deref, DerefMut};
@@ -36,27 +37,29 @@ pub use error::Error;
 /// It represents where we replied to the main thread and now has the
 /// opportunity to become a thread of items itself.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SubThread<A>(OrdSequence<UniqueTimestamp, Item<A>>);
+pub struct SubThread<M, A>(OrdSequence<Modifier<M>, UniqueTimestamp, Item<A>>);
 
-impl<T> Deref for SubThread<T> {
-    type Target = OrdSequence<UniqueTimestamp, Item<T>>;
+impl<M, T> Deref for SubThread<M, T> {
+    type Target = OrdSequence<Modifier<M>, UniqueTimestamp, Item<T>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<T> DerefMut for SubThread<T> {
+impl<M, T> DerefMut for SubThread<M, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<M, A> Apply for SubThread<A>
+type SubThreadOp<M, A> = sequence::Op<Modifier<M>, UniqueTimestamp, Item<A>>;
+
+impl<M, A> Apply for SubThread<M, A>
 where
-    A: Apply<Op = M> + Ord,
+    A: Apply<Op = M>,
 {
-    type Op = sequence::Op<Modifier<M>, UniqueTimestamp, Item<A>>;
+    type Op = SubThreadOp<M, A>;
     type Error = sequence::Error<A::Error>;
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
@@ -67,30 +70,30 @@ where
 /// `Replies` is the structure that represents the replies to the main thread.
 /// Each one of these can is potentially a sub-thread itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Replies<A>(OrdSequence<UniqueTimestamp, SubThread<A>>);
+pub struct Replies<M, A>(OrdSequence<SubThreadOp<M, A>, UniqueTimestamp, SubThread<M, A>>);
 
-impl<A> Default for Replies<A> {
+impl<M, A> Default for Replies<M, A> {
     fn default() -> Self {
         Replies::new()
     }
 }
 
-impl<A> Replies<A> {
+impl<M, A> Replies<M, A> {
     fn new() -> Self {
         Replies(OrdSequence::new())
     }
 
-    fn push<M>(&mut self, a: A) -> MainOp<M, A>
+    fn push(&mut self, a: A) -> MainOp<M, A>
     where
         A: Clone,
         M: Clone,
     {
         let mut thread = SubThread(OrdSequence::new());
-        thread.append::<M>(Item::new(a));
+        thread.append(Item::new(a));
         self.0.append(thread)
     }
 
-    fn append<M, E>(&mut self, ix: usize, new: A) -> Result<Op<M, A>, Error<E>>
+    fn append<E>(&mut self, ix: usize, new: A) -> Result<Op<M, A>, Error<E>>
     where
         A: Clone,
     {
@@ -110,7 +113,7 @@ impl<A> Replies<A> {
 type MainOp<M, A> = sequence::Op<
     sequence::Op<Modifier<M>, UniqueTimestamp, Item<A>>,
     UniqueTimestamp,
-    SubThread<A>,
+    SubThread<M, A>,
 >;
 
 /// Operations on a [`Thread`] can be performed on any of the items in thread.
@@ -185,9 +188,9 @@ pub enum ReplyFinger {
 /// * [`Thread::edit`]
 /// * [`Thread::delete`]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Thread<A> {
+pub struct Thread<M, A> {
     root: Item<A>,
-    replies: Replies<A>,
+    replies: Replies<M, A>,
 }
 
 /// This tells us where we want to append a new item to the [`Thread`].
@@ -200,7 +203,7 @@ pub enum AppendTo {
     Thread(usize),
 }
 
-impl<A: Apply> Thread<A> {
+impl<M, A: Apply> Thread<M, A> {
     // TODO: there should be ops that tell us how the structure was initialised as
     // well.
     pub fn new(a: A) -> Self {
@@ -210,7 +213,7 @@ impl<A: Apply> Thread<A> {
         }
     }
 
-    pub fn append<M>(&mut self, ix: AppendTo, new: A) -> Result<Op<M, A>, Error<A::Error>>
+    pub fn append(&mut self, ix: AppendTo, new: A) -> Result<Op<M, A>, Error<A::Error>>
     where
         A: Clone,
         M: Clone,
@@ -221,7 +224,7 @@ impl<A: Apply> Thread<A> {
         }
     }
 
-    pub fn edit<M>(&mut self, finger: Finger, op: M) -> Result<Op<M, A>, Error<A::Error>>
+    pub fn edit(&mut self, finger: Finger, op: M) -> Result<Op<M, A>, Error<A::Error>>
     where
         A: Apply<Op = M> + Clone + Ord,
         M: Clone,
@@ -256,7 +259,7 @@ impl<A: Apply> Thread<A> {
         }
     }
 
-    pub fn delete<M>(&mut self, finger: Finger) -> Result<Op<M, A>, Error<A::Error>>
+    pub fn delete(&mut self, finger: Finger) -> Result<Op<M, A>, Error<A::Error>>
     where
         A: Apply<Op = M> + Clone + Ord,
         M: Clone + Ord,
@@ -294,44 +297,11 @@ impl<A: Apply> Thread<A> {
         }
     }
 
-    pub fn apply<M>(&mut self, op: Op<M, A>) -> Result<(), sequence::Error<A::Error>>
-    where
-        A: Apply<Op = M> + Ord,
-        M: Ord,
-    {
-        match op {
-            Op::Root(modifier) => Ok(self.root.apply(modifier)?),
-            Op::Main(op) => {
-                let main_thread = &mut self.replies.0;
-                match main_thread.apply(op) {
-                    Ok(_) => Ok(()),
-                    Err(err) => match err {
-                        sequence::Error::IndexOutOfBounds(ix) => {
-                            Err(sequence::Error::IndexOutOfBounds(ix))
-                        },
-
-                        sequence::Error::IndexExists(ix) => Err(sequence::Error::IndexExists(ix)),
-
-                        sequence::Error::Modify(m) => Err(m),
-                    },
-                }
-            },
-            Op::Thread { main, op } => {
-                let thread = &mut self
-                    .replies
-                    .0
-                    .get_mut(main)
-                    .ok_or(sequence::Error::IndexOutOfBounds(main))?
-                    .1;
-                thread.apply(op)
-            },
-        }
-    }
-
     #[cfg(test)]
     fn to_vec(&self) -> Vec<NonEmpty<Item<A>>>
     where
         A: Clone,
+        M: Clone,
     {
         let mut result = vec![NonEmpty::new(self.root.clone())];
         result.append(
@@ -346,6 +316,31 @@ impl<A: Apply> Thread<A> {
                 .collect(),
         );
         result
+    }
+}
+
+impl<M, A: Apply<Op = M>> Apply for Thread<M, A> {
+    type Op = Op<M, A>;
+    type Error = Error<A::Error>;
+
+    fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
+        match op {
+            Op::Root(modifier) => Ok(self.root.apply(modifier)?),
+            Op::Main(op) => {
+                let main_thread = &mut self.replies.0;
+                main_thread.apply(op).map_err(Error::flatten_main)
+            },
+            Op::Thread { main, op } => {
+                let thread = &mut self
+                    .replies
+                    .0
+                    .get_mut(main)
+                    .ok_or(sequence::Error::IndexOutOfBounds(main))
+                    .map_err(Error::Main)?
+                    .1;
+                thread.apply(op).map_err(Error::Thread)
+            },
+        }
     }
 }
 
