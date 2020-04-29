@@ -24,6 +24,7 @@ pub enum Error<Marker> {
 pub struct Replace<Marker: Ord, A> {
     pub marker: Marker,
     pub val: A,
+    conflicts: Vec<A>,
 }
 
 impl<Marker: Ord, A: Eq> Replace<Marker, A> {
@@ -34,24 +35,21 @@ impl<Marker: Ord, A: Eq> Replace<Marker, A> {
         Replace {
             marker: Marker::default(),
             val,
+            conflicts: vec![],
         }
     }
 
-    pub fn replace(&mut self, marker: Marker, val: A) -> Result<(), Error<Marker>> {
+    pub fn replace(&mut self, marker: Marker, val: A) {
         if self.marker < marker {
             self.marker = marker;
             self.val = val;
-
-            Ok(())
+            self.conflicts = vec![];
         } else if self.marker == marker && self.val != val {
-            Err(Error::ConflictingMarker(marker))
-        } else {
-            // no-op
-            Ok(())
+            self.conflicts.push(val);
         }
     }
 
-    pub fn apply(&mut self, other: Self) -> Result<(), Error<Marker>> {
+    pub fn apply(&mut self, other: Self) {
         self.replace(other.marker, other.val)
     }
 }
@@ -65,16 +63,16 @@ mod tests {
         // Start with 1
         let mut left: Replace<usize, u8> = Replace::new(1);
         // Replace 1 with 2
-        left.replace(left.marker + 1, 2).expect("error occurred");
+        left.replace(left.marker + 1, 2);
         let r1 = left.clone();
 
         // Replace 2 with 3
-        left.replace(left.marker + 1, 2).expect("error occurred");
+        left.replace(left.marker + 1, 2);
         let r2 = left.clone();
 
-        let mut right = Replace { marker: 0, val: 1 };
-        right.apply(r2).expect("error occurred");
-        right.apply(r1).expect("error occurred");
+        let mut right = Replace::new(1);
+        right.apply(r2);
+        right.apply(r1);
 
         assert_eq!(left, right);
     }
@@ -85,27 +83,26 @@ mod tests {
         let mut left: Replace<usize, u8> = Replace::new(1);
 
         // Replace 1 with 2
-        left.replace(left.marker + 1, 2).expect("error occurred");
+        left.replace(left.marker + 1, 2);
 
         // Right also starts with 1
         let mut right = Replace::new(1);
 
         // Replace 1 with 3
-        right.replace(right.marker + 1, 3).expect("error occurred");
+        right.replace(right.marker + 1, 3);
 
-        let left_result = left.apply(right.clone());
-        let right_result = right.apply(left.clone());
+        left.apply(right.clone());
+        right.apply(left.clone());
 
-        // Concurrent replace will fail if the markers are the same.
-        // The user should be expected to try apply their edit again with a
-        // higher marker.
-        assert_eq!(left_result, Err(Error::ConflictingMarker(left.marker)));
-        assert_eq!(right_result, Err(Error::ConflictingMarker(right.marker)));
+        // Concurrent replace will store conflicts locally.
+        // The user should be expected try resolve the conflicts.
         assert!(left != right);
+        assert_eq!(left.conflicts, vec![3]);
+        assert_eq!(right.conflicts, vec![2]);
 
-        // Right got there first and they are now synced
-        right.replace(right.marker + 1, 3).expect("error occured");
-        left.apply(right.clone()).expect("error occurred");
+        // One way is to apply a higher marker.
+        right.replace(right.marker + 1, 3);
+        left.apply(right.clone());
         assert_eq!(left, right);
     }
 }
