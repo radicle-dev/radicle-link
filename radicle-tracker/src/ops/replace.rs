@@ -15,10 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::convert::Infallible;
 use crate::ops::Apply;
+use std::convert::Infallible;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Replace<Marker: Ord, A> {
     pub marker: Marker,
     pub val: A,
@@ -75,8 +75,8 @@ mod tests {
         let r2 = left.clone();
 
         let mut right = Replace::new(1);
-        right.apply(r2);
-        right.apply(r1);
+        right.apply(r2).expect("absurdium");
+        right.apply(r1).expect("absurdium");
 
         assert_eq!(left, right);
     }
@@ -95,8 +95,8 @@ mod tests {
         // Replace 1 with 3
         right.replace(right.marker + 1, 3);
 
-        left.apply(right.clone());
-        right.apply(left.clone());
+        left.apply(right.clone()).expect("absurdium");
+        right.apply(left.clone()).expect("absurdium");
 
         // Concurrent replace will store conflicts locally.
         // The user should be expected try resolve the conflicts.
@@ -106,7 +106,7 @@ mod tests {
 
         // One way is to apply a higher marker.
         right.replace(right.marker + 1, 3);
-        left.apply(right.clone());
+        left.apply(right.clone()).expect("absurdium");
         assert_eq!(left, right);
     }
 }
