@@ -32,7 +32,7 @@ pub trait Hasher: PartialEq + Eq {
     fn hash(data: &[u8]) -> Self;
 }
 
-#[derive(Debug, Error)]
+#[derive(Clone, PartialEq, Eq, Debug, Error)]
 #[error("Invalid hash algorithm, expected {expected:?}, actual {actual:?}")]
 pub struct AlgorithmMismatch {
     expected: multihash::Code,
@@ -43,7 +43,7 @@ pub struct AlgorithmMismatch {
 ///
 /// Use this type for all hashing needs which don't depend on VCS specifics.
 /// Currently, this uses Blake2b-256 for compatibility with `radicle-registry`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Hash(Multihash);
 
 impl Hasher for Hash {
@@ -72,7 +72,7 @@ impl Display for Hash {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Clone, PartialEq, Eq, Debug, Error)]
 pub enum ParseError {
     #[error(transparent)]
     Algo(#[from] AlgorithmMismatch),

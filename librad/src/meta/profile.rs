@@ -45,9 +45,9 @@ pub struct UserProfile {
 }
 
 impl UserProfile {
-    pub fn new(nick: &str) -> Self {
+    pub fn new(nick: String) -> Self {
         Self {
-            nick: nick.to_string(),
+            nick,
             name: None,
             img: None,
             bio: None,
@@ -64,10 +64,67 @@ pub enum ProfileImage {
     Url(Url),
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GeoArc {
+    pub deg: i16,
+    pub min: i8,
+    pub sec: i8,
+}
+
+impl GeoArc {
+    pub fn new(deg: i16, min: i8, sec: i8) -> Self {
+        Self { deg, min, sec }
+    }
+}
+
+impl From<f64> for GeoArc {
+    fn from(val: f64) -> Self {
+        let deg = val.trunc();
+        let frac = val.fract();
+        let frac_60 = frac * 60.0;
+        let min = frac_60.trunc();
+        let frac_3600 = (frac_60 - min) * 60.0;
+        let sec = frac_3600.trunc();
+        Self {
+            deg: deg as i16,
+            min: min as i8,
+            sec: sec as i8,
+        }
+    }
+}
+
+impl Into<f64> for GeoArc {
+    fn into(self) -> f64 {
+        (self.deg as f64) + (self.min as f64 / 60.0) + (self.sec as f64 / 3600.0)
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GeoPoint {
+    pub lat: GeoArc,
+    pub lon: GeoArc,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub enum Geo {
-    LatLon(f32, f32),
+    Point(GeoPoint),
     Earth,
+}
+
+impl Geo {
+    pub fn from_f64_coords(lat: f64, lon: f64) -> Self {
+        Geo::Point(GeoPoint {
+            lat: GeoArc::from(lat),
+            lon: GeoArc::from(lon),
+        })
+    }
+
+    pub fn from_f32_coords(lat: f32, lon: f32) -> Self {
+        Geo::Point(GeoPoint {
+            lat: GeoArc::from(lat as f64),
+            lon: GeoArc::from(lon as f64),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -77,10 +134,23 @@ pub mod tests {
     use proptest::prelude::*;
     use serde_json;
 
+    #[test]
+    pub fn test_geo_arc() {
+        let arc1 = GeoArc::new(30, 6, 0);
+        let float: f64 = arc1.into();
+        let arc2 = GeoArc::from(float);
+        assert_eq!(arc1, arc2);
+
+        let arc1 = GeoArc::new(50, 15, 40);
+        let float: f64 = arc1.into();
+        let arc2 = GeoArc::from(float);
+        assert_eq!(arc1, arc2);
+    }
+
     pub fn gen_geo() -> impl Strategy<Value = Geo> {
         prop_oneof![
             Just(Geo::Earth),
-            (any::<f32>(), any::<f32>()).prop_map(|(lat, lon)| Geo::LatLon(lat, lon)),
+            (any::<f32>(), any::<f32>()).prop_map(|(lat, lon)| Geo::from_f32_coords(lat, lon)),
         ]
     }
 

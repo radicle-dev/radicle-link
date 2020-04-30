@@ -27,7 +27,6 @@ pub use radicle_surf as surf;
 
 pub mod git;
 pub mod hash;
-pub mod id;
 pub mod keys;
 pub mod meta;
 pub mod net;
