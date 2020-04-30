@@ -18,25 +18,49 @@
 use crate::ops::Apply;
 use std::convert::Infallible;
 
+/// A data structure that allows you to track the replacement of some value `A`.
+/// The change to the value is tracked via the `Marker`.
+///
+/// A higher `Marker` will always be accepted as the most up to date
+/// replacement. If the two `Marker`s are equal, and the values are also equal,
+/// then there is no change. If the values are different, however, the conflicts
+/// are kept track of for that replacement. When there are conflicts, and a
+/// higher `Marker` is found again, then the conflicts are cleared.
+///
+/// **N.B.**: A `Replace` is its own `Op` for its [`Apply`] instance.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Replace<Marker: Ord, A> {
+    /// An ordered marker for keeping track of replacements.
     pub marker: Marker,
+    /// The current value.
     pub val: A,
     conflicts: Vec<A>,
 }
 
 impl<Marker: Ord, A: Eq> Replace<Marker, A> {
+    /// Create a new `Replace` with the initial value.
+    /// The `Marker` is set to its [`Default`] value.
     pub fn new(val: A) -> Self
     where
         Marker: Default,
     {
+        Self::new_with_marker(val, Marker::default())
+    }
+
+    /// Create a new `Replace` with the provided value and marker.
+    pub fn new_with_marker(val: A, marker: Marker) -> Self
+    where
+        Marker: Default,
+    {
         Replace {
-            marker: Marker::default(),
+            marker,
             val,
             conflicts: vec![],
         }
     }
 
+    /// Replace the current value with the provided one, if the passed marker is
+    /// greater than the current one.
     pub fn replace(&mut self, marker: Marker, val: A) {
         if self.marker < marker {
             self.marker = marker;
@@ -45,6 +69,11 @@ impl<Marker: Ord, A: Eq> Replace<Marker, A> {
         } else if self.marker == marker && self.val != val {
             self.conflicts.push(val);
         }
+    }
+
+    /// Peek at the conflicts for this `Replace`.
+    pub fn conflicts(&self) -> &[A] {
+        &self.conflicts
     }
 }
 
