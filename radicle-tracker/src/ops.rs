@@ -15,24 +15,47 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#![allow(missing_docs)]
-
+/// Sometimes it's necessary to keep track of a unique and orderable identity in
+/// our structures. The `id` module gives us primitives to use when this is
+/// needed. For example, see the [`crate::ops::sequence`] module.
 pub mod id;
+/// A data structure that allows us to keep track of replacing values over time.
 pub mod replace;
+/// Contains `OrdSequence`, a data structure that allows us to append to it,
+/// resolving conflicts by an ordered identity on the element.
 pub mod sequence;
+/// Contains `Set`, a `HashSet` like structure that is limited to inserting and
+/// removing items.
 pub mod set;
+/// A data structure for creating threads of items.
 pub mod thread;
+/// A data structure that designates whether something should be visible or
+/// hidden from view.
 pub mod visibility;
 
 use std::convert::Infallible;
 
+/// `Apply` allows us to apply an operation to a data structure. If something
+/// implements `Apply` it should safely grow the structure monotonically or else
+/// being "embarassingly" convergent.
 pub trait Apply {
+    /// The operation to apply to the data structure.
     type Op;
+
+    /// Any error that occurs when attempting to apply the operation to the data
+    /// structure. If an error isn't possible then use [`Infallible`].
     type Error;
 
+    /// Apply the operation to the data structure.
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error>;
 }
 
+/// Since we can never _create_ an [`Infallible`] we can never truly call this
+/// function. This means we can call this function, pretending like we get back
+/// an `A`.
+///
+/// This is useful when we want to unwrap a `Result` knowing the `Err` is
+/// `Infallible`.
 pub(crate) fn absurd<A>(_infallible: Infallible) -> A {
     panic!("Infallible cannot do anything else")
 }
