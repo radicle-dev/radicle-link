@@ -21,12 +21,12 @@ use crate::{
         Reaction,
     },
     ops::{
-        Apply,
         replace::Replace,
         set::{self, Set},
+        Apply,
     },
 };
-use std::{collections::HashMap, hash::Hash, convert::Infallible};
+use std::{collections::HashMap, convert::Infallible, hash::Hash};
 
 pub type ReactionOp<User> = set::Op<Reaction<User>>;
 
@@ -118,6 +118,11 @@ impl<Id, User: Eq + Hash> Comment<Id, User> {
         User: Clone,
     {
         self.reactions.remove(reaction)
+    }
+
+    pub fn replace_content(&mut self, new_content: String) -> ReplaceComment {
+        self.content.replace(self.content.marker + 1, new_content);
+        self.content.clone()
     }
 
     /// Get the map of reactions to this comment.

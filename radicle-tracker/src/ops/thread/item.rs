@@ -16,9 +16,9 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::ops::{
-    visibility::{Hide, Visibility},
-    Apply,
     absurd,
+    visibility::{self, Visibility},
+    Apply,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -39,7 +39,7 @@ impl<A> Item<A> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Modifier<E> {
     Edit(E),
-    Delete(Hide),
+    Delete(visibility::Op),
 }
 
 impl<E, A: Apply<Op = E>> Apply for Item<A> {

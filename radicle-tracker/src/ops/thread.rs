@@ -19,7 +19,7 @@ use crate::ops::{
     absurd,
     id::{Gen, UniqueTimestamp},
     sequence::{self, OrdSequence},
-    visibility::Hide,
+    visibility,
     Apply,
 };
 use std::ops::{Deref, DerefMut};
@@ -145,7 +145,7 @@ impl<M, A> Op<M, A> {
     }
 
     fn root_delete() -> Self {
-        Self::root_modifier(Modifier::Delete(Hide {}))
+        Self::root_modifier(Modifier::Delete(visibility::Op {}))
     }
 }
 
@@ -268,7 +268,7 @@ impl<M, A: Apply> Thread<M, A> {
             Finger::Root => {
                 self.root
                     .visibility
-                    .apply(Hide {})
+                    .apply(visibility::Op {})
                     .map_err(absurd::<Error<A::Error>>)?;
                 Ok(Op::root_delete())
             },
@@ -281,7 +281,7 @@ impl<M, A: Apply> Thread<M, A> {
                         sequence::Op::Modify {
                             id: UniqueTimestamp::gen(),
                             ix: 0,
-                            op: Modifier::Delete(Hide {}),
+                            op: Modifier::Delete(visibility::Op {}),
                         },
                     )
                     .map(Op::Main)
@@ -289,7 +289,7 @@ impl<M, A: Apply> Thread<M, A> {
                 ReplyFinger::Thread { main, reply } => {
                     let thread = &mut self.replies.0[main].1;
                     thread
-                        .modify(reply, Modifier::Delete(Hide {}))
+                        .modify(reply, Modifier::Delete(visibility::Op {}))
                         .map(|op| Op::Thread { main, op })
                         .map_err(Error::Thread)
                 },

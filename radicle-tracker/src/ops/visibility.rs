@@ -15,11 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::ops::Apply;
+use crate::ops::{absurd, Apply};
 use std::convert::Infallible;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Hide {}
+pub struct Op {}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Visibility {
@@ -27,8 +27,15 @@ pub enum Visibility {
     Hidden,
 }
 
+impl Visibility {
+    pub fn hide(&mut self) -> Op {
+        self.apply(Op {}).unwrap_or_else(absurd);
+        Op {}
+    }
+}
+
 impl Apply for Visibility {
-    type Op = Hide;
+    type Op = Op;
     type Error = Infallible;
 
     fn apply(&mut self, _op: Self::Op) -> Result<(), Self::Error> {

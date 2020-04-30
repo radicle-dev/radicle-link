@@ -29,6 +29,7 @@ use crate::{
         replace::Replace,
         set::{self, Set},
         thread::{self, Thread},
+        visibility::{self, Visibility},
         Apply,
     },
 };
@@ -46,10 +47,11 @@ pub type ReplaceableTitle = Replace<usize, Title>;
 pub struct Issue<Id, Cid, User: Eq + Hash> {
     identifier: Id,
     author: User,
-    pub title: ReplaceableTitle,
-    pub comments: Thread<comment::Op<User>, Comment<Cid, User>>,
-    pub assignees: Set<User>,
-    pub labels: Set<Label>,
+    title: ReplaceableTitle,
+    comments: Thread<comment::Op<User>, Comment<Cid, User>>,
+    assignees: Set<User>,
+    labels: Set<Label>,
+    status: Visibility,
     timestamp: RadClock,
 }
 
@@ -85,16 +87,51 @@ impl<Id, Cid, User: Eq + Hash> Issue<Id, Cid, User> {
             assignees: Set::new(),
             labels: Set::new(),
             timestamp,
+            status: Visibility::Visible,
         }
     }
 
-    /*
+    pub fn assign(&mut self, user: User) -> Op<Cid, User>
+    where
+        User: Clone,
+    {
+        Op::Assignee(self.assignees.insert(user))
+    }
+
+    pub fn unassign(&mut self, user: User) -> Op<Cid, User>
+    where
+        User: Clone,
+    {
+        Op::Assignee(self.assignees.remove(user))
+    }
+
+    pub fn label(&mut self, label: Label) -> Op<Cid, User> {
+        Op::Label(self.labels.insert(label))
+    }
+
+    pub fn unlabel(&mut self, label: Label) -> Op<Cid, User> {
+        Op::Label(self.labels.remove(label))
+    }
+
+    pub fn with_comments<F>(&mut self, f: F) -> Op<Cid, User>
+    where
+        F: FnOnce(
+            &mut Thread<comment::Op<User>, Comment<Cid, User>>,
+        ) -> thread::Op<comment::Op<User>, Comment<Cid, User>>,
+    {
+        Op::Thread(f(&mut self.comments))
+    }
+
+    pub fn replace_title(&mut self, new_title: Title) -> Op<Cid, User> {
+        self.title.replace(self.title.marker + 1, new_title);
+        Op::Title(self.title.clone())
+    }
+
     /// Close an [`Issue`] and get back a [`ClosedIssue`]. This limits the
     /// functionality on the original `Issue`.
-    pub fn close(self) -> ClosedIssue<Id, Cid, User> {
-        ClosedIssue(self)
+    pub fn close(&mut self) -> Op<Cid, User> {
+        Op::Close(self.status.hide())
     }
-    */
 
     /// Get a reference to the author (`User`) of this issue.
     pub fn author(&self) -> &User {
@@ -112,6 +149,7 @@ pub enum Op<Cid, User: Eq + Hash> {
     Assignee(set::Op<User>),
     Label(set::Op<Label>),
     Thread(thread::Op<comment::Op<User>, Comment<Cid, User>>),
+    Close(visibility::Op),
 }
 
 impl<Id, Cid, User: Eq + Hash + Ord> Apply for Issue<Id, Cid, User> {
@@ -124,6 +162,7 @@ impl<Id, Cid, User: Eq + Hash + Ord> Apply for Issue<Id, Cid, User> {
             Op::Assignee(assignee) => self.assignees.apply(assignee).map_err(absurd),
             Op::Label(label) => self.labels.apply(label).map_err(absurd),
             Op::Thread(comment) => self.comments.apply(comment),
+            Op::Close(close) => self.status.apply(close).map_err(absurd),
         }
     }
 }
