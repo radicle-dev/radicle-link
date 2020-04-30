@@ -60,14 +60,14 @@ impl UserData {
     fn profile_ref_mut(&mut self) -> Result<&mut ProfileRef, Error> {
         match &mut self.info.profile {
             Some(p) => Ok(p),
-            None => Err(Error::MissingRootHash),
+            None => Err(Error::BuilderError("Missing user profile")),
         }
     }
 
     fn user_profile_mut(&mut self) -> Result<&mut UserProfile, Error> {
         match self.profile_ref_mut()? {
             ProfileRef::UserProfile(p) => Ok(p),
-            ProfileRef::Url(_) => Err(Error::MissingRootHash),
+            ProfileRef::Url(_) => Err(Error::BuilderError("Missing user profile")),
         }
     }
 

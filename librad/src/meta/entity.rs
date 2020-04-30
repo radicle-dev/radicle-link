@@ -73,6 +73,9 @@ pub enum Error {
     #[error("Invalid data ({0})")]
     InvalidData(String),
 
+    #[error("Builder error ({0})")]
+    BuilderError(&'static str),
+
     #[error("Key not present ({0})")]
     KeyNotPresent(PublicKey),
 
