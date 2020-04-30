@@ -23,12 +23,15 @@ use crate::{
         Reaction,
     },
     ops::{
+        absurd,
         replace::Replace,
         set::{self, Set},
         Apply,
     },
 };
-use std::{collections::HashMap, convert::Infallible, hash::Hash};
+use std::{collections::HashMap, hash::Hash};
+
+pub type Error<User> = set::Error<Reaction<User>>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReplaceOp<User> {
@@ -115,11 +118,11 @@ impl<Id, User: Eq + Hash> Comment<Id, User> {
     /// Add a new reaction to the set of reactions on the comment.
     /// Returns `true` if the reaction was in the set and is now removed.
     /// Returns `false` if the reaction was not in the set to begin with.
-    pub fn unreact(&mut self, reaction: Reaction<User>) -> Op<User>
+    pub fn unreact(&mut self, reaction: Reaction<User>) -> Option<Op<User>>
     where
         User: Clone,
     {
-        Op::Reaction(self.reactions.remove(reaction))
+        self.reactions.remove(reaction).map(Op::Reaction)
     }
 
     pub fn replace_content(&mut self, user: User, new_content: String) -> Option<Op<User>> {
@@ -152,12 +155,12 @@ impl<Id, User: Eq + Hash> Comment<Id, User> {
 
 impl<Id, User: Eq + Hash> Apply for Comment<Id, User> {
     type Op = Op<User>;
-    type Error = Infallible;
+    type Error = set::Error<Reaction<User>>;
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
         match op {
             // TODO: should we check if the users are equal, or just assume the invariant?
-            Op::Comment(comment) => self.content.apply(comment.replace),
+            Op::Comment(comment) => self.content.apply(comment.replace).map_err(absurd),
             Op::Reaction(reaction) => self.reactions.apply(reaction),
         }
     }

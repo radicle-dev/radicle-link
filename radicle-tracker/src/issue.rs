@@ -33,7 +33,7 @@ use crate::{
         Apply,
     },
 };
-use std::{convert::Infallible, hash::Hash};
+use std::hash::Hash;
 
 pub type ReplaceableTitle = Replace<usize, Title>;
 
@@ -98,19 +98,19 @@ impl<Id, Cid, User: Eq + Hash> Issue<Id, Cid, User> {
         Op::Assignee(self.assignees.insert(user))
     }
 
-    pub fn unassign(&mut self, user: User) -> Op<Cid, User>
+    pub fn unassign(&mut self, user: User) -> Option<Op<Cid, User>>
     where
         User: Clone,
     {
-        Op::Assignee(self.assignees.remove(user))
+        self.assignees.remove(user).map(Op::Assignee)
     }
 
     pub fn label(&mut self, label: Label) -> Op<Cid, User> {
         Op::Label(self.labels.insert(label))
     }
 
-    pub fn unlabel(&mut self, label: Label) -> Op<Cid, User> {
-        Op::Label(self.labels.remove(label))
+    pub fn unlabel(&mut self, label: Label) -> Option<Op<Cid, User>> {
+        self.labels.remove(label).map(Op::Label)
     }
 
     pub fn with_comments<F>(&mut self, f: F) -> Op<Cid, User>
@@ -152,16 +152,22 @@ pub enum Op<Cid, User: Eq + Hash> {
     Close(visibility::Op),
 }
 
+pub enum Error<User> {
+    Assignee(set::Error<User>),
+    Label(set::Error<Label>),
+    Thread(thread::Error<comment::Error<User>>),
+}
+
 impl<Id, Cid, User: Eq + Hash + Ord> Apply for Issue<Id, Cid, User> {
     type Op = Op<Cid, User>;
-    type Error = thread::Error<Infallible>;
+    type Error = Error<User>;
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
         match op {
             Op::Title(title) => self.title.apply(title).map_err(absurd),
-            Op::Assignee(assignee) => self.assignees.apply(assignee).map_err(absurd),
-            Op::Label(label) => self.labels.apply(label).map_err(absurd),
-            Op::Thread(comment) => self.comments.apply(comment),
+            Op::Assignee(assignee) => self.assignees.apply(assignee).map_err(Error::Assignee),
+            Op::Label(label) => self.labels.apply(label).map_err(Error::Label),
+            Op::Thread(comment) => self.comments.apply(comment).map_err(Error::Thread),
             Op::Close(close) => self.status.apply(close).map_err(absurd),
         }
     }
