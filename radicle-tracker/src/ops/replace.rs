@@ -61,6 +61,49 @@ impl<Marker: Ord, A: Eq> Apply for Replace<Marker, A> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ops::absurd;
+    use proptest::prelude::*;
+
+    fn replace_strategy() -> impl Strategy<Value = Replace<usize, String>> {
+        (any::<usize>(), "[a-z]*").prop_map(|(marker, val)| Replace {
+            marker,
+            val: val.to_string(),
+            conflicts: vec![],
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn idempotent(mut x in replace_strategy()) {
+            let original = x.clone();
+            x.apply(x.clone()).unwrap_or_else(absurd);
+            assert_eq!(original, x);
+        }
+
+        #[test]
+        fn commutative((x, y) in (replace_strategy(), replace_strategy())) {
+            let mut x_result = x.clone();
+            let mut y_result = y.clone();
+            x_result.apply(y).unwrap_or_else(absurd);
+            y_result.apply(x).unwrap_or_else(absurd);
+
+            assert_eq!(x_result, y_result);
+        }
+
+        #[test]
+        fn associative((x, mut y, z) in (replace_strategy(), replace_strategy(), replace_strategy())) {
+            let mut left = x.clone();
+            let mut right = x.clone();
+
+            left.apply(y.clone()).unwrap_or_else(absurd);
+            left.apply(z.clone()).unwrap_or_else(absurd);
+
+            y.apply(z).unwrap_or_else(absurd);
+            right.apply(y).unwrap_or_else(absurd);
+
+            assert_eq!(left, right);
+        }
+    }
 
     #[test]
     fn commutative_ints() {
