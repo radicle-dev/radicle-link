@@ -105,10 +105,12 @@ pub use metadata::*;
 
 use clock::{Clock, RadClock};
 
-/// TODO: Ops
-pub mod ops;
+/// TODO: Comment
+pub mod comment;
 /// TODO: Issue
 pub mod issue;
+/// TODO: Ops
+pub mod ops;
 
 /// An [`Issue`] that has been closed. The underlying issue cannot be mutated,
 /// and can we can only access the reference of this issue..

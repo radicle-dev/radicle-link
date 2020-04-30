@@ -18,6 +18,7 @@
 #![allow(missing_docs)]
 
 use crate::{
+    comment::{self, Comment},
     metadata::{
         clock::{Clock, RadClock},
         Label,
@@ -25,7 +26,6 @@ use crate::{
     },
     ops::{
         absurd,
-        comment::{self, Comment},
         replace::Replace,
         set::{self, Set},
         thread::{self, Thread},

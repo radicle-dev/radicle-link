@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+#![allow(missing_docs)]
+
 use crate::{
     metadata::{
         clock::{Clock, RadClock},
@@ -28,13 +30,13 @@ use crate::{
 };
 use std::{collections::HashMap, convert::Infallible, hash::Hash};
 
-pub type ReactionOp<User> = set::Op<Reaction<User>>;
-
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReplaceOp<User> {
     pub author: User,
     pub replace: ReplaceComment,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NewComment<User> {
     pub body: String,
     pub author: User,
@@ -44,7 +46,7 @@ pub type ReplaceComment = Replace<usize, String>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Op<User> {
-    Comment(ReplaceComment),
+    Comment(ReplaceOp<User>),
     Reaction(set::Op<Reaction<User>>),
 }
 
@@ -103,26 +105,33 @@ impl<Id, User: Eq + Hash> Comment<Id, User> {
     /// Add a new reaction to the set of reactions on the comment.
     /// Returns `true` if the reaction was new.
     /// Returns `false` if the reaction already existed.
-    pub fn react(&mut self, reaction: Reaction<User>) -> ReactionOp<User>
+    pub fn react(&mut self, reaction: Reaction<User>) -> Op<User>
     where
         User: Clone,
     {
-        self.reactions.insert(reaction)
+        Op::Reaction(self.reactions.insert(reaction))
     }
 
     /// Add a new reaction to the set of reactions on the comment.
     /// Returns `true` if the reaction was in the set and is now removed.
     /// Returns `false` if the reaction was not in the set to begin with.
-    pub fn unreact(&mut self, reaction: Reaction<User>) -> ReactionOp<User>
+    pub fn unreact(&mut self, reaction: Reaction<User>) -> Op<User>
     where
         User: Clone,
     {
-        self.reactions.remove(reaction)
+        Op::Reaction(self.reactions.remove(reaction))
     }
 
-    pub fn replace_content(&mut self, new_content: String) -> ReplaceComment {
+    pub fn replace_content(&mut self, user: User, new_content: String) -> Option<Op<User>> {
+        if self.author != user {
+            return None;
+        }
+
         self.content.replace(self.content.marker + 1, new_content);
-        self.content.clone()
+        Some(Op::Comment(ReplaceOp {
+            author: user,
+            replace: self.content.clone(),
+        }))
     }
 
     /// Get the map of reactions to this comment.
@@ -147,7 +156,8 @@ impl<Id, User: Eq + Hash> Apply for Comment<Id, User> {
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
         match op {
-            Op::Comment(comment) => self.content.apply(comment),
+            // TODO: should we check if the users are equal, or just assume the invariant?
+            Op::Comment(comment) => self.content.apply(comment.replace),
             Op::Reaction(reaction) => self.reactions.apply(reaction),
         }
     }

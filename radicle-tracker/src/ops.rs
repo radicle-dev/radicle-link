@@ -17,7 +17,6 @@
 
 #![allow(missing_docs)]
 
-pub mod comment;
 pub mod id;
 pub mod replace;
 pub mod sequence;
@@ -25,7 +24,6 @@ pub mod set;
 pub mod thread;
 pub mod visibility;
 
-use crate::metadata::Label;
 use std::convert::Infallible;
 
 pub trait Apply {
@@ -34,9 +32,6 @@ pub trait Apply {
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error>;
 }
-
-pub type AssigneeOp<User> = set::Op<User>;
-pub type LabelOp = set::Op<Label>;
 
 pub(crate) fn absurd<A>(_infallible: Infallible) -> A {
     panic!("Infallible cannot do anything else")
