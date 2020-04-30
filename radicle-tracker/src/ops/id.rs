@@ -19,24 +19,21 @@ use crate::metadata::clock::TimeDiff;
 use std::{cmp::Ordering, hash::Hash, time::SystemTime};
 use uuid::Uuid;
 
+/// Magically generate a thing.
 pub trait Gen {
+    /// Abrakedabra!
     fn gen() -> Self;
 }
 
+/// A unique identifier consisting of a blob of bytes (for some meaning of
+/// unique).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Unique {
     blob: Vec<u8>,
 }
 
 impl Unique {
-    pub fn new(id: &[u8]) -> Option<Self> {
-        if id.is_empty() {
-            return None;
-        }
-
-        Some(Unique { blob: id.to_vec() })
-    }
-
+    /// Peek at the bytes of the unique identifier.
     pub fn val(&self) -> &[u8] {
         &self.blob
     }
@@ -50,15 +47,14 @@ impl Gen for Unique {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Timestamp {
-    time: TimeDiff,
-}
-
+/// A combination of [`Unique`] identifier along with a [`TimeDiff`].
+///
+/// The ordering of a `UniqueTimestamp` first relies on its `TimeDiff` falling
+/// back to the identifier if the times were equal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UniqueTimestamp {
     unique: Unique,
-    time: Timestamp,
+    time: TimeDiff,
 }
 
 impl PartialOrd for UniqueTimestamp {
@@ -78,15 +74,13 @@ impl Ord for UniqueTimestamp {
 }
 
 impl UniqueTimestamp {
-    pub fn new(id: &[u8], time: Timestamp) -> Option<Self> {
-        Unique::new(id).map(|unique| UniqueTimestamp { unique, time })
-    }
-
-    pub fn val(&self) -> (&[u8], &Timestamp) {
+    /// Peek at the identifier bytes and the `TimeDiff`.
+    pub fn val(&self) -> (&[u8], &TimeDiff) {
         (self.unique.val(), &self.time)
     }
 
-    pub fn at(&self) -> &Timestamp {
+    /// Peek at the `TimeDiff`.
+    pub fn at(&self) -> &TimeDiff {
         &self.time
     }
 }
@@ -95,9 +89,7 @@ impl Gen for UniqueTimestamp {
     fn gen() -> Self {
         UniqueTimestamp {
             unique: Unique::gen(),
-            time: Timestamp {
-                time: TimeDiff::from(SystemTime::now()),
-            },
+            time: TimeDiff::from(SystemTime::now()),
         }
     }
 }
