@@ -14,5 +14,6 @@ thiserror = "1.0"
 uuid = { version = "0.8", features = ["v4"] }
 
 [dev-dependencies]
+itertools = "0.9"
 proptest = "0.9"
 pretty_assertions = "0.6"

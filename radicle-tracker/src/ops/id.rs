@@ -16,7 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::metadata::clock::TimeDiff;
-use std::{cmp::Ordering, hash::Hash, time::SystemTime};
+use std::{cmp::Ordering, fmt, hash::Hash, time::SystemTime};
 use uuid::Uuid;
 
 /// Magically generate a thing.
@@ -47,6 +47,13 @@ impl Gen for Unique {
     }
 }
 
+impl fmt::Display for Unique {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let utf8 = String::from_utf8_lossy(&self.blob);
+        write!(f, "{}", utf8)
+    }
+}
+
 /// A combination of [`Unique`] identifier along with a [`TimeDiff`].
 ///
 /// The ordering of a `UniqueTimestamp` first relies on its `TimeDiff` falling
@@ -66,9 +73,9 @@ impl PartialOrd for UniqueTimestamp {
 impl Ord for UniqueTimestamp {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.time.cmp(&other.time) {
+            Ordering::Equal => self.unique.cmp(&other.unique),
             Ordering::Greater => Ordering::Greater,
             Ordering::Less => Ordering::Less,
-            Ordering::Equal => self.unique.cmp(&other.unique),
         }
     }
 }
@@ -83,6 +90,11 @@ impl UniqueTimestamp {
     pub fn at(&self) -> &TimeDiff {
         &self.time
     }
+
+    /// Compare the [`TimeDiff`]s of the two `UniqueTimestamp`.
+    pub fn cmp_times(&self, other: &Self) -> Ordering {
+        self.at().cmp(other.at())
+    }
 }
 
 impl Gen for UniqueTimestamp {
@@ -91,5 +103,11 @@ impl Gen for UniqueTimestamp {
             unique: Unique::gen(),
             time: TimeDiff::from(SystemTime::now()),
         }
+    }
+}
+
+impl fmt::Display for UniqueTimestamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}-{}", self.unique, self.time)
     }
 }

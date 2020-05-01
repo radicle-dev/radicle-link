@@ -15,7 +15,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::ops::{id::Gen, Apply};
+// Clipy is giving out about "i >= 0", but we're looping down from
+// an index, and I'd rather not find out what happens if I do "0 - 1".
+#![allow(clippy::absurd_extreme_comparisons, unused_comparisons)]
+
+use crate::ops::{
+    id::{Gen, UniqueTimestamp},
+    Apply,
+};
 use std::{
     error,
     fmt,
@@ -23,10 +30,16 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+/// Errors that occur when modifying an [`OrdSequence`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error<Modify> {
+    /// The index provided was out of bounds. This means we could not append or
+    /// modify an item.
     IndexOutOfBounds(usize),
-    IndexExists(usize),
+    /// The identifier could not be found when trying to apply a modification.
+    MissingModificationId(UniqueTimestamp),
+    /// The modification operation failed. The generic type represents the
+    /// underlying [`Apply`] operation.
     Modify(Modify),
 }
 
@@ -34,8 +47,8 @@ pub enum Error<Modify> {
 impl<Modify: fmt::Display> fmt::Display for Error<Modify> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::IndexOutOfBounds(ix) => write!(f, "index {0} is out of bounds", ix),
-            Error::IndexExists(ix) => write!(f, "index {} already exists", ix),
+            Error::IndexOutOfBounds(ix) => write!(f, "index {} is out of bounds", ix),
+            Error::MissingModificationId(id) => write!(f, "identifier {} was not found", id),
             Error::Modify(m) => write!(f, "{}", m),
         }
     }
@@ -59,24 +72,36 @@ impl<Modify> From<Modify> for Error<Modify> {
 /// An `Op` is the operation that can be produced from an [`OrdSequence`], or
 /// applied to an [`OrdSequence`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Op<Mod, O, A> {
+pub enum Op<Mod, A> {
     /// Append the value (`val`) to the `OrdSequence`, ensuring it occurs at the
     /// supplied index (`ix`).
-    Append { id: O, ix: usize, val: A },
+    Append {
+        /// The identifier for this append operation. It is called `O` because
+        /// it is needed for falling back to an `O`rdering.
+        id: UniqueTimestamp,
+        /// The index of where we expect this append to happen. This is to
+        /// ensure that we do not append the item at a completely
+        /// unrelated index. Note that if it does not end up in the
+        /// desired position, it was because two items shared the same index and
+        /// fell back to the `id`.
+        ix: usize,
+        /// The value we wish to append ot the [`OrdSequence`].
+        val: A,
+    },
     /// Modify the item at the index (`ix`) of the `OrdSequence` using the
     /// supplied operation (`op`).
-    Modify { id: O, ix: usize, op: Mod },
+    Modify {
+        /// The identifier for this modify operation. It is called `O` because
+        /// it is needed for falling back to an `O`rdering.
+        id: UniqueTimestamp,
+        /// The value we wish to modify ot the [`OrdSequence`].
+        op: Mod,
+    },
 }
 
-impl<Mod, O, A> Op<Mod, O, A> {
-    pub fn ix(&self) -> usize {
-        match self {
-            Op::Append { ix, .. } => *ix,
-            Op::Modify { ix, .. } => *ix,
-        }
-    }
-
-    pub fn id(&self) -> &O {
+impl<Mod, A> Op<Mod, A> {
+    /// Look at the identifier for this operation.
+    pub fn id(&self) -> &UniqueTimestamp {
         match self {
             Op::Append { id, .. } => &id,
             Op::Modify { id, .. } => &id,
@@ -87,29 +112,36 @@ impl<Mod, O, A> Op<Mod, O, A> {
 /// An `OrdSequence` is an [`Appendable`] data structure, which ensure that
 /// appending and modification is commutative.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct OrdSequence<M, O, T> {
-    pub(crate) val: Vec<(O, T)>,
+pub struct OrdSequence<M, T> {
+    pub(crate) val: Vec<(UniqueTimestamp, T)>,
 
     // Carrying type information for
-    // the operations.
+    // the modification operations.
     _marker: PhantomData<M>,
 }
 
-impl<M, O, T> Deref for OrdSequence<M, O, T> {
-    type Target = Vec<(O, T)>;
+impl<M, T> Deref for OrdSequence<M, T> {
+    type Target = Vec<(UniqueTimestamp, T)>;
 
     fn deref(&self) -> &Self::Target {
         &self.val
     }
 }
 
-impl<M, O, T> DerefMut for OrdSequence<M, O, T> {
+impl<M, T> DerefMut for OrdSequence<M, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.val
     }
 }
 
-impl<M, O, T> OrdSequence<M, O, T> {
+impl<M, T> From<OrdSequence<M, T>> for Vec<(UniqueTimestamp, T)> {
+    fn from(sequence: OrdSequence<M, T>) -> Self {
+        sequence.val
+    }
+}
+
+impl<M, T> OrdSequence<M, T> {
+    /// Create a new empty `OrdSequence`.
     pub fn new() -> Self {
         OrdSequence {
             val: vec![],
@@ -117,6 +149,11 @@ impl<M, O, T> OrdSequence<M, O, T> {
         }
     }
 
+    /// Get the underlying vector of items.
+    ///
+    /// Note that this removes the identifiers from the items and avoids cloning
+    /// them. If we wish to also get the identifiers, we can use `From`
+    /// instance.
     pub fn to_vec(&self) -> Vec<T>
     where
         T: Clone,
@@ -124,22 +161,69 @@ impl<M, O, T> OrdSequence<M, O, T> {
         self.val.iter().map(|(_, t)| t).cloned().collect()
     }
 
-    fn find_item(&self, ord: &O) -> Result<usize, usize>
+    // Searching through a vector looking for the exact identifier.
+    // Not my proudest moment... Very imperative.
+    fn search_for_identifier<Update, Bound>(
+        &self,
+        time: &UniqueTimestamp,
+        mut ix: usize,
+        bound: Bound,
+        update: Update,
+    ) -> Option<usize>
     where
-        O: Ord + Clone,
+        Update: Fn(usize) -> usize,
+        Bound: Fn(usize) -> bool,
     {
-        self.val
-            .binary_search_by_key(ord, |(other, _)| other.clone())
+        while bound(ix) {
+            let val = &self.val[ix].0;
+
+            if val == time {
+                return Some(ix);
+            }
+
+            if val.at() != time.at() {
+                break;
+            }
+            ix = update(ix);
+        }
+
+        None
+    }
+
+    fn search_and_identify(&self, time: &UniqueTimestamp) -> Option<usize> {
+        match self
+            .val
+            .binary_search_by(|(other, _)| time.cmp_times(other))
+        {
+            Ok(ix) => {
+                // Are the identifiers the exact same?
+                if self.val[ix].0 == *time {
+                    Some(ix)
+                } else {
+                    // Otherwise we need to check left and right of the value.
+                    // While the timestamps are the same.
+                    self.search_for_identifier(&time, ix - 1, |i| i >= 0, |i| i - 1)
+                        .or_else(|| {
+                            self.search_for_identifier(
+                                &time,
+                                ix + 1,
+                                |i| i < self.val.len(),
+                                |i| i + 1,
+                            )
+                        })
+                }
+            },
+            Err(_) => None,
+        }
     }
 
     /// Append a new `item` to the `OrdSequence`. We get back the [`Op`] to pass
     /// onto other `OrdSequence`s.
-    pub fn append(&mut self, item: T) -> Op<M, O, T>
+    pub fn append(&mut self, item: T) -> Op<M, T>
     where
         T: Clone,
-        O: Gen + Clone,
     {
-        let id = O::gen();
+        let id = UniqueTimestamp::gen();
         self.val.push((id.clone(), item.clone()));
         Op::Append {
             id,
@@ -151,11 +235,13 @@ impl<M, O, T> OrdSequence<M, O, T> {
     /// Modify the item at `ix` in the `OrdSequence`. We get back the [`Op`] to
     /// pass onto other `OrdSequence`s, but only if the index existed since we
     /// cannot modify non-existent items.
-    pub fn modify(&mut self, ix: usize, modify: M) -> Result<Op<M, O, T>, Error<T::Error>>
+    ///
+    /// The modification operation will identify this item by its identifier
+    /// rather than its index.
+    pub fn modify(&mut self, ix: usize, modify: M) -> Result<Op<M, T>, Error<T::Error>>
     where
         T: Apply<Op = M> + Clone,
         M: Clone,
-        O: Clone,
     {
         match self.val.get_mut(ix) {
             None => Err(Error::IndexOutOfBounds(ix)),
@@ -163,7 +249,6 @@ impl<M, O, T> OrdSequence<M, O, T> {
                 val.apply(modify.clone())?;
                 Ok(Op::Modify {
                     id: id.clone(),
-                    ix,
                     op: modify,
                 })
             },
@@ -171,8 +256,8 @@ impl<M, O, T> OrdSequence<M, O, T> {
     }
 }
 
-impl<M, O: Ord + Clone, T: Apply<Op = M>> Apply for OrdSequence<M, O, T> {
-    type Op = Op<M, O, T>;
+impl<M, T: Apply<Op = M>> Apply for OrdSequence<M, T> {
+    type Op = Op<M, T>;
     type Error = Error<T::Error>;
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
@@ -197,24 +282,57 @@ impl<M, O: Ord + Clone, T: Apply<Op = M>> Apply for OrdSequence<M, O, T> {
                     Ok(())
                 },
             },
-            Op::Modify { id, ix, op } => match self.find_item(&id) {
-                Ok(ix) => {
-                    // ix exists because of find_item. qed.
+            // We don't actually look for the index since concurrent items
+            // may get placed at a different index.
+            Op::Modify { id, op } => match self.search_and_identify(&id) {
+                Some(ix) => {
+                    // ix exists because of search_and_identify. qed.
                     let (_, item) = &mut self.val[ix];
                     item.apply(op)?;
                     Ok(())
                 },
-                Err(_) => Err(Error::IndexOutOfBounds(ix)),
+                None => Err(Error::MissingModificationId(id)),
             },
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub mod strategy {
     use super::*;
     use crate::ops::id::UniqueTimestamp;
+    use proptest::{collection, prelude::*};
+    use std::{fmt, marker::PhantomData};
+
+    pub fn sequence_strategy<M, T>(
+        val_strategy: impl Strategy<Value = T>,
+    ) -> impl Strategy<Value = OrdSequence<M, T>>
+    where
+        T: fmt::Debug,
+        M: fmt::Debug,
+    {
+        collection::vec(
+            val_strategy.prop_map(|v| (UniqueTimestamp::gen(), v)),
+            1..50,
+        )
+        .prop_map(|val| OrdSequence {
+            val,
+            _marker: PhantomData,
+        })
+    }
+
+    pub fn ascii() -> impl Strategy<Value = String> {
+        "[ -.|0-~]+"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{strategy::*, *};
+    use crate::ops::replace::{strategy::replace_strategy, Replace};
+    use itertools::{EitherOrBoth, Itertools};
     use pretty_assertions::assert_eq;
+    use proptest::{collection::vec, prelude::*};
     use std::{cmp::Ordering, convert::Infallible, error};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -259,9 +377,121 @@ mod tests {
 
     type TestResult = Result<(), Box<dyn error::Error + 'static>>;
 
+    fn oracle_tester<T>(
+        mut sequence: OrdSequence<Replace<usize, T>, Replace<usize, T>>,
+        appends: Vec<T>,
+        modifications: Vec<Replace<usize, T>>,
+    ) where
+        T: Clone + Eq + fmt::Debug,
+    {
+        let mut oracle = sequence.clone();
+        let mut ops = vec![];
+
+        for item in appends.into_iter().zip_longest(modifications.into_iter()) {
+            match item {
+                EitherOrBoth::Both(val, op) => {
+                    let append = oracle.append(Replace::new(val));
+                    let modify = oracle
+                        .modify(oracle.len() - 1, op)
+                        .expect("failed to modify oracle");
+
+                    assert_eq!(
+                        modify.id(),
+                        append.id(),
+                        "the modification id differed from the append id"
+                    );
+
+                    ops.push(append);
+                    ops.push(modify);
+                },
+                EitherOrBoth::Left(val) => {
+                    let append = oracle.append(Replace::new(val));
+                    ops.push(append)
+                },
+                EitherOrBoth::Right(_) => { /* skip */ },
+            }
+        }
+
+        for op in ops {
+            sequence.apply(op).expect("failed to apply to sequence");
+        }
+
+        assert_eq!(sequence, oracle);
+    }
+
+    #[test]
+    fn oracle_test_debug() {
+        let sequence: OrdSequence<Replace<usize, String>, _> = OrdSequence::new();
+        let appends = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let modifications = vec![
+            Replace::new("d".to_string()),
+            Replace::new("e".to_string()),
+            Replace::new("f".to_string()),
+        ];
+        oracle_tester(sequence, appends, modifications)
+    }
+
+    proptest! {
+        #[test]
+        fn oracle_test((sequence, appends, modifications)
+                       in (sequence_strategy(replace_strategy()), vec(ascii(), 1..20), vec(replace_strategy(), 1..20))) {
+            oracle_tester(sequence, appends, modifications)
+        }
+
+        // TODO: I think modifications commute as long as they:
+        // 1. Exist in the sequence.
+        // 2. The modification operation commutes as well.
+        // This is probably the same for idempotency and associativity.
+        #[test]
+        fn idempotent_modifications(x in replace_strategy()) {
+            let mut left = OrdSequence::new();
+            left.append(Replace::new("init".to_string()));
+            let mut right = left.clone();
+
+            left.modify(0, x.clone()).expect("failed to modify left");
+
+            right.modify(0, x.clone()).expect("failed to modify right");
+            right.modify(0, x).expect("failed to modify right");
+
+            assert_eq!(left, right);
+        }
+
+        #[test]
+        fn commutative_modifications((x, y) in (replace_strategy(), replace_strategy())) {
+            let mut left = OrdSequence::new();
+            left.append(Replace::new("init".to_string()));
+            let mut right = left.clone();
+
+            left.modify(0, x.clone()).expect("failed to modify left");
+            left.modify(0, y.clone()).expect("failed to modify left");
+
+            right.modify(0, y).expect("failed to modify right");
+            right.modify(0, x).expect("failed to modify right");
+
+            assert_eq!(left, right);
+        }
+
+        #[test]
+        fn associative_modifications((x, y, z) in (replace_strategy(), replace_strategy(), replace_strategy())) {
+            let mut left = OrdSequence::new();
+            left.append(Replace::new("init".to_string()));
+            let mut right = left.clone();
+
+            left.modify(0, x.clone()).expect("failed to modify left");
+            left.modify(0, y.clone()).expect("failed to modify left");
+            left.modify(0, z.clone()).expect("failed to modify left");
+
+            right.modify(0, y).expect("failed to modify right");
+            right.modify(0, z).expect("failed to modify right");
+            right.modify(0, x).expect("failed to modify right");
+
+            assert_eq!(left, right);
+        }
+    }
+
     #[test]
     fn sync_appends() -> TestResult {
-        let mut left: OrdSequence<Add, UniqueTimestamp, Int> = OrdSequence::new();
+        let mut left: OrdSequence<Add, Int> = OrdSequence::new();
         let append1 = left.append(Int::new(1));
         let append2 = left.append(Int::new(2));
 
@@ -276,7 +506,7 @@ mod tests {
 
     #[test]
     fn out_of_order_appends_fail() -> TestResult {
-        let mut left: OrdSequence<Add, UniqueTimestamp, Int> = OrdSequence::new();
+        let mut left: OrdSequence<Add, Int> = OrdSequence::new();
         let append1 = left.append(Int::new(1));
         let append2 = left.append(Int::new(2));
 
@@ -293,7 +523,7 @@ mod tests {
     fn sync_appends_and_edits() -> TestResult {
         let expected = vec![Int::new(1), Int { id: 2, val: 44 }];
 
-        let mut left: OrdSequence<Add, UniqueTimestamp, Int> = OrdSequence::new();
+        let mut left: OrdSequence<Add, Int> = OrdSequence::new();
         let append1 = left.append(Int::new(1));
         let append2 = left.append(Int::new(2));
         let edit = left.modify(1, Add(42))?;
@@ -311,7 +541,7 @@ mod tests {
 
     #[test]
     fn concurrent_appends_lt() -> TestResult {
-        let mut left: OrdSequence<Add, UniqueTimestamp, Int> = OrdSequence::new();
+        let mut left: OrdSequence<Add, Int> = OrdSequence::new();
         let append1 = left.append(Int::new(1));
 
         let mut right = OrdSequence::new();
@@ -326,7 +556,7 @@ mod tests {
 
     #[test]
     fn concurrent_appends_gt() -> TestResult {
-        let mut left: OrdSequence<Add, UniqueTimestamp, Int> = OrdSequence::new();
+        let mut left: OrdSequence<Add, Int> = OrdSequence::new();
         let append1 = left.append(Int::new(2));
 
         let mut right = OrdSequence::new();
@@ -341,18 +571,23 @@ mod tests {
 
     #[test]
     fn concurrent_appends_with_edits() -> TestResult {
-        let mut left: OrdSequence<Add, UniqueTimestamp, Int> = OrdSequence::new();
+        let mut left: OrdSequence<Add, Int> = OrdSequence::new();
         let append1 = left.append(Int::new(1));
-        let edit1 = left.modify(append1.ix(), Add(2))?;
+        let edit1 = left.modify(left.len() - 1, Add(2))?;
 
         let mut right = OrdSequence::new();
         let append2 = right.append(Int::new(2));
-        let edit2 = right.modify(append2.ix(), Add(3))?;
+        let edit2 = right.modify(right.len() - 1, Add(3))?;
 
+        println!("What");
         left.apply(append2)?;
+        println!("Huh");
         left.apply(edit2)?;
+        println!("Yup");
         right.apply(append1)?;
+        println!("Boo");
         right.apply(edit1)?;
+        println!("Goo");
 
         assert_eq!(left, right);
         Ok(())

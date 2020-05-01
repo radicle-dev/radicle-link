@@ -954,6 +954,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1005,7 +1014,7 @@ dependencies = [
  "diff",
  "docopt",
  "ena",
- "itertools",
+ "itertools 0.8.2",
  "lalrpop-util",
  "petgraph",
  "regex",
@@ -1835,6 +1844,7 @@ dependencies = [
 name = "radicle-tracker"
 version = "0.1.0"
 dependencies = [
+ "itertools 0.9.0",
  "nonempty 0.4.0",
  "num-bigint",
  "pretty_assertions",

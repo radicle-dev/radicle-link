@@ -37,7 +37,9 @@ impl<M> Error<M> {
             sequence::Error::IndexOutOfBounds(ix) => {
                 Error::Main(sequence::Error::IndexOutOfBounds(ix))
             },
-            sequence::Error::IndexExists(ix) => Error::Main(sequence::Error::IndexExists(ix)),
+            sequence::Error::MissingModificationId(id) => {
+                Error::Main(sequence::Error::MissingModificationId(id))
+            },
             sequence::Error::Modify(err) => Error::Main(err),
         }
     }

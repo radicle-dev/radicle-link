@@ -37,10 +37,10 @@ pub use error::Error;
 /// It represents where we replied to the main thread and now has the
 /// opportunity to become a thread of items itself.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SubThread<M, A>(OrdSequence<item::Op<M>, UniqueTimestamp, Item<A>>);
+pub struct SubThread<M, A>(OrdSequence<item::Op<M>, Item<A>>);
 
 impl<M, T> Deref for SubThread<M, T> {
-    type Target = OrdSequence<item::Op<M>, UniqueTimestamp, Item<T>>;
+    type Target = OrdSequence<item::Op<M>, Item<T>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -53,7 +53,7 @@ impl<M, T> DerefMut for SubThread<M, T> {
     }
 }
 
-type SubThreadOp<M, A> = sequence::Op<item::Op<M>, UniqueTimestamp, Item<A>>;
+type SubThreadOp<M, A> = sequence::Op<item::Op<M>, Item<A>>;
 
 impl<M, A> Apply for SubThread<M, A>
 where
@@ -70,7 +70,7 @@ where
 /// `Replies` is the structure that represents the replies to the main thread.
 /// Each one of these can is potentially a sub-thread itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Replies<M, A>(OrdSequence<SubThreadOp<M, A>, UniqueTimestamp, SubThread<M, A>>);
+pub struct Replies<M, A>(OrdSequence<SubThreadOp<M, A>, SubThread<M, A>>);
 
 impl<M, A> Default for Replies<M, A> {
     fn default() -> Self {
@@ -110,11 +110,7 @@ impl<M, A> Replies<M, A> {
     }
 }
 
-type MainOp<M, A> = sequence::Op<
-    sequence::Op<item::Op<M>, UniqueTimestamp, Item<A>>,
-    UniqueTimestamp,
-    SubThread<M, A>,
->;
+type MainOp<M, A> = sequence::Op<sequence::Op<item::Op<M>, Item<A>>, SubThread<M, A>>;
 
 /// Operations on a [`Thread`] can be performed on any of the items in thread.
 /// This structure allows us to focus in on what part of the structure we're
@@ -131,7 +127,7 @@ pub enum Op<M, A> {
     /// modify one the sub-thread's items.
     Thread {
         main: usize,
-        op: sequence::Op<item::Op<M>, UniqueTimestamp, Item<A>>,
+        op: sequence::Op<item::Op<M>, Item<A>>,
     },
 }
 
@@ -242,7 +238,6 @@ impl<M, A: Apply> Thread<M, A> {
                         ix,
                         sequence::Op::Modify {
                             id: UniqueTimestamp::gen(),
-                            ix: 0,
                             op: item::Op::Edit(op),
                         },
                     )
@@ -280,7 +275,6 @@ impl<M, A: Apply> Thread<M, A> {
                         ix,
                         sequence::Op::Modify {
                             id: UniqueTimestamp::gen(),
-                            ix: 0,
                             op: item::Op::Delete(visibility::Op {}),
                         },
                     )
