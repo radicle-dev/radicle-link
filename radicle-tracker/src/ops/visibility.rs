@@ -70,14 +70,20 @@ impl Apply for Visibility {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod strategy {
     use super::*;
-    use crate::ops::absurd;
     use proptest::prelude::*;
 
-    fn visibility_strategy() -> impl Strategy<Value = Visibility> {
+    pub fn visibility_strategy() -> impl Strategy<Value = Visibility> {
         prop_oneof![Just(Visibility::Visible), Just(Visibility::Hidden)]
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{strategy::visibility_strategy, *};
+    use crate::ops::absurd;
+    use proptest::prelude::*;
 
     proptest! {
         #[test]

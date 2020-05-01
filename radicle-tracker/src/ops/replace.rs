@@ -88,18 +88,24 @@ impl<Marker: Ord, A: Eq> Apply for Replace<Marker, A> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod strategy {
     use super::*;
-    use crate::ops::absurd;
     use proptest::prelude::*;
 
-    fn replace_strategy() -> impl Strategy<Value = Replace<usize, String>> {
+    pub fn replace_strategy() -> impl Strategy<Value = Replace<usize, String>> {
         (any::<usize>(), "[a-z]*").prop_map(|(marker, val)| Replace {
             marker,
             val: val.to_string(),
             conflicts: vec![],
         })
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{strategy::replace_strategy, *};
+    use crate::ops::absurd;
+    use proptest::prelude::*;
 
     proptest! {
         #[test]
