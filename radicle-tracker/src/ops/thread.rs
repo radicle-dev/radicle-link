@@ -28,7 +28,7 @@ use std::ops::{Deref, DerefMut};
 use nonempty::NonEmpty;
 
 mod item;
-pub use item::{Item, Modifier};
+pub use item::Item;
 
 mod error;
 pub use error::Error;
@@ -37,10 +37,10 @@ pub use error::Error;
 /// It represents where we replied to the main thread and now has the
 /// opportunity to become a thread of items itself.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SubThread<M, A>(OrdSequence<Modifier<M>, UniqueTimestamp, Item<A>>);
+pub struct SubThread<M, A>(OrdSequence<item::Op<M>, UniqueTimestamp, Item<A>>);
 
 impl<M, T> Deref for SubThread<M, T> {
-    type Target = OrdSequence<Modifier<M>, UniqueTimestamp, Item<T>>;
+    type Target = OrdSequence<item::Op<M>, UniqueTimestamp, Item<T>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -53,7 +53,7 @@ impl<M, T> DerefMut for SubThread<M, T> {
     }
 }
 
-type SubThreadOp<M, A> = sequence::Op<Modifier<M>, UniqueTimestamp, Item<A>>;
+type SubThreadOp<M, A> = sequence::Op<item::Op<M>, UniqueTimestamp, Item<A>>;
 
 impl<M, A> Apply for SubThread<M, A>
 where
@@ -111,7 +111,7 @@ impl<M, A> Replies<M, A> {
 }
 
 type MainOp<M, A> = sequence::Op<
-    sequence::Op<Modifier<M>, UniqueTimestamp, Item<A>>,
+    sequence::Op<item::Op<M>, UniqueTimestamp, Item<A>>,
     UniqueTimestamp,
     SubThread<M, A>,
 >;
@@ -123,7 +123,7 @@ type MainOp<M, A> = sequence::Op<
 pub enum Op<M, A> {
     /// `Root` allows us to modify the root item, i.e. the first element of
     /// the thread.
-    Root(Modifier<M>),
+    Root(item::Op<M>),
     /// `Main` allows us to append to the main thread or modify one of its
     /// items.
     Main(MainOp<M, A>),
@@ -131,21 +131,21 @@ pub enum Op<M, A> {
     /// modify one the sub-thread's items.
     Thread {
         main: usize,
-        op: sequence::Op<Modifier<M>, UniqueTimestamp, Item<A>>,
+        op: sequence::Op<item::Op<M>, UniqueTimestamp, Item<A>>,
     },
 }
 
 impl<M, A> Op<M, A> {
-    fn root_modifier(m: Modifier<M>) -> Self {
+    fn root_modifier(m: item::Op<M>) -> Self {
         Op::Root(m)
     }
 
     fn root_edit(e: M) -> Self {
-        Self::root_modifier(Modifier::Edit(e))
+        Self::root_modifier(item::Op::Edit(e))
     }
 
     fn root_delete() -> Self {
-        Self::root_modifier(Modifier::Delete(visibility::Op {}))
+        Self::root_modifier(item::Op::Delete(visibility::Op {}))
     }
 }
 
@@ -243,7 +243,7 @@ impl<M, A: Apply> Thread<M, A> {
                         sequence::Op::Modify {
                             id: UniqueTimestamp::gen(),
                             ix: 0,
-                            op: Modifier::Edit(op),
+                            op: item::Op::Edit(op),
                         },
                     )
                     .map(Op::Main)
@@ -251,7 +251,7 @@ impl<M, A: Apply> Thread<M, A> {
                 ReplyFinger::Thread { main, reply } => {
                     let thread = &mut self.replies.0[main].1;
                     thread
-                        .modify(reply, Modifier::Edit(op))
+                        .modify(reply, item::Op::Edit(op))
                         .map(|op| Op::Thread { main, op })
                         .map_err(Error::Thread)
                 },
@@ -281,7 +281,7 @@ impl<M, A: Apply> Thread<M, A> {
                         sequence::Op::Modify {
                             id: UniqueTimestamp::gen(),
                             ix: 0,
-                            op: Modifier::Delete(visibility::Op {}),
+                            op: item::Op::Delete(visibility::Op {}),
                         },
                     )
                     .map(Op::Main)
@@ -289,7 +289,7 @@ impl<M, A: Apply> Thread<M, A> {
                 ReplyFinger::Thread { main, reply } => {
                     let thread = &mut self.replies.0[main].1;
                     thread
-                        .modify(reply, Modifier::Delete(visibility::Op {}))
+                        .modify(reply, item::Op::Delete(visibility::Op {}))
                         .map(|op| Op::Thread { main, op })
                         .map_err(Error::Thread)
                 },

@@ -21,13 +21,19 @@ use crate::ops::{
     Apply,
 };
 
+/// A value that can be placed in a [`Thread`]. The value is placed alongside a
+/// `visibility` to mark that the `Item` can be "deleted".
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Item<A> {
+    /// The value of the `Item`.
     pub val: A,
+    /// If the [`Visibility::`Hidden`] then this `Item` is marked as deleted,
+    /// otherwise it was only created.
     pub visibility: Visibility,
 }
 
 impl<A> Item<A> {
+    /// Create a new `Item`, where the `visibility` is [`Visibility::Visible`].
     pub fn new(val: A) -> Self {
         Item {
             val,
@@ -36,20 +42,102 @@ impl<A> Item<A> {
     }
 }
 
+/// The operations that can be applied to an [`Item`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Modifier<E> {
+pub enum Op<E> {
+    /// Edit the underlying value of an [`Item`] using some operation `E` that
+    /// implements [`Apply`].
     Edit(E),
+    /// Delete the [`Item`] by turning the visibility to [`Visibility::Hidden`].
     Delete(visibility::Op),
 }
 
 impl<E, A: Apply<Op = E>> Apply for Item<A> {
-    type Op = Modifier<E>;
+    type Op = Op<E>;
     type Error = A::Error;
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
         match op {
-            Modifier::Edit(e) => self.val.apply(e),
-            Modifier::Delete(h) => self.visibility.apply(h).map_err(absurd),
+            Op::Edit(e) => self.val.apply(e),
+            Op::Delete(h) => self.visibility.apply(h).map_err(absurd),
+        }
+    }
+}
+
+#[cfg(test)]
+pub mod strategy {
+    use super::*;
+    use crate::ops::{
+        replace::{strategy::replace_strategy, Replace},
+        visibility::{self, strategy::visibility_strategy},
+    };
+    use proptest::prelude::*;
+
+    type ReplaceItem = Item<Replace<usize, String>>;
+    type ReplaceOp = Op<Replace<usize, String>>;
+
+    pub fn item_strategy() -> impl Strategy<Value = ReplaceItem> {
+        (replace_strategy(), visibility_strategy()).prop_map(|(replace, visibility)| Item {
+            val: replace,
+            visibility,
+        })
+    }
+
+    pub fn op_strategy() -> impl Strategy<Value = ReplaceOp> {
+        prop_oneof![
+            Just(Op::Delete(visibility::Op {})),
+            replace_strategy().prop_map(Op::Edit)
+        ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{strategy::*, *};
+    use crate::ops::absurd;
+    use proptest::prelude::*;
+
+    // Items are idempotent, commutative, and associative as long as the
+    // Edit operation also is.
+    proptest! {
+        #[test]
+        fn idempotent((item, x) in (item_strategy(), op_strategy())) {
+            let mut left = item.clone();
+            left.apply(x.clone()).unwrap_or_else(absurd);
+
+            let mut right = item.clone();
+            right.apply(x.clone()).unwrap_or_else(absurd);
+            right.apply(x).unwrap_or_else(absurd);
+
+            assert_eq!(left, right);
+        }
+
+        #[test]
+        fn commutative((item, x, y) in (item_strategy(), op_strategy(), op_strategy())) {
+            let mut left = item.clone();
+            left.apply(x.clone()).unwrap_or_else(absurd);
+            left.apply(y.clone()).unwrap_or_else(absurd);
+
+            let mut right = item.clone();
+            right.apply(y).unwrap_or_else(absurd);
+            right.apply(x).unwrap_or_else(absurd);
+
+            assert_eq!(left, right);
+        }
+
+        #[test]
+        fn associative((item, x, y, z) in (item_strategy(), op_strategy(), op_strategy(), op_strategy())) {
+            let mut left = item.clone();
+            left.apply(x.clone()).unwrap_or_else(absurd);
+            left.apply(y.clone()).unwrap_or_else(absurd);
+            left.apply(z.clone()).unwrap_or_else(absurd);
+
+            let mut right = item.clone();
+            right.apply(y).unwrap_or_else(absurd);
+            right.apply(z).unwrap_or_else(absurd);
+            right.apply(x).unwrap_or_else(absurd);
+
+            assert_eq!(left, right);
         }
     }
 }
