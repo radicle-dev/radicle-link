@@ -40,6 +40,19 @@ impl<A> Item<A> {
             visibility: Visibility::Visible,
         }
     }
+
+    pub fn edit<F, E>(&mut self, f: F) -> Result<Op<E>, A::Error>
+    where
+        A: Apply<Op = E>,
+        F: FnOnce(&mut A) -> Result<E, A::Error>,
+    {
+        let op = f(&mut self.val)?;
+        Ok(Op::Edit(op))
+    }
+
+    pub fn delete<E>(&mut self) -> Op<E> {
+        Op::Delete(self.visibility.hide())
+    }
 }
 
 /// The operations that can be applied to an [`Item`].
