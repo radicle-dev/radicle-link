@@ -105,6 +105,8 @@ pub mod comment;
 pub mod issue;
 /// TODO: Ops
 pub mod ops;
+/// TODO: Thread
+pub mod thread;
 
 #[cfg(test)]
 pub mod test;

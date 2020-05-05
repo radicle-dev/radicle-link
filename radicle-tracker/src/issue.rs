@@ -29,10 +29,10 @@ use crate::{
         fold_apply,
         replace::Replace,
         set::{self, Set},
-        thread::{self, Thread},
         visibility::{self, Visibility},
         Apply,
     },
+    thread::{self, Thread},
 };
 use std::hash::Hash;
 

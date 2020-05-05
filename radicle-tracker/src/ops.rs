@@ -27,8 +27,6 @@ pub mod sequence;
 /// Contains `Set`, a `HashSet` like structure that is limited to inserting and
 /// removing items.
 pub mod set;
-/// A data structure for creating threads of items.
-pub mod thread;
 /// A data structure that designates whether something should be visible or
 /// hidden from view.
 pub mod visibility;

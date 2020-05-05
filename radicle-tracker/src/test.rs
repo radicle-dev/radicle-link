@@ -19,7 +19,7 @@ use crate::{
     comment::Comment,
     issue::Issue,
     metadata::{Label, Reaction, Title},
-    ops::thread::{AppendTo, Finger, ReplyFinger},
+    thread::{AppendTo, Finger, ReplyFinger},
 };
 use pretty_assertions::assert_eq;
 
