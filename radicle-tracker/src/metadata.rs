@@ -201,6 +201,12 @@ impl std::ops::Deref for Label {
     }
 }
 
+impl From<&str> for Label {
+    fn from(s: &str) -> Self {
+        Label(s.to_string())
+    }
+}
+
 impl FromStr for Label {
     type Err = Infallible;
 
