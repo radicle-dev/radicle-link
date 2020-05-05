@@ -26,6 +26,7 @@ use crate::{
     },
     ops::{
         absurd,
+        fold_apply,
         replace::Replace,
         set::{self, Set},
         thread::{self, Thread},
@@ -43,7 +44,7 @@ pub type ReplaceableTitle = Replace<usize, Title>;
 ///
 /// It also contains [`Metadata`] for which we would like to keep track of and
 /// enhance the experience of the conversation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Issue<Id, Cid, User: Eq + Hash> {
     identifier: Id,
     author: User,
@@ -113,13 +114,17 @@ impl<Id, Cid, User: Eq + Hash> Issue<Id, Cid, User> {
         self.labels.remove(label).map(Op::Label)
     }
 
-    pub fn with_comments<F>(&mut self, f: F) -> Op<Cid, User>
+    pub fn with_comments<F>(&mut self, f: F) -> Result<Op<Cid, User>, Error<User>>
     where
         F: FnOnce(
             &mut Thread<comment::Op<User>, Comment<Cid, User>>,
-        ) -> thread::Op<comment::Op<User>, Comment<Cid, User>>,
+        ) -> Result<
+            thread::Op<comment::Op<User>, Comment<Cid, User>>,
+            thread::Error<comment::Error<User>>,
+        >,
     {
-        Op::Thread(f(&mut self.comments))
+        let op = f(&mut self.comments).map_err(Error::Thread)?;
+        Ok(Op::Thread(op))
     }
 
     pub fn replace_title(&mut self, new_title: Title) -> Op<Cid, User> {
@@ -142,8 +147,19 @@ impl<Id, Cid, User: Eq + Hash> Issue<Id, Cid, User> {
     pub fn timestamp(&self) -> &RadClock {
         &self.timestamp
     }
+
+    pub fn fold_issue(
+        &mut self,
+        ops: impl Iterator<Item = Op<Cid, User>>,
+    ) -> Result<(), Error<User>>
+    where
+        User: Hash + Eq + Ord,
+    {
+        fold_apply(self, ops)
+    }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Op<Cid, User: Eq + Hash> {
     Title(ReplaceableTitle),
     Assignee(set::Op<User>),
@@ -152,6 +168,7 @@ pub enum Op<Cid, User: Eq + Hash> {
     Close(visibility::Op),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error<User> {
     Assignee(set::Error<User>),
     Label(set::Error<Label>),
