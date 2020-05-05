@@ -238,19 +238,17 @@ impl<M, T> OrdSequence<M, T> {
     ///
     /// The modification operation will identify this item by its identifier
     /// rather than its index.
-    pub fn modify(&mut self, ix: usize, modify: M) -> Result<Op<M, T>, Error<T::Error>>
+    pub fn modify<F>(&mut self, ix: usize, f: F) -> Result<Op<M, T>, Error<T::Error>>
     where
         T: Apply<Op = M> + Clone,
         M: Clone,
+        F: FnOnce(&mut T) -> Result<M, T::Error>,
     {
         match self.val.get_mut(ix) {
             None => Err(Error::IndexOutOfBounds(ix)),
             Some((id, val)) => {
-                val.apply(modify.clone())?;
-                Ok(Op::Modify {
-                    id: id.clone(),
-                    op: modify,
-                })
+                let op = f(val)?;
+                Ok(Op::Modify { id: id.clone(), op })
             },
         }
     }
@@ -348,6 +346,11 @@ mod tests {
                 val: i,
             }
         }
+
+        fn add(&mut self, i: u32) -> Result<Add, Infallible> {
+            self.val += i;
+            Ok(Add(i))
+        }
     }
 
     impl PartialOrd for Int {
@@ -392,7 +395,10 @@ mod tests {
                 EitherOrBoth::Both(val, op) => {
                     let append = oracle.append(Replace::new(val));
                     let modify = oracle
-                        .modify(oracle.len() - 1, op)
+                        .modify(oracle.len() - 1, |val| {
+                            val.replace(op.marker + 1, op.val);
+                            Ok(val.clone())
+                        })
                         .expect("failed to modify oracle");
 
                     assert_eq!(
@@ -431,6 +437,16 @@ mod tests {
         oracle_tester(sequence, appends, modifications)
     }
 
+    fn replace_first(
+        sequence: &mut OrdSequence<Replace<usize, String>, Replace<usize, String>>,
+        op: Replace<usize, String>,
+    ) -> Result<Op<Replace<usize, String>, Replace<usize, String>>, Error<Infallible>> {
+        sequence.modify(0, |val| {
+            val.replace(op.marker, op.val);
+            Ok(val.clone())
+        })
+    }
+
     proptest! {
         #[test]
         fn oracle_test((sequence, appends, modifications)
@@ -448,10 +464,10 @@ mod tests {
             left.append(Replace::new("init".to_string()));
             let mut right = left.clone();
 
-            left.modify(0, x.clone()).expect("failed to modify left");
+            replace_first(&mut left, x.clone()).expect("failed to modify left");
 
-            right.modify(0, x.clone()).expect("failed to modify right");
-            right.modify(0, x).expect("failed to modify right");
+            replace_first(&mut right, x.clone()).expect("failed to modify right");
+            replace_first(&mut right, x).expect("failed to modify right");
 
             assert_eq!(left, right);
         }
@@ -462,11 +478,11 @@ mod tests {
             left.append(Replace::new("init".to_string()));
             let mut right = left.clone();
 
-            left.modify(0, x.clone()).expect("failed to modify left");
-            left.modify(0, y.clone()).expect("failed to modify left");
+            replace_first(&mut left, x.clone()).expect("failed to modify left");
+            replace_first(&mut left, y.clone()).expect("failed to modify left");
 
-            right.modify(0, y).expect("failed to modify right");
-            right.modify(0, x).expect("failed to modify right");
+            replace_first(&mut right, y).expect("failed to modify right");
+            replace_first(&mut right, x).expect("failed to modify right");
 
             assert_eq!(left, right);
         }
@@ -477,13 +493,13 @@ mod tests {
             left.append(Replace::new("init".to_string()));
             let mut right = left.clone();
 
-            left.modify(0, x.clone()).expect("failed to modify left");
-            left.modify(0, y.clone()).expect("failed to modify left");
-            left.modify(0, z.clone()).expect("failed to modify left");
+            replace_first(&mut left, x.clone()).expect("failed to modify left");
+            replace_first(&mut left, y.clone()).expect("failed to modify left");
+            replace_first(&mut left, z.clone()).expect("failed to modify left");
 
-            right.modify(0, y).expect("failed to modify right");
-            right.modify(0, z).expect("failed to modify right");
-            right.modify(0, x).expect("failed to modify right");
+            replace_first(&mut right, y).expect("failed to modify right");
+            replace_first(&mut right, z).expect("failed to modify right");
+            replace_first(&mut right, x).expect("failed to modify right");
 
             assert_eq!(left, right);
         }
@@ -526,7 +542,7 @@ mod tests {
         let mut left: OrdSequence<Add, Int> = OrdSequence::new();
         let append1 = left.append(Int::new(1));
         let append2 = left.append(Int::new(2));
-        let edit = left.modify(1, Add(42))?;
+        let edit = left.modify(1, |val| val.add(42))?;
 
         let mut right = OrdSequence::new();
         right.apply(append1)?;
@@ -573,11 +589,11 @@ mod tests {
     fn concurrent_appends_with_edits() -> TestResult {
         let mut left: OrdSequence<Add, Int> = OrdSequence::new();
         let append1 = left.append(Int::new(1));
-        let edit1 = left.modify(left.len() - 1, Add(2))?;
+        let edit1 = left.modify(left.len() - 1, |val| val.add(2))?;
 
         let mut right = OrdSequence::new();
         let append2 = right.append(Int::new(2));
-        let edit2 = right.modify(right.len() - 1, Add(3))?;
+        let edit2 = right.modify(right.len() - 1, |val| val.add(3))?;
 
         println!("What");
         left.apply(append2)?;

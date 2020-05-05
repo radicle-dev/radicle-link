@@ -16,10 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::ops::{
-    absurd,
-    id::{Gen, UniqueTimestamp},
     sequence::{self, OrdSequence},
-    visibility,
     Apply,
 };
 use std::ops::{Deref, DerefMut};
@@ -27,7 +24,7 @@ use std::ops::{Deref, DerefMut};
 #[cfg(test)]
 use nonempty::NonEmpty;
 
-mod item;
+pub mod item;
 pub use item::Item;
 
 mod error;
@@ -139,10 +136,6 @@ impl<M, A> Op<M, A> {
     fn root_edit(e: M) -> Self {
         Self::root_modifier(item::Op::Edit(e))
     }
-
-    fn root_delete() -> Self {
-        Self::root_modifier(item::Op::Delete(visibility::Op {}))
-    }
 }
 
 /// A structure for pointing into a [`Thread`].
@@ -220,33 +213,28 @@ impl<M, A: Apply> Thread<M, A> {
         }
     }
 
-    pub fn edit(&mut self, finger: Finger, op: M) -> Result<Op<M, A>, Error<A::Error>>
+    pub fn edit<F>(&mut self, finger: Finger, f: F) -> Result<Op<M, A>, Error<A::Error>>
     where
-        A: Apply<Op = M> + Clone + Ord,
+        A: Apply<Op = M> + Clone,
         M: Clone,
+        F: FnOnce(&mut A) -> Result<M, A::Error>,
     {
         match finger {
             Finger::Root => {
-                self.root.val.apply(op.clone())?;
+                let op = f(&mut self.root.val)?;
                 Ok(Op::root_edit(op))
             },
             Finger::Reply(reply) => match reply {
                 ReplyFinger::Main(ix) => self
                     .replies
                     .0
-                    .modify(
-                        ix,
-                        sequence::Op::Modify {
-                            id: UniqueTimestamp::gen(),
-                            op: item::Op::Edit(op),
-                        },
-                    )
+                    .modify(ix, |thread| thread.modify(0, |item| item.edit(f)))
                     .map(Op::Main)
                     .map_err(Error::flatten_main),
                 ReplyFinger::Thread { main, reply } => {
                     let thread = &mut self.replies.0[main].1;
                     thread
-                        .modify(reply, item::Op::Edit(op))
+                        .modify(reply, |item| item.edit(f))
                         .map(|op| Op::Thread { main, op })
                         .map_err(Error::Thread)
                 },
@@ -256,34 +244,25 @@ impl<M, A: Apply> Thread<M, A> {
 
     pub fn delete(&mut self, finger: Finger) -> Result<Op<M, A>, Error<A::Error>>
     where
-        A: Apply<Op = M> + Clone + Ord,
+        A: Apply<Op = M> + Clone,
         M: Clone + Ord,
     {
         match finger {
             Finger::Root => {
-                self.root
-                    .visibility
-                    .apply(visibility::Op {})
-                    .map_err(absurd::<Error<A::Error>>)?;
-                Ok(Op::root_delete())
+                let op = self.root.delete();
+                Ok(Op::Root(op))
             },
             Finger::Reply(reply) => match reply {
                 ReplyFinger::Main(ix) => self
                     .replies
                     .0
-                    .modify(
-                        ix,
-                        sequence::Op::Modify {
-                            id: UniqueTimestamp::gen(),
-                            op: item::Op::Delete(visibility::Op {}),
-                        },
-                    )
+                    .modify(ix, |thread| thread.modify(0, |item| Ok(item.delete())))
                     .map(Op::Main)
                     .map_err(Error::flatten_main),
                 ReplyFinger::Thread { main, reply } => {
                     let thread = &mut self.replies.0[main].1;
                     thread
-                        .modify(reply, item::Op::Delete(visibility::Op {}))
+                        .modify(reply, |item| Ok(item.delete()))
                         .map(|op| Op::Thread { main, op })
                         .map_err(Error::Thread)
                 },
