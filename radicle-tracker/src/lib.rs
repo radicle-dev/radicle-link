@@ -96,9 +96,6 @@
 #![deny(missing_docs, unused_import_braces, unused_qualifications, warnings)]
 #![allow(clippy::new_without_default)]
 
-mod thread;
-pub use thread::{DataState, Error as ThreadError, Finger, Replies, ReplyTo, Thread};
-
 mod metadata;
 pub use metadata::*;
 
