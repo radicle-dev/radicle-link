@@ -59,3 +59,15 @@ pub trait Apply {
 pub(crate) fn absurd<A>(_infallible: Infallible) -> A {
     panic!("Infallible cannot do anything else")
 }
+
+/// TODO: Fold the things
+pub fn fold_apply<S>(state: &mut S, ops: impl Iterator<Item = S::Op>) -> Result<(), S::Error>
+where
+    S: Apply,
+{
+    for op in ops {
+        state.apply(op)?
+    }
+
+    Ok(())
+}
