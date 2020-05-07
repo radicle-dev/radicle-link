@@ -26,72 +26,6 @@
 //! alongside them so that we can enrich the experience of our conversations,
 //! allowing us to label for organisation, react for emotions, and assign to
 //! users to help responsibility.
-//!
-//! ```
-//! # use std::error::Error;
-//! #
-//! # fn main() -> Result<(), Box<dyn Error>> {
-//! use radicle_tracker::{Comment, Issue, Metadata, ReplyTo, Reaction, Title, Thread};
-//! use std::str::FromStr;
-//!
-//! // Setting up some way of giving out "global" identifiers for
-//! // issues and comments.
-//! let mut global_issue_id = 0;
-//! let mut new_issue_id = || {
-//!     let new_id = global_issue_id.clone();
-//!     global_issue_id += 1;
-//!     new_id
-//! };
-//!
-//! let mut global_comment_id = 0;
-//! let mut new_comment_id = || {
-//!     let new_id = global_comment_id.clone();
-//!     global_comment_id += 1;
-//!     new_id
-//! };
-//!
-//! // Create a new issue for our buggy beouf
-//! let mut issue = Issue::new(
-//!     new_issue_id(),
-//!     new_comment_id(),
-//!     String::from("Monadic"),
-//!     Title::from("Buggy Boeuf"),
-//!     String::from("We have bugs in our boeuf"),
-//! );
-//!
-//! // We can grab the Thread of our issue to view and manipulate.
-//! let mut thread = issue.thread_mut().clone();
-//! let initial_comment = thread.view()?.get().clone();
-//!
-//! assert_eq!(issue.author(), &String::from("Monadic"));
-//! assert_eq!(issue.title(), &Title::from("Buggy Boeuf"));
-//! assert_eq!(initial_comment.content(), &String::from("We have bugs in our boeuf"));
-//! assert!(initial_comment.author() == issue.author());
-//! assert_eq!(issue.meta(), &Metadata::new());
-//!
-//! // Let's reply to the main thread
-//! let finto_comment = Comment::new(
-//!     new_comment_id(),
-//!     String::from("finto"),
-//!     String::from("How do we find the bugs in our beouf")
-//! );
-//! thread.reply(finto_comment, ReplyTo::Main);
-//!
-//! // And then we reply to that first comment
-//! let kim_comment = Comment::new(
-//!     new_comment_id(),
-//!     String::from("kim"),
-//!     String::from("There are a few techniques to beouf bug finding...")
-//! );
-//! thread.reply(kim_comment, ReplyTo::Thread);
-//!
-//! // And we react to this comment with surprise!
-//! let current_comment = thread.view_mut()?.get_mut();
-//! current_comment.react(Reaction::new(String::from("massi"), String::from("surprise")));
-//! #
-//! #     Ok(())
-//! # }
-//! ```
 
 #![deny(missing_docs, unused_import_braces, unused_qualifications, warnings)]
 #![allow(clippy::new_without_default)]
@@ -99,13 +33,20 @@
 mod metadata;
 pub use metadata::*;
 
-/// TODO: Comment
+/// A comment is a user's reply to an issue.
 pub mod comment;
-/// TODO: Issue
+/// An issue is a conversation of multiple comments and lot's of emojis.
 pub mod issue;
-/// TODO: Ops
+/// Operations are the backbone of building up code collaboration data. They all
+/// implement [`ops::Apply`]. What this means is that they are a data structure
+/// paired with operations to modify this structure. The expectation is that a
+/// well formed timeline of operations will successfully mutate the structure so
+/// that it can be viewed.
 pub mod ops;
-/// TODO: Thread
+/// A [`thread::Thread`] is the composition of two [`ops::sequence:Sequence`]s.
+/// It represents a thread of elements that can be of infinite depth — we can
+/// continuously append to a sequence. It only, however, has a breadth of one —
+/// appending to a single sub-thread.
 pub mod thread;
 
 #[cfg(test)]
