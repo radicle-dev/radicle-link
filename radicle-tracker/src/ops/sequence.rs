@@ -454,10 +454,6 @@ mod tests {
             oracle_tester(sequence, appends, modifications)
         }
 
-        // TODO: I think modifications commute as long as they:
-        // 1. Exist in the sequence.
-        // 2. The modification operation commutes as well.
-        // This is probably the same for idempotency and associativity.
         #[test]
         fn idempotent_modifications(x in replace_strategy()) {
             let mut left = OrdSequence::new();
