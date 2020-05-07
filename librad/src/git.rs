@@ -28,8 +28,8 @@ use crate::{
     keys,
     keys::{device, pgp},
     meta,
+    meta::{entity, project::ProjectData, Project},
     paths::Paths,
-    peer::PeerId,
 };
 
 pub mod server;
@@ -62,6 +62,9 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] io::Error),
+
+    #[error(transparent)]
+    Entity(#[from] entity::Error),
 
     #[error(transparent)]
     Serde(#[from] serde_json::error::Error),
@@ -136,11 +139,11 @@ impl GitProject {
         paths: &Paths,
         key: &device::Key,
         sources: &git2::Repository,
-        metadata: meta::Project,
-        founder: meta::Contributor,
+        metadata: &meta::Project,
+        founder: &meta::User,
     ) -> Result<ProjectId, Error> {
         // TODO: resolve URL ref iff rad://
-        let (nickname, fullname) = match founder.profile {
+        let (nickname, fullname) = match founder.profile() {
             Some(meta::ProfileRef::UserProfile(meta::UserProfile {
                 ref nick, ref name, ..
             })) => (nick.to_owned(), name.to_owned()),
@@ -149,16 +152,14 @@ impl GitProject {
         let mut pgp_key = key.clone().into_pgp(&nickname, fullname)?;
 
         // Link all metadata to the tip of the default branch
-        let default_branch = metadata.default_branch.clone();
+        let default_branch = metadata.default_branch().to_owned();
         let parent = sources
             .find_branch(&default_branch, git2::BranchType::Local)
-            .map_err(|e| Error::MissingDefaultBranch(default_branch.clone(), e))?
+            .map_err(|e| Error::MissingDefaultBranch(metadata.default_branch().to_owned(), e))?
             .into_reference()
             .peel_to_commit()?;
 
-        // Ensure the signing key is a maintainer
-        let mut metadata = metadata;
-        metadata.add_maintainer(&PeerId::from(key.clone()));
+        // FIXME[ENTITY]: Verify entity signatures
 
         // Create the metadata in the sources repo
         let pid = commit_project_meta(
@@ -180,7 +181,7 @@ impl GitProject {
             &parent,
             &mut pgp_key,
             "Radicle: initial contributor metadata",
-            founder,
+            &founder,
         )?;
         let mut contrib_branch = sources.branch(
             CONTRIBUTOR_METADATA_BRANCH,
@@ -209,14 +210,14 @@ impl GitProject {
                 .to_object(&self.0)?
                 .peel_to_blob()
         }?;
-        let meta = serde_json::from_slice(blob.content())?;
+        let meta = Project::from_json_slice(blob.content())?;
         Ok(meta)
     }
 
     pub fn builder(
         project_name: &str,
         founder_key: &device::Key,
-        founder_meta: meta::Contributor,
+        founder_meta: meta::User,
     ) -> project::Builder {
         project::Builder::new(project_name, founder_key, founder_meta)
     }
@@ -237,7 +238,7 @@ pub mod project {
 
     pub struct Builder {
         key: device::Key,
-        founder: meta::Contributor,
+        founder: meta::User,
         name: String,
         description: Option<String>,
         default_branch: String,
@@ -245,7 +246,7 @@ pub mod project {
     }
 
     impl Builder {
-        pub fn new(name: &str, key: &device::Key, founder: meta::Contributor) -> Self {
+        pub fn new(name: &str, key: &device::Key, founder: meta::User) -> Self {
             Self {
                 key: key.clone(),
                 founder,
@@ -286,12 +287,15 @@ pub mod project {
             paths: &Paths,
             sources: &git2::Repository,
         ) -> Result<ProjectId, Error> {
-            let mut meta = meta::Project::new(&self.name, &PeerId::from(self.key.clone()));
-            meta.default_branch = self.default_branch;
-            meta.description = self.description;
-            meta.rel = self.rel;
+            // FIXME[ENTITY]: add certifier instead of peer
+            let meta = ProjectData::default()
+                .set_name(self.name.to_owned())
+                .set_default_branch(self.default_branch.to_owned())
+                .set_optional_description(self.description.to_owned())
+                .add_rels(&self.rel)
+                .build()?;
 
-            GitProject::init(paths, &self.key, sources, meta, self.founder.clone())
+            GitProject::init(paths, &self.key, sources, &meta, &self.founder)
         }
     }
 }
@@ -301,7 +305,7 @@ fn commit_project_meta(
     parent: &git2::Commit,
     pgp_key: &mut pgp::Key,
     msg: &str,
-    meta: meta::Project,
+    meta: &meta::Project,
 ) -> Result<git2::Oid, Error> {
     commit_meta(repo, parent, pgp_key, msg, meta, PROJECT_METADATA_FILE)
 }
@@ -311,7 +315,7 @@ fn commit_contributor_meta(
     parent: &git2::Commit,
     pgp_key: &mut pgp::Key,
     msg: &str,
-    meta: meta::Contributor,
+    meta: &meta::User,
 ) -> Result<git2::Oid, Error> {
     commit_meta(repo, parent, pgp_key, msg, meta, CONTRIBUTOR_METADATA_FILE)
 }

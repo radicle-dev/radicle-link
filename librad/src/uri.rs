@@ -23,6 +23,7 @@ use std::{
 
 use percent_encoding::{percent_decode_str, percent_encode, AsciiSet};
 use regex::RegexSet;
+use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 use url::Url;
 
@@ -49,7 +50,7 @@ const PATH_PERCENT_ENCODE_SET: &AsciiSet = &FRAGMENT_PERCENT_ENCODE_SET
 /// Protocol specifier in the context of a [`RadUrn`] or [`RadUrl`]
 ///
 /// This pertains to the VCS backend, implying the native wire protocol.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Protocol {
     Git,
     //Pijul,
@@ -114,7 +115,8 @@ pub mod path {
 ///
 /// A [`Path`] is also a valid git branch name (as specified in
 /// `git-check-ref-format(1)`).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Path(String);
 
 impl Path {
@@ -224,7 +226,7 @@ impl Deref for Path {
 ///     urn.to_string()
 /// )
 /// ```
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RadUrn {
     id: Hash,
     proto: Protocol,
@@ -339,6 +341,41 @@ impl FromStr for RadUrn {
     }
 }
 
+impl Serialize for RadUrn {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for RadUrn {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct UrnVisitor;
+
+        impl<'de> Visitor<'de> for UrnVisitor {
+            type Value = RadUrn;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "a RadUrn")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                RadUrn::from_str(s).map_err(serde::de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_str(UrnVisitor)
+    }
+}
+
 /// A `RadUrl` is a URL with the scheme `rad://`.
 ///
 /// The authority of a rad URL is a [`PeerId`], from which to retrieve the
@@ -444,6 +481,41 @@ impl FromStr for RadUrl {
             authority,
             urn: RadUrn { id, proto, path },
         })
+    }
+}
+
+impl Serialize for RadUrl {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for RadUrl {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct UrlVisitor;
+
+        impl<'de> Visitor<'de> for UrlVisitor {
+            type Value = RadUrl;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "a RadUrl")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                RadUrl::from_str(s).map_err(serde::de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_str(UrlVisitor)
     }
 }
 

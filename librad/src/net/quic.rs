@@ -27,7 +27,6 @@ use quinn::{self, NewConnection, VarInt};
 use thiserror::Error;
 
 use crate::{
-    git::transport::GitStream,
     keys::device,
     net::{
         connection::{self, CloseReason, LocalInfo, RemoteInfo},
@@ -86,6 +85,8 @@ impl Endpoint {
 }
 
 impl LocalInfo for Endpoint {
+    type Addr = SocketAddr;
+
     fn local_peer_id(&self) -> &PeerId {
         &self.peer_id
     }
@@ -103,6 +104,8 @@ pub struct BoundEndpoint<'a> {
 }
 
 impl<'a> LocalInfo for BoundEndpoint<'a> {
+    type Addr = SocketAddr;
+
     fn local_peer_id(&self) -> &PeerId {
         self.endpoint.local_peer_id()
     }
@@ -195,6 +198,8 @@ impl Connection {
 }
 
 impl RemoteInfo for Connection {
+    type Addr = SocketAddr;
+
     fn remote_peer_id(&self) -> &PeerId {
         &self.peer
     }
@@ -220,6 +225,8 @@ impl Stream {
 }
 
 impl RemoteInfo for Stream {
+    type Addr = SocketAddr;
+
     fn remote_peer_id(&self) -> &PeerId {
         &self.conn.remote_peer_id()
     }
@@ -228,8 +235,6 @@ impl RemoteInfo for Stream {
         self.conn.remote_addr()
     }
 }
-
-impl GitStream for Stream {}
 
 impl connection::Stream for Stream {
     type Read = RecvStream;
@@ -270,6 +275,8 @@ pub struct RecvStream {
 }
 
 impl RemoteInfo for RecvStream {
+    type Addr = SocketAddr;
+
     fn remote_peer_id(&self) -> &PeerId {
         &self.conn.remote_peer_id()
     }
@@ -295,6 +302,8 @@ pub struct SendStream {
 }
 
 impl RemoteInfo for SendStream {
+    type Addr = SocketAddr;
+
     fn remote_peer_id(&self) -> &PeerId {
         &self.conn.remote_peer_id()
     }

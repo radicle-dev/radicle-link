@@ -18,20 +18,27 @@
 pub mod data;
 
 use crate::{
-    id::{uri::RadicleUri, user::User},
+    hash::{Hash, ParseError as HashParseError},
     keys::device::{Key, PublicKey, Signature},
+    meta::user::User,
+    uri::{Path, Protocol, RadUrn},
 };
 use async_trait::async_trait;
-use multihash::{Multihash, Sha2_256};
-use serde::{de::DeserializeOwned, Serialize};
+use data::{EntityBuilder, EntityData};
+use serde::{
+    de::{DeserializeOwned, Error as SerdeDeserializationError},
+    Deserialize,
+    Serialize,
+};
 use std::{
     collections::{HashMap, HashSet},
+    convert::{Into, TryFrom},
     iter::FromIterator,
     str::FromStr,
 };
 use thiserror::Error;
 
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum Error {
     #[error("Serialization failed ({0})")]
     SerializationFailed(String),
@@ -44,6 +51,12 @@ pub enum Error {
 
     #[error("Invalid hash ({0})")]
     InvalidHash(String),
+
+    #[error("Wrong hash (claimed {claimed:?}, actual {actual:?})")]
+    WrongHash { claimed: String, actual: String },
+
+    #[error("Hash parse error ({0})")]
+    HashParseError(#[from] HashParseError),
 
     #[error("Invalid root hash")]
     InvalidRootHash,
@@ -60,14 +73,17 @@ pub enum Error {
     #[error("Invalid data ({0})")]
     InvalidData(String),
 
+    #[error("Builder error ({0})")]
+    BuilderError(&'static str),
+
     #[error("Key not present ({0})")]
     KeyNotPresent(PublicKey),
 
     #[error("User key not present (uri {0}, key {1})")]
-    UserKeyNotPresent(RadicleUri, PublicKey),
+    UserKeyNotPresent(RadUrn, PublicKey),
 
     #[error("Signature missing")]
-    SignatureMissingXXX,
+    SignatureMissing,
 
     #[error("Signature decoding failed")]
     SignatureDecodingFailed,
@@ -76,13 +92,13 @@ pub enum Error {
     SignatureVerificationFailed,
 
     #[error("Resolution failed ({0})")]
-    ResolutionFailed(RadicleUri),
+    ResolutionFailed(RadUrn),
 
     #[error("Resolution at revision failed ({0}, revision {1})")]
-    RevisionResolutionFailed(RadicleUri, u64),
+    RevisionResolutionFailed(RadUrn, u64),
 }
 
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum UpdateVerificationError {
     #[error("Non monotonic revision")]
     NonMonotonicRevision,
@@ -100,7 +116,7 @@ pub enum UpdateVerificationError {
     NoCurrentQuorum,
 }
 
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum HistoryVerificationError {
     #[error("Empty history")]
     EmptyHistory,
@@ -115,7 +131,7 @@ pub enum HistoryVerificationError {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VerificationStatus {
     Verified,
     Signed,
@@ -171,16 +187,16 @@ impl VerificationStatus {
 }
 
 /// A type expressing *who* is signing an `Entity`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Signatory {
     /// A specific user (identified by their URN)
-    User(RadicleUri),
+    User(RadUrn),
     /// The entity itself (with an owned key)
     OwnedKey,
 }
 
-/// A signature for an `Entity`
-#[derive(Clone, Debug)]
+/// A signature for an `Entity``
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EntitySignature {
     /// Who is producing this signature
     pub by: Signatory,
@@ -193,8 +209,8 @@ pub struct EntitySignature {
 #[async_trait]
 pub trait Resolver<T> {
     /// Resolve the given URN and deserialize the target `Entity`
-    async fn resolve(&self, uri: &RadicleUri) -> Result<T, Error>;
-    async fn resolve_revision(&self, uri: &RadicleUri, revision: u64) -> Result<T, Error>;
+    async fn resolve(&self, uri: &RadUrn) -> Result<T, Error>;
+    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<T, Error>;
 }
 
 /// The base entity definition.
@@ -216,7 +232,7 @@ pub trait Resolver<T> {
 /// - Each subsequent revision must be signed by a quorum of the previous keys
 ///   and certifiers, to prove that the entity evolution is actually under the
 ///   control of its current "owners" (the idea is taken from [TUF](https://theupdateframework.io/)).
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entity<T> {
     /// Entity verification status
     status: VerificationStatus,
@@ -224,22 +240,72 @@ pub struct Entity<T> {
     name: String,
     /// Entity revision, to be incremented at each entity update
     revision: u64,
+    /// Radicle software version used to serialize the entity
+    rad_version: u8,
     /// Entity hash, computed on everything except the signatures and
     /// the hash itself
-    hash: Multihash,
+    hash: Hash,
     /// Hash of the root of the revision Merkle tree (the entity ID)
-    root_hash: Multihash,
+    root_hash: Hash,
     /// Hash of the previous revision, `None` for the initial revision
     /// (in this case the entity hash is actually the entity ID)
-    parent_hash: Option<Multihash>,
+    parent_hash: Option<Hash>,
     /// Set of signatures
     signatures: HashMap<PublicKey, EntitySignature>,
     /// Set of owned keys
     keys: HashSet<PublicKey>,
     /// Set of certifiers (entities identified by their URN)
-    certifiers: HashSet<RadicleUri>,
+    certifiers: HashSet<RadUrn>,
     /// Specific `Entity` data
     info: T,
+}
+
+impl<T> TryFrom<EntityData<T>> for Entity<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+    EntityData<T>: EntityBuilder,
+{
+    type Error = Error;
+    fn try_from(data: EntityData<T>) -> Result<Entity<T>, Error> {
+        Self::from_data(data)
+    }
+}
+
+impl<T> Into<EntityData<T>> for Entity<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+{
+    fn into(self) -> EntityData<T> {
+        self.to_data()
+    }
+}
+
+impl<T> Serialize for Entity<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_data().serialize(serializer)
+    }
+}
+
+impl<'de, T> Deserialize<'de> for Entity<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+    EntityData<T>: EntityBuilder,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+        D::Error: SerdeDeserializationError,
+    {
+        let data = EntityData::<T>::deserialize(deserializer)?;
+        let res = Entity::<T>::try_from(data);
+        res.map_err(D::Error::custom)
+    }
 }
 
 impl<T> Entity<T>
@@ -261,118 +327,14 @@ where
         self.revision
     }
 
-    /// Build an `Entity` from its data (the second step of deserialization)
-    /// It guarantees that the `hash` is correct
-    pub fn from_data(data: data::EntityData<T>) -> Result<Self, Error> {
-        if data.name.is_none() {
-            return Err(Error::InvalidData("Missing name".to_owned()));
-        }
-        if data.revision.is_none() {
-            return Err(Error::InvalidData("Missing revision".to_owned()));
-        }
-        if data.keys.is_empty() {
-            return Err(Error::InvalidData("Missing keys".to_owned()));
-        }
+    /// `rad_version` getter
+    pub fn rad_version(&self) -> u8 {
+        self.rad_version
+    }
 
-        if data.revision.unwrap() < 1 {
-            return Err(Error::InvalidData("Invalid revision".to_owned()));
-        }
-
-        let mut keys = HashSet::new();
-        for k in data.keys.iter() {
-            keys.insert(
-                PublicKey::from_bs58(k).ok_or_else(|| Error::InvalidData(format!("key: {}", k)))?,
-            );
-        }
-
-        let mut certifiers = HashSet::new();
-        for c in data.certifiers.iter() {
-            certifiers.insert(
-                RadicleUri::from_str(c)
-                    .map_err(|_| Error::InvalidData(format!("certifier: {}", c)))?,
-            );
-        }
-
-        let mut signatures = HashMap::new();
-        if let Some(s) = &data.signatures {
-            for (k, sig) in s.iter() {
-                let key = PublicKey::from_bs58(k)
-                    .ok_or_else(|| Error::InvalidData(format!("signature key: {}", k)))?;
-                let signature = EntitySignature {
-                    by: match &sig.user {
-                        Some(uri) => Signatory::User(RadicleUri::from_str(&uri)?),
-                        None => Signatory::OwnedKey,
-                    },
-                    sig: Signature::from_bs58(&sig.sig).ok_or_else(|| {
-                        Error::InvalidData(format!("signature data: {}", &sig.sig))
-                    })?,
-                };
-                signatures.insert(key, signature);
-            }
-        }
-
-        let actual_hash = data.compute_hash()?;
-        if let Some(s) = &data.hash {
-            let claimed_hash = {
-                let bytes = bs58::decode(s.as_bytes())
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_vec()
-                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
-                Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?
-            };
-            if claimed_hash != actual_hash {
-                return Err(Error::InvalidHash(s.to_owned()));
-            }
-        }
-
-        let parent_hash = match data.parent_hash {
-            Some(s) => {
-                let bytes = bs58::decode(s.as_bytes())
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_vec()
-                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
-                let hash =
-                    Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?;
-                Some(hash)
-            },
-            None => None,
-        };
-
-        let root_hash = match data.root_hash {
-            Some(s) => {
-                let bytes = bs58::decode(s.as_bytes())
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_vec()
-                    .map_err(|_| Error::InvalidBufferEncoding(s.to_owned()))?;
-                let hash =
-                    Multihash::from_bytes(bytes).map_err(|_| Error::InvalidHash(s.to_owned()))?;
-                Some(hash)
-            },
-            None => None,
-        };
-        let root_hash = match root_hash {
-            Some(h) => h,
-            None => {
-                if parent_hash.is_none() && data.revision.unwrap() == 1 {
-                    actual_hash.clone()
-                } else {
-                    return Err(Error::MissingRootHash);
-                }
-            },
-        };
-
-        Ok(Self {
-            status: VerificationStatus::Unknown,
-            name: data.name.unwrap(),
-            revision: data.revision.unwrap().to_owned(),
-            hash: actual_hash,
-            root_hash,
-            parent_hash,
-            keys,
-            certifiers,
-            signatures,
-            info: data.info,
-        })
+    /// `info` getter
+    pub fn info(&self) -> &T {
+        &self.info
     }
 
     /// Turn the entity in to its raw data
@@ -398,21 +360,10 @@ where
         data::EntityData {
             name: Some(self.name.to_owned()),
             revision: Some(self.revision),
-            hash: Some(
-                bs58::encode(&self.hash)
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_string(),
-            ),
-            root_hash: Some(
-                bs58::encode(&self.root_hash)
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_string(),
-            ),
-            parent_hash: self.parent_hash.to_owned().map(|h| {
-                bs58::encode(h)
-                    .with_alphabet(bs58::alphabet::BITCOIN)
-                    .into_string()
-            }),
+            rad_version: self.rad_version,
+            hash: Some(self.hash.to_string()),
+            root_hash: Some(self.root_hash.to_string()),
+            parent_hash: self.parent_hash.to_owned().map(|h| h.to_string()),
             signatures: Some(signatures),
             keys,
             certifiers,
@@ -427,22 +378,22 @@ where
     }
 
     /// `hash` getter
-    pub fn hash(&self) -> &Multihash {
+    pub fn hash(&self) -> &Hash {
         &self.hash
     }
 
     /// `root_hash` getter
-    pub fn root_hash(&self) -> &Multihash {
+    pub fn root_hash(&self) -> &Hash {
         &self.root_hash
     }
 
     /// `uri` getter
-    pub fn uri(&self) -> RadicleUri {
-        RadicleUri::new(self.hash.to_owned())
+    pub fn uri(&self) -> RadUrn {
+        RadUrn::new(self.hash.to_owned(), Protocol::Git, Path::new())
     }
 
     /// `parent_hash` getter
-    pub fn parent_hash(&self) -> &Option<Multihash> {
+    pub fn parent_hash(&self) -> &Option<Hash> {
         &self.parent_hash
     }
 
@@ -465,7 +416,7 @@ where
     }
 
     /// `certifiers` getter
-    pub fn certifiers(&self) -> &HashSet<RadicleUri> {
+    pub fn certifiers(&self) -> &HashSet<RadUrn> {
         &self.certifiers
     }
     /// Certifiers count
@@ -473,7 +424,7 @@ where
         self.certifiers.len()
     }
     /// Check certifier presence
-    fn has_certifier(&self, c: &RadicleUri) -> bool {
+    fn has_certifier(&self, c: &RadUrn) -> bool {
         self.certifiers.contains(c)
     }
 
@@ -481,40 +432,6 @@ where
     /// (for hashing or signing)
     pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
         self.to_data().canonical_data()
-    }
-
-    /// Helper serialization to JSON writer
-    pub fn to_json_writer<W>(&self, writer: W) -> Result<(), Error>
-    where
-        W: std::io::Write,
-    {
-        self.to_data().to_json_writer(writer)?;
-        Ok(())
-    }
-
-    /// Helper serialization to JSON string
-    pub fn to_json_string(&self) -> Result<String, Error> {
-        self.to_data().to_json_string()
-    }
-
-    /// Helper deserialization from JSON reader
-    pub fn from_json_reader<R>(r: R) -> Result<Self, Error>
-    where
-        R: std::io::Read,
-    {
-        Self::from_data(data::EntityData::from_json_reader(r)?)
-    }
-
-    /// Helper deserialization from JSON strng
-    pub fn from_json_str(s: &str) -> Result<Self, Error> {
-        Self::from_data(data::EntityData::from_json_str(s)?)
-    }
-
-    /// Compute the entity hash (for validation)
-    /// FIXME: this is useless and should be removed: the hash is checked and
-    /// eventually computed in `from_data` and cannot be changed after that
-    pub fn compute_hash(&self) -> Result<Multihash, Error> {
-        Ok(Sha2_256::digest(&self.canonical_data()?))
     }
 
     /// Check that this key is allowed to sign the entity by checking that the
@@ -545,8 +462,8 @@ where
     }
 
     /// Given a private key, compute the signature of the entity canonical data
-    /// FIXME: we should check the hash instead: it is cheaper and makes also
-    /// verification way faster because we would not need to rebuild the
+    /// FIXME[ENTITY]: we should check the hash instead: it is cheaper and makes
+    /// also verification way faster because we would not need to rebuild the
     /// canonical data at every check (we can trust the hash correctness)
     pub fn compute_signature(&self, key: &Key) -> Result<Signature, Error> {
         Ok(key.sign(&self.canonical_data()?))
@@ -601,7 +518,7 @@ where
     /// - the first revision has no parent and a matching root hash
     pub async fn compute_status(&mut self, resolver: &impl Resolver<User>) -> Result<(), Error> {
         let mut keys = HashSet::<PublicKey>::from_iter(self.keys().iter().cloned());
-        let mut users = HashSet::<RadicleUri>::from_iter(self.certifiers().iter().cloned());
+        let mut users = HashSet::<RadUrn>::from_iter(self.certifiers().iter().cloned());
         self.status = VerificationStatus::Unknown;
 
         if self.revision == 1 && (self.parent_hash.is_some() || self.root_hash != self.hash) {
@@ -641,10 +558,10 @@ where
     /// - the root hash is correct
     /// - the TUF quorum rules have been observed
     ///
-    /// FIXME: only allow exact `+1`increments so that the revision history has
-    /// no holes
-    /// FIXME: probably we should merge owned keys and certifiers when checking
-    /// the quorum rules (now we are handling them separately)
+    /// FIXME[ENTITY]: only allow exact `+1`increments so that the revision
+    /// history has no holes
+    /// FIXME[ENTITY]: probably we should merge owned keys and certifiers when
+    /// checking the quorum rules (now we are handling them separately)
     fn check_update(&self, previous: &Self) -> Result<(), UpdateVerificationError> {
         if self.revision() <= previous.revision() {
             return Err(UpdateVerificationError::NonMonotonicRevision);
@@ -699,7 +616,7 @@ where
     /// Compute the entity status checking that the whole revision history is
     /// valid
     ///
-    /// FIXME: allow certifiers that are not `User` entities
+    /// FIXME[ENTITY]: should we allow certifiers that are not `User` entities?
     pub async fn compute_history_status(
         &mut self,
         resolver: &impl Resolver<Entity<T>>,
@@ -722,7 +639,7 @@ where
             if current.status.signatures_missing() {
                 let err = HistoryVerificationError::ErrorAtRevision {
                     revision,
-                    error: Error::SignatureMissingXXX,
+                    error: Error::SignatureMissing,
                 };
                 self.status = VerificationStatus::HistoryVerificationFailed(err.clone());
                 return Err(err);
@@ -762,5 +679,140 @@ where
                 },
             }
         }
+    }
+}
+
+impl<T> Entity<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+    EntityData<T>: EntityBuilder,
+{
+    /// Build an `Entity` from its data (the second step of deserialization)
+    /// It guarantees that the `hash` is correct
+    pub fn from_data(data: data::EntityData<T>) -> Result<Self, Error> {
+        // FIXME[ENTITY]: do we want this? it makes `default` harder to get right...
+        if data.name.is_none() {
+            return Err(Error::InvalidData("Missing name".to_owned()));
+        }
+        if data.revision.is_none() {
+            return Err(Error::InvalidData("Missing revision".to_owned()));
+        }
+
+        if data.revision.unwrap() < 1 {
+            return Err(Error::InvalidData("Invalid revision".to_owned()));
+        }
+
+        let mut keys = HashSet::new();
+        for k in data.keys.iter() {
+            keys.insert(
+                PublicKey::from_bs58(k).ok_or_else(|| Error::InvalidData(format!("key: {}", k)))?,
+            );
+        }
+
+        let mut certifiers = HashSet::new();
+        for c in data.certifiers.iter() {
+            certifiers.insert(
+                RadUrn::from_str(c).map_err(|_| Error::InvalidData(format!("certifier: {}", c)))?,
+            );
+        }
+
+        let mut signatures = HashMap::new();
+        if let Some(s) = &data.signatures {
+            for (k, sig) in s.iter() {
+                let key = PublicKey::from_bs58(k)
+                    .ok_or_else(|| Error::InvalidData(format!("signature key: {}", k)))?;
+                let signature = EntitySignature {
+                    by: match &sig.user {
+                        Some(uri) => Signatory::User(
+                            RadUrn::from_str(&uri)
+                                .map_err(|_| Error::InvalidUri(uri.to_owned()))?,
+                        ),
+                        None => Signatory::OwnedKey,
+                    },
+                    sig: Signature::from_bs58(&sig.sig).ok_or_else(|| {
+                        Error::InvalidData(format!("signature data: {}", &sig.sig))
+                    })?,
+                };
+                signatures.insert(key, signature);
+            }
+        }
+
+        let actual_hash = data.compute_hash()?;
+        if let Some(s) = &data.hash {
+            let claimed_hash = Hash::from_str(s)?;
+            if claimed_hash != actual_hash {
+                let actual_hash_string = actual_hash.to_string();
+                return Err(Error::WrongHash {
+                    claimed: s.to_owned(),
+                    actual: actual_hash_string,
+                });
+            }
+        }
+
+        let parent_hash = match data.parent_hash {
+            Some(s) => Some(Hash::from_str(&s)?),
+            None => None,
+        };
+
+        let root_hash = match data.root_hash {
+            Some(s) => Some(Hash::from_str(&s)?),
+            None => None,
+        };
+        let root_hash = match root_hash {
+            Some(h) => h,
+            None => {
+                if parent_hash.is_none() && data.revision.unwrap() == 1 {
+                    actual_hash.clone()
+                } else {
+                    return Err(Error::MissingRootHash);
+                }
+            },
+        };
+
+        Ok(Self {
+            status: VerificationStatus::Unknown,
+            name: data.name.unwrap(),
+            revision: data.revision.unwrap().to_owned(),
+            rad_version: data.rad_version,
+            hash: actual_hash,
+            root_hash,
+            parent_hash,
+            keys,
+            certifiers,
+            signatures,
+            info: data.info,
+        })
+    }
+
+    /// Helper serialization to JSON writer
+    pub fn to_json_writer<W>(&self, writer: W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        self.to_data().to_json_writer(writer)?;
+        Ok(())
+    }
+
+    /// Helper serialization to JSON string
+    pub fn to_json_string(&self) -> Result<String, Error> {
+        self.to_data().to_json_string()
+    }
+
+    /// Helper deserialization from JSON reader
+    pub fn from_json_reader<R>(r: R) -> Result<Self, Error>
+    where
+        R: std::io::Read,
+    {
+        Self::from_data(data::EntityData::from_json_reader(r)?)
+    }
+
+    /// Helper deserialization from JSON string
+    pub fn from_json_str(s: &str) -> Result<Self, Error> {
+        Self::from_data(data::EntityData::from_json_str(s)?)
+    }
+
+    /// Helper deserialization from JSON slice
+    pub fn from_json_slice(s: &[u8]) -> Result<Self, Error> {
+        Self::from_data(data::EntityData::from_json_slice(s)?)
     }
 }

@@ -246,6 +246,13 @@ async fn main() {
 
     let peer1 = spawn(None, transport.clone(), shutdown.clone(), 1).await;
     let init = (peer1.peer.peer_id(), peer1.endpoint.clone());
+
+    let project_owner = meta::User::new(
+        "Foo".to_owned(),
+        peer1.peer.peer_id().device_key().to_owned(),
+    )
+    .unwrap();
+
     let peers: Vec<Spawned> = stream::unfold((init, 2), |(prev, i)| {
         let transport = transport.clone();
         let shutdown = shutdown.clone();
@@ -275,8 +282,8 @@ async fn main() {
             &peer1.peer.paths,
             &peer1.peer.key,
             &repo,
-            meta::Project::new("mini1", &peer1.peer.peer_id()),
-            meta::Contributor::new(),
+            &meta::Project::new("mini1".to_owned(), &project_owner.uri()).unwrap(),
+            &project_owner,
         )
         .unwrap()
         .into()

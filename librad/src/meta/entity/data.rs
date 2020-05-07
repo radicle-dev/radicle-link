@@ -15,8 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::id::entity::{Entity, Error};
-use multihash::{Multihash, Sha2_256};
+use crate::{
+    hash::{Hash, Hasher},
+    meta::{
+        entity::{Entity, Error},
+        RAD_VERSION,
+    },
+};
 use olpc_cjson::CanonicalFormatter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -48,8 +53,9 @@ where
 /// - as a "builder" when creating new entities (or entity revisions), again so
 ///   that invariants can be enforced at `build` time when all the data has been
 ///   collected
-#[derive(Clone, Deserialize, Serialize, Debug, Default)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct EntityData<T> {
+    pub rad_version: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,6 +86,26 @@ pub struct EntityData<T> {
     pub info: T,
 }
 
+impl<T> Default for EntityData<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+{
+    fn default() -> Self {
+        Self {
+            rad_version: RAD_VERSION,
+            name: None,
+            revision: Some(1),
+            hash: None,
+            root_hash: None,
+            parent_hash: None,
+            signatures: None,
+            keys: HashSet::default(),
+            certifiers: HashSet::default(),
+            info: T::default(),
+        }
+    }
+}
+
 impl<T> EntityData<T>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
@@ -105,12 +131,15 @@ where
     pub fn from_json_str(s: &str) -> Result<Self, Error> {
         serde_json::from_str(s).map_err(|e| Error::SerializationFailed(e.to_string()))
     }
+    pub fn from_json_slice(s: &[u8]) -> Result<Self, Error> {
+        serde_json::from_slice(s).map_err(|e| Error::SerializationFailed(e.to_string()))
+    }
 
     pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
         let mut cleaned = EntityData::<T>::default();
         cleaned.name = self.name.to_owned();
         cleaned.revision = self.revision.to_owned();
-        cleaned.hash = self.hash.to_owned();
+        cleaned.hash = None;
         cleaned.root_hash = if self.parent_hash.is_some() {
             self.root_hash.to_owned()
         } else {
@@ -130,15 +159,8 @@ where
         Ok(buffer)
     }
 
-    pub fn compute_hash(&self) -> Result<Multihash, Error> {
-        Ok(Sha2_256::digest(&self.canonical_data()?))
-    }
-
-    pub fn new(name: String, revision: u64) -> Self {
-        let mut result = Self::default();
-        result.name = Some(name);
-        result.revision = Some(revision);
-        result
+    pub fn compute_hash(&self) -> Result<Hash, Error> {
+        Ok(Hash::hash(&self.canonical_data()?))
     }
 
     pub fn set_name(mut self, name: String) -> Self {
@@ -147,6 +169,10 @@ where
     }
     pub fn clear_name(mut self) -> Self {
         self.name = None;
+        self
+    }
+    pub fn set_optional_name(mut self, name: Option<String>) -> Self {
+        self.name = name;
         self
     }
 
@@ -183,13 +209,9 @@ where
     }
 
     pub fn set_parent(mut self, parent: &Entity<T>) -> Self {
-        let parent_hash_text = bs58::encode(parent.hash())
-            .with_alphabet(bs58::alphabet::BITCOIN)
-            .into_string();
+        let parent_hash_text = parent.hash().to_string();
         self.parent_hash = Some(parent_hash_text);
-        let root_hash_text = bs58::encode(parent.root_hash())
-            .with_alphabet(bs58::alphabet::BITCOIN)
-            .into_string();
+        let root_hash_text = parent.root_hash().to_string();
         self.root_hash = Some(root_hash_text);
         self.revision = Some(parent.revision() + 1);
         self
@@ -240,5 +262,19 @@ where
 
     pub fn map(self, f: impl FnOnce(Self) -> Self) -> Self {
         f(self)
+    }
+}
+
+pub trait EntityBuilder {
+    fn check_invariants(&self) -> Result<(), Error>;
+}
+
+impl<T> EntityData<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Default,
+    EntityData<T>: EntityBuilder,
+{
+    pub fn build(self) -> Result<Entity<T>, Error> {
+        Entity::<T>::from_data(self)
     }
 }

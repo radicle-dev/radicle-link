@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{collections::HashSet, net::SocketAddr};
+use std::{collections::HashSet, hash::Hash};
 
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -29,20 +29,29 @@ pub enum Capability {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PeerInfo {
+pub struct PeerInfo<Addr>
+where
+    Addr: Clone + PartialEq + Eq + Hash,
+{
     pub peer_id: PeerId,
-    pub advertised_info: PeerAdvertisement,
-    pub seen_addrs: HashSet<SocketAddr>,
+    pub advertised_info: PeerAdvertisement<Addr>,
+    pub seen_addrs: HashSet<Addr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PeerAdvertisement {
-    pub listen_addr: SocketAddr,
+pub struct PeerAdvertisement<Addr>
+where
+    Addr: Clone + PartialEq + Eq + Hash,
+{
+    pub listen_addr: Addr,
     pub capabilities: HashSet<Capability>,
 }
 
-impl PeerAdvertisement {
-    pub fn new(listen_addr: SocketAddr) -> Self {
+impl<Addr> PeerAdvertisement<Addr>
+where
+    Addr: Clone + PartialEq + Eq + Hash,
+{
+    pub fn new(listen_addr: Addr) -> Self {
         Self {
             listen_addr,
             capabilities: HashSet::default(),
