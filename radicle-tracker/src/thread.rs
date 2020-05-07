@@ -285,7 +285,12 @@ impl<M, A: Apply> Thread<M, A> {
                     .map(Op::Main)
                     .map_err(Error::flatten_main),
                 ReplyFinger::Thread { main, reply } => {
-                    let thread = &mut self.replies.0[main].1; // TODO: Error handling
+                    // TODO: It would be nice to use modify here, but types are hard.
+                    let (_, thread) = self
+                        .replies
+                        .0
+                        .get_mut(main)
+                        .ok_or(Error::MainReply(sequence::Error::IndexOutOfBounds(main)))?;
                     thread
                         .edit_reply(reply, f)
                         .map(|op| Op::Thread { main, op })
@@ -313,7 +318,12 @@ impl<M, A: Apply> Thread<M, A> {
                     .map(Op::Main)
                     .map_err(Error::flatten_main),
                 ReplyFinger::Thread { main, reply } => {
-                    let thread = &mut self.replies.0[main].1;
+                    // TODO: It would be nice to use modify here, but types are hard.
+                    let (_, thread) = self
+                        .replies
+                        .0
+                        .get_mut(main)
+                        .ok_or(Error::MainReply(sequence::Error::IndexOutOfBounds(main)))?;
                     thread.delete_reply(reply).map(|op| Op::Thread { main, op })
                 },
             },
