@@ -18,11 +18,20 @@
 use crate::ops::sequence;
 use std::{error, fmt};
 
+/// Errors can occur when attempting to modify a [`Thread`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error<M> {
+    /// We allow for errors to happen on the root element. The error is
+    /// delegated to the underlying operation.
     Root(M),
-    Main(sequence::Error<M>),
-    Thread(sequence::Error<M>),
+    /// We may want to focus on a main thread element and modify it. Errors may
+    /// occur due to the index being out of bounds, or the underlying
+    /// operation fails.
+    MainRoot(M),
+    /// We may want to focus on a reply to a main thread element and modify it.
+    /// Errors may occur due to the index being out of bounds, or the
+    /// underlying operation fails.
+    MainReply(sequence::Error<M>),
 }
 
 impl<M> From<M> for Error<M> {
@@ -32,15 +41,15 @@ impl<M> From<M> for Error<M> {
 }
 
 impl<M> Error<M> {
-    pub(crate) fn flatten_main(error: sequence::Error<sequence::Error<M>>) -> Self {
+    pub(crate) fn flatten_main(error: sequence::Error<Error<M>>) -> Self {
         match error {
             sequence::Error::IndexOutOfBounds(ix) => {
-                Error::Main(sequence::Error::IndexOutOfBounds(ix))
+                Error::MainReply(sequence::Error::IndexOutOfBounds(ix))
             },
             sequence::Error::MissingModificationId(id) => {
-                Error::Main(sequence::Error::MissingModificationId(id))
+                Error::MainReply(sequence::Error::MissingModificationId(id))
             },
-            sequence::Error::Modify(err) => Error::Main(err),
+            sequence::Error::Modify(err) => err,
         }
     }
 }
@@ -50,8 +59,8 @@ impl<M: fmt::Display> fmt::Display for Error<M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Root(m) => write!(f, "{}", m),
-            Error::Main(err) => write!(f, "main thread error: {}", err),
-            Error::Thread(err) => write!(f, "thread error: {}", err),
+            Error::MainRoot(err) => write!(f, "main thread error: {}", err),
+            Error::MainReply(err) => write!(f, "thread error: {}", err),
         }
     }
 }
@@ -60,8 +69,8 @@ impl<M: error::Error> error::Error for Error<M> {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
             Error::Root(m) => m.source(),
-            Error::Main(err) => err.source(),
-            Error::Thread(err) => err.source(),
+            Error::MainRoot(err) => err.source(),
+            Error::MainReply(err) => err.source(),
         }
     }
 }

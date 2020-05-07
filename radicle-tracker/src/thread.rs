@@ -19,48 +19,86 @@ use crate::ops::{
     sequence::{self, OrdSequence},
     Apply,
 };
-use std::ops::{Deref, DerefMut};
 
 #[cfg(test)]
 use nonempty::NonEmpty;
+#[cfg(test)]
+use std::iter;
 
+/// We use [`Item`]s as the values of the `Thread`. This allows us to modify the
+/// elements and perform soft deletes.
 pub mod item;
 pub use item::Item;
 
 mod error;
 pub use error::Error;
 
-/// A `SubThread` is an [`Appendage`] of `NonEmpty` [`Item`]s.
+/// A `SubThread` is an [`OrdSequence`] of [`Item`]s.
 /// It represents where we replied to the main thread and now has the
 /// opportunity to become a thread of items itself.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SubThread<M, A>(OrdSequence<item::Op<M>, Item<A>>);
-
-impl<M, T> Deref for SubThread<M, T> {
-    type Target = OrdSequence<item::Op<M>, Item<T>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+pub struct SubThread<M, A> {
+    root: Item<A>,
+    replies: OrdSequence<item::Op<M>, Item<A>>,
 }
 
-impl<M, T> DerefMut for SubThread<M, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+impl<M, A> SubThread<M, A> {
+    fn edit_root<F>(&mut self, f: F) -> Result<SubThreadOp<M, A>, Error<A::Error>>
+    where
+        A: Apply<Op = M>,
+        F: FnOnce(&mut A) -> Result<M, A::Error>,
+    {
+        self.root
+            .edit(f)
+            .map(SubThreadOp::Root)
+            .map_err(Error::MainRoot)
+    }
+
+    fn delete_root(&mut self) -> SubThreadOp<M, A> {
+        SubThreadOp::Root(self.root.delete())
+    }
+
+    fn edit_reply<F>(&mut self, ix: usize, f: F) -> Result<SubThreadOp<M, A>, Error<A::Error>>
+    where
+        A: Apply<Op = M> + Clone,
+        M: Clone,
+        F: FnOnce(&mut A) -> Result<M, A::Error>,
+    {
+        self.replies
+            .modify(ix, |item| item.edit(f))
+            .map(SubThreadOp::Reply)
+            .map_err(Error::MainReply)
+    }
+
+    fn delete_reply(&mut self, ix: usize) -> Result<SubThreadOp<M, A>, Error<A::Error>>
+    where
+        A: Apply<Op = M> + Clone,
+        M: Clone,
+    {
+        self.replies
+            .modify(ix, |item| Ok(item.delete()))
+            .map(SubThreadOp::Reply)
+            .map_err(Error::MainReply)
+    }
+
+    #[cfg(test)]
+    fn iter(&self) -> impl Iterator<Item = &Item<A>> {
+        iter::once(&self.root).chain(self.replies.iter().map(|(_, a)| a))
     }
 }
-
-type SubThreadOp<M, A> = sequence::Op<item::Op<M>, Item<A>>;
 
 impl<M, A> Apply for SubThread<M, A>
 where
     A: Apply<Op = M>,
 {
     type Op = SubThreadOp<M, A>;
-    type Error = sequence::Error<A::Error>;
+    type Error = Error<A::Error>;
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
-        self.0.apply(op)
+        match op {
+            SubThreadOp::Root(op) => self.root.apply(op).map_err(Error::MainRoot),
+            SubThreadOp::Reply(op) => self.replies.apply(op).map_err(Error::MainReply),
+        }
     }
 }
 
@@ -85,8 +123,10 @@ impl<M, A> Replies<M, A> {
         A: Clone,
         M: Clone,
     {
-        let mut thread = SubThread(OrdSequence::new());
-        thread.append(Item::new(a));
+        let thread = SubThread {
+            root: Item::new(a),
+            replies: OrdSequence::new(),
+        };
         self.0.append(thread)
     }
 
@@ -97,17 +137,27 @@ impl<M, A> Replies<M, A> {
         let thread = &mut self
             .0
             .get_mut(ix)
-            .ok_or(Error::Thread(sequence::Error::IndexOutOfBounds(ix)))?
+            .ok_or(sequence::Error::IndexOutOfBounds(ix))
+            .map_err(Error::MainReply)?
             .1;
 
         Ok(Op::Thread {
             main: ix,
-            op: thread.append(Item::new(new)),
+            op: SubThreadOp::Reply(thread.replies.append(Item::new(new))),
         })
     }
 }
 
-type MainOp<M, A> = sequence::Op<sequence::Op<item::Op<M>, Item<A>>, SubThread<M, A>>;
+type MainOp<M, A> = sequence::Op<SubThreadOp<M, A>, SubThread<M, A>>;
+
+/// An operation that affects a sub-thread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubThreadOp<M, A> {
+    /// An operation that affects the root item of a sub-thread.
+    Root(item::Op<M>),
+    /// An operation that affects one of the replies to a sub-thread.
+    Reply(sequence::Op<item::Op<M>, Item<A>>),
+}
 
 /// Operations on a [`Thread`] can be performed on any of the items in thread.
 /// This structure allows us to focus in on what part of the structure we're
@@ -123,19 +173,11 @@ pub enum Op<M, A> {
     /// `Thread` allows us to append to a sub-thread (of the main thread) or
     /// modify one the sub-thread's items.
     Thread {
+        /// What main thread did this operation occur on.
         main: usize,
-        op: sequence::Op<item::Op<M>, Item<A>>,
+        /// The operation that was applied to the [`SubThread`].
+        op: SubThreadOp<M, A>, // sequence::Op<item::Op<M>, Item<A>>,
     },
-}
-
-impl<M, A> Op<M, A> {
-    fn root_modifier(m: item::Op<M>) -> Self {
-        Op::Root(m)
-    }
-
-    fn root_edit(e: M) -> Self {
-        Self::root_modifier(item::Op::Edit(e))
-    }
 }
 
 /// A structure for pointing into a [`Thread`].
@@ -193,8 +235,8 @@ pub enum AppendTo {
 }
 
 impl<M, A: Apply> Thread<M, A> {
-    // TODO: there should be ops that tell us how the structure was initialised as
-    // well.
+    /// Create a new thread where the supplied element acts as the root of the
+    /// `Thread`.
     pub fn new(a: A) -> Self {
         Thread {
             root: Item::new(a),
@@ -202,6 +244,13 @@ impl<M, A: Apply> Thread<M, A> {
         }
     }
 
+    /// Append the element to the `Thread`.
+    ///
+    ///     * If the `AppendTo` value is `Main`, then the element will be
+    ///       appended to the main thread.
+    ///
+    ///     * If the `AppendTo` value is `Thread`, then we find the main thread
+    ///       element, and append the element to its replies.
     pub fn append(&mut self, ix: AppendTo, new: A) -> Result<Op<M, A>, Error<A::Error>>
     where
         A: Clone,
@@ -213,6 +262,10 @@ impl<M, A: Apply> Thread<M, A> {
         }
     }
 
+    /// Edit the element of the `Thread` found at the given [`Finger`].
+    ///
+    /// The [`Op`] returned will be the composition of a modification and the
+    /// operation returned by the function.
     pub fn edit<F>(&mut self, finger: Finger, f: F) -> Result<Op<M, A>, Error<A::Error>>
     where
         A: Apply<Op = M> + Clone,
@@ -221,27 +274,27 @@ impl<M, A: Apply> Thread<M, A> {
     {
         match finger {
             Finger::Root => {
-                let op = f(&mut self.root.val)?;
-                Ok(Op::root_edit(op))
+                let op = self.root.edit(f)?;
+                Ok(Op::Root(op))
             },
             Finger::Reply(reply) => match reply {
                 ReplyFinger::Main(ix) => self
                     .replies
                     .0
-                    .modify(ix, |thread| thread.modify(0, |item| item.edit(f)))
+                    .modify(ix, |thread| thread.edit_root(f))
                     .map(Op::Main)
                     .map_err(Error::flatten_main),
                 ReplyFinger::Thread { main, reply } => {
-                    let thread = &mut self.replies.0[main].1;
+                    let thread = &mut self.replies.0[main].1; // TODO: Error handling
                     thread
-                        .modify(reply, |item| item.edit(f))
+                        .edit_reply(reply, f)
                         .map(|op| Op::Thread { main, op })
-                        .map_err(Error::Thread)
                 },
             },
         }
     }
 
+    /// Delete the element of the `Thread` found at the given [`Finger`].
     pub fn delete(&mut self, finger: Finger) -> Result<Op<M, A>, Error<A::Error>>
     where
         A: Apply<Op = M> + Clone,
@@ -256,15 +309,12 @@ impl<M, A: Apply> Thread<M, A> {
                 ReplyFinger::Main(ix) => self
                     .replies
                     .0
-                    .modify(ix, |thread| thread.modify(0, |item| Ok(item.delete())))
+                    .modify(ix, |thread| Ok(thread.delete_root()))
                     .map(Op::Main)
                     .map_err(Error::flatten_main),
                 ReplyFinger::Thread { main, reply } => {
                     let thread = &mut self.replies.0[main].1;
-                    thread
-                        .modify(reply, |item| Ok(item.delete()))
-                        .map(|op| Op::Thread { main, op })
-                        .map_err(Error::Thread)
+                    thread.delete_reply(reply).map(|op| Op::Thread { main, op })
                 },
             },
         }
@@ -284,7 +334,7 @@ impl<M, A: Apply> Thread<M, A> {
                 .val
                 .iter()
                 .cloned()
-                .map(|(_, v)| v.iter().cloned().map(|(_, v)| v).collect::<Vec<_>>())
+                .map(|(_, v)| v.iter().cloned().collect::<Vec<_>>())
                 .filter_map(|t| NonEmpty::from_slice(&t))
                 .collect(),
         );
@@ -309,9 +359,9 @@ impl<M, A: Apply<Op = M>> Apply for Thread<M, A> {
                     .0
                     .get_mut(main)
                     .ok_or(sequence::Error::IndexOutOfBounds(main))
-                    .map_err(Error::Main)?
+                    .map_err(Error::MainReply)?
                     .1;
-                thread.apply(op).map_err(Error::Thread)
+                thread.apply(op)
             },
         }
     }

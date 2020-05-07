@@ -103,9 +103,7 @@ fn folding_ops() {
     let finto_edit_comment = expected_issue
         .with_comments(|thread| {
             thread.edit(
-                // Note here that the reply is 1, because { main: 0, reply: 0 } represents
-                // kim's comment.
-                Finger::Reply(ReplyFinger::Thread { main: 0, reply: 1 }),
+                Finger::Reply(ReplyFinger::Thread { main: 0, reply: 0 }),
                 |comment| {
                     Ok(comment
                     .replace_content(
