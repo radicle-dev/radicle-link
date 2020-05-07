@@ -39,12 +39,6 @@ pub struct ReplaceOp<User> {
     pub replace: ReplaceComment,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NewComment<User> {
-    pub body: String,
-    pub author: User,
-}
-
 pub type ReplaceComment = Replace<usize, String>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -159,7 +153,6 @@ impl<Id, User: Eq + Hash> Apply for Comment<Id, User> {
 
     fn apply(&mut self, op: Self::Op) -> Result<(), Self::Error> {
         match op {
-            // TODO: should we check if the users are equal, or just assume the invariant?
             Op::Comment(comment) => self.content.apply(comment.replace).map_err(absurd),
             Op::Reaction(reaction) => self.reactions.apply(reaction),
         }
