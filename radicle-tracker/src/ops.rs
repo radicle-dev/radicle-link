@@ -58,7 +58,7 @@ pub(crate) fn absurd<A>(_infallible: Infallible) -> A {
     panic!("Infallible cannot do anything else")
 }
 
-/// TODO: Fold the things
+/// Fold an iterator of operations, applying each to the supplies state.
 pub fn fold_apply<S>(state: &mut S, ops: impl Iterator<Item = S::Op>) -> Result<(), S::Error>
 where
     S: Apply,
