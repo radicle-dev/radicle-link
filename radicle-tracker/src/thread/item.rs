@@ -26,10 +26,10 @@ use crate::ops::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Item<A> {
     /// The value of the `Item`.
-    pub val: A,
+    val: A,
     /// If the [`Visibility::`Hidden`] then this `Item` is marked as deleted,
     /// otherwise it was only created.
-    pub visibility: Visibility,
+    visibility: Visibility,
 }
 
 impl<A> Item<A> {
@@ -41,6 +41,9 @@ impl<A> Item<A> {
         }
     }
 
+    /// Modify the value in the `Item`. The function supplied should return the
+    /// operation that represents this modification. This operation will
+    /// then be embedded in [`Op::Edit`].
     pub fn edit<F, E>(&mut self, f: F) -> Result<Op<E>, A::Error>
     where
         A: Apply<Op = E>,
@@ -50,8 +53,21 @@ impl<A> Item<A> {
         Ok(Op::Edit(op))
     }
 
+    /// Delete the value in the `Item`. This operation does not perform a hard
+    /// deletion of the data. Instead, it "hides" the data. See
+    /// [`Visibility`].
     pub fn delete<E>(&mut self) -> Op<E> {
         Op::Delete(self.visibility.hide())
+    }
+
+    /// Look at the value of the `Item`.
+    pub fn val(&self) -> &A {
+        &self.val
+    }
+
+    /// Look at the deletion status value of the `Item`.
+    pub fn status(&self) -> &Visibility {
+        &self.visibility
     }
 }
 
