@@ -146,7 +146,7 @@ mod tests {
             left.apply(x.clone()).expect("Failed to apply x");
             left.apply(y.clone()).expect("Failed to apply y");
 
-            let mut right = set.clone();
+            let mut right = set;
             right.apply(y).expect("Failed to apply y");
             right.apply(x).expect("Failed to apply x");
 
@@ -160,7 +160,7 @@ mod tests {
             left.apply(y.clone()).expect("Failed to apply y");
             left.apply(z.clone()).expect("Failed to apply z");
 
-            let mut right = set.clone();
+            let mut right = set;
             right.apply(y).expect("Failed to apply y");
             right.apply(z).expect("Failed to apply z");
             right.apply(x).expect("Failed to apply x");

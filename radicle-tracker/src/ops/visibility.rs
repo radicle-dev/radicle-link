@@ -91,7 +91,7 @@ mod tests {
             let mut left = visibility.clone();
             left.apply(Op {}).unwrap_or_else(absurd);
 
-            let mut right = visibility.clone();
+            let mut right = visibility;
             right.apply(Op {}).unwrap_or_else(absurd);
             right.apply(Op {}).unwrap_or_else(absurd);
 
@@ -107,7 +107,7 @@ mod tests {
             left.apply(x.clone()).unwrap_or_else(absurd);
             left.apply(y.clone()).unwrap_or_else(absurd);
 
-            let mut right = visibility.clone();
+            let mut right = visibility;
             right.apply(y).unwrap_or_else(absurd);
             right.apply(x).unwrap_or_else(absurd);
 
@@ -125,7 +125,7 @@ mod tests {
             left.apply(y.clone()).unwrap_or_else(absurd);
             left.apply(z.clone()).unwrap_or_else(absurd);
 
-            let mut right = visibility.clone();
+            let mut right = visibility;
             right.apply(y).unwrap_or_else(absurd);
             right.apply(z).unwrap_or_else(absurd);
             right.apply(x).unwrap_or_else(absurd);

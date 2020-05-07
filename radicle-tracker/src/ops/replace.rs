@@ -95,7 +95,7 @@ pub mod strategy {
     pub fn replace_strategy() -> impl Strategy<Value = Replace<usize, String>> {
         (any::<usize>(), "[a-z]*").prop_map(|(marker, val)| Replace {
             marker,
-            val: val.to_string(),
+            val,
             conflicts: vec![],
         })
     }
@@ -128,7 +128,7 @@ mod tests {
         #[test]
         fn associative((x, mut y, z) in (replace_strategy(), replace_strategy(), replace_strategy())) {
             let mut left = x.clone();
-            let mut right = x.clone();
+            let mut right = x;
 
             left.apply(y.clone()).unwrap_or_else(absurd);
             left.apply(z.clone()).unwrap_or_else(absurd);

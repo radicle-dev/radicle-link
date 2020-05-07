@@ -134,7 +134,7 @@ mod tests {
             let mut left = item.clone();
             left.apply(x.clone()).unwrap_or_else(absurd);
 
-            let mut right = item.clone();
+            let mut right = item;
             right.apply(x.clone()).unwrap_or_else(absurd);
             right.apply(x).unwrap_or_else(absurd);
 
@@ -147,7 +147,7 @@ mod tests {
             left.apply(x.clone()).unwrap_or_else(absurd);
             left.apply(y.clone()).unwrap_or_else(absurd);
 
-            let mut right = item.clone();
+            let mut right = item;
             right.apply(y).unwrap_or_else(absurd);
             right.apply(x).unwrap_or_else(absurd);
 
@@ -161,7 +161,7 @@ mod tests {
             left.apply(y.clone()).unwrap_or_else(absurd);
             left.apply(z.clone()).unwrap_or_else(absurd);
 
-            let mut right = item.clone();
+            let mut right = item;
             right.apply(y).unwrap_or_else(absurd);
             right.apply(z).unwrap_or_else(absurd);
             right.apply(x).unwrap_or_else(absurd);

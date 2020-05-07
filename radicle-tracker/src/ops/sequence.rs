@@ -440,10 +440,12 @@ mod tests {
         oracle_tester(sequence, appends, modifications)
     }
 
+    type ReplaceFirstOp = Op<Replace<usize, String>, Replace<usize, String>>;
+
     fn replace_first(
         sequence: &mut OrdSequence<Replace<usize, String>, Replace<usize, String>>,
         op: Replace<usize, String>,
-    ) -> Result<Op<Replace<usize, String>, Replace<usize, String>>, Error<Infallible>> {
+    ) -> Result<ReplaceFirstOp, Error<Infallible>> {
         sequence.modify(0, |val| {
             val.replace(op.marker, op.val);
             Ok(val.clone())
@@ -451,6 +453,7 @@ mod tests {
     }
 
     proptest! {
+        #[allow(clippy::unnecessary_operation)]
         #[test]
         fn oracle_test((sequence, appends, modifications)
                        in (sequence_strategy(replace_strategy()), vec(ascii(), 1..20), vec(replace_strategy(), 1..20))) {
