@@ -412,33 +412,4 @@ mod tests {
 
         Ok(())
     }
-
-    /*
-    #[test]
-    fn commutative_ints_with_edit() {
-        let append1 = Op::main_append(0, Int(2));
-        let append2 = Op::main_append(1, Int(3));
-        let edit = Op::main_edit(1, IntOp(42));
-
-        let expected = vec![
-            NonEmpty::new(Item::new(Int(1))),
-            NonEmpty::new(Item::new(Int(2))),
-            NonEmpty::new(Item::new(Int(45))),
-        ];
-
-        let mut left = Thread::new(Int(1));
-        left.apply(append1.clone());
-        left.apply(append2.clone());
-        left.apply(edit.clone());
-
-        let mut right = Thread::new(Int(1));
-        right.apply(edit);
-        right.apply(append2);
-        right.apply(append1);
-
-        assert_eq!(left.to_vec(), expected);
-        assert_eq!(right.to_vec(), expected);
-        assert_eq!(left, right);
-    }
-    */
 }
