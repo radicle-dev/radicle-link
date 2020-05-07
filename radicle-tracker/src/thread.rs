@@ -246,11 +246,11 @@ impl<M, A: Apply> Thread<M, A> {
 
     /// Append the element to the `Thread`.
     ///
-    ///     * If the `AppendTo` value is `Main`, then the element will be
-    ///       appended to the main thread.
+    /// * If the `AppendTo` value is `Main`, then the element will be appended
+    ///   to the main thread.
     ///
-    ///     * If the `AppendTo` value is `Thread`, then we find the main thread
-    ///       element, and append the element to its replies.
+    /// * If the `AppendTo` value is `Thread`, then we find the main thread
+    ///   element, and append the element to its replies.
     pub fn append(&mut self, ix: AppendTo, new: A) -> Result<Op<M, A>, Error<A::Error>>
     where
         A: Clone,
