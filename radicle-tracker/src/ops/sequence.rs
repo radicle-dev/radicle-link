@@ -595,15 +595,10 @@ mod tests {
         let append2 = right.append(Int::new(2));
         let edit2 = right.modify(right.len() - 1, |val| val.add(3))?;
 
-        println!("What");
         left.apply(append2)?;
-        println!("Huh");
         left.apply(edit2)?;
-        println!("Yup");
         right.apply(append1)?;
-        println!("Boo");
         right.apply(edit1)?;
-        println!("Goo");
 
         assert_eq!(left, right);
         Ok(())
