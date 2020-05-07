@@ -313,9 +313,12 @@ pub mod strategy {
             val_strategy.prop_map(|v| (UniqueTimestamp::gen(), v)),
             1..50,
         )
-        .prop_map(|val| OrdSequence {
-            val,
-            _marker: PhantomData,
+        .prop_map(|mut val| {
+            val.sort_by_key(|(t, _)| t.clone());
+            OrdSequence {
+                val,
+                _marker: PhantomData,
+            }
         })
     }
 
