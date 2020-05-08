@@ -117,6 +117,10 @@ impl UserHistory {
             None => Err(HistoryVerificationError::EmptyHistory),
         }
     }
+
+    fn verification_status(&self) -> Option<VerificationStatus> {
+        self.revisions.last().map(|user| user.status().clone())
+    }
 }
 
 #[async_trait]
@@ -322,6 +326,10 @@ async fn test_project_update() {
         .await
         .unwrap();
     assert!(matches!(history.check().await, Ok(())));
+    assert_eq!(
+        history.verification_status(),
+        Some(VerificationStatus::Verified)
+    );
 
     // Having a parent but no parent hash is not ok
     let mut user = history
@@ -388,6 +396,10 @@ async fn test_project_update() {
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(history.check().await, Ok(())));
+    assert_eq!(
+        history.verification_status(),
+        Some(VerificationStatus::Verified)
+    );
 
     // Adding two keys starting from one is not ok
     history.revisions.pop();
@@ -438,6 +450,10 @@ async fn test_project_update() {
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(history.check().await, Ok(())));
+    assert_eq!(
+        history.verification_status(),
+        Some(VerificationStatus::Verified)
+    );
     let mut user = history
         .revisions
         .last()
@@ -458,6 +474,10 @@ async fn test_project_update() {
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(history.check().await, Ok(())));
+    assert_eq!(
+        history.verification_status(),
+        Some(VerificationStatus::Verified)
+    );
 
     // Changing two devices out of three is not ok
     let mut user = history
