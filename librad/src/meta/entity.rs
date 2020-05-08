@@ -619,6 +619,7 @@ where
 
             // End at root revision
             if revision == 1 {
+                self.status = VerificationStatus::Verified;
                 return Ok(());
             }
 
