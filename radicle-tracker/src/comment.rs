@@ -15,8 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#![allow(missing_docs)]
-
 use crate::{
     metadata::{
         clock::{Clock, RadClock},
@@ -31,22 +29,33 @@ use crate::{
 };
 use std::{collections::HashMap, hash::Hash};
 
+/// The only error that can occur during the application of a `Comment`
+/// operation is an error in reactions.
 pub type Error<User> = set::Error<Reaction<User>>;
 
+/// An operation to represent a user replacing the content of a [`Comment`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReplaceOp<User> {
+    /// The author of this replace.
     pub author: User,
+    /// The [`Replace`] operation.
     pub replace: ReplaceComment,
 }
 
+/// Replace the content of a `Comment`.
 pub type ReplaceComment = Replace<usize, String>;
 
+/// The set of operations that can occur on a [`Comment`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Op<User> {
+    /// Replace the content of the [`Comment`].
     Comment(ReplaceOp<User>),
+    /// Insert/Remove a [`Reaction`] on the [`Comment`].
     Reaction(set::Op<Reaction<User>>),
 }
 
+/// A `Comment` consists of its metadata: identifier, author, timestamp. It also
+/// has content that can be replaced and a set of reactions from several users.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Comment<Id, User: Eq + Hash> {
     identifier: Id,
