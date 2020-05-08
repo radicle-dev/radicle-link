@@ -98,6 +98,7 @@ impl Resolver<User> for EmptyResolver {
 
 static EMPTY_RESOLVER: EmptyResolver = EmptyResolver {};
 
+#[derive(Debug, Clone)]
 struct UserHistory {
     pub revisions: Vec<User>,
 }
@@ -107,13 +108,10 @@ impl UserHistory {
         Self { revisions: vec![] }
     }
 
-    async fn check(&self) -> Result<(), HistoryVerificationError> {
-        match self.revisions.last() {
-            Some(user) => {
-                user.clone()
-                    .compute_history_status(self, &EMPTY_RESOLVER)
-                    .await
-            },
+    async fn check(&mut self) -> Result<(), HistoryVerificationError> {
+        let history = self.clone();
+        match self.revisions.last_mut() {
+            Some(user) => user.compute_history_status(&history, &EMPTY_RESOLVER).await,
             None => Err(HistoryVerificationError::EmptyHistory),
         }
     }
