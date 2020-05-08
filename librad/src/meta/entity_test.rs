@@ -141,7 +141,6 @@ impl Resolver<User> for UserHistory {
 }
 
 #[test]
-#[test]
 fn test_valid_uri() {
     let u1 = RadUrn::new((*EMPTY_HASH).to_owned(), Protocol::Git, Path::new());
     let s = u1.to_string();
@@ -228,13 +227,15 @@ async fn test_user_verification() {
     // A new user is structurally valid but it is not signed
     let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
     assert!(matches!(user.compute_status(&EMPTY_RESOLVER).await, Ok(())));
-    assert!(user.status().signatures_missing());
+    assert_eq!(user.status(), &VerificationStatus::SignaturesMissing);
+
     // Adding the signature fixes it
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .await
         .unwrap();
     assert!(matches!(user.compute_status(&EMPTY_RESOLVER).await, Ok(())));
-    assert!(user.status().signed());
+    assert_eq!(user.status(), &VerificationStatus::Signed);
+
     // Adding keys (any mutation would do) invalidates the signature
     let mut user = user
         .to_data()
@@ -248,7 +249,11 @@ async fn test_user_verification() {
         user.compute_status(&EMPTY_RESOLVER).await,
         Err(Error::SignatureVerificationFailed)
     ));
-    assert!(user.status().verification_failed());
+    assert_eq!(
+        user.status(),
+        &VerificationStatus::VerificationFailed(Error::SignatureVerificationFailed)
+    );
+
     // Adding the missing signatures does not fix it: D1 signed a previous
     // revision
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
@@ -261,12 +266,16 @@ async fn test_user_verification() {
         user.compute_status(&EMPTY_RESOLVER).await,
         Err(Error::SignatureVerificationFailed)
     ));
-    assert!(user.status().verification_failed());
+    assert_eq!(
+        user.status(),
+        &VerificationStatus::VerificationFailed(Error::SignatureVerificationFailed)
+    );
     // Cannot sign a project twice with the same key
     assert!(matches!(
         user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER).await,
         Err(Error::SignatureAlreadyPresent(_))
     ));
+
     // Removing the signature and re adding it fixes it
     let mut user = user
         .to_data()
@@ -283,7 +292,8 @@ async fn test_user_verification() {
         .await
         .unwrap();
     assert!(matches!(user.compute_status(&EMPTY_RESOLVER).await, Ok(())));
-    assert!(user.status().signed());
+    assert_eq!(user.status(), &VerificationStatus::Signed);
+
     // Removing a maintainer invalidates it again
     let mut user = user
         .to_data()
@@ -293,7 +303,7 @@ async fn test_user_verification() {
         .build()
         .unwrap();
     assert!(matches!(user.compute_status(&EMPTY_RESOLVER).await, Err(_)));
-    assert!(user.status().verification_failed());
+    assert_ne!(user.status().verification_failed(), None);
 }
 
 #[async_test]

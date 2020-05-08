@@ -142,46 +142,18 @@ pub enum VerificationStatus {
 }
 
 impl VerificationStatus {
-    pub fn verified(&self) -> bool {
-        if let VerificationStatus::Verified = self {
-            true
+    pub fn verification_failed(&self) -> Option<&Error> {
+        if let VerificationStatus::VerificationFailed(err) = self {
+            Some(err)
         } else {
-            false
+            None
         }
     }
-    pub fn signed(&self) -> bool {
-        if let VerificationStatus::Signed = self {
-            true
+    pub fn history_verification_failed(&self) -> Option<&HistoryVerificationError> {
+        if let VerificationStatus::HistoryVerificationFailed(err) = self {
+            Some(err)
         } else {
-            false
-        }
-    }
-    pub fn signatures_missing(&self) -> bool {
-        if let VerificationStatus::SignaturesMissing = self {
-            true
-        } else {
-            false
-        }
-    }
-    pub fn verification_failed(&self) -> bool {
-        if let VerificationStatus::VerificationFailed(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-    pub fn history_verification_failed(&self) -> bool {
-        if let VerificationStatus::HistoryVerificationFailed(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-    pub fn unknown(&self) -> bool {
-        if let VerificationStatus::Unknown = self {
-            true
-        } else {
-            false
+            None
         }
     }
 }
@@ -636,7 +608,7 @@ where
                 return Err(err);
             }
             // Also check that no signature is missing
-            if current.status.signatures_missing() {
+            if current.status == VerificationStatus::SignaturesMissing {
                 let err = HistoryVerificationError::ErrorAtRevision {
                     revision,
                     error: Error::SignatureMissing,
