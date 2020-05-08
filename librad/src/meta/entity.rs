@@ -311,7 +311,7 @@ where
 
     /// Turn the entity in to its raw data
     /// (first step of serialization and reverse of [`Entity::from_data`])
-    pub fn to_data(&self) -> data::EntityData<T> {
+    pub fn to_data(&self) -> EntityData<T> {
         let mut signatures = HashMap::new();
         for (k, s) in self.signatures() {
             signatures.insert(
@@ -329,7 +329,7 @@ where
         let keys = HashSet::from_iter(self.keys().iter().map(|k| k.to_bs58()));
         let certifiers = HashSet::from_iter(self.certifiers().iter().map(|c| c.to_string()));
 
-        data::EntityData {
+        EntityData {
             name: Some(self.name.to_owned()),
             revision: Some(self.revision),
             rad_version: self.rad_version,
@@ -345,7 +345,7 @@ where
 
     /// Helper to build a new entity cloning the current one
     /// (signatures are cleared because they would be invalid anyway)
-    pub fn to_builder(&self) -> data::EntityData<T> {
+    pub fn to_builder(&self) -> EntityData<T> {
         self.to_data().clear_hash().clear_signatures()
     }
 
@@ -661,7 +661,7 @@ where
 {
     /// Build an `Entity` from its data (the second step of deserialization)
     /// It guarantees that the `hash` is correct
-    pub fn from_data(data: data::EntityData<T>) -> Result<Self, Error> {
+    pub fn from_data(data: EntityData<T>) -> Result<Self, Error> {
         // FIXME[ENTITY]: do we want this? it makes `default` harder to get right...
         if data.name.is_none() {
             return Err(Error::InvalidData("Missing name".to_owned()));
