@@ -721,18 +721,13 @@ where
             }
         }
 
-        let parent_hash = match data.parent_hash {
-            Some(s) => Some(Hash::from_str(&s)?),
-            None => None,
-        };
+        let parent_hash = data.parent_hash.map(|s| Hash::from_str(&s)).transpose()?;
+        let root_hash = data.root_hash.map(|s| Hash::from_str(&s)).transpose()?;
 
-        let root_hash = match data.root_hash {
-            Some(s) => Some(Hash::from_str(&s)?),
-            None => None,
-        };
         let root_hash = match root_hash {
             Some(h) => h,
             None => {
+                // TODO: error handling for unwrap on revision
                 if parent_hash.is_none() && data.revision.unwrap() == 1 {
                     actual_hash.clone()
                 } else {
