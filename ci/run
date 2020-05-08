@@ -26,3 +26,6 @@ cargo deny check sources
 
 echo '--- Tests'
 cargo test --all
+
+echo '--- Docs'
+cargo doc --no-deps --workspace

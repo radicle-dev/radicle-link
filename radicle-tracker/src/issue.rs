@@ -42,8 +42,9 @@ pub type ReplaceableTitle = Replace<usize, Title>;
 /// issue is kicked off by providing a [`Title`] and an initial [`Comment`] that
 /// starts the main [`Thread`].
 ///
-/// It also contains [`Metadata`] for which we would like to keep track of and
-/// enhance the experience of the conversation.
+/// It also contains metadata for which we would like to keep track of and
+/// enhance the experience of the conversation. Labels and assignees are
+/// examples of this metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Issue<Id, Cid, User: Eq + Hash> {
     identifier: Id,
@@ -132,8 +133,8 @@ impl<Id, Cid, User: Eq + Hash> Issue<Id, Cid, User> {
         Op::Title(self.title.clone())
     }
 
-    /// Close an [`Issue`] and get back a [`ClosedIssue`]. This limits the
-    /// functionality on the original `Issue`.
+    /// Close an `Issue`. This morally hides the `Issue`. Actions still be taken
+    /// on the `Issue`.
     pub fn close(&mut self) -> Op<Cid, User> {
         Op::Close(self.status.hide())
     }

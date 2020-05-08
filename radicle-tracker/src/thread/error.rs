@@ -18,7 +18,7 @@
 use crate::ops::sequence;
 use std::{error, fmt};
 
-/// Errors can occur when attempting to modify a [`Thread`].
+/// Errors can occur when attempting to modify a [`crate::thread::Thread`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error<M> {
     /// We allow for errors to happen on the root element. The error is

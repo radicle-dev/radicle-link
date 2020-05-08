@@ -119,6 +119,12 @@ impl<Id, User: Eq + Hash> Comment<Id, User> {
         self.reactions.remove(reaction).map(Op::Reaction)
     }
 
+    /// Replace the content of the `Comment` with the new content.
+    ///
+    /// # Failures
+    ///
+    /// The operation will fail if the `user` isn't the same as the `author` of
+    /// the `Comment`.
     pub fn replace_content(&mut self, user: User, new_content: String) -> Option<Op<User>> {
         if self.author != user {
             return None;

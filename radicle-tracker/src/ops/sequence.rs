@@ -109,8 +109,14 @@ impl<Mod, A> Op<Mod, A> {
     }
 }
 
-/// An `OrdSequence` is an [`Appendable`] data structure, which ensure that
-/// appending and modification is commutative.
+/// An `OrdSequence` is a sequence of items that is ordered by a timestamp and
+/// user identifier. The sequence can only be appended too and existing items
+/// modified.
+///
+/// If two users append items at the same time, then the order is resolved based
+/// on the respective timestamps.
+///
+/// Items are modified by using the timestamp and identifier.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OrdSequence<M, T> {
     pub(crate) val: Vec<(UniqueTimestamp, T)>,

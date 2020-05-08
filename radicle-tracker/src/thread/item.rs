@@ -21,8 +21,8 @@ use crate::ops::{
     Apply,
 };
 
-/// A value that can be placed in a [`Thread`]. The value is placed alongside a
-/// `visibility` to mark that the `Item` can be "deleted".
+/// A value that can be placed in a [`crate::thread::Thread`]. The value is
+/// placed alongside a `visibility` to mark that the `Item` can be "deleted".
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Item<A> {
     /// The value of the `Item`.

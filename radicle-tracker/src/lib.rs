@@ -17,10 +17,11 @@
 
 //! `radicle-tracker` is where we get to the meat of an issue.
 //!
-//! An [`Issue`] is a conversation that forms around code collaboration. When a
-//! user creates a new issue to interact with they kick off a [`Thread`]. The
-//! thread is made up of a main thread that other users may reply to. On each
-//! comment on the main thread a single sub-thread can also happen.
+//! An [`issue::Issue`] is a conversation that forms around code collaboration.
+//! When a user creates a new issue to interact with they kick off a
+//! [`thread::Thread`]. The thread is made up of a main thread that other users
+//! may reply to. On each comment on the main thread a single sub-thread can
+//! also happen.
 //!
 //! Issues are more than just conversations, they also carry [`Metadata`]
 //! alongside them so that we can enrich the experience of our conversations,
@@ -43,10 +44,10 @@ pub mod issue;
 /// well formed timeline of operations will successfully mutate the structure so
 /// that it can be viewed.
 pub mod ops;
-/// A [`thread::Thread`] is the composition of two [`ops::sequence:Sequence`]s.
-/// It represents a thread of elements that can be of infinite depth — we can
-/// continuously append to a sequence. It only, however, has a breadth of one —
-/// appending to a single sub-thread.
+/// A [`thread::Thread`] is the composition of two
+/// [`ops::sequence::OrdSequence`]s. It represents a thread of elements that can
+/// be of infinite depth — we can continuously append to a sequence. It only,
+/// however, has a breadth of one — appending to a single sub-thread.
 pub mod thread;
 
 #[cfg(test)]
