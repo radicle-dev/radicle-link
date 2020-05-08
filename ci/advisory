@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 set -eou pipefail
 
-echo '--- Formatting'
-cargo fmt -- --check
-
-echo '--- Clippy'
-cargo clippy --all-targets --all-features -- -D warnings
-
 if [[ "${CI:-false}" = "true" ]]
 then
     sed -i -e 's|db-path.*|db-path = "/cache/cargo/advisory-db"|' deny.toml
@@ -23,6 +17,3 @@ cargo deny check bans
 
 echo '--- deny: Sources'
 cargo deny check sources
-
-echo '--- Tests'
-cargo test --all

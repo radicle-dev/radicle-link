@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+echo "--- Docs"
+cargo doc --no-deps --workspace

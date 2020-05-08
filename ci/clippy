@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+echo '--- Formatting'
+cargo fmt -- --check
+
+echo '--- Clippy'
+cargo clippy --all-targets --all-features -- -D warnings
+

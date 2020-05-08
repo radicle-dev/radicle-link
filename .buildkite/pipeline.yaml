@@ -1,7 +1,11 @@
 steps:
-  - label: "Build, lint, test"
+  - label: "Build, test, lint, clip, doc"
     commands:
-      - "ci/run"
+      - "ci/build-test"
+      - wait
+      - "ci/advisory"
+      - "ci/clippy"
+      - "ci/docs"
     agents:
       production: "true"
       platform: "linux"
