@@ -29,7 +29,7 @@ pub trait Gen {
 /// unique).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Unique {
-    blob: Vec<u8>,
+    pub(crate) blob: Vec<u8>,
 }
 
 impl Unique {
@@ -60,8 +60,8 @@ impl fmt::Display for Unique {
 /// back to the identifier if the times were equal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UniqueTimestamp {
-    unique: Unique,
-    time: TimeDiff,
+    pub(crate) unique: Unique,
+    pub(crate) time: TimeDiff,
 }
 
 impl PartialOrd for UniqueTimestamp {

@@ -199,7 +199,7 @@ impl<M, T> OrdSequence<M, T> {
     fn search_and_identify(&self, time: &UniqueTimestamp) -> Option<usize> {
         match self
             .val
-            .binary_search_by(|(other, _)| time.cmp_times(other))
+            .binary_search_by(|(other, _)| other.cmp_times(time))
         {
             Ok(ix) => {
                 // Are the identifiers the exact same?
@@ -336,8 +336,16 @@ pub mod strategy {
 #[cfg(test)]
 mod tests {
     use super::{strategy::*, *};
-    use crate::ops::replace::{strategy::replace_strategy, Replace};
+    use crate::{
+        metadata::clock::TimeDiff,
+        ops::{
+            fold_apply,
+            id::Unique,
+            replace::{strategy::replace_strategy, Replace},
+        },
+    };
     use itertools::{EitherOrBoth, Itertools};
+    use num_bigint::{BigInt, Sign};
     use pretty_assertions::assert_eq;
     use proptest::{collection::vec, prelude::*};
     use std::{cmp::Ordering, convert::Infallible, error};
@@ -427,9 +435,7 @@ mod tests {
             }
         }
 
-        for op in ops {
-            sequence.apply(op).expect("failed to apply to sequence");
-        }
+        fold_apply(&mut sequence, ops.into_iter()).expect("failed to apply to sequence");
 
         assert_eq!(sequence, oracle);
     }
@@ -610,5 +616,67 @@ mod tests {
 
         assert_eq!(left, right);
         Ok(())
+    }
+
+    // A test failure occured which pointed out that the binary search ordering was
+    // reversed. The data here is set up so that the timestamps are all the same.
+    // The append will then happen after all of them and be placed in the correct
+    // position.
+    #[test]
+    fn prop_test_failure() {
+        let (sequence, appends, modifications) = (
+            OrdSequence {
+                val: vec![
+                    (
+                        UniqueTimestamp {
+                            unique: Unique {
+                                blob: vec![
+                                    0, 24, 15, 27, 176, 79, 67, 221, 150, 93, 11, 205, 250, 132,
+                                    111, 92,
+                                ],
+                            },
+                            time: TimeDiff(BigInt::new(Sign::Plus, vec![1_588_930_222])),
+                        },
+                        Replace::new_with_marker("s".to_string(), 5_448_328_102_005_918_661),
+                    ),
+                    (
+                        UniqueTimestamp {
+                            unique: Unique {
+                                blob: vec![
+                                    3, 37, 236, 156, 182, 133, 64, 138, 173, 164, 112, 240, 245,
+                                    26, 218, 151,
+                                ],
+                            },
+                            time: TimeDiff(BigInt::new(Sign::Plus, vec![1_588_930_222])),
+                        },
+                        Replace::new_with_marker(
+                            "pmvrbcwsaeyfehxzzgubec".to_string(),
+                            17_246_580_896_002_372_933,
+                        ),
+                    ),
+                ],
+                _marker: PhantomData,
+            },
+            vec![
+                "&A=\'9*{e:Na".to_string(),
+                "nB_%.:<$CC".to_string(),
+                "K[o~Iz&_{n2b\"T`\'".to_string(),
+            ],
+            vec![
+                Replace::new_with_marker(
+                    "zykwvumkgagcxntesyxwjzojdv".to_string(),
+                    8_350_699_072_794_734_726,
+                ),
+                Replace::new_with_marker(
+                    "bowceomoaqrwijfeatfpqs".to_string(),
+                    11_043_883_424_500_136_142,
+                ),
+                Replace::new_with_marker(
+                    "dlangblriuvotyvdtonqmsjovovcfyd".to_string(),
+                    3_088_723_444_539_470_380,
+                ),
+            ],
+        );
+        oracle_tester(sequence, appends, modifications)
     }
 }
