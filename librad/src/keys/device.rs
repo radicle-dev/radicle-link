@@ -17,14 +17,16 @@
 
 use std::{
     fmt::{self, Display},
+    iter,
     ops::Deref,
     time::SystemTime,
 };
 
 use ::pgp::conversions::Time;
 use bit_vec::BitVec;
+use multibase::Base;
 use secstr::SecStr;
-use serde::{Deserialize, Serialize};
+use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use sodiumoxide::crypto::sign::ed25519;
 
 use keystore::SecretKeyExt;
@@ -33,20 +35,27 @@ use crate::keys::pgp;
 
 pub use ed25519::PUBLICKEYBYTES;
 
+/// Version of the signature scheme in use
+///
+/// This is used for future-proofing serialisation. For ergonomics reasons, we
+/// avoid introducing single-variant enums just now, and just serialize a
+/// version tag alongside the data.
+const VERSION: u8 = 0;
+
 /// A device-specific signing key
 #[derive(Clone, Eq, PartialEq)]
 pub struct Key {
     sk: ed25519::SecretKey,
-    /// Time this key was created, normalised seconds precision.
+    /// Time this key was created, normalised to seconds precision.
     created_at: SystemTime,
 }
 
 /// The public part of a `Key``
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct PublicKey(ed25519::PublicKey);
 
 /// A signature produced by `Key::sign`
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Signature(ed25519::Signature);
 
 // Key
@@ -229,6 +238,64 @@ impl Deref for PublicKey {
     }
 }
 
+impl Serialize for PublicKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        multibase::encode(
+            Base::Base32Z,
+            iter::once(&VERSION)
+                .chain(self.as_ref())
+                .cloned()
+                .collect::<Vec<u8>>(),
+        )
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct PublicKeyVisitor;
+
+        impl<'de> Visitor<'de> for PublicKeyVisitor {
+            type Value = PublicKey;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "a PublicKey, version {}", VERSION)
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                let (_, bytes) = multibase::decode(s).map_err(serde::de::Error::custom)?;
+                match bytes.split_first() {
+                    // impossible, actually
+                    None => Err(serde::de::Error::custom("Empty input")),
+                    Some((version, data)) => {
+                        if version != &VERSION {
+                            return Err(serde::de::Error::custom(format!(
+                                "Unknown PublicKey version {}",
+                                version
+                            )));
+                        }
+
+                        ed25519::PublicKey::from_slice(data).map(PublicKey).ok_or({
+                            serde::de::Error::custom("Invalid length for ed25519 public key")
+                        })
+                    },
+                }
+            }
+        }
+
+        deserializer.deserialize_str(PublicKeyVisitor)
+    }
+}
+
 // Signature
 
 pub mod signature {
@@ -297,6 +364,64 @@ impl Deref for Signature {
     }
 }
 
+impl Serialize for Signature {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        multibase::encode(
+            Base::Base32Z,
+            iter::once(&VERSION)
+                .chain(self.as_ref())
+                .cloned()
+                .collect::<Vec<u8>>(),
+        )
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Signature {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct SignatureVisitor;
+
+        impl<'de> Visitor<'de> for SignatureVisitor {
+            type Value = Signature;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "a Signature, version {}", VERSION)
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                let (_, bytes) = multibase::decode(s).map_err(serde::de::Error::custom)?;
+                match bytes.split_first() {
+                    // impossible, actually
+                    None => Err(serde::de::Error::custom("Empty input")),
+                    Some((version, data)) => {
+                        if version != &VERSION {
+                            return Err(serde::de::Error::custom(format!(
+                                "Unknown Signature version {}",
+                                version
+                            )));
+                        }
+
+                        ed25519::Signature::from_slice(data).map(Signature).ok_or({
+                            serde::de::Error::custom("Invalid length for ed25519 signature")
+                        })
+                    },
+                }
+            }
+        }
+
+        deserializer.deserialize_str(SignatureVisitor)
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -315,5 +440,51 @@ pub mod tests {
         let key = Key::new();
         let sig = key.sign(&DATA_TO_SIGN);
         assert!(key.public().verify(&sig, &DATA_TO_SIGN))
+    }
+
+    #[test]
+    fn test_public_key_serde() {
+        let pk = Key::new().public();
+        assert_eq!(
+            pk,
+            serde_json::from_str(&serde_json::to_string(&pk).unwrap()).unwrap()
+        )
+    }
+
+    #[test]
+    fn test_public_key_deserialize_wrong_version() {
+        let pk = Key::new().public();
+        let ser = multibase::encode(
+            Base::Base32Z,
+            iter::once(&1)
+                .chain(pk.as_ref())
+                .cloned()
+                .collect::<Vec<u8>>(),
+        );
+        assert!(serde_json::from_str::<PublicKey>(&ser).is_err())
+    }
+
+    #[test]
+    fn test_signature_serde() {
+        let key = Key::new();
+        let sig = key.sign(&DATA_TO_SIGN);
+        assert_eq!(
+            sig,
+            serde_json::from_str(&serde_json::to_string(&sig).unwrap()).unwrap()
+        )
+    }
+
+    #[test]
+    fn test_signature_deserialize_wrong_version() {
+        let key = Key::new();
+        let sig = key.sign(&DATA_TO_SIGN);
+        let ser = multibase::encode(
+            Base::Base32Z,
+            iter::once(&1)
+                .chain(sig.as_ref())
+                .cloned()
+                .collect::<Vec<u8>>(),
+        );
+        assert!(serde_json::from_str::<Signature>(&ser).is_err())
     }
 }
