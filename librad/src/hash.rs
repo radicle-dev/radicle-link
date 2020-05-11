@@ -23,7 +23,7 @@ use std::{
 
 use multibase::Base;
 use multihash::{Blake2b256, Multihash};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 /// A hash function, suitable for small inputs
@@ -103,7 +103,7 @@ impl Serialize for Hash {
     where
         S: Serializer,
     {
-        self.0.as_bytes().serialize(serializer)
+        serializer.serialize_str(&self.to_string())
     }
 }
 
@@ -112,11 +112,24 @@ impl<'de> Deserialize<'de> for Hash {
     where
         D: Deserializer<'de>,
     {
-        // Nb. `deserialize_bytes` is NOT the inverse of `serialize_bytes`. Instead, we
-        // need to go through an owned sequence here.
-        let bytes: Vec<u8> = Deserialize::deserialize(deserializer)?;
-        let mhash = Multihash::from_bytes(bytes).map_err(serde::de::Error::custom)?;
-        Self::try_from(mhash).map_err(serde::de::Error::custom)
+        struct HashVisitor;
+
+        impl<'de> Visitor<'de> for HashVisitor {
+            type Value = Hash;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "a Hash")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                s.parse().map_err(serde::de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_str(HashVisitor)
     }
 }
 
@@ -266,18 +279,17 @@ mod tests {
     fn test_serde_wrong_algorithm() {
         let data: [u8; 32] = random();
 
-        let sha3 = multihash::Sha3_256::digest(&data);
+        let sha3 = multibase::encode(Base::Base32Z, multihash::Sha3_256::digest(&data));
 
-        let json = serde_json::to_string(&sha3.as_bytes()).unwrap();
+        let json = serde_json::to_string(&sha3).unwrap();
         let de: Result<Hash, serde_json::Error> = serde_json::from_str(&json);
 
-        // Bravo, serde: the std::error::Error impls only return a `source()` for IO
-        // errors. So no option but to match against the `Display` impl. Sorry, future
-        // maintainer!
+        // Bravo, serde: the std::error::Error impls only return a `source()`
+        // for IO errors. So no option but to match against the `Display` impl.
+        // Sorry, future maintainer!
         let expect_err = de.unwrap_err().to_string();
-        assert_eq!(
-            &expect_err,
-            "Invalid hash algorithm, expected Blake2b256, actual Sha3_256"
+        assert!(
+            expect_err.starts_with("Invalid hash algorithm, expected Blake2b256, actual Sha3_256")
         )
     }
 
