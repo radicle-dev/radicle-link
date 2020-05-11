@@ -19,15 +19,14 @@ use std::{convert::TryFrom, fmt, ops::Deref, str::FromStr};
 
 use multibase::Base::Base32Z;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
-use tracing;
 
-use crate::keys::device;
+use crate::keys::{self, PublicKey, SecretKey};
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
-pub struct PeerId(device::PublicKey);
+pub struct PeerId(PublicKey);
 
 impl PeerId {
-    pub fn device_key(&self) -> &device::PublicKey {
+    pub fn device_key(&self) -> &PublicKey {
         &self.0
     }
 
@@ -36,13 +35,13 @@ impl PeerId {
     /// This is the `multibase` encoding, using the `z-base32` alphabet, of the
     /// public key bytes prepended by a one byte reserved value.
     pub fn default_encoding(&self) -> String {
-        let mut buf = [0u8; device::PUBLICKEYBYTES + 1];
+        let mut buf = [0u8; keys::PUBLICKEYBYTES + 1];
         buf[1..].copy_from_slice(&self.0.as_ref()[0..]);
 
         multibase::encode(Base32Z, &buf[0..])
     }
 
-    const ENCODED_LEN: usize = 1 + (((device::PUBLICKEYBYTES + 1) * 8 + 4) / 5); // 54
+    const ENCODED_LEN: usize = 1 + (((keys::PUBLICKEYBYTES + 1) * 8 + 4) / 5); // 54
 
     /// Attempt to deserialise from the canonical representation
     pub fn from_default_encoding(s: &str) -> Result<Self, conversion::Error> {
@@ -61,7 +60,7 @@ impl PeerId {
             return Err(UnknownVersion(*version));
         }
 
-        device::PublicKey::from_slice(&key)
+        PublicKey::from_slice(&key)
             .map(PeerId)
             .ok_or_else(|| InvalidPublicKey)
     }
@@ -71,20 +70,20 @@ impl PeerId {
     }
 }
 
-impl From<device::PublicKey> for PeerId {
-    fn from(pk: device::PublicKey) -> Self {
+impl From<PublicKey> for PeerId {
+    fn from(pk: PublicKey) -> Self {
         Self(pk)
     }
 }
 
-impl From<device::Key> for PeerId {
-    fn from(k: device::Key) -> Self {
+impl From<SecretKey> for PeerId {
+    fn from(k: SecretKey) -> Self {
         Self(k.public())
     }
 }
 
-impl From<&device::Key> for PeerId {
-    fn from(k: &device::Key) -> Self {
+impl From<&SecretKey> for PeerId {
+    fn from(k: &SecretKey) -> Self {
         Self(k.public())
     }
 }
@@ -178,7 +177,7 @@ impl Into<webpki::DNSName> for PeerId {
 }
 
 impl Deref for PeerId {
-    type Target = device::PublicKey;
+    type Target = PublicKey;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -191,7 +190,7 @@ pub mod tests {
 
     #[test]
     fn test_default_encoding_roundtrip() {
-        let peer_id1 = PeerId::from(device::Key::new().public());
+        let peer_id1 = PeerId::from(SecretKey::new().public());
         let peer_id2 = PeerId::from_default_encoding(&peer_id1.default_encoding()).unwrap();
 
         assert_eq!(peer_id1, peer_id2)
@@ -207,7 +206,7 @@ pub mod tests {
 
     #[test]
     fn test_str_roundtrip() {
-        let peer_id1 = PeerId::from(device::Key::new().public());
+        let peer_id1 = PeerId::from(SecretKey::new().public());
         let peer_id2 = PeerId::from_str(&peer_id1.to_string()).unwrap();
 
         assert_eq!(peer_id1, peer_id2)
@@ -215,7 +214,7 @@ pub mod tests {
 
     #[test]
     fn test_dns_name_roundtrip() {
-        let peer_id1 = PeerId::from(device::Key::new());
+        let peer_id1 = PeerId::from(SecretKey::new());
         let dns_name: webpki::DNSName = peer_id1.clone().into();
         let peer_id2 = PeerId::try_from(dns_name.as_ref()).unwrap();
 

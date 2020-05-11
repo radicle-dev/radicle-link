@@ -17,7 +17,6 @@
 
 use std::env;
 
-use tracing;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 /// Initialise logging / tracing

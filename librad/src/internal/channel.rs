@@ -57,6 +57,6 @@ impl<A: Clone> Fanout<A> {
             .collect()
             .await;
 
-        mem::replace(&mut *subscribers, subscribers1);
+        let _ = mem::replace(&mut *subscribers, subscribers1);
     }
 }

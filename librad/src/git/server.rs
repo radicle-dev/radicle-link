@@ -37,7 +37,6 @@ use futures::{
 };
 use tokio::process::{self, Command};
 use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
-use tracing;
 
 #[derive(Clone)]
 pub struct GitServer {

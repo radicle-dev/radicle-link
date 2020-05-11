@@ -132,7 +132,6 @@ pub mod tests {
     use super::*;
 
     use proptest::prelude::*;
-    use serde_json;
 
     #[test]
     pub fn test_geo_arc() {

@@ -162,9 +162,7 @@ pub mod tests {
         uri::{Path, Protocol},
     };
 
-    use lazy_static;
     use proptest::prelude::*;
-    use serde_json;
 
     lazy_static! {
         pub static ref EMPTY_HASH: Hash = Hash::hash(&[]);

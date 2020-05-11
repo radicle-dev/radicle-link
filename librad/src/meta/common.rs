@@ -201,8 +201,6 @@ impl fmt::Display for Url {
 pub mod tests {
     use super::*;
 
-    use serde_json;
-
     const SIMPLE_EMAIL: &str = "leboeuf@example.org";
     const SIMPLE_URL: &str = "http://example.org/xyz";
 

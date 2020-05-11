@@ -30,7 +30,7 @@ use crate::{
         repo::{self, Repo},
         server::GitServer,
     },
-    keys::device::{self, PublicKey},
+    keys::{PublicKey, SecretKey},
     meta::entity::{
         data::{EntityBuilder, EntityData},
         Entity,
@@ -74,12 +74,12 @@ pub struct BindError {
 /// [`SocketAddr`]esses.
 #[derive(Clone)]
 pub struct Peer {
-    key: device::Key,
+    key: SecretKey,
     paths: Paths,
 }
 
 impl Peer {
-    pub fn new(paths: Paths, key: device::Key) -> Self {
+    pub fn new(paths: Paths, key: SecretKey) -> Self {
         Self { key, paths }
     }
 

@@ -2,21 +2,34 @@
 
 # Radicle Link 🌱
 
-This is the working repo for the second iteration of the [Radicle](http://radicle.xyz/) code collaboration protocol and stack.
+This is the working repo for the second iteration of the [Radicle](https://radicle.xyz/)
+code collaboration protocol and stack.
 
 **🚨 WORK IN PROGRESS 🚨**
 
 _In fact, there is nothing substantial to see here yet_
 
-Join our [#radicle](https://webchat.freenode.net/?channels=radicle) IRC channel for development updates.
+Join our [#radicle](https://webchat.freenode.net/?channels=radicle) IRC channel
+for development updates.
 
 ## Build
 
-To build this, besides a rust build environment, you'll need the following libraries and tools (these are the package names on Ubuntu or Debian):
+Besides a Rust build environment (best obtained using [rustup](https://rustup.rs)),
+you may need to install the following packages on a Debian system:
 
-* `libssl-dev` (ssl library)
-* `nettle-dev` (low level crypto library)
-* `pkg-config`, `m4`, `llvm`, `libclang`, `libclang-dev` (dev tools and libs)
+* `file`
+* `gcc`
+* `git`
+* `libc6-dev`
+* `liblzma-dev`
+* `libssl-dev`
+* `make` (GNU make)
+* `pkg-config`
+
+For an up-to-date specification of the build and development toolchain, see the
+[Dockerfile used for CI](./.buildkite/docker/rust-nightly/Dockerfile).
+
+To compile, run `cargo build`.
 
 ## License
 

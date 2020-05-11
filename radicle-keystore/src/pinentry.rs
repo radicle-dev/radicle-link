@@ -17,7 +17,7 @@
 
 use std::{convert::Infallible, io};
 
-use rpassword;
+use rpassword::read_password_from_tty;
 use secstr::SecUtf8;
 
 /// A method to obtain a passphrase from which an encryption key can be derived.
@@ -52,6 +52,6 @@ impl<'a> Pinentry for Prompt<'a> {
     type Error = io::Error;
 
     fn get_passphrase(&self) -> Result<SecUtf8, Self::Error> {
-        rpassword::read_password_from_tty(Some(self.0)).map(SecUtf8::from)
+        read_password_from_tty(Some(self.0)).map(SecUtf8::from)
     }
 }

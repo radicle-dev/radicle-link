@@ -28,15 +28,18 @@ use rustls::{
     TLSError,
 };
 
-use crate::{keys::device, peer::PeerId};
+use crate::{
+    keys::{PublicKey, SecretKey},
+    peer::PeerId,
+};
 
 use yasna::{ASN1Error, ASN1ErrorKind, ASN1Result};
 
 /// Generate a TLS certificate.
 ///
-/// The certificate is self-signed by the given [`device::Key`], and advertises
+/// The certificate is self-signed by the given [`SecretKey`], and advertises
 /// the `PeerId::default_encoding` as the subject alt name.
-fn gen_cert(key: &device::Key) -> rcgen::Certificate {
+fn gen_cert(key: &SecretKey) -> rcgen::Certificate {
     let params = {
         let mut params = CertificateParams::new(vec![PeerId::from(key).default_encoding()]);
 
@@ -68,7 +71,7 @@ fn gen_cert(key: &device::Key) -> rcgen::Certificate {
         .expect("A certificate with valid parameters is valid. qed")
 }
 
-pub fn make_client_config(key: &device::Key) -> rustls::ClientConfig {
+pub fn make_client_config(key: &SecretKey) -> rustls::ClientConfig {
     let cert = gen_cert(key);
 
     let mut cfg = rustls::ClientConfig::new();
@@ -84,7 +87,7 @@ pub fn make_client_config(key: &device::Key) -> rustls::ClientConfig {
     cfg
 }
 
-pub fn make_server_config(key: &device::Key) -> rustls::ServerConfig {
+pub fn make_server_config(key: &SecretKey) -> rustls::ServerConfig {
     let cert = gen_cert(key);
 
     let mut cfg =
@@ -137,7 +140,7 @@ pub fn extract_peer_id(cert_der: &[u8]) -> ASN1Result<PeerId> {
                 Ok(pk)
             })?;
 
-            let peer_id = device::PublicKey::from_slice(&pk)
+            let peer_id = PublicKey::from_slice(&pk)
                 .map(PeerId::from)
                 .ok_or_else(|| ASN1Error::new(ASN1ErrorKind::Invalid))?;
 
@@ -308,15 +311,15 @@ mod tests {
 
     #[test]
     fn test_pkcs8_is_sane() {
-        let key = device::Key::new();
+        let key = SecretKey::new();
         let cert = gen_cert(&key);
         assert_eq!(cert.serialize_private_key_der(), key.as_pkcs8())
     }
 
     #[test]
     fn test_can_handshake() {
-        let client_key = device::Key::new();
-        let server_key = device::Key::new();
+        let client_key = SecretKey::new();
+        let server_key = SecretKey::new();
 
         let server_id = PeerId::from(&server_key).to_string();
 

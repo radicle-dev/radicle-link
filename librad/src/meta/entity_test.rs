@@ -21,7 +21,7 @@ use super::{
 };
 use crate::{
     hash::Hash,
-    keys::device::Key,
+    keys::SecretKey,
     peer::PeerId,
     uri::{Path, Protocol, RadUrn},
 };
@@ -41,27 +41,23 @@ const SEED: Seed = Seed([
     20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81, 181,
     134, 74, 88, 174, 254, 78, 69, 84, 149, 84, 167,
 ]);
-const CREATED_AT: u64 = 1_576_843_598;
 
-fn new_key_from_seed(seed_value: u8) -> Key {
+fn new_key_from_seed(seed_value: u8) -> SecretKey {
     let mut seed = SEED;
     seed.0[0] = seed_value;
-    let created_at = std::time::SystemTime::UNIX_EPOCH
-        .checked_add(std::time::Duration::from_secs(CREATED_AT))
-        .expect("SystemTime overflow o.O");
-    Key::from_seed(&seed, created_at)
+    SecretKey::from_seed(&seed)
 }
 
-fn peer_from_key(key: &Key) -> PeerId {
+fn peer_from_key(key: &SecretKey) -> PeerId {
     PeerId::from(key.public())
 }
 
 lazy_static! {
-    static ref K1: Key = new_key_from_seed(1);
-    static ref K2: Key = new_key_from_seed(2);
-    static ref K3: Key = new_key_from_seed(3);
-    static ref K4: Key = new_key_from_seed(4);
-    static ref K5: Key = new_key_from_seed(5);
+    static ref K1: SecretKey = new_key_from_seed(1);
+    static ref K2: SecretKey = new_key_from_seed(2);
+    static ref K3: SecretKey = new_key_from_seed(3);
+    static ref K4: SecretKey = new_key_from_seed(4);
+    static ref K5: SecretKey = new_key_from_seed(5);
 }
 
 lazy_static! {

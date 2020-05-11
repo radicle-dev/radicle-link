@@ -1,5 +1,5 @@
 [workspace]
-members = [ "librad", "rad2", "radicle-keystore", "radicle-tracker" ]
+members = [ "librad", "radicle-keystore", "radicle-tracker" ]
 
 [patch.crates-io]
 # Ed25519 support for rustls

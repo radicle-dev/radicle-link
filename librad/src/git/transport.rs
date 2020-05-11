@@ -59,7 +59,6 @@ use futures::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
-use tracing;
 
 use crate::{git::url::GitUrl, hash::Hash, peer::PeerId};
 

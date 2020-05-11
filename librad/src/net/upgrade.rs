@@ -254,12 +254,12 @@ mod tests {
     use futures::try_join;
     use futures_await_test::async_test;
 
-    use crate::{keys::device, net::connection::mock::MockStream};
+    use crate::{keys::SecretKey, net::connection::mock::MockStream};
 
     #[async_test]
     async fn test_upgrade() -> Result<(), Error> {
         let (initiator, receiver) =
-            MockStream::pair(device::Key::new().into(), device::Key::new().into(), 512);
+            MockStream::pair(SecretKey::new().into(), SecretKey::new().into(), 512);
 
         try_join!(
             async { upgrade(initiator, Git).await.map_err(|e| e.into()) },

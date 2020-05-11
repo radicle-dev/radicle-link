@@ -15,6 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod keys;
-pub mod profiles;
-pub mod project;
+//! Modules internally used by `librad`.
+//!
+//! Code here may change in incompatible ways without prior notice.
+
+pub mod canonical;
+pub mod channel;
+pub mod sync;

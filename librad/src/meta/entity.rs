@@ -19,7 +19,7 @@ pub mod data;
 
 use crate::{
     hash::{Hash, ParseError as HashParseError},
-    keys::device::{Key, PublicKey, Signature},
+    keys::{PublicKey, SecretKey, Signature},
     meta::user::User,
     uri::{Path, Protocol, RadUrn},
 };
@@ -437,7 +437,7 @@ where
     /// FIXME[ENTITY]: we should check the hash instead: it is cheaper and makes
     /// also verification way faster because we would not need to rebuild the
     /// canonical data at every check (we can trust the hash correctness)
-    pub fn compute_signature(&self, key: &Key) -> Result<Signature, Error> {
+    pub fn compute_signature(&self, key: &SecretKey) -> Result<Signature, Error> {
         Ok(key.sign(&self.canonical_data()?))
     }
 
@@ -449,7 +449,7 @@ where
     /// - this key is allowed to sign the entity (using `check_key`)
     pub async fn sign(
         &mut self,
-        key: &Key,
+        key: &SecretKey,
         by: &Signatory,
         resolver: &impl Resolver<User>,
     ) -> Result<(), Error> {

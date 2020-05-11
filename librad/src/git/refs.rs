@@ -27,8 +27,8 @@ use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 use crate::{
-    canonical::{Cjson, CjsonError},
-    keys::device::{self, Signature},
+    internal::canonical::{Cjson, CjsonError},
+    keys::{SecretKey, Signature},
     peer::PeerId,
 };
 
@@ -151,7 +151,7 @@ pub struct Refs {
 }
 
 impl Refs {
-    pub fn sign(self, key: &device::Key) -> Result<Signed, CjsonError> {
+    pub fn sign(self, key: &SecretKey) -> Result<Signed, CjsonError> {
         let signature = key.sign(&self.canonical_form()?);
         Ok(Signed {
             refs: self,

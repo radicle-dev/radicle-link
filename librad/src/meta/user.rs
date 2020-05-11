@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use urltemplate::UrlTemplate;
 
 use crate::{
-    keys::device::PublicKey,
+    keys::PublicKey,
     meta::{
         common::{EmailAddr, Label, Url},
         entity::{
@@ -179,7 +179,6 @@ pub mod tests {
     use super::*;
 
     use proptest::prelude::*;
-    use serde_json;
 
     use crate::meta::profile::tests::gen_user_profile;
 

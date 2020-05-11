@@ -20,17 +20,18 @@ use std::{
     fs,
 };
 
+use radicle_surf::vcs::git as surf;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
 use crate::{
-    canonical::{Cjson, CjsonError},
     git::{
         refs::{self, Oid, Refs},
         url::GitUrlRef,
     },
     hash::{self, Hash},
-    keys::device,
+    internal::canonical::{Cjson, CjsonError},
+    keys::SecretKey,
     meta::entity::{
         self,
         data::{EntityBuilder, EntityData},
@@ -48,7 +49,7 @@ const RAD_REFS: &str = "rad/refs";
 /// A git repository with `radicle-link` specific operations
 pub struct Repo {
     urn: RadUrn,
-    key: device::Key,
+    key: SecretKey,
     repo: git2::Repository,
 }
 
@@ -95,12 +96,15 @@ pub enum Error {
     Cjson(#[from] CjsonError),
 
     #[error(transparent)]
+    Surf(#[from] surf::error::Error),
+
+    #[error(transparent)]
     Git(#[from] git2::Error),
 }
 
 impl Repo {
     /// Create a [`Repo`] from the given metadata [`Entity`]
-    pub fn create<T>(paths: &Paths, key: device::Key, meta: &Entity<T>) -> Result<Self, Error>
+    pub fn create<T>(paths: &Paths, key: SecretKey, meta: &Entity<T>) -> Result<Self, Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
     {
@@ -153,7 +157,7 @@ impl Repo {
     ///
     /// Note that it is not currently validated that the repo is conforming to
     /// `radicle-link` conventions.
-    pub fn open(paths: &Paths, key: device::Key, urn: RadUrn) -> Result<Self, Error> {
+    pub fn open(paths: &Paths, key: SecretKey, urn: RadUrn) -> Result<Self, Error> {
         let mut repo_path = paths.projects_dir().join(urn.id.to_string());
         repo_path.set_extension("git");
 
@@ -180,7 +184,7 @@ impl Repo {
     /// The repo must not already exist.
     ///
     /// TODO: entity verification is not currently functional, pending #95
-    pub fn clone<T>(paths: &Paths, key: device::Key, url: RadUrl) -> Result<Self, Error>
+    pub fn clone<T>(paths: &Paths, key: SecretKey, url: RadUrl) -> Result<Self, Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,
@@ -422,6 +426,14 @@ impl Repo {
         })
     }
 
+    /// Obtain a [radicle-surf] `Browser` for this repo, consuming self.
+    ///
+    /// [radicle-surf]: https://github.com/radicle-dev/radicle-surf
+    pub fn browser(self) -> Result<surf::Browser, Error> {
+        let bro = surf::Browser::new(self.repo.into())?;
+        Ok(bro)
+    }
+
     /// Read the current [`Refs`] from the repo state
     pub fn rad_refs(&self) -> Result<Refs, Error> {
         // Collect refs/heads (our branches) at their current state
@@ -535,7 +547,7 @@ fn is_exists(e: &git2::Error) -> bool {
     e.code() == git2::ErrorCode::Exists
 }
 
-fn init_repo(paths: &Paths, key: &device::Key, id: &Hash) -> Result<git2::Repository, Error> {
+fn init_repo(paths: &Paths, key: &SecretKey, id: &Hash) -> Result<git2::Repository, Error> {
     let mut repo_path = paths.projects_dir().join(id.to_string());
     repo_path.set_extension("git");
 
@@ -551,7 +563,7 @@ fn init_repo(paths: &Paths, key: &device::Key, id: &Hash) -> Result<git2::Reposi
         _ => Error::Git(e),
     })?;
 
-    fn set_user_info(repo: &git2::Repository, key: &device::Key) -> Result<(), git2::Error> {
+    fn set_user_info(repo: &git2::Repository, key: &SecretKey) -> Result<(), git2::Error> {
         let mut config = repo.config()?;
         config.set_str("user.name", "radicle")?;
         config.set_str("user.email", &format!("radicle@{}", &key))

@@ -28,14 +28,13 @@ use futures::{
 use futures_codec::CborCodecError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing;
 
 use crate::{
-    channel::Fanout,
     git::{
         server::GitServer,
         transport::{GitStream, GitStreamFactory},
     },
+    internal::channel::Fanout,
     net::{
         connection::{CloseReason, LocalInfo, RemoteInfo, Stream},
         gossip,

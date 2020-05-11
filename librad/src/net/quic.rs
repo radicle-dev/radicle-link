@@ -27,7 +27,7 @@ use quinn::{self, NewConnection, VarInt};
 use thiserror::Error;
 
 use crate::{
-    keys::device,
+    keys::SecretKey,
     net::{
         connection::{self, CloseReason, LocalInfo, RemoteInfo},
         tls,
@@ -55,7 +55,7 @@ pub struct Endpoint {
 
 impl Endpoint {
     pub async fn bind<'a>(
-        local_key: &device::Key,
+        local_key: &SecretKey,
         listen_addr: SocketAddr,
     ) -> Result<BoundEndpoint<'a>> {
         let (endpoint, incoming) = make_endpoint(local_key, listen_addr).await?;
@@ -327,7 +327,7 @@ impl AsyncWrite for SendStream {
     }
 }
 async fn make_endpoint(
-    key: &device::Key,
+    key: &SecretKey,
     listen_addr: SocketAddr,
 ) -> std::result::Result<(quinn::Endpoint, quinn::Incoming), quinn::EndpointError> {
     let mut builder = quinn::Endpoint::builder();
@@ -337,7 +337,7 @@ async fn make_endpoint(
     builder.bind(&listen_addr)
 }
 
-fn make_client_config(key: &device::Key) -> quinn::ClientConfig {
+fn make_client_config(key: &SecretKey) -> quinn::ClientConfig {
     let mut quic_config = quinn::ClientConfigBuilder::default().build();
     let tls_config = Arc::new(tls::make_client_config(key));
     quic_config.crypto = tls_config;
@@ -345,7 +345,7 @@ fn make_client_config(key: &device::Key) -> quinn::ClientConfig {
     quic_config
 }
 
-fn make_server_config(key: &device::Key) -> quinn::ServerConfig {
+fn make_server_config(key: &SecretKey) -> quinn::ServerConfig {
     let mut quic_config = quinn::ServerConfigBuilder::default().build();
     let tls_config = Arc::new(tls::make_server_config(key));
     quic_config.crypto = tls_config;

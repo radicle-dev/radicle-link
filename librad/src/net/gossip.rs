@@ -48,10 +48,9 @@ use governor::{Quota, RateLimiter};
 use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
-use tracing;
 
 use crate::{
-    channel::Fanout,
+    internal::channel::Fanout,
     net::{
         connection::{self, RemoteInfo},
         gossip::error::Error,

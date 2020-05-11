@@ -21,10 +21,10 @@ use futures::future::Either;
 use futures_timer::Delay;
 
 use librad::{
+    internal::sync::Monitor,
     meta::{project::ProjectInfo, Project, User},
     net::peer::{BoundPeer, Gossip, Rev},
     peer::PeerId,
-    sync::Monitor,
 };
 
 mod logging;

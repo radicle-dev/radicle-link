@@ -551,17 +551,15 @@ impl<'a> Display for RadUrlRef<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, UNIX_EPOCH};
 
     use sodiumoxide::crypto::sign::Seed;
 
-    use crate::{keys::device, peer::PeerId};
+    use crate::{keys::SecretKey, peer::PeerId};
 
     const SEED: Seed = Seed([
         20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81,
         181, 134, 74, 88, 174, 254, 78, 69, 84, 149, 84, 167,
     ]);
-    const CREATED_AT: u64 = 1_576_843_598;
 
     #[test]
     fn test_urn_roundtrip() {
@@ -581,12 +579,7 @@ mod tests {
             proto: Protocol::Git,
             path: Path::parse("rad/issues/42").unwrap(),
         }
-        .into_rad_url(PeerId::from(device::Key::from_seed(
-            &SEED,
-            UNIX_EPOCH
-                .checked_add(Duration::from_secs(CREATED_AT))
-                .unwrap(),
-        )));
+        .into_rad_url(PeerId::from(SecretKey::from_seed(&SEED)));
 
         assert_eq!(
             "rad+git://hyduh7ymr5a1n7zo54iyix36dyqh3o84wbi95muirt7mbiobar3d9s/hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/rad/issues/42",
@@ -601,12 +594,7 @@ mod tests {
             proto: Protocol::Git,
             path: Path::parse("rad/issue#foos/42").unwrap(),
         }
-        .into_rad_url(PeerId::from(device::Key::from_seed(
-            &SEED,
-            UNIX_EPOCH
-                .checked_add(Duration::from_secs(CREATED_AT))
-                .unwrap(),
-        )));
+        .into_rad_url(PeerId::from(SecretKey::from_seed(&SEED)));
 
         assert_eq!(url, url.clone().to_string().parse().unwrap())
     }

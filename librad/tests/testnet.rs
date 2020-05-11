@@ -29,7 +29,7 @@ use lazy_static::lazy_static;
 use tempfile::{tempdir, TempDir};
 
 use librad::{
-    keys::device,
+    keys::SecretKey,
     net::{
         peer::{BindError, BoundPeer, Handle, Peer},
         protocol::ProtocolEvent,
@@ -59,7 +59,7 @@ pub fn setup(num_peers: usize) -> io::Result<Vec<TestPeer>> {
     for _ in 0..num_peers {
         let tmp = tempdir()?;
         let paths = Paths::from_root(tmp.path())?;
-        let key = device::Key::new();
+        let key = SecretKey::new();
         peers.push(TestPeer {
             _tmp: tmp,
             peer: Peer::new(paths, key),

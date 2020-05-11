@@ -78,20 +78,20 @@ impl Paths {
     pub fn all_dirs(&self) -> HashMap<&str, &Path> {
         // Nb. this pattern match is here to keep the map consistent with the
         // struct fields
-        match self {
-            Self {
-                keys_dir,
-                projects_dir,
-                profiles_dir,
-            } => [
-                ("keys_dir", keys_dir.as_path()),
-                ("projects_dir", projects_dir.as_path()),
-                ("profiles_dir", profiles_dir.as_path()),
-            ]
-            .iter()
-            .cloned()
-            .collect(),
-        }
+        let Self {
+            keys_dir,
+            projects_dir,
+            profiles_dir,
+        } = self;
+
+        [
+            ("keys_dir", keys_dir.as_path()),
+            ("projects_dir", projects_dir.as_path()),
+            ("profiles_dir", profiles_dir.as_path()),
+        ]
+        .iter()
+        .cloned()
+        .collect()
     }
 
     fn init(self) -> Result<Self, io::Error> {
