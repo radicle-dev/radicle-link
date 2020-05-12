@@ -35,6 +35,22 @@ pub use ed25519::PUBLICKEYBYTES;
 /// version tag alongside the data.
 const VERSION: u8 = 0;
 
+lazy_static! {
+    static ref SODIUMOXIDE_INITIALISED: bool = sodiumoxide::init().map(|()| true).unwrap_or(false);
+}
+
+/// Lazily trigger sodiumoxide initialisation.
+///
+/// Panics if `sodiumoxide::init()` fails.
+///
+/// **This function must be called from all places within this module which
+/// could be called with an unitialized `sodiumoxide`.**
+fn ensure_initialised() {
+    if !SODIUMOXIDE_INITIALISED.deref() {
+        panic!("Failed to initialise sodiumoxide")
+    }
+}
+
 /// A device-specific signing key
 #[derive(Clone, Eq, PartialEq)]
 pub struct SecretKey(ed25519::SecretKey);
@@ -52,17 +68,20 @@ pub struct Signature(ed25519::Signature);
 #[allow(clippy::new_without_default)]
 impl SecretKey {
     pub fn new() -> Self {
+        ensure_initialised();
         let (_, sk) = ed25519::gen_keypair();
         Self(sk)
     }
 
     #[cfg(test)]
     pub fn from_seed(seed: &ed25519::Seed) -> Self {
+        ensure_initialised();
         let (_, sk) = ed25519::keypair_from_seed(seed);
         Self(sk)
     }
 
     pub(crate) fn from_secret(sk: ed25519::SecretKey) -> Self {
+        ensure_initialised(); // just to be sure
         Self(sk)
     }
 
@@ -128,6 +147,7 @@ impl SecretKeyExt for SecretKey {
     type Error = IntoSecretKeyError;
 
     fn from_bytes_and_meta(bytes: SecStr, _metadata: &Self::Metadata) -> Result<Self, Self::Error> {
+        ensure_initialised();
         let sk = ed25519::SecretKey::from_slice(bytes.unsecure())
             .ok_or(IntoSecretKeyError::InvalidSliceLength)?;
         Ok(Self::from_secret(sk))
@@ -144,10 +164,12 @@ impl PublicKey {
     }
 
     pub fn from_slice(bs: &[u8]) -> Option<PublicKey> {
+        ensure_initialised();
         ed25519::PublicKey::from_slice(&bs).map(PublicKey)
     }
 
     pub fn from_bs58(s: &str) -> Option<Self> {
+        ensure_initialised();
         let bytes = match bs58::decode(s.as_bytes())
             .with_alphabet(bs58::alphabet::BITCOIN)
             .into_vec()
@@ -167,6 +189,7 @@ impl PublicKey {
 
 impl From<ed25519::PublicKey> for PublicKey {
     fn from(pk: ed25519::PublicKey) -> Self {
+        ensure_initialised();
         Self(pk)
     }
 }
@@ -263,6 +286,7 @@ impl Signature {
     }
 
     pub fn from_bs58(s: &str) -> Option<Self> {
+        ensure_initialised();
         let bytes = match bs58::decode(s.as_bytes())
             .with_alphabet(bs58::alphabet::BITCOIN)
             .into_vec()

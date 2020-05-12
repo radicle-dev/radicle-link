@@ -34,7 +34,3 @@ pub mod net;
 pub mod paths;
 pub mod peer;
 pub mod uri;
-
-pub fn init() -> bool {
-    sodiumoxide::init().is_ok()
-}
