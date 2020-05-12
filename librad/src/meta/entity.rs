@@ -142,46 +142,18 @@ pub enum VerificationStatus {
 }
 
 impl VerificationStatus {
-    pub fn verified(&self) -> bool {
-        if let VerificationStatus::Verified = self {
-            true
+    pub fn verification_failed(&self) -> Option<&Error> {
+        if let VerificationStatus::VerificationFailed(err) = self {
+            Some(err)
         } else {
-            false
+            None
         }
     }
-    pub fn signed(&self) -> bool {
-        if let VerificationStatus::Signed = self {
-            true
+    pub fn history_verification_failed(&self) -> Option<&HistoryVerificationError> {
+        if let VerificationStatus::HistoryVerificationFailed(err) = self {
+            Some(err)
         } else {
-            false
-        }
-    }
-    pub fn signatures_missing(&self) -> bool {
-        if let VerificationStatus::SignaturesMissing = self {
-            true
-        } else {
-            false
-        }
-    }
-    pub fn verification_failed(&self) -> bool {
-        if let VerificationStatus::VerificationFailed(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-    pub fn history_verification_failed(&self) -> bool {
-        if let VerificationStatus::HistoryVerificationFailed(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-    pub fn unknown(&self) -> bool {
-        if let VerificationStatus::Unknown = self {
-            true
-        } else {
-            false
+            None
         }
     }
 }
@@ -339,7 +311,7 @@ where
 
     /// Turn the entity in to its raw data
     /// (first step of serialization and reverse of [`Entity::from_data`])
-    pub fn to_data(&self) -> data::EntityData<T> {
+    pub fn to_data(&self) -> EntityData<T> {
         let mut signatures = HashMap::new();
         for (k, s) in self.signatures() {
             signatures.insert(
@@ -357,7 +329,7 @@ where
         let keys = HashSet::from_iter(self.keys().iter().map(|k| k.to_bs58()));
         let certifiers = HashSet::from_iter(self.certifiers().iter().map(|c| c.to_string()));
 
-        data::EntityData {
+        EntityData {
             name: Some(self.name.to_owned()),
             revision: Some(self.revision),
             rad_version: self.rad_version,
@@ -373,7 +345,7 @@ where
 
     /// Helper to build a new entity cloning the current one
     /// (signatures are cleared because they would be invalid anyway)
-    pub fn to_builder(&self) -> data::EntityData<T> {
+    pub fn to_builder(&self) -> EntityData<T> {
         self.to_data().clear_hash().clear_signatures()
     }
 
@@ -636,7 +608,7 @@ where
                 return Err(err);
             }
             // Also check that no signature is missing
-            if current.status.signatures_missing() {
+            if current.status == VerificationStatus::SignaturesMissing {
                 let err = HistoryVerificationError::ErrorAtRevision {
                     revision,
                     error: Error::SignatureMissing,
@@ -647,6 +619,7 @@ where
 
             // End at root revision
             if revision == 1 {
+                self.status = VerificationStatus::Verified;
                 return Ok(());
             }
 
@@ -689,7 +662,7 @@ where
 {
     /// Build an `Entity` from its data (the second step of deserialization)
     /// It guarantees that the `hash` is correct
-    pub fn from_data(data: data::EntityData<T>) -> Result<Self, Error> {
+    pub fn from_data(data: EntityData<T>) -> Result<Self, Error> {
         // FIXME[ENTITY]: do we want this? it makes `default` harder to get right...
         if data.name.is_none() {
             return Err(Error::InvalidData("Missing name".to_owned()));
@@ -749,18 +722,13 @@ where
             }
         }
 
-        let parent_hash = match data.parent_hash {
-            Some(s) => Some(Hash::from_str(&s)?),
-            None => None,
-        };
+        let parent_hash = data.parent_hash.map(|s| Hash::from_str(&s)).transpose()?;
+        let root_hash = data.root_hash.map(|s| Hash::from_str(&s)).transpose()?;
 
-        let root_hash = match data.root_hash {
-            Some(s) => Some(Hash::from_str(&s)?),
-            None => None,
-        };
         let root_hash = match root_hash {
             Some(h) => h,
             None => {
+                // TODO: error handling for unwrap on revision
                 if parent_hash.is_none() && data.revision.unwrap() == 1 {
                     actual_hash.clone()
                 } else {
