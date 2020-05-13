@@ -1,13 +1,27 @@
 steps:
-  - label: "Build, lint, test"
+  - label: "Build, test, doc"
     commands:
-      - "ci/run"
-    agents:
+      - "ci/build-test"
+      - "ci/docs"
+    agents: &build-agent
       production: "true"
       platform: "linux"
-    env:
+    env: &build-docker
       DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-seedling-build@sha256:f53c35f65541d91b7665003a6362be48d6b2687a5a9e46adaadccaf3129da51f"
       DOCKER_FILE: .buildkite/docker/rust-nightly/Dockerfile
+
+  - label: "Lint and clip"
+    commands:
+      - "ci/clippy"
+    agents: *build-agent
+    env: *build-docker
+
+  - label: "Deny"
+    commands:
+      - "ci/advisory"
+    agents: *build-agent
+    env: *build-docker
+
 
   - label: "Render Spec"
     commands:

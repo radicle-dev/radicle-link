@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+if [[ "${CI:-false}" = "true" ]]
+then
+    sed -i -e 's|db-path.*|db-path = "/cache/cargo/advisory-db"|' deny.toml
+fi
+
+echo '--- deny: Advisories'
+cargo deny check advisories
+
+echo '--- deny: Licenses'
+cargo deny check licenses
+
+echo '--- deny: Bans'
+cargo deny check bans
+
+echo '--- deny: Sources'
+cargo deny check sources

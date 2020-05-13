@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+echo '--- Build & Test'
+cargo test --all
