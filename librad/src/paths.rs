@@ -27,8 +27,7 @@ use directories::ProjectDirs;
 #[derive(Clone)]
 pub struct Paths {
     keys_dir: PathBuf,
-    projects_dir: PathBuf,
-    profiles_dir: PathBuf,
+    git_dir: PathBuf,
 }
 
 impl Paths {
@@ -45,8 +44,7 @@ impl Paths {
 
         Self {
             keys_dir: config_dir.join("keys"),
-            projects_dir: data_dir.join("projects"),
-            profiles_dir: config_dir.join("profiles"),
+            git_dir: data_dir.join("git"),
         }
         .init()
     }
@@ -54,11 +52,11 @@ impl Paths {
     // Don't use system paths, but the supplied directory as a root.
     //
     // For testing, you know.
-    pub fn from_root(root: &Path) -> Result<Self, io::Error> {
+    pub fn from_root(root: impl AsRef<Path>) -> Result<Self, io::Error> {
+        let root = root.as_ref();
         Self {
             keys_dir: root.join("keys"),
-            projects_dir: root.join("projects"),
-            profiles_dir: root.join("profiles"),
+            git_dir: root.join("git"),
         }
         .init()
     }
@@ -67,27 +65,18 @@ impl Paths {
         &self.keys_dir
     }
 
-    pub fn projects_dir(&self) -> &Path {
-        &self.projects_dir
-    }
-
-    pub fn profiles_dir(&self) -> &Path {
-        &self.profiles_dir
+    pub fn git_dir(&self) -> &Path {
+        &self.git_dir
     }
 
     pub fn all_dirs(&self) -> HashMap<&str, &Path> {
         // Nb. this pattern match is here to keep the map consistent with the
         // struct fields
-        let Self {
-            keys_dir,
-            projects_dir,
-            profiles_dir,
-        } = self;
+        let Self { keys_dir, git_dir } = self;
 
         [
             ("keys_dir", keys_dir.as_path()),
-            ("projects_dir", projects_dir.as_path()),
-            ("profiles_dir", profiles_dir.as_path()),
+            ("git_dir", git_dir.as_path()),
         ]
         .iter()
         .cloned()

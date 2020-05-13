@@ -21,20 +21,13 @@ use std::{
     net::{SocketAddr, ToSocketAddrs},
 };
 
-use serde::{de::DeserializeOwned, Serialize};
+use futures::executor::block_on;
 use thiserror::Error;
 
 use crate::{
-    git::{
-        self,
-        repo::{self, Repo},
-        server::GitServer,
-    },
+    git::{self, repo, server::GitServer, storage::Storage as GitStorage},
+    internal::channel::Fanout,
     keys::{PublicKey, SecretKey},
-    meta::entity::{
-        data::{EntityBuilder, EntityData},
-        Entity,
-    },
     net::{
         connection::LocalInfo,
         discovery,
@@ -43,8 +36,8 @@ use crate::{
         quic::{self, BoundEndpoint, Endpoint},
     },
     paths::Paths,
-    peer::PeerId,
-    uri::{self, RadUrl, RadUrn},
+    peer::{Originates, OriginatesRef, PeerId},
+    uri::{self, RadUrn},
 };
 
 pub mod types;
@@ -59,6 +52,9 @@ pub enum GitFetchError {
 
     #[error(transparent)]
     Repo(#[from] repo::Error),
+
+    #[error(transparent)]
+    Store(#[from] git::storage::Error),
 }
 
 #[derive(Debug, Error)]
@@ -66,6 +62,23 @@ pub enum GitFetchError {
 pub struct BindError {
     addr: SocketAddr,
     source: quic::Error,
+}
+
+/// Upstream events.
+///
+/// A [`Peer`] exhibits "background" behaviour as it reacts to gossip. This
+/// behaviour can be observed by using [`Peer::subscribe`].
+#[derive(Clone, Debug)]
+pub enum PeerEvent {
+    GossipFetch(FetchInfo),
+}
+
+/// Event payload for a fetch triggered by [`LocalStorage::put`]
+#[derive(Clone, Debug)]
+pub struct FetchInfo {
+    pub provider: PeerId,
+    pub gossip: Gossip,
+    pub result: PutResult,
 }
 
 /// A stateful network peer.
@@ -76,15 +89,43 @@ pub struct BindError {
 pub struct Peer {
     key: SecretKey,
     paths: Paths,
+    git: GitStorage,
+
+    subscribers: Fanout<PeerEvent>,
 }
 
 impl Peer {
-    pub fn new(paths: Paths, key: SecretKey) -> Self {
-        Self { key, paths }
+    pub fn new(paths: Paths, git: GitStorage) -> Self {
+        Self {
+            key: git.key.clone(),
+            paths,
+            git,
+            subscribers: Fanout::new(),
+        }
+    }
+
+    pub fn init(paths: Paths, key: SecretKey) -> Result<Self, git::storage::Error> {
+        let git = GitStorage::init(&paths, key.clone())?;
+        Ok(Self {
+            key,
+            paths,
+            git,
+            subscribers: Fanout::new(),
+        })
+    }
+
+    pub fn peer_id(&self) -> PeerId {
+        PeerId::from(&self.key)
     }
 
     pub fn public_key(&self) -> PublicKey {
         self.key.public()
+    }
+
+    // FIXME: this should not be here, but we can't otherwise do entity signing
+    // in tests
+    pub fn key(&self) -> &SecretKey {
+        &self.key
     }
 
     /// Bind to the given [`SocketAddr`].
@@ -97,9 +138,7 @@ impl Peer {
     /// kernel.
     pub async fn bind<'a>(self, addr: SocketAddr) -> Result<BoundPeer<'a>, BindError> {
         let peer_id = PeerId::from(&self.key);
-        let git = GitServer {
-            export: self.paths.projects_dir().into(),
-        };
+        let git = GitServer::new(&self.paths);
         let endpoint = Endpoint::bind(&self.key, addr)
             .await
             .map_err(|e| BindError { addr, source: e })?;
@@ -119,47 +158,81 @@ impl Peer {
         })
     }
 
-    /// Create a git [`Repo`] from an initial [`Entity`]
-    pub fn git_create<T>(&self, meta: &Entity<T>) -> Result<Repo, repo::Error>
-    where
-        T: Serialize + DeserializeOwned + Clone + Default,
-    {
-        Repo::create(&self.paths, self.key.clone(), meta)
+    /// Subscribe to [`PeerEvent`]s
+    pub async fn subscribe(&self) -> impl futures::Stream<Item = PeerEvent> {
+        self.subscribers.subscribe().await
     }
 
-    /// Open a git [`Repo`] identified by the given [`RadUrn`]
-    ///
-    /// This is a local storage operation -- an error is returned if the repo
-    /// doesn't exist locally.
-    pub fn git_open(&self, urn: RadUrn) -> Result<Repo, repo::Error> {
-        Repo::open(&self.paths, self.key.clone(), urn)
+    pub fn git(&self) -> &GitStorage {
+        &self.git
     }
 
-    /// Clone a git [`Repo`] from the given [`RadUrl`]
-    pub fn git_clone<T>(&self, url: RadUrl) -> Result<Repo, repo::Error>
-    where
-        T: Serialize + DeserializeOwned + Clone + Default,
-        EntityData<T>: EntityBuilder,
-    {
-        Repo::clone(&self.paths, self.key.clone(), url)
-    }
+    /// Update a git repo
+    pub fn git_fetch<'a>(
+        &'a self,
+        from: &PeerId,
+        urn: impl Into<OriginatesRef<'a, RadUrn>>,
+        head: impl Into<Option<git2::Oid>>,
+    ) -> Result<(), GitFetchError> {
+        let urn = self.urn_context(urn);
 
-    /// Internal: update a git repo in response to a [`LocalStorage::put`]
-    /// callback
-    fn git_fetch(&self, from: &PeerId, urn: RadUrn, head: git2::Oid) -> Result<(), GitFetchError> {
-        let repo = self.git_open(urn)?;
-        if repo.has_object(head)? {
-            return Err(GitFetchError::KnownObject(head));
+        if let Some(head) = head.into() {
+            if self.git.has_commit(&urn, head)? {
+                return Err(GitFetchError::KnownObject(head));
+            }
         }
-        repo.fetch(from).map_err(|e| e.into())
+
+        self.git
+            .clone()
+            .open_repo(urn)?
+            .fetch(from)
+            .map_err(|e| e.into())
     }
 
-    /// Internal: determine if we have the given object locally, in response to
-    /// a [`LocalStorage::ask`] callback.
-    fn git_has(&self, urn: RadUrn, head: git2::Oid) -> bool {
-        self.git_open(urn)
-            .and_then(|repo| repo.has_object(head))
-            .unwrap_or(false)
+    /// Determine if we have the given object locally
+    pub fn git_has<'a>(
+        &'a self,
+        urn: impl Into<OriginatesRef<'a, RadUrn>>,
+        head: impl Into<Option<git2::Oid>>,
+    ) -> bool {
+        let urn = self.urn_context(urn);
+        match head.into() {
+            None => self.git.has_urn(&urn).unwrap_or(false),
+            Some(head) => self.git.has_commit(&urn, head).unwrap_or(false),
+        }
+    }
+
+    /// Map the [`uri::Path`] of the given [`RadUrn`] to
+    /// `refs/remotes/<origin>/<path>` if applicable
+    fn urn_context<'a>(&'a self, urn: impl Into<OriginatesRef<'a, RadUrn>>) -> RadUrn {
+        let OriginatesRef { from, value } = urn.into();
+        let urn = value.clone();
+
+        if from == &self.peer_id() {
+            return urn;
+        }
+
+        let path = urn
+            .path
+            .strip_prefix("refs/")
+            .map(|tail| {
+                uri::Path::parse(tail)
+                    .expect("`Path` is still valid after stripping a valid prefix")
+            })
+            .unwrap_or(urn.path);
+
+        let mut remote =
+            uri::Path::parse(format!("refs/remotes/{}", from)).expect("Known valid path");
+        remote.push(path);
+
+        RadUrn {
+            path: remote,
+            ..urn
+        }
+    }
+
+    fn emit_event_sync(&self, event: PeerEvent) {
+        block_on(self.subscribers.emit(event))
     }
 }
 
@@ -167,29 +240,61 @@ impl LocalStorage for Peer {
     type Update = Gossip;
 
     fn put(&self, provider: &PeerId, has: Self::Update) -> PutResult {
+        let span = tracing::info_span!("Peer::LocalStorage::put");
+        let _guard = span.enter();
+
         match has.urn.proto {
             uri::Protocol::Git => {
-                let Rev::Git(head) = has.rev;
-                let res = self.git_fetch(provider, has.urn, head);
-
-                match res {
-                    Ok(()) => PutResult::Applied,
-                    Err(e) => match e {
-                        GitFetchError::KnownObject(_) => PutResult::Stale,
-                        GitFetchError::Repo(repo::Error::NoSuchRepo) => PutResult::Uninteresting,
-                        _ => PutResult::Error,
+                let res = match has.rev {
+                    // TODO: may need to fetch eagerly if we tracked while offline (#141)
+                    None => PutResult::Uninteresting,
+                    Some(Rev::Git(head)) => {
+                        match self.git_fetch(
+                            provider,
+                            OriginatesRef {
+                                from: &has.origin,
+                                value: &has.urn,
+                            },
+                            head,
+                        ) {
+                            Ok(()) => PutResult::Applied,
+                            Err(e) => match e {
+                                GitFetchError::KnownObject(_) => PutResult::Stale,
+                                GitFetchError::Repo(repo::Error::NoSuchUrn(_)) => {
+                                    PutResult::Uninteresting
+                                },
+                                e => {
+                                    tracing::error!(err = %e, "Fetch error");
+                                    PutResult::Error
+                                },
+                            },
+                        }
                     },
-                }
+                };
+
+                self.emit_event_sync(PeerEvent::GossipFetch(FetchInfo {
+                    provider: provider.clone(),
+                    gossip: has,
+                    result: res,
+                }));
+
+                res
             },
         }
     }
 
     fn ask(&self, want: Self::Update) -> bool {
+        let span = tracing::info_span!("Peer::LocalStorage::ask");
+        let _guard = span.enter();
+
         match want.urn.proto {
-            uri::Protocol::Git => {
-                let Rev::Git(head) = want.rev;
-                self.git_has(want.urn, head)
-            },
+            uri::Protocol::Git => self.git_has(
+                &Originates {
+                    from: want.origin,
+                    value: want.urn,
+                },
+                want.rev.map(|Rev::Git(head)| head),
+            ),
         }
     }
 }
@@ -257,7 +362,7 @@ impl Handle {
 mod tests {
     use super::*;
 
-    use crate::{hash::Hash, uri::Path};
+    use crate::{hash::Hash, keys::SecretKey, peer::PeerId, uri::Path};
 
     #[test]
     fn test_rev_serde() {
@@ -271,7 +376,12 @@ mod tests {
     #[test]
     fn test_gossip_serde() {
         let rev = Rev::Git(git2::Oid::hash_object(git2::ObjectType::Commit, b"chrzbrr").unwrap());
-        let gossip = Gossip::new(Hash::hash(b"cerveza coronita"), Path::new(), rev);
+        let gossip = Gossip::new(
+            Hash::hash(b"cerveza coronita"),
+            Path::new(),
+            rev,
+            PeerId::from(SecretKey::new()),
+        );
         assert_eq!(
             gossip,
             serde_cbor::from_slice(&serde_cbor::to_vec(&gossip).unwrap()).unwrap()

@@ -184,6 +184,31 @@ impl Deref for PeerId {
     }
 }
 
+pub struct Originates<T> {
+    pub from: PeerId,
+    pub value: T,
+}
+
+impl<T> Originates<T> {
+    pub fn as_ref(&'_ self) -> OriginatesRef<'_, T> {
+        OriginatesRef {
+            from: &self.from,
+            value: &self.value,
+        }
+    }
+}
+
+pub struct OriginatesRef<'a, T> {
+    pub from: &'a PeerId,
+    pub value: &'a T,
+}
+
+impl<'a, T> From<&'a Originates<T>> for OriginatesRef<'a, T> {
+    fn from(orig: &'a Originates<T>) -> Self {
+        orig.as_ref()
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;

@@ -302,8 +302,8 @@ where
         mut incoming: BoxStream<'_, quic::Result<quic::Stream>>,
         hello: impl Into<Option<gossip::Rpc<SocketAddr, A>>>,
     ) {
-        tracing::info!("New outgoing connection");
         let remote_id = conn.remote_peer_id().clone();
+        tracing::info!(remote_id = %remote_id, "New outgoing connection");
 
         {
             self.connections
@@ -358,8 +358,7 @@ where
         Incoming: futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
     {
         let remote_id = conn.remote_peer_id().clone();
-
-        tracing::info!("New incoming connection");
+        tracing::info!(remote.id = %remote_id, "New incoming connection");
 
         {
             self.connections
@@ -474,7 +473,7 @@ where
     futures::stream::iter(addrs)
         .filter_map(|addr| {
             let mut endpoint = endpoint.clone();
-            tracing::info!("Establishing connection");
+            tracing::info!(peer.id = %peer_id, "Establishing connection");
             Box::pin(async move {
                 match endpoint.connect(peer_id, &addr).await {
                     Ok(conn) => Some(conn),

@@ -150,17 +150,40 @@ impl Path {
         Self::with_capacity(0)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn parse<S: AsRef<str>>(s: S) -> Result<Self, path::ParseError> {
         Self::parse_str(s).map(Path)
     }
 
     pub fn join<S: AsRef<str>>(mut self, segment: S) -> Result<Self, path::ParseError> {
         let segment = Self::parse_str(segment)?;
-        if !self.0.is_empty() {
+
+        if !self.is_empty() {
             self.0.push('/')
         }
         self.0.push_str(&segment);
+
         Ok(self)
+    }
+
+    pub fn push(&mut self, other: Self) {
+        if !other.is_empty() {
+            if !self.is_empty() {
+                self.0.push('/')
+            }
+            self.0.push_str(&other.0);
+        }
+    }
+
+    pub fn deref_or_default(&self) -> &str {
+        if self.is_empty() {
+            "rad/id"
+        } else {
+            self.deref()
+        }
     }
 
     #[allow(clippy::trivial_regex)]
@@ -597,6 +620,12 @@ mod tests {
         .into_rad_url(PeerId::from(SecretKey::from_seed(&SEED)));
 
         assert_eq!(url, url.clone().to_string().parse().unwrap())
+    }
+
+    #[test]
+    fn test_empty_path_parses() {
+        let path = Path::parse("").unwrap();
+        assert_eq!(path, Path::empty())
     }
 
     #[test]

@@ -17,13 +17,13 @@
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fmt::{self, Debug},
+    fmt::Debug,
     hash::Hash,
     iter,
     ops::{Deref, DerefMut},
 };
 
-use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -32,51 +32,7 @@ use crate::{
     peer::PeerId,
 };
 
-#[derive(Debug)]
-pub struct Oid(pub git2::Oid);
-
-impl Serialize for Oid {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.0.to_string().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Oid {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct OidVisitor;
-
-        impl<'de> Visitor<'de> for OidVisitor {
-            type Value = Oid;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "a git2::Oid")
-            }
-
-            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                s.parse().map(Oid).map_err(serde::de::Error::custom)
-            }
-        }
-
-        deserializer.deserialize_str(OidVisitor)
-    }
-}
-
-impl Deref for Oid {
-    type Target = git2::Oid;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+pub use crate::git::ext::Oid;
 
 /// The transitive tracking graph, up to 3 degrees
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
