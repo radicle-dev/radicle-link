@@ -60,7 +60,12 @@ use futures::{
 };
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
 
-use crate::{git::url::GitUrl, hash::Hash, peer::PeerId};
+use crate::{
+    git::{header::Header, url::GitUrl},
+    hash::Hash,
+    peer::PeerId,
+    uri::{self, RadUrn},
+};
 
 type Factories = Arc<RwLock<HashMap<PeerId, Box<dyn GitStreamFactory>>>>;
 
@@ -172,32 +177,18 @@ impl RadSubTransport {
     async fn ensure_header_sent(&mut self) -> io::Result<()> {
         if !self.header_sent {
             self.header_sent = true;
-            self.stream
-                .write_all(self.service_header().as_bytes())
-                .await
+            let header = Header::new(
+                self.service,
+                RadUrn::new(
+                    self.remote_repo.clone(),
+                    uri::Protocol::Git,
+                    uri::Path::empty(),
+                ),
+                self.remote_peer.clone(),
+            );
+            self.stream.write_all(header.to_string().as_bytes()).await
         } else {
             Ok(())
-        }
-    }
-
-    fn service_header(&self) -> String {
-        match self.service {
-            Service::UploadPackLs => format!(
-                "git-upload-pack {}.git\0advertise\0host={}\0\n",
-                self.remote_repo, self.remote_peer
-            ),
-            Service::UploadPack => format!(
-                "git-upload-pack {}.git\0\0host={}\0\n",
-                self.remote_repo, self.remote_peer
-            ),
-            Service::ReceivePackLs => format!(
-                "git-receive-pack {}.git\0advertise\0host={}\0\n",
-                self.remote_repo, self.remote_peer
-            ),
-            Service::ReceivePack => format!(
-                "git-receive-pack {}.git\0\0host={}\0\n",
-                self.remote_repo, self.remote_peer
-            ),
         }
     }
 }

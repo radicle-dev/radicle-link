@@ -19,4 +19,6 @@ pub mod refs;
 pub mod repo;
 pub mod server;
 pub mod transport;
-pub mod url;
+
+pub(crate) mod header;
+pub(crate) mod url;

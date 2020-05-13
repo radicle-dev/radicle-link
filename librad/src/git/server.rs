@@ -35,8 +35,11 @@ use futures::{
     self,
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
 };
+use git2::transport::Service;
 use tokio::process::{self, Command};
 use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
+
+use crate::git::header::{self, Header};
 
 #[derive(Clone)]
 pub struct GitServer {
@@ -55,56 +58,46 @@ impl GitServer {
         let _guard = span.enter();
 
         let mut recv = BufReader::new(recv);
-        let mut header = String::with_capacity(512);
-        if let Err(e) = recv.read_line(&mut header).await {
+        let mut hdr_buf = String::with_capacity(256);
+        if let Err(e) = recv.read_line(&mut hdr_buf).await {
             tracing::error!("Error reading git service header: {}", e);
             return send_err(&mut send, "garbage header").await;
         }
 
-        let (service, repo, mode) = {
-            let mut parts = header.split(|c| c == ' ' || c == '\0');
-
-            let service = parts.next();
-            let repo = parts.next();
-            let mode = parts.next().unwrap_or("");
-            (service, repo, mode)
+        let header = match hdr_buf.parse::<Header>() {
+            Ok(hdr) => hdr,
+            Err(e) => {
+                tracing::error!("Error parsing git service header: {}", e);
+                return send_err(&mut send, "invalid header").await;
+            },
         };
 
-        if service != Some("git-upload-pack") {
-            tracing::error!("Invalid git service: {:?}", service);
-            return send_err(&mut send, "service not enabled").await;
-        }
-
         let repo_path = {
-            let repo_path = repo
-                .ok_or_else(|| git2::Error::from_str("No repo specified by client"))
-                .and_then(|path| {
-                    git2::Repository::open_bare(self.export.join(path.trim_start_matches('/')))
-                })
-                .map(|repo| repo.path().to_path_buf());
-
-            match repo_path {
-                Ok(repo_path) => repo_path,
+            let repo = git2::Repository::open_bare(
+                self.export
+                    .join(format!("{}.git", header.repo.id.to_string())),
+            );
+            match repo {
+                Ok(repo) => repo.path().to_path_buf(),
                 Err(e) => {
-                    tracing::error!("Error opening repo {:?}: {}", repo, e);
+                    tracing::error!("Error opening repo {:?}: {}", header.repo, e);
                     return send_err(&mut send, "repo not found or access denied").await;
                 },
             }
         };
 
         tracing::trace!(
-            git.service = ?service,
+            git.service = ?header.service,
             git.repo.path = %repo_path.display(),
-            git.mode = %mode
         );
 
-        if mode.is_empty() {
-            UploadPack::upload_pack(&repo_path)?.run(recv, send).await
-        } else if mode == "advertise" {
-            UploadPack::advertise(&repo_path)?.run(recv, send).await
-        } else {
-            tracing::error!("Invalid mode: expected `advertise`, got `{}`", mode);
-            send_err(&mut send, "invalid mode").await
+        match *header.service {
+            Service::UploadPack => UploadPack::upload_pack(&repo_path)?.run(recv, send).await,
+            Service::UploadPackLs => UploadPack::advertise(&repo_path)?.run(recv, send).await,
+            service => {
+                tracing::error!("Invalid git service: {:?}", header::Service(service));
+                send_err(&mut send, "service not enabled").await
+            },
         }
     }
 }
