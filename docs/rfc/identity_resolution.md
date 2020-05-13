@@ -2,7 +2,7 @@
 
 * Author: @kim
 * Date: 2020-05-08
-* Status: draft
+* Status: accepted
 * Community discussion: https://radicle.community/t/rfc-identity-resolution/212
 
 ## Motivation
