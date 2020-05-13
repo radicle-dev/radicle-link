@@ -161,6 +161,7 @@ mod tests {
     where
         F: FnOnce(MemoryStorage<Pwhash<P>, PublicKey, SecretKey, ()>) -> (),
         P: Pinentry,
+        P::Error: std::error::Error + 'static,
     {
         f(MemoryStorage::new(Pwhash::new(pin)))
     }

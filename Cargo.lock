@@ -1407,12 +1407,14 @@ dependencies = [
 name = "radicle-keystore"
 version = "0.1.0"
 dependencies = [
+ "lazy_static",
  "rpassword",
  "secstr",
  "serde",
  "serde_cbor",
  "sodiumoxide",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]

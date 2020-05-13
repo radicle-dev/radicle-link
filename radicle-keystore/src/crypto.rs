@@ -15,13 +15,31 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::fmt::{self, Display};
+use std::ops::Deref;
 
+use lazy_static::lazy_static;
 use secstr::{SecStr, SecUtf8};
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::{pwhash, secretbox};
+use thiserror::Error;
 
 use crate::pinentry::Pinentry;
+
+lazy_static! {
+    static ref SODIUMOXIDE_INITIALISED: bool = sodiumoxide::init().map(|()| true).unwrap_or(false);
+}
+
+/// Lazily trigger sodiumoxide initialisation.
+///
+/// Panics if `sodiumoxide::init()` fails.
+///
+/// **This function must be called from all places within this module which
+/// could be called with an unitialized `sodiumoxide`.**
+fn ensure_initialised() {
+    if !SODIUMOXIDE_INITIALISED.deref() {
+        panic!("Failed to initialise sodiumoxide")
+    }
+}
 
 /// Class of types which can seal (encrypt) a secret, and unseal (decrypt) it
 /// from it's sealed form.
@@ -42,22 +60,13 @@ pub struct SecretBox {
     sealed: Vec<u8>,
 }
 
-#[derive(Debug)]
-pub enum SecretBoxError<PinentryError> {
+#[derive(Debug, Error)]
+pub enum SecretBoxError<PinentryError: std::error::Error + 'static> {
+    #[error("Unable to decrypt secret box using the derived key")]
     InvalidKey,
-    Pinentry(PinentryError),
-}
 
-impl<E: Display> Display for SecretBoxError<E> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::InvalidKey => f.write_str(
-                "Unable to decrypt secret box using the derived key. \
-                Perhaps the passphrase was wrong?",
-            ),
-            Self::Pinentry(e) => write!(f, "Error getting passphrase: {}", e),
-        }
-    }
+    #[error("Error getting passphrase")]
+    Pinentry(#[from] PinentryError),
 }
 
 /// A [`Crypto`] implementation using `libsodium`'s "secretbox". The encryption
@@ -71,24 +80,26 @@ pub struct Pwhash<P> {
 }
 
 impl<P> Pwhash<P> {
+    /// Create a new [`Pwhash`] value
+    ///
+    /// Panics if the `sodiumoxide` crate could not be initialised.
     pub fn new(pinentry: P) -> Self {
+        ensure_initialised();
         Self { pinentry }
-    }
-
-    fn derive_key(salt: &pwhash::Salt, passphrase: &SecUtf8) -> secretbox::Key {
-        let mut k = secretbox::Key([0; secretbox::KEYBYTES]);
-        let secretbox::Key(ref mut kb) = k;
-        pwhash::derive_key_interactive(kb, passphrase.unsecure().as_bytes(), salt)
-            .expect("Key derivation failed"); // OOM
-        k
     }
 }
 
-impl<P: Pinentry> Crypto for Pwhash<P> {
+impl<P> Crypto for Pwhash<P>
+where
+    P: Pinentry,
+    P::Error: std::error::Error + 'static,
+{
     type SecretBox = SecretBox;
     type Error = SecretBoxError<P::Error>;
 
     fn seal<K: AsRef<[u8]>>(&self, secret: K) -> Result<Self::SecretBox, Self::Error> {
+        ensure_initialised();
+
         let passphrase = self
             .pinentry
             .get_passphrase()
@@ -97,11 +108,7 @@ impl<P: Pinentry> Crypto for Pwhash<P> {
         let nonce = secretbox::gen_nonce();
         let salt = pwhash::gen_salt();
 
-        let sealed = secretbox::seal(
-            secret.as_ref(),
-            &nonce,
-            &Self::derive_key(&salt, &passphrase),
-        );
+        let sealed = secretbox::seal(secret.as_ref(), &nonce, &derive_key(&salt, &passphrase));
 
         Ok(SecretBox {
             nonce,
@@ -111,6 +118,8 @@ impl<P: Pinentry> Crypto for Pwhash<P> {
     }
 
     fn unseal(&self, secret_box: Self::SecretBox) -> Result<SecStr, Self::Error> {
+        ensure_initialised();
+
         let passphrase = self
             .pinentry
             .get_passphrase()
@@ -119,9 +128,17 @@ impl<P: Pinentry> Crypto for Pwhash<P> {
         secretbox::open(
             &secret_box.sealed,
             &secret_box.nonce,
-            &Self::derive_key(&secret_box.salt, &passphrase),
+            &derive_key(&secret_box.salt, &passphrase),
         )
         .map_err(|()| SecretBoxError::InvalidKey)
         .map(SecStr::new)
     }
+}
+
+fn derive_key(salt: &pwhash::Salt, passphrase: &SecUtf8) -> secretbox::Key {
+    let mut k = secretbox::Key([0; secretbox::KEYBYTES]);
+    let secretbox::Key(ref mut kb) = k;
+    pwhash::derive_key_interactive(kb, passphrase.unsecure().as_bytes(), salt)
+        .expect("Key derivation failed"); // OOM
+    k
 }

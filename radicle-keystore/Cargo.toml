@@ -7,11 +7,13 @@ edition = "2018"
 license = "GPL-3.0-or-later"
 
 [dependencies]
+lazy_static = "1.4"
+rpassword = "4.0"
 secstr = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.10"
 sodiumoxide = "0.2"
-rpassword = "4.0"
+thiserror = "1.0"
 
 [dev-dependencies]
 tempfile = "3.1"
