@@ -2,7 +2,6 @@ steps:
   - label: "Build, test, doc"
     commands:
       - "ci/build-test"
-      - wait
       - "ci/docs"
     agents: &build-agent
       production: "true"
