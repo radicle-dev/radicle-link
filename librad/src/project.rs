@@ -116,7 +116,10 @@ impl Project {
     }
 
     /// Get the latest project metadata for project `id`.
-    pub fn show(paths: &Paths, id: &ProjectId) -> Result<meta::Project, Error> {
+    pub fn show(
+        paths: &Paths,
+        id: &ProjectId,
+    ) -> Result<meta::Project<meta::entity::EntityStatusUnknown>, Error> {
         GitProject::open(&id.path(paths))?
             .metadata()
             .map_err(|e| e.into())

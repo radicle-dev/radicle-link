@@ -28,7 +28,7 @@ use crate::{
     keys,
     keys::{device, pgp},
     meta,
-    meta::{entity, project::ProjectData, Project},
+    meta::{entity, entity::EntityStatusUnknown, project::ProjectData, Project},
     paths::Paths,
 };
 
@@ -138,12 +138,13 @@ impl GitProject {
             .map_err(|e| e.into())
     }
 
+    //FIXME[ENTITY] we should require verified entities
     pub fn init(
         paths: &Paths,
         key: &device::Key,
         sources: &git2::Repository,
-        metadata: &meta::Project,
-        founder: &meta::User,
+        metadata: &meta::Project<EntityStatusUnknown>,
+        founder: &meta::User<entity::EntityStatusUnknown>,
     ) -> Result<ProjectId, Error> {
         // TODO: resolve URL ref iff rad://
         let (nickname, fullname) = match founder.profile() {
@@ -179,6 +180,7 @@ impl GitProject {
         let pid = ProjectId(pid);
 
         // Add initial contributor metadata from the profile
+        // FIXME[ENTITY]: Verify entity signatures
         let cid = commit_contributor_meta(
             sources,
             &parent,
@@ -202,7 +204,7 @@ impl GitProject {
         res.map(|_| pid)
     }
 
-    pub fn metadata(&self) -> Result<meta::Project, Error> {
+    pub fn metadata(&self) -> Result<meta::Project<EntityStatusUnknown>, Error> {
         let blob = {
             self.0
                 .find_branch(PROJECT_METADATA_BRANCH, git2::BranchType::Local)?
@@ -213,14 +215,15 @@ impl GitProject {
                 .to_object(&self.0)?
                 .peel_to_blob()
         }?;
-        let meta = Project::from_json_slice(blob.content())?;
+        let meta = Project::<EntityStatusUnknown>::from_json_slice(blob.content())?;
         Ok(meta)
     }
 
+    // FIXME[ENTITY]: Verify entity signatures
     pub fn builder(
         project_name: &str,
         founder_key: &device::Key,
-        founder_meta: meta::User,
+        founder_meta: meta::User<entity::EntityStatusUnknown>,
     ) -> project::Builder {
         project::Builder::new(project_name, founder_key, founder_meta)
     }
@@ -239,17 +242,23 @@ impl From<GitProject> for surf::Repository {
 pub mod project {
     use super::*;
 
+    // FIXME[ENTITY]: Verify entity signatures
     pub struct Builder {
         key: device::Key,
-        founder: meta::User,
+        founder: meta::User<entity::EntityStatusUnknown>,
         name: String,
         description: Option<String>,
         default_branch: String,
         rel: Vec<meta::Relation>,
     }
 
+    // FIXME[ENTITY]: Verify entity signatures
     impl Builder {
-        pub fn new(name: &str, key: &device::Key, founder: meta::User) -> Self {
+        pub fn new(
+            name: &str,
+            key: &device::Key,
+            founder: meta::User<entity::EntityStatusUnknown>,
+        ) -> Self {
             Self {
                 key: key.clone(),
                 founder,
@@ -298,27 +307,30 @@ pub mod project {
                 .add_rels(&self.rel)
                 .build()?;
 
+            // FIXME[ENTITY]: cannot invoke this if we do not verify the entity
             GitProject::init(paths, &self.key, sources, &meta, &self.founder)
         }
     }
 }
 
+// FIXME[ENTITY]: Verify entity signatures
 fn commit_project_meta(
     repo: &git2::Repository,
     parent: &git2::Commit,
     pgp_key: &mut pgp::Key,
     msg: &str,
-    meta: &meta::Project,
+    meta: &meta::Project<EntityStatusUnknown>,
 ) -> Result<git2::Oid, Error> {
     commit_meta(repo, parent, pgp_key, msg, meta, PROJECT_METADATA_FILE)
 }
 
+// FIXME[ENTITY]: Verify entity signatures
 fn commit_contributor_meta(
     repo: &git2::Repository,
     parent: &git2::Commit,
     pgp_key: &mut pgp::Key,
     msg: &str,
-    meta: &meta::User,
+    meta: &meta::User<entity::EntityStatusUnknown>,
 ) -> Result<git2::Oid, Error> {
     commit_meta(repo, parent, pgp_key, msg, meta, CONTRIBUTOR_METADATA_FILE)
 }

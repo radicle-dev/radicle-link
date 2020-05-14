@@ -35,6 +35,7 @@ use crate::{
         self,
         data::{EntityBuilder, EntityData},
         Entity,
+        EntityStatusUnknown,
         Signatory,
         VerificationStatus,
     },
@@ -100,9 +101,14 @@ pub enum Error {
 
 impl Repo {
     /// Create a [`Repo`] from the given metadata [`Entity`]
-    pub fn create<T>(paths: &Paths, key: device::Key, meta: &Entity<T>) -> Result<Self, Error>
+    pub fn create<T, ST>(
+        paths: &Paths,
+        key: device::Key,
+        meta: &Entity<T, ST>,
+    ) -> Result<Self, Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
+        ST: Clone,
     {
         /*
         if !meta.status().signed() {
@@ -191,7 +197,7 @@ impl Repo {
         let id_branch = format!("refs/remotes/{}/rad/id", url.authority);
         let peer_id = PeerId::from(&key);
         let git_url = GitUrlRef::from_rad_url_ref(url.as_ref(), &peer_id);
-        let entity: Entity<T> = {
+        let entity: Entity<T, EntityStatusUnknown> = {
             let mut remote = repo.remote_anonymous(&git_url.to_string())?;
             remote.fetch(
                 &[&format!(
@@ -203,7 +209,7 @@ impl Repo {
             )?;
 
             let id_blob = read_blob_at_init(&repo, &id_branch, "id")?;
-            Entity::from_json_slice(id_blob.content())
+            Entity::<T, EntityStatusUnknown>::from_json_slice(id_blob.content())
         }?;
 
         // TODO:
@@ -351,9 +357,10 @@ impl Repo {
     }
 
     /// Internal: track all external signers of `Entity`
-    fn track_entity<T>(&self, entity: &Entity<T>) -> Result<(), Error>
+    fn track_entity<T, ST>(&self, entity: &Entity<T, ST>) -> Result<(), Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
+        ST: Clone,
     {
         let signatures = entity
             .signatures()

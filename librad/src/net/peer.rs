@@ -34,6 +34,7 @@ use crate::{
     meta::entity::{
         data::{EntityBuilder, EntityData},
         Entity,
+        EntityStatusUnknown,
     },
     net::{
         connection::LocalInfo,
@@ -119,8 +120,9 @@ impl Peer {
         })
     }
 
+    // FIXME[ENTITY]: Verify entity signatures
     /// Create a git [`Repo`] from an initial [`Entity`]
-    pub fn git_create<T>(&self, meta: &Entity<T>) -> Result<Repo, repo::Error>
+    pub fn git_create<T>(&self, meta: &Entity<T, EntityStatusUnknown>) -> Result<Repo, repo::Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
     {

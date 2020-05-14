@@ -141,6 +141,55 @@ pub enum VerificationStatus {
     Unknown,
 }
 
+pub trait VerificationStatusMarker {
+    fn status() -> VerificationStatus;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EntityStatusVerified {
+    marker: (),
+}
+impl EntityStatusVerified {
+    pub(self) fn new() -> Self {
+        Self { marker: () }
+    }
+}
+impl VerificationStatusMarker for EntityStatusVerified {
+    fn status() -> VerificationStatus {
+        VerificationStatus::Verified
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EntityStatusSigned {
+    marker: (),
+}
+impl EntityStatusSigned {
+    pub(self) fn new() -> Self {
+        Self { marker: () }
+    }
+}
+impl VerificationStatusMarker for EntityStatusSigned {
+    fn status() -> VerificationStatus {
+        VerificationStatus::Signed
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EntityStatusUnknown {
+    marker: (),
+}
+impl EntityStatusUnknown {
+    pub(self) fn new() -> Self {
+        Self { marker: () }
+    }
+}
+impl VerificationStatusMarker for EntityStatusUnknown {
+    fn status() -> VerificationStatus {
+        VerificationStatus::Unknown
+    }
+}
+
 impl VerificationStatus {
     pub fn verification_failed(&self) -> Option<&Error> {
         if let VerificationStatus::VerificationFailed(err) = self {
@@ -205,9 +254,11 @@ pub trait Resolver<T> {
 ///   and certifiers, to prove that the entity evolution is actually under the
 ///   control of its current "owners" (the idea is taken from [TUF](https://theupdateframework.io/)).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Entity<T> {
+pub struct Entity<T, ST> {
     /// Entity verification status
     status: VerificationStatus,
+    /// Verification status marker type
+    status_marker: ST,
     /// The entity name (useful for humans because the hash is unreadable)
     name: String,
     /// Entity revision, to be incremented at each entity update
@@ -232,29 +283,31 @@ pub struct Entity<T> {
     info: T,
 }
 
-impl<T> TryFrom<EntityData<T>> for Entity<T>
+impl<T> TryFrom<EntityData<T>> for Entity<T, EntityStatusUnknown>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
     EntityData<T>: EntityBuilder,
 {
     type Error = Error;
-    fn try_from(data: EntityData<T>) -> Result<Entity<T>, Error> {
+    fn try_from(data: EntityData<T>) -> Result<Entity<T, EntityStatusUnknown>, Error> {
         Self::from_data(data)
     }
 }
 
-impl<T> Into<EntityData<T>> for Entity<T>
+impl<T, ST> Into<EntityData<T>> for Entity<T, ST>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
+    ST: Clone,
 {
     fn into(self) -> EntityData<T> {
         self.to_data()
     }
 }
 
-impl<T> Serialize for Entity<T>
+impl<T, ST> Serialize for Entity<T, ST>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
+    ST: Clone,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -264,7 +317,7 @@ where
     }
 }
 
-impl<'de, T> Deserialize<'de> for Entity<T>
+impl<'de, T> Deserialize<'de> for Entity<T, EntityStatusUnknown>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
     EntityData<T>: EntityBuilder,
@@ -275,14 +328,15 @@ where
         D::Error: SerdeDeserializationError,
     {
         let data = EntityData::<T>::deserialize(deserializer)?;
-        let res = Entity::<T>::try_from(data);
+        let res = Entity::<T, EntityStatusUnknown>::try_from(data);
         res.map_err(D::Error::custom)
     }
 }
 
-impl<T> Entity<T>
+impl<T, ST> Entity<T, ST>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
+    ST: Clone,
 {
     /// `status` getter
     pub fn status(&self) -> &VerificationStatus {
@@ -415,7 +469,7 @@ where
         &self,
         key: &PublicKey,
         by: &Signatory,
-        resolver: &impl Resolver<User>,
+        resolver: &impl Resolver<User<EntityStatusUnknown>>,
     ) -> Result<(), Error> {
         match by {
             Signatory::OwnedKey => {
@@ -451,7 +505,7 @@ where
         &mut self,
         key: &Key,
         by: &Signatory,
-        resolver: &impl Resolver<User>,
+        resolver: &impl Resolver<User<EntityStatusUnknown>>,
     ) -> Result<(), Error> {
         let public_key = key.public();
         if self.signatures().contains_key(&public_key) {
@@ -472,7 +526,7 @@ where
         key: &PublicKey,
         by: &Signatory,
         signature: &Signature,
-        resolver: &impl Resolver<User>,
+        resolver: &impl Resolver<User<EntityStatusUnknown>>,
     ) -> Result<(), Error> {
         self.check_key(key, by, resolver).await?;
         if signature.verify(&self.canonical_data()?, key) {
@@ -482,13 +536,36 @@ where
         }
     }
 
+    fn with_status<NewSt>(&self, status_marker: NewSt) -> Entity<T, NewSt>
+    where
+        NewSt: VerificationStatusMarker,
+    {
+        Entity::<T, NewSt> {
+            status: NewSt::status(),
+            status_marker,
+            name: self.name.clone(),
+            revision: self.revision,
+            rad_version: self.rad_version,
+            hash: self.hash.clone(),
+            root_hash: self.root_hash.clone(),
+            parent_hash: self.parent_hash.clone(),
+            keys: self.keys.clone(),
+            certifiers: self.certifiers.clone(),
+            signatures: self.signatures.clone(),
+            info: self.info.clone(),
+        }
+    }
+
     /// Compute the status of this entity (only this revision is checked)
     ///
     /// This checks that:
     /// - every owned key and certifier has a corresponding signature
     /// - only owned keys and certifiers have signed the entity
     /// - the first revision has no parent and a matching root hash
-    pub async fn compute_status(&mut self, resolver: &impl Resolver<User>) -> Result<(), Error> {
+    pub async fn check_signatures(
+        &mut self,
+        resolver: &impl Resolver<User<EntityStatusUnknown>>,
+    ) -> Result<Entity<T, EntityStatusSigned>, Error> {
         let mut keys = HashSet::<PublicKey>::from_iter(self.keys().iter().cloned());
         let mut users = HashSet::<RadUrn>::from_iter(self.certifiers().iter().cloned());
         self.status = VerificationStatus::Unknown;
@@ -516,10 +593,11 @@ where
         }
         if keys.is_empty() && users.is_empty() {
             self.status = VerificationStatus::Signed;
+            Ok(self.with_status(EntityStatusSigned::new()))
         } else {
             self.status = VerificationStatus::SignaturesMissing;
+            Err(Error::SignatureMissing)
         }
-        Ok(())
     }
 
     /// Given an entity and its previous revision check that the update is
@@ -589,17 +667,17 @@ where
     /// valid
     ///
     /// FIXME[ENTITY]: should we allow certifiers that are not `User` entities?
-    pub async fn compute_history_status(
+    pub async fn check_history_status(
         &mut self,
-        resolver: &impl Resolver<Entity<T>>,
-        certifier_resolver: &impl Resolver<User>,
-    ) -> Result<(), HistoryVerificationError> {
+        resolver: &impl Resolver<Entity<T, ST>>,
+        certifier_resolver: &impl Resolver<User<EntityStatusUnknown>>,
+    ) -> Result<Entity<T, EntityStatusVerified>, HistoryVerificationError> {
         let mut current = self.clone();
 
         loop {
             let revision = current.revision();
             // Check current status
-            if let Err(err) = current.compute_status(certifier_resolver).await {
+            if let Err(err) = current.check_signatures(certifier_resolver).await {
                 let err = HistoryVerificationError::ErrorAtRevision {
                     revision,
                     error: err,
@@ -620,7 +698,7 @@ where
             // End at root revision
             if revision == 1 {
                 self.status = VerificationStatus::Verified;
-                return Ok(());
+                return Ok(self.with_status(EntityStatusVerified::new()));
             }
 
             // Resolve previous revision
@@ -655,14 +733,15 @@ where
     }
 }
 
-impl<T> Entity<T>
+impl<T, ST> Entity<T, ST>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
     EntityData<T>: EntityBuilder,
+    ST: Clone,
 {
     /// Build an `Entity` from its data (the second step of deserialization)
     /// It guarantees that the `hash` is correct
-    pub fn from_data(data: EntityData<T>) -> Result<Self, Error> {
+    pub fn from_data(data: EntityData<T>) -> Result<Entity<T, EntityStatusUnknown>, Error> {
         // FIXME[ENTITY]: do we want this? it makes `default` harder to get right...
         if data.name.is_none() {
             return Err(Error::InvalidData("Missing name".to_owned()));
@@ -737,8 +816,9 @@ where
             },
         };
 
-        Ok(Self {
+        Ok(Entity::<T, EntityStatusUnknown> {
             status: VerificationStatus::Unknown,
+            status_marker: EntityStatusUnknown::new(),
             name: data.name.unwrap(),
             revision: data.revision.unwrap().to_owned(),
             rad_version: data.rad_version,
@@ -767,7 +847,7 @@ where
     }
 
     /// Helper deserialization from JSON reader
-    pub fn from_json_reader<R>(r: R) -> Result<Self, Error>
+    pub fn from_json_reader<R>(r: R) -> Result<Entity<T, EntityStatusUnknown>, Error>
     where
         R: std::io::Read,
     {
@@ -775,12 +855,12 @@ where
     }
 
     /// Helper deserialization from JSON string
-    pub fn from_json_str(s: &str) -> Result<Self, Error> {
+    pub fn from_json_str(s: &str) -> Result<Entity<T, EntityStatusUnknown>, Error> {
         Self::from_data(data::EntityData::from_json_str(s)?)
     }
 
     /// Helper deserialization from JSON slice
-    pub fn from_json_slice(s: &[u8]) -> Result<Self, Error> {
+    pub fn from_json_slice(s: &[u8]) -> Result<Entity<T, EntityStatusUnknown>, Error> {
         Self::from_data(data::EntityData::from_json_slice(s)?)
     }
 }

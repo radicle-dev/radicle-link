@@ -18,7 +18,7 @@
 use crate::{
     hash::Hash,
     meta::{
-        entity::{Entity, Error},
+        entity::{Entity, EntityStatusUnknown, Error},
         RAD_VERSION,
     },
 };
@@ -208,7 +208,10 @@ where
         self
     }
 
-    pub fn set_parent(mut self, parent: &Entity<T>) -> Self {
+    pub fn set_parent<ST>(mut self, parent: &Entity<T, ST>) -> Self
+    where
+        ST: Clone,
+    {
         let parent_hash_text = parent.hash().to_string();
         self.parent_hash = Some(parent_hash_text);
         let root_hash_text = parent.root_hash().to_string();
@@ -274,7 +277,7 @@ where
     T: Serialize + DeserializeOwned + Clone + Default,
     EntityData<T>: EntityBuilder,
 {
-    pub fn build(self) -> Result<Entity<T>, Error> {
-        Entity::<T>::from_data(self)
+    pub fn build(self) -> Result<Entity<T, EntityStatusUnknown>, Error> {
+        Entity::<T, EntityStatusUnknown>::from_data(self)
     }
 }

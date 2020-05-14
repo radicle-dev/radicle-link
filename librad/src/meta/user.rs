@@ -25,6 +25,7 @@ use crate::{
         entity::{
             data::{EntityBuilder, EntityData},
             Entity,
+            EntityStatusUnknown,
             Error,
         },
         profile::{Geo, ProfileImage, UserProfile},
@@ -152,10 +153,13 @@ impl EntityBuilder for UserData {
     }
 }
 
-pub type User = Entity<UserInfo>;
+pub type User<ST> = Entity<UserInfo, ST>;
 
-impl User {
-    pub fn new(name: String, key: PublicKey) -> Result<Self, Error> {
+impl<ST> User<ST>
+where
+    ST: Clone,
+{
+    pub fn new(name: String, key: PublicKey) -> Result<User<EntityStatusUnknown>, Error> {
         UserData::default()
             .set_name(name)
             .set_revision(1)
@@ -190,7 +194,7 @@ pub mod tests {
         ]
     }
 
-    pub fn gen_user() -> impl Strategy<Value = User> {
+    pub fn gen_user() -> impl Strategy<Value = User<EntityStatusUnknown>> {
         proptest::option::of(gen_profile_ref()).prop_map(|profile| {
             let largefiles = Some(UrlTemplate::from("https://git-lfs.github.com/{SHA512}"));
 

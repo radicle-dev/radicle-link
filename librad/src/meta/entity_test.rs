@@ -87,11 +87,15 @@ lazy_static! {
 struct EmptyResolver {}
 
 #[async_trait]
-impl Resolver<User> for EmptyResolver {
-    async fn resolve(&self, uri: &RadUrn) -> Result<User, Error> {
+impl Resolver<User<EntityStatusUnknown>> for EmptyResolver {
+    async fn resolve(&self, uri: &RadUrn) -> Result<User<EntityStatusUnknown>, Error> {
         Err(Error::ResolutionFailed(uri.to_owned()))
     }
-    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User, Error> {
+    async fn resolve_revision(
+        &self,
+        uri: &RadUrn,
+        revision: u64,
+    ) -> Result<User<EntityStatusUnknown>, Error> {
         Err(Error::RevisionResolutionFailed(uri.to_owned(), revision))
     }
 }
@@ -100,7 +104,7 @@ static EMPTY_RESOLVER: EmptyResolver = EmptyResolver {};
 
 #[derive(Debug, Clone)]
 struct UserHistory {
-    pub revisions: Vec<User>,
+    pub revisions: Vec<User<EntityStatusUnknown>>,
 }
 
 impl UserHistory {
@@ -108,10 +112,10 @@ impl UserHistory {
         Self { revisions: vec![] }
     }
 
-    async fn check(&mut self) -> Result<(), HistoryVerificationError> {
+    async fn check(&mut self) -> Result<User<EntityStatusVerified>, HistoryVerificationError> {
         let history = self.clone();
         match self.revisions.last_mut() {
-            Some(user) => user.compute_history_status(&history, &EMPTY_RESOLVER).await,
+            Some(user) => user.check_history_status(&history, &EMPTY_RESOLVER).await,
             None => Err(HistoryVerificationError::EmptyHistory),
         }
     }
@@ -122,14 +126,18 @@ impl UserHistory {
 }
 
 #[async_trait]
-impl Resolver<User> for UserHistory {
-    async fn resolve(&self, uri: &RadUrn) -> Result<User, Error> {
+impl Resolver<User<EntityStatusUnknown>> for UserHistory {
+    async fn resolve(&self, uri: &RadUrn) -> Result<User<EntityStatusUnknown>, Error> {
         match self.revisions.last() {
             Some(user) => Ok(user.to_owned()),
             None => Err(Error::ResolutionFailed(uri.to_owned())),
         }
     }
-    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User, Error> {
+    async fn resolve_revision(
+        &self,
+        uri: &RadUrn,
+        revision: u64,
+    ) -> Result<User<EntityStatusUnknown>, Error> {
         if revision >= 1 && revision <= self.revisions.len() as u64 {
             Ok(self.revisions[revision as usize - 1].clone())
         } else {
@@ -146,7 +154,11 @@ fn test_valid_uri() {
     assert_eq!(u1, u2);
 }
 
-fn new_user(name: &str, revision: u64, devices: &[&'static str]) -> Result<User, Error> {
+fn new_user(
+    name: &str,
+    revision: u64,
+    devices: &[&'static str],
+) -> Result<User<EntityStatusUnknown>, Error> {
     let mut data = UserData::default()
         .set_name(name.to_owned())
         .set_revision(revision);
@@ -224,14 +236,20 @@ async fn test_adding_user_signatures() {
 async fn test_user_verification() {
     // A new user is structurally valid but it is not signed
     let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
-    assert!(matches!(user.compute_status(&EMPTY_RESOLVER).await, Ok(())));
+    assert!(matches!(
+        user.check_signatures(&EMPTY_RESOLVER).await,
+        Err(Error::SignatureMissing)
+    ));
     assert_eq!(user.status(), &VerificationStatus::SignaturesMissing);
 
     // Adding the signature fixes it
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .await
         .unwrap();
-    assert!(matches!(user.compute_status(&EMPTY_RESOLVER).await, Ok(())));
+    assert!(matches!(
+        user.check_signatures(&EMPTY_RESOLVER).await,
+        Ok(_)
+    ));
     assert_eq!(user.status(), &VerificationStatus::Signed);
 
     // Adding keys (any mutation would do) invalidates the signature
@@ -244,7 +262,7 @@ async fn test_user_verification() {
         .build()
         .unwrap();
     assert!(matches!(
-        user.compute_status(&EMPTY_RESOLVER).await,
+        user.check_signatures(&EMPTY_RESOLVER).await,
         Err(Error::SignatureVerificationFailed)
     ));
     assert_eq!(
@@ -261,7 +279,7 @@ async fn test_user_verification() {
         .await
         .unwrap();
     assert!(matches!(
-        user.compute_status(&EMPTY_RESOLVER).await,
+        user.check_signatures(&EMPTY_RESOLVER).await,
         Err(Error::SignatureVerificationFailed)
     ));
     assert_eq!(
@@ -289,7 +307,10 @@ async fn test_user_verification() {
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .await
         .unwrap();
-    assert!(matches!(user.compute_status(&EMPTY_RESOLVER).await, Ok(())));
+    assert!(matches!(
+        user.check_signatures(&EMPTY_RESOLVER).await,
+        Ok(_)
+    ));
     assert_eq!(user.status(), &VerificationStatus::Signed);
 
     // Removing a maintainer invalidates it again
@@ -300,7 +321,10 @@ async fn test_user_verification() {
         .remove_key(&*D1K)
         .build()
         .unwrap();
-    assert!(matches!(user.compute_status(&EMPTY_RESOLVER).await, Err(_)));
+    assert!(matches!(
+        user.check_signatures(&EMPTY_RESOLVER).await,
+        Err(_)
+    ));
     assert_ne!(user.status().verification_failed(), None);
 }
 
@@ -333,7 +357,7 @@ async fn test_project_update() {
         .sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .await
         .unwrap();
-    assert!(matches!(history.check().await, Ok(())));
+    assert!(matches!(history.check().await, Ok(_)));
     assert_eq!(history.status(), Some(&VerificationStatus::Verified));
 
     // Having a parent but no parent hash is not ok
@@ -400,7 +424,7 @@ async fn test_project_update() {
         .await
         .unwrap();
     history.revisions.push(user);
-    assert!(matches!(history.check().await, Ok(())));
+    assert!(matches!(history.check().await, Ok(_)));
     assert_eq!(history.status(), Some(&VerificationStatus::Verified));
 
     // Adding two keys starting from one is not ok
@@ -451,7 +475,7 @@ async fn test_project_update() {
         .await
         .unwrap();
     history.revisions.push(user);
-    assert!(matches!(history.check().await, Ok(())));
+    assert!(matches!(history.check().await, Ok(_)));
     assert_eq!(history.status(), Some(&VerificationStatus::Verified));
     let mut user = history
         .revisions
@@ -472,7 +496,7 @@ async fn test_project_update() {
         .await
         .unwrap();
     history.revisions.push(user);
-    assert!(matches!(history.check().await, Ok(())));
+    assert!(matches!(history.check().await, Ok(_)));
     assert_eq!(history.status(), Some(&VerificationStatus::Verified));
 
     // Changing two devices out of three is not ok
