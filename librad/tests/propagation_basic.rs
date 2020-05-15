@@ -21,7 +21,7 @@ use futures::future::Either;
 use futures_timer::Delay;
 
 use librad::{
-    meta::{entity::EntityStatusUnknown, project::ProjectInfo, Project, User},
+    meta::{entity::Unknown, project::ProjectInfo, Project, User},
     net::peer::{BoundPeer, Gossip, Rev},
     peer::PeerId,
     sync::Monitor,
@@ -41,11 +41,9 @@ async fn can_clone() {
         let peer1 = peers[0].peer.clone();
         let peer2 = peers[1].peer.clone();
 
-        let peer1_user =
-            User::<EntityStatusUnknown>::create("alice".to_owned(), peer1.public_key()).unwrap();
+        let peer1_user = User::<Unknown>::create("alice".to_owned(), peer1.public_key()).unwrap();
         let peer1_project =
-            Project::<EntityStatusUnknown>::create("radicle".to_owned(), &peer1_user.urn())
-                .unwrap();
+            Project::<Unknown>::create("radicle".to_owned(), &peer1_user.urn()).unwrap();
         let urn = peer1_project.urn();
 
         run_on_testnet(bound, async move {
@@ -81,11 +79,9 @@ async fn fetches_on_gossip_notify() {
         let peer1 = peers[0].peer.clone();
         let peer2 = peers[1].peer.clone();
 
-        let peer1_user =
-            User::<EntityStatusUnknown>::create("alice".to_owned(), peer1.public_key()).unwrap();
+        let peer1_user = User::<Unknown>::create("alice".to_owned(), peer1.public_key()).unwrap();
         let peer1_project =
-            Project::<EntityStatusUnknown>::create("radicle".to_owned(), &peer1_user.urn())
-                .unwrap();
+            Project::<Unknown>::create("radicle".to_owned(), &peer1_user.urn()).unwrap();
         let peer1_project_urn = peer1_project.urn();
 
         let peer1_handle = bound[0].handle();
