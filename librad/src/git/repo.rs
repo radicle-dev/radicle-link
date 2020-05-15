@@ -37,7 +37,6 @@ use crate::{
         Draft,
         Entity,
         Signatory,
-        VerificationStatus,
     },
     paths::Paths,
     peer::PeerId,
@@ -68,12 +67,6 @@ pub enum Error {
 
     #[error("Blob {0} not found")]
     NoSuchBlob(String),
-
-    #[error("Identity VerificationStatus must be {expected:?}, got {actual:?}")]
-    Verification {
-        expected: VerificationStatus,
-        actual: VerificationStatus,
-    },
 
     #[error(
         "Identity root hash doesn't match resolved URL. Expected {expected}, actual: {actual}"
