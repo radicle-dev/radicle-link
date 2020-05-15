@@ -132,43 +132,12 @@ pub enum HistoryVerificationError {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum VerificationStatus {
-    Verified,
-    Signed,
-    SignaturesMissing,
-    VerificationFailed(Error),
-    HistoryVerificationFailed(HistoryVerificationError),
-    Unknown,
-}
-
-pub trait VerificationStatusMarker {
-    fn status() -> VerificationStatus;
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Verified;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signed;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Draft;
-
-impl VerificationStatus {
-    pub fn verification_failed(&self) -> Option<&Error> {
-        if let VerificationStatus::VerificationFailed(err) = self {
-            Some(err)
-        } else {
-            None
-        }
-    }
-    pub fn history_verification_failed(&self) -> Option<&HistoryVerificationError> {
-        if let VerificationStatus::HistoryVerificationFailed(err) = self {
-            Some(err)
-        } else {
-            None
-        }
-    }
-}
 
 /// A type expressing *who* is signing an `Entity`
 #[derive(Clone, Debug, PartialEq, Eq)]
