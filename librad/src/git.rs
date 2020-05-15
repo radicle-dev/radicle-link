@@ -18,7 +18,10 @@
 pub mod refs;
 pub mod repo;
 pub mod server;
+pub mod storage;
 pub mod transport;
+pub mod types;
 
+pub(crate) mod ext;
 pub(crate) mod header;
 pub(crate) mod url;

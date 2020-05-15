@@ -53,17 +53,15 @@ impl TestPeer {
     }
 }
 
-pub fn setup(num_peers: usize) -> io::Result<Vec<TestPeer>> {
+pub fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
     let mut peers = Vec::with_capacity(num_peers);
 
     for _ in 0..num_peers {
         let tmp = tempdir()?;
         let paths = Paths::from_root(tmp.path())?;
         let key = SecretKey::new();
-        peers.push(TestPeer {
-            _tmp: tmp,
-            peer: Peer::new(paths, key),
-        });
+        let peer = Peer::init(paths, key)?;
+        peers.push(TestPeer { _tmp: tmp, peer });
     }
 
     Ok(peers)

@@ -21,20 +21,11 @@ use std::{
     net::{SocketAddr, ToSocketAddrs},
 };
 
-use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
 use crate::{
-    git::{
-        self,
-        repo::{self, Repo},
-        server::GitServer,
-    },
+    git::{self, repo, server::GitServer, storage::Storage as GitStorage},
     keys::{PublicKey, SecretKey},
-    meta::entity::{
-        data::{EntityBuilder, EntityData},
-        Entity,
-    },
     net::{
         connection::LocalInfo,
         discovery,
@@ -44,7 +35,7 @@ use crate::{
     },
     paths::Paths,
     peer::PeerId,
-    uri::{self, RadUrl, RadUrn},
+    uri::{self, RadUrn},
 };
 
 pub mod types;
@@ -59,6 +50,9 @@ pub enum GitFetchError {
 
     #[error(transparent)]
     Repo(#[from] repo::Error),
+
+    #[error(transparent)]
+    Store(#[from] git::storage::Error),
 }
 
 #[derive(Debug, Error)]
@@ -76,11 +70,21 @@ pub struct BindError {
 pub struct Peer {
     key: SecretKey,
     paths: Paths,
+    git: GitStorage,
 }
 
 impl Peer {
-    pub fn new(paths: Paths, key: SecretKey) -> Self {
-        Self { key, paths }
+    pub fn new(paths: Paths, git: GitStorage) -> Self {
+        Self {
+            key: git.key.clone(),
+            paths,
+            git,
+        }
+    }
+
+    pub fn init(paths: Paths, key: SecretKey) -> Result<Self, git::storage::Error> {
+        let git = GitStorage::init(&paths, key.clone())?;
+        Ok(Self { key, paths, git })
     }
 
     pub fn public_key(&self) -> PublicKey {
@@ -97,9 +101,7 @@ impl Peer {
     /// kernel.
     pub async fn bind<'a>(self, addr: SocketAddr) -> Result<BoundPeer<'a>, BindError> {
         let peer_id = PeerId::from(&self.key);
-        let git = GitServer {
-            export: self.paths.projects_dir().into(),
-        };
+        let git = GitServer::new(&self.paths);
         let endpoint = Endpoint::bind(&self.key, addr)
             .await
             .map_err(|e| BindError { addr, source: e })?;
@@ -119,47 +121,31 @@ impl Peer {
         })
     }
 
-    /// Create a git [`Repo`] from an initial [`Entity`]
-    pub fn git_create<T>(&self, meta: &Entity<T>) -> Result<Repo, repo::Error>
-    where
-        T: Serialize + DeserializeOwned + Clone + Default,
-    {
-        Repo::create(&self.paths, self.key.clone(), meta)
+    pub fn git(&self) -> &GitStorage {
+        &self.git
     }
 
-    /// Open a git [`Repo`] identified by the given [`RadUrn`]
-    ///
-    /// This is a local storage operation -- an error is returned if the repo
-    /// doesn't exist locally.
-    pub fn git_open(&self, urn: RadUrn) -> Result<Repo, repo::Error> {
-        Repo::open(&self.paths, self.key.clone(), urn)
-    }
-
-    /// Clone a git [`Repo`] from the given [`RadUrl`]
-    pub fn git_clone<T>(&self, url: RadUrl) -> Result<Repo, repo::Error>
-    where
-        T: Serialize + DeserializeOwned + Clone + Default,
-        EntityData<T>: EntityBuilder,
-    {
-        Repo::clone(&self.paths, self.key.clone(), url)
-    }
-
-    /// Internal: update a git repo in response to a [`LocalStorage::put`]
-    /// callback
-    fn git_fetch(&self, from: &PeerId, urn: RadUrn, head: git2::Oid) -> Result<(), GitFetchError> {
-        let repo = self.git_open(urn)?;
-        if repo.has_object(head)? {
+    /// Update a git repo
+    pub fn git_fetch(
+        &self,
+        from: &PeerId,
+        urn: RadUrn,
+        head: git2::Oid,
+    ) -> Result<(), GitFetchError> {
+        if self.git.has_commit(&urn, head)? {
             return Err(GitFetchError::KnownObject(head));
         }
-        repo.fetch(from).map_err(|e| e.into())
+
+        self.git
+            .clone()
+            .open_repo(urn)?
+            .fetch(from)
+            .map_err(|e| e.into())
     }
 
-    /// Internal: determine if we have the given object locally, in response to
-    /// a [`LocalStorage::ask`] callback.
-    fn git_has(&self, urn: RadUrn, head: git2::Oid) -> bool {
-        self.git_open(urn)
-            .and_then(|repo| repo.has_object(head))
-            .unwrap_or(false)
+    /// Determine if we have the given object locally
+    pub fn git_has(&self, urn: RadUrn, head: git2::Oid) -> bool {
+        self.git.has_commit(&urn, head).unwrap_or(false)
     }
 }
 
@@ -176,7 +162,7 @@ impl LocalStorage for Peer {
                     Ok(()) => PutResult::Applied,
                     Err(e) => match e {
                         GitFetchError::KnownObject(_) => PutResult::Stale,
-                        GitFetchError::Repo(repo::Error::NoSuchRepo) => PutResult::Uninteresting,
+                        GitFetchError::Repo(repo::Error::NoSuchUrn(_)) => PutResult::Uninteresting,
                         _ => PutResult::Error,
                     },
                 }

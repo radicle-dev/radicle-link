@@ -39,22 +39,34 @@ use git2::transport::Service;
 use tokio::process::{self, Command};
 use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
-use crate::git::header::{self, Header};
+use crate::{
+    git::{
+        header::{self, Header},
+        types::Namespace,
+    },
+    paths::Paths,
+};
 
 #[derive(Clone)]
 pub struct GitServer {
-    /// Base directory under which all git repositories are "exported", i.e.
-    /// available for pull. The `git-daemon-export-ok` file is not checked.
-    pub export: PathBuf,
+    monorepo: PathBuf,
 }
 
 impl GitServer {
-    pub async fn invoke_service<'a, R, W>(&self, (recv, mut send): (R, W)) -> io::Result<()>
+    pub fn new(paths: &Paths) -> Self {
+        Self {
+            monorepo: paths.git_dir().to_path_buf(),
+        }
+    }
+}
+
+impl GitServer {
+    pub async fn invoke_service<R, W>(&self, (recv, mut send): (R, W)) -> io::Result<()>
     where
         R: AsyncRead + Unpin,
         W: AsyncWrite + Unpin,
     {
-        let span = tracing::trace_span!("GitServer::invoke_service", git.server.path = %self.export.display());
+        let span = tracing::trace_span!("GitServer::invoke_service", git.server.path = %self.monorepo.display());
         let _guard = span.enter();
 
         let mut recv = BufReader::new(recv);
@@ -72,28 +84,22 @@ impl GitServer {
             },
         };
 
-        let repo_path = {
-            let repo = git2::Repository::open_bare(
-                self.export
-                    .join(format!("{}.git", header.repo.id.to_string())),
-            );
-            match repo {
-                Ok(repo) => repo.path().to_path_buf(),
-                Err(e) => {
-                    tracing::error!("Error opening repo {:?}: {}", header.repo, e);
-                    return send_err(&mut send, "repo not found or access denied").await;
-                },
-            }
-        };
-
         tracing::trace!(
             git.service = ?header.service,
-            git.repo.path = %repo_path.display(),
+            git.urn = %header.repo,
         );
 
         match *header.service {
-            Service::UploadPack => UploadPack::upload_pack(&repo_path)?.run(recv, send).await,
-            Service::UploadPackLs => UploadPack::advertise(&repo_path)?.run(recv, send).await,
+            Service::UploadPack => {
+                UploadPack::upload_pack(&self.monorepo)?
+                    .run(recv, send)
+                    .await
+            },
+            Service::UploadPackLs => {
+                UploadPack::advertise(&self.monorepo, &header.repo.id)?
+                    .run(recv, send)
+                    .await
+            },
             service => {
                 tracing::error!("Invalid git service: {:?}", header::Service(service));
                 send_err(&mut send, "service not enabled").await
@@ -110,9 +116,9 @@ enum UploadPack {
 }
 
 impl UploadPack {
-    fn advertise(repo_path: &Path) -> io::Result<Self> {
+    fn advertise(repo_path: &Path, namespace: &Namespace) -> io::Result<Self> {
         Command::new("git")
-            .current_dir(repo_path)
+            .arg(format!("--namespace={}", namespace))
             .args(&[
                 "upload-pack",
                 "--strict",
@@ -121,6 +127,7 @@ impl UploadPack {
                 "--advertise-refs",
                 ".",
             ])
+            .current_dir(repo_path)
             .stdout(Stdio::piped())
             .spawn()
             .map(Self::AdvertiseRefs)

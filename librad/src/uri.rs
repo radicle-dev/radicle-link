@@ -150,6 +150,10 @@ impl Path {
         Self::with_capacity(0)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn parse<S: AsRef<str>>(s: S) -> Result<Self, path::ParseError> {
         Self::parse_str(s).map(Path)
     }
