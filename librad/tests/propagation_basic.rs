@@ -51,7 +51,8 @@ async fn can_clone() {
         let alice = Alice::new(peer1.public_key());
         let mut radicle = Radicle::new(&alice);
         let urn = radicle.urn();
-            Project::<EntityStatusUnknown>::new("radicle".to_owned(), &peer1_user.urn()).unwrap();
+            Project::<EntityStatusUnknown>::create("radicle".to_owned(), &peer1_user.urn())
+                .unwrap();
 
         run_on_testnet(bound, async move {
             radicle
@@ -94,7 +95,8 @@ async fn fetches_on_gossip_notify() {
         let alice = Alice::new(peer1.public_key());
         let mut radicle = Radicle::new(&alice);
         let peer1_project =
-            Project::<EntityStatusUnknown>::new("radicle".to_owned(), &peer1_user.urn()).unwrap();
+            Project::<EntityStatusUnknown>::create("radicle".to_owned(), &peer1_user.urn())
+                .unwrap();
 
         let peer1_handle = bound[0].handle();
 

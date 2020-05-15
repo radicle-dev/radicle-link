@@ -159,7 +159,7 @@ impl<ST> User<ST>
 where
     ST: Clone,
 {
-    pub fn new(name: String, key: PublicKey) -> Result<User<EntityStatusUnknown>, Error> {
+    pub fn create(name: String, key: PublicKey) -> Result<User<EntityStatusUnknown>, Error> {
         UserData::default()
             .set_name(name)
             .set_revision(1)
