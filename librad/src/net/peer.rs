@@ -33,8 +33,8 @@ use crate::{
     keys::device::{self, PublicKey},
     meta::entity::{
         data::{EntityBuilder, EntityData},
+        Draft,
         Entity,
-        Unknown,
     },
     net::{
         connection::LocalInfo,
@@ -122,7 +122,7 @@ impl Peer {
 
     // FIXME[ENTITY]: Verify entity signatures
     /// Create a git [`Repo`] from an initial [`Entity`]
-    pub fn git_create<T>(&self, meta: &Entity<T, Unknown>) -> Result<Repo, repo::Error>
+    pub fn git_create<T>(&self, meta: &Entity<T, Draft>) -> Result<Repo, repo::Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
     {

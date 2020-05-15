@@ -28,7 +28,7 @@ use crate::{
     keys,
     keys::{device, pgp},
     meta,
-    meta::{entity, entity::Unknown, project::ProjectData, Project},
+    meta::{entity, entity::Draft, project::ProjectData, Project},
     paths::Paths,
 };
 
@@ -143,8 +143,8 @@ impl GitProject {
         paths: &Paths,
         key: &device::Key,
         sources: &git2::Repository,
-        metadata: &meta::Project<Unknown>,
-        founder: &meta::User<entity::Unknown>,
+        metadata: &meta::Project<Draft>,
+        founder: &meta::User<entity::Draft>,
     ) -> Result<ProjectId, Error> {
         // TODO: resolve URL ref iff rad://
         let (nickname, fullname) = match founder.profile() {
@@ -204,7 +204,7 @@ impl GitProject {
         res.map(|_| pid)
     }
 
-    pub fn metadata(&self) -> Result<meta::Project<Unknown>, Error> {
+    pub fn metadata(&self) -> Result<meta::Project<Draft>, Error> {
         let blob = {
             self.0
                 .find_branch(PROJECT_METADATA_BRANCH, git2::BranchType::Local)?
@@ -215,7 +215,7 @@ impl GitProject {
                 .to_object(&self.0)?
                 .peel_to_blob()
         }?;
-        let meta = Project::<Unknown>::from_json_slice(blob.content())?;
+        let meta = Project::<Draft>::from_json_slice(blob.content())?;
         Ok(meta)
     }
 
@@ -223,7 +223,7 @@ impl GitProject {
     pub fn builder(
         project_name: &str,
         founder_key: &device::Key,
-        founder_meta: meta::User<entity::Unknown>,
+        founder_meta: meta::User<entity::Draft>,
     ) -> project::Builder {
         project::Builder::new(project_name, founder_key, founder_meta)
     }
@@ -245,7 +245,7 @@ pub mod project {
     // FIXME[ENTITY]: Verify entity signatures
     pub struct Builder {
         key: device::Key,
-        founder: meta::User<entity::Unknown>,
+        founder: meta::User<entity::Draft>,
         name: String,
         description: Option<String>,
         default_branch: String,
@@ -254,7 +254,7 @@ pub mod project {
 
     // FIXME[ENTITY]: Verify entity signatures
     impl Builder {
-        pub fn new(name: &str, key: &device::Key, founder: meta::User<entity::Unknown>) -> Self {
+        pub fn new(name: &str, key: &device::Key, founder: meta::User<entity::Draft>) -> Self {
             Self {
                 key: key.clone(),
                 founder,
@@ -315,7 +315,7 @@ fn commit_project_meta(
     parent: &git2::Commit,
     pgp_key: &mut pgp::Key,
     msg: &str,
-    meta: &meta::Project<Unknown>,
+    meta: &meta::Project<Draft>,
 ) -> Result<git2::Oid, Error> {
     commit_meta(repo, parent, pgp_key, msg, meta, PROJECT_METADATA_FILE)
 }
@@ -326,7 +326,7 @@ fn commit_contributor_meta(
     parent: &git2::Commit,
     pgp_key: &mut pgp::Key,
     msg: &str,
-    meta: &meta::User<entity::Unknown>,
+    meta: &meta::User<entity::Draft>,
 ) -> Result<git2::Oid, Error> {
     commit_meta(repo, parent, pgp_key, msg, meta, CONTRIBUTOR_METADATA_FILE)
 }

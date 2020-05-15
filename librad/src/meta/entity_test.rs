@@ -87,11 +87,11 @@ lazy_static! {
 struct EmptyResolver {}
 
 #[async_trait]
-impl Resolver<User<Unknown>> for EmptyResolver {
-    async fn resolve(&self, uri: &RadUrn) -> Result<User<Unknown>, Error> {
+impl Resolver<User<Draft>> for EmptyResolver {
+    async fn resolve(&self, uri: &RadUrn) -> Result<User<Draft>, Error> {
         Err(Error::ResolutionFailed(uri.to_owned()))
     }
-    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User<Unknown>, Error> {
+    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User<Draft>, Error> {
         Err(Error::RevisionResolutionFailed(uri.to_owned(), revision))
     }
 }
@@ -142,7 +142,7 @@ fn test_valid_uri() {
     assert_eq!(u1, u2);
 }
 
-fn new_user(name: &str, revision: u64, devices: &[&'static str]) -> Result<User<Unknown>, Error> {
+fn new_user(name: &str, revision: u64, devices: &[&'static str]) -> Result<User<Draft>, Error> {
     let mut data = UserData::default()
         .set_name(name.to_owned())
         .set_revision(revision);

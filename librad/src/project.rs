@@ -119,7 +119,7 @@ impl Project {
     pub fn show(
         paths: &Paths,
         id: &ProjectId,
-    ) -> Result<meta::Project<meta::entity::Unknown>, Error> {
+    ) -> Result<meta::Project<meta::entity::Draft>, Error> {
         GitProject::open(&id.path(paths))?
             .metadata()
             .map_err(|e| e.into())

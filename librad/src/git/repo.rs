@@ -34,9 +34,9 @@ use crate::{
     meta::entity::{
         self,
         data::{EntityBuilder, EntityData},
+        Draft,
         Entity,
         Signatory,
-        Unknown,
         VerificationStatus,
     },
     paths::Paths,
@@ -197,7 +197,7 @@ impl Repo {
         let id_branch = format!("refs/remotes/{}/rad/id", url.authority);
         let peer_id = PeerId::from(&key);
         let git_url = GitUrlRef::from_rad_url_ref(url.as_ref(), &peer_id);
-        let entity: Entity<T, Unknown> = {
+        let entity: Entity<T, Draft> = {
             let mut remote = repo.remote_anonymous(&git_url.to_string())?;
             remote.fetch(
                 &[&format!(
@@ -209,7 +209,7 @@ impl Repo {
             )?;
 
             let id_blob = read_blob_at_init(&repo, &id_branch, "id")?;
-            Entity::<T, Unknown>::from_json_slice(id_blob.content())
+            Entity::<T, Draft>::from_json_slice(id_blob.content())
         }?;
 
         // TODO:
