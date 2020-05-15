@@ -132,10 +132,15 @@ pub enum HistoryVerificationError {
     },
 }
 
+/// Type witness for a fully verified [`Entity`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Verified;
+
+/// Type witness for a signed [`Entity`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signed;
+
+/// Type witness for a draft [`Entity`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Draft;
 
