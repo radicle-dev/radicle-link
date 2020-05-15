@@ -459,11 +459,11 @@ where
     /// - the entity has not been already signed using this same key
     /// - this key is allowed to sign the entity (using `check_key`)
     pub async fn sign(
-        mut self,
+        &mut self,
         key: &Key,
         by: &Signatory,
         resolver: &impl Resolver<User<Draft>>,
-    ) -> Result<Entity<T, Signed>, Error> {
+    ) -> Result<(), Error> {
         let public_key = key.public();
         if self.signatures().contains_key(&public_key) {
             return Err(Error::SignatureAlreadyPresent(public_key.to_owned()));
@@ -474,7 +474,7 @@ where
             sig: self.compute_signature(key)?,
         };
         self.signatures.insert(public_key, signature);
-        Ok(self.with_status::<Signed>())
+        Ok(())
     }
 
     /// Check that an entity signature is valid
@@ -525,8 +525,8 @@ where
     where
         ST: Clone,
     {
-        let mut keys = HashSet::<PublicKey>::from_iter(self.keys().iter().cloned());
-        let mut users = HashSet::<RadUrn>::from_iter(self.certifiers().iter().cloned());
+        let mut keys = self.keys().iter().cloned().collect::<HashSet<_>>();
+        let mut users = self.certifiers().iter().cloned().collect::<HashSet<_>>();
 
         if self.revision == 1 && (self.parent_hash.is_some() || self.root_hash != self.hash) {
             // TODO: define a better error if `self.parent_hash.is_some()`
