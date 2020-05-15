@@ -39,6 +39,7 @@ use crate::{
         data::{EntityBuilder, EntityData},
         Entity,
         Signatory,
+        Unknown,
     },
     peer::PeerId,
     uri::{self, RadUrl, RadUrn},
