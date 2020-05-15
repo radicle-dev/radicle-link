@@ -247,7 +247,7 @@ async fn main() {
     let peer1 = spawn(None, transport.clone(), shutdown.clone(), 1).await;
     let init = (peer1.peer.peer_id(), peer1.endpoint.clone());
 
-    let project_owner = meta::User::<meta::entity::EntityStatusUnknown>::new(
+    let project_owner = meta::User::<meta::entity::EntityStatusUnknown>::create(
         "Foo".to_owned(),
         peer1.peer.peer_id().device_key().to_owned(),
     )
@@ -282,7 +282,7 @@ async fn main() {
             &peer1.peer.paths,
             &peer1.peer.key,
             &repo,
-            &meta::Project::<meta::entity::EntityStatusUnknown>::new(
+            &meta::Project::<meta::entity::EntityStatusUnknown>::create(
                 "mini1".to_owned(),
                 &project_owner.urn(),
             )
