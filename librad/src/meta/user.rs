@@ -24,9 +24,9 @@ use crate::{
         common::{EmailAddr, Label, Url},
         entity::{
             data::{EntityBuilder, EntityData},
+            Draft,
             Entity,
             Error,
-            Unknown,
         },
         profile::{Geo, ProfileImage, UserProfile},
         serde_helpers,
@@ -159,7 +159,7 @@ impl<ST> User<ST>
 where
     ST: Clone,
 {
-    pub fn create(name: String, key: PublicKey) -> Result<User<Unknown>, Error> {
+    pub fn create(name: String, key: PublicKey) -> Result<User<Draft>, Error> {
         UserData::default()
             .set_name(name)
             .set_revision(1)
@@ -193,7 +193,7 @@ pub mod tests {
         ]
     }
 
-    pub fn gen_user() -> impl Strategy<Value = User<Unknown>> {
+    pub fn gen_user() -> impl Strategy<Value = User<Draft>> {
         proptest::option::of(gen_profile_ref()).prop_map(|profile| {
             let largefiles = Some(UrlTemplate::from("https://git-lfs.github.com/{SHA512}"));
 

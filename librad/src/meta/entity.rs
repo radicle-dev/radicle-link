@@ -151,7 +151,7 @@ pub struct Verified;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signed;
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Unknown;
+pub struct Draft;
 
 impl VerificationStatus {
     pub fn verification_failed(&self) -> Option<&Error> {
@@ -246,13 +246,13 @@ pub struct Entity<T, ST> {
     info: T,
 }
 
-impl<T> TryFrom<EntityData<T>> for Entity<T, Unknown>
+impl<T> TryFrom<EntityData<T>> for Entity<T, Draft>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
     EntityData<T>: EntityBuilder,
 {
     type Error = Error;
-    fn try_from(data: EntityData<T>) -> Result<Entity<T, Unknown>, Error> {
+    fn try_from(data: EntityData<T>) -> Result<Entity<T, Draft>, Error> {
         Self::from_data(data)
     }
 }
@@ -280,7 +280,7 @@ where
     }
 }
 
-impl<'de, T> Deserialize<'de> for Entity<T, Unknown>
+impl<'de, T> Deserialize<'de> for Entity<T, Draft>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
     EntityData<T>: EntityBuilder,
@@ -291,7 +291,7 @@ where
         D::Error: SerdeDeserializationError,
     {
         let data = EntityData::<T>::deserialize(deserializer)?;
-        let res = Entity::<T, Unknown>::try_from(data);
+        let res = Entity::<T, Draft>::try_from(data);
         res.map_err(D::Error::custom)
     }
 }
@@ -423,7 +423,7 @@ where
         &self,
         key: &PublicKey,
         by: &Signatory,
-        resolver: &impl Resolver<User<Unknown>>,
+        resolver: &impl Resolver<User<Draft>>,
     ) -> Result<(), Error> {
         match by {
             Signatory::OwnedKey => {
@@ -459,7 +459,7 @@ where
         mut self,
         key: &SecretKey,
         by: &Signatory,
-        resolver: &impl Resolver<User<Unknown>>,
+        resolver: &impl Resolver<User<Draft>>,
     ) -> Result<Entity<T, Signed>, Error> {
         let public_key = key.public();
         if self.signatures().contains_key(&public_key) {
@@ -480,7 +480,7 @@ where
         key: &PublicKey,
         by: &Signatory,
         signature: &Signature,
-        resolver: &impl Resolver<User<Unknown>>,
+        resolver: &impl Resolver<User<Draft>>,
     ) -> Result<Entity<T, Signed>, Error>
     where
         ST: Clone,
@@ -517,7 +517,7 @@ where
     /// - the first revision has no parent and a matching root hash
     pub async fn check_signatures(
         self,
-        resolver: &impl Resolver<User<Unknown>>,
+        resolver: &impl Resolver<User<Draft>>,
     ) -> Result<Entity<T, Signed>, Error>
     where
         ST: Clone,
@@ -626,7 +626,7 @@ where
     pub async fn check_history_status(
         self,
         resolver: &impl Resolver<Entity<T, ST>>,
-        certifier_resolver: &impl Resolver<User<Unknown>>,
+        certifier_resolver: &impl Resolver<User<Draft>>,
     ) -> Result<Entity<T, Verified>, HistoryVerificationError>
     where
         ST: Clone,
@@ -690,7 +690,7 @@ where
 {
     /// Build an `Entity` from its data (the second step of deserialization)
     /// It guarantees that the `hash` is correct
-    pub fn from_data(data: EntityData<T>) -> Result<Entity<T, Unknown>, Error> {
+    pub fn from_data(data: EntityData<T>) -> Result<Entity<T, Draft>, Error> {
         // FIXME[ENTITY]: do we want this? it makes `default` harder to get right...
         if data.name.is_none() {
             return Err(Error::InvalidData("Missing name".to_owned()));
@@ -746,7 +746,7 @@ where
             },
         };
 
-        Ok(Entity::<T, Unknown> {
+        Ok(Entity::<T, Draft> {
             status_marker: PhantomData,
             name: data.name.unwrap(),
             revision: data.revision.unwrap(),
@@ -776,7 +776,7 @@ where
     }
 
     /// Helper deserialization from JSON reader
-    pub fn from_json_reader<R>(r: R) -> Result<Entity<T, Unknown>, Error>
+    pub fn from_json_reader<R>(r: R) -> Result<Entity<T, Draft>, Error>
     where
         R: std::io::Read,
     {
@@ -784,12 +784,12 @@ where
     }
 
     /// Helper deserialization from JSON string
-    pub fn from_json_str(s: &str) -> Result<Entity<T, Unknown>, Error> {
+    pub fn from_json_str(s: &str) -> Result<Entity<T, Draft>, Error> {
         Self::from_data(data::EntityData::from_json_str(s)?)
     }
 
     /// Helper deserialization from JSON slice
-    pub fn from_json_slice(s: &[u8]) -> Result<Entity<T, Unknown>, Error> {
+    pub fn from_json_slice(s: &[u8]) -> Result<Entity<T, Draft>, Error> {
         Self::from_data(data::EntityData::from_json_slice(s)?)
     }
 }

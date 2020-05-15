@@ -37,9 +37,9 @@ use crate::{
     meta::entity::{
         self,
         data::{EntityBuilder, EntityData},
+        Draft,
         Entity,
         Signatory,
-        Unknown,
     },
     peer::PeerId,
     uri::{self, RadUrl, RadUrn},

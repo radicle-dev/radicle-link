@@ -83,11 +83,11 @@ lazy_static! {
 struct EmptyResolver {}
 
 #[async_trait]
-impl Resolver<User<Unknown>> for EmptyResolver {
-    async fn resolve(&self, uri: &RadUrn) -> Result<User<Unknown>, Error> {
+impl Resolver<User<Draft>> for EmptyResolver {
+    async fn resolve(&self, uri: &RadUrn) -> Result<User<Draft>, Error> {
         Err(Error::ResolutionFailed(uri.to_owned()))
     }
-    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User<Unknown>, Error> {
+    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User<Draft>, Error> {
         Err(Error::RevisionResolutionFailed(uri.to_owned(), revision))
     }
 }

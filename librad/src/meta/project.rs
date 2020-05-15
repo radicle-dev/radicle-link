@@ -24,9 +24,9 @@ use crate::{
         common::{Label, Url},
         entity::{
             data::{EntityBuilder, EntityData},
+            Draft,
             Entity,
             Error,
-            Unknown,
         },
     },
     uri::RadUrn,
@@ -149,7 +149,7 @@ where
         &self.info().rel
     }
 
-    pub fn create(name: String, owner: RadUrn) -> Result<Project<EntityStatusUnknown>, Error> {
+    pub fn create(name: String, owner: RadUrn) -> Result<Project<Draft>, Error> {
         ProjectData::default()
             .set_name(name)
             .set_revision(1)
@@ -176,13 +176,13 @@ pub mod tests {
 
     #[test]
     fn test_project_serde() {
-        let proj = Project::<Unknown>::create("foo".to_owned(), EMPTY_URI.clone()).unwrap();
+        let proj = Project::<Draft>::create("foo".to_owned(), EMPTY_URI.clone()).unwrap();
         let proj_ser = serde_json::to_string(&proj).unwrap();
         let proj_de = serde_json::from_str(&proj_ser).unwrap();
         assert_eq!(proj, proj_de)
     }
 
-    fn gen_project() -> impl Strategy<Value = Project<Unknown>> {
+    fn gen_project() -> impl Strategy<Value = Project<Draft>> {
         (
             ".*",
             proptest::option::of(".*"),

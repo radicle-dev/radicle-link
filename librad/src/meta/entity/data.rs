@@ -19,7 +19,7 @@ use crate::{
     hash::Hash,
     keys::PublicKey,
     meta::{
-        entity::{Entity, Error, Unknown},
+        entity::{Draft, Entity, Error},
         RAD_VERSION,
     },
     uri::RadUrn,
@@ -288,7 +288,7 @@ where
     T: Serialize + DeserializeOwned + Clone + Default,
     EntityData<T>: EntityBuilder,
 {
-    pub fn build(self) -> Result<Entity<T, Unknown>, Error> {
-        Entity::<T, Unknown>::from_data(self)
+    pub fn build(self) -> Result<Entity<T, Draft>, Error> {
+        Entity::<T, Draft>::from_data(self)
     }
 }
