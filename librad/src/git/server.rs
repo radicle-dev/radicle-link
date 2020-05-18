@@ -133,11 +133,21 @@ impl UploadPack {
             ));
 
         let repo = git2::Repository::open_bare(repo_path).map_err(git2io)?;
-        let mut id_refs = repo
-            .references_glob(&format!("refs/namespaces/{}/**/rad/ids/*", namespace))
+
+        let mut owned_ids = repo
+            .references_glob(&format!("refs/namespaces/{}/rad/ids/*", namespace))
             .map_err(git2io)?;
-        let id_refs_names = id_refs.names();
-        for id_ref in id_refs_names {
+        let mut remote_ids = repo
+            .references_glob(&format!(
+                "refs/namespaces/{}/refs/remotes/**/rad/ids/*",
+                namespace
+            ))
+            .map_err(git2io)?;
+
+        let owned_ids = owned_ids.names();
+        let remote_ids = remote_ids.names();
+
+        for id_ref in owned_ids.chain(remote_ids) {
             if let Some(id) = id_ref.ok().and_then(|name| name.split('/').next_back()) {
                 git.arg("-c").arg(format!(
                     "uploadpack.hiderefs=!refs/namespaces/{}/rad/id",
