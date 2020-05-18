@@ -125,8 +125,8 @@ impl Default for MembershipParams {
             max_active: 23,
             random_walk_length: 3,
             shuffle_sample_size: 7,
-            shuffle_interval: Duration::from_secs(10),
-            promote_interval: Duration::from_secs(5),
+            shuffle_interval: Duration::from_secs(30),
+            promote_interval: Duration::from_secs(20),
         }
     }
 }

@@ -56,7 +56,8 @@ impl Paths {
     // Don't use system paths, but the supplied directory as a root.
     //
     // For testing, you know.
-    pub fn from_root(root: &Path) -> Result<Self, io::Error> {
+    pub fn from_root(root: impl AsRef<Path>) -> Result<Self, io::Error> {
+        let root = root.as_ref();
         Self {
             keys_dir: root.join("keys"),
             git_dir: root.join("git"),

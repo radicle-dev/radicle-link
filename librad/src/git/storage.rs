@@ -16,7 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    ops::Deref,
+    ops::{Deref, Range},
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -27,7 +27,7 @@ use crate::{
     git::{
         ext::is_not_found_err,
         repo::{self, Repo},
-        types::{Namespace, Reference, RefsCategory, Refspec},
+        types::Reference,
         url::GitUrlRef,
     },
     keys::SecretKey,
@@ -90,6 +90,7 @@ impl Storage {
     pub fn create_repo<T>(self, meta: &Entity<T>) -> Result<Repo, repo::Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
+        EntityData<T>: EntityBuilder,
     {
         Repo::create(self, meta)
     }
@@ -108,51 +109,25 @@ impl Storage {
 
     // Utils
 
-    // FIXME: tests should use a working copy + push
-    pub fn create_empty_commit(&self, urn: RadUrn) -> Result<git2::Oid, Error> {
-        let git = self.backend.lock().unwrap();
-
-        let tree = {
-            let mut index = git.index()?;
-            let tree_id = index.write_tree()?;
-            git.find_tree(tree_id)
-        }?;
-        let author = git.signature()?;
-
-        let oid = git.commit(
-            Some(
-                &Reference {
-                    namespace: urn.id,
-                    remote: None,
-                    category: RefsCategory::Heads,
-                    name: "master".to_owned(),
-                }
-                .to_string(),
-            ),
-            &author,
-            &author,
-            "Initial commit",
-            &tree,
-            &[],
-        )?;
-
-        Ok(oid)
-    }
-
-    // FIXME: provide namespace-aware delegators instead
-    pub(crate) fn backend(&self) -> MutexGuard<git2::Repository> {
+    pub(super) fn lock(&self) -> MutexGuard<git2::Repository> {
         self.backend.lock().unwrap()
     }
 
     pub(crate) fn has_commit(&self, urn: &RadUrn, oid: git2::Oid) -> Result<bool, Error> {
+        let span = tracing::warn_span!("Storage::has_commit", urn = %urn, oid = %oid);
+        let _guard = span.enter();
+
         if oid.is_zero() {
             return Ok(false);
         }
 
-        let git = self.backend.lock().unwrap();
+        let git = self.lock();
         let commit = git.find_commit(oid);
         match commit {
-            Err(e) if is_not_found_err(&e) => Ok(false),
+            Err(e) if is_not_found_err(&e) => {
+                tracing::warn!("commit not found");
+                Ok(false)
+            },
             Ok(commit) => {
                 let namespace = &urn.id;
                 let branch = if urn.path.is_empty() {
@@ -161,15 +136,32 @@ impl Storage {
                     urn.path.deref()
                 };
 
-                match git.find_reference(&format!("refs/namespaces/{}/{}", namespace, branch)) {
-                    Err(e) if is_not_found_err(&e) => Ok(false),
+                let refname = format!("refs/namespaces/{}/{}", namespace, branch);
+                match git.find_reference(&refname) {
+                    Err(e) if is_not_found_err(&e) => {
+                        tracing::warn!(refname = %refname, "ref not found");
+                        Ok(false)
+                    },
                     Ok(tip) => {
                         match tip.target() {
-                            None => Ok(false), // FIXME: ??
+                            None => {
+                                // FIXME: ??
+                                tracing::error!("tip has no target");
+                                Ok(false)
+                            },
                             Some(tip) if tip == commit.id() => Ok(true),
-                            Some(tip) => git
-                                .graph_descendant_of(tip, commit.id())
-                                .map_err(|e| e.into()),
+                            Some(tip) => {
+                                if git.graph_descendant_of(tip, commit.id())? {
+                                    Ok(true)
+                                } else {
+                                    tracing::warn!(
+                                        tip = %tip,
+                                        commit = %commit.id(),
+                                        "commit exists, but not on branch",
+                                    );
+                                    Ok(false)
+                                }
+                            },
                         }
                     },
                     Err(e) => Err(e.into()),
@@ -180,7 +172,7 @@ impl Storage {
     }
 
     pub(crate) fn has_ref(&self, reference: &Reference) -> Result<bool, Error> {
-        let git = self.backend.lock().unwrap();
+        let git = self.lock();
         git.find_reference(&reference.to_string())
             .map(|_| true)
             .or_else(|e| {
@@ -192,44 +184,71 @@ impl Storage {
             })
     }
 
-    pub(crate) fn has_remote(&self, name: &str) -> Result<bool, Error> {
-        let git = self.backend.lock().unwrap();
-        git.find_remote(name).map(|_| true).or_else(|e| {
-            if is_not_found_err(&e) {
-                Ok(false)
-            } else {
-                Err(e.into())
-            }
-        })
-    }
+    pub(crate) fn track(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
+        let remote_name = tracking_remote_name(urn, peer);
+        let url = GitUrlRef::from_rad_urn(&urn, &PeerId::from(&self.key), peer).to_string();
 
-    pub(crate) fn track(&self, urn: &RadUrn, peer: PeerId) -> Result<(), Error> {
-        let remote_name = tracking_remote_name(urn, &peer);
-        let namespace = urn.id.clone();
+        tracing::debug!(
+            "Storage::track({}, {}): {} url={}",
+            urn,
+            peer,
+            remote_name,
+            url
+        );
 
-        let git = self.backend.lock().unwrap();
-        if !self.has_remote(&remote_name)? {
-            let _ = git.remote_with_fetch(
-                &remote_name,
-                &GitUrlRef::from_rad_urn(&urn, &PeerId::from(&self.key), &peer).to_string(),
-                &track_spec(namespace.clone(), peer.clone(), RefsCategory::Heads).to_string(),
-            )?;
-        }
-
-        git.remote_add_fetch(
-            &remote_name,
-            &track_spec(namespace, peer, RefsCategory::Rad).to_string(),
-        )?;
-
+        let _ = self.lock().remote(&remote_name, &url)?;
         Ok(())
     }
 
-    pub(crate) fn untrack(&self, urn: &RadUrn, peer: PeerId) -> Result<(), Error> {
-        let remote_name = tracking_remote_name(urn, &peer);
+    pub(crate) fn untrack(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
+        let remote_name = tracking_remote_name(urn, peer);
         // TODO: This removes all remote tracking branches matching the
         // fetchspec (I suppose). Not sure this is what we want.
-        let git = self.backend.lock().unwrap();
-        git.remote_delete(&remote_name).map_err(|e| e.into())
+        self.lock()
+            .remote_delete(&remote_name)
+            .map_err(|e| e.into())
+    }
+
+    pub(crate) fn tracked(&self, urn: &RadUrn) -> Result<Tracked, Error> {
+        let remotes = self.lock().remotes()?;
+        Ok(Tracked::new(remotes, urn))
+    }
+}
+
+/// Iterator over the 1st degree tracked peers of a repo.
+///
+/// Created by the [`Storage::tracked`] method.
+pub struct Tracked {
+    remotes: git2::string_array::StringArray,
+    range: Range<usize>,
+    prefix: String,
+}
+
+impl Tracked {
+    pub(super) fn new(remotes: git2::string_array::StringArray, filter: &RadUrn) -> Self {
+        let range = 0..remotes.len();
+        let prefix = format!("{}/", filter.id);
+        Self {
+            remotes,
+            range,
+            prefix,
+        }
+    }
+}
+
+impl Iterator for Tracked {
+    type Item = PeerId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.range
+            .next()
+            .and_then(|i| self.remotes.get(i))
+            .and_then(|name| name.strip_prefix(&self.prefix))
+            .and_then(|peer| peer.parse().ok())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.range.size_hint()
     }
 }
 
@@ -289,24 +308,60 @@ impl<'a> WithBlob<'a> {
 }
 
 fn tracking_remote_name(urn: &RadUrn, peer: &PeerId) -> String {
-    format!("{}/{}", urn, peer)
+    format!("{}/{}", urn.id, peer)
 }
 
-fn track_spec(namespace: Namespace, peer: PeerId, category: RefsCategory) -> Refspec {
-    let remote = Reference {
-        namespace,
-        remote: None,
-        category,
-        name: "*".to_owned(),
-    };
-    let local = Reference {
-        remote: Some(peer),
-        ..remote.clone()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use tempfile::tempdir;
+
+    use crate::{
+        hash::Hash,
+        uri::{self, RadUrn},
     };
 
-    Refspec {
-        local,
-        remote,
-        force: false,
+    #[test]
+    fn test_tracking_read_after_write() {
+        let tmp = tempdir().unwrap();
+        let paths = Paths::from_root(tmp).unwrap();
+        let key = SecretKey::new();
+        let store = Storage::init(&paths, key).unwrap();
+
+        let urn = RadUrn {
+            id: Hash::hash(b"lala"),
+            proto: uri::Protocol::Git,
+            path: uri::Path::empty(),
+        };
+        let peer = PeerId::from(SecretKey::new());
+
+        store.track(&urn, &peer).unwrap();
+        let tracked = store.tracked(&urn).unwrap().next();
+        assert_eq!(tracked, Some(peer))
+    }
+
+    #[test]
+    fn test_untrack() {
+        let tmp = tempdir().unwrap();
+        let paths = Paths::from_root(tmp).unwrap();
+        let key = SecretKey::new();
+        let store = Storage::init(&paths, key).unwrap();
+
+        let urn = RadUrn {
+            id: Hash::hash(b"lala"),
+            proto: uri::Protocol::Git,
+            path: uri::Path::empty(),
+        };
+        let peer = PeerId::from(SecretKey::new());
+
+        store.track(&urn, &peer).unwrap();
+        store.untrack(&urn, &peer).unwrap();
+
+        assert!(store
+            .tracked(&urn)
+            .unwrap()
+            .collect::<Vec<PeerId>>()
+            .is_empty())
     }
 }

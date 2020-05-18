@@ -91,6 +91,12 @@ impl Peer {
         self.key.public()
     }
 
+    // FIXME: this should not be here, but we can't otherwise do entity signing
+    // in tests
+    pub fn key(&self) -> &SecretKey {
+        &self.key
+    }
+
     /// Bind to the given [`SocketAddr`].
     ///
     /// Calling `bind` will cause the process to listen on the given address,
@@ -153,6 +159,9 @@ impl LocalStorage for Peer {
     type Update = Gossip;
 
     fn put(&self, provider: &PeerId, has: Self::Update) -> PutResult {
+        let span = tracing::info_span!("Peer::LocalStorage::put");
+        let _guard = span.enter();
+
         match has.urn.proto {
             uri::Protocol::Git => {
                 let Rev::Git(head) = has.rev;
@@ -171,6 +180,9 @@ impl LocalStorage for Peer {
     }
 
     fn ask(&self, want: Self::Update) -> bool {
+        let span = tracing::info_span!("Peer::LocalStorage::ask");
+        let _guard = span.enter();
+
         match want.urn.proto {
             uri::Protocol::Git => {
                 let Rev::Git(head) = want.rev;

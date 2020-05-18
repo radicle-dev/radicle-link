@@ -12,7 +12,7 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
-// You should have received a copy of the GNU General Public License
+// You should have received a coopy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{future::Future, time::Duration};
@@ -22,13 +22,17 @@ use futures_timer::Delay;
 
 use librad::{
     internal::sync::Monitor,
-    meta::{project::ProjectInfo, Project, User},
+    meta::{entity::Signatory, project::ProjectInfo},
     net::peer::{BoundPeer, Gossip, Rev},
     peer::PeerId,
+    uri::{self, RadUrn},
 };
 
+mod fixtures;
 mod logging;
 mod testnet;
+
+use fixtures::{Alice, Radicle};
 
 #[tokio::test]
 async fn can_clone() {
@@ -41,22 +45,22 @@ async fn can_clone() {
         let peer1 = peers[0].peer.clone();
         let peer2 = peers[1].peer.clone();
 
-        let peer1_user = User::new("alice".to_owned(), peer1.public_key()).unwrap();
-        let peer1_project = Project::new("radicle".to_owned(), &peer1_user.urn()).unwrap();
-        let urn = peer1_project.urn();
+        let alice = Alice::new(peer1.public_key());
+        let mut radicle = Radicle::new(&alice);
+        let urn = radicle.urn();
 
         run_on_testnet(bound, async move {
+            radicle
+                .sign(peer1.key(), &Signatory::User(alice.urn()), &alice)
+                .await
+                .unwrap();
+
             tokio::task::spawn_blocking(move || {
                 let git1 = peer1.git().clone();
                 let git2 = peer2.git().clone();
-
-                println!("create repo");
-                git1.create_repo(&peer1_project).unwrap();
-                println!("clone");
+                git1.create_repo(&radicle).unwrap();
                 git2.clone_repo::<ProjectInfo>(
-                    peer1_project
-                        .urn()
-                        .into_rad_url(PeerId::from(peer1.public_key())),
+                    radicle.urn().into_rad_url(PeerId::from(peer1.public_key())),
                 )
                 .unwrap();
             })
@@ -83,17 +87,22 @@ async fn fetches_on_gossip_notify() {
         let peer1 = peers[0].peer.clone();
         let peer2 = peers[1].peer.clone();
 
-        let peer1_user = User::new("alice".to_owned(), peer1.public_key()).unwrap();
-        let peer1_project = Project::new("radicle".to_owned(), &peer1_user.urn()).unwrap();
-        let peer1_project_urn = peer1_project.urn();
+        let alice = Alice::new(peer1.public_key());
+        let mut radicle = Radicle::new(&alice);
+        let radicle_urn = radicle.urn();
 
         let peer1_handle = bound[0].handle();
 
         let commit_id = run_on_testnet(bound, async move {
+            radicle
+                .sign(peer1.key(), &Signatory::User(alice.urn()), &alice)
+                .await
+                .unwrap();
+
             let (commit_id, urn) = tokio::task::spawn_blocking(move || {
                 // Create a repo on peer1 and have peer2 clone it
                 let peer1_git = peer1.git();
-                let peer1_repo = peer1_git.clone().create_repo(&peer1_project).unwrap();
+                let mut peer1_repo = peer1_git.clone().create_repo(&radicle).unwrap();
                 let peer1_project_urn = peer1_repo.urn();
 
                 let peer2_git = peer2.git();
@@ -108,31 +117,41 @@ async fn fetches_on_gossip_notify() {
 
                 // Create a commit in peer1's repo and gossip the head rev
                 // FIXME: should operate on a working copy + push
-                let commit_id = peer1_git
-                    .clone()
-                    .create_empty_commit(peer1_project_urn.clone())
-                    .unwrap();
+                let commit_id = {
+                    let repo = peer1_repo.locked();
 
-                (commit_id, peer1_project_urn.clone())
+                    let empty_tree = {
+                        let mut index = repo.index().unwrap();
+                        let oid = index.write_tree().unwrap();
+                        repo.find_tree(oid).unwrap()
+                    };
+                    repo.commit("master", "Initial commit", &empty_tree, &[])
+                        .unwrap()
+                };
+
+                (commit_id, peer1_project_urn)
             })
             .await
             .unwrap();
 
             peer1_handle
                 .announce(Gossip {
-                    urn,
+                    urn: RadUrn {
+                        path: uri::Path::parse("refs/heads/master").unwrap(),
+                        ..urn
+                    },
                     rev: Rev::Git(commit_id),
                 })
                 .await;
 
             // Wait a moment for peer2 to react
-            let _ = tokio::task::spawn(Delay::new(Duration::from_secs(2))).await;
+            let _ = tokio::task::spawn(Delay::new(Duration::from_secs(1))).await;
 
             commit_id
         })
         .await;
 
-        (peer1_project_urn, commit_id)
+        (radicle_urn, commit_id)
     };
 
     // Check peer2 fetched the gossiped update
