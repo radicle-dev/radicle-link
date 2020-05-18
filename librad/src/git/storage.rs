@@ -352,10 +352,6 @@ mod tests {
         store.track(&urn, &peer).unwrap();
         store.untrack(&urn, &peer).unwrap();
 
-        assert!(store
-            .tracked(&urn)
-            .unwrap()
-            .collect::<Vec<PeerId>>()
-            .is_empty())
+        assert!(store.tracked(&urn).unwrap().next().is_none())
     }
 }
