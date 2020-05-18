@@ -150,7 +150,7 @@ async fn fetches_on_gossip_notify() {
             // Wait a moment for peer2 to react
             // FIXME: add an event chan to peer, so we can tell when it's done
             // (or time out)
-            let _ = tokio::task::spawn(Delay::new(Duration::from_secs(2))).await;
+            let _ = tokio::task::spawn(Delay::new(Duration::from_secs(5))).await;
 
             (urn, commit_id)
         })
