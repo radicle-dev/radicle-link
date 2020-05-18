@@ -417,7 +417,7 @@ impl<'a> Locked<'a> {
         {
             tracing::trace!(repo.clone.refspecs = ?refspecs);
             let mut remote = self.git.remote_anonymous(&url.to_string())?;
-            remote.fetch(&refspecs, None, None)?;
+            remote.fetch(&refspecs, Some(&mut self.fetch_options()), None)?;
         }
 
         let entity: Entity<T> = {
@@ -570,7 +570,7 @@ impl<'a> Locked<'a> {
                     .map(|spec| spec.to_string())
                     .collect::<Vec<String>>();
             tracing::debug!(refspecs = ?refspecs, "Fetching rad/refs");
-            remote.fetch(&refspecs, None, None)?;
+            remote.fetch(&refspecs, Some(&mut self.fetch_options()), None)?;
         }
 
         // Read the signed refs of all known remotes, and compare their `heads`
@@ -596,7 +596,7 @@ impl<'a> Locked<'a> {
             .collect::<Vec<String>>();
 
             tracing::debug!(refspecs = ?refspecs, "Fetching refs/heads");
-            remote.fetch(&refspecs, None, None)?;
+            remote.fetch(&refspecs, Some(&mut self.fetch_options()), None)?;
         }
 
         // At this point, the transitive tracking graph may have changed. Let's
@@ -621,6 +621,26 @@ impl<'a> Locked<'a> {
         ))?;
         let refnames = refs.names();
         Ok(urns_from_refs(refnames).collect())
+    }
+
+    fn fetch_options(&self) -> git2::FetchOptions<'a> {
+        let mut cbs = git2::RemoteCallbacks::new();
+        cbs.sideband_progress(|prog| {
+            tracing::trace!("{}", unsafe { std::str::from_utf8_unchecked(prog) });
+            true
+        })
+        .update_tips(|name, old, new| {
+            tracing::debug!("{}: {} -> {}", name, old, new);
+            true
+        });
+
+        let mut fos = git2::FetchOptions::new();
+        fos.prune(git2::FetchPrune::Off)
+            .update_fetchhead(true)
+            .download_tags(git2::AutotagOption::None)
+            .remote_callbacks(cbs);
+
+        fos
     }
 }
 
