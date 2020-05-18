@@ -176,30 +176,28 @@ impl Refspec {
             {
                 let their_rad_refs = rad_refs_of(tracked_peer.clone())?;
                 for (name, target) in their_rad_refs.heads {
-                    let targets_match = remote_heads
-                        .get(name.as_str())
-                        .map(|remote_target| {
-                            println!(
-                                "remote_target: {}, rad_refs target: {}",
-                                remote_target, &*target
-                            );
-                            remote_target == &*target
-                        })
-                        .unwrap_or(false);
+                    let name_namespaced = format!("refs/namespaces/{}/{}", namespace, name);
+                    if let Some(name) = name.strip_prefix("refs/heads/") {
+                        let targets_match = remote_heads
+                            .get(name_namespaced.as_str())
+                            .map(|remote_target| remote_target == &*target)
+                            .unwrap_or(false);
 
-                    if targets_match {
-                        let local = Reference::head(namespace.clone(), tracked_peer.clone(), &name);
-                        let remote = if tracked_peer == remote_peer {
-                            local.with_remote(None)
-                        } else {
-                            local.clone()
-                        };
+                        if targets_match {
+                            let local =
+                                Reference::head(namespace.clone(), tracked_peer.clone(), &name);
+                            let remote = if tracked_peer == remote_peer {
+                                local.with_remote(None)
+                            } else {
+                                local.clone()
+                            };
 
-                        refspecs.push(Self {
-                            local,
-                            remote,
-                            force: true,
-                        })
+                            refspecs.push(Self {
+                                local,
+                                remote,
+                                force: true,
+                            })
+                        }
                     }
                 }
             }

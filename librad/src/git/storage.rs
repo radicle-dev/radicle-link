@@ -136,36 +136,29 @@ impl Storage {
                     urn.path.deref()
                 };
 
-                let refname = format!("refs/namespaces/{}/{}", namespace, branch);
-                match git.find_reference(&refname) {
-                    Err(e) if is_not_found_err(&e) => {
-                        tracing::warn!(refname = %refname, "ref not found");
-                        Ok(false)
-                    },
-                    Ok(tip) => {
-                        match tip.target() {
-                            None => {
-                                // FIXME: ??
-                                tracing::error!("tip has no target");
-                                Ok(false)
-                            },
-                            Some(tip) if tip == commit.id() => Ok(true),
-                            Some(tip) => {
-                                if git.graph_descendant_of(tip, commit.id())? {
-                                    Ok(true)
-                                } else {
-                                    tracing::warn!(
-                                        tip = %tip,
-                                        commit = %commit.id(),
-                                        "commit exists, but not on branch",
-                                    );
-                                    Ok(false)
-                                }
-                            },
+                // FIXME: this is both too expensive and to stringly. We need
+                // to be able to tell from the gossip message if we should look
+                // in the owned refs or a remote
+                let own_refs =
+                    git.references_glob(&format!("refs/namespaces/{}/{}", namespace, branch))?;
+                let remote_refs = git.references_glob(&format!(
+                    "refs/namespaces/{}/refs/remotes/**/{}",
+                    namespace,
+                    branch.strip_prefix("refs/").unwrap_or(branch)
+                ))?;
+
+                for tip in own_refs.chain(remote_refs) {
+                    let tip = tip?;
+                    if let Some(tip_oid) = tip.target() {
+                        if tip_oid == commit.id()
+                            || git.graph_descendant_of(tip_oid, commit.id())?
+                        {
+                            return Ok(true);
                         }
-                    },
-                    Err(e) => Err(e.into()),
+                    }
                 }
+
+                Ok(false)
             },
             Err(e) => Err(e.into()),
         }
@@ -253,7 +246,7 @@ impl Iterator for Tracked {
 }
 
 #[derive(Clone, Copy)]
-pub enum Side {
+pub enum BranchEnd {
     Tip,
     First,
 }
@@ -261,13 +254,13 @@ pub enum Side {
 pub struct WithBlob<'a> {
     pub reference: &'a Reference,
     pub file_name: &'a str,
-    pub side: Side,
+    pub branch_end: BranchEnd,
 }
 
 impl<'a> WithBlob<'a> {
     pub fn get(self, git: &'a git2::Repository) -> Result<git2::Blob<'a>, Error> {
-        let tree = match self.side {
-            Side::Tip => {
+        let tree = match self.branch_end {
+            BranchEnd::Tip => {
                 let ref_name = self.reference.to_string();
                 let branch = git.find_reference(&ref_name).or_else(|e| {
                     if is_not_found_err(&e) {
@@ -279,7 +272,8 @@ impl<'a> WithBlob<'a> {
                 let tree = branch.peel_to_tree()?;
                 Ok(tree)
             },
-            Side::First => {
+
+            BranchEnd::First => {
                 let mut revwalk = git.revwalk()?;
                 let mut sort = git2::Sort::TOPOLOGICAL;
                 sort.insert(git2::Sort::REVERSE);

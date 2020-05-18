@@ -27,7 +27,7 @@ use crate::{
     git::{
         ext::{is_not_found_err, Oid},
         refs::{self, Refs},
-        storage::{self, Side, Storage, WithBlob},
+        storage::{self, BranchEnd, Storage, WithBlob},
         types::{Namespace, Reference, RefsCategory, Refspec},
         url::GitUrlRef,
     },
@@ -424,7 +424,7 @@ impl<'a> Locked<'a> {
             let blob = WithBlob {
                 reference: &id_branch,
                 file_name: "id",
-                side: Side::First,
+                branch_end: BranchEnd::First,
             }
             .get(&self.git)?;
             Entity::from_json_slice(blob.content())
@@ -480,16 +480,11 @@ impl<'a> Locked<'a> {
 
     fn rad_refs_of(&self, peer: PeerId) -> Result<Refs, Error> {
         let signed = {
-            let refs = Reference {
-                namespace: self.namespace(),
-                remote: Some(peer.clone()),
-                category: RefsCategory::Rad,
-                name: "refs".to_owned(),
-            };
+            let refs = Reference::rad_refs(self.namespace(), peer.clone());
             let blob = WithBlob {
                 reference: &refs,
                 file_name: "refs",
-                side: Side::Tip,
+                branch_end: BranchEnd::Tip,
             }
             .get(&self.git)?;
             refs::Signed::from_json(blob.content(), &peer)
