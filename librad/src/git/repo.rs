@@ -25,7 +25,7 @@ use thiserror::Error;
 
 use crate::{
     git::{
-        ext::{is_not_found_err, Oid, References},
+        ext::{Git2ErrorExt, Oid, References},
         refs::{self, Refs},
         storage::{self, Storage, WithBlob},
         types::{Namespace, Reference, Refspec},
@@ -491,13 +491,7 @@ impl<'a> Locked<'a> {
             .git
             .find_reference(&rad_refs_ref)
             .and_then(|refs| refs.peel_to_commit().map(Some))
-            .or_else(|e| {
-                if is_not_found_err(&e) {
-                    Ok(None)
-                } else {
-                    Err(e)
-                }
-            })?;
+            .map_not_found::<Error, _>(|| Ok(None))?;
         let tree = {
             let blob = self.git.blob(&refsig_canonical)?;
             let mut builder = self.git.treebuilder(None)?;

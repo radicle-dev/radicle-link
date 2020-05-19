@@ -25,7 +25,7 @@ use thiserror::Error;
 
 use crate::{
     git::{
-        ext::{is_not_found_err, References},
+        ext::{is_not_found_err, Git2ErrorExt, References},
         repo::{self, Repo},
         types::Reference,
         url::GitUrlRef,
@@ -154,13 +154,7 @@ impl Storage {
         self.lock()
             .find_reference(&reference.to_string())
             .map(|_| true)
-            .or_else(|e| {
-                if is_not_found_err(&e) {
-                    Ok(false)
-                } else {
-                    Err(e.into())
-                }
-            })
+            .map_not_found(|| Ok(false))
     }
 
     pub(crate) fn has_urn(&self, urn: &RadUrn) -> Result<bool, Error> {
@@ -170,13 +164,7 @@ impl Storage {
         self.lock()
             .find_reference(&format!("refs/namespaces/{}/refs/{}", namespace, branch))
             .map(|_| true)
-            .or_else(|e| {
-                if is_not_found_err(&e) {
-                    Ok(false)
-                } else {
-                    Err(e.into())
-                }
-            })
+            .map_not_found(|| Ok(false))
     }
 
     pub(crate) fn track(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
@@ -267,13 +255,9 @@ impl<'a> WithBlob<'a> {
                 file_name,
             } => {
                 let ref_name = reference.to_string();
-                let branch = git.find_reference(&ref_name).or_else(|e| {
-                    if is_not_found_err(&e) {
-                        Err(Error::NoSuchBranch(ref_name))
-                    } else {
-                        Err(e.into())
-                    }
-                })?;
+                let branch = git
+                    .find_reference(&ref_name)
+                    .map_not_found(|| Err(Error::NoSuchBranch(ref_name)))?;
                 let tree = branch.peel_to_tree()?;
                 blob(git, tree, file_name)
             },
