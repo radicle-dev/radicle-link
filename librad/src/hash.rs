@@ -43,7 +43,7 @@ pub struct AlgorithmMismatch {
 ///
 /// Use this type for all hashing needs which don't depend on VCS specifics.
 /// Currently, this uses Blake2b-256 for compatibility with `radicle-registry`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Hash(Multihash);
 
 impl Hash {

@@ -17,10 +17,12 @@
 
 use crate::{
     hash::Hash,
+    keys::PublicKey,
     meta::{
         entity::{Entity, Error},
         RAD_VERSION,
     },
+    uri::RadUrn,
 };
 use olpc_cjson::CanonicalFormatter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};
@@ -35,12 +37,21 @@ pub struct EntitySignatureData {
     pub sig: String,
 }
 
-/// Helper to serialize `HashSet` in a canonical way
-fn ordered_set<S>(value: &HashSet<String>, serializer: S) -> Result<S::Ok, S::Error>
+/// Helper to serialize `HashSet<RadUrn>` in a canonical way
+fn serialize_certifiers<S>(value: &HashSet<RadUrn>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let ordered: BTreeSet<String> = value.iter().cloned().collect();
+    let ordered: BTreeSet<RadUrn> = value.iter().cloned().collect();
+    ordered.serialize(serializer)
+}
+
+/// Helper to serialize `HashSet<PublicKey>` in a canonical way
+fn serialize_keys<S>(value: &HashSet<PublicKey>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let ordered: BTreeSet<PublicKey> = value.iter().cloned().collect();
     ordered.serialize(serializer)
 }
 
@@ -61,27 +72,29 @@ pub struct EntityData<T> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revision: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub hash: Option<String>,
+    pub hash: Option<Hash>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub root_hash: Option<String>,
+    pub root_hash: Option<Hash>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_hash: Option<String>,
+    pub parent_hash: Option<Hash>,
 
+    // serialize_with = "serialize_signatures",
+    // deserialize_with = "deserialize_signatures"
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub signatures: Option<HashMap<String, EntitySignatureData>>,
+    pub signatures: Option<HashMap<PublicKey, EntitySignatureData>>,
 
     #[serde(
         skip_serializing_if = "HashSet::is_empty",
-        serialize_with = "ordered_set",
+        serialize_with = "serialize_keys",
         default
     )]
-    pub keys: HashSet<String>,
+    pub keys: HashSet<PublicKey>,
     #[serde(
         skip_serializing_if = "HashSet::is_empty",
-        serialize_with = "ordered_set",
+        serialize_with = "serialize_certifiers",
         default
     )]
-    pub certifiers: HashSet<String>,
+    pub certifiers: HashSet<RadUrn>,
 
     pub info: T,
 }
@@ -190,7 +203,7 @@ where
         self
     }
 
-    pub fn set_root_hash(mut self, root_hash: String) -> Self {
+    pub fn set_root_hash(mut self, root_hash: Hash) -> Self {
         self.root_hash = Some(root_hash);
         self
     }
@@ -199,7 +212,7 @@ where
         self
     }
 
-    pub fn set_parent_hash(mut self, parent_hash: String) -> Self {
+    pub fn set_parent_hash(mut self, parent_hash: Hash) -> Self {
         self.parent_hash = Some(parent_hash);
         self
     }
@@ -209,10 +222,8 @@ where
     }
 
     pub fn set_parent(mut self, parent: &Entity<T>) -> Self {
-        let parent_hash_text = parent.hash().to_string();
-        self.parent_hash = Some(parent_hash_text);
-        let root_hash_text = parent.root_hash().to_string();
-        self.root_hash = Some(root_hash_text);
+        self.parent_hash = Some(parent.hash().clone());
+        self.root_hash = Some(parent.root_hash().clone());
         self.revision = Some(parent.revision() + 1);
         self
     }
@@ -222,11 +233,11 @@ where
         self
     }
 
-    pub fn add_key(mut self, key: String) -> Self {
+    pub fn add_key(mut self, key: PublicKey) -> Self {
         self.keys.insert(key);
         self
     }
-    pub fn remove_key(mut self, key: &str) -> Self {
+    pub fn remove_key(mut self, key: &PublicKey) -> Self {
         self.keys.remove(key);
         self
     }
@@ -234,18 +245,18 @@ where
         self.keys.clear();
         self
     }
-    pub fn add_keys(mut self, keys: impl IntoIterator<Item = String>) -> Self {
+    pub fn add_keys(mut self, keys: impl IntoIterator<Item = PublicKey>) -> Self {
         for s in keys.into_iter() {
             self.keys.insert(s);
         }
         self
     }
 
-    pub fn add_certifier(mut self, certifier: String) -> Self {
+    pub fn add_certifier(mut self, certifier: RadUrn) -> Self {
         self.certifiers.insert(certifier);
         self
     }
-    pub fn remove_certifier(mut self, certifier: &str) -> Self {
+    pub fn remove_certifier(mut self, certifier: &RadUrn) -> Self {
         self.certifiers.remove(certifier);
         self
     }
@@ -253,9 +264,9 @@ where
         self.certifiers.clear();
         self
     }
-    pub fn add_certifiers(mut self, certifiers: impl IntoIterator<Item = String>) -> Self {
-        for s in certifiers.into_iter() {
-            self.certifiers.insert(s);
+    pub fn add_certifiers(mut self, certifiers: impl IntoIterator<Item = RadUrn>) -> Self {
+        for c in certifiers.into_iter() {
+            self.certifiers.insert(c);
         }
         self
     }

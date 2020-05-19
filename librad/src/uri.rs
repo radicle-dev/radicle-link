@@ -50,7 +50,7 @@ const PATH_PERCENT_ENCODE_SET: &AsciiSet = &FRAGMENT_PERCENT_ENCODE_SET
 /// Protocol specifier in the context of a [`RadUrn`] or [`RadUrl`]
 ///
 /// This pertains to the VCS backend, implying the native wire protocol.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Protocol {
     Git,
     //Pijul,
@@ -121,7 +121,7 @@ pub mod path {
 ///
 /// A [`Path`] is also a valid git branch name (as specified in
 /// `git-check-ref-format(1)`).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Path(String);
 
@@ -236,7 +236,7 @@ impl Deref for Path {
 ///     urn.to_string()
 /// )
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RadUrn {
     pub id: Hash,
     pub proto: Protocol,
