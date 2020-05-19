@@ -34,7 +34,7 @@ use crate::{
         quic::{self, BoundEndpoint, Endpoint},
     },
     paths::Paths,
-    peer::PeerId,
+    peer::{Originates, OriginatesRef, PeerId},
     uri::{self, RadUrn},
 };
 
@@ -136,12 +136,14 @@ impl Peer {
     }
 
     /// Update a git repo
-    pub fn git_fetch(
-        &self,
+    pub fn git_fetch<'a>(
+        &'a self,
         from: &PeerId,
-        urn: RadUrn,
+        urn: impl Into<OriginatesRef<'a, RadUrn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> Result<(), GitFetchError> {
+        let urn = self.urn_context(urn);
+
         if let Some(head) = head.into() {
             if self.git.has_commit(&urn, head)? {
                 return Err(GitFetchError::KnownObject(head));
@@ -156,7 +158,12 @@ impl Peer {
     }
 
     /// Determine if we have the given object locally
-    pub fn git_has(&self, urn: RadUrn, head: impl Into<Option<git2::Oid>>) -> bool {
+    pub fn git_has<'a>(
+        &'a self,
+        urn: impl Into<OriginatesRef<'a, RadUrn>>,
+        head: impl Into<Option<git2::Oid>>,
+    ) -> bool {
+        let urn = self.urn_context(urn);
         match head.into() {
             None => self.git.has_urn(&urn).unwrap_or(false),
             Some(head) => self.git.has_commit(&urn, head).unwrap_or(false),
@@ -165,8 +172,11 @@ impl Peer {
 
     /// Map the [`uri::Path`] of the given [`RadUrn`] to
     /// `refs/remotes/<origin>/<path>` if applicable
-    pub fn urn_context(&self, urn: RadUrn, origin: PeerId) -> RadUrn {
-        if origin == self.peer_id() {
+    fn urn_context<'a>(&'a self, urn: impl Into<OriginatesRef<'a, RadUrn>>) -> RadUrn {
+        let OriginatesRef { from, value } = urn.into();
+        let urn = value.clone();
+
+        if from == &self.peer_id() {
             return urn;
         }
 
@@ -180,7 +190,7 @@ impl Peer {
             .unwrap_or(urn.path);
 
         let mut remote =
-            uri::Path::parse(format!("refs/remotes/{}", origin)).expect("Known valid path");
+            uri::Path::parse(format!("refs/remotes/{}", from)).expect("Known valid path");
         remote.push(path);
 
         RadUrn {
@@ -202,7 +212,14 @@ impl LocalStorage for Peer {
                 // TODO: may need to fetch eagerly if we tracked while offline (#141)
                 None => PutResult::Uninteresting,
                 Some(Rev::Git(head)) => {
-                    match self.git_fetch(provider, self.urn_context(has.urn, has.origin), head) {
+                    match self.git_fetch(
+                        provider,
+                        &Originates {
+                            from: has.origin,
+                            value: has.urn,
+                        },
+                        head,
+                    ) {
                         Ok(()) => PutResult::Applied,
                         Err(e) => match e {
                             GitFetchError::KnownObject(_) => PutResult::Stale,
@@ -223,7 +240,10 @@ impl LocalStorage for Peer {
 
         match want.urn.proto {
             uri::Protocol::Git => self.git_has(
-                self.urn_context(want.urn, want.origin),
+                &Originates {
+                    from: want.origin,
+                    value: want.urn,
+                },
                 want.rev.map(|Rev::Git(head)| head),
             ),
         }

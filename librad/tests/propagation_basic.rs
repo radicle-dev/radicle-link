@@ -24,7 +24,7 @@ use librad::{
     internal::sync::Monitor,
     meta::{entity::Signatory, project::ProjectInfo},
     net::peer::{BoundPeer, Gossip, Rev},
-    peer::PeerId,
+    peer::{Originates, PeerId},
     uri::{self, RadUrn},
 };
 
@@ -153,7 +153,7 @@ async fn fetches_on_gossip_notify() {
             // Wait a moment for peer2 to react
             // FIXME: add an event chan to peer, so we can tell when it's done
             // (or time out)
-            let _ = tokio::task::spawn(Delay::new(Duration::from_secs(5))).await;
+            let _ = tokio::task::spawn(Delay::new(Duration::from_secs(2))).await;
 
             (urn, commit_id)
         })
@@ -163,7 +163,13 @@ async fn fetches_on_gossip_notify() {
     // Check peer2 fetched the gossiped update
     let peer1 = &peers[0].peer;
     let peer2 = &peers[1].peer;
-    assert!(peer2.git_has(peer2.urn_context(urn, peer1.peer_id()), commit_id))
+    assert!(peer2.git_has(
+        &Originates {
+            from: peer1.peer_id(),
+            value: urn
+        },
+        commit_id
+    ))
 }
 
 async fn run_on_testnet<F, A>(bound: Vec<BoundPeer<'_>>, f: F) -> A
