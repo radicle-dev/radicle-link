@@ -27,6 +27,7 @@ use serde::{
 
 use crate::{
     hash::Hash,
+    peer::PeerId,
     uri::{self, RadUrn},
 };
 
@@ -102,19 +103,25 @@ impl<'a> Into<&'a uri::Protocol> for &'a Rev {
 pub struct Gossip {
     /// URN of an updated or wanted repo.
     ///
-    /// _May_ include the branch name as the `path` component.
+    /// The path component denotes the named branch the `rev` was applied to.
+    /// Defaults to `rad/id` if empty.
     pub urn: RadUrn,
 
-    /// The revision advertised or wanted
-    pub rev: Rev,
+    /// The revision advertised or wanted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rev: Option<Rev>,
+
+    /// The origin of the update.
+    pub origin: PeerId,
 }
 
 impl Gossip {
-    pub fn new(id: Hash, path: uri::Path, rev: Rev) -> Self {
-        Self {
-            urn: RadUrn::new(id, rev.clone().into(), path),
-            rev,
-        }
+    pub fn new(id: Hash, path: uri::Path, rev: impl Into<Option<Rev>>, origin: PeerId) -> Self {
+        let rev = rev.into();
+        // FIXME: we really need the uri protocol on the type level
+        let urn = RadUrn::new(id, uri::Protocol::Git, path);
+
+        Self { urn, rev, origin }
     }
 }
 
@@ -128,6 +135,7 @@ impl<'de> Deserialize<'de> for Gossip {
         enum Field {
             Urn,
             Rev,
+            Origin,
         }
 
         struct GossipVisitor;
@@ -143,8 +151,10 @@ impl<'de> Deserialize<'de> for Gossip {
             where
                 V: MapAccess<'de>,
             {
-                let mut urn = None;
-                let mut rev = None;
+                let mut urn: Option<RadUrn> = None;
+                let mut rev: Option<Rev> = None;
+                let mut origin: Option<PeerId> = None;
+
                 while let Some(key) = map.next_key()? {
                     match key {
                         Field::Urn => {
@@ -160,21 +170,30 @@ impl<'de> Deserialize<'de> for Gossip {
                             }
                             rev = Some(map.next_value()?);
                         },
+
+                        Field::Origin => {
+                            if origin.is_some() {
+                                return Err(serde::de::Error::duplicate_field("origin"));
+                            }
+                            origin = Some(map.next_value()?);
+                        },
                     }
                 }
 
                 let urn: RadUrn = urn.ok_or_else(|| serde::de::Error::missing_field("urn"))?;
-                let rev: Rev = rev.ok_or_else(|| serde::de::Error::missing_field("rev"))?;
+                let origin: PeerId =
+                    origin.ok_or_else(|| serde::de::Error::missing_field("origin"))?;
 
-                if &urn.proto != rev.as_proto() {
-                    Err(serde::de::Error::custom("protocol mismatch"))
-                } else {
-                    Ok(Gossip { urn, rev })
+                if let Some(ref rev) = rev {
+                    if &urn.proto != rev.as_proto() {
+                        return Err(serde::de::Error::custom("protocol mismatch"));
+                    }
                 }
+                Ok(Gossip { urn, rev, origin })
             }
         }
 
-        const FIELDS: &[&str] = &["urn", "rev"];
+        const FIELDS: &[&str] = &["urn", "rev", "origin"];
         deserializer.deserialize_struct("Gossip", FIELDS, GossipVisitor)
     }
 }

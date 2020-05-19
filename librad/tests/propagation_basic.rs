@@ -98,6 +98,8 @@ async fn fetches_on_gossip_notify() {
                 .await
                 .unwrap();
 
+            let peer1_id = PeerId::from(peer1.public_key());
+
             let (urn, commit_id) = tokio::task::spawn_blocking(move || {
                 // Create a repo on peer1 and have peer2 clone it
                 let peer1_git = peer1.git();
@@ -143,7 +145,8 @@ async fn fetches_on_gossip_notify() {
             peer1_handle
                 .announce(Gossip {
                     urn: urn.clone(),
-                    rev: Rev::Git(commit_id),
+                    rev: Some(Rev::Git(commit_id)),
+                    origin: peer1_id,
                 })
                 .await;
 
@@ -158,7 +161,9 @@ async fn fetches_on_gossip_notify() {
     };
 
     // Check peer2 fetched the gossiped update
-    assert!(peers[1].peer.git_has(urn, commit_id))
+    let peer1 = &peers[0].peer;
+    let peer2 = &peers[1].peer;
+    assert!(peer2.git_has(peer2.urn_context(urn, peer1.peer_id()), commit_id))
 }
 
 async fn run_on_testnet<F, A>(bound: Vec<BoundPeer<'_>>, f: F) -> A

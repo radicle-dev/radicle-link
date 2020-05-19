@@ -16,7 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    ops::{Deref, Range},
+    ops::Range,
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -130,22 +130,12 @@ impl Storage {
             },
             Ok(commit) => {
                 let namespace = &urn.id;
-                let branch = if urn.path.is_empty() {
-                    "rad/id"
-                } else {
-                    urn.path.deref()
-                };
+                let branch = urn.path.deref_or_default();
                 let branch = branch.strip_prefix("refs/").unwrap_or(branch);
 
-                // FIXME: this is both too expensive and to stringly. We need
-                // to be able to tell from the gossip message if we should look
-                // in the owned refs or a remote
                 let refs = References::from_globs(
                     &git,
-                    &[
-                        format!("refs/namespaces/{}/refs/{}", namespace, branch),
-                        format!("refs/namespaces/{}/refs/remotes/**/{}", namespace, branch),
-                    ],
+                    &[format!("refs/namespaces/{}/refs/{}", namespace, branch)],
                 )?;
 
                 for (_, oid) in refs.peeled() {
@@ -161,8 +151,24 @@ impl Storage {
     }
 
     pub(crate) fn has_ref(&self, reference: &Reference) -> Result<bool, Error> {
-        let git = self.lock();
-        git.find_reference(&reference.to_string())
+        self.lock()
+            .find_reference(&reference.to_string())
+            .map(|_| true)
+            .or_else(|e| {
+                if is_not_found_err(&e) {
+                    Ok(false)
+                } else {
+                    Err(e.into())
+                }
+            })
+    }
+
+    pub(crate) fn has_urn(&self, urn: &RadUrn) -> Result<bool, Error> {
+        let namespace = &urn.id;
+        let branch = urn.path.deref_or_default();
+        let branch = branch.strip_prefix("refs/").unwrap_or(branch);
+        self.lock()
+            .find_reference(&format!("refs/namespaces/{}/refs/{}", namespace, branch))
             .map(|_| true)
             .or_else(|e| {
                 if is_not_found_err(&e) {

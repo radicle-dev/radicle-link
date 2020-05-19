@@ -87,6 +87,10 @@ impl Peer {
         Ok(Self { key, paths, git })
     }
 
+    pub fn peer_id(&self) -> PeerId {
+        PeerId::from(&self.key)
+    }
+
     pub fn public_key(&self) -> PublicKey {
         self.key.public()
     }
@@ -136,10 +140,12 @@ impl Peer {
         &self,
         from: &PeerId,
         urn: RadUrn,
-        head: git2::Oid,
+        head: impl Into<Option<git2::Oid>>,
     ) -> Result<(), GitFetchError> {
-        if self.git.has_commit(&urn, head)? {
-            return Err(GitFetchError::KnownObject(head));
+        if let Some(head) = head.into() {
+            if self.git.has_commit(&urn, head)? {
+                return Err(GitFetchError::KnownObject(head));
+            }
         }
 
         self.git
@@ -150,8 +156,37 @@ impl Peer {
     }
 
     /// Determine if we have the given object locally
-    pub fn git_has(&self, urn: RadUrn, head: git2::Oid) -> bool {
-        self.git.has_commit(&urn, head).unwrap_or(false)
+    pub fn git_has(&self, urn: RadUrn, head: impl Into<Option<git2::Oid>>) -> bool {
+        match head.into() {
+            None => self.git.has_urn(&urn).unwrap_or(false),
+            Some(head) => self.git.has_commit(&urn, head).unwrap_or(false),
+        }
+    }
+
+    /// Map the [`uri::Path`] of the given [`RadUrn`] to
+    /// `refs/remotes/<origin>/<path>` if applicable
+    pub fn urn_context(&self, urn: RadUrn, origin: PeerId) -> RadUrn {
+        if origin == self.peer_id() {
+            return urn;
+        }
+
+        let path = urn
+            .path
+            .strip_prefix("refs/")
+            .map(|tail| {
+                uri::Path::parse(tail)
+                    .expect("`Path` is still valid after stripping a valid prefix")
+            })
+            .unwrap_or(urn.path);
+
+        let mut remote =
+            uri::Path::parse(format!("refs/remotes/{}", origin)).expect("Known valid path");
+        remote.push(path);
+
+        RadUrn {
+            path: remote,
+            ..urn
+        }
     }
 }
 
@@ -163,18 +198,21 @@ impl LocalStorage for Peer {
         let _guard = span.enter();
 
         match has.urn.proto {
-            uri::Protocol::Git => {
-                let Rev::Git(head) = has.rev;
-                let res = self.git_fetch(provider, has.urn, head);
-
-                match res {
-                    Ok(()) => PutResult::Applied,
-                    Err(e) => match e {
-                        GitFetchError::KnownObject(_) => PutResult::Stale,
-                        GitFetchError::Repo(repo::Error::NoSuchUrn(_)) => PutResult::Uninteresting,
-                        _ => PutResult::Error,
-                    },
-                }
+            uri::Protocol::Git => match has.rev {
+                // TODO: may need to fetch eagerly if we tracked while offline (#141)
+                None => PutResult::Uninteresting,
+                Some(Rev::Git(head)) => {
+                    match self.git_fetch(provider, self.urn_context(has.urn, has.origin), head) {
+                        Ok(()) => PutResult::Applied,
+                        Err(e) => match e {
+                            GitFetchError::KnownObject(_) => PutResult::Stale,
+                            GitFetchError::Repo(repo::Error::NoSuchUrn(_)) => {
+                                PutResult::Uninteresting
+                            },
+                            _ => PutResult::Error,
+                        },
+                    }
+                },
             },
         }
     }
@@ -184,10 +222,10 @@ impl LocalStorage for Peer {
         let _guard = span.enter();
 
         match want.urn.proto {
-            uri::Protocol::Git => {
-                let Rev::Git(head) = want.rev;
-                self.git_has(want.urn, head)
-            },
+            uri::Protocol::Git => self.git_has(
+                self.urn_context(want.urn, want.origin),
+                want.rev.map(|Rev::Git(head)| head),
+            ),
         }
     }
 }
@@ -255,7 +293,7 @@ impl Handle {
 mod tests {
     use super::*;
 
-    use crate::{hash::Hash, uri::Path};
+    use crate::{hash::Hash, keys::SecretKey, peer::PeerId, uri::Path};
 
     #[test]
     fn test_rev_serde() {
@@ -269,7 +307,12 @@ mod tests {
     #[test]
     fn test_gossip_serde() {
         let rev = Rev::Git(git2::Oid::hash_object(git2::ObjectType::Commit, b"chrzbrr").unwrap());
-        let gossip = Gossip::new(Hash::hash(b"cerveza coronita"), Path::new(), rev);
+        let gossip = Gossip::new(
+            Hash::hash(b"cerveza coronita"),
+            Path::new(),
+            rev,
+            PeerId::from(SecretKey::new()),
+        );
         assert_eq!(
             gossip,
             serde_cbor::from_slice(&serde_cbor::to_vec(&gossip).unwrap()).unwrap()
