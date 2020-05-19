@@ -25,7 +25,7 @@ use thiserror::Error;
 
 use crate::{
     git::{
-        ext::{is_not_found_err, Oid},
+        ext::{is_not_found_err, Oid, References},
         refs::{self, Refs},
         storage::{self, BranchEnd, Storage, WithBlob},
         types::{Namespace, Reference, RefsCategory, Refspec},
@@ -327,25 +327,23 @@ impl<'a> Locked<'a> {
         Ok(commit)
     }
 
-    pub fn references_glob(&self, glob: &str) -> Result<Vec<(String, git2::Oid)>, Error> {
-        let prefix = format!("refs/namespaces/{}/", &self.urn.id);
-        let refs = self.git.references_glob(&format!("{}{}", &prefix, glob))?;
-        let iter = refs.filter_map(|reference| {
-            if let Ok(head) = reference {
-                if let (Some(name), Some(target)) = (
-                    head.name().and_then(|name| name.strip_prefix(&prefix)),
-                    head.target(),
-                ) {
-                    Some((name.to_owned(), target.to_owned()))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        });
+    pub fn references_glob(
+        &'a self,
+        globs: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> Result<impl Iterator<Item = (String, git2::Oid)> + 'a, Error> {
+        let namespace_prefix = format!("refs/namespaces/{}/", &self.urn.id);
 
-        Ok(iter.collect())
+        let refs = References::from_globs(
+            &self.git,
+            globs
+                .into_iter()
+                .map(|glob| format!("{}{}", namespace_prefix, glob.as_ref())),
+        )?;
+
+        Ok(refs.peeled().filter_map(move |(name, target)| {
+            name.strip_prefix(&namespace_prefix)
+                .map(|name| (name.to_owned(), target))
+        }))
     }
 
     fn commit_initial_meta<T>(&self, meta: &Entity<T>) -> Result<git2::Oid, Error>
@@ -438,11 +436,8 @@ impl<'a> Locked<'a> {
         let _guard = span.enter();
 
         // Collect refs/heads (our branches) at their current state
-        let heads = self.references_glob("refs/heads/*")?;
-        let heads: BTreeMap<String, Oid> = heads
-            .into_iter()
-            .map(|(name, oid)| (name, Oid(oid)))
-            .collect();
+        let heads = self.references_glob(Some("refs/heads/*"))?;
+        let heads: BTreeMap<String, Oid> = heads.map(|(name, oid)| (name, Oid(oid))).collect();
 
         tracing::debug!(heads = ?heads);
 
@@ -602,18 +597,25 @@ impl<'a> Locked<'a> {
     }
 
     fn certifiers(&self) -> Result<HashSet<RadUrn>, Error> {
-        let mut refs = self
-            .git
-            .references_glob(&format!("refs/namespaces/{}/**/rad/ids/*", &self.urn.id))?;
+        let mut refs = References::from_globs(
+            &self.git,
+            &[
+                format!("refs/namespaces/{}/refs/rad/ids/*", &self.urn.id),
+                format!("refs/namespaces/{}/refs/remotes/**/rad/ids/*", &self.urn.id),
+            ],
+        )?;
         let refnames = refs.names();
         Ok(urns_from_refs(refnames).collect())
     }
 
     fn certifiers_of(&self, peer: &PeerId) -> Result<HashSet<RadUrn>, Error> {
-        let mut refs = self.git.references_glob(&format!(
-            "refs/namespaces/{}/refs/remotes/{}/rad/ids/*",
-            &self.urn.id, peer
-        ))?;
+        let mut refs = References::from_globs(
+            &self.git,
+            &[format!(
+                "refs/namespaces/{}/refs/remotes/{}/rad/ids/*",
+                &self.urn.id, peer
+            )],
+        )?;
         let refnames = refs.names();
         Ok(urns_from_refs(refnames).collect())
     }

@@ -211,6 +211,7 @@ impl Storage {
 /// Iterator over the 1st degree tracked peers of a repo.
 ///
 /// Created by the [`Storage::tracked`] method.
+#[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct Tracked {
     remotes: git2::string_array::StringArray,
     range: Range<usize>,

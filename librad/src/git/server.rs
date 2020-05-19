@@ -43,6 +43,7 @@ use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
 use crate::{
     git::{
+        ext::References,
         header::{self, Header},
         types::Namespace,
     },
@@ -132,22 +133,19 @@ impl UploadPack {
                 namespace
             ));
 
+        // FIXME: we should probably keep one git2::Repository around, but
+        // `GitServer` needs to be `Sync`
         let repo = git2::Repository::open_bare(repo_path).map_err(git2io)?;
+        let mut refs = References::from_globs(
+            &repo,
+            &[
+                format!("refs/namespaces/{}/refs/rad/ids/*", namespace),
+                format!("refs/namespaces/{}/refs/remotes/**/rad/ids/*", namespace),
+            ],
+        )
+        .map_err(git2io)?;
 
-        let mut owned_ids = repo
-            .references_glob(&format!("refs/namespaces/{}/rad/ids/*", namespace))
-            .map_err(git2io)?;
-        let mut remote_ids = repo
-            .references_glob(&format!(
-                "refs/namespaces/{}/refs/remotes/**/rad/ids/*",
-                namespace
-            ))
-            .map_err(git2io)?;
-
-        let owned_ids = owned_ids.names();
-        let remote_ids = remote_ids.names();
-
-        for id_ref in owned_ids.chain(remote_ids) {
+        for id_ref in refs.names() {
             if let Some(id) = id_ref.ok().and_then(|name| name.split('/').next_back()) {
                 git.arg("-c").arg(format!(
                     "uploadpack.hiderefs=!refs/namespaces/{}/rad/id",
