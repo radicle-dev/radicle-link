@@ -2,4 +2,6 @@
 set -eou pipefail
 
 echo '--- Build & Test'
+# Single-threaded to make the integration tests less flaky. Should be dropped
+# once we don't need to rely on a timeout there.
 cargo test --all -- --test-threads=1
