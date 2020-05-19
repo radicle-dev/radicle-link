@@ -204,7 +204,7 @@ impl UploadPack {
                 futures::try_join!(
                     futures::io::copy(&mut stdout, &mut send),
                     stderr.lines().try_for_each(|line| {
-                        tracing::info!(git.uploadpack = %line);
+                        tracing::trace!(git.uploadpack = %line);
                         future::ready(Ok(()))
                     })
                 )
@@ -222,7 +222,7 @@ impl UploadPack {
                     futures::io::copy(&mut recv, &mut stdin),
                     futures::io::copy(&mut stdout, &mut send),
                     stderr.lines().try_for_each(|line| {
-                        tracing::info!(git.uploadpack = %line);
+                        tracing::trace!(git.uploadpack = %line);
                         future::ready(Ok(()))
                     })
                 )
@@ -237,7 +237,7 @@ fn git_tracing(git: &mut Command) {
         git.env("GIT_TRACE", "1").env("GIT_TRACE_PACKET", "1");
         true
     };
-    tracing::trace!(git.trace = enable())
+    tracing::trace!(git.trace.enabled = enable())
 }
 
 async fn send_err<W>(writer: &mut W, msg: &str) -> io::Result<()>

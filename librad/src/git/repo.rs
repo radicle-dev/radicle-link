@@ -27,8 +27,8 @@ use crate::{
     git::{
         ext::{is_not_found_err, Oid, References},
         refs::{self, Refs},
-        storage::{self, BranchEnd, Storage, WithBlob},
-        types::{Namespace, Reference, RefsCategory, Refspec},
+        storage::{self, Storage, WithBlob},
+        types::{Namespace, Reference, Refspec},
         url::GitUrlRef,
     },
     hash::Hash,
@@ -129,12 +129,7 @@ impl Repo {
 
     pub fn open(storage: Storage, urn: RadUrn) -> Result<Self, Error> {
         {
-            let id_ref = Reference {
-                namespace: urn.id.clone(),
-                remote: None,
-                category: RefsCategory::Rad,
-                name: "id".to_owned(),
-            };
+            let id_ref = Reference::rad_id(urn.id.clone());
             if !storage.has_ref(&id_ref)? {
                 return Err(Error::NoSuchUrn(urn));
             }
@@ -302,12 +297,7 @@ impl<'a> Locked<'a> {
         parents: &[&git2::Commit],
     ) -> Result<git2::Oid, Error> {
         let author = self.git.signature()?;
-        let head = Reference {
-            namespace: self.namespace(),
-            remote: None,
-            category: RefsCategory::Heads,
-            name: branch.to_owned(),
-        };
+        let head = Reference::head(self.namespace(), None, branch);
         let oid = self.git.commit(
             Some(&head.to_string()),
             &author,
@@ -419,10 +409,9 @@ impl<'a> Locked<'a> {
         }
 
         let entity: Entity<T> = {
-            let blob = WithBlob {
+            let blob = WithBlob::Init {
                 reference: &id_branch,
                 file_name: "id",
-                branch_end: BranchEnd::First,
             }
             .get(&self.git)?;
             Entity::from_json_slice(blob.content())
@@ -476,10 +465,9 @@ impl<'a> Locked<'a> {
     fn rad_refs_of(&self, peer: PeerId) -> Result<Refs, Error> {
         let signed = {
             let refs = Reference::rad_refs(self.namespace(), peer.clone());
-            let blob = WithBlob {
+            let blob = WithBlob::Tip {
                 reference: &refs,
                 file_name: "refs",
-                branch_end: BranchEnd::Tip,
             }
             .get(&self.git)?;
             refs::Signed::from_json(blob.content(), &peer)

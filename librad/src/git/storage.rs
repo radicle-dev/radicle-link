@@ -25,7 +25,7 @@ use thiserror::Error;
 
 use crate::{
     git::{
-        ext::is_not_found_err,
+        ext::{is_not_found_err, References},
         repo::{self, Repo},
         types::Reference,
         url::GitUrlRef,
@@ -135,26 +135,22 @@ impl Storage {
                 } else {
                     urn.path.deref()
                 };
+                let branch = branch.strip_prefix("refs/").unwrap_or(branch);
 
                 // FIXME: this is both too expensive and to stringly. We need
                 // to be able to tell from the gossip message if we should look
                 // in the owned refs or a remote
-                let own_refs =
-                    git.references_glob(&format!("refs/namespaces/{}/{}", namespace, branch))?;
-                let remote_refs = git.references_glob(&format!(
-                    "refs/namespaces/{}/refs/remotes/**/{}",
-                    namespace,
-                    branch.strip_prefix("refs/").unwrap_or(branch)
-                ))?;
+                let refs = References::from_globs(
+                    &git,
+                    &[
+                        format!("refs/namespaces/{}/refs/{}", namespace, branch),
+                        format!("refs/namespaces/{}/refs/remotes/**/{}", namespace, branch),
+                    ],
+                )?;
 
-                for tip in own_refs.chain(remote_refs) {
-                    let tip = tip?;
-                    if let Some(tip_oid) = tip.target() {
-                        if tip_oid == commit.id()
-                            || git.graph_descendant_of(tip_oid, commit.id())?
-                        {
-                            return Ok(true);
-                        }
+                for (_, oid) in refs.peeled() {
+                    if oid == commit.id() || git.graph_descendant_of(oid, commit.id())? {
+                        return Ok(true);
                     }
                 }
 
@@ -246,23 +242,25 @@ impl Iterator for Tracked {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum BranchEnd {
-    Tip,
-    First,
-}
-
-pub struct WithBlob<'a> {
-    pub reference: &'a Reference,
-    pub file_name: &'a str,
-    pub branch_end: BranchEnd,
+pub enum WithBlob<'a> {
+    Tip {
+        reference: &'a Reference,
+        file_name: &'a str,
+    },
+    Init {
+        reference: &'a Reference,
+        file_name: &'a str,
+    },
 }
 
 impl<'a> WithBlob<'a> {
     pub fn get(self, git: &'a git2::Repository) -> Result<git2::Blob<'a>, Error> {
-        let tree = match self.branch_end {
-            BranchEnd::Tip => {
-                let ref_name = self.reference.to_string();
+        match self {
+            Self::Tip {
+                reference,
+                file_name,
+            } => {
+                let ref_name = reference.to_string();
                 let branch = git.find_reference(&ref_name).or_else(|e| {
                     if is_not_found_err(&e) {
                         Err(Error::NoSuchBranch(ref_name))
@@ -271,35 +269,44 @@ impl<'a> WithBlob<'a> {
                     }
                 })?;
                 let tree = branch.peel_to_tree()?;
-                Ok(tree)
+                blob(git, tree, file_name)
             },
 
-            BranchEnd::First => {
+            Self::Init {
+                reference,
+                file_name,
+            } => {
                 let mut revwalk = git.revwalk()?;
                 let mut sort = git2::Sort::TOPOLOGICAL;
                 sort.insert(git2::Sort::REVERSE);
                 revwalk.set_sorting(sort)?;
                 revwalk.simplify_first_parent()?;
-                revwalk.push_ref(&self.reference.to_string())?;
+                revwalk.push_ref(&reference.to_string())?;
 
                 match revwalk.next() {
-                    None => Err(Error::NoSuchBlob(self.file_name.to_owned())),
+                    None => Err(Error::NoSuchBlob(file_name.to_owned())),
                     Some(oid) => {
                         let oid = oid?;
                         let tree = git.find_commit(oid)?.tree()?;
-                        Ok(tree)
+                        blob(git, tree, file_name)
                     },
                 }
             },
-        }?;
-
-        let entry = tree
-            .get_name(self.file_name)
-            .ok_or_else(|| Error::NoSuchBlob(self.file_name.to_owned()))?;
-        let blob = entry.to_object(&*git)?.peel_to_blob()?;
-
-        Ok(blob)
+        }
     }
+}
+
+fn blob<'a>(
+    repo: &'a git2::Repository,
+    tree: git2::Tree<'a>,
+    file_name: &'a str,
+) -> Result<git2::Blob<'a>, Error> {
+    let entry = tree
+        .get_name(file_name)
+        .ok_or_else(|| Error::NoSuchBlob(file_name.to_owned()))?;
+    let bob = entry.to_object(repo)?.peel_to_blob()?;
+
+    Ok(bob)
 }
 
 fn tracking_remote_name(urn: &RadUrn, peer: &PeerId) -> String {
