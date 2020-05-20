@@ -42,7 +42,7 @@ async fn can_clone() {
         let peer2 = peers[1].peer.clone();
 
         let peer1_user = User::new("alice".to_owned(), peer1.public_key()).unwrap();
-        let peer1_project = Project::new("radicle".to_owned(), &peer1_user.urn()).unwrap();
+        let peer1_project = Project::new("radicle".to_owned(), peer1_user.urn()).unwrap();
         let urn = peer1_project.urn();
 
         run_on_testnet(bound, async move {
@@ -79,7 +79,7 @@ async fn fetches_on_gossip_notify() {
         let peer2 = peers[1].peer.clone();
 
         let peer1_user = User::new("alice".to_owned(), peer1.public_key()).unwrap();
-        let peer1_project = Project::new("radicle".to_owned(), &peer1_user.urn()).unwrap();
+        let peer1_project = Project::new("radicle".to_owned(), peer1_user.urn()).unwrap();
         let peer1_project_urn = peer1_project.urn();
 
         let peer1_handle = bound[0].handle();

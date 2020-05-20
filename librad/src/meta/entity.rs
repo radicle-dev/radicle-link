@@ -315,7 +315,7 @@ where
         let mut signatures = HashMap::new();
         for (k, s) in self.signatures() {
             signatures.insert(
-                k.to_bs58(),
+                k.to_owned(),
                 data::EntitySignatureData {
                     user: match &s.by {
                         Signatory::User(uri) => Some(uri.to_string()),
@@ -326,19 +326,16 @@ where
             );
         }
 
-        let keys = HashSet::from_iter(self.keys().iter().map(|k| k.to_bs58()));
-        let certifiers = HashSet::from_iter(self.certifiers().iter().map(|c| c.to_string()));
-
         EntityData {
             name: Some(self.name.to_owned()),
             revision: Some(self.revision),
             rad_version: self.rad_version,
-            hash: Some(self.hash.to_string()),
-            root_hash: Some(self.root_hash.to_string()),
-            parent_hash: self.parent_hash.to_owned().map(|h| h.to_string()),
+            hash: Some(self.hash.clone()),
+            root_hash: Some(self.root_hash.clone()),
+            parent_hash: self.parent_hash.clone(),
             signatures: Some(signatures),
-            keys,
-            certifiers,
+            keys: self.keys.clone(),
+            certifiers: self.certifiers.clone(),
             info: self.info.to_owned(),
         }
     }
@@ -675,25 +672,9 @@ where
             return Err(Error::InvalidData("Invalid revision".to_owned()));
         }
 
-        let mut keys = HashSet::new();
-        for k in data.keys.iter() {
-            keys.insert(
-                PublicKey::from_bs58(k).ok_or_else(|| Error::InvalidData(format!("key: {}", k)))?,
-            );
-        }
-
-        let mut certifiers = HashSet::new();
-        for c in data.certifiers.iter() {
-            certifiers.insert(
-                RadUrn::from_str(c).map_err(|_| Error::InvalidData(format!("certifier: {}", c)))?,
-            );
-        }
-
         let mut signatures = HashMap::new();
         if let Some(s) = &data.signatures {
-            for (k, sig) in s.iter() {
-                let key = PublicKey::from_bs58(k)
-                    .ok_or_else(|| Error::InvalidData(format!("signature key: {}", k)))?;
+            for (key, sig) in s.iter() {
                 let signature = EntitySignature {
                     by: match &sig.user {
                         Some(uri) => Signatory::User(
@@ -706,26 +687,23 @@ where
                         Error::InvalidData(format!("signature data: {}", &sig.sig))
                     })?,
                 };
-                signatures.insert(key, signature);
+                signatures.insert(key.to_owned(), signature);
             }
         }
 
         let actual_hash = data.compute_hash()?;
-        if let Some(s) = &data.hash {
-            let claimed_hash = Hash::from_str(s)?;
-            if claimed_hash != actual_hash {
+        if let Some(claimed_hash) = &data.hash {
+            if claimed_hash != &actual_hash {
                 let actual_hash_string = actual_hash.to_string();
                 return Err(Error::WrongHash {
-                    claimed: s.to_owned(),
+                    claimed: claimed_hash.to_string(),
                     actual: actual_hash_string,
                 });
             }
         }
 
-        let parent_hash = data.parent_hash.map(|s| Hash::from_str(&s)).transpose()?;
-        let root_hash = data.root_hash.map(|s| Hash::from_str(&s)).transpose()?;
-
-        let root_hash = match root_hash {
+        let parent_hash = data.parent_hash.clone();
+        let root_hash = match data.root_hash {
             Some(h) => h,
             None => {
                 // TODO: error handling for unwrap on revision
@@ -740,13 +718,13 @@ where
         Ok(Self {
             status: VerificationStatus::Unknown,
             name: data.name.unwrap(),
-            revision: data.revision.unwrap().to_owned(),
+            revision: data.revision.unwrap(),
             rad_version: data.rad_version,
             hash: actual_hash,
             root_hash,
             parent_hash,
-            keys,
-            certifiers,
+            keys: data.keys,
+            certifiers: data.certifiers,
             signatures,
             info: data.info,
         })

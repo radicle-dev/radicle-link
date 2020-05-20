@@ -21,7 +21,7 @@ use super::{
 };
 use crate::{
     hash::Hash,
-    keys::SecretKey,
+    keys::{PublicKey, SecretKey},
     peer::PeerId,
     uri::{Path, Protocol, RadUrn},
 };
@@ -68,16 +68,16 @@ lazy_static! {
     pub static ref D5: PeerId = peer_from_key(&K5);
 }
 
-fn peer_key_string(peer: &PeerId) -> String {
-    peer.device_key().to_bs58()
+fn peer_key_string(peer: &PeerId) -> PublicKey {
+    peer.device_key().clone()
 }
 
 lazy_static! {
-    pub static ref D1K: String = peer_key_string(&D1);
-    pub static ref D2K: String = peer_key_string(&D2);
-    pub static ref D3K: String = peer_key_string(&D3);
-    pub static ref D4K: String = peer_key_string(&D4);
-    pub static ref D5K: String = peer_key_string(&D5);
+    pub static ref D1K: PublicKey = peer_key_string(&D1);
+    pub static ref D2K: PublicKey = peer_key_string(&D2);
+    pub static ref D3K: PublicKey = peer_key_string(&D3);
+    pub static ref D4K: PublicKey = peer_key_string(&D4);
+    pub static ref D5K: PublicKey = peer_key_string(&D5);
 }
 
 struct EmptyResolver {}
@@ -142,12 +142,12 @@ fn test_valid_uri() {
     assert_eq!(u1, u2);
 }
 
-fn new_user(name: &str, revision: u64, devices: &[&'static str]) -> Result<User, Error> {
+fn new_user(name: &str, revision: u64, devices: &[&'static PublicKey]) -> Result<User, Error> {
     let mut data = UserData::default()
         .set_name(name.to_owned())
         .set_revision(revision);
-    for s in devices.iter() {
-        data = data.add_key((*s).to_owned());
+    for k in devices.iter() {
+        data = data.add_key((*k).to_owned());
     }
     data.build()
 }

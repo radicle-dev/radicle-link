@@ -159,7 +159,7 @@ impl User {
         UserData::default()
             .set_name(name)
             .set_revision(1)
-            .add_key(key.to_bs58())
+            .add_key(key)
             .build()
     }
 

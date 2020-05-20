@@ -109,11 +109,11 @@ impl ProjectData {
     }
 
     pub fn add_maintainer(self, maintainer: RadUrn) -> Self {
-        self.add_certifier(maintainer.to_string())
+        self.add_certifier(maintainer)
     }
 
     pub fn add_maintainers(self, maintainers: &[RadUrn]) -> Self {
-        self.add_certifiers(maintainers.iter().map(|urn| urn.to_string()))
+        self.add_certifiers(maintainers.iter().cloned())
     }
 }
 
@@ -145,11 +145,11 @@ impl Project {
         &self.info().rel
     }
 
-    pub fn new(name: String, owner: &RadUrn) -> Result<Self, Error> {
+    pub fn new(name: String, owner: RadUrn) -> Result<Self, Error> {
         ProjectData::default()
             .set_name(name)
             .set_revision(1)
-            .add_certifier(owner.to_string())
+            .add_certifier(owner)
             .build()
     }
 }
@@ -172,7 +172,7 @@ pub mod tests {
 
     #[test]
     fn test_project_serde() {
-        let proj = Project::new("foo".to_owned(), &EMPTY_URI).unwrap();
+        let proj = Project::new("foo".to_owned(), EMPTY_URI.to_owned()).unwrap();
         let proj_ser = serde_json::to_string(&proj).unwrap();
         let proj_de = serde_json::from_str(&proj_ser).unwrap();
         assert_eq!(proj, proj_de)
