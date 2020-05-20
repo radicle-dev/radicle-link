@@ -17,13 +17,15 @@
 
 use std::{future::Future, time::Duration};
 
-use futures::future::Either;
-use futures_timer::Delay;
+use futures::{
+    future::{self, Either},
+    stream::StreamExt,
+};
 
 use librad::{
     internal::sync::Monitor,
     meta::{entity::Signatory, project::ProjectInfo},
-    net::peer::{BoundPeer, Gossip, Rev},
+    net::peer::{BoundPeer, FetchInfo, Gossip, PeerEvent, Rev},
     peer::{Originates, PeerId},
     uri::{self, RadUrn},
 };
@@ -93,6 +95,8 @@ async fn fetches_on_gossip_notify() {
         let peer1_handle = bound[0].handle();
 
         run_on_testnet(bound, async move {
+            let peer2_events = peer2.subscribe().await;
+
             radicle
                 .sign(peer1.key(), &Signatory::User(alice.urn()), &alice)
                 .await
@@ -146,14 +150,24 @@ async fn fetches_on_gossip_notify() {
                 .announce(Gossip {
                     urn: urn.clone(),
                     rev: Some(Rev::Git(commit_id)),
-                    origin: peer1_id,
+                    origin: peer1_id.clone(),
                 })
                 .await;
 
             // Wait a moment for peer2 to react
-            // FIXME: add an event chan to peer, so we can tell when it's done
-            // (or time out)
-            let _ = tokio::task::spawn(Delay::new(Duration::from_secs(2))).await;
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                peer2_events
+                    .take_while(|event| match event {
+                        PeerEvent::GossipFetch(FetchInfo { provider, .. }) => {
+                            future::ready(provider != &peer1_id)
+                        },
+                    })
+                    .map(|_| ())
+                    .next(),
+            )
+            .await
+            .unwrap();
 
             (urn, commit_id)
         })

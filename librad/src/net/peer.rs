@@ -21,10 +21,12 @@ use std::{
     net::{SocketAddr, ToSocketAddrs},
 };
 
+use futures::executor::block_on;
 use thiserror::Error;
 
 use crate::{
     git::{self, repo, server::GitServer, storage::Storage as GitStorage},
+    internal::channel::Fanout,
     keys::{PublicKey, SecretKey},
     net::{
         connection::LocalInfo,
@@ -62,6 +64,23 @@ pub struct BindError {
     source: quic::Error,
 }
 
+/// Upstream events.
+///
+/// A [`Peer`] exhibits "background" behaviour as it reacts to gossip. This
+/// behaviour can be observed by using [`Peer::subscribe`].
+#[derive(Clone, Debug)]
+pub enum PeerEvent {
+    GossipFetch(FetchInfo),
+}
+
+/// Event payload for a fetch triggered by [`LocalStorage::put`]
+#[derive(Clone, Debug)]
+pub struct FetchInfo {
+    pub provider: PeerId,
+    pub gossip: Gossip,
+    pub result: PutResult,
+}
+
 /// A stateful network peer.
 ///
 /// Implements [`LocalStorage`]. A [`Peer`] can be bound to one or more
@@ -71,6 +90,8 @@ pub struct Peer {
     key: SecretKey,
     paths: Paths,
     git: GitStorage,
+
+    subscribers: Fanout<PeerEvent>,
 }
 
 impl Peer {
@@ -79,12 +100,18 @@ impl Peer {
             key: git.key.clone(),
             paths,
             git,
+            subscribers: Fanout::new(),
         }
     }
 
     pub fn init(paths: Paths, key: SecretKey) -> Result<Self, git::storage::Error> {
         let git = GitStorage::init(&paths, key.clone())?;
-        Ok(Self { key, paths, git })
+        Ok(Self {
+            key,
+            paths,
+            git,
+            subscribers: Fanout::new(),
+        })
     }
 
     pub fn peer_id(&self) -> PeerId {
@@ -129,6 +156,11 @@ impl Peer {
             endpoint,
             protocol,
         })
+    }
+
+    /// Subscribe to [`PeerEvent`]s
+    pub async fn subscribe(&self) -> impl futures::Stream<Item = PeerEvent> {
+        self.subscribers.subscribe().await
     }
 
     pub fn git(&self) -> &GitStorage {
@@ -198,6 +230,10 @@ impl Peer {
             ..urn
         }
     }
+
+    fn emit_event_sync(&self, event: PeerEvent) {
+        block_on(self.subscribers.emit(event))
+    }
 }
 
 impl LocalStorage for Peer {
@@ -208,28 +244,41 @@ impl LocalStorage for Peer {
         let _guard = span.enter();
 
         match has.urn.proto {
-            uri::Protocol::Git => match has.rev {
-                // TODO: may need to fetch eagerly if we tracked while offline (#141)
-                None => PutResult::Uninteresting,
-                Some(Rev::Git(head)) => {
-                    match self.git_fetch(
-                        provider,
-                        &Originates {
-                            from: has.origin,
-                            value: has.urn,
-                        },
-                        head,
-                    ) {
-                        Ok(()) => PutResult::Applied,
-                        Err(e) => match e {
-                            GitFetchError::KnownObject(_) => PutResult::Stale,
-                            GitFetchError::Repo(repo::Error::NoSuchUrn(_)) => {
-                                PutResult::Uninteresting
+            uri::Protocol::Git => {
+                let res = match has.rev {
+                    // TODO: may need to fetch eagerly if we tracked while offline (#141)
+                    None => PutResult::Uninteresting,
+                    Some(Rev::Git(head)) => {
+                        match self.git_fetch(
+                            provider,
+                            OriginatesRef {
+                                from: &has.origin,
+                                value: &has.urn,
                             },
-                            _ => PutResult::Error,
-                        },
-                    }
-                },
+                            head,
+                        ) {
+                            Ok(()) => PutResult::Applied,
+                            Err(e) => match e {
+                                GitFetchError::KnownObject(_) => PutResult::Stale,
+                                GitFetchError::Repo(repo::Error::NoSuchUrn(_)) => {
+                                    PutResult::Uninteresting
+                                },
+                                e => {
+                                    tracing::error!(err = %e, "Fetch error");
+                                    PutResult::Error
+                                },
+                            },
+                        }
+                    },
+                };
+
+                self.emit_event_sync(PeerEvent::GossipFetch(FetchInfo {
+                    provider: provider.clone(),
+                    gossip: has,
+                    result: res,
+                }));
+
+                res
             },
         }
     }

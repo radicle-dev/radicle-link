@@ -17,7 +17,7 @@
 
 use crate::peer::PeerId;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum PutResult {
     Applied,
     Stale,
