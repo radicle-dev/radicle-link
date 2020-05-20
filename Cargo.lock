@@ -667,8 +667,6 @@ dependencies = [
  "libc",
  "libgit2-sys",
  "log",
- "openssl-probe",
- "openssl-sys",
  "url 2.1.1",
 ]
 
@@ -832,9 +830,7 @@ checksum = "4d5d1459353d397a029fb18862166338de938e6be976606bd056cf8f1a912ecf"
 dependencies = [
  "cc",
  "libc",
- "libssh2-sys",
  "libz-sys",
- "openssl-sys",
  "pkg-config",
 ]
 
@@ -906,20 +902,6 @@ dependencies = [
  "libflate",
  "pkg-config",
  "tar",
- "vcpkg",
-]
-
-[[package]]
-name = "libssh2-sys"
-version = "0.2.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d45f516b9b19ea6c940b9f36d36734062a153a2b4cc9ef31d82c54bb9780f525"
-dependencies = [
- "cc",
- "libc",
- "libz-sys",
- "openssl-sys",
- "pkg-config",
  "vcpkg",
 ]
 
@@ -1097,6 +1079,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7747482c817116898e7aeda0d68c90998d47ee0db28b7030d44584ef7695d355"
 
 [[package]]
+name = "nonempty"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab47dfd48409c1c38b632639cce6e919d1ad2771ddbb5e338e12ae6f42de2f2d"
+
+[[package]]
 name = "nonzero_ext"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1164,25 +1152,6 @@ name = "opaque-debug"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2839e79665f131bdb5782e51f2c6c9599c133c6098982a54c794358bf432529c"
-
-[[package]]
-name = "openssl-probe"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77af24da69f9d9341038eba93a073b1fdaaa1b788221b00a69bce9e762cb32de"
-
-[[package]]
-name = "openssl-sys"
-version = "0.9.56"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f02309a7f127000ed50594f0b50ecc69e7c654e16d41b4e8156d1b3df8e0b52e"
-dependencies = [
- "autocfg 1.0.0",
- "cc",
- "libc",
- "pkg-config",
- "vcpkg",
-]
 
 [[package]]
 name = "parking_lot"
@@ -1419,10 +1388,10 @@ dependencies = [
 [[package]]
 name = "radicle-surf"
 version = "0.2.1"
-source = "git+https://github.com/radicle-dev/radicle-surf?rev=33d4980422bc6a0cb48ccdc6d4b893f9e45bc2b9#33d4980422bc6a0cb48ccdc6d4b893f9e45bc2b9"
+source = "git+https://github.com/radicle-dev/radicle-surf?rev=18bb6ff3641cd2c9785fd441872e9a8c13dd3bbc#18bb6ff3641cd2c9785fd441872e9a8c13dd3bbc"
 dependencies = [
  "git2",
- "nonempty 0.2.0",
+ "nonempty 0.4.0",
  "thiserror",
 ]
 
