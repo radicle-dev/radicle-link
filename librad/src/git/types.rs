@@ -173,6 +173,9 @@ impl Refspec {
 
         for tracked_peer in tracked_peers {
             // Heads
+            //
+            // `+refs/namespaces/<namespace>/refs[/remotes/<peer>]/heads/* \
+            // :refs/namespaces/<namespace>/refs/remotes/<peer>/refs/heads/*`
             {
                 let their_rad_refs = rad_refs_of(tracked_peer.clone())?;
                 for (name, target) in their_rad_refs.heads {
@@ -202,7 +205,10 @@ impl Refspec {
                 }
             }
 
-            // id
+            // Id
+            //
+            // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/id \
+            // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/id`
             {
                 let local = Reference::rad_id(namespace.clone()).set_remote(tracked_peer.clone());
                 let remote = if tracked_peer == remote_peer {
@@ -218,7 +224,10 @@ impl Refspec {
                 });
             }
 
-            // certifiers
+            // Certifiers
+            //
+            // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/ids/* \
+            // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/ids/*`
             {
                 let local =
                     Reference::rad_ids_glob(namespace.clone()).set_remote(tracked_peer.clone());
@@ -235,31 +244,51 @@ impl Refspec {
                 });
             }
 
-            // certifier top-level identities
+            // Certifier top-level identities
+            //
+            // `refs/namespaces/<certifier>/refs[/remotes/<peer>]/rad/id \
+            // :refs/namespaces/<certifier>/refs/remotes/<peer>/rad/id`
+            //
+            // and
+            //
+            // `refs/namespaces/<certifier>/refs[/remotes/<peer>]/rad/ids/* \
+            // :refs/namespaces/<certifier>/refs/remotes/<peer>/rad/ids/*`
             {
                 let their_certifiers = certifiers_of(&tracked_peer)?;
                 for urn in their_certifiers {
-                    let local = Reference {
-                        namespace: urn.id.clone(),
-                        remote: Some(tracked_peer.clone()),
-                        category: RefsCategory::Rad,
-                        name: "id*".to_owned(),
-                    };
+                    // id
+                    {
+                        let local =
+                            Reference::rad_id(urn.id.clone()).set_remote(tracked_peer.clone());
+                        let remote = if tracked_peer == remote_peer {
+                            local.with_remote(None)
+                        } else {
+                            local.clone()
+                        };
 
-                    let remote = if tracked_peer == remote_peer {
-                        Reference {
-                            remote: None,
-                            ..local.clone()
-                        }
-                    } else {
-                        local.clone()
-                    };
+                        refspecs.push(Self {
+                            local,
+                            remote,
+                            force: false,
+                        });
+                    }
 
-                    refspecs.push(Self {
-                        local,
-                        remote,
-                        force: false,
-                    });
+                    // rad/ids/* of id
+                    {
+                        let local = Reference::rad_ids_glob(urn.id.clone())
+                            .set_remote(tracked_peer.clone());
+                        let remote = if tracked_peer == remote_peer {
+                            local.with_remote(None)
+                        } else {
+                            local.clone()
+                        };
+
+                        refspecs.push(Self {
+                            local,
+                            remote,
+                            force: false,
+                        });
+                    }
                 }
             }
         }
