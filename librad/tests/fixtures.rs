@@ -60,7 +60,7 @@ pub struct Radicle(Project);
 
 impl Radicle {
     pub fn new(owner: &User) -> Self {
-        Self(Project::new("radicle".to_owned(), &owner.urn()).unwrap())
+        Self(Project::new("radicle".to_owned(), owner.urn()).unwrap())
     }
 }
 
