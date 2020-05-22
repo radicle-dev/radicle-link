@@ -33,6 +33,7 @@ use crate::{
     keys::SecretKey,
     meta::entity::{
         data::{EntityBuilder, EntityData},
+        Draft,
         Entity,
     },
     paths::Paths,
@@ -87,7 +88,8 @@ impl Storage {
         })
     }
 
-    pub fn create_repo<T>(self, meta: &Entity<T>) -> Result<Repo, repo::Error>
+    // FIXME: decide if we want to require verified entities
+    pub fn create_repo<T>(self, meta: &Entity<T, Draft>) -> Result<Repo, repo::Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,

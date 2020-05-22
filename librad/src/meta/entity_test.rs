@@ -138,7 +138,11 @@ fn test_valid_uri() {
     assert_eq!(u1, u2);
 }
 
-fn new_user(name: &str, revision: u64, devices: &[&'static PublicKey]) -> Result<User<Unknown>, Error> {
+fn new_user(
+    name: &str,
+    revision: u64,
+    devices: &[&'static PublicKey],
+) -> Result<User<Draft>, Error> {
     let mut data = UserData::default()
         .set_name(name.to_owned())
         .set_revision(revision);

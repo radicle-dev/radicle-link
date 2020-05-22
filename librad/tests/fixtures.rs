@@ -22,23 +22,23 @@ use async_trait::async_trait;
 use librad::{
     keys::PublicKey,
     meta::{
-        entity::{Error, Resolver},
+        entity::{Draft, Error, Resolver},
         Project,
         User,
     },
     uri::RadUrn,
 };
 
-pub struct Alice(User);
+pub struct Alice(User<Draft>);
 
 impl Alice {
     pub fn new(pk: PublicKey) -> Self {
-        Self(User::new("alice".to_owned(), pk).unwrap())
+        Self(User::<Draft>::create("alice".to_owned(), pk).unwrap())
     }
 }
 
 impl Deref for Alice {
-    type Target = User;
+    type Target = User<Draft>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -46,26 +46,26 @@ impl Deref for Alice {
 }
 
 #[async_trait]
-impl Resolver<User> for Alice {
-    async fn resolve(&self, _uri: &RadUrn) -> Result<User, Error> {
+impl Resolver<User<Draft>> for Alice {
+    async fn resolve(&self, _uri: &RadUrn) -> Result<User<Draft>, Error> {
         Ok(self.0.clone())
     }
 
-    async fn resolve_revision(&self, _uri: &RadUrn, _revision: u64) -> Result<User, Error> {
+    async fn resolve_revision(&self, _uri: &RadUrn, _revision: u64) -> Result<User<Draft>, Error> {
         Ok(self.0.clone())
     }
 }
 
-pub struct Radicle(Project);
+pub struct Radicle(Project<Draft>);
 
 impl Radicle {
-    pub fn new(owner: &User) -> Self {
-        Self(Project::new("radicle".to_owned(), owner.urn()).unwrap())
+    pub fn new(owner: &User<Draft>) -> Self {
+        Self(Project::<Draft>::create("radicle".to_owned(), owner.urn()).unwrap())
     }
 }
 
 impl Deref for Radicle {
-    type Target = Project;
+    type Target = Project<Draft>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

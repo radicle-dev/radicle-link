@@ -28,7 +28,6 @@ use crate::{
     git::{self, repo, server::GitServer, storage::Storage as GitStorage},
     internal::channel::Fanout,
     keys::{PublicKey, SecretKey},
-        Draft,
     net::{
         connection::LocalInfo,
         discovery,

@@ -33,7 +33,6 @@ use serde::{
 use std::{
     collections::{HashMap, HashSet},
     convert::{Into, TryFrom},
-    iter::FromIterator,
     marker::PhantomData,
     str::FromStr,
 };
