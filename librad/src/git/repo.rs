@@ -455,7 +455,7 @@ impl<'a> Locked<'a> {
         let mut remotes: HashMap<PeerId, HashMap<PeerId, HashSet<PeerId>>> =
             tracked.map(|peer| (peer, HashMap::new())).collect();
 
-        tracing::debug!(remotes.bare = ?remotes);
+        tracing::trace!(remotes.unverified = ?remotes);
 
         // For each of the 1st degree tracked peers, lookup their rad/refs (if any),
         // verify the signature, and add their [`Remotes`] to ours (minus the 3rd
@@ -478,8 +478,7 @@ impl<'a> Locked<'a> {
     }
 
     fn tracked(&self) -> Result<Tracked, Error> {
-        let remotes = self.git.remotes()?;
-        Ok(Tracked::new(remotes, &self.urn))
+        Tracked::collect(&self.git, &self.urn).map_err(|e| e.into())
     }
 
     fn rad_refs_of(&self, peer: PeerId) -> Result<Refs, Error> {

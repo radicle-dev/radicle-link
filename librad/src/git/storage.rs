@@ -174,14 +174,19 @@ impl Storage {
         let url = GitUrlRef::from_rad_urn(&urn, &PeerId::from(&self.key), peer).to_string();
 
         tracing::debug!(
-            "Storage::track({}, {}): {} url={}",
-            urn,
-            peer,
-            remote_name,
-            url
+            urn = %urn,
+            peer = %peer,
+            "Storage::track"
         );
 
-        let _ = self.lock().remote(&remote_name, &url)?;
+        let _ = self.lock().remote_with_fetch(
+            &remote_name,
+            &url,
+            &format!(
+                "refs/namespaces/{}/refs/*:refs/namespaces/{}/refs/remotes/{}/*",
+                urn.id, urn.id, peer
+            ),
+        )?;
         Ok(())
     }
 
@@ -195,8 +200,7 @@ impl Storage {
     }
 
     pub(crate) fn tracked(&self, urn: &RadUrn) -> Result<Tracked, Error> {
-        let remotes = self.lock().remotes()?;
-        Ok(Tracked::new(remotes, urn))
+        Tracked::collect(&self.lock(), urn).map_err(|e| e.into())
     }
 }
 
@@ -211,14 +215,15 @@ pub struct Tracked {
 }
 
 impl Tracked {
-    pub(super) fn new(remotes: git2::string_array::StringArray, filter: &RadUrn) -> Self {
+    pub(super) fn collect(repo: &git2::Repository, context: &RadUrn) -> Result<Self, git2::Error> {
+        let remotes = repo.remotes()?;
         let range = 0..remotes.len();
-        let prefix = format!("{}/", filter.id);
-        Self {
+        let prefix = format!("{}/", context.id);
+        Ok(Self {
             remotes,
             range,
             prefix,
-        }
+        })
     }
 }
 
@@ -226,11 +231,16 @@ impl Iterator for Tracked {
     type Item = PeerId;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.range
-            .next()
-            .and_then(|i| self.remotes.get(i))
-            .and_then(|name| name.strip_prefix(&self.prefix))
-            .and_then(|peer| peer.parse().ok())
+        let next = self.range.next().and_then(|i| self.remotes.get(i));
+        match next {
+            None => None,
+            Some(name) => {
+                let peer = name
+                    .strip_prefix(&self.prefix)
+                    .and_then(|peer| peer.parse().ok());
+                peer.or_else(|| self.next())
+            },
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
