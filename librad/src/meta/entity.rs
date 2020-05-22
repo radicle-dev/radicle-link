@@ -191,8 +191,6 @@ pub trait Resolver<T> {
 ///   control of its current "owners" (the idea is taken from [TUF](https://theupdateframework.io/)).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entity<T, ST> {
-    // /// Entity verification status
-    // status: VerificationStatus,
     /// Verification status marker type
     status_marker: PhantomData<ST>,
     /// The entity name (useful for humans because the hash is unreadable)
@@ -603,8 +601,6 @@ where
     ) -> Result<Entity<T, Verified>, HistoryVerificationError>
     where
         ST: Clone,
-        ST: std::fmt::Debug,
-        T: std::fmt::Debug,
     {
         let mut current = self.clone();
 
