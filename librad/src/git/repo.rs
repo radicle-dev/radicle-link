@@ -37,6 +37,7 @@ use crate::{
     meta::entity::{
         self,
         data::{EntityBuilder, EntityData},
+        Draft,
         Entity,
         Signatory,
     },
@@ -96,7 +97,8 @@ impl Repo {
         }
     }
 
-    pub fn create<T>(storage: Storage, meta: &Entity<T>) -> Result<Self, Error>
+    // FIXME: decide if we want to require verified entities
+    pub fn create<T>(storage: Storage, meta: &Entity<T, Draft>) -> Result<Self, Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,
@@ -196,7 +198,8 @@ impl Repo {
         Ok(())
     }
 
-    fn track_signers<T>(&self, meta: &Entity<T>) -> Result<(), Error>
+    // FIXME: decide if we want to require verified entities
+    fn track_signers<T>(&self, meta: &Entity<T, Draft>) -> Result<(), Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
     {
@@ -336,7 +339,8 @@ impl<'a> Locked<'a> {
         }))
     }
 
-    fn commit_initial_meta<T>(&self, meta: &Entity<T>) -> Result<git2::Oid, Error>
+    // FIXME: decide if we want to require verified entities
+    fn commit_initial_meta<T>(&self, meta: &Entity<T, Draft>) -> Result<git2::Oid, Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,
@@ -372,7 +376,8 @@ impl<'a> Locked<'a> {
         Ok(oid)
     }
 
-    fn fetch_id<T>(&self, url: GitUrlRef) -> Result<Entity<T>, Error>
+    // FIXME: decide if we want to require verified entities
+    fn fetch_id<T>(&self, url: GitUrlRef) -> Result<Entity<T, Draft>, Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,
@@ -408,13 +413,13 @@ impl<'a> Locked<'a> {
             remote.fetch(&refspecs, Some(&mut self.fetch_options()), None)?;
         }
 
-        let entity: Entity<T> = {
+        let entity: Entity<T, Draft> = {
             let blob = WithBlob::Init {
                 reference: &id_branch,
                 file_name: "id",
             }
             .get(&self.git)?;
-            Entity::from_json_slice(blob.content())
+            Entity::<T, Draft>::from_json_slice(blob.content())
         }?;
 
         Ok(entity)

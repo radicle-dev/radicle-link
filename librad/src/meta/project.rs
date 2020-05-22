@@ -24,6 +24,7 @@ use crate::{
         common::{Label, Url},
         entity::{
             data::{EntityBuilder, EntityData},
+            Draft,
             Entity,
             Error,
         },
@@ -126,9 +127,12 @@ impl EntityBuilder for ProjectData {
     }
 }
 
-pub type Project = Entity<ProjectInfo>;
+pub type Project<ST> = Entity<ProjectInfo, ST>;
 
-impl Project {
+impl<ST> Project<ST>
+where
+    ST: Clone,
+{
     pub fn maintainers(&self) -> &std::collections::HashSet<RadUrn> {
         self.certifiers()
     }
@@ -145,7 +149,7 @@ impl Project {
         &self.info().rel
     }
 
-    pub fn new(name: String, owner: RadUrn) -> Result<Self, Error> {
+    pub fn create(name: String, owner: RadUrn) -> Result<Project<Draft>, Error> {
         ProjectData::default()
             .set_name(name)
             .set_revision(1)
@@ -172,13 +176,13 @@ pub mod tests {
 
     #[test]
     fn test_project_serde() {
-        let proj = Project::new("foo".to_owned(), EMPTY_URI.to_owned()).unwrap();
+        let proj = Project::<Draft>::create("foo".to_owned(), EMPTY_URI.clone()).unwrap();
         let proj_ser = serde_json::to_string(&proj).unwrap();
         let proj_de = serde_json::from_str(&proj_ser).unwrap();
         assert_eq!(proj, proj_de)
     }
 
-    fn gen_project() -> impl Strategy<Value = Project> {
+    fn gen_project() -> impl Strategy<Value = Project<Draft>> {
         (
             ".*",
             proptest::option::of(".*"),

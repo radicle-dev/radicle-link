@@ -33,7 +33,7 @@ use serde::{
 use std::{
     collections::{HashMap, HashSet},
     convert::{Into, TryFrom},
-    iter::FromIterator,
+    marker::PhantomData,
     str::FromStr,
 };
 use thiserror::Error;
@@ -131,32 +131,17 @@ pub enum HistoryVerificationError {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum VerificationStatus {
-    Verified,
-    Signed,
-    SignaturesMissing,
-    VerificationFailed(Error),
-    HistoryVerificationFailed(HistoryVerificationError),
-    Unknown,
-}
+/// Type witness for a fully verified [`Entity`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Verified;
 
-impl VerificationStatus {
-    pub fn verification_failed(&self) -> Option<&Error> {
-        if let VerificationStatus::VerificationFailed(err) = self {
-            Some(err)
-        } else {
-            None
-        }
-    }
-    pub fn history_verification_failed(&self) -> Option<&HistoryVerificationError> {
-        if let VerificationStatus::HistoryVerificationFailed(err) = self {
-            Some(err)
-        } else {
-            None
-        }
-    }
-}
+/// Type witness for a signed [`Entity`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Signed;
+
+/// Type witness for a draft [`Entity`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Draft;
 
 /// A type expressing *who* is signing an `Entity`
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -205,9 +190,9 @@ pub trait Resolver<T> {
 ///   and certifiers, to prove that the entity evolution is actually under the
 ///   control of its current "owners" (the idea is taken from [TUF](https://theupdateframework.io/)).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Entity<T> {
-    /// Entity verification status
-    status: VerificationStatus,
+pub struct Entity<T, ST> {
+    /// Verification status marker type
+    status_marker: PhantomData<ST>,
     /// The entity name (useful for humans because the hash is unreadable)
     name: String,
     /// Entity revision, to be incremented at each entity update
@@ -232,29 +217,31 @@ pub struct Entity<T> {
     info: T,
 }
 
-impl<T> TryFrom<EntityData<T>> for Entity<T>
+impl<T> TryFrom<EntityData<T>> for Entity<T, Draft>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
     EntityData<T>: EntityBuilder,
 {
     type Error = Error;
-    fn try_from(data: EntityData<T>) -> Result<Entity<T>, Error> {
+    fn try_from(data: EntityData<T>) -> Result<Entity<T, Draft>, Error> {
         Self::from_data(data)
     }
 }
 
-impl<T> Into<EntityData<T>> for Entity<T>
+impl<T, ST> Into<EntityData<T>> for Entity<T, ST>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
+    ST: Clone,
 {
     fn into(self) -> EntityData<T> {
         self.to_data()
     }
 }
 
-impl<T> Serialize for Entity<T>
+impl<T, ST> Serialize for Entity<T, ST>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
+    ST: Clone,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -264,7 +251,7 @@ where
     }
 }
 
-impl<'de, T> Deserialize<'de> for Entity<T>
+impl<'de, T> Deserialize<'de> for Entity<T, Draft>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
     EntityData<T>: EntityBuilder,
@@ -275,20 +262,15 @@ where
         D::Error: SerdeDeserializationError,
     {
         let data = EntityData::<T>::deserialize(deserializer)?;
-        let res = Entity::<T>::try_from(data);
+        let res = Entity::<T, Draft>::try_from(data);
         res.map_err(D::Error::custom)
     }
 }
 
-impl<T> Entity<T>
+impl<T, ST> Entity<T, ST>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
 {
-    /// `status` getter
-    pub fn status(&self) -> &VerificationStatus {
-        &self.status
-    }
-
     /// `name` getter
     pub fn name(&self) -> &str {
         &self.name
@@ -412,7 +394,7 @@ where
         &self,
         key: &PublicKey,
         by: &Signatory,
-        resolver: &impl Resolver<User>,
+        resolver: &impl Resolver<User<Draft>>,
     ) -> Result<(), Error> {
         match by {
             Signatory::OwnedKey => {
@@ -448,7 +430,7 @@ where
         &mut self,
         key: &SecretKey,
         by: &Signatory,
-        resolver: &impl Resolver<User>,
+        resolver: &impl Resolver<User<Draft>>,
     ) -> Result<(), Error> {
         let public_key = key.public();
         if self.signatures().contains_key(&public_key) {
@@ -469,13 +451,32 @@ where
         key: &PublicKey,
         by: &Signatory,
         signature: &Signature,
-        resolver: &impl Resolver<User>,
-    ) -> Result<(), Error> {
+        resolver: &impl Resolver<User<Draft>>,
+    ) -> Result<Entity<T, Signed>, Error>
+    where
+        ST: Clone,
+    {
         self.check_key(key, by, resolver).await?;
         if signature.verify(&self.canonical_data()?, key) {
-            Ok(())
+            Ok(self.clone().with_status::<Signed>())
         } else {
             Err(Error::SignatureVerificationFailed)
+        }
+    }
+
+    fn with_status<NewSt>(self) -> Entity<T, NewSt> {
+        Entity::<T, NewSt> {
+            status_marker: PhantomData,
+            name: self.name,
+            revision: self.revision,
+            rad_version: self.rad_version,
+            hash: self.hash,
+            root_hash: self.root_hash,
+            parent_hash: self.parent_hash,
+            keys: self.keys,
+            certifiers: self.certifiers,
+            signatures: self.signatures,
+            info: self.info,
         }
     }
 
@@ -485,23 +486,28 @@ where
     /// - every owned key and certifier has a corresponding signature
     /// - only owned keys and certifiers have signed the entity
     /// - the first revision has no parent and a matching root hash
-    pub async fn compute_status(&mut self, resolver: &impl Resolver<User>) -> Result<(), Error> {
-        let mut keys = HashSet::<PublicKey>::from_iter(self.keys().iter().cloned());
-        let mut users = HashSet::<RadUrn>::from_iter(self.certifiers().iter().cloned());
-        self.status = VerificationStatus::Unknown;
+    pub async fn check_signatures(
+        self,
+        resolver: &impl Resolver<User<Draft>>,
+    ) -> Result<Entity<T, Signed>, Error>
+    where
+        ST: Clone,
+    {
+        let mut keys = self.keys().iter().cloned().collect::<HashSet<_>>();
+        let mut users = self.certifiers().iter().cloned().collect::<HashSet<_>>();
 
         if self.revision == 1 && (self.parent_hash.is_some() || self.root_hash != self.hash) {
             // TODO: define a better error if `self.parent_hash.is_some()`
             // (should be "revision 1 cannot have a parent hash")
-            self.status = VerificationStatus::VerificationFailed(Error::InvalidRootHash);
             return Err(Error::InvalidRootHash);
         }
 
         for (k, s) in self.signatures() {
-            if let Err(e) = self.check_signature(k, &s.by, &s.sig, resolver).await {
-                self.status = VerificationStatus::VerificationFailed(e.clone());
-                return Err(e);
-            }
+            match self.check_signature(k, &s.by, &s.sig, resolver).await {
+                Err(e) => return Err(e),
+                Ok(_signed) => {},
+            };
+
             match &s.by {
                 Signatory::OwnedKey => {
                     keys.remove(k);
@@ -512,11 +518,10 @@ where
             }
         }
         if keys.is_empty() && users.is_empty() {
-            self.status = VerificationStatus::Signed;
+            Ok(self.with_status::<Signed>())
         } else {
-            self.status = VerificationStatus::SignaturesMissing;
+            Err(Error::SignatureMissing)
         }
-        Ok(())
     }
 
     /// Given an entity and its previous revision check that the update is
@@ -531,7 +536,10 @@ where
     /// history has no holes
     /// FIXME[ENTITY]: probably we should merge owned keys and certifiers when
     /// checking the quorum rules (now we are handling them separately)
-    fn check_update(&self, previous: &Self) -> Result<(), UpdateVerificationError> {
+    fn check_update<OtherST>(
+        self,
+        previous: Entity<T, OtherST>,
+    ) -> Result<Entity<T, OtherST>, UpdateVerificationError> {
         if self.revision() <= previous.revision() {
             return Err(UpdateVerificationError::NonMonotonicRevision);
         }
@@ -579,64 +587,56 @@ where
             return Err(UpdateVerificationError::NoPreviousQuorum);
         }
 
-        Ok(())
+        Ok(previous)
     }
 
     /// Compute the entity status checking that the whole revision history is
     /// valid
     ///
     /// FIXME[ENTITY]: should we allow certifiers that are not `User` entities?
-    pub async fn compute_history_status(
-        &mut self,
-        resolver: &impl Resolver<Entity<T>>,
-        certifier_resolver: &impl Resolver<User>,
-    ) -> Result<(), HistoryVerificationError> {
+    pub async fn check_history_status(
+        self,
+        resolver: &impl Resolver<Entity<T, ST>>,
+        certifier_resolver: &impl Resolver<User<Draft>>,
+    ) -> Result<Entity<T, Verified>, HistoryVerificationError>
+    where
+        ST: Clone,
+    {
         let mut current = self.clone();
 
         loop {
             let revision = current.revision();
             // Check current status
-            if let Err(err) = current.compute_status(certifier_resolver).await {
-                let err = HistoryVerificationError::ErrorAtRevision {
-                    revision,
-                    error: err,
-                };
-                self.status = VerificationStatus::HistoryVerificationFailed(err.clone());
-                return Err(err);
-            }
-            // Also check that no signature is missing
-            if current.status == VerificationStatus::SignaturesMissing {
-                let err = HistoryVerificationError::ErrorAtRevision {
-                    revision,
-                    error: Error::SignatureMissing,
-                };
-                self.status = VerificationStatus::HistoryVerificationFailed(err.clone());
-                return Err(err);
-            }
+            let signed = match current.check_signatures(certifier_resolver).await {
+                Err(err) => {
+                    let err = HistoryVerificationError::ErrorAtRevision {
+                        revision,
+                        error: err,
+                    };
+                    return Err(err);
+                },
+                Ok(signed) => signed,
+            };
 
             // End at root revision
             if revision == 1 {
-                self.status = VerificationStatus::Verified;
-                return Ok(());
+                return Ok(self.with_status::<Verified>());
             }
 
             // Resolve previous revision
-            match resolver.resolve_revision(&self.urn(), revision - 1).await {
+            current = match resolver.resolve_revision(&self.urn(), revision - 1).await {
                 // Check update between current and previous
-                Ok(previous) => match current.check_update(&previous) {
+                Ok(previous) => match signed.check_update(previous) {
                     // Update verification failed
                     Err(err) => {
                         let err = HistoryVerificationError::UpdateError {
                             revision,
                             error: err,
                         };
-                        self.status = VerificationStatus::HistoryVerificationFailed(err.clone());
                         return Err(err);
                     },
                     // Continue traversing revisions
-                    Ok(()) => {
-                        current = previous;
-                    },
+                    Ok(previous) => previous,
                 },
                 // Resoltion failed
                 Err(err) => {
@@ -644,7 +644,6 @@ where
                         revision,
                         error: err,
                     };
-                    self.status = VerificationStatus::HistoryVerificationFailed(err.clone());
                     return Err(err);
                 },
             }
@@ -652,14 +651,15 @@ where
     }
 }
 
-impl<T> Entity<T>
+impl<T, ST> Entity<T, ST>
 where
     T: Serialize + DeserializeOwned + Clone + Default,
     EntityData<T>: EntityBuilder,
+    ST: Clone,
 {
     /// Build an `Entity` from its data (the second step of deserialization)
     /// It guarantees that the `hash` is correct
-    pub fn from_data(data: EntityData<T>) -> Result<Self, Error> {
+    pub fn from_data(data: EntityData<T>) -> Result<Entity<T, Draft>, Error> {
         // FIXME[ENTITY]: do we want this? it makes `default` harder to get right...
         if data.name.is_none() {
             return Err(Error::InvalidData("Missing name".to_owned()));
@@ -715,8 +715,8 @@ where
             },
         };
 
-        Ok(Self {
-            status: VerificationStatus::Unknown,
+        Ok(Entity::<T, Draft> {
+            status_marker: PhantomData,
             name: data.name.unwrap(),
             revision: data.revision.unwrap(),
             rad_version: data.rad_version,
@@ -745,7 +745,7 @@ where
     }
 
     /// Helper deserialization from JSON reader
-    pub fn from_json_reader<R>(r: R) -> Result<Self, Error>
+    pub fn from_json_reader<R>(r: R) -> Result<Entity<T, Draft>, Error>
     where
         R: std::io::Read,
     {
@@ -753,12 +753,12 @@ where
     }
 
     /// Helper deserialization from JSON string
-    pub fn from_json_str(s: &str) -> Result<Self, Error> {
+    pub fn from_json_str(s: &str) -> Result<Entity<T, Draft>, Error> {
         Self::from_data(data::EntityData::from_json_str(s)?)
     }
 
     /// Helper deserialization from JSON slice
-    pub fn from_json_slice(s: &[u8]) -> Result<Self, Error> {
+    pub fn from_json_slice(s: &[u8]) -> Result<Entity<T, Draft>, Error> {
         Self::from_data(data::EntityData::from_json_slice(s)?)
     }
 }
