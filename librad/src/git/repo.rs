@@ -44,6 +44,7 @@ use crate::{
     peer::PeerId,
     uri::{self, RadUrl, RadUrn},
 };
+use radicle_surf::vcs::git as surf;
 
 pub use storage::Tracked;
 
@@ -77,6 +78,9 @@ pub enum Error {
 
     #[error(transparent)]
     Git(#[from] git2::Error),
+
+    #[error(transparent)]
+    Surf(#[from] surf::error::Error),
 }
 
 pub struct Repo {
@@ -267,7 +271,18 @@ pub struct Locked<'a> {
     git: MutexGuard<'a, git2::Repository>,
 }
 
+impl<'a> From<&'a Locked<'a>> for surf::RepositoryRef<'a> {
+    fn from(locked: &'a Locked<'a>) -> Self {
+        let repo = &*locked.git;
+        repo.into()
+    }
+}
+
 impl<'a> Locked<'a> {
+    pub fn browser(&'_ self) -> Result<surf::Browser<'_>, Error> {
+        Ok(surf::Browser::new(self)?)
+    }
+
     pub fn namespace(&self) -> Namespace {
         self.urn.id.clone()
     }
