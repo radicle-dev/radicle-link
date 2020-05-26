@@ -599,16 +599,7 @@ where
                     })))
                     .await;
 
-                let res = {
-                    let remote_id = remote_id.clone();
-                    let val = val.clone();
-                    let storage = self.storage.clone();
-                    tokio::task::spawn_blocking(move || storage.put(&remote_id, val))
-                        .await
-                        .expect("storage.put panicked")
-                };
-
-                match res {
+                match self.storage.put(&remote_id, val.clone()).await {
                     // `val` was new, and is now fetched to local storage. Let
                     // connected peers know they can now fetch it from us.
                     PutResult::Applied => {
@@ -679,13 +670,7 @@ where
 
             Want { origin, val } => {
                 tracing::trace!(msg = "Want", origin.peer.id = %origin.peer_id, origin.value = ?val);
-                let have = {
-                    let val = val.clone();
-                    let storage = self.storage.clone();
-                    tokio::task::spawn_blocking(move || storage.ask(val))
-                        .await
-                        .expect("storage.ask panicked")
-                };
+                let have = self.storage.ask(val.clone()).await;
 
                 if have {
                     self.reply(

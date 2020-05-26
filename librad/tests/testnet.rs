@@ -17,24 +17,27 @@
 
 use std::{
     future::Future,
-    io,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    ops::Deref,
 };
 
 use futures::{
-    future,
-    stream::{self, StreamExt, TryStreamExt},
+    future::{self, Either, FutureExt},
+    stream::{self, StreamExt},
 };
 use lazy_static::lazy_static;
 use tempfile::{tempdir, TempDir};
 
 use librad::{
+    git,
     keys::SecretKey,
     net::{
-        peer::{BindError, BoundPeer, Handle, Peer},
+        discovery,
+        peer::{Peer, PeerApi, PeerConfig},
         protocol::ProtocolEvent,
     },
     paths::Paths,
+    peer::PeerId,
 };
 
 lazy_static! {
@@ -47,68 +50,111 @@ pub struct TestPeer {
     pub peer: Peer,
 }
 
-impl TestPeer {
-    async fn bind<'a>(&self) -> Result<BoundPeer<'a>, BindError> {
-        self.peer.clone().bind(*LOCALHOST_ANY).await
+impl Deref for TestPeer {
+    type Target = Peer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.peer
     }
 }
 
-pub fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
-    let mut peers = Vec::with_capacity(num_peers);
+impl AsRef<Peer> for TestPeer {
+    fn as_ref(&self) -> &Peer {
+        self
+    }
+}
 
-    for _ in 0..num_peers {
-        let tmp = tempdir()?;
-        let paths = Paths::from_root(tmp.path())?;
-        let key = SecretKey::new();
-        let peer = Peer::init(paths, key)?;
-        peers.push(TestPeer { _tmp: tmp, peer });
+async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
+    let tmp = tempdir()?;
+    let paths = Paths::from_root(tmp.path())?;
+    let key = SecretKey::new();
+    let listen_addr = *LOCALHOST_ANY;
+    let gossip_params = Default::default();
+    let disco = discovery::Static::new(seeds);
+
+    git::storage::Storage::init(&paths, key.clone())?;
+
+    let config = PeerConfig {
+        key,
+        paths,
+        listen_addr,
+        gossip_params,
+        disco,
+    };
+
+    config
+        .try_into_peer()
+        .await
+        .map(|peer| TestPeer { _tmp: tmp, peer })
+        .map_err(|e| e.into())
+}
+
+pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
+    if num_peers < 1 {
+        return Ok(vec![]);
+    }
+
+    let seed = boot(vec![]).await?;
+    let seed_addrs = vec![(seed.peer_id(), seed.listen_addr())];
+
+    let mut peers = Vec::with_capacity(num_peers);
+    peers.push(seed);
+
+    for _ in 1..num_peers {
+        let peer = boot(seed_addrs.clone()).await?;
+        peers.push(peer)
     }
 
     Ok(peers)
 }
 
-pub async fn bind<'a, I>(peers: I) -> Result<Vec<BoundPeer<'a>>, BindError>
+pub async fn run_on_testnet<F, Fut, A>(peers: Vec<TestPeer>, mut f: F) -> A
 where
-    I: IntoIterator<Item = &'a TestPeer>,
+    F: FnMut(Vec<PeerApi>) -> Fut,
+    Fut: Future<Output = A>,
 {
-    let mut bound_peers = Vec::new();
-    for test_peer in peers {
-        bound_peers.push(test_peer.bind().await?);
-    }
-    Ok(bound_peers)
-}
+    let len = peers.len();
 
-pub async fn run<'a, F>(bound_peers: Vec<BoundPeer<'a>>, shutdown: F) -> Result<(), io::Error>
-where
-    F: Future<Output = ()> + Send + Clone + Unpin,
-{
-    assert!(!bound_peers.is_empty());
+    // move out tempdirs, so they don't get dropped
+    let (_tmps, peers) = peers
+        .into_iter()
+        .map(|TestPeer { _tmp, peer }| (_tmp, peer))
+        .unzip::<_, _, Vec<_>, Vec<_>>();
 
-    let (seed_id, seed_addr) = {
-        let seed = bound_peers.first().unwrap();
-        (seed.peer_id().clone(), seed.bound_addr()?)
+    let (apis, runners) = peers
+        .into_iter()
+        .map(|peer| peer.accept().unwrap())
+        .unzip::<_, _, Vec<_>, Vec<_>>();
+
+    let events = {
+        let mut events = Vec::with_capacity(len);
+        for api in &apis {
+            events.push(api.protocol().subscribe().await);
+        }
+        stream::iter(events).flatten()
     };
+    let connected = wait_connected(events, len);
 
-    stream::iter(bound_peers)
-        .map(Ok)
-        .try_for_each_concurrent(None, |peer| {
-            let shutdown = shutdown.clone();
-            let addrs = if &seed_id == peer.peer_id() {
-                vec![]
-            } else {
-                vec![(seed_id.clone(), seed_addr)]
-            };
-            async move {
-                peer.run(addrs, shutdown).await;
-                Ok(())
-            }
-        })
-        .await
+    let res = future::select(
+        future::select_all(runners).boxed(),
+        Box::pin(async {
+            connected.await;
+            f(apis).await
+        }),
+    )
+    .await;
+
+    match res {
+        Either::Left(_) => unreachable!(),
+        Either::Right((output, _)) => output,
+    }
 }
 
-pub async fn wait_connected(handles: Vec<Handle>, min_connected: usize) {
-    let events = future::join_all(handles.iter().map(|handle| handle.subscribe())).await;
-    stream::select_all(events)
+pub async fn wait_connected<S>(events: S, min_connected: usize)
+where
+    S: futures::Stream<Item = ProtocolEvent>,
+{
+    events
         .scan(0, |connected, event| {
             if let ProtocolEvent::Connected(_) = event {
                 *connected += 1;

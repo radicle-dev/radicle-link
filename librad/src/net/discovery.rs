@@ -24,6 +24,13 @@ use std::{
 
 use crate::peer::PeerId;
 
+pub trait Discovery {
+    type Addr;
+    type Stream: futures::Stream<Item = (PeerId, Vec<Self::Addr>)> + Send;
+
+    fn discover(self) -> Self::Stream;
+}
+
 pub struct Static<I, S> {
     iter: I,
     _marker: PhantomData<S>,
@@ -64,5 +71,17 @@ where
                 .ok()
                 .map(|resolved| (peer_id, resolved.collect()))
         })
+    }
+}
+
+impl<I> Discovery for Static<I, SocketAddr>
+where
+    I: Iterator<Item = (PeerId, SocketAddr)> + Send,
+{
+    type Addr = SocketAddr;
+    type Stream = futures::stream::Iter<Self>;
+
+    fn discover(self) -> Self::Stream {
+        self.into_stream()
     }
 }

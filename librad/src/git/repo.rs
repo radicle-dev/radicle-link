@@ -15,10 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    sync::MutexGuard,
-};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
@@ -32,8 +29,10 @@ use crate::{
         url::GitUrlRef,
     },
     hash::Hash,
-    internal::canonical::{Cjson, CjsonError},
-    keys::SecretKey,
+    internal::{
+        borrow::{TryCow, TryToOwned},
+        canonical::{Cjson, CjsonError},
+    },
     meta::entity::{
         self,
         data::{EntityBuilder, EntityData},
@@ -83,26 +82,13 @@ pub enum Error {
     Surf(#[from] surf::error::Error),
 }
 
-pub struct Repo {
-    urn: RadUrn,
-    storage: Storage,
+pub struct Repo<'a> {
+    pub urn: RadUrn,
+    storage: TryCow<'a, Storage>,
 }
 
-impl Repo {
-    pub fn urn(&self) -> RadUrn {
-        self.urn.clone()
-    }
-
-    pub fn locked(&mut self) -> Locked {
-        Locked {
-            urn: &self.urn,
-            key: &self.storage.key,
-            git: self.storage.lock(),
-        }
-    }
-
-    // FIXME: decide if we want to require verified entities
-    pub fn create<T>(storage: Storage, meta: &Entity<T, Draft>) -> Result<Self, Error>
+impl<'a> Repo<'a> {
+    pub fn create<T>(storage: &'a Storage, meta: &Entity<T, Draft>) -> Result<Self, Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,
@@ -118,22 +104,22 @@ impl Repo {
 
         // FIXME: certifier identities must exist, or be supplied
 
-        let mut this = Self {
+        let this = Self {
             urn: RadUrn::new(
                 meta.root_hash().to_owned(),
                 uri::Protocol::Git,
                 uri::Path::empty(),
             ),
-            storage,
+            storage: storage.into(),
         };
-        this.locked().commit_initial_meta(meta)?;
+        this.commit_initial_meta(meta)?;
         this.track_signers(&meta)?;
-        this.locked().update_refs()?;
+        this.update_refs()?;
 
         Ok(this)
     }
 
-    pub fn open(storage: Storage, urn: RadUrn) -> Result<Self, Error> {
+    pub fn open(storage: &'a Storage, urn: RadUrn) -> Result<Self, Error> {
         {
             let id_ref = Reference::rad_id(urn.id.clone());
             if !storage.has_ref(&id_ref)? {
@@ -146,11 +132,11 @@ impl Repo {
                 path: uri::Path::empty(),
                 ..urn
             },
-            storage,
+            storage: storage.into(),
         })
     }
 
-    pub fn clone<T>(storage: Storage, url: RadUrl) -> Result<Self, Error>
+    pub fn clone<T>(storage: &'a Storage, url: RadUrl) -> Result<Self, Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,
@@ -159,17 +145,17 @@ impl Repo {
         let _guard = span.enter();
 
         let local_peer_id = PeerId::from(&storage.key);
-        let mut this = Self {
+        let this = Self {
             urn: RadUrn {
                 path: uri::Path::empty(),
                 ..url.urn.clone()
             },
-            storage,
+            storage: storage.into(),
         };
 
         // Fetch the identity first
         let git_url = GitUrlRef::from_rad_url_ref(url.as_ref(), &local_peer_id);
-        let meta = this.locked().fetch_id(git_url)?;
+        let meta = this.fetch_id(git_url)?;
 
         // TODO: properly verify meta
 
@@ -185,16 +171,73 @@ impl Repo {
         }
 
         this.track_signers(&meta)?;
-        this.locked().update_refs()?;
+        this.update_refs()?;
         this.fetch(&url.authority)?;
 
         Ok(this)
     }
 
-    pub fn fetch(&mut self, from: &PeerId) -> Result<(), Error> {
+    pub fn browser(&'_ self) -> Result<surf::Browser<'_>, Error> {
+        Ok(surf::Browser::new(&self.storage.backend)?)
+    }
+
+    pub fn fetch(&self, from: &PeerId) -> Result<(), Error> {
         let span = tracing::info_span!("Repo::fetch", repo.fetch.from = %from);
         let _guard = span.enter();
-        self.locked().fetch(from)
+
+        let namespace = &self.urn.id;
+
+        let mut remote = {
+            let local_peer = PeerId::from(&self.storage.key);
+            let url = GitUrlRef::from_rad_url_ref(self.urn.as_rad_url_ref(from), &local_peer);
+            self.storage.remote_anonymous(&url.to_string())
+        }?;
+        remote.connect(git2::Direction::Fetch)?;
+
+        let rad_refs = self.rad_refs()?;
+        let tracked_trans = rad_refs.remotes.flatten().collect::<HashSet<&PeerId>>();
+
+        // Fetch rad/refs of all known remotes
+        {
+            let refspecs =
+                Refspec::rad_refs(namespace.clone(), from, tracked_trans.iter().cloned())
+                    .map(|spec| spec.to_string())
+                    .collect::<Vec<String>>();
+            tracing::debug!(refspecs = ?refspecs, "Fetching rad/refs");
+            remote.fetch(&refspecs, Some(&mut self.fetch_options()), None)?;
+        }
+
+        // Read the signed refs of all known remotes, and compare their `heads`
+        // against the advertised refs. If signed and advertised branch head
+        // match, non-fast-forwards are permitted. Otherwise, the branch is
+        // skipped.
+        {
+            let remote_heads: HashMap<&str, git2::Oid> = remote
+                .list()?
+                .iter()
+                .map(|rhead| (rhead.name(), rhead.oid()))
+                .collect();
+
+            let refspecs = Refspec::fetch_heads(
+                namespace.clone(),
+                remote_heads,
+                tracked_trans.iter().cloned(),
+                from,
+                |peer| self.rad_refs_of(peer),
+                |peer| self.certifiers_of(peer),
+            )?
+            .map(|spec| spec.to_string())
+            .collect::<Vec<String>>();
+
+            tracing::debug!(refspecs = ?refspecs, "Fetching refs/heads");
+            remote.fetch(&refspecs, Some(&mut self.fetch_options()), None)?;
+        }
+
+        // At this point, the transitive tracking graph may have changed. Let's
+        // update the refs, but don't recurse here for now (we could, if
+        // we reload `self.refs()` and compare to the value we had
+        // before fetching).
+        self.update_refs()
     }
 
     pub fn track(&self, peer: &PeerId) -> Result<(), Error> {
@@ -249,38 +292,60 @@ impl Repo {
     ///
     /// To retrieve the transitively tracked peers, use [`rad_refs`] and inspect
     /// the `remotes`.
-    pub fn tracked(&mut self) -> Result<Tracked, Error> {
+    pub fn tracked(&self) -> Result<Tracked, Error> {
         let tracked = self.storage.tracked(&self.urn)?;
         Ok(tracked)
     }
 
     /// Read the current [`Refs`] from the repo state
-    pub fn rad_refs(&mut self) -> Result<Refs, Error> {
-        self.locked().rad_refs()
+    pub fn rad_refs(&self) -> Result<Refs, Error> {
+        let span = tracing::debug_span!("Repo::rad_refs", urn = %self.urn);
+        let _guard = span.enter();
+
+        // Collect refs/heads (our branches) at their current state
+        let heads = self.references_glob(Some("refs/heads/*"))?;
+        let heads: BTreeMap<String, Oid> = heads.map(|(name, oid)| (name, Oid(oid))).collect();
+
+        tracing::debug!(heads = ?heads);
+
+        // Get 1st degree tracked peers from the remotes configured in .git/config
+        let tracked = self.tracked()?;
+        let mut remotes: HashMap<PeerId, HashMap<PeerId, HashSet<PeerId>>> =
+            tracked.map(|peer| (peer, HashMap::new())).collect();
+
+        tracing::debug!(remotes.bare = ?remotes);
+
+        // For each of the 1st degree tracked peers, lookup their rad/refs (if any),
+        // verify the signature, and add their [`Remotes`] to ours (minus the 3rd
+        // degree)
+        for (peer, tracked) in remotes.iter_mut() {
+            match self.rad_refs_of(peer.clone()) {
+                Ok(refs) => *tracked = refs.remotes.cutoff(),
+                Err(Error::Storage(storage::Error::NoSuchBranch(_)))
+                | Err(Error::Storage(storage::Error::NoSuchBlob(_))) => {},
+                Err(e) => return Err(e),
+            }
+        }
+
+        tracing::debug!(remotes.verified = ?remotes);
+
+        Ok(Refs {
+            heads,
+            remotes: remotes.into(),
+        })
     }
 
     /// The set of all certifiers of this repo's identity, transitively
-    pub fn certifiers(&mut self) -> Result<HashSet<RadUrn>, Error> {
-        self.locked().certifiers()
-    }
-}
-
-pub struct Locked<'a> {
-    urn: &'a RadUrn,
-    key: &'a SecretKey,
-    git: MutexGuard<'a, git2::Repository>,
-}
-
-impl<'a> From<&'a Locked<'a>> for surf::RepositoryRef<'a> {
-    fn from(locked: &'a Locked<'a>) -> Self {
-        let repo = &*locked.git;
-        repo.into()
-    }
-}
-
-impl<'a> Locked<'a> {
-    pub fn browser(&'_ self) -> Result<surf::Browser<'_>, Error> {
-        Ok(surf::Browser::new(self)?)
+    pub fn certifiers(&self) -> Result<HashSet<RadUrn>, Error> {
+        let mut refs = References::from_globs(
+            &self.storage,
+            &[
+                format!("refs/namespaces/{}/refs/rad/ids/*", &self.urn.id),
+                format!("refs/namespaces/{}/refs/remotes/**/rad/ids/*", &self.urn.id),
+            ],
+        )?;
+        let refnames = refs.names();
+        Ok(urns_from_refs(refnames).collect())
     }
 
     pub fn namespace(&self) -> Namespace {
@@ -288,22 +353,22 @@ impl<'a> Locked<'a> {
     }
 
     pub fn index(&self) -> Result<git2::Index, Error> {
-        let idx = self.git.index()?;
+        let idx = self.storage.index()?;
         Ok(idx)
     }
 
     pub fn find_tree(&self, oid: git2::Oid) -> Result<git2::Tree, Error> {
-        let tree = self.git.find_tree(oid)?;
+        let tree = self.storage.find_tree(oid)?;
         Ok(tree)
     }
 
     pub fn blob(&self, data: &[u8]) -> Result<git2::Oid, Error> {
-        let oid = self.git.blob(data)?;
+        let oid = self.storage.blob(data)?;
         Ok(oid)
     }
 
     pub fn find_blob(&self, oid: git2::Oid) -> Result<git2::Blob, Error> {
-        let blob = self.git.find_blob(oid)?;
+        let blob = self.storage.find_blob(oid)?;
         Ok(blob)
     }
 
@@ -314,9 +379,9 @@ impl<'a> Locked<'a> {
         tree: &git2::Tree,
         parents: &[&git2::Commit],
     ) -> Result<git2::Oid, Error> {
-        let author = self.git.signature()?;
+        let author = self.storage.signature()?;
         let head = Reference::head(self.namespace(), None, branch);
-        let oid = self.git.commit(
+        let oid = self.storage.commit(
             Some(&head.to_string()),
             &author,
             &author,
@@ -331,7 +396,7 @@ impl<'a> Locked<'a> {
     }
 
     pub fn find_commit(&self, oid: git2::Oid) -> Result<git2::Commit, Error> {
-        let commit = self.git.find_commit(oid)?;
+        let commit = self.storage.find_commit(oid)?;
         Ok(commit)
     }
 
@@ -342,7 +407,7 @@ impl<'a> Locked<'a> {
         let namespace_prefix = format!("refs/namespaces/{}/", &self.urn.id);
 
         let refs = References::from_globs(
-            &self.git,
+            &self.storage,
             globs
                 .into_iter()
                 .map(|glob| format!("{}{}", namespace_prefix, glob.as_ref())),
@@ -354,25 +419,24 @@ impl<'a> Locked<'a> {
         }))
     }
 
-    // FIXME: decide if we want to require verified entities
     fn commit_initial_meta<T>(&self, meta: &Entity<T, Draft>) -> Result<git2::Oid, Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,
     {
         let canonical_data = Cjson(meta).canonical_form()?;
-        let blob = self.git.blob(&canonical_data)?;
+        let blob = self.storage.blob(&canonical_data)?;
         let tree = {
-            let mut builder = self.git.treebuilder(None)?;
+            let mut builder = self.storage.treebuilder(None)?;
             builder.insert("id", blob, 0o100_644)?;
             let oid = builder.write()?;
-            self.git.find_tree(oid)
+            self.storage.find_tree(oid)
         }?;
-        let author = self.git.signature()?;
+        let author = self.storage.signature()?;
 
         let branch_name = Reference::rad_id(self.namespace());
 
-        let oid = self.git.commit(
+        let oid = self.storage.commit(
             Some(&branch_name.to_string()),
             &author,
             &author,
@@ -424,7 +488,7 @@ impl<'a> Locked<'a> {
 
         {
             tracing::trace!(repo.clone.refspecs = ?refspecs);
-            let mut remote = self.git.remote_anonymous(&url.to_string())?;
+            let mut remote = self.storage.remote_anonymous(&url.to_string())?;
             remote.fetch(&refspecs, Some(&mut self.fetch_options()), None)?;
         }
 
@@ -433,52 +497,11 @@ impl<'a> Locked<'a> {
                 reference: &id_branch,
                 file_name: "id",
             }
-            .get(&self.git)?;
+            .get(&self.storage)?;
             Entity::<T, Draft>::from_json_slice(blob.content())
         }?;
 
         Ok(entity)
-    }
-
-    fn rad_refs(&self) -> Result<Refs, Error> {
-        let span = tracing::debug_span!("Repo::Locked::rad_refs", urn = %self.urn);
-        let _guard = span.enter();
-
-        // Collect refs/heads (our branches) at their current state
-        let heads = self.references_glob(Some("refs/heads/*"))?;
-        let heads: BTreeMap<String, Oid> = heads.map(|(name, oid)| (name, Oid(oid))).collect();
-
-        tracing::debug!(heads = ?heads);
-
-        // Get 1st degree tracked peers from the remotes configured in .git/config
-        let tracked = self.tracked()?;
-        let mut remotes: HashMap<PeerId, HashMap<PeerId, HashSet<PeerId>>> =
-            tracked.map(|peer| (peer, HashMap::new())).collect();
-
-        tracing::trace!(remotes.unverified = ?remotes);
-
-        // For each of the 1st degree tracked peers, lookup their rad/refs (if any),
-        // verify the signature, and add their [`Remotes`] to ours (minus the 3rd
-        // degree)
-        for (peer, tracked) in remotes.iter_mut() {
-            match self.rad_refs_of(peer.clone()) {
-                Ok(refs) => *tracked = refs.remotes.cutoff(),
-                Err(Error::Storage(storage::Error::NoSuchBranch(_)))
-                | Err(Error::Storage(storage::Error::NoSuchBlob(_))) => {},
-                Err(e) => return Err(e),
-            }
-        }
-
-        tracing::debug!(remotes.verified = ?remotes);
-
-        Ok(Refs {
-            heads,
-            remotes: remotes.into(),
-        })
-    }
-
-    fn tracked(&self) -> Result<Tracked, Error> {
-        Tracked::collect(&self.git, &self.urn).map_err(|e| e.into())
     }
 
     fn rad_refs_of(&self, peer: PeerId) -> Result<Refs, Error> {
@@ -488,7 +511,7 @@ impl<'a> Locked<'a> {
                 reference: &refs,
                 file_name: "refs",
             }
-            .get(&self.git)?;
+            .get(&self.storage)?;
             refs::Signed::from_json(blob.content(), &peer)
         }?;
 
@@ -501,24 +524,24 @@ impl<'a> Locked<'a> {
 
         let refsig_canonical = self
             .rad_refs()?
-            .sign(self.key)
+            .sign(&self.storage.key)
             .and_then(|signed| Cjson(signed).canonical_form())?;
 
         let rad_refs_ref = Reference::rad_refs(self.namespace(), None).to_string();
 
         let parent: Option<git2::Commit> = self
-            .git
+            .storage
             .find_reference(&rad_refs_ref)
             .and_then(|refs| refs.peel_to_commit().map(Some))
             .map_not_found::<Error, _>(|| Ok(None))?;
         let tree = {
-            let blob = self.git.blob(&refsig_canonical)?;
-            let mut builder = self.git.treebuilder(None)?;
+            let blob = self.storage.blob(&refsig_canonical)?;
+            let mut builder = self.storage.treebuilder(None)?;
 
             builder.insert("refs", blob, 0o100_644)?;
             let oid = builder.write()?;
 
-            self.git.find_tree(oid)
+            self.storage.find_tree(oid)
         }?;
 
         // Don't create a new commit if it would be the same tree as the parent
@@ -528,8 +551,8 @@ impl<'a> Locked<'a> {
             }
         }
 
-        let author = self.git.signature()?;
-        self.git.commit(
+        let author = self.storage.signature()?;
+        self.storage.commit(
             Some(&rad_refs_ref),
             &author,
             &author,
@@ -541,77 +564,9 @@ impl<'a> Locked<'a> {
         Ok(())
     }
 
-    fn fetch(&self, from: &PeerId) -> Result<(), Error> {
-        let namespace = &self.urn.id;
-
-        let mut remote = {
-            let local_peer = PeerId::from(self.key);
-            let url = GitUrlRef::from_rad_url_ref(self.urn.as_rad_url_ref(from), &local_peer);
-            self.git.remote_anonymous(&url.to_string())
-        }?;
-        remote.connect(git2::Direction::Fetch)?;
-
-        let rad_refs = self.rad_refs()?;
-        let tracked_trans = rad_refs.remotes.flatten().collect::<HashSet<&PeerId>>();
-
-        // Fetch rad/refs of all known remotes
-        {
-            let refspecs =
-                Refspec::rad_refs(namespace.clone(), from, tracked_trans.iter().cloned())
-                    .map(|spec| spec.to_string())
-                    .collect::<Vec<String>>();
-            tracing::debug!(refspecs = ?refspecs, "Fetching rad/refs");
-            remote.fetch(&refspecs, Some(&mut self.fetch_options()), None)?;
-        }
-
-        // Read the signed refs of all known remotes, and compare their `heads`
-        // against the advertised refs. If signed and advertised branch head
-        // match, non-fast-forwards are permitted. Otherwise, the branch is
-        // skipped.
-        {
-            let remote_heads: HashMap<&str, git2::Oid> = remote
-                .list()?
-                .iter()
-                .map(|rhead| (rhead.name(), rhead.oid()))
-                .collect();
-
-            let refspecs = Refspec::fetch_heads(
-                namespace.clone(),
-                remote_heads,
-                tracked_trans.iter().cloned(),
-                from,
-                |peer| self.rad_refs_of(peer),
-                |peer| self.certifiers_of(peer),
-            )?
-            .map(|spec| spec.to_string())
-            .collect::<Vec<String>>();
-
-            tracing::debug!(refspecs = ?refspecs, "Fetching refs/heads");
-            remote.fetch(&refspecs, Some(&mut self.fetch_options()), None)?;
-        }
-
-        // At this point, the transitive tracking graph may have changed. Let's
-        // update the refs, but don't recurse here for now (we could, if
-        // we reload `self.refs()` and compare to the value we had
-        // before fetching).
-        self.update_refs()
-    }
-
-    fn certifiers(&self) -> Result<HashSet<RadUrn>, Error> {
-        let mut refs = References::from_globs(
-            &self.git,
-            &[
-                format!("refs/namespaces/{}/refs/rad/ids/*", &self.urn.id),
-                format!("refs/namespaces/{}/refs/remotes/**/rad/ids/*", &self.urn.id),
-            ],
-        )?;
-        let refnames = refs.names();
-        Ok(urns_from_refs(refnames).collect())
-    }
-
     fn certifiers_of(&self, peer: &PeerId) -> Result<HashSet<RadUrn>, Error> {
         let mut refs = References::from_globs(
-            &self.git,
+            &self.storage,
             &[format!(
                 "refs/namespaces/{}/refs/remotes/{}/rad/ids/*",
                 &self.urn.id, peer
@@ -639,6 +594,17 @@ impl<'a> Locked<'a> {
             .remote_callbacks(cbs);
 
         fos
+    }
+}
+
+impl TryToOwned for Repo<'_> {
+    type Owned = Self;
+    type Error = Error;
+
+    fn try_to_owned(&self) -> Result<Self::Owned, Self::Error> {
+        let storage = self.storage.try_to_owned().map(TryCow::Owned)?;
+        let urn = self.urn.clone();
+        Ok(Self { storage, urn })
     }
 }
 

@@ -15,10 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    ops::Range,
-    sync::{Arc, Mutex, MutexGuard},
-};
+use std::ops::{Deref, Range};
 
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
@@ -30,6 +27,7 @@ use crate::{
         types::Reference,
         url::GitUrlRef,
     },
+    internal::borrow::TryToOwned,
     keys::SecretKey,
     meta::entity::{
         data::{EntityBuilder, EntityData},
@@ -53,20 +51,35 @@ pub enum Error {
     Git(#[from] git2::Error),
 }
 
-#[derive(Clone)]
 pub struct Storage {
-    backend: Arc<Mutex<git2::Repository>>,
+    pub(super) backend: git2::Repository,
     pub(crate) key: SecretKey,
+}
+
+impl Deref for Storage {
+    type Target = git2::Repository;
+
+    fn deref(&self) -> &Self::Target {
+        &self.backend
+    }
+}
+
+impl AsRef<git2::Repository> for Storage {
+    fn as_ref(&self) -> &git2::Repository {
+        self
+    }
 }
 
 impl Storage {
     pub fn open(paths: &Paths, key: SecretKey) -> Result<Self, Error> {
         git2::Repository::open_bare(paths.git_dir())
-            .map(|backend| Self {
-                backend: Arc::new(Mutex::new(backend)),
-                key,
-            })
+            .map(|backend| Self { backend, key })
             .map_err(|e| e.into())
+    }
+
+    /// Obtain a new, owned handle to the backing store.
+    pub fn reopen(&self) -> Result<Self, Error> {
+        self.try_to_owned()
     }
 
     pub fn init(paths: &Paths, key: SecretKey) -> Result<Self, Error> {
@@ -82,14 +95,10 @@ impl Storage {
         config.set_str("user.name", "radicle")?;
         config.set_str("user.email", &format!("radicle@{}", PeerId::from(&key)))?;
 
-        Ok(Self {
-            backend: Arc::new(Mutex::new(repo)),
-            key,
-        })
+        Ok(Self { backend: repo, key })
     }
 
-    // FIXME: decide if we want to require verified entities
-    pub fn create_repo<T>(self, meta: &Entity<T, Draft>) -> Result<Repo, repo::Error>
+    pub fn create_repo<T>(&self, meta: &Entity<T, Draft>) -> Result<Repo, repo::Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,
@@ -97,11 +106,15 @@ impl Storage {
         Repo::create(self, meta)
     }
 
-    pub fn open_repo(self, urn: RadUrn) -> Result<Repo, repo::Error> {
+    pub fn open_repo(&self, urn: RadUrn) -> Result<Repo, repo::Error> {
         Repo::open(self, urn)
     }
 
-    pub fn clone_repo<T>(self, url: RadUrl) -> Result<Repo, repo::Error>
+    /// Attempt to clone the designated repo from the network.
+    ///
+    /// Note that this method **must** be spawned on a `async` runtime, where
+    /// currently the only supported method is [`tokio::task::spawn_blocking`].
+    pub fn clone_repo<T>(&self, url: RadUrl) -> Result<Repo, repo::Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,
@@ -111,11 +124,7 @@ impl Storage {
 
     // Utils
 
-    pub(super) fn lock(&self) -> MutexGuard<git2::Repository> {
-        self.backend.lock().unwrap()
-    }
-
-    pub(crate) fn has_commit(&self, urn: &RadUrn, oid: git2::Oid) -> Result<bool, Error> {
+    pub fn has_commit(&self, urn: &RadUrn, oid: git2::Oid) -> Result<bool, Error> {
         let span = tracing::warn_span!("Storage::has_commit", urn = %urn, oid = %oid);
         let _guard = span.enter();
 
@@ -123,8 +132,7 @@ impl Storage {
             return Ok(false);
         }
 
-        let git = self.lock();
-        let commit = git.find_commit(oid);
+        let commit = self.backend.find_commit(oid);
         match commit {
             Err(e) if is_not_found_err(&e) => {
                 tracing::warn!("commit not found");
@@ -136,12 +144,12 @@ impl Storage {
                 let branch = branch.strip_prefix("refs/").unwrap_or(branch);
 
                 let refs = References::from_globs(
-                    &git,
+                    &self.backend,
                     &[format!("refs/namespaces/{}/refs/{}", namespace, branch)],
                 )?;
 
                 for (_, oid) in refs.peeled() {
-                    if oid == commit.id() || git.graph_descendant_of(oid, commit.id())? {
+                    if oid == commit.id() || self.backend.graph_descendant_of(oid, commit.id())? {
                         return Ok(true);
                     }
                 }
@@ -152,24 +160,24 @@ impl Storage {
         }
     }
 
-    pub(crate) fn has_ref(&self, reference: &Reference) -> Result<bool, Error> {
-        self.lock()
+    pub fn has_ref(&self, reference: &Reference) -> Result<bool, Error> {
+        self.backend
             .find_reference(&reference.to_string())
             .map(|_| true)
             .map_not_found(|| Ok(false))
     }
 
-    pub(crate) fn has_urn(&self, urn: &RadUrn) -> Result<bool, Error> {
+    pub fn has_urn(&self, urn: &RadUrn) -> Result<bool, Error> {
         let namespace = &urn.id;
         let branch = urn.path.deref_or_default();
         let branch = branch.strip_prefix("refs/").unwrap_or(branch);
-        self.lock()
+        self.backend
             .find_reference(&format!("refs/namespaces/{}/refs/{}", namespace, branch))
             .map(|_| true)
             .map_not_found(|| Ok(false))
     }
 
-    pub(crate) fn track(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
+    pub fn track(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
         let remote_name = tracking_remote_name(urn, peer);
         let url = GitUrlRef::from_rad_urn(&urn, &PeerId::from(&self.key), peer).to_string();
 
@@ -179,28 +187,32 @@ impl Storage {
             "Storage::track"
         );
 
-        let _ = self.lock().remote_with_fetch(
-            &remote_name,
-            &url,
-            &format!(
-                "refs/namespaces/{}/refs/*:refs/namespaces/{}/refs/remotes/{}/*",
-                urn.id, urn.id, peer
-            ),
-        )?;
+        let _ = self.backend.remote(&remote_name, &url)?;
         Ok(())
     }
 
-    pub(crate) fn untrack(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
+    pub fn untrack(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
         let remote_name = tracking_remote_name(urn, peer);
         // TODO: This removes all remote tracking branches matching the
         // fetchspec (I suppose). Not sure this is what we want.
-        self.lock()
+        self.backend
             .remote_delete(&remote_name)
             .map_err(|e| e.into())
     }
 
-    pub(crate) fn tracked(&self, urn: &RadUrn) -> Result<Tracked, Error> {
-        Tracked::collect(&self.lock(), urn).map_err(|e| e.into())
+    pub fn tracked(&self, urn: &RadUrn) -> Result<Tracked, Error> {
+        Tracked::collect(&self.backend, urn).map_err(|e| e.into())
+    }
+}
+
+impl TryToOwned for Storage {
+    type Owned = Self;
+    type Error = Error;
+
+    fn try_to_owned(&self) -> Result<Self::Owned, Self::Error> {
+        let backend = self.backend.try_to_owned()?;
+        let key = self.key.clone();
+        Ok(Self { backend, key })
     }
 }
 
