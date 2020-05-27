@@ -27,7 +27,11 @@ use futures::future::{BoxFuture, FutureExt};
 use thiserror::Error;
 
 use crate::{
-    git::{self, repo, server::GitServer, storage::Storage as GitStorage},
+    git::{
+        self,
+        server::GitServer,
+        storage::{self, Storage as GitStorage},
+    },
     internal::{borrow::TryToOwned, channel::Fanout},
     keys::{PublicKey, SecretKey},
     net::{
@@ -51,9 +55,6 @@ pub use types::*;
 pub enum GitFetchError {
     #[error("Already have {0}")]
     KnownObject(git2::Oid),
-
-    #[error(transparent)]
-    Repo(#[from] repo::Error),
 
     #[error(transparent)]
     Store(#[from] git::storage::Error),
@@ -301,8 +302,7 @@ impl PeerStorage {
         self.inner
             .lock()
             .unwrap()
-            .open_repo(urn)?
-            .fetch(from)
+            .fetch_repo(&urn, from)
             .map_err(|e| e.into())
     }
 
@@ -386,7 +386,7 @@ impl LocalStorage for PeerStorage {
                             Ok(()) => PutResult::Applied,
                             Err(e) => match e {
                                 GitFetchError::KnownObject(_) => PutResult::Stale,
-                                GitFetchError::Repo(repo::Error::NoSuchUrn(_)) => {
+                                GitFetchError::Store(storage::Error::NoSuchUrn(_)) => {
                                     PutResult::Uninteresting
                                 },
                                 e => {
