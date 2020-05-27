@@ -205,7 +205,7 @@ impl Storage {
 
         // Fetch the identity first
         let git_url = GitUrlRef::from_rad_url_ref(url.as_ref(), &local_peer_id);
-        let meta = self.fetch_id(&urn, git_url)?;
+        let meta = self.fetch_id(git_url)?;
 
         // TODO: properly verify meta
 
@@ -497,14 +497,14 @@ impl Storage {
 
     // FIXME: decide if we want to require verified entities
     // FIXME: yes, we do want that
-    fn fetch_id<T>(&self, urn: &RadUrn, url: GitUrlRef) -> Result<Entity<T, Draft>, Error>
+    fn fetch_id<T>(&self, url: GitUrlRef) -> Result<Entity<T, Draft>, Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,
     {
         tracing::debug!("Fetching id of {}", url);
 
-        let namespace = urn.id.clone();
+        let namespace = url.repo.clone();
         let id_branch = Reference::rad_id(namespace.clone());
         let certifiers_glob = Reference::rad_ids_glob(namespace);
 
