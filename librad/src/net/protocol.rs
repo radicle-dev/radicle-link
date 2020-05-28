@@ -17,7 +17,7 @@
 
 //! Main protocol dispatch loop
 
-use std::{collections::HashMap, fmt::Debug, future::Future, io, iter, net::SocketAddr, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, fmt::Debug, io, iter, net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
 use futures::{
@@ -69,8 +69,6 @@ enum Run<'a, A> {
     Gossip {
         event: gossip::ProtocolEvent<SocketAddr, A>,
     },
-
-    Shutdown,
 }
 
 #[derive(Debug, Error)]
@@ -133,23 +131,17 @@ where
     }
 
     /// Start the protocol run loop.
-    ///
-    /// This method terminates when the `Shutdown` future resolves, the program
-    /// is interrupted, or an error occurs.
-    pub async fn run<Disco, Shutdown>(
-        &mut self,
+    pub async fn run<Disco>(
+        self,
         quic::BoundEndpoint { endpoint, incoming }: quic::BoundEndpoint<'_>,
         disco: Disco,
-        shutdown: Shutdown,
     ) where
         Disco: futures::stream::Stream<Item = (PeerId, Vec<SocketAddr>)>,
-        Shutdown: Future<Output = ()> + Send,
     {
         let span = tracing::trace_span!("Protocol::run");
         let _guard = span.enter();
 
         let incoming = incoming.map(|(conn, i)| Ok(Run::Incoming { conn, incoming: i }));
-        let shutdown = futures::stream::once(shutdown).map(|()| Ok(Run::Shutdown));
         let bootstrap = disco.map(|(peer, addrs)| Ok(Run::Discovered { peer, addrs }));
         let gossip_events = self
             .gossip
@@ -159,17 +151,14 @@ where
 
         tracing::info!(msg = "Listening", local.addr = ?endpoint.local_addr());
 
-        futures::stream::select(
-            shutdown,
-            futures::stream::select(incoming, futures::stream::select(bootstrap, gossip_events)),
-        )
-        .try_for_each_concurrent(None, |run| {
-            let mut this = self.clone();
-            let endpoint = endpoint.clone();
-            async move { this.eval_run(endpoint, run).await }
-        })
-        .await
-        .unwrap_or_else(|()| tracing::warn!("Shutting down"))
+        futures::stream::select(incoming, futures::stream::select(bootstrap, gossip_events))
+            .try_for_each_concurrent(None, |run| {
+                let mut this = self.clone();
+                let endpoint = endpoint.clone();
+                async move { this.eval_run(endpoint, run).await }
+            })
+            .await
+            .unwrap_or_else(|()| tracing::warn!("Shutting down"))
     }
 
     /// Subscribe to an infinite stream of [`ProtocolEvent`]s.
@@ -287,11 +276,6 @@ where
                 },
 
                 gossip::ProtocolEvent::Info(_) => Ok(()),
-            },
-
-            Run::Shutdown => {
-                tracing::debug!("Run::Shutdown");
-                Err(())
             },
         }
     }
@@ -445,6 +429,16 @@ where
                 None
             },
         }
+    }
+}
+
+impl<'a, S, A> From<&'a Protocol<S, A>> for Cow<'a, Protocol<S, A>>
+where
+    S: Clone,
+    A: Clone,
+{
+    fn from(p: &'a Protocol<S, A>) -> Self {
+        Cow::Borrowed(p)
     }
 }
 

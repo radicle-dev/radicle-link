@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use async_trait::async_trait;
+
 use crate::peer::PeerId;
 
 #[derive(Clone, Copy, Debug)]
@@ -25,6 +27,7 @@ pub enum PutResult {
     Error,
 }
 
+#[async_trait]
 pub trait LocalStorage: Clone + Send + Sync {
     type Update;
 
@@ -39,11 +42,11 @@ pub trait LocalStorage: Clone + Send + Sync {
     /// up-to-date, or it was not possible to fetch the actual state from
     /// the `provider`. In this case, the network is asked to retransmit
     /// [`Self::Update`], so we can eventually try again.
-    fn put(&self, provider: &PeerId, has: Self::Update) -> PutResult;
+    async fn put(&self, provider: &PeerId, has: Self::Update) -> PutResult;
 
     /// Ask the local storage if value `A` is available.
     ///
     /// This is used to notify the asking peer that they may fetch value `A`
     /// from us.
-    fn ask(&self, want: Self::Update) -> bool;
+    async fn ask(&self, want: Self::Update) -> bool;
 }

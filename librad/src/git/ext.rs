@@ -21,6 +21,8 @@ use std::{fmt, ops::Deref};
 
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::internal::borrow::TryToOwned;
+
 /// Serializable [`git2::Oid`]
 #[derive(Debug)]
 pub struct Oid(pub git2::Oid);
@@ -175,5 +177,14 @@ impl<'a, 'b> Iterator for ReferenceNames<'a, 'b> {
                 Some(item)
             },
         })
+    }
+}
+
+impl TryToOwned for git2::Repository {
+    type Owned = git2::Repository;
+    type Error = git2::Error;
+
+    fn try_to_owned(&self) -> Result<Self::Owned, Self::Error> {
+        git2::Repository::open(self.path())
     }
 }
