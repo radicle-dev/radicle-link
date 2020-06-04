@@ -420,6 +420,50 @@ where
         Ok(key.sign(&self.canonical_data()?))
     }
 
+    /// Given a private key owned by the entity, sign the current entity
+    ///
+    /// The following checks are performed:
+    ///
+    /// - the entity has not been already signed using this same key
+    /// - this key is owned by the current entity
+    pub fn sign_owned(&mut self, key: &SecretKey) -> Result<(), Error> {
+        let public_key = key.public();
+        if self.signatures().contains_key(&public_key) {
+            return Err(Error::SignatureAlreadyPresent(public_key));
+        }
+        if !self.has_key(&public_key) {
+            return Err(Error::KeyNotPresent(public_key));
+        }
+        let signature = EntitySignature {
+            by: Signatory::OwnedKey,
+            sig: self.compute_signature(key)?,
+        };
+        self.signatures.insert(public_key, signature);
+        Ok(())
+    }
+
+    /// Given a private key owned by a verified user, sign the current entity
+    ///
+    /// The following checks are performed:
+    ///
+    /// - the entity has not been already signed using this same key
+    /// - this key is owned by the provided user
+    pub fn sign_by_user(&mut self, key: &SecretKey, user: &User<Verified>) -> Result<(), Error> {
+        let public_key = key.public();
+        if self.signatures().contains_key(&public_key) {
+            return Err(Error::SignatureAlreadyPresent(public_key));
+        }
+        if !user.has_key(&public_key) {
+            return Err(Error::UserKeyNotPresent(user.urn(), public_key));
+        }
+        let signature = EntitySignature {
+            by: Signatory::User(user.urn()),
+            sig: self.compute_signature(key)?,
+        };
+        self.signatures.insert(public_key, signature);
+        Ok(())
+    }
+
     /// Given a private key, sign the current entity
     ///
     /// The following checks are performed:

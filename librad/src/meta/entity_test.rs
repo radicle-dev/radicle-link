@@ -171,6 +171,24 @@ async fn test_user_signatures() {
     assert_ne!(&sig1, &sig2);
 }
 
+#[test]
+fn test_self_signatures() {
+    // Keep signing the user while adding keys
+    let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
+
+    user.sign_owned(&K1).unwrap();
+    let sig1 = user.compute_signature(&K1).unwrap();
+
+    // Cannot sign with a not-owned key
+    assert!(matches!(user.sign_owned(&K2), Err(Error::KeyNotPresent(_))));
+
+    let mut user = user.to_builder().add_key((*D2K).clone()).build().unwrap();
+    user.sign_owned(&K2).unwrap();
+    let sig2 = user.compute_signature(&K1).unwrap();
+
+    assert_ne!(&sig1, &sig2);
+}
+
 #[async_test]
 async fn test_adding_user_signatures() {
     let user = new_user("foo", 1, &[&*D1K]).unwrap();
@@ -474,6 +492,11 @@ async fn test_project_update() {
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(history.check().await, Ok(_)));
+
+    // Also check directly signing a user
+    let verified_user = history.check().await.unwrap();
+    let mut user2 = new_user("bar", 1, &[&*D4K]).unwrap();
+    assert!(matches!(user2.sign_by_user(&K1, &verified_user), Ok(_)));
 
     // Changing two devices out of three is not ok
     let mut user = history
