@@ -862,6 +862,29 @@ mod tests {
     }
 
     #[test]
+    fn test_idempotent_tracking() {
+        let tmp = tempdir().unwrap();
+        let paths = Paths::from_root(tmp).unwrap();
+        let key = SecretKey::new();
+        let store = Storage::init(&paths, key).unwrap();
+
+        let urn = RadUrn {
+            id: Hash::hash(b"lala"),
+            proto: uri::Protocol::Git,
+            path: uri::Path::empty(),
+        };
+        let peer = PeerId::from(SecretKey::new());
+
+        store.track(&urn, &peer).unwrap();
+
+        // Attempting to track again does not fail
+        store.track(&urn, &peer).unwrap();
+
+        let tracked = store.tracked(&urn).unwrap().next();
+        assert_eq!(tracked, Some(peer))
+    }
+
+    #[test]
     fn test_untrack() {
         let tmp = tempdir().unwrap();
         let paths = Paths::from_root(tmp).unwrap();
