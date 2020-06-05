@@ -133,6 +133,7 @@ pub struct PeerApi {
     protocol: Protocol<PeerStorage, Gossip>,
     storage: GitStorage,
     subscribers: Fanout<PeerEvent>,
+    paths: Paths,
 }
 
 impl PeerApi {
@@ -159,6 +160,10 @@ impl PeerApi {
     pub async fn subscribe(&self) -> impl futures::Stream<Item = PeerEvent> {
         self.subscribers.subscribe().await
     }
+
+    pub fn paths(&self) -> &Paths {
+        &self.paths
+    }
 }
 
 impl TryToOwned for PeerApi {
@@ -172,6 +177,7 @@ impl TryToOwned for PeerApi {
             protocol: self.protocol.clone(),
             storage,
             subscribers: self.subscribers.clone(),
+            paths: self.paths.clone(),
         })
     }
 }
@@ -219,6 +225,7 @@ impl Peer {
             storage,
             protocol: self.protocol,
             subscribers: self.subscribers,
+            paths: self.paths,
         };
         Ok((api, self.run_loop))
     }
