@@ -358,17 +358,10 @@ impl Storage {
             "Storage::track"
         );
 
-        match self.backend.remote(&remote_name, &url) {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                if err.code() == git2::ErrorCode::Exists {
-                    tracing::warn!(urn = %urn, peer = %peer, "already tracking remote");
-                    Ok(())
-                } else {
-                    Err(err.into())
-                }
-            },
-        }
+        self.backend
+            .remote(&remote_name, &url)
+            .map(|_| ())
+            .map_already_exists(|| Ok(()))
     }
 
     pub fn untrack(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
