@@ -25,6 +25,7 @@ you may need to install the following packages on a Debian system:
 * `libssl-dev`
 * `make` (GNU make)
 * `pkg-config`
+* `zlib1g-dev`
 
 For an up-to-date specification of the build and development toolchain, see the
 [Dockerfile used for CI](./.buildkite/docker/rust-nightly/Dockerfile).
