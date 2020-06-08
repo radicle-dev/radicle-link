@@ -42,6 +42,7 @@ unlicensed = "deny"
 # [possible values: any SPDX 3.7 short identifier (+ optional exception)].
 allow = [
     "Apache-2.0",
+    "BlueOak-1.0.0",
     "BSD-2-Clause",
     "CC0-1.0",
     "GPL-2.0",
