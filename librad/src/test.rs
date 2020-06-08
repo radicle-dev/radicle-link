@@ -15,13 +15,35 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod connection;
-pub mod discovery;
-pub mod gossip;
-pub mod peer;
-pub mod protocol;
-pub mod quic;
-pub mod tls;
-pub mod upgrade;
+//! Common testing utilities
 
-mod codec;
+#[cfg(test)]
+use std::{
+    fmt::{Debug, Display},
+    str::FromStr,
+};
+
+pub(crate) fn json_roundtrip<A>(a: A)
+where
+    for<'de> A: Debug + PartialEq + serde::Serialize + serde::Deserialize<'de>,
+{
+    assert_eq!(
+        a,
+        serde_json::from_str(&serde_json::to_string(&a).unwrap()).unwrap()
+    )
+}
+
+pub(crate) fn cbor_roundtrip<A>(a: A)
+where
+    for<'de> A: Debug + PartialEq + minicbor::Encode + minicbor::Decode<'de>,
+{
+    assert_eq!(a, minicbor::decode(&minicbor::to_vec(&a).unwrap()).unwrap())
+}
+
+pub(crate) fn str_roundtrip<A>(a: A)
+where
+    A: Debug + PartialEq + Display + FromStr,
+    <A as FromStr>::Err: Debug,
+{
+    assert_eq!(a, a.to_string().parse().unwrap())
+}

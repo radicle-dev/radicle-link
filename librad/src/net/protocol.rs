@@ -25,8 +25,7 @@ use futures::{
     lock::Mutex,
     stream::{BoxStream, StreamExt, TryStreamExt},
 };
-use futures_codec::CborCodecError;
-use serde::{Deserialize, Serialize};
+use minicbor::{Decode, Encode};
 use thiserror::Error;
 
 use crate::{
@@ -36,6 +35,7 @@ use crate::{
     },
     internal::channel::Fanout,
     net::{
+        codec::CborCodecError,
         connection::{CloseReason, LocalInfo, RemoteInfo, Stream},
         gossip,
         quic,
@@ -80,7 +80,7 @@ pub enum Error {
     Upgrade(#[from] upgrade::Error),
 
     #[error(transparent)]
-    Cbor(#[from] serde_cbor::Error),
+    Cbor(#[from] CborCodecError),
 
     #[error("Error handling gossip upgrade")]
     Gossip(#[from] gossip::error::Error),
@@ -95,15 +95,6 @@ pub enum Error {
     Io(#[from] io::Error),
 }
 
-impl From<CborCodecError> for Error {
-    fn from(e: CborCodecError) -> Self {
-        match e {
-            CborCodecError::Cbor(e) => Self::Cbor(e),
-            CborCodecError::Io(e) => Self::Io(e),
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct Protocol<S, A> {
     gossip: gossip::Protocol<S, A, SocketAddr, quic::RecvStream, quic::SendStream>,
@@ -116,7 +107,7 @@ pub struct Protocol<S, A> {
 impl<S, A> Protocol<S, A>
 where
     S: gossip::LocalStorage<Update = A> + 'static,
-    for<'de> A: Serialize + Deserialize<'de> + Clone + Debug + Send + Sync + 'static,
+    for<'de> A: Encode + Decode<'de> + Clone + Debug + Send + Sync + 'static,
 {
     pub fn new(
         gossip: gossip::Protocol<S, A, SocketAddr, quic::RecvStream, quic::SendStream>,
@@ -416,7 +407,7 @@ where
 impl<S, A> GitStreamFactory for Protocol<S, A>
 where
     S: gossip::LocalStorage<Update = A> + 'static,
-    for<'de> A: Serialize + Deserialize<'de> + Clone + Debug + Send + Sync + 'static,
+    for<'de> A: Encode + Decode<'de> + Clone + Debug + Send + Sync + 'static,
 {
     async fn open_stream(&self, to: &PeerId) -> Option<Box<dyn GitStream>> {
         let span = tracing::trace_span!("GitStreamFactory::open_stream", peer.id = %to);

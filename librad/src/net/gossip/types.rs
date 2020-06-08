@@ -17,33 +17,40 @@
 
 use std::{collections::HashSet, hash::Hash};
 
-use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
+use minicbor::{Decode, Encode};
 
 use crate::peer::PeerId;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Encode, Decode)]
 #[repr(u8)]
 pub enum Capability {
+    #[n(0)]
     Reserved = 0,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
+#[cbor(array)]
 pub struct PeerInfo<Addr>
 where
     Addr: Clone + PartialEq + Eq + Hash,
 {
+    #[n(0)]
     pub peer_id: PeerId,
+    #[n(1)]
     pub advertised_info: PeerAdvertisement<Addr>,
+    #[n(2)]
     pub seen_addrs: HashSet<Addr>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
+#[cbor(array)]
 pub struct PeerAdvertisement<Addr>
 where
     Addr: Clone + PartialEq + Eq + Hash,
 {
+    #[n(0)]
     pub listen_addr: Addr,
+    #[n(1)]
     pub capabilities: HashSet<Capability>,
 }
 

@@ -34,3 +34,6 @@ pub mod net;
 pub mod paths;
 pub mod peer;
 pub mod uri;
+
+#[cfg(test)]
+mod test;

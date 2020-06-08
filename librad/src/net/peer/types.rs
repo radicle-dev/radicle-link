@@ -15,15 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::fmt;
-
-use serde::{
-    de::{MapAccess, Visitor},
-    Deserialize,
-    Deserializer,
-    Serialize,
-    Serializer,
-};
+use minicbor::{Decode, Decoder, Encode, Encoder};
 
 use crate::{
     hash::Hash,
@@ -46,38 +38,33 @@ impl Rev {
     }
 }
 
-// FIXME: Below is standard CBOR tuple-encoding. We should really use a proper
-// CBOR library instead of serde (cf. #102)
-impl Serialize for Rev {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            Self::Git(oid) => {
-                let mut seq = vec![0];
-                seq.extend_from_slice(oid.as_bytes());
-                seq.serialize(serializer)
-            },
-        }
+impl Encode for Rev {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut Encoder<W>,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        let Self::Git(oid) = self;
+
+        e.array(2)?.u32(0)?.bytes(oid.as_ref())?;
+
+        Ok(())
     }
 }
 
-impl<'de> Deserialize<'de> for Rev {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let x = Vec::deserialize(deserializer)?;
-        match x.split_first() {
-            Some((tag, oid)) => match tag {
-                0 => git2::Oid::from_bytes(oid)
-                    .map(Self::Git)
-                    .map_err(serde::de::Error::custom),
-                _ => Err(serde::de::Error::custom("Unknown tag")),
-            },
+impl<'de> Decode<'de> for Rev {
+    fn decode(d: &mut Decoder<'de>) -> Result<Self, minicbor::decode::Error> {
+        if Some(2) != d.array()? {
+            return Err(minicbor::decode::Error::Message("expected 2-element array"));
+        }
 
-            None => Err(serde::de::Error::custom("No data")),
+        match d.u32()? {
+            0 => {
+                let bytes = d.bytes()?;
+                git2::Oid::from_bytes(bytes)
+                    .map(Self::Git)
+                    .map_err(|_| minicbor::decode::Error::Message("invalid git oid"))
+            },
+            n => Err(minicbor::decode::Error::UnknownVariant(n)),
         }
     }
 }
@@ -99,19 +86,22 @@ impl<'a> Into<&'a uri::Protocol> for &'a Rev {
 }
 
 /// The gossip payload type
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[cbor(array)]
 pub struct Gossip {
     /// URN of an updated or wanted repo.
     ///
     /// The path component denotes the named branch the `rev` was applied to.
     /// Defaults to `rad/id` if empty.
+    #[n(0)]
     pub urn: RadUrn,
 
     /// The revision advertised or wanted.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[n(1)]
     pub rev: Option<Rev>,
 
     /// The origin of the update.
+    #[n(2)]
     pub origin: PeerId,
 }
 
@@ -125,75 +115,31 @@ impl Gossip {
     }
 }
 
-impl<'de> Deserialize<'de> for Gossip {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "lowercase")]
-        enum Field {
-            Urn,
-            Rev,
-            Origin,
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        struct GossipVisitor;
+    use crate::{hash::Hash, keys::SecretKey, peer::PeerId, test::cbor_roundtrip, uri::Path};
 
-        impl<'de> Visitor<'de> for GossipVisitor {
-            type Value = Gossip;
+    lazy_static! {
+        static ref OID: git2::Oid =
+            git2::Oid::hash_object(git2::ObjectType::Commit, b"chrzbrr").unwrap();
+    }
 
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "struct Gossip")
-            }
+    #[test]
+    fn test_rev_cbor() {
+        cbor_roundtrip(Rev::Git(*OID));
+    }
 
-            fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
-            where
-                V: MapAccess<'de>,
-            {
-                let mut urn: Option<RadUrn> = None;
-                let mut rev: Option<Rev> = None;
-                let mut origin: Option<PeerId> = None;
+    #[test]
+    fn test_gossip_cbor() {
+        let gossip = Gossip::new(
+            Hash::hash(b"cerveza coronita"),
+            Path::new(),
+            Rev::Git(*OID),
+            PeerId::from(SecretKey::new()),
+        );
 
-                while let Some(key) = map.next_key()? {
-                    match key {
-                        Field::Urn => {
-                            if urn.is_some() {
-                                return Err(serde::de::Error::duplicate_field("urn"));
-                            }
-                            urn = Some(map.next_value()?);
-                        },
-
-                        Field::Rev => {
-                            if rev.is_some() {
-                                return Err(serde::de::Error::duplicate_field("rev"));
-                            }
-                            rev = Some(map.next_value()?);
-                        },
-
-                        Field::Origin => {
-                            if origin.is_some() {
-                                return Err(serde::de::Error::duplicate_field("origin"));
-                            }
-                            origin = Some(map.next_value()?);
-                        },
-                    }
-                }
-
-                let urn: RadUrn = urn.ok_or_else(|| serde::de::Error::missing_field("urn"))?;
-                let origin: PeerId =
-                    origin.ok_or_else(|| serde::de::Error::missing_field("origin"))?;
-
-                if let Some(ref rev) = rev {
-                    if &urn.proto != rev.as_proto() {
-                        return Err(serde::de::Error::custom("protocol mismatch"));
-                    }
-                }
-                Ok(Gossip { urn, rev, origin })
-            }
-        }
-
-        const FIELDS: &[&str] = &["urn", "rev", "origin"];
-        deserializer.deserialize_struct("Gossip", FIELDS, GossipVisitor)
+        cbor_roundtrip(gossip)
     }
 }

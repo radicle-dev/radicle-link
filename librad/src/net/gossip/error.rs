@@ -17,14 +17,12 @@
 
 use std::io;
 
-use futures_codec::CborCodecError;
 use thiserror::Error;
+
+use crate::net::codec::CborCodecError;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Invalid payload")]
-    InvalidPayload(#[source] serde_cbor::Error),
-
     #[error("Connection to self")]
     SelfConnection,
 
@@ -32,14 +30,8 @@ pub enum Error {
     StorageErrorRateLimitExceeded,
 
     #[error(transparent)]
-    Io(#[from] io::Error),
-}
+    Cbor(#[from] CborCodecError),
 
-impl From<CborCodecError> for Error {
-    fn from(err: CborCodecError) -> Self {
-        match err {
-            CborCodecError::Cbor(e) => Self::InvalidPayload(e),
-            CborCodecError::Io(e) => Self::Io(e),
-        }
-    }
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }

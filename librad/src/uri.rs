@@ -21,6 +21,7 @@ use std::{
     str::{FromStr, Utf8Error},
 };
 
+use minicbor::{Decode, Decoder, Encode, Encoder};
 use percent_encoding::{percent_decode_str, percent_encode, AsciiSet};
 use regex::RegexSet;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
@@ -50,8 +51,9 @@ const PATH_PERCENT_ENCODE_SET: &AsciiSet = &FRAGMENT_PERCENT_ENCODE_SET
 /// Protocol specifier in the context of a [`RadUrn`] or [`RadUrl`]
 ///
 /// This pertains to the VCS backend, implying the native wire protocol.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
 pub enum Protocol {
+    #[n(0)]
     Git,
     //Pijul,
 }
@@ -121,8 +123,7 @@ pub mod path {
 ///
 /// A [`Path`] is also a valid git branch name (as specified in
 /// `git-check-ref-format(1)`).
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Path(String);
 
 impl Path {
@@ -223,6 +224,25 @@ impl Deref for Path {
     }
 }
 
+impl Encode for Path {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut Encoder<W>,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        e.str(&self.0)?;
+        Ok(())
+    }
+}
+
+impl<'de> Decode<'de> for Path {
+    fn decode(d: &mut Decoder) -> Result<Self, minicbor::decode::Error> {
+        let s = d.str()?;
+        s.parse().or(Err(minicbor::decode::Error::Message(
+            "path violates format rules",
+        )))
+    }
+}
+
 /// A `RadUrn` identifies a branch in a verifiable `radicle-link` repository,
 /// where:
 ///
@@ -259,10 +279,16 @@ impl Deref for Path {
 ///     urn.to_string()
 /// )
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode)]
+#[cbor(array)]
 pub struct RadUrn {
+    #[n(0)]
     pub id: Hash,
+
+    #[n(1)]
     pub proto: Protocol,
+
+    #[n(2)]
     pub path: Path,
 }
 
@@ -408,9 +434,13 @@ impl<'de> Deserialize<'de> for RadUrn {
 ///
 /// The authority of a rad URL is a [`PeerId`], from which to retrieve the
 /// `radicle-link` repository and branch identified by [`RadUrn`].
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[cbor(array)]
 pub struct RadUrl {
+    #[n(0)]
     pub authority: PeerId,
+
+    #[n(1)]
     pub urn: RadUrn,
 }
 
@@ -577,49 +607,54 @@ mod tests {
 
     use sodiumoxide::crypto::sign::Seed;
 
-    use crate::{keys::SecretKey, peer::PeerId};
+    use crate::{
+        keys::SecretKey,
+        peer::PeerId,
+        test::{cbor_roundtrip, str_roundtrip},
+    };
 
     const SEED: Seed = Seed([
         20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81,
         181, 134, 74, 88, 174, 254, 78, 69, 84, 149, 84, 167,
     ]);
 
-    #[test]
-    fn test_urn_roundtrip() {
-        let urn = RadUrn {
+    lazy_static! {
+        static ref URN: RadUrn = RadUrn {
             id: Hash::hash(b"geez"),
             proto: Protocol::Git,
             path: Path::parse("rad/issues/42").unwrap(),
         };
+        static ref URL: RadUrl = URN
+            .clone()
+            .into_rad_url(PeerId::from(SecretKey::from_seed(&SEED)));
+    }
 
-        assert_eq!(urn, urn.clone().to_string().parse().unwrap())
+    #[test]
+    fn test_urn_str() {
+        str_roundtrip(URN.clone())
+    }
+
+    #[test]
+    fn test_urn_cbor() {
+        cbor_roundtrip(URN.clone())
     }
 
     #[test]
     fn test_url_example() {
-        let url = RadUrn {
-            id: Hash::hash(b"geez"),
-            proto: Protocol::Git,
-            path: Path::parse("rad/issues/42").unwrap(),
-        }
-        .into_rad_url(PeerId::from(SecretKey::from_seed(&SEED)));
-
         assert_eq!(
             "rad+git://hyduh7ymr5a1n7zo54iyix36dyqh3o84wbi95muirt7mbiobar3d9s/hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/rad/issues/42",
-            url.to_string()
+            URL.to_string()
         )
     }
 
     #[test]
-    fn test_url_roundtrip() {
-        let url = RadUrn {
-            id: Hash::hash(b"geez"),
-            proto: Protocol::Git,
-            path: Path::parse("rad/issue#foos/42").unwrap(),
-        }
-        .into_rad_url(PeerId::from(SecretKey::from_seed(&SEED)));
+    fn test_url_str() {
+        str_roundtrip(URL.clone())
+    }
 
-        assert_eq!(url, url.clone().to_string().parse().unwrap())
+    #[test]
+    fn test_url_cbor() {
+        cbor_roundtrip(URL.clone())
     }
 
     #[test]
