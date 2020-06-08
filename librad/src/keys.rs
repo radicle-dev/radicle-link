@@ -278,6 +278,34 @@ impl<'de> Deserialize<'de> for PublicKey {
     }
 }
 
+impl minicbor::Encode for PublicKey {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut minicbor::Encoder<W>,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        e.array(2)?.u8(VERSION)?.bytes(self.0.as_ref())?;
+        Ok(())
+    }
+}
+
+impl<'b> minicbor::Decode<'b> for PublicKey {
+    fn decode(d: &mut minicbor::Decoder<'b>) -> Result<Self, minicbor::decode::Error> {
+        if Some(2) != d.array()? {
+            return Err(minicbor::decode::Error::Message("expected 2-element array"));
+        }
+        if VERSION != d.u8()? {
+            return Err(minicbor::decode::Error::Message("Unknown version"));
+        }
+
+        let data = d.bytes()?;
+        ed25519::PublicKey::from_slice(data)
+            .map(PublicKey)
+            .ok_or(minicbor::decode::Error::Message(
+                "Invalid length for ed25519 public key",
+            ))
+    }
+}
+
 // Signature
 
 impl Signature {
@@ -376,9 +404,39 @@ impl<'de> Deserialize<'de> for Signature {
     }
 }
 
+impl minicbor::Encode for Signature {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut minicbor::Encoder<W>,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        e.array(2)?.u8(VERSION)?.bytes(self.0.as_ref())?;
+        Ok(())
+    }
+}
+
+impl<'b> minicbor::Decode<'b> for Signature {
+    fn decode(d: &mut minicbor::Decoder<'b>) -> Result<Self, minicbor::decode::Error> {
+        if Some(2) != d.array()? {
+            return Err(minicbor::decode::Error::Message("expected 2-element array"));
+        }
+        if VERSION != d.u8()? {
+            return Err(minicbor::decode::Error::Message("Unknown version"));
+        }
+
+        let data = d.bytes()?;
+        ed25519::Signature::from_slice(data)
+            .map(Signature)
+            .ok_or(minicbor::decode::Error::Message(
+                "Invalid length for ed25519 signature",
+            ))
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
+
+    use crate::test::*;
 
     const DATA_TO_SIGN: &[u8] = b"alors monsieur";
 
@@ -397,12 +455,13 @@ pub mod tests {
     }
 
     #[test]
-    fn test_public_key_serde() {
-        let pk = SecretKey::new().public();
-        assert_eq!(
-            pk,
-            serde_json::from_str(&serde_json::to_string(&pk).unwrap()).unwrap()
-        )
+    fn test_public_key_json() {
+        json_roundtrip(SecretKey::new().public())
+    }
+
+    #[test]
+    fn test_public_key_cbor() {
+        cbor_roundtrip(SecretKey::new().public())
     }
 
     #[test]
@@ -419,19 +478,18 @@ pub mod tests {
     }
 
     #[test]
-    fn test_signature_serde() {
-        let key = SecretKey::new();
-        let sig = key.sign(&DATA_TO_SIGN);
-        assert_eq!(
-            sig,
-            serde_json::from_str(&serde_json::to_string(&sig).unwrap()).unwrap()
-        )
+    fn test_signature_json() {
+        json_roundtrip(SecretKey::new().sign(&DATA_TO_SIGN))
+    }
+
+    #[test]
+    fn test_signature_cbor() {
+        cbor_roundtrip(SecretKey::new().sign(&DATA_TO_SIGN))
     }
 
     #[test]
     fn test_signature_deserialize_wrong_version() {
-        let key = SecretKey::new();
-        let sig = key.sign(&DATA_TO_SIGN);
+        let sig = SecretKey::new().sign(&DATA_TO_SIGN);
         let ser = multibase::encode(
             Base::Base32Z,
             iter::once(&1)

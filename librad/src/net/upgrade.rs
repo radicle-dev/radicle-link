@@ -28,20 +28,27 @@ use futures::{
     stream::TryStreamExt,
     task::{Context, Poll},
 };
-use futures_codec::{CborCodec, CborCodecError, Framed};
-use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
+use futures_codec::Framed;
+use minicbor::{Decode, Encode};
 use thiserror::Error;
 
-use crate::{git::transport::GitStream, net::quic};
+use crate::{
+    git::transport::GitStream,
+    net::{
+        codec::{CborCodec, CborCodecError},
+        quic,
+    },
+};
 
 pub struct Gossip;
 pub struct Git;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
 #[repr(u8)]
 pub enum UpgradeRequest {
+    #[n(0)]
     Gossip = 0,
+    #[n(1)]
     Git = 1,
 }
 
@@ -57,19 +64,23 @@ impl Into<UpgradeRequest> for Git {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub enum UpgradeResponse {
     // TODO(kim): Technically, we don't need a confirmation. Keeping it here for
     // now, so we can send back an error. Maybe we'll also need some additional
     // response payload in the future, who knows.
-    SwitchingProtocols(UpgradeRequest),
-    Error(UpgradeError),
+    #[n(0)]
+    SwitchingProtocols(#[n(0)] UpgradeRequest),
+    #[n(1)]
+    Error(#[n(0)] UpgradeError),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub enum UpgradeError {
+    #[n(0)]
     InvalidPayload,
-    UnsupportedUpgrade(UpgradeRequest), // reserved
+    #[n(1)]
+    UnsupportedUpgrade(#[n(0)] UpgradeRequest), // reserved
 }
 
 #[derive(Debug, Error)]
@@ -90,22 +101,13 @@ pub enum Error {
     NoResponse,
 
     #[error(transparent)]
-    Cbor(#[from] serde_cbor::Error),
+    Cbor(#[from] CborCodecError),
 
     #[error(transparent)]
     Quic(#[from] quic::Error),
 
     #[error(transparent)]
     Io(#[from] io::Error),
-}
-
-impl From<CborCodecError> for Error {
-    fn from(e: CborCodecError) -> Self {
-        match e {
-            CborCodecError::Cbor(e) => Self::Cbor(e),
-            CborCodecError::Io(e) => Self::Io(e),
-        }
-    }
 }
 
 pub struct Upgraded<S, U> {
@@ -254,7 +256,7 @@ mod tests {
     use futures::try_join;
     use futures_await_test::async_test;
 
-    use crate::{keys::SecretKey, net::connection::mock::MockStream};
+    use crate::{keys::SecretKey, net::connection::mock::MockStream, test::cbor_roundtrip};
 
     #[async_test]
     async fn test_upgrade() -> Result<(), Error> {
@@ -271,5 +273,23 @@ mod tests {
             }
         )
         .map(|_| ())
+    }
+
+    #[test]
+    fn test_request_cbor() {
+        cbor_roundtrip(UpgradeRequest::Gossip);
+        cbor_roundtrip(UpgradeRequest::Git)
+    }
+
+    #[test]
+    fn test_response_cbor() {
+        cbor_roundtrip(UpgradeResponse::SwitchingProtocols(UpgradeRequest::Gossip));
+        cbor_roundtrip(UpgradeResponse::Error(UpgradeError::InvalidPayload))
+    }
+
+    #[test]
+    fn test_error_cbor() {
+        cbor_roundtrip(UpgradeError::InvalidPayload);
+        cbor_roundtrip(UpgradeError::UnsupportedUpgrade(UpgradeRequest::Git))
     }
 }

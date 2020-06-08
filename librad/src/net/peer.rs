@@ -440,34 +440,3 @@ impl LocalStorage for PeerStorage {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::{hash::Hash, keys::SecretKey, peer::PeerId, uri::Path};
-
-    #[test]
-    fn test_rev_serde() {
-        let rev = Rev::Git(git2::Oid::hash_object(git2::ObjectType::Commit, b"chrzbrr").unwrap());
-        assert_eq!(
-            rev,
-            serde_cbor::from_slice(&serde_cbor::to_vec(&rev).unwrap()).unwrap()
-        )
-    }
-
-    #[test]
-    fn test_gossip_serde() {
-        let rev = Rev::Git(git2::Oid::hash_object(git2::ObjectType::Commit, b"chrzbrr").unwrap());
-        let gossip = Gossip::new(
-            Hash::hash(b"cerveza coronita"),
-            Path::new(),
-            rev,
-            PeerId::from(SecretKey::new()),
-        );
-        assert_eq!(
-            gossip,
-            serde_cbor::from_slice(&serde_cbor::to_vec(&gossip).unwrap()).unwrap()
-        )
-    }
-}

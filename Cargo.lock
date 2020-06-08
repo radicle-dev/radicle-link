@@ -858,6 +858,7 @@ dependencies = [
  "libgit2-sys",
  "log",
  "matches",
+ "minicbor",
  "multibase",
  "multihash",
  "nonempty 0.2.0",
@@ -874,9 +875,7 @@ dependencies = [
  "rustls",
  "secstr",
  "serde",
- "serde_cbor",
  "serde_json",
- "serde_repr",
  "sha2",
  "sodiumoxide",
  "tempfile",
@@ -955,6 +954,26 @@ name = "memchr"
 version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3728d817d99e5ac407411fa471ff9800a778d88a24685968b36824eaf4bee400"
+
+[[package]]
+name = "minicbor"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ba51ba9e365147a1bfb1442afbb5d887530eee5ed7dca410c2ba365ad617083"
+dependencies = [
+ "minicbor-derive",
+]
+
+[[package]]
+name = "minicbor-derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3436a67b46fbf4b5cc25a37341b3daf0371496dac1161422b96225dde8f603ee"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "mio"
@@ -1823,17 +1842,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "serde_repr"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd02c7587ec314570041b2754829f84d873ced14a96d1fd1823531e11db40573"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

@@ -17,13 +17,15 @@
 
 use std::{convert::TryFrom, fmt, ops::Deref, str::FromStr};
 
+use minicbor::{Decode, Encode};
 use multibase::Base::Base32Z;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::keys::{self, PublicKey, SecretKey};
 
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
-pub struct PeerId(PublicKey);
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Encode, Decode)]
+#[cbor(array)]
+pub struct PeerId(#[n(0)] PublicKey);
 
 impl PeerId {
     pub fn device_key(&self) -> &PublicKey {
@@ -213,6 +215,8 @@ impl<'a, T> From<&'a Originates<T>> for OriginatesRef<'a, T> {
 pub mod tests {
     use super::*;
 
+    use crate::test::*;
+
     #[test]
     fn test_default_encoding_roundtrip() {
         let peer_id1 = PeerId::from(SecretKey::new().public());
@@ -231,10 +235,12 @@ pub mod tests {
 
     #[test]
     fn test_str_roundtrip() {
-        let peer_id1 = PeerId::from(SecretKey::new().public());
-        let peer_id2 = PeerId::from_str(&peer_id1.to_string()).unwrap();
+        str_roundtrip(PeerId::from(SecretKey::new().public()));
+    }
 
-        assert_eq!(peer_id1, peer_id2)
+    #[test]
+    fn test_cbor_roundtrip() {
+        cbor_roundtrip(PeerId::from(SecretKey::new().public()))
     }
 
     #[test]

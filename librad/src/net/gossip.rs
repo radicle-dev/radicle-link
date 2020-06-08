@@ -42,16 +42,17 @@ use futures::{
     sink::SinkExt,
     stream::StreamExt,
 };
-use futures_codec::{CborCodec, Framed, FramedRead, FramedWrite};
+use futures_codec::{Framed, FramedRead, FramedWrite};
 use futures_timer::Delay;
 use governor::{Quota, RateLimiter};
+use minicbor::{Decode, Encode};
 use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     internal::channel::Fanout,
     net::{
+        codec::CborCodec,
         connection::{self, RemoteInfo},
         gossip::error::Error,
         upgrade::{self, Upgraded},
@@ -312,17 +313,9 @@ where
 impl<Storage, Broadcast, Addr, R, W> Protocol<Storage, Broadcast, Addr, R, W>
 where
     Storage: LocalStorage<Update = Broadcast> + 'static,
-    for<'de> Broadcast: Serialize + Deserialize<'de> + Clone + Debug + Send + Sync + 'static,
-    for<'de> Addr: Serialize
-        + Deserialize<'de>
-        + Clone
-        + Debug
-        + Hash
-        + PartialEq
-        + Eq
-        + Send
-        + Sync
-        + 'static,
+    for<'de> Broadcast: Encode + Decode<'de> + Clone + Debug + Send + Sync + 'static,
+    for<'de> Addr:
+        Encode + Decode<'de> + Clone + Debug + Hash + PartialEq + Eq + Send + Sync + 'static,
     R: AsyncRead + RemoteInfo<Addr = Addr> + Unpin + Send + Sync + 'static,
     W: AsyncWrite + RemoteInfo<Addr = Addr> + Unpin + Send + Sync + 'static,
 {

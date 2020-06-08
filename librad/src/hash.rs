@@ -133,6 +133,27 @@ impl<'de> Deserialize<'de> for Hash {
     }
 }
 
+impl minicbor::Encode for Hash {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut minicbor::Encoder<W>,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        e.bytes(self.0.as_bytes())?;
+        Ok(())
+    }
+}
+
+impl<'de> minicbor::Decode<'de> for Hash {
+    fn decode(d: &mut minicbor::Decoder<'de>) -> Result<Self, minicbor::decode::Error> {
+        let bytes = d.bytes()?;
+        let mhash = Multihash::from_bytes(bytes.to_vec())
+            .or(Err(minicbor::decode::Error::Message("invalid multihash")))?;
+        Self::try_from(mhash).or(Err(minicbor::decode::Error::Message(
+            "unsupported hash algorithm",
+        )))
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct HashRef<'a>(&'a Multihash);
 
@@ -162,6 +183,16 @@ impl<'a> Display for HashRef<'a> {
     }
 }
 
+impl minicbor::Encode for HashRef<'_> {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut minicbor::Encoder<W>,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        e.bytes(self.0.as_bytes())?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod fast {
     use std::{
@@ -172,14 +203,15 @@ mod fast {
     };
 
     use fnv::FnvHasher;
+    use minicbor::{Decode, Encode};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     /// A fast, but not cryptographically secure hash function
     ///
     /// **Only** use this in test code which does not rely on collision
     /// resistance properties of the hash function.
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    pub struct FastHash(u64);
+    #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+    pub struct FastHash(#[n(0)] u64);
 
     impl super::Hasher for FastHash {
         fn hash(data: &[u8]) -> Self {
@@ -230,26 +262,29 @@ mod tests {
 
     use rand::random;
 
+    use crate::test::*;
+
     fn is_a_deterministic_function<H: Hasher + Debug>() {
         let data: [u8; 32] = random();
         assert_eq!(H::hash(&data), H::hash(&data))
     }
 
-    fn can_serde<H>()
+    fn can_json<H>()
     where
         for<'de> H: Hasher + Debug + Serialize + Deserialize<'de>,
     {
         let data: [u8; 32] = random();
         let hash = H::hash(&data);
+        json_roundtrip(hash)
+    }
 
-        let json = serde_json::to_string(&hash).unwrap();
-        let de1 = serde_json::from_str(&json).unwrap();
-
-        let cbor = serde_cbor::to_vec(&hash).unwrap();
-        let de2 = serde_cbor::from_slice(&cbor).unwrap();
-
-        assert_eq!(de1, de2);
-        assert_eq!(hash, de1);
+    fn can_cbor<H>()
+    where
+        for<'de> H: Hasher + Debug + minicbor::Encode + minicbor::Decode<'de>,
+    {
+        let data: [u8; 32] = random();
+        let hash = H::hash(&data);
+        cbor_roundtrip(hash)
     }
 
     fn can_display_from_str<H>()
@@ -258,9 +293,8 @@ mod tests {
         H::Err: Debug,
     {
         let data: [u8; 32] = random();
-        let hash1 = H::hash(&data);
-        let hash2 = hash1.to_string().parse().unwrap();
-        assert_eq!(hash1, hash2)
+        let hash = H::hash(&data);
+        str_roundtrip(hash)
     }
 
     #[test]
@@ -270,13 +304,29 @@ mod tests {
     }
 
     #[test]
-    fn test_serde() {
-        can_serde::<Hash>();
-        can_serde::<FastHash>();
+    fn test_json() {
+        can_json::<Hash>();
+        can_json::<FastHash>();
     }
 
     #[test]
-    fn test_serde_wrong_algorithm() {
+    fn test_cbor() {
+        can_cbor::<Hash>();
+        can_cbor::<FastHash>();
+    }
+
+    #[test]
+    fn test_ref_cbor() {
+        let data: [u8; 32] = random();
+        let hash = Hash::hash(&data);
+        assert_eq!(
+            hash,
+            minicbor::decode(&minicbor::to_vec(hash.as_ref()).unwrap()).unwrap()
+        )
+    }
+
+    #[test]
+    fn test_json_wrong_algorithm() {
         let data: [u8; 32] = random();
 
         let sha3 = multibase::encode(Base::Base32Z, multihash::Sha3_256::digest(&data));
@@ -291,6 +341,23 @@ mod tests {
         assert!(
             expect_err.starts_with("Invalid hash algorithm, expected Blake2b256, actual Sha3_256")
         )
+    }
+
+    #[test]
+    fn test_cbor_wrong_algorithm() {
+        let data: [u8; 32] = random();
+
+        let sha3 = multihash::Sha3_256::digest(&data);
+
+        let mut buf = [0u8; 36];
+        let mut encoder = minicbor::Encoder::new(&mut buf[..]);
+        encoder.bytes(sha3.as_bytes()).unwrap();
+
+        let de: Result<Hash, minicbor::decode::Error> = minicbor::decode(&buf);
+
+        // Same thing
+        let expect_err = de.unwrap_err().to_string();
+        assert_eq!(expect_err, "unsupported hash algorithm")
     }
 
     #[test]
