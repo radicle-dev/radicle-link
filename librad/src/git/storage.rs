@@ -18,6 +18,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     ops::{Deref, Range},
+    str::FromStr,
 };
 
 use radicle_surf::vcs::git as surf;
@@ -47,7 +48,7 @@ use crate::{
     },
     paths::Paths,
     peer::PeerId,
-    uri::{self, RadUrl, RadUrn},
+    uri::{self, Path, Protocol, RadUrl, RadUrn},
 };
 
 #[derive(Debug, Error)]
@@ -501,6 +502,25 @@ impl Storage {
         }))
     }
 
+    pub fn entity_metadata_commit(&self, urn: &RadUrn) -> Option<git2::Oid> {
+        References::from_globs(&self, &[format!("refs/namespaces/{}/refs/rad/id", &urn.id)])
+            .ok()
+            .and_then(|refs| refs.peeled().map(|(_, oid)| oid).next())
+    }
+
+    pub fn entity_metadata_commits<'a>(
+        &'a self,
+    ) -> Result<impl Iterator<Item = (RadUrn, git2::Oid)> + 'a, Error> {
+        Ok(
+            References::from_globs(&self, &["refs/namespaces/*/refs/rad/id"])?
+                .peeled()
+                .filter_map(move |(refname, oid)| match urn_from_idref(&refname) {
+                    Some(urn) => Some((urn, oid)),
+                    None => None,
+                }),
+        )
+    }
+
     pub fn certifiers_of(&self, urn: &RadUrn, peer: &PeerId) -> Result<HashSet<RadUrn>, Error> {
         let mut refs = References::from_globs(
             &self,
@@ -829,20 +849,41 @@ fn tracking_remote_name(urn: &RadUrn, peer: &PeerId) -> String {
     format!("{}/{}", urn.id, peer)
 }
 
+fn urn_from_idref(refname: &str) -> Option<RadUrn> {
+    refname
+        .strip_suffix("/refs/rad/id")
+        .and_then(|namespace_root| {
+            namespace_root
+                .split('/')
+                .next_back()
+                .and_then(|namespace| Hash::from_str(namespace).ok())
+                .map(|hash| RadUrn::new(hash, Protocol::Git, Path::empty()))
+        })
+}
+
+fn urn_from_ref(refname: &str) -> Option<RadUrn> {
+    refname
+        .split('/')
+        .next_back()
+        .and_then(|urn| urn.parse().ok())
+}
+
 fn urns_from_refs<'a, E>(
     refs: impl Iterator<Item = Result<&'a str, E>> + 'a,
 ) -> impl Iterator<Item = RadUrn> + 'a {
-    refs.filter_map(|refname| {
-        refname
-            .ok()
-            .and_then(|name| name.split('/').next_back())
-            .and_then(|urn| urn.parse().ok())
-    })
+    refs.filter_map(|refname| refname.ok().and_then(urn_from_ref))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::meta::{
+        entity::{Draft, Resolver},
+        Project,
+        User,
+    };
+    use async_trait::async_trait;
+    use futures_await_test::async_test;
 
     use tempfile::tempdir;
 
@@ -913,13 +954,67 @@ mod tests {
         assert!(store.tracked(&urn).unwrap().next().is_none())
     }
 
+    struct DummyUserResolver(User<Draft>);
+    #[async_trait]
+    impl Resolver<User<Draft>> for DummyUserResolver {
+        async fn resolve(&self, _uri: &RadUrn) -> Result<User<Draft>, entity::Error> {
+            Ok(self.0.clone())
+        }
+        async fn resolve_revision(
+            &self,
+            _uri: &RadUrn,
+            _revision: u64,
+        ) -> Result<User<Draft>, entity::Error> {
+            Ok(self.0.clone())
+        }
+    }
+
+    #[async_test]
+    async fn test_entity_metadata_commits() {
+        let tmp = tempdir().unwrap();
+        let paths = Paths::from_root(tmp).unwrap();
+        let user_key = SecretKey::new();
+        let store = Storage::init(&paths, user_key.clone()).unwrap();
+
+        let mut user = User::<Draft>::create("user".to_owned(), user_key.public()).unwrap();
+        user.sign_owned(&user_key).unwrap();
+        let user_resolver = DummyUserResolver(user.clone());
+        let verified_user = user
+            .clone()
+            .check_history_status(&user_resolver, &user_resolver)
+            .await
+            .unwrap();
+
+        let mut project_foo = Project::<Draft>::create("foo".to_owned(), user.urn()).unwrap();
+        let mut project_bar = Project::<Draft>::create("bar".to_owned(), user.urn()).unwrap();
+
+        project_foo.sign_by_user(&user_key, &verified_user).unwrap();
+        project_bar.sign_by_user(&user_key, &verified_user).unwrap();
+
+        store.create_repo(&user).unwrap();
+        store.create_repo(&project_foo).unwrap();
+        store.create_repo(&project_bar).unwrap();
+
+        let mut ids = HashSet::new();
+        ids.insert(user.hash());
+        ids.insert(project_foo.hash());
+        ids.insert(project_bar.hash());
+        for (urn, oid) in store.entity_metadata_commits().unwrap() {
+            let id = &urn.id;
+            assert!(ids.contains(id));
+            let branch = store.entity_metadata_commit(&urn).unwrap();
+            assert_eq!(branch, oid);
+            ids.remove(id);
+        }
+        assert!(ids.is_empty());
+    }
+    
     #[test]
     fn test_open_or_init() {
         let tmp = tempdir().unwrap();
         let paths = Paths::from_root(tmp).unwrap();
         let key = SecretKey::new();
         let store = Storage::open(&paths, key);
-
         if let Err(err) = store {
             assert!(false, "failed to open Storage: {:?}", err)
         };
