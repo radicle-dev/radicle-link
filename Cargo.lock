@@ -1388,7 +1388,7 @@ dependencies = [
 [[package]]
 name = "radicle-surf"
 version = "0.2.1"
-source = "git+https://github.com/radicle-dev/radicle-surf?rev=e484b1b13dfdbdb8e078095b3b28737b042155c3#e484b1b13dfdbdb8e078095b3b28737b042155c3"
+source = "git+https://github.com/radicle-dev/radicle-surf?rev=2ec8be3a3467bcc1587f235f313910cd2462bd33#2ec8be3a3467bcc1587f235f313910cd2462bd33"
 dependencies = [
  "git2",
  "lazy_static",

@@ -296,8 +296,15 @@ impl Storage {
         self.update_refs(urn)
     }
 
-    pub fn browser(&'_ self, _urn: &RadUrn) -> Result<surf::Browser<'_>, Error> {
-        Ok(surf::Browser::new(&self.backend)?)
+    pub fn browser(&'_ self, urn: &RadUrn) -> Result<surf::Browser<'_>, Error> {
+        // TODO: we need to fetch the user/project to look what the default branch is.
+        let default_branch = "master";
+        let namespace = surf::Namespace::from(urn.id.to_string().as_str());
+        Ok(surf::Browser::new_with_namespace(
+            &self.backend,
+            &namespace,
+            default_branch,
+        )?)
     }
 
     // Utils

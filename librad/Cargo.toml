@@ -65,7 +65,7 @@ path = "../radicle-keystore"
 
 [dependencies.radicle-surf]
 git = "https://github.com/radicle-dev/radicle-surf"
-rev = "e484b1b13dfdbdb8e078095b3b28737b042155c3"
+rev = "8805a1c2cc0672c5a2a2c483255a7f54d0c4ca57"
 
 [dependencies.rustls]
 version = "0.17"
