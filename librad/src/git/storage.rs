@@ -109,6 +109,24 @@ impl AsRef<git2::Repository> for Storage {
     }
 }
 
+pub struct LinearHistoryCommits<'a>(Option<git2::Commit<'a>>);
+
+impl<'a> Iterator for LinearHistoryCommits<'a> {
+    type Item = git2::Commit<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self
+            .0
+            .as_ref()
+            .and_then(|commit| match commit.parents().len() {
+                1 => commit.parents().next(),
+                _ => None,
+            });
+        let result = self.0.clone();
+        self.0 = next;
+        result
+    }
+}
+
 impl Storage {
     /// Open the `Storage` found at the given [`Paths`]'s `git_dir`.
     /// If the path does not exist we initialise the `Storage` with
@@ -502,20 +520,45 @@ impl Storage {
         }))
     }
 
-    pub fn entity_metadata_commit(&self, urn: &RadUrn) -> Option<git2::Oid> {
+    pub fn entity_blob<'a>(&'a self, commit: git2::Commit<'a>) -> Result<git2::Blob, Error> {
+        blob(&self, commit.tree()?, "id")
+    }
+
+    pub fn entity_parent_commit(&self, commit_oid: git2::Oid) -> Option<git2::Commit> {
+        self.backend
+            .find_commit(commit_oid)
+            .ok()
+            .and_then(|commit| match commit.parents().len() {
+                1 => commit.parents().next(),
+                _ => None,
+            })
+    }
+
+    pub fn linear_commit_history<'a>(
+        &'a self,
+        commit: git2::Commit<'a>,
+    ) -> LinearHistoryCommits<'a> {
+        LinearHistoryCommits(Some(commit))
+    }
+
+    pub fn entity_metadata_commit(&self, urn: &RadUrn) -> Option<git2::Commit> {
         References::from_globs(&self, &[format!("refs/namespaces/{}/refs/rad/id", &urn.id)])
             .ok()
             .and_then(|refs| refs.peeled().map(|(_, oid)| oid).next())
+            .and_then(|oid| self.backend.find_commit(oid).ok())
     }
 
     pub fn entity_metadata_commits<'a>(
         &'a self,
-    ) -> Result<impl Iterator<Item = (RadUrn, git2::Oid)> + 'a, Error> {
+    ) -> Result<impl Iterator<Item = (RadUrn, git2::Commit)> + 'a, Error> {
         Ok(
             References::from_globs(&self, &["refs/namespaces/*/refs/rad/id"])?
                 .peeled()
                 .filter_map(move |(refname, oid)| match urn_from_idref(&refname) {
-                    Some(urn) => Some((urn, oid)),
+                    Some(urn) => match self.backend.find_commit(oid).ok() {
+                        Some(commit) => Some((urn, commit)),
+                        None => None,
+                    },
                     None => None,
                 }),
         )
@@ -976,6 +1019,7 @@ mod tests {
         let user_key = SecretKey::new();
         let store = Storage::init(&paths, user_key.clone()).unwrap();
 
+        // Create signed and verified user
         let mut user = User::<Draft>::create("user".to_owned(), user_key.public()).unwrap();
         user.sign_owned(&user_key).unwrap();
         let user_resolver = DummyUserResolver(user.clone());
@@ -985,28 +1029,70 @@ mod tests {
             .await
             .unwrap();
 
+        // Create and sign two projects
         let mut project_foo = Project::<Draft>::create("foo".to_owned(), user.urn()).unwrap();
         let mut project_bar = Project::<Draft>::create("bar".to_owned(), user.urn()).unwrap();
-
         project_foo.sign_by_user(&user_key, &verified_user).unwrap();
         project_bar.sign_by_user(&user_key, &verified_user).unwrap();
 
+        // Sture the three entities in their respective namespaces
         store.create_repo(&user).unwrap();
         store.create_repo(&project_foo).unwrap();
         store.create_repo(&project_bar).unwrap();
 
         let mut ids = HashSet::new();
+        let mut urns = HashMap::new();
         ids.insert(user.hash());
         ids.insert(project_foo.hash());
         ids.insert(project_bar.hash());
-        for (urn, oid) in store.entity_metadata_commits().unwrap() {
+
+        // Iterate ove all namespaces
+        for (urn, commit) in store.entity_metadata_commits().unwrap() {
+            // Check that we found one of our IDs
             let id = &urn.id;
             assert!(ids.contains(id));
-            let branch = store.entity_metadata_commit(&urn).unwrap();
-            assert_eq!(branch, oid);
+
+            // Check that we can use the URN to find the same commit
+            let commit_from_urn = store.entity_metadata_commit(&urn).unwrap();
+            assert_eq!(commit_from_urn.id(), commit.id());
+
+            // Bookkeeping for more tests
             ids.remove(id);
+            urns.insert(id.to_owned(), urn);
         }
+
+        // Check that we found all the entities that we saved
         assert!(ids.is_empty());
+
+        // Pull out user blob and deserialize
+        assert_eq!(
+            user,
+            User::<Draft>::from_json_slice(
+                store
+                    .entity_blob(store.entity_metadata_commit(&user.urn()).unwrap())
+                    .unwrap()
+                    .content()
+            )
+            .unwrap()
+        );
+
+        // Pull out foo blob and deserialize
+        assert_eq!(
+            project_foo,
+            Project::<Draft>::from_json_slice(
+                store
+                    .entity_blob(store.entity_metadata_commit(&project_foo.urn()).unwrap())
+                    .unwrap()
+                    .content()
+            )
+            .unwrap()
+        );
+
+        // Check user commit history length
+        let user_history =
+            store.linear_commit_history(store.entity_metadata_commit(&user.urn()).unwrap());
+        let user_commits: Vec<git2::Commit> = user_history.collect();
+        assert_eq!(user_commits.len(), 1);
     }
     
     #[test]
