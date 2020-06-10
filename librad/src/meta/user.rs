@@ -39,6 +39,7 @@ pub struct UserInfo {
     pub profile: Option<ProfileRef>,
 
     #[serde(
+        default,
         skip_serializing_if = "Option::is_none",
         serialize_with = "serde_helpers::urltemplate::serialize_opt",
         deserialize_with = "serde_helpers::urltemplate::deserialize_opt"
@@ -193,18 +194,27 @@ pub mod tests {
         ]
     }
 
-    pub fn gen_user() -> impl Strategy<Value = User<Draft>> {
-        proptest::option::of(gen_profile_ref()).prop_map(|profile| {
-            let largefiles = Some(UrlTemplate::from("https://git-lfs.github.com/{SHA512}"));
+    pub fn gen_largefiles() -> impl Strategy<Value = Option<UrlTemplate>> {
+        prop_oneof![
+            Just(None),
+            Just(Some(UrlTemplate::from(
+                "https://git-lfs.github.com/{SHA512}"
+            ))),
+        ]
+    }
 
-            UserData::default()
-                .set_name("foo".to_owned())
-                .set_revision(1)
-                .set_profile_ref(profile)
-                .set_largefiles(largefiles)
-                .build()
-                .unwrap()
-        })
+    pub fn gen_user() -> impl Strategy<Value = User<Draft>> {
+        (proptest::option::of(gen_profile_ref()), gen_largefiles()).prop_map(
+            |(profile, largefiles)| {
+                UserData::default()
+                    .set_name("foo".to_owned())
+                    .set_revision(1)
+                    .set_profile_ref(profile)
+                    .set_largefiles(largefiles)
+                    .build()
+                    .unwrap()
+            },
+        )
     }
 
     proptest! {
