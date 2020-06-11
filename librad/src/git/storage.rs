@@ -296,8 +296,17 @@ impl Storage {
         self.update_refs(urn)
     }
 
-    pub fn browser(&'_ self, _urn: &RadUrn) -> Result<surf::Browser<'_>, Error> {
-        Ok(surf::Browser::new(&self.backend)?)
+    /// Get a [`surf::Browser`] for the project at `urn`. The `Browser` will be
+    /// initialised with history found at the given `revision`.
+    pub fn browser(&'_ self, urn: &RadUrn, revision: &str) -> Result<surf::Browser<'_>, Error> {
+        let namespace = surf::Namespace::from(urn.id.to_string().as_str());
+        // TODO(finto): Should the revision be the default branch of the project?
+        // If so we need resolvers to fetch the project from the urn.
+        Ok(surf::Browser::new_with_namespace(
+            &self.backend,
+            &namespace,
+            revision,
+        )?)
     }
 
     // Utils
