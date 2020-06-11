@@ -7,7 +7,7 @@
 
 ## Motivation
 
-We have generalised the notion of "identity" in `radicle-link` to simply the
+We have generalised the notion of "identity" in `radicle-link` to simply mean the
 presence of a document at a conventional location within a git repository, where
 the document is subject to certain verification rules. The hash of the initial
 document is considered its stable identifier and encoded as a uniform resource
