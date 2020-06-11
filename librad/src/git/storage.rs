@@ -512,11 +512,11 @@ impl Storage {
         }))
     }
 
-    pub fn entity_blob<'a>(&'a self, commit: git2::Commit<'a>) -> Result<git2::Blob, Error> {
+    fn entity_blob<'a>(&'a self, commit: git2::Commit<'a>) -> Result<git2::Blob, Error> {
         blob(&self, commit.tree()?, "id")
     }
 
-    pub fn entity_parent_commit(&self, commit_oid: git2::Oid) -> Option<git2::Commit> {
+    pub fn first_parent(&self, commit_oid: git2::Oid) -> Option<git2::Commit> {
         self.backend
             .find_commit(commit_oid)
             .ok()
@@ -533,37 +533,38 @@ impl Storage {
         LinearHistoryCommits(Some(commit))
     }
 
-    pub fn entity_metadata_commit(&self, urn: &RadUrn) -> Result<git2::Commit, Error> {
-        References::from_globs(&self, &[format!("refs/namespaces/{}/refs/rad/id", &urn.id)])
+    fn entity_metadata_commit(&self, urn: &RadUrn) -> Result<git2::Commit, Error> {
+        self.backend
+            .find_reference(&Reference::rad_id(urn.id.clone()).to_string())
             .map_err(Error::Git)
-            .and_then(|refs| {
-                refs.peeled()
-                    .map(|(_, oid)| oid)
-                    .next()
-                    .ok_or_else(|| Error::NoSuchUrn(urn.to_owned()))
+            .and_then(|reference| {
+                reference
+                    .target()
+                    .ok_or_else(|| Error::NoSuchUrn(urn.clone()))
             })
-            .and_then(|oid| self.backend.find_commit(oid).map_err(|err| err.into()))
+            .and_then(|oid| Ok(self.backend.find_commit(oid)?))
     }
 
-    pub fn entity_metadata(&self, urn: &RadUrn) -> Result<GenericDraftEntity, Error> {
+    pub fn metadata(&self, urn: &RadUrn) -> Result<GenericDraftEntity, Error> {
         self.entity_metadata_commit(urn).and_then(|commit| {
             GenericDraftEntity::from_json_slice(self.entity_blob(commit).unwrap().content())
                 .map_err(Error::Entity)
         })
     }
 
-    pub fn entity_metadata_commits<'a>(
+    pub fn all_metadata_heads<'a>(
         &'a self,
     ) -> Result<impl Iterator<Item = (RadUrn, git2::Commit)> + 'a, Error> {
         Ok(
             References::from_globs(&self, &["refs/namespaces/*/refs/rad/id"])?
                 .peeled()
-                .filter_map(move |(refname, oid)| match urn_from_idref(&refname) {
-                    Some(urn) => match self.backend.find_commit(oid).ok() {
-                        Some(commit) => Some((urn, commit)),
-                        None => None,
-                    },
-                    None => None,
+                .filter_map(move |(refname, oid)| {
+                    urn_from_idref(&refname).and_then(|urn| {
+                        self.backend
+                            .find_commit(oid)
+                            .map(|commit| (urn, commit))
+                            .ok()
+                    })
                 }),
         )
     }
@@ -1015,7 +1016,7 @@ mod tests {
     }
 
     #[async_test]
-    async fn test_entity_metadata_commits() {
+    async fn test_all_metadata_heads() {
         let tmp = tempdir().unwrap();
         let paths = Paths::from_root(tmp).unwrap();
         let user_key = SecretKey::new();
@@ -1049,7 +1050,7 @@ mod tests {
         ids.insert(project_bar.hash());
 
         // Iterate ove all namespaces
-        for (urn, commit) in store.entity_metadata_commits().unwrap() {
+        for (urn, commit) in store.all_metadata_heads().unwrap() {
             // Check that we found one of our IDs
             let id = &urn.id;
             assert!(ids.contains(id));
@@ -1077,7 +1078,7 @@ mod tests {
             )
             .unwrap()
         );
-        let generic_user = store.entity_metadata(&user.urn()).unwrap();
+        let generic_user = store.metadata(&user.urn()).unwrap();
         assert_eq!(generic_user.kind(), user.kind());
         assert_eq!(generic_user.hash(), user.hash());
 
@@ -1092,7 +1093,7 @@ mod tests {
             )
             .unwrap()
         );
-        let generic_foo = store.entity_metadata(&project_foo.urn()).unwrap();
+        let generic_foo = store.metadata(&project_foo.urn()).unwrap();
         assert_eq!(generic_foo.kind(), project_foo.kind());
         assert_eq!(generic_foo.hash(), project_foo.hash());
 
