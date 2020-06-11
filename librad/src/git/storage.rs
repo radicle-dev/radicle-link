@@ -39,7 +39,7 @@ use crate::{
         canonical::{Cjson, CjsonError},
     },
     keys::SecretKey,
-    meta::entity::{self, data::EntityInfoExt, Draft, Entity, Signatory},
+    meta::entity::{self, data::EntityInfoExt, Draft, Entity, GenericDraftEntity, Signatory},
     paths::Paths,
     peer::PeerId,
     uri::{self, Path, Protocol, RadUrl, RadUrn},
@@ -533,11 +533,23 @@ impl Storage {
         LinearHistoryCommits(Some(commit))
     }
 
-    pub fn entity_metadata_commit(&self, urn: &RadUrn) -> Option<git2::Commit> {
+    pub fn entity_metadata_commit(&self, urn: &RadUrn) -> Result<git2::Commit, Error> {
         References::from_globs(&self, &[format!("refs/namespaces/{}/refs/rad/id", &urn.id)])
-            .ok()
-            .and_then(|refs| refs.peeled().map(|(_, oid)| oid).next())
-            .and_then(|oid| self.backend.find_commit(oid).ok())
+            .map_err(Error::Git)
+            .and_then(|refs| {
+                refs.peeled()
+                    .map(|(_, oid)| oid)
+                    .next()
+                    .ok_or_else(|| Error::NoSuchUrn(urn.to_owned()))
+            })
+            .and_then(|oid| self.backend.find_commit(oid).map_err(|err| err.into()))
+    }
+
+    pub fn entity_metadata(&self, urn: &RadUrn) -> Result<GenericDraftEntity, Error> {
+        self.entity_metadata_commit(urn).and_then(|commit| {
+            GenericDraftEntity::from_json_slice(self.entity_blob(commit).unwrap().content())
+                .map_err(Error::Entity)
+        })
     }
 
     pub fn entity_metadata_commits<'a>(
@@ -1065,6 +1077,9 @@ mod tests {
             )
             .unwrap()
         );
+        let generic_user = store.entity_metadata(&user.urn()).unwrap();
+        assert_eq!(generic_user.kind(), user.kind());
+        assert_eq!(generic_user.hash(), user.hash());
 
         // Pull out foo blob and deserialize
         assert_eq!(
@@ -1077,6 +1092,9 @@ mod tests {
             )
             .unwrap()
         );
+        let generic_foo = store.entity_metadata(&project_foo.urn()).unwrap();
+        assert_eq!(generic_foo.kind(), project_foo.kind());
+        assert_eq!(generic_foo.hash(), project_foo.hash());
 
         // Check user commit history length
         let user_history =
