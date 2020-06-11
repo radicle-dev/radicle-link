@@ -39,13 +39,7 @@ use crate::{
         canonical::{Cjson, CjsonError},
     },
     keys::SecretKey,
-    meta::entity::{
-        self,
-        data::{EntityBuilder, EntityData},
-        Draft,
-        Entity,
-        Signatory,
-    },
+    meta::entity::{self, data::EntityInfoExt, Draft, Entity, Signatory},
     paths::Paths,
     peer::PeerId,
     uri::{self, Path, Protocol, RadUrl, RadUrn},
@@ -164,8 +158,7 @@ impl Storage {
 
     pub fn create_repo<T>(&self, meta: &Entity<T, Draft>) -> Result<Repo, Error>
     where
-        T: Serialize + DeserializeOwned + Clone + Default,
-        EntityData<T>: EntityBuilder,
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         let span = tracing::info_span!("Storage::create_repo");
         let _guard = span.enter();
@@ -217,8 +210,7 @@ impl Storage {
     /// currently the only supported method is [`tokio::task::spawn_blocking`].
     pub fn clone_repo<T>(&self, url: RadUrl) -> Result<Repo, Error>
     where
-        T: Serialize + DeserializeOwned + Clone + Default,
-        EntityData<T>: EntityBuilder,
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         let span = tracing::info_span!("Storage::clone_repo", url = %url);
         let _guard = span.enter();
@@ -231,7 +223,7 @@ impl Storage {
 
         // Fetch the identity first
         let git_url = GitUrlRef::from_rad_url_ref(url.as_ref(), &local_peer_id);
-        let meta = self.fetch_id(git_url)?;
+        let meta: Entity<T, Draft> = self.fetch_id(git_url)?;
 
         // TODO: properly verify meta
 
@@ -580,8 +572,7 @@ impl Storage {
     // FIXME: yes, we do want that
     fn fetch_id<T>(&self, url: GitUrlRef) -> Result<Entity<T, Draft>, Error>
     where
-        T: Serialize + DeserializeOwned + Clone + Default,
-        EntityData<T>: EntityBuilder,
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         tracing::debug!("Fetching id of {}", url);
 
@@ -629,8 +620,7 @@ impl Storage {
 
     fn commit_initial_meta<T>(&self, meta: &Entity<T, Draft>) -> Result<git2::Oid, Error>
     where
-        T: Serialize + DeserializeOwned + Clone + Default,
-        EntityData<T>: EntityBuilder,
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         let canonical_data = Cjson(meta).canonical_form()?;
         let blob = self.blob(&canonical_data)?;
@@ -667,7 +657,7 @@ impl Storage {
     // FIXME: yes, we want this
     fn track_signers<T>(&self, meta: &Entity<T, Draft>) -> Result<(), Error>
     where
-        T: Serialize + DeserializeOwned + Clone + Default,
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         let span = tracing::debug_span!("Storage::track_signers", meta.urn = %meta.urn());
         let _guard = span.enter();

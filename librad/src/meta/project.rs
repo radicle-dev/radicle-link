@@ -23,7 +23,7 @@ use crate::{
     meta::{
         common::{Label, Url},
         entity::{
-            data::{EntityBuilder, EntityData},
+            data::{EntityData, EntityInfoExt, EntityKind},
             Draft,
             Entity,
             Error,
@@ -38,8 +38,11 @@ pub fn default_branch() -> String {
     DEFAULT_BRANCH.into()
 }
 
-#[derive(Clone, Default, Deserialize, Serialize, Debug, PartialEq)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct ProjectInfo {
+    // Marker so `EntityInfo` can deserialize correctly
+    project: (),
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
@@ -50,13 +53,33 @@ pub struct ProjectInfo {
     pub rel: Vec<Relation>,
 }
 
-impl ProjectInfo {
-    pub fn new() -> Self {
+impl Default for ProjectInfo {
+    fn default() -> Self {
         Self {
+            project: (),
             description: None,
             default_branch: DEFAULT_BRANCH.into(),
             rel: vec![],
         }
+    }
+}
+
+impl EntityInfoExt for ProjectInfo {
+    fn kind(&self) -> EntityKind {
+        EntityKind::Project
+    }
+
+    fn check_invariants<T>(&self, data: &EntityData<T>) -> Result<(), Error> {
+        if data.certifiers.is_empty() {
+            return Err(Error::InvalidData("Missing certifier".to_owned()));
+        }
+        Ok(())
+    }
+}
+
+impl ProjectInfo {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn add_rel(&mut self, rel: Relation) {
@@ -118,15 +141,6 @@ impl ProjectData {
     }
 }
 
-impl EntityBuilder for ProjectData {
-    fn check_invariants(&self) -> Result<(), Error> {
-        if self.certifiers.is_empty() {
-            return Err(Error::InvalidData("Missing certifier".to_owned()));
-        }
-        Ok(())
-    }
-}
-
 pub type Project<ST> = Entity<ProjectInfo, ST>;
 
 impl<ST> Project<ST>
@@ -161,18 +175,9 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{
-        hash::Hash,
-        uri::{Path, Protocol},
-    };
+    use crate::meta::{entity::GenericDraftEntity, entity_test::EMPTY_URI};
 
     use proptest::prelude::*;
-
-    lazy_static! {
-        pub static ref EMPTY_HASH: Hash = Hash::hash(&[]);
-        pub static ref EMPTY_URI: RadUrn =
-            RadUrn::new(EMPTY_HASH.to_owned(), Protocol::Git, Path::new());
-    }
 
     #[test]
     fn test_project_serde() {
@@ -224,10 +229,14 @@ pub mod tests {
 
         #[test]
         fn prop_project_serde(proj in gen_project()) {
-            let proj_de = serde_json::to_string(&proj)
-                .and_then(|ser| serde_json::from_str(&ser))
-                .unwrap();
-            assert_eq!(proj, proj_de)
+            let ser = serde_json::to_string(&proj).unwrap();
+            let proj_de = Project::<Draft>::from_json_str(&ser).unwrap();
+            assert_eq!(proj, proj_de);
+
+            println!(" --- project gen deserialize");
+            let generic_de = GenericDraftEntity::from_json_str(&ser).unwrap();
+            let generic_ser = generic_de.to_json_string().unwrap();
+            assert_eq!(ser, generic_ser);
         }
     }
 }
