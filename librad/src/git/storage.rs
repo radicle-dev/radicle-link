@@ -296,14 +296,16 @@ impl Storage {
         self.update_refs(urn)
     }
 
-    pub fn browser(&'_ self, urn: &RadUrn) -> Result<surf::Browser<'_>, Error> {
-        // TODO: we need to fetch the user/project to look what the default branch is.
-        let default_branch = "master";
+    /// Get a [`surf::Browser`] for the project at `urn`. The `Browser` will be
+    /// initialised with history found at the given `revision`.
+    pub fn browser(&'_ self, urn: &RadUrn, revision: &str) -> Result<surf::Browser<'_>, Error> {
         let namespace = surf::Namespace::from(urn.id.to_string().as_str());
+        // TODO(finto): Should the revision be the default branch of the project?
+        // If so we need resolvers to fetch the project from the urn.
         Ok(surf::Browser::new_with_namespace(
             &self.backend,
             &namespace,
-            default_branch,
+            revision,
         )?)
     }
 

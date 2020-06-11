@@ -64,8 +64,10 @@ impl<'a> Repo<'a> {
     }
 
     /// Obtain a read-only view of this repo
-    pub fn browser(&'_ self) -> Result<surf::Browser<'_>, Error> {
-        self.storage.browser(&self.urn).map_err(Error::from)
+    pub fn browser(&'_ self, revision: &str) -> Result<surf::Browser<'_>, Error> {
+        self.storage
+            .browser(&self.urn, revision)
+            .map_err(Error::from)
     }
 
     /// Track [`PeerId`]s view of this repo
