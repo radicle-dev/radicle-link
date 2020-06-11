@@ -109,10 +109,16 @@ impl AsRef<git2::Repository> for Storage {
 }
 
 impl Storage {
+    /// Open the `Storage` found at the given [`Paths`]'s `git_dir`.
+    /// If the path does not exist we initialise the `Storage` with
+    /// [`Storage::init`].
     pub fn open(paths: &Paths, key: SecretKey) -> Result<Self, Error> {
         git2::Repository::open_bare(paths.git_dir())
-            .map(|backend| Self { backend, key })
-            .map_err(|e| e.into())
+            .map(|backend| Self {
+                backend,
+                key: key.clone(),
+            })
+            .map_not_found(|| Ok(Self::init(paths, key)?))
     }
 
     /// Obtain a new, owned handle to the backing store.
@@ -120,6 +126,7 @@ impl Storage {
         self.try_to_owned()
     }
 
+    /// Initialise the `Storage` at the given [`Paths`]'s `git_dir`.
     pub fn init(paths: &Paths, key: SecretKey) -> Result<Self, Error> {
         let repo = git2::Repository::init_opts(
             paths.git_dir(),
@@ -895,5 +902,17 @@ mod tests {
         store.untrack(&urn, &peer).unwrap();
 
         assert!(store.tracked(&urn).unwrap().next().is_none())
+    }
+
+    #[test]
+    fn test_open_or_init() {
+        let tmp = tempdir().unwrap();
+        let paths = Paths::from_root(tmp).unwrap();
+        let key = SecretKey::new();
+        let store = Storage::open(&paths, key);
+
+        if let Err(err) = store {
+            assert!(false, "failed to open Storage: {:?}", err)
+        };
     }
 }
