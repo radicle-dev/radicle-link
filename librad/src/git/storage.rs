@@ -108,9 +108,8 @@ pub struct LinearHistoryCommits<'a>(Option<git2::Commit<'a>>);
 impl<'a> Iterator for LinearHistoryCommits<'a> {
     type Item = git2::Commit<'a>;
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.0.as_ref().and_then(|commit| commit.parents().next());
         let result = self.0.clone();
-        self.0 = next;
+        self.0 = self.0.as_ref().and_then(|commit| commit.parents().next());
         result
     }
 }
