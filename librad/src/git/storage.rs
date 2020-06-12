@@ -26,7 +26,7 @@ use thiserror::Error;
 
 use crate::{
     git::{
-        ext::{is_not_found_err, Git2ErrorExt, Oid, References},
+        ext::{is_exists_err, is_not_found_err, Oid, References},
         refs::{self, Refs},
         repo::Repo,
         types::{Reference, Refspec},
@@ -36,6 +36,7 @@ use crate::{
     internal::{
         borrow::TryToOwned,
         canonical::{Cjson, CjsonError},
+        result::ResultExt,
     },
     keys::SecretKey,
     meta::entity::{
@@ -118,7 +119,7 @@ impl Storage {
                 backend,
                 key: key.clone(),
             })
-            .map_not_found(|| Ok(Self::init(paths, key)?))
+            .or_matches(is_not_found_err, || Ok(Self::init(paths, key)?))
     }
 
     /// Obtain a new, owned handle to the backing store.
@@ -351,7 +352,7 @@ impl Storage {
         self.backend
             .find_reference(&reference.to_string())
             .map(|_| true)
-            .map_not_found(|| Ok(false))
+            .or_matches(is_not_found_err, || Ok(false))
     }
 
     pub fn has_urn(&self, urn: &RadUrn) -> Result<bool, Error> {
@@ -361,7 +362,7 @@ impl Storage {
         self.backend
             .find_reference(&format!("refs/namespaces/{}/refs/{}", namespace, branch))
             .map(|_| true)
-            .map_not_found(|| Ok(false))
+            .or_matches(is_not_found_err, || Ok(false))
     }
 
     pub fn track(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
@@ -377,7 +378,7 @@ impl Storage {
         self.backend
             .remote(&remote_name, &url)
             .map(|_| ())
-            .map_already_exists(|| Ok(()))
+            .or_matches(is_exists_err, || Ok(()))
     }
 
     pub fn untrack(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
@@ -654,7 +655,7 @@ impl Storage {
         let parent: Option<git2::Commit> = self
             .find_reference(&rad_refs_ref)
             .and_then(|refs| refs.peel_to_commit().map(Some))
-            .map_not_found::<Error, _>(|| Ok(None))?;
+            .or_matches::<Error, _, _>(is_not_found_err, || Ok(None))?;
         let tree = {
             let blob = self.blob(&refsig_canonical)?;
             let mut builder = self.treebuilder(None)?;
@@ -783,7 +784,7 @@ impl<'a> WithBlob<'a> {
                 let ref_name = reference.to_string();
                 let branch = git
                     .find_reference(&ref_name)
-                    .map_not_found(|| Err(Error::NoSuchBranch(ref_name)))?;
+                    .or_matches(is_not_found_err, || Err(Error::NoSuchBranch(ref_name)))?;
                 let tree = branch.peel_to_tree()?;
                 blob(git, tree, file_name)
             },
