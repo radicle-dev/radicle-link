@@ -17,7 +17,15 @@
 
 //! Main protocol dispatch loop
 
-use std::{borrow::Cow, collections::HashMap, fmt::Debug, io, iter, net::SocketAddr, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::Debug,
+    io,
+    iter,
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 use futures::{
@@ -67,7 +75,7 @@ enum Run<'a, A> {
     },
 
     Gossip {
-        event: gossip::ProtocolEvent<SocketAddr, A>,
+        event: gossip::ProtocolEvent<IpAddr, A>,
     },
 }
 
@@ -97,7 +105,7 @@ pub enum Error {
 
 #[derive(Clone)]
 pub struct Protocol<S, A> {
-    gossip: gossip::Protocol<S, A, SocketAddr, quic::RecvStream, quic::SendStream>,
+    gossip: gossip::Protocol<S, A, IpAddr, quic::RecvStream, quic::SendStream>,
     git: GitServer,
 
     connections: Arc<Mutex<HashMap<PeerId, quic::Connection>>>,
@@ -110,7 +118,7 @@ where
     for<'de> A: Encode + Decode<'de> + Clone + Debug + Send + Sync + 'static,
 {
     pub fn new(
-        gossip: gossip::Protocol<S, A, SocketAddr, quic::RecvStream, quic::SendStream>,
+        gossip: gossip::Protocol<S, A, IpAddr, quic::RecvStream, quic::SendStream>,
         git: GitServer,
     ) -> Self {
         Self {
@@ -275,7 +283,7 @@ where
         &self,
         conn: quic::Connection,
         mut incoming: BoxStream<'_, quic::Result<quic::Stream>>,
-        hello: impl Into<Option<gossip::Rpc<SocketAddr, A>>>,
+        hello: impl Into<Option<gossip::Rpc<IpAddr, A>>>,
     ) {
         let remote_id = conn.remote_peer_id().clone();
         tracing::info!(remote_id = %remote_id, "New outgoing connection");
@@ -361,7 +369,7 @@ where
     async fn outgoing(
         &mut self,
         stream: quic::Stream,
-        hello: impl Into<Option<gossip::Rpc<SocketAddr, A>>>,
+        hello: impl Into<Option<gossip::Rpc<IpAddr, A>>>,
     ) -> Result<(), Error> {
         let upgraded = upgrade(stream, upgrade::Gossip).await?;
         self.gossip
@@ -435,12 +443,15 @@ where
 
 async fn connect_peer_info(
     endpoint: &quic::Endpoint,
-    peer_info: gossip::PeerInfo<SocketAddr>,
+    peer_info: gossip::PeerInfo<IpAddr>,
 ) -> Option<(
     quic::Connection,
     impl futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
 )> {
-    let addrs = iter::once(peer_info.advertised_info.listen_addr).chain(peer_info.seen_addrs);
+    let advertised_port = peer_info.advertised_info.listen_port;
+    let addrs = iter::once(peer_info.advertised_info.listen_addr)
+        .chain(peer_info.seen_addrs)
+        .map(move |ip| SocketAddr::new(ip, advertised_port));
     connect(endpoint, &peer_info.peer_id, addrs).await
 }
 

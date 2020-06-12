@@ -50,7 +50,11 @@ where
 {
     #[n(0)]
     pub listen_addr: Addr,
+
     #[n(1)]
+    pub listen_port: u16,
+
+    #[n(2)]
     pub capabilities: HashSet<Capability>,
 }
 
@@ -58,9 +62,10 @@ impl<Addr> PeerAdvertisement<Addr>
 where
     Addr: Clone + PartialEq + Eq + Hash,
 {
-    pub fn new(listen_addr: Addr) -> Self {
+    pub fn new(listen_addr: Addr, listen_port: u16) -> Self {
         Self {
             listen_addr,
+            listen_port,
             capabilities: HashSet::default(),
         }
     }

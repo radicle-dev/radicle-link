@@ -259,7 +259,7 @@ impl Peer {
 
         let gossip = gossip::Protocol::new(
             &peer_id,
-            gossip::PeerAdvertisement::new(listen_addr),
+            gossip::PeerAdvertisement::new(listen_addr.ip(), listen_addr.port()),
             config.gossip_params,
             peer_storage,
         );
