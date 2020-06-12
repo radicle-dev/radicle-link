@@ -18,10 +18,12 @@
 #![feature(str_strip)]
 #![feature(bool_to_option)]
 
-extern crate radicle_keystore as keystore;
-extern crate sodiumoxide;
+#[macro_use]
+extern crate async_trait;
 #[macro_use]
 extern crate lazy_static;
+extern crate radicle_keystore as keystore;
+extern crate sodiumoxide;
 
 pub use radicle_surf as surf;
 

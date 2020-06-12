@@ -22,4 +22,5 @@
 pub mod borrow;
 pub mod canonical;
 pub mod channel;
+pub mod result;
 pub mod sync;

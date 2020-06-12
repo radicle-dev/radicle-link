@@ -25,7 +25,6 @@ use crate::{
     peer::PeerId,
     uri::{Path, Protocol, RadUrn},
 };
-use async_trait::async_trait;
 use futures_await_test::async_test;
 use lazy_static::lazy_static;
 use sodiumoxide::crypto::sign::ed25519::Seed;

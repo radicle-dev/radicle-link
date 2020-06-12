@@ -19,7 +19,6 @@
 
 use std::{borrow::Cow, collections::HashMap, fmt::Debug, io, iter, net::SocketAddr, sync::Arc};
 
-use async_trait::async_trait;
 use futures::{
     future::TryFutureExt,
     lock::Mutex,

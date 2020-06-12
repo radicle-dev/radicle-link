@@ -29,6 +29,7 @@ use librad::{
     uri::RadUrn,
 };
 
+#[derive(Clone)]
 pub struct Alice(User<Draft>);
 
 impl Alice {
@@ -45,6 +46,12 @@ impl Deref for Alice {
     }
 }
 
+impl DerefMut for Alice {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[async_trait]
 impl Resolver<User<Draft>> for Alice {
     async fn resolve(&self, _uri: &RadUrn) -> Result<User<Draft>, Error> {
@@ -56,6 +63,7 @@ impl Resolver<User<Draft>> for Alice {
     }
 }
 
+#[derive(Clone)]
 pub struct Radicle(Project<Draft>);
 
 impl Radicle {

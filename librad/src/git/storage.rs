@@ -18,14 +18,16 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     ops::{Deref, Range},
+    path::Path,
 };
 
 use radicle_surf::vcs::git as surf;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
     git::{
+        config,
         ext::{is_not_found_err, Git2ErrorExt, Oid, References},
         refs::{self, Refs},
         repo::Repo,
@@ -36,6 +38,7 @@ use crate::{
     internal::{
         borrow::TryToOwned,
         canonical::{Cjson, CjsonError},
+        result::ResultExt,
     },
     keys::SecretKey,
     meta::entity::{
@@ -43,6 +46,7 @@ use crate::{
         data::{EntityBuilder, EntityData},
         Draft,
         Entity,
+        EntitySignature,
         Signatory,
     },
     paths::Paths,
@@ -69,6 +73,12 @@ pub enum Error {
     #[error("Metadata is not signed")]
     UnsignedMetadata,
 
+    #[error("Metadata must be signed by local key")]
+    NotSignedBySelf,
+
+    #[error("Local key certifier identity not found: {0}")]
+    NoSelf(Reference),
+
     #[error(transparent)]
     Urn(#[from] uri::rad_urn::ParseError),
 
@@ -83,6 +93,12 @@ pub enum Error {
 
     #[error(transparent)]
     Surf(#[from] surf::error::Error),
+
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    Config(#[from] config::Error),
 
     #[error(transparent)]
     Git(#[from] git2::Error),
@@ -150,7 +166,10 @@ impl Storage {
             return Err(Error::UnsignedMetadata);
         }
 
-        // FIXME: certifier identities must exist, or be supplied
+        let self_sig = meta
+            .signatures()
+            .get(&self.key.public())
+            .ok_or(Error::NotSignedBySelf)?;
 
         let urn = RadUrn::new(
             meta.root_hash().to_owned(),
@@ -158,7 +177,7 @@ impl Storage {
             uri::Path::empty(),
         );
 
-        self.commit_initial_meta(&meta)?;
+        self.commit_initial_meta(&meta, self_sig)?;
         self.track_signers(&meta)?;
         self.update_refs(&urn)?;
 
@@ -293,6 +312,31 @@ impl Storage {
         Ok(surf::Browser::new(&self.backend)?)
     }
 
+    pub fn create_working_copy<P: AsRef<Path>>(
+        &self,
+        urn: &RadUrn,
+        dst_dir: P,
+    ) -> Result<(), Error> {
+        let remotes = self.tracked(urn)?.filter_map(|peer_id| {
+            self.rad_self_name_of(urn, peer_id.clone())
+                .map(|name| (name, peer_id))
+                .ok()
+        });
+
+        let config = config::WorkingCopy::new(&self.backend.path(), &urn.id, remotes)?;
+        let repo = git2::Repository::open(&dst_dir)
+            .or_matches(is_not_found_err, || git2::Repository::init(dst_dir))?;
+
+        let mut repo_config = repo.config()?;
+        repo_config.set_multivar(
+            "include.path",
+            &format!("^{}$", config.path().display()),
+            &config.path().display().to_string(),
+        )?;
+
+        Ok(())
+    }
+
     // Utils
 
     pub fn has_commit(&self, urn: &RadUrn, oid: git2::Oid) -> Result<bool, Error> {
@@ -374,7 +418,7 @@ impl Storage {
     }
 
     pub fn tracked(&self, urn: &RadUrn) -> Result<Tracked, Error> {
-        Tracked::collect(&self.backend, urn).map_err(|e| e.into())
+        Tracked::new(&self.backend, urn).map_err(|e| e.into())
     }
 
     /// Read the current [`Refs`] from the repo state
@@ -441,6 +485,19 @@ impl Storage {
         Ok(urns_from_refs(refnames).collect())
     }
 
+    /// The set of certifiers if the given identity, as advertised by `peer`.
+    pub fn certifiers_of(&self, urn: &RadUrn, peer: &PeerId) -> Result<HashSet<RadUrn>, Error> {
+        let mut refs = References::from_globs(
+            &self,
+            &[format!(
+                "refs/namespaces/{}/refs/remotes/{}/rad/ids/*",
+                &urn.id, peer
+            )],
+        )?;
+        let refnames = refs.names();
+        Ok(urns_from_refs(refnames).collect())
+    }
+
     pub fn commit(
         &self,
         urn: &RadUrn,
@@ -485,16 +542,41 @@ impl Storage {
         }))
     }
 
-    pub fn certifiers_of(&self, urn: &RadUrn, peer: &PeerId) -> Result<HashSet<RadUrn>, Error> {
-        let mut refs = References::from_globs(
-            &self,
-            &[format!(
-                "refs/namespaces/{}/refs/remotes/{}/rad/ids/*",
-                &urn.id, peer
-            )],
-        )?;
-        let refnames = refs.names();
-        Ok(urns_from_refs(refnames).collect())
+    pub fn rad_id_name(&self, urn: &RadUrn) -> Result<String, Error> {
+        let rad_id = Reference::rad_id(urn.id.clone());
+        let blob = WithBlob::Tip {
+            reference: &rad_id,
+            file_name: "id",
+        };
+        self.named(blob)
+    }
+
+    pub fn rad_self_name(&self, urn: &RadUrn) -> Result<String, Error> {
+        self.rad_self_name_of(urn, None)
+    }
+
+    pub fn rad_self_name_of(
+        &self,
+        urn: &RadUrn,
+        peer: impl Into<Option<PeerId>>,
+    ) -> Result<String, Error> {
+        let rad_self = Reference::rad_self(urn.id.clone(), peer);
+        let blob = WithBlob::Tip {
+            reference: &rad_self,
+            file_name: "id",
+        };
+        self.named(blob)
+    }
+
+    fn named(&self, blob: WithBlob) -> Result<String, Error> {
+        #[derive(Deserialize)]
+        struct Named {
+            name: String,
+        }
+
+        serde_json::from_slice(blob.get(&self)?.content())
+            .map(|Named { name }| name)
+            .map_err(Error::from)
     }
 
     // FIXME: decide if we want to require verified entities
@@ -548,7 +630,11 @@ impl Storage {
         Ok(entity)
     }
 
-    fn commit_initial_meta<T>(&self, meta: &Entity<T, Draft>) -> Result<git2::Oid, Error>
+    fn commit_initial_meta<T>(
+        &self,
+        meta: &Entity<T, Draft>,
+        self_sig: &EntitySignature,
+    ) -> Result<git2::Oid, Error>
     where
         T: Serialize + DeserializeOwned + Clone + Default,
         EntityData<T>: EntityBuilder,
@@ -563,10 +649,22 @@ impl Storage {
         }?;
         let author = self.signature()?;
 
-        let branch_name = Reference::rad_id(meta.urn().id);
+        let rad_id = Reference::rad_id(meta.urn().id);
+        let rad_self = Reference::rad_self(meta.urn().id, None);
+        let rad_self_target = match &self_sig.by {
+            Signatory::OwnedKey => rad_id.clone(),
+            Signatory::User(urn) => Reference::rad_id(urn.id.clone()),
+        };
+
+        // Check if we could create `rad/self`, pointing to a valid target. Do
+        // it before committing `rad/id` (which would be valid), so we don't
+        // leave the repo in a half-consistent state.
+        if rad_id != rad_self_target && !self.has_ref(&rad_self_target)? {
+            return Err(Error::NoSelf(rad_self_target));
+        }
 
         let oid = self.backend.commit(
-            Some(&branch_name.to_string()),
+            Some(&rad_id.to_string()),
             &author,
             &author,
             &format!("Initialised with identity {}", meta.root_hash()),
@@ -574,10 +672,18 @@ impl Storage {
             &[],
         )?;
 
+        self.backend.reference_symbolic(
+            &rad_self.to_string(),
+            &rad_self_target.to_string(),
+            true,
+            "rad/self symref",
+        )?;
+
         tracing::debug!(
             repo.urn = %meta.urn(),
-            repo.id.branch = %branch_name,
+            repo.id.branch = %rad_id,
             repo.id.oid = %oid,
+            repo.self.target = %rad_self_target,
             "Initial metadata committed"
         );
 
@@ -624,7 +730,7 @@ impl Storage {
             })
     }
 
-    fn update_refs(&self, urn: &RadUrn) -> Result<(), Error> {
+    pub fn update_refs(&self, urn: &RadUrn) -> Result<(), Error> {
         let span = tracing::debug_span!("Storage::update_refs");
         let _guard = span.enter();
 
@@ -713,7 +819,7 @@ pub struct Tracked {
 }
 
 impl Tracked {
-    pub(super) fn collect(repo: &git2::Repository, context: &RadUrn) -> Result<Self, git2::Error> {
+    pub(super) fn new(repo: &git2::Repository, context: &RadUrn) -> Result<Self, git2::Error> {
         let remotes = repo.remotes()?;
         let range = 0..remotes.len();
         let prefix = format!("{}/", context.id);
@@ -828,20 +934,47 @@ fn urns_from_refs<'a, E>(
 mod tests {
     use super::*;
 
-    use tempfile::tempdir;
+    use futures_await_test::async_test;
+    use tempfile::{tempdir, TempDir};
 
     use crate::{
         hash::Hash,
+        meta::{
+            entity::{Draft, Resolver},
+            Project,
+            User,
+        },
         uri::{self, RadUrn},
     };
 
+    struct TmpStorage {
+        _tmp: TempDir,
+        inner: Storage,
+    }
+
+    impl Deref for TmpStorage {
+        type Target = Storage;
+
+        fn deref(&self) -> &Self::Target {
+            &self.inner
+        }
+    }
+
+    impl TmpStorage {
+        fn new() -> Self {
+            let tmp = tempdir().unwrap();
+            let paths = Paths::from_root(tmp.path()).unwrap();
+            let store = Storage::init(&paths, SecretKey::new()).unwrap();
+            Self {
+                _tmp: tmp,
+                inner: store,
+            }
+        }
+    }
+
     #[test]
     fn test_tracking_read_after_write() {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp).unwrap();
-        let key = SecretKey::new();
-        let store = Storage::init(&paths, key).unwrap();
-
+        let store = TmpStorage::new();
         let urn = RadUrn {
             id: Hash::hash(b"lala"),
             proto: uri::Protocol::Git,
@@ -856,11 +989,7 @@ mod tests {
 
     #[test]
     fn test_idempotent_tracking() {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp).unwrap();
-        let key = SecretKey::new();
-        let store = Storage::init(&paths, key).unwrap();
-
+        let store = TmpStorage::new();
         let urn = RadUrn {
             id: Hash::hash(b"lala"),
             proto: uri::Protocol::Git,
@@ -879,11 +1008,7 @@ mod tests {
 
     #[test]
     fn test_untrack() {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp).unwrap();
-        let key = SecretKey::new();
-        let store = Storage::init(&paths, key).unwrap();
-
+        let store = TmpStorage::new();
         let urn = RadUrn {
             id: Hash::hash(b"lala"),
             proto: uri::Protocol::Git,
@@ -895,5 +1020,145 @@ mod tests {
         store.untrack(&urn, &peer).unwrap();
 
         assert!(store.tracked(&urn).unwrap().next().is_none())
+    }
+
+    struct ConstResolver<A>(User<A>);
+
+    #[async_trait]
+    impl<A: Clone + Send + Sync> Resolver<User<A>> for ConstResolver<A> {
+        async fn resolve(&self, _uri: &RadUrn) -> Result<User<A>, entity::Error> {
+            Ok(self.0.clone())
+        }
+
+        async fn resolve_revision(
+            &self,
+            _uri: &RadUrn,
+            _revision: u64,
+        ) -> Result<User<A>, entity::Error> {
+            Ok(self.0.clone())
+        }
+    }
+
+    #[async_test]
+    async fn test_create_repo() {
+        let store = TmpStorage::new();
+        let mut alice = User::<Draft>::create("alice".to_owned(), store.key.public()).unwrap();
+        let mut radicle = Project::<Draft>::create("radicle".to_owned(), alice.urn()).unwrap();
+
+        {
+            let resolv = ConstResolver(alice.clone());
+            alice
+                .sign(&store.key, &Signatory::OwnedKey, &resolv)
+                .await
+                .unwrap();
+            radicle
+                .sign(&store.key, &Signatory::User(alice.urn()), &resolv)
+                .await
+                .unwrap();
+        }
+
+        store.create_repo(&alice).unwrap();
+        store.create_repo(&radicle).unwrap();
+
+        assert!(store.has_urn(&alice.urn()).unwrap());
+        assert!(store.has_urn(&radicle.urn()).unwrap());
+
+        let alice_self = Reference::rad_self(alice.urn().id, None);
+        let radicle_self = Reference::rad_self(radicle.urn().id, None);
+
+        assert!(store.has_ref(&alice_self).unwrap());
+        assert!(store.has_ref(&radicle_self).unwrap());
+
+        let radicle_self_target = radicle_self
+            .find(&store)
+            .unwrap()
+            .symbolic_target()
+            .unwrap()
+            .to_owned();
+
+        assert_eq!(
+            radicle_self_target,
+            Reference::rad_id(alice.urn().id).to_string()
+        )
+    }
+
+    #[async_test]
+    async fn test_create_repo_missing_self() {
+        let store = TmpStorage::new();
+        let alice = User::<Draft>::create("alice".to_owned(), store.key.public()).unwrap();
+        let mut radicle = Project::<Draft>::create("radicle".to_owned(), alice.urn()).unwrap();
+
+        radicle
+            .sign(
+                &store.key,
+                &Signatory::User(alice.urn()),
+                &ConstResolver(alice),
+            )
+            .await
+            .unwrap();
+
+        assert!(matches!(store.create_repo(&radicle), Err(Error::NoSelf(_))))
+    }
+
+    #[async_test]
+    async fn test_create_working_copy() {
+        let store = TmpStorage::new();
+
+        let urn = {
+            let mut alice = User::<Draft>::create("alice".to_owned(), store.key.public()).unwrap();
+            alice
+                .sign(
+                    &store.key,
+                    &Signatory::OwnedKey,
+                    &ConstResolver(alice.clone()),
+                )
+                .await
+                .unwrap();
+            store.create_repo(&alice).unwrap();
+            alice.urn()
+        };
+
+        let working = tempdir().unwrap();
+        store.create_working_copy(&urn, working.path()).unwrap();
+
+        let oid = {
+            let repo = git2::Repository::open(working.path()).unwrap();
+            let oid = {
+                let empty_tree = {
+                    let mut index = repo.index().unwrap();
+                    let oid = index.write_tree().unwrap();
+                    repo.find_tree(oid).unwrap()
+                };
+                let author = git2::Signature::now("John Doe", "jd@acme.com").unwrap();
+                repo.commit(
+                    Some("refs/heads/master"),
+                    &author,
+                    &author,
+                    "Initial commit",
+                    &empty_tree,
+                    &[],
+                )
+                .unwrap()
+            };
+
+            let mut remote = repo.find_remote("rad").unwrap();
+            remote
+                .push(
+                    &[&format!(
+                        "refs/heads/master:refs/namespaces/{}/refs/heads/master",
+                        urn.id
+                    )],
+                    None,
+                )
+                .unwrap();
+
+            oid
+        };
+
+        let urn = RadUrn {
+            path: uri::Path::parse("refs/heads/master").unwrap(),
+            ..urn
+        };
+        assert!(store.has_commit(&urn, oid).unwrap());
     }
 }

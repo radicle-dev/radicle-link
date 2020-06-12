@@ -22,7 +22,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use async_trait::async_trait;
 use futures::future::{BoxFuture, FutureExt};
 use thiserror::Error;
 
@@ -390,7 +389,19 @@ impl LocalStorage for PeerStorage {
                         };
 
                         match res {
-                            Ok(()) => PutResult::Applied,
+                            Ok(()) => {
+                                if !self.ask(has.clone()).await {
+                                    tracing::warn!(
+                                        provider = %provider,
+                                        has.origin = %has.origin,
+                                        has.urn = %has.urn,
+                                        "Provider announced non-existant rev"
+                                    );
+                                    PutResult::Stale
+                                } else {
+                                    PutResult::Applied
+                                }
+                            },
                             Err(e) => match e {
                                 GitFetchError::KnownObject(_) => PutResult::Stale,
                                 GitFetchError::Store(storage::Error::NoSuchUrn(_)) => {
@@ -423,20 +434,13 @@ impl LocalStorage for PeerStorage {
         let _guard = span.enter();
 
         match want.urn.proto {
-            uri::Protocol::Git => {
-                let this = self.clone();
-                tokio::task::spawn_blocking(move || {
-                    this.git_has(
-                        &Originates {
-                            from: want.origin,
-                            value: want.urn,
-                        },
-                        want.rev.map(|Rev::Git(head)| head),
-                    )
-                })
-                .await
-                .unwrap_or(false)
-            },
+            uri::Protocol::Git => self.git_has(
+                &Originates {
+                    from: want.origin,
+                    value: want.urn,
+                },
+                want.rev.map(|Rev::Git(head)| head),
+            ),
         }
     }
 }

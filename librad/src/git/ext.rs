@@ -78,31 +78,18 @@ pub fn already_exists(e: &git2::Error) -> bool {
     e.code() == git2::ErrorCode::Exists
 }
 
-pub trait Git2ErrorExt<T> {
-    fn map_not_found<E, F>(self, f: F) -> Result<T, E>
+pub trait Git2ErrorExt<T>: Sized {
+    fn map_err_code<E, F>(self, code: git2::ErrorCode, f: F) -> Result<T, E>
     where
         E: From<git2::Error>,
         F: FnOnce() -> Result<T, E>;
 
-    fn map_already_exists<E, F>(self, f: F) -> Result<T, E>
-    where
-        E: From<git2::Error>,
-        F: FnOnce() -> Result<T, E>;
-}
-
-impl<T> Git2ErrorExt<T> for Result<T, git2::Error> {
     fn map_not_found<E, F>(self, f: F) -> Result<T, E>
     where
         E: From<git2::Error>,
         F: FnOnce() -> Result<T, E>,
     {
-        self.or_else(|e| {
-            if is_not_found_err(&e) {
-                f()
-            } else {
-                Err(e.into())
-            }
-        })
+        self.map_err_code(git2::ErrorCode::NotFound, f)
     }
 
     fn map_already_exists<E, F>(self, f: F) -> Result<T, E>
@@ -110,13 +97,17 @@ impl<T> Git2ErrorExt<T> for Result<T, git2::Error> {
         E: From<git2::Error>,
         F: FnOnce() -> Result<T, E>,
     {
-        self.or_else(|e| {
-            if already_exists(&e) {
-                f()
-            } else {
-                Err(e.into())
-            }
-        })
+        self.map_err_code(git2::ErrorCode::Exists, f)
+    }
+}
+
+impl<T> Git2ErrorExt<T> for Result<T, git2::Error> {
+    fn map_err_code<E, F>(self, code: git2::ErrorCode, f: F) -> Result<T, E>
+    where
+        E: From<git2::Error>,
+        F: FnOnce() -> Result<T, E>,
+    {
+        self.or_else(|e| if e.code() == code { f() } else { Err(e.into()) })
     }
 }
 

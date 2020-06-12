@@ -23,7 +23,6 @@ use crate::{
     meta::user::User,
     uri::{Path, Protocol, RadUrn},
 };
-use async_trait::async_trait;
 use data::{EntityBuilder, EntityData};
 use serde::{
     de::{DeserializeOwned, Error as SerdeDeserializationError},

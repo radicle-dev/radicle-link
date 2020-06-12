@@ -20,6 +20,7 @@
 use std::time::Duration;
 
 use futures::{future, stream::StreamExt};
+use tempfile::tempdir;
 
 use librad::{
     meta::{entity::Signatory, project::ProjectInfo},
@@ -42,14 +43,27 @@ async fn can_clone() {
         let peer1 = apis.pop().unwrap();
         let peer2 = apis.pop().unwrap();
 
-        let alice = Alice::new(peer1.public_key());
+        let mut alice = Alice::new(peer1.public_key());
         let mut radicle = Radicle::new(&alice);
-        radicle
-            .sign(peer1.key(), &Signatory::User(alice.urn()), &alice)
-            .await
-            .unwrap();
+
+        {
+            let resolves_to_alice = alice.clone();
+            alice
+                .sign(peer1.key(), &Signatory::OwnedKey, &resolves_to_alice)
+                .await
+                .unwrap();
+            radicle
+                .sign(
+                    peer1.key(),
+                    &Signatory::User(alice.urn()),
+                    &resolves_to_alice,
+                )
+                .await
+                .unwrap();
+        }
 
         tokio::task::spawn_blocking(move || {
+            peer1.storage().create_repo(&alice).unwrap();
             peer1.storage().create_repo(&radicle).unwrap();
 
             {
@@ -75,18 +89,31 @@ async fn fetches_on_gossip_notify() {
         let peer1 = apis.pop().unwrap();
         let peer2 = apis.pop().unwrap();
 
-        let alice = Alice::new(peer1.public_key());
+        let mut alice = Alice::new(peer1.public_key());
         let mut radicle = Radicle::new(&alice);
-        radicle
-            .sign(peer1.key(), &Signatory::User(alice.urn()), &alice)
-            .await
-            .unwrap();
+
+        {
+            let resolves_to_alice = alice.clone();
+            alice
+                .sign(peer1.key(), &Signatory::OwnedKey, &resolves_to_alice)
+                .await
+                .unwrap();
+            radicle
+                .sign(
+                    peer1.key(),
+                    &Signatory::User(alice.urn()),
+                    &resolves_to_alice,
+                )
+                .await
+                .unwrap();
+        }
 
         let peer1_storage = peer1.storage();
         let peer2_storage = peer2.storage();
 
         // Create project on peer1, and clone from peer2
         {
+            peer1_storage.create_repo(&alice).unwrap();
             peer1_storage.create_repo(&radicle).unwrap();
             let peer2_storage = peer2_storage.reopen().unwrap();
             let url = radicle.urn().into_rad_url(peer1.peer_id());
@@ -97,16 +124,46 @@ async fn fetches_on_gossip_notify() {
             .unwrap();
         }
 
-        // Add a commit on peer1
+        // On peer1, create a working copy, add a commit, and push it
         let commit_id = {
-            let repo = peer1_storage.open_repo(radicle.urn()).unwrap();
-            let empty_tree = {
-                let mut index = repo.index().unwrap();
-                let oid = index.write_tree().unwrap();
-                repo.find_tree(oid).unwrap()
-            };
-            repo.commit("master", "Initial commit", &empty_tree, &[])
+            let wc = tempdir().unwrap();
+            peer1_storage
+                .create_working_copy(&radicle.urn(), wc.path())
+                .unwrap();
+
+            let repo = git2::Repository::open(wc.path()).unwrap();
+            let commit_id = {
+                let empty_tree = {
+                    let mut index = repo.index().unwrap();
+                    let oid = index.write_tree().unwrap();
+                    repo.find_tree(oid).unwrap()
+                };
+                let author = git2::Signature::now("John Doe", "jd@acme.com").unwrap();
+                repo.commit(
+                    Some("refs/heads/master"),
+                    &author,
+                    &author,
+                    "Initial commit",
+                    &empty_tree,
+                    &[],
+                )
                 .unwrap()
+            };
+
+            let mut remote = repo.find_remote("rad").unwrap();
+            remote
+                .push(
+                    &[&format!(
+                        "refs/heads/master:refs/namespaces/{}/refs/heads/master",
+                        radicle.urn().id
+                    )],
+                    None,
+                )
+                .unwrap();
+
+            peer1_storage.update_refs(&radicle.urn()).unwrap();
+
+            commit_id
         };
 
         // Announce the update, and wait for peer2 to receive it

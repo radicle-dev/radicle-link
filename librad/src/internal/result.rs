@@ -15,14 +15,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod config;
-pub mod ext;
-pub mod refs;
-pub mod repo;
-pub mod server;
-pub mod storage;
-pub mod transport;
-pub mod types;
+pub trait ResultExt<T, E>: Sized {
+    fn or_matches<E2, P, F>(self, pred: P, f: F) -> Result<T, E2>
+    where
+        E2: From<E>,
+        P: FnOnce(&E) -> bool,
+        F: FnOnce() -> Result<T, E2>;
+}
 
-pub(crate) mod header;
-pub(crate) mod url;
+impl<T, E> ResultExt<T, E> for Result<T, E> {
+    fn or_matches<E2, P, F>(self, pred: P, f: F) -> Result<T, E2>
+    where
+        E2: From<E>,
+        P: FnOnce(&E) -> bool,
+        F: FnOnce() -> Result<T, E2>,
+    {
+        self.or_else(|e| if pred(&e) { f() } else { Err(e.into()) })
+    }
+}

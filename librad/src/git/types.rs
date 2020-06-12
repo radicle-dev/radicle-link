@@ -24,7 +24,7 @@ use crate::{git::refs::Refs, hash::Hash, peer::PeerId, uri::RadUrn};
 
 pub type Namespace = Hash;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RefsCategory {
     Heads,
     Rad,
@@ -39,7 +39,7 @@ impl Display for RefsCategory {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Reference {
     pub namespace: Namespace,
     pub remote: Option<PeerId>,
@@ -59,6 +59,10 @@ impl Display for Reference {
 }
 
 impl Reference {
+    pub fn find<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error> {
+        repo.find_reference(&self.to_string())
+    }
+
     pub fn rad_id(namespace: Namespace) -> Self {
         Self {
             namespace,
@@ -83,6 +87,15 @@ impl Reference {
             remote: remote.into(),
             category: RefsCategory::Rad,
             name: "refs".to_owned(),
+        }
+    }
+
+    pub fn rad_self(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
+        Self {
+            namespace,
+            remote: remote.into(),
+            category: RefsCategory::Rad,
+            name: "self".to_owned(),
         }
     }
 
@@ -222,6 +235,25 @@ impl Refspec {
                     remote,
                     force: false,
                 });
+            }
+
+            // Self
+            //
+            // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/self \
+            // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/self`
+            {
+                let local = Reference::rad_self(namespace.clone(), tracked_peer.clone());
+                let remote = if tracked_peer == remote_peer {
+                    local.with_remote(None)
+                } else {
+                    local.clone()
+                };
+
+                refspecs.push(Self {
+                    local,
+                    remote,
+                    force: false,
+                })
             }
 
             // Certifiers
