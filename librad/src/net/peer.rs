@@ -390,7 +390,19 @@ impl LocalStorage for PeerStorage {
                         };
 
                         match res {
-                            Ok(()) => PutResult::Applied,
+                            Ok(()) => {
+                                if !self.ask(has.clone()).await {
+                                    tracing::warn!(
+                                        provider = %provider,
+                                        has.origin = %has.origin,
+                                        has.urn = %has.urn,
+                                        "Provider announced non-existent rev"
+                                    );
+                                    PutResult::Stale
+                                } else {
+                                    PutResult::Applied
+                                }
+                            },
                             Err(e) => match e {
                                 GitFetchError::KnownObject(_) => PutResult::Stale,
                                 GitFetchError::Store(storage::Error::NoSuchUrn(_)) => {
