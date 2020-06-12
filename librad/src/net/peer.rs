@@ -423,20 +423,13 @@ impl LocalStorage for PeerStorage {
         let _guard = span.enter();
 
         match want.urn.proto {
-            uri::Protocol::Git => {
-                let this = self.clone();
-                tokio::task::spawn_blocking(move || {
-                    this.git_has(
-                        &Originates {
-                            from: want.origin,
-                            value: want.urn,
-                        },
-                        want.rev.map(|Rev::Git(head)| head),
-                    )
-                })
-                .await
-                .unwrap_or(false)
-            },
+            uri::Protocol::Git => self.git_has(
+                &Originates {
+                    from: want.origin,
+                    value: want.urn,
+                },
+                want.rev.map(|Rev::Git(head)| head),
+            ),
         }
     }
 }
