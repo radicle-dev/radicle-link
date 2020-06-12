@@ -1031,7 +1031,7 @@ mod tests {
         project_foo.sign_by_user(&user_key, &verified_user).unwrap();
         project_bar.sign_by_user(&user_key, &verified_user).unwrap();
 
-        // Sture the three entities in their respective namespaces
+        // Store the three entities in their respective namespaces
         store.create_repo(&user).unwrap();
         store.create_repo(&project_foo).unwrap();
         store.create_repo(&project_bar).unwrap();
