@@ -15,8 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use async_trait::async_trait;
-
 use crate::peer::PeerId;
 
 #[derive(Clone, Copy, Debug)]

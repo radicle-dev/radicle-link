@@ -18,6 +18,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     ops::{Deref, Range},
+    str::FromStr,
 };
 
 use radicle_surf::vcs::git as surf;
@@ -39,16 +40,10 @@ use crate::{
         result::ResultExt,
     },
     keys::SecretKey,
-    meta::entity::{
-        self,
-        data::{EntityBuilder, EntityData},
-        Draft,
-        Entity,
-        Signatory,
-    },
+    meta::entity::{self, data::EntityInfoExt, Draft, Entity, GenericDraftEntity, Signatory},
     paths::Paths,
     peer::PeerId,
-    uri::{self, RadUrl, RadUrn},
+    uri::{self, Path, Protocol, RadUrl, RadUrn},
 };
 
 #[derive(Debug, Error)]
@@ -109,6 +104,17 @@ impl AsRef<git2::Repository> for Storage {
     }
 }
 
+pub struct LinearHistoryCommits<'a>(Option<git2::Commit<'a>>);
+
+impl<'a> Iterator for LinearHistoryCommits<'a> {
+    type Item = git2::Commit<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = self.0.clone();
+        self.0 = self.0.as_ref().and_then(|commit| commit.parents().next());
+        result
+    }
+}
+
 impl Storage {
     /// Open the `Storage` found at the given [`Paths`]'s `git_dir`.
     /// If the path does not exist we initialise the `Storage` with
@@ -146,8 +152,7 @@ impl Storage {
 
     pub fn create_repo<T>(&self, meta: &Entity<T, Draft>) -> Result<Repo, Error>
     where
-        T: Serialize + DeserializeOwned + Clone + Default,
-        EntityData<T>: EntityBuilder,
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         let span = tracing::info_span!("Storage::create_repo");
         let _guard = span.enter();
@@ -199,8 +204,7 @@ impl Storage {
     /// currently the only supported method is [`tokio::task::spawn_blocking`].
     pub fn clone_repo<T>(&self, url: RadUrl) -> Result<Repo, Error>
     where
-        T: Serialize + DeserializeOwned + Clone + Default,
-        EntityData<T>: EntityBuilder,
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         let span = tracing::info_span!("Storage::clone_repo", url = %url);
         let _guard = span.enter();
@@ -213,7 +217,7 @@ impl Storage {
 
         // Fetch the identity first
         let git_url = GitUrlRef::from_rad_url_ref(url.as_ref(), &local_peer_id);
-        let meta = self.fetch_id(git_url)?;
+        let meta: Entity<T, Draft> = self.fetch_id(git_url)?;
 
         // TODO: properly verify meta
 
@@ -502,6 +506,63 @@ impl Storage {
         }))
     }
 
+    fn entity_blob<'a>(&'a self, commit: git2::Commit<'a>) -> Result<git2::Blob, Error> {
+        blob(&self, commit.tree()?, "id")
+    }
+
+    pub fn first_parent(&self, commit_oid: git2::Oid) -> Option<git2::Commit> {
+        self.backend
+            .find_commit(commit_oid)
+            .ok()
+            .and_then(|commit| match commit.parents().len() {
+                1 => commit.parents().next(),
+                _ => None,
+            })
+    }
+
+    pub fn linear_commit_history<'a>(
+        &'a self,
+        commit: git2::Commit<'a>,
+    ) -> LinearHistoryCommits<'a> {
+        LinearHistoryCommits(Some(commit))
+    }
+
+    fn entity_metadata_commit(&self, urn: &RadUrn) -> Result<git2::Commit, Error> {
+        self.backend
+            .find_reference(&Reference::rad_id(urn.id.clone()).to_string())
+            .map_err(Error::Git)
+            .and_then(|reference| {
+                reference
+                    .target()
+                    .ok_or_else(|| Error::NoSuchUrn(urn.clone()))
+            })
+            .and_then(|oid| Ok(self.backend.find_commit(oid)?))
+    }
+
+    pub fn metadata(&self, urn: &RadUrn) -> Result<GenericDraftEntity, Error> {
+        self.entity_metadata_commit(urn).and_then(|commit| {
+            GenericDraftEntity::from_json_slice(self.entity_blob(commit).unwrap().content())
+                .map_err(Error::Entity)
+        })
+    }
+
+    pub fn all_metadata_heads<'a>(
+        &'a self,
+    ) -> Result<impl Iterator<Item = (RadUrn, git2::Commit)> + 'a, Error> {
+        Ok(
+            References::from_globs(&self, &["refs/namespaces/*/refs/rad/id"])?
+                .peeled()
+                .filter_map(move |(refname, oid)| {
+                    urn_from_idref(&refname).and_then(|urn| {
+                        self.backend
+                            .find_commit(oid)
+                            .map(|commit| (urn, commit))
+                            .ok()
+                    })
+                }),
+        )
+    }
+
     pub fn certifiers_of(&self, urn: &RadUrn, peer: &PeerId) -> Result<HashSet<RadUrn>, Error> {
         let mut refs = References::from_globs(
             &self,
@@ -518,8 +579,7 @@ impl Storage {
     // FIXME: yes, we do want that
     fn fetch_id<T>(&self, url: GitUrlRef) -> Result<Entity<T, Draft>, Error>
     where
-        T: Serialize + DeserializeOwned + Clone + Default,
-        EntityData<T>: EntityBuilder,
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         tracing::debug!("Fetching id of {}", url);
 
@@ -567,8 +627,7 @@ impl Storage {
 
     fn commit_initial_meta<T>(&self, meta: &Entity<T, Draft>) -> Result<git2::Oid, Error>
     where
-        T: Serialize + DeserializeOwned + Clone + Default,
-        EntityData<T>: EntityBuilder,
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         let canonical_data = Cjson(meta).canonical_form()?;
         let blob = self.blob(&canonical_data)?;
@@ -605,7 +664,7 @@ impl Storage {
     // FIXME: yes, we want this
     fn track_signers<T>(&self, meta: &Entity<T, Draft>) -> Result<(), Error>
     where
-        T: Serialize + DeserializeOwned + Clone + Default,
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         let span = tracing::debug_span!("Storage::track_signers", meta.urn = %meta.urn());
         let _guard = span.enter();
@@ -830,20 +889,41 @@ fn tracking_remote_name(urn: &RadUrn, peer: &PeerId) -> String {
     format!("{}/{}", urn.id, peer)
 }
 
+fn urn_from_idref(refname: &str) -> Option<RadUrn> {
+    refname
+        .strip_suffix("/refs/rad/id")
+        .and_then(|namespace_root| {
+            namespace_root
+                .split('/')
+                .next_back()
+                .and_then(|namespace| Hash::from_str(namespace).ok())
+                .map(|hash| RadUrn::new(hash, Protocol::Git, Path::empty()))
+        })
+}
+
+fn urn_from_ref(refname: &str) -> Option<RadUrn> {
+    refname
+        .split('/')
+        .next_back()
+        .and_then(|urn| urn.parse().ok())
+}
+
 fn urns_from_refs<'a, E>(
     refs: impl Iterator<Item = Result<&'a str, E>> + 'a,
 ) -> impl Iterator<Item = RadUrn> + 'a {
-    refs.filter_map(|refname| {
-        refname
-            .ok()
-            .and_then(|name| name.split('/').next_back())
-            .and_then(|urn| urn.parse().ok())
-    })
+    refs.filter_map(|refname| refname.ok().and_then(urn_from_ref))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::meta::{
+        entity::{Draft, Resolver},
+        Project,
+        User,
+    };
+    use async_trait::async_trait;
+    use futures_await_test::async_test;
 
     use tempfile::tempdir;
 
@@ -914,13 +994,116 @@ mod tests {
         assert!(store.tracked(&urn).unwrap().next().is_none())
     }
 
+    struct DummyUserResolver(User<Draft>);
+    #[async_trait]
+    impl Resolver<User<Draft>> for DummyUserResolver {
+        async fn resolve(&self, _uri: &RadUrn) -> Result<User<Draft>, entity::Error> {
+            Ok(self.0.clone())
+        }
+        async fn resolve_revision(
+            &self,
+            _uri: &RadUrn,
+            _revision: u64,
+        ) -> Result<User<Draft>, entity::Error> {
+            Ok(self.0.clone())
+        }
+    }
+
+    #[async_test]
+    async fn test_all_metadata_heads() {
+        let tmp = tempdir().unwrap();
+        let paths = Paths::from_root(tmp).unwrap();
+        let user_key = SecretKey::new();
+        let store = Storage::init(&paths, user_key.clone()).unwrap();
+
+        // Create signed and verified user
+        let mut user = User::<Draft>::create("user".to_owned(), user_key.public()).unwrap();
+        user.sign_owned(&user_key).unwrap();
+        let user_resolver = DummyUserResolver(user.clone());
+        let verified_user = user
+            .clone()
+            .check_history_status(&user_resolver, &user_resolver)
+            .await
+            .unwrap();
+
+        // Create and sign two projects
+        let mut project_foo = Project::<Draft>::create("foo".to_owned(), user.urn()).unwrap();
+        let mut project_bar = Project::<Draft>::create("bar".to_owned(), user.urn()).unwrap();
+        project_foo.sign_by_user(&user_key, &verified_user).unwrap();
+        project_bar.sign_by_user(&user_key, &verified_user).unwrap();
+
+        // Store the three entities in their respective namespaces
+        store.create_repo(&user).unwrap();
+        store.create_repo(&project_foo).unwrap();
+        store.create_repo(&project_bar).unwrap();
+
+        let mut ids = HashSet::new();
+        let mut urns = HashMap::new();
+        ids.insert(user.hash());
+        ids.insert(project_foo.hash());
+        ids.insert(project_bar.hash());
+
+        // Iterate ove all namespaces
+        for (urn, commit) in store.all_metadata_heads().unwrap() {
+            // Check that we found one of our IDs
+            let id = &urn.id;
+            assert!(ids.contains(id));
+
+            // Check that we can use the URN to find the same commit
+            let commit_from_urn = store.entity_metadata_commit(&urn).unwrap();
+            assert_eq!(commit_from_urn.id(), commit.id());
+
+            // Bookkeeping for more tests
+            ids.remove(id);
+            urns.insert(id.to_owned(), urn);
+        }
+
+        // Check that we found all the entities that we saved
+        assert!(ids.is_empty());
+
+        // Pull out user blob and deserialize
+        assert_eq!(
+            user,
+            User::<Draft>::from_json_slice(
+                store
+                    .entity_blob(store.entity_metadata_commit(&user.urn()).unwrap())
+                    .unwrap()
+                    .content()
+            )
+            .unwrap()
+        );
+        let generic_user = store.metadata(&user.urn()).unwrap();
+        assert_eq!(generic_user.kind(), user.kind());
+        assert_eq!(generic_user.hash(), user.hash());
+
+        // Pull out foo blob and deserialize
+        assert_eq!(
+            project_foo,
+            Project::<Draft>::from_json_slice(
+                store
+                    .entity_blob(store.entity_metadata_commit(&project_foo.urn()).unwrap())
+                    .unwrap()
+                    .content()
+            )
+            .unwrap()
+        );
+        let generic_foo = store.metadata(&project_foo.urn()).unwrap();
+        assert_eq!(generic_foo.kind(), project_foo.kind());
+        assert_eq!(generic_foo.hash(), project_foo.hash());
+
+        // Check user commit history length
+        let user_history =
+            store.linear_commit_history(store.entity_metadata_commit(&user.urn()).unwrap());
+        let user_commits: Vec<git2::Commit> = user_history.collect();
+        assert_eq!(user_commits.len(), 1);
+    }
+
     #[test]
     fn test_open_or_init() {
         let tmp = tempdir().unwrap();
         let paths = Paths::from_root(tmp).unwrap();
         let key = SecretKey::new();
         let store = Storage::open(&paths, key);
-
         if let Err(err) = store {
             assert!(false, "failed to open Storage: {:?}", err)
         };

@@ -15,7 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::io;
+use std::{
+    io,
+    net::{IpAddr, SocketAddr},
+};
 
 use crate::peer::PeerId;
 use futures::io::{AsyncRead, AsyncWrite};
@@ -32,6 +35,16 @@ pub trait RemoteInfo {
 
     fn remote_peer_id(&self) -> &PeerId;
     fn remote_addr(&self) -> Self::Addr;
+}
+
+pub trait AsAddr<A> {
+    fn as_addr(&self) -> A;
+}
+
+impl AsAddr<IpAddr> for SocketAddr {
+    fn as_addr(&self) -> IpAddr {
+        self.ip()
+    }
 }
 
 pub trait Stream: RemoteInfo + AsyncRead + AsyncWrite + Unpin + Send + Sync + Sized {

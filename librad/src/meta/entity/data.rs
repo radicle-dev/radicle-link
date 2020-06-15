@@ -20,6 +20,8 @@ use crate::{
     keys::PublicKey,
     meta::{
         entity::{Draft, Entity, Error},
+        project::ProjectInfo,
+        user::UserInfo,
         RAD_VERSION,
     },
     uri::RadUrn,
@@ -55,7 +57,50 @@ where
     ordered.serialize(serializer)
 }
 
-/// Raw data for an `Entity
+/// The different kinds of `Entity` types
+#[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Debug)]
+pub enum EntityKind {
+    User,
+    Project,
+}
+
+/// Information payload for all possible `Entity` types
+///
+/// This is used so we can deserialize `EntityData` without knowing the actual
+/// entity type: deserializing as `EntityData<EntityInfo>` the `info` property
+/// will contain this payload
+///
+/// Care has been taken to ensure that the same data can be deserialized both
+/// "generically" (as `EntityData<EntityInfo>`) and using its specific type
+#[derive(Clone, Deserialize, Serialize, Debug)]
+#[serde(untagged)]
+pub enum EntityInfo {
+    User(UserInfo),
+    Project(ProjectInfo),
+}
+
+pub trait EntityInfoExt: Sized {
+    fn kind(&self) -> EntityKind;
+    fn check_invariants<T>(&self, data: &EntityData<T>) -> Result<(), Error>;
+}
+
+impl EntityInfoExt for EntityInfo {
+    fn kind(&self) -> EntityKind {
+        match self {
+            EntityInfo::User(_) => EntityKind::User,
+            EntityInfo::Project(_) => EntityKind::Project,
+        }
+    }
+
+    fn check_invariants<T>(&self, data: &EntityData<T>) -> Result<(), Error> {
+        match self {
+            EntityInfo::User(info) => info.check_invariants(data),
+            EntityInfo::Project(info) => info.check_invariants(data),
+        }
+    }
+}
+
+/// Raw data for an `Entity`
 ///
 /// This is used in two ways:
 ///
@@ -121,7 +166,7 @@ where
 
 impl<T> EntityData<T>
 where
-    T: Serialize + DeserializeOwned + Clone + Default,
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
 {
     pub fn to_json_writer<W>(&self, writer: W) -> Result<(), Error>
     where
@@ -149,19 +194,22 @@ where
     }
 
     pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
-        let mut cleaned = EntityData::<T>::default();
-        cleaned.name = self.name.to_owned();
-        cleaned.revision = self.revision.to_owned();
-        cleaned.hash = None;
-        cleaned.root_hash = if self.parent_hash.is_some() {
-            self.root_hash.to_owned()
-        } else {
-            None
+        let cleaned = Self {
+            name: self.name.to_owned(),
+            revision: self.revision.to_owned(),
+            hash: None,
+            root_hash: if self.parent_hash.is_some() {
+                self.root_hash.to_owned()
+            } else {
+                None
+            },
+            parent_hash: self.parent_hash.to_owned(),
+            keys: self.keys.to_owned(),
+            certifiers: self.certifiers.to_owned(),
+            info: self.info.to_owned(),
+            rad_version: self.rad_version,
+            signatures: None,
         };
-        cleaned.parent_hash = self.parent_hash.to_owned();
-        cleaned.keys = self.keys.to_owned();
-        cleaned.certifiers = self.certifiers.to_owned();
-        cleaned.info = self.info.to_owned();
 
         let mut buffer: Vec<u8> = vec![];
         let mut ser =
@@ -277,18 +325,14 @@ where
     pub fn map(self, f: impl FnOnce(Self) -> Self) -> Self {
         f(self)
     }
-}
 
-pub trait EntityBuilder {
-    fn check_invariants(&self) -> Result<(), Error>;
-}
+    pub fn check_invariants(&self) -> Result<(), Error> {
+        self.info.check_invariants(self)
+    }
 
-impl<T> EntityData<T>
-where
-    T: Serialize + DeserializeOwned + Clone + Default,
-    EntityData<T>: EntityBuilder,
-{
     pub fn build(self) -> Result<Entity<T, Draft>, Error> {
         Entity::<T, Draft>::from_data(self)
     }
 }
+
+pub type GenericEntityData = EntityData<EntityInfo>;

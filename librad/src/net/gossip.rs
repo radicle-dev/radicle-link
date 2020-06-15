@@ -53,7 +53,7 @@ use crate::{
     internal::channel::Fanout,
     net::{
         codec::CborCodec,
-        connection::{self, RemoteInfo},
+        connection::{self, AsAddr, RemoteInfo},
         gossip::error::Error,
         upgrade::{self, Upgraded},
     },
@@ -313,11 +313,16 @@ where
 impl<Storage, Broadcast, Addr, R, W> Protocol<Storage, Broadcast, Addr, R, W>
 where
     Storage: LocalStorage<Update = Broadcast> + 'static,
+
     for<'de> Broadcast: Encode + Decode<'de> + Clone + Debug + Send + Sync + 'static,
     for<'de> Addr:
         Encode + Decode<'de> + Clone + Debug + Hash + PartialEq + Eq + Send + Sync + 'static,
-    R: AsyncRead + RemoteInfo<Addr = Addr> + Unpin + Send + Sync + 'static,
-    W: AsyncWrite + RemoteInfo<Addr = Addr> + Unpin + Send + Sync + 'static,
+
+    R: AsyncRead + RemoteInfo + Unpin + Send + Sync + 'static,
+    W: AsyncWrite + RemoteInfo + Unpin + Send + Sync + 'static,
+
+    <R as RemoteInfo>::Addr: AsAddr<Addr>,
+    <W as RemoteInfo>::Addr: AsAddr<Addr>,
 {
     pub fn new(
         local_id: &PeerId,
@@ -457,7 +462,7 @@ where
             match recvd {
                 Ok(rpc) => match rpc {
                     Rpc::Membership(msg) => {
-                        self.handle_membership(&remote_id, recv.remote_addr(), msg)
+                        self.handle_membership(&remote_id, recv.remote_addr().as_addr(), msg)
                             .await?
                     },
 
