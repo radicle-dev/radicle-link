@@ -53,11 +53,11 @@ fn peer_from_key(key: &SecretKey) -> PeerId {
 }
 
 lazy_static! {
-    static ref K1: SecretKey = new_key_from_seed(1);
-    static ref K2: SecretKey = new_key_from_seed(2);
-    static ref K3: SecretKey = new_key_from_seed(3);
-    static ref K4: SecretKey = new_key_from_seed(4);
-    static ref K5: SecretKey = new_key_from_seed(5);
+    pub static ref K1: SecretKey = new_key_from_seed(1);
+    pub static ref K2: SecretKey = new_key_from_seed(2);
+    pub static ref K3: SecretKey = new_key_from_seed(3);
+    pub static ref K4: SecretKey = new_key_from_seed(4);
+    pub static ref K5: SecretKey = new_key_from_seed(5);
 }
 
 lazy_static! {

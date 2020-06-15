@@ -23,7 +23,7 @@ use crate::{
     meta::{
         common::{EmailAddr, Label, Url},
         entity::{
-            data::{EntityBuilder, EntityData},
+            data::{EntityData, EntityInfoExt, EntityKind},
             Draft,
             Entity,
             Error,
@@ -33,12 +33,16 @@ use crate::{
     },
 };
 
-#[derive(Clone, Deserialize, Serialize, Debug, Default, PartialEq)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct UserInfo {
+    // Marker so `EntityInfo` can deserialize correctly
+    user: (),
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<ProfileRef>,
 
     #[serde(
+        default,
         skip_serializing_if = "Option::is_none",
         serialize_with = "serde_helpers::urltemplate::serialize_opt",
         deserialize_with = "serde_helpers::urltemplate::deserialize_opt"
@@ -46,12 +50,33 @@ pub struct UserInfo {
     pub largefiles: Option<UrlTemplate>,
 }
 
-impl UserInfo {
-    pub fn new() -> Self {
+impl Default for UserInfo {
+    fn default() -> Self {
         Self {
+            user: (),
             profile: None,
             largefiles: None,
         }
+    }
+}
+
+impl EntityInfoExt for UserInfo {
+    fn kind(&self) -> EntityKind {
+        EntityKind::User
+    }
+
+    fn check_invariants<T>(&self, data: &EntityData<T>) -> Result<(), Error> {
+        // Require at least one signing key
+        if data.keys.is_empty() {
+            return Err(Error::InvalidData("Missing keys".to_owned()));
+        }
+        Ok(())
+    }
+}
+
+impl UserInfo {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
@@ -143,16 +168,6 @@ impl UserData {
     }
 }
 
-impl EntityBuilder for UserData {
-    fn check_invariants(&self) -> Result<(), Error> {
-        // Require at least one signing key
-        if self.keys.is_empty() {
-            return Err(Error::InvalidData("Missing keys".to_owned()));
-        }
-        Ok(())
-    }
-}
-
 pub type User<ST> = Entity<UserInfo, ST>;
 
 impl<ST> User<ST>
@@ -184,7 +199,11 @@ pub mod tests {
 
     use proptest::prelude::*;
 
-    use crate::meta::profile::tests::gen_user_profile;
+    use crate::meta::{
+        entity::GenericDraftEntity,
+        entity_test::K1,
+        profile::tests::gen_user_profile,
+    };
 
     pub fn gen_profile_ref() -> impl Strategy<Value = ProfileRef> {
         prop_oneof![
@@ -193,26 +212,40 @@ pub mod tests {
         ]
     }
 
-    pub fn gen_user() -> impl Strategy<Value = User<Draft>> {
-        proptest::option::of(gen_profile_ref()).prop_map(|profile| {
-            let largefiles = Some(UrlTemplate::from("https://git-lfs.github.com/{SHA512}"));
+    pub fn gen_largefiles() -> impl Strategy<Value = Option<UrlTemplate>> {
+        prop_oneof![
+            Just(None),
+            Just(Some(UrlTemplate::from(
+                "https://git-lfs.github.com/{SHA512}"
+            ))),
+        ]
+    }
 
-            UserData::default()
-                .set_name("foo".to_owned())
-                .set_revision(1)
-                .set_profile_ref(profile)
-                .set_largefiles(largefiles)
-                .build()
-                .unwrap()
-        })
+    pub fn gen_user() -> impl Strategy<Value = User<Draft>> {
+        (proptest::option::of(gen_profile_ref()), gen_largefiles()).prop_map(
+            |(profile, largefiles)| {
+                UserData::default()
+                    .set_name("foo".to_owned())
+                    .set_revision(1)
+                    .add_key(K1.public())
+                    .set_profile_ref(profile)
+                    .set_largefiles(largefiles)
+                    .build()
+                    .unwrap()
+            },
+        )
     }
 
     proptest! {
         #[test]
-        fn prop_user_serde(contrib in gen_user()) {
-            let ser = serde_json::to_string(&contrib).unwrap();
-            let contrib_de = serde_json::from_str(&ser).unwrap();
-            assert_eq!(contrib, contrib_de)
+        fn prop_user_serde(user in gen_user()) {
+            let ser = serde_json::to_string(&user).unwrap();
+            let user_de = serde_json::from_str(&ser).unwrap();
+            assert_eq!(user, user_de);
+
+            let generic_de = GenericDraftEntity::from_json_str(&ser).unwrap();
+            let generic_ser = generic_de.to_json_string().unwrap();
+            assert_eq!(ser, generic_ser);
         }
     }
 }

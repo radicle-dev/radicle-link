@@ -24,7 +24,7 @@ use crate::{
     uri::{Path, Protocol, RadUrn},
 };
 use async_trait::async_trait;
-use data::{EntityBuilder, EntityData};
+use data::{EntityData, EntityInfo, EntityInfoExt, EntityKind};
 use serde::{
     de::{DeserializeOwned, Error as SerdeDeserializationError},
     Deserialize,
@@ -219,8 +219,7 @@ pub struct Entity<T, ST> {
 
 impl<T> TryFrom<EntityData<T>> for Entity<T, Draft>
 where
-    T: Serialize + DeserializeOwned + Clone + Default,
-    EntityData<T>: EntityBuilder,
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
 {
     type Error = Error;
     fn try_from(data: EntityData<T>) -> Result<Entity<T, Draft>, Error> {
@@ -230,7 +229,7 @@ where
 
 impl<T, ST> Into<EntityData<T>> for Entity<T, ST>
 where
-    T: Serialize + DeserializeOwned + Clone + Default,
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     ST: Clone,
 {
     fn into(self) -> EntityData<T> {
@@ -240,7 +239,7 @@ where
 
 impl<T, ST> Serialize for Entity<T, ST>
 where
-    T: Serialize + DeserializeOwned + Clone + Default,
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     ST: Clone,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -253,8 +252,7 @@ where
 
 impl<'de, T> Deserialize<'de> for Entity<T, Draft>
 where
-    T: Serialize + DeserializeOwned + Clone + Default,
-    EntityData<T>: EntityBuilder,
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -269,7 +267,7 @@ where
 
 impl<T, ST> Entity<T, ST>
 where
-    T: Serialize + DeserializeOwned + Clone + Default,
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
 {
     /// `name` getter
     pub fn name(&self) -> &str {
@@ -289,6 +287,11 @@ where
     /// `info` getter
     pub fn info(&self) -> &T {
         &self.info
+    }
+
+    /// Gets the entity kind
+    pub fn kind(&self) -> EntityKind {
+        self.info.kind()
     }
 
     /// Turn the entity in to its raw data
@@ -697,8 +700,7 @@ where
 
 impl<T, ST> Entity<T, ST>
 where
-    T: Serialize + DeserializeOwned + Clone + Default,
-    EntityData<T>: EntityBuilder,
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     ST: Clone,
 {
     /// Build an `Entity` from its data (the second step of deserialization)
@@ -715,6 +717,9 @@ where
         if data.revision.unwrap() < 1 {
             return Err(Error::InvalidData("Invalid revision".to_owned()));
         }
+
+        // Check specific invariants
+        data.check_invariants()?;
 
         let mut signatures = HashMap::new();
         if let Some(s) = &data.signatures {
@@ -806,3 +811,6 @@ where
         Self::from_data(data::EntityData::from_json_slice(s)?)
     }
 }
+
+pub type GenericEntity<ST> = Entity<EntityInfo, ST>;
+pub type GenericDraftEntity = GenericEntity<Draft>;
