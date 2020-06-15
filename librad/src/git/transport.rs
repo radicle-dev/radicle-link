@@ -53,7 +53,6 @@ use std::{
     sync::{Arc, Once, RwLock},
 };
 
-use async_trait::async_trait;
 use futures::{
     executor::block_on,
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},

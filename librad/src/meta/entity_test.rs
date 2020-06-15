@@ -15,21 +15,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::str::FromStr;
+
+use futures_await_test::async_test;
+use sodiumoxide::crypto::sign::ed25519::Seed;
+
 use super::{
     entity::*,
     user::{User, UserData},
 };
+
 use crate::{
     hash::Hash,
     keys::{PublicKey, SecretKey},
     peer::PeerId,
     uri::{Path, Protocol, RadUrn},
 };
-use async_trait::async_trait;
-use futures_await_test::async_test;
-use lazy_static::lazy_static;
-use sodiumoxide::crypto::sign::ed25519::Seed;
-use std::str::FromStr;
 
 lazy_static! {
     pub static ref EMPTY_HASH: Hash = Hash::hash(&[]);

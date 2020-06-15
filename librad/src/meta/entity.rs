@@ -15,7 +15,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod data;
+use std::{
+    collections::{HashMap, HashSet},
+    convert::{Into, TryFrom},
+    marker::PhantomData,
+    str::FromStr,
+};
+
+use serde::{
+    de::{DeserializeOwned, Error as SerdeDeserializationError},
+    Deserialize,
+    Serialize,
+};
+use thiserror::Error;
 
 use crate::{
     hash::{Hash, ParseError as HashParseError},
@@ -23,20 +35,10 @@ use crate::{
     meta::user::User,
     uri::{Path, Protocol, RadUrn},
 };
-use async_trait::async_trait;
+
+pub mod data;
+
 use data::{EntityData, EntityInfo, EntityInfoExt, EntityKind};
-use serde::{
-    de::{DeserializeOwned, Error as SerdeDeserializationError},
-    Deserialize,
-    Serialize,
-};
-use std::{
-    collections::{HashMap, HashSet},
-    convert::{Into, TryFrom},
-    marker::PhantomData,
-    str::FromStr,
-};
-use thiserror::Error;
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum Error {
