@@ -1096,7 +1096,7 @@ mod tests {
         let user_commits: Vec<git2::Commit> = user_history.collect();
         assert_eq!(user_commits.len(), 1);
     }
-    
+
     #[test]
     fn test_open_or_init() {
         let tmp = tempdir().unwrap();
