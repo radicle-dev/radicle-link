@@ -569,10 +569,9 @@ impl Storage {
     ///
     /// * If the `RadUrn` does not point to a project.
     pub fn project(&self, urn: &RadUrn) -> Result<Project<Draft>, Error> {
-        let entity = self.metadata(urn)?;
-        entity.try_map(|info| match info {
-            EntityInfo::Project(project_info) => Ok(project_info),
-            _ => Err(Error::NotProject(urn.clone())),
+        self.coerce(&urn, Error::NotProject(urn.clone()), |info| match info {
+            EntityInfo::Project(project_info) => Some(project_info),
+            _ => None,
         })
     }
 
@@ -582,11 +581,18 @@ impl Storage {
     ///
     /// * If the `RadUrn` does not point to a user.
     pub fn user(&self, urn: &RadUrn) -> Result<User<Draft>, Error> {
-        let entity = self.metadata(urn)?;
-        entity.try_map(|info| match info {
-            EntityInfo::User(user_info) => Ok(user_info),
-            _ => Err(Error::NotUser(urn.clone())),
+        self.coerce(&urn, Error::NotUser(urn.clone()), |info| match info {
+            EntityInfo::User(user_info) => Some(user_info),
+            _ => None,
         })
+    }
+
+    fn coerce<F, T>(&self, urn: &RadUrn, err: Error, coerce: F) -> Result<Entity<T, Draft>, Error>
+    where
+        F: FnOnce(EntityInfo) -> Option<T>,
+    {
+        let entity = self.metadata(urn)?;
+        entity.try_map(|info| coerce(info).ok_or(err))
     }
 
     pub fn all_metadata_heads<'a>(
