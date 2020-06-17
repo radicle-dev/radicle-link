@@ -18,7 +18,7 @@
 use std::{convert::Infallible, io};
 
 use rpassword::read_password_from_tty;
-use secstr::SecUtf8;
+pub use secstr::SecUtf8;
 
 /// A method to obtain a passphrase from which an encryption key can be derived.
 ///
