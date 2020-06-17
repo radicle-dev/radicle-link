@@ -264,7 +264,8 @@ impl Peer {
         );
 
         let protocol = Protocol::new(gossip, git);
-        git::transport::register().register_stream_factory(&peer_id, Box::new(protocol.clone()));
+        git::transport::p2p::register()
+            .register_stream_factory(&peer_id, Box::new(protocol.clone()));
 
         let run_loop = protocol
             .clone()

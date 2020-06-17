@@ -20,6 +20,7 @@
 use std::time::Duration;
 
 use futures::{future, stream::StreamExt};
+use tempfile::tempdir;
 
 use librad::{
     meta::{entity::Signatory, project::ProjectInfo},
@@ -120,16 +121,38 @@ async fn fetches_on_gossip_notify() {
             .unwrap();
         }
 
-        // Add a commit on peer1
+        // Check out a working copy on peer1, add a commit, and push it
         let commit_id = {
-            let repo = peer1_storage.open_repo(radicle.urn()).unwrap();
-            let empty_tree = {
-                let mut index = repo.index().unwrap();
-                let oid = index.write_tree().unwrap();
-                repo.find_tree(oid).unwrap()
-            };
-            repo.commit("master", "Initial commit", &empty_tree, &[])
+            librad::git::transport::local::register(librad::git::transport::local::Settings {
+                paths: peer1.paths().clone(),
+                signer: Some(peer1_key),
+            });
+
+            let tmp = tempdir().unwrap();
+            let repo = git2::Repository::init(tmp.path()).unwrap();
+            let commit_id = {
+                let empty_tree = {
+                    let mut index = repo.index().unwrap();
+                    let oid = index.write_tree().unwrap();
+                    repo.find_tree(oid).unwrap()
+                };
+                let author = git2::Signature::now("The Animal", "animal@muppets.com").unwrap();
+                repo.commit(
+                    Some("refs/heads/master"),
+                    &author,
+                    &author,
+                    "Initial commit",
+                    &empty_tree,
+                    &[],
+                )
                 .unwrap()
+            };
+            let mut origin = repo
+                .remote("origin", &format!("radl://{}", radicle.urn().id))
+                .unwrap();
+            origin.push(&["refs/heads/master"], None).unwrap();
+
+            commit_id
         };
 
         // Announce the update, and wait for peer2 to receive it

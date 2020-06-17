@@ -38,7 +38,7 @@ use thiserror::Error;
 use crate::{
     git::{
         server::GitServer,
-        transport::{GitStream, GitStreamFactory},
+        transport::p2p::{GitStream, GitStreamFactory},
     },
     internal::channel::Fanout,
     net::{

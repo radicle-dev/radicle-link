@@ -22,7 +22,7 @@ use std::{
     io,
     iter,
     marker::PhantomData,
-    ops::{Deref, Range},
+    ops::Range,
     path::Path,
 };
 
@@ -41,8 +41,8 @@ use crate::{
         },
         refs::{self, Refs},
         repo::Repo,
+        transport::p2p::{GitUrl, GitUrlRef},
         types::Reference,
-        url::{GitUrl, GitUrlRef},
     },
     hash::Hash,
     internal::{
@@ -155,21 +155,6 @@ pub struct Storage<S> {
     pub(super) backend: git2::Repository,
     peer_id: PeerId,
     signer: S,
-}
-
-// FIXME(kim): we really don't want to export this
-impl<S> Deref for Storage<S> {
-    type Target = git2::Repository;
-
-    fn deref(&self) -> &Self::Target {
-        &self.backend
-    }
-}
-
-impl<S> AsRef<git2::Repository> for Storage<S> {
-    fn as_ref(&self) -> &git2::Repository {
-        self
-    }
 }
 
 impl<S: Clone> Storage<S> {
@@ -291,7 +276,7 @@ impl<S: Clone> Storage<S> {
 
     pub fn certifiers_of(&self, urn: &RadUrn, peer: &PeerId) -> Result<HashSet<RadUrn>, Error> {
         let mut refs = References::from_globs(
-            &self,
+            &self.backend,
             &[format!(
                 "refs/namespaces/{}/refs/remotes/{}/rad/ids/*",
                 &urn.id, peer
@@ -411,7 +396,7 @@ impl<S: Clone> Storage<S> {
                 branch: refs.borrow().into(),
                 path: Path::new("refs"),
             }
-            .get(&self)?;
+            .get(&self.backend)?;
             refs::Signed::from_json(blob.content(), &peer)
         }?;
 
@@ -421,7 +406,7 @@ impl<S: Clone> Storage<S> {
     /// The set of all certifiers of the given identity, transitively
     pub fn certifiers(&self, urn: &RadUrn) -> Result<HashSet<RadUrn>, Error> {
         let mut refs = References::from_globs(
-            &self,
+            &self.backend,
             &[
                 format!("refs/namespaces/{}/refs/rad/ids/*", &urn.id),
                 format!("refs/namespaces/{}/refs/remotes/**/rad/ids/*", &urn.id),
@@ -431,7 +416,7 @@ impl<S: Clone> Storage<S> {
         Ok(urns_from_refs(refnames).collect())
     }
 
-    fn references_glob<'a>(
+    pub(crate) fn references_glob<'a>(
         &'a self,
         urn: &RadUrn,
         globs: impl IntoIterator<Item = impl AsRef<str>>,
@@ -439,7 +424,7 @@ impl<S: Clone> Storage<S> {
         let namespace_prefix = format!("refs/namespaces/{}/", &urn.id);
 
         let refs = References::from_globs(
-            &self,
+            &self.backend,
             globs
                 .into_iter()
                 .map(|glob| format!("{}{}", namespace_prefix, glob.as_ref())),
@@ -449,6 +434,10 @@ impl<S: Clone> Storage<S> {
             name.strip_prefix(&namespace_prefix)
                 .map(|name| (name.to_owned(), target))
         }))
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        self.backend.path()
     }
 }
 
@@ -507,6 +496,23 @@ impl Storage<WithSigner> {
                 .external_template(false),
         )?;
         Config::init(&mut backend, &signer, None)?;
+
+        {
+            let empty_tree = {
+                let mut index = backend.index()?;
+                let oid = index.write_tree()?;
+                backend.find_tree(oid)
+            }?;
+            let author = backend.signature()?;
+            backend.commit(
+                Some("HEAD"),
+                &author,
+                &author,
+                &format!("Initialised storage for peer id {}", PeerId::from(&signer)),
+                &empty_tree,
+                &[],
+            )?;
+        }
 
         Ok(Self {
             backend,
@@ -843,31 +849,6 @@ impl Storage<WithSigner> {
             .or_matches(is_exists_err, || Ok(()))
     }
 
-    // FIXME: REMOVE
-    pub fn commit(
-        &self,
-        urn: &RadUrn,
-        branch: &str,
-        msg: &str,
-        tree: &git2::Tree,
-        parents: &[&git2::Commit],
-    ) -> Result<git2::Oid, Error> {
-        let author = self.signature()?;
-        let head = Reference::head(urn.id.clone(), None, branch);
-        let oid = self.backend.commit(
-            Some(&head.to_string()),
-            &author,
-            &author,
-            msg,
-            tree,
-            parents,
-        )?;
-
-        self.update_refs(urn)?;
-
-        Ok(oid)
-    }
-
     // Helpers
 
     fn commit_initial_meta<T>(&self, meta: &Entity<T, Draft>) -> Result<git2::Oid, Error>
@@ -946,7 +927,7 @@ impl Storage<WithSigner> {
             })
     }
 
-    fn update_refs(&self, urn: &RadUrn) -> Result<(), Error> {
+    pub(crate) fn update_refs(&self, urn: &RadUrn) -> Result<(), Error> {
         let span = tracing::debug_span!("Storage::update_refs");
         let _guard = span.enter();
 
@@ -958,17 +939,18 @@ impl Storage<WithSigner> {
         let rad_refs_ref = Reference::rad_refs(urn.id.clone(), None).to_string();
 
         let parent: Option<git2::Commit> = self
+            .backend
             .find_reference(&rad_refs_ref)
             .and_then(|refs| refs.peel_to_commit().map(Some))
             .or_matches::<Error, _, _>(is_not_found_err, || Ok(None))?;
         let tree = {
-            let blob = self.blob(&refsig_canonical)?;
-            let mut builder = self.treebuilder(None)?;
+            let blob = self.backend.blob(&refsig_canonical)?;
+            let mut builder = self.backend.treebuilder(None)?;
 
             builder.insert("refs", blob, 0o100_644)?;
             let oid = builder.write()?;
 
-            self.find_tree(oid)
+            self.backend.find_tree(oid)
         }?;
 
         // Don't create a new commit if it would be the same tree as the parent
@@ -978,7 +960,7 @@ impl Storage<WithSigner> {
             }
         }
 
-        let author = self.signature()?;
+        let author = self.backend.signature()?;
         self.backend.commit(
             Some(&rad_refs_ref),
             &author,

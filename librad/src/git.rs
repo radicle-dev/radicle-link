@@ -24,4 +24,3 @@ pub mod transport;
 pub mod types;
 
 pub(crate) mod header;
-pub(crate) mod url;
