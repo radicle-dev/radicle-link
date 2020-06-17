@@ -1043,6 +1043,45 @@ mod tests {
         assert!(store.tracked(&urn).unwrap().next().is_none())
     }
 
+    #[async_test]
+    async fn test_specific_entity_resolution() -> Result<(), Error> {
+        let tmp = tempdir().unwrap();
+        let paths = Paths::from_root(tmp).unwrap();
+        let user_key = SecretKey::new();
+        let store = Storage::init(&paths, user_key.clone()).unwrap();
+
+        // Setup and verify owner
+        let mut owner = User::<Draft>::create("radicle".to_owned(), user_key.public()).unwrap();
+        owner.sign_owned(&user_key).unwrap();
+        let user_resolver = DummyUserResolver(owner.clone());
+        let verified_owner = owner
+            .clone()
+            .check_history_status(&user_resolver, &user_resolver)
+            .await
+            .unwrap();
+
+        // Store the owner in the monorepo
+        let _repo = store.create_repo(&owner)?;
+
+        // Assert we can fetch it back
+        assert_eq!(owner, store.user(&owner.urn())?);
+
+        // Setup a project for the owner
+        let mut project_banana =
+            Project::<Draft>::create("banana".to_owned(), owner.urn()).unwrap();
+        project_banana
+            .sign_by_user(&user_key, &verified_owner)
+            .unwrap();
+
+        // Store the project in the monorepo
+        let _repo = store.create_repo(&project_banana)?;
+
+        // And assert we can get it back
+        assert_eq!(project_banana, store.project(&project_banana.urn())?);
+
+        Ok(())
+    }
+
     struct DummyUserResolver(User<Draft>);
     #[async_trait]
     impl Resolver<User<Draft>> for DummyUserResolver {
