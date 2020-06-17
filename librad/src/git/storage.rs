@@ -50,6 +50,7 @@ use crate::{
             Signatory,
         },
         project::Project,
+        user::User,
     },
     paths::Paths,
     peer::PeerId,
@@ -69,6 +70,9 @@ pub enum Error {
 
     #[error("the URN '{0}' does not point to a Project")]
     NotProject(RadUrn),
+
+    #[error("the URN '{0}' does not point to a User")]
+    NotUser(RadUrn),
 
     #[error(
         "Identity root hash doesn't match resolved URL. Expected {expected}, actual: {actual}"
@@ -569,6 +573,19 @@ impl Storage {
         entity.try_map(|info| match info {
             EntityInfo::Project(project_info) => Ok(project_info),
             _ => Err(Error::NotProject(urn.clone())),
+        })
+    }
+
+    /// Get the [`User`] at the provided [`RadUrn`]
+    ///
+    /// # Errors
+    ///
+    /// * If the `RadUrn` does not point to a user.
+    pub fn user(&self, urn: &RadUrn) -> Result<User<Draft>, Error> {
+        let entity = self.metadata(urn)?;
+        entity.try_map(|info| match info {
+            EntityInfo::User(user_info) => Ok(user_info),
+            _ => Err(Error::NotUser(urn.clone())),
         })
     }
 
