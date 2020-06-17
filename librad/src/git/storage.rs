@@ -40,7 +40,17 @@ use crate::{
         result::ResultExt,
     },
     keys::SecretKey,
-    meta::entity::{self, data::EntityInfoExt, Draft, Entity, GenericDraftEntity, Signatory},
+    meta::{
+        entity::{
+            self,
+            data::{EntityInfo, EntityInfoExt},
+            Draft,
+            Entity,
+            GenericDraftEntity,
+            Signatory,
+        },
+        project::Project,
+    },
     paths::Paths,
     peer::PeerId,
     uri::{self, Path, Protocol, RadUrl, RadUrn},
@@ -56,6 +66,9 @@ pub enum Error {
 
     #[error("Unknown repo {0}")]
     NoSuchUrn(RadUrn),
+
+    #[error("the URN '{0}' does not point to a Project")]
+    NotProject(RadUrn),
 
     #[error(
         "Identity root hash doesn't match resolved URL. Expected {expected}, actual: {actual}"
@@ -543,6 +556,19 @@ impl Storage {
         self.entity_metadata_commit(urn).and_then(|commit| {
             GenericDraftEntity::from_json_slice(self.entity_blob(commit).unwrap().content())
                 .map_err(Error::Entity)
+        })
+    }
+
+    /// Get the [`Project`] at the provided [`RadUrn`]
+    ///
+    /// # Errors
+    ///
+    /// * If the `RadUrn` does not point to a project.
+    pub fn project(&self, urn: &RadUrn) -> Result<Project<Draft>, Error> {
+        let entity = self.metadata(urn)?;
+        entity.try_map(|info| match info {
+            EntityInfo::Project(project_info) => Ok(project_info),
+            _ => Err(Error::NotProject(urn.clone())),
         })
     }
 
