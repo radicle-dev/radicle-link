@@ -32,7 +32,7 @@
 //! employed by [`crypto::Pwhash`]) in some system keychain, or offload
 //! encryption entirely to an external system (such as GPG, or a password
 //! manager).
-use secstr::SecStr;
+pub use secstr::SecStr;
 
 pub mod crypto;
 pub mod file;
