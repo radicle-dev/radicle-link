@@ -68,7 +68,7 @@ pub enum Error {
     #[error("Unknown repo {0}")]
     NoSuchUrn(RadUrn),
 
-    #[error("the URN '{urn}' does not point to a '{entity_kind:?}'")]
+    #[error("the URN '{urn}' points to a '{entity_kind:?}', which was not the kind requested")]
     IncorrectEntityInfo {
         urn: RadUrn,
         entity_kind: EntityKind,
