@@ -1099,7 +1099,7 @@ mod tests {
         // Assert that getting the wrong entity provides the correct error
         let is_it_a_user = store.user(&project_banana.urn());
         if let Err(Error::IncorrectEntityInfo { urn, entity_kind }) = is_it_a_user {
-            assert_eq!(urn, project_banana.urn().clone());
+            assert_eq!(urn, project_banana.urn());
             assert_eq!(entity_kind, EntityKind::Project);
         } else {
             assert!(false, "got the wrong error: {:?}", is_it_a_user)
@@ -1107,7 +1107,7 @@ mod tests {
 
         let is_it_a_project = store.project(&owner.urn());
         if let Err(Error::IncorrectEntityInfo { urn, entity_kind }) = is_it_a_project {
-            assert_eq!(urn, owner.urn().clone());
+            assert_eq!(urn, owner.urn());
             assert_eq!(entity_kind, EntityKind::User);
         } else {
             assert!(false, "got the wrong error: {:?}", is_it_a_project)
