@@ -63,7 +63,8 @@ default-features = false
 features = ["tls-rustls"]
 
 [dependencies.radicle-keystore]
-path = "../radicle-keystore"
+git = "https://github.com/radicle-dev/radicle-keystore"
+rev = "a04f4dbaec4d05be2c7a516a36b5bbec02ee32aa"
 
 [dependencies.radicle-surf]
 git = "https://github.com/radicle-dev/radicle-surf"

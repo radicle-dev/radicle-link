@@ -1404,6 +1404,7 @@ dependencies = [
 [[package]]
 name = "radicle-keystore"
 version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-keystore?rev=a04f4dbaec4d05be2c7a516a36b5bbec02ee32aa#a04f4dbaec4d05be2c7a516a36b5bbec02ee32aa"
 dependencies = [
  "lazy_static",
  "rpassword",
@@ -1411,7 +1412,6 @@ dependencies = [
  "serde",
  "serde_cbor",
  "sodiumoxide",
- "tempfile",
  "thiserror",
 ]
 
