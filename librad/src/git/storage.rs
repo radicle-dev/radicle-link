@@ -43,7 +43,7 @@ use crate::{
     meta::{
         entity::{
             self,
-            data::{EntityInfo, EntityInfoExt},
+            data::{EntityInfo, EntityInfoExt, EntityKind},
             Draft,
             Entity,
             GenericDraftEntity,
@@ -68,11 +68,11 @@ pub enum Error {
     #[error("Unknown repo {0}")]
     NoSuchUrn(RadUrn),
 
-    #[error("the URN '{0}' does not point to a Project")]
-    NotProject(RadUrn),
-
-    #[error("the URN '{0}' does not point to a User")]
-    NotUser(RadUrn),
+    #[error("the URN '{urn}' does not point to a '{entity_kind:?}'")]
+    IncorrectEntityInfo {
+        urn: RadUrn,
+        entity_kind: EntityKind,
+    },
 
     #[error(
         "Identity root hash doesn't match resolved URL. Expected {expected}, actual: {actual}"
@@ -569,7 +569,7 @@ impl Storage {
     ///
     /// * If the `RadUrn` does not point to a project.
     pub fn project(&self, urn: &RadUrn) -> Result<Project<Draft>, Error> {
-        self.coerce(&urn, Error::NotProject(urn.clone()), |info| match info {
+        self.entity_info_or(&urn, |info| match info {
             EntityInfo::Project(project_info) => Some(project_info),
             _ => None,
         })
@@ -581,18 +581,35 @@ impl Storage {
     ///
     /// * If the `RadUrn` does not point to a user.
     pub fn user(&self, urn: &RadUrn) -> Result<User<Draft>, Error> {
-        self.coerce(&urn, Error::NotUser(urn.clone()), |info| match info {
+        self.entity_info_or(&urn, |info| match info {
             EntityInfo::User(user_info) => Some(user_info),
             _ => None,
         })
     }
 
-    fn coerce<F, T>(&self, urn: &RadUrn, err: Error, coerce: F) -> Result<Entity<T, Draft>, Error>
+    /// Get the [`Entity`] found at the provided [`RadUrn`]. Then try to map the
+    /// [`EntityInfo`] into the target `T`.
+    ///
+    /// # Errors
+    ///   * If the entity resolution fails.
+    ///   * If the mapping fails, an [`Error::IncorrectEntityInfo`] will be
+    ///     returned.
+    pub fn entity_info_or<F, T>(
+        &self,
+        urn: &RadUrn,
+        map_option: F,
+    ) -> Result<Entity<T, Draft>, Error>
     where
         F: FnOnce(EntityInfo) -> Option<T>,
     {
         let entity = self.metadata(urn)?;
-        entity.try_map(|info| coerce(info).ok_or(err))
+        let entity_kind = entity.kind();
+        entity.try_map(|info| {
+            map_option(info).ok_or(Error::IncorrectEntityInfo {
+                urn: urn.clone(),
+                entity_kind,
+            })
+        })
     }
 
     pub fn all_metadata_heads<'a>(
@@ -1078,6 +1095,23 @@ mod tests {
 
         // And assert we can get it back
         assert_eq!(project_banana, store.project(&project_banana.urn())?);
+
+        // Assert that getting the wrong entity provides the correct error
+        let is_it_a_user = store.user(&project_banana.urn());
+        if let Err(Error::IncorrectEntityInfo { urn, entity_kind }) = is_it_a_user {
+            assert_eq!(urn, project_banana.urn().clone());
+            assert_eq!(entity_kind, EntityKind::Project);
+        } else {
+            assert!(false, "got the wrong error: {:?}", is_it_a_user)
+        }
+
+        let is_it_a_project = store.project(&owner.urn());
+        if let Err(Error::IncorrectEntityInfo { urn, entity_kind }) = is_it_a_project {
+            assert_eq!(urn, owner.urn().clone());
+            assert_eq!(entity_kind, EntityKind::User);
+        } else {
+            assert!(false, "got the wrong error: {:?}", is_it_a_project)
+        }
 
         Ok(())
     }
