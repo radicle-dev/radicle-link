@@ -40,17 +40,12 @@ use crate::{
         result::ResultExt,
     },
     keys::SecretKey,
-    meta::{
-        entity::{
-            self,
-            data::{EntityInfo, EntityInfoExt, EntityKind},
-            Draft,
-            Entity,
-            GenericDraftEntity,
-            Signatory,
-        },
-        project::Project,
-        user::User,
+    meta::entity::{
+        self,
+        data::{EntityInfoExt, EntityKind},
+        Draft,
+        Entity,
+        Signatory,
     },
     paths::Paths,
     peer::PeerId,
@@ -67,12 +62,6 @@ pub enum Error {
 
     #[error("Unknown repo {0}")]
     NoSuchUrn(RadUrn),
-
-    #[error("the URN '{urn}' points to a '{entity_kind:?}', which was not the kind requested")]
-    IncorrectEntityInfo {
-        urn: RadUrn,
-        entity_kind: EntityKind,
-    },
 
     #[error(
         "Identity root hash doesn't match resolved URL. Expected {expected}, actual: {actual}"
@@ -556,59 +545,23 @@ impl Storage {
             .and_then(|oid| Ok(self.backend.find_commit(oid)?))
     }
 
-    pub fn metadata(&self, urn: &RadUrn) -> Result<GenericDraftEntity, Error> {
-        self.entity_metadata_commit(urn).and_then(|commit| {
-            GenericDraftEntity::from_json_slice(self.entity_blob(commit).unwrap().content())
-                .map_err(Error::Entity)
-        })
-    }
-
-    /// Get the [`Project`] at the provided [`RadUrn`]
+    /// Get the [`Entity`] found at the provided [`RadUrn`].
     ///
-    /// # Errors
+    /// To use this, the caller will need to specify which `T` they wish to
+    /// resolve to. This can be done one of two ways:
     ///
-    /// * If the `RadUrn` does not point to a project.
-    pub fn project(&self, urn: &RadUrn) -> Result<Project<Draft>, Error> {
-        self.entity_info_or(&urn, |info| match info {
-            EntityInfo::Project(project_info) => Some(project_info),
-            _ => None,
-        })
-    }
-
-    /// Get the [`User`] at the provided [`RadUrn`]
-    ///
-    /// # Errors
-    ///
-    /// * If the `RadUrn` does not point to a user.
-    pub fn user(&self, urn: &RadUrn) -> Result<User<Draft>, Error> {
-        self.entity_info_or(&urn, |info| match info {
-            EntityInfo::User(user_info) => Some(user_info),
-            _ => None,
-        })
-    }
-
-    /// Get the [`Entity`] found at the provided [`RadUrn`]. Then try to map the
-    /// [`EntityInfo`] into the target `T`.
+    /// * `let user: User = storage.entity(&urn);`
+    /// * `let user = storage.entity::<UserInfo>(&urn);`
     ///
     /// # Errors
     ///   * If the entity resolution fails.
-    ///   * If the mapping fails, an [`Error::IncorrectEntityInfo`] will be
-    ///     returned.
-    pub fn entity_info_or<F, T>(
-        &self,
-        urn: &RadUrn,
-        map_option: F,
-    ) -> Result<Entity<T, Draft>, Error>
+    pub fn entity<T>(&self, urn: &RadUrn) -> Result<Entity<T, Draft>, Error>
     where
-        F: FnOnce(EntityInfo) -> Option<T>,
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
-        let entity = self.metadata(urn)?;
-        let entity_kind = entity.kind();
-        entity.try_map(|info| {
-            map_option(info).ok_or(Error::IncorrectEntityInfo {
-                urn: urn.clone(),
-                entity_kind,
-            })
+        self.entity_metadata_commit(urn).and_then(|commit| {
+            Entity::<T, Draft>::from_json_slice(self.entity_blob(commit).unwrap().content())
+                .map_err(Error::Entity)
         })
     }
 
@@ -984,7 +937,7 @@ fn urns_from_refs<'a, E>(
 mod tests {
     use super::*;
     use crate::meta::{
-        entity::{Draft, Resolver},
+        entity::{Draft, GenericDraftEntity, Resolver},
         Project,
         User,
     };
@@ -1081,7 +1034,7 @@ mod tests {
         let _repo = store.create_repo(&owner)?;
 
         // Assert we can fetch it back
-        assert_eq!(owner, store.user(&owner.urn())?);
+        assert_eq!(owner, store.entity(&owner.urn())?);
 
         // Setup a project for the owner
         let mut project_banana =
@@ -1094,24 +1047,14 @@ mod tests {
         let _repo = store.create_repo(&project_banana)?;
 
         // And assert we can get it back
-        assert_eq!(project_banana, store.project(&project_banana.urn())?);
+        assert_eq!(project_banana, store.entity(&project_banana.urn())?);
 
         // Assert that getting the wrong entity provides the correct error
-        let is_it_a_user = store.user(&project_banana.urn());
-        if let Err(Error::IncorrectEntityInfo { urn, entity_kind }) = is_it_a_user {
-            assert_eq!(urn, project_banana.urn());
-            assert_eq!(entity_kind, EntityKind::Project);
-        } else {
-            assert!(false, "got the wrong error: {:?}", is_it_a_user)
-        }
+        let is_it_a_user: Result<User<Draft>, Error> = store.entity(&project_banana.urn());
+        assert!(is_it_a_user.is_err());
 
-        let is_it_a_project = store.project(&owner.urn());
-        if let Err(Error::IncorrectEntityInfo { urn, entity_kind }) = is_it_a_project {
-            assert_eq!(urn, owner.urn());
-            assert_eq!(entity_kind, EntityKind::User);
-        } else {
-            assert!(false, "got the wrong error: {:?}", is_it_a_project)
-        }
+        let is_it_a_project: Result<Project<Draft>, Error> = store.entity(&owner.urn());
+        assert!(is_it_a_project.is_err());
 
         Ok(())
     }
@@ -1194,7 +1137,7 @@ mod tests {
             )
             .unwrap()
         );
-        let generic_user = store.metadata(&user.urn()).unwrap();
+        let generic_user: GenericDraftEntity = store.entity(&user.urn()).unwrap();
         assert_eq!(generic_user.kind(), user.kind());
         assert_eq!(generic_user.hash(), user.hash());
 
@@ -1209,7 +1152,7 @@ mod tests {
             )
             .unwrap()
         );
-        let generic_foo = store.metadata(&project_foo.urn()).unwrap();
+        let generic_foo: GenericDraftEntity = store.entity(&project_foo.urn()).unwrap();
         assert_eq!(generic_foo.kind(), project_foo.kind());
         assert_eq!(generic_foo.hash(), project_foo.hash());
 
