@@ -127,6 +127,15 @@ where
 
 /// Main entry point for `radicle-link` applications on top of a connected
 /// [`Peer`]
+///
+/// Note that a [`PeerApi`] is neither [`Clone`] nor [`Sync`], because it owns
+/// an open handle to the backend git storage (which requires external
+/// synchronisation and refcounting if applicable). It is nevertheless possible
+/// to obtain an owned copy by calling `try_to_owned`, which will re-open the
+/// git storage. The tradeoffs are that a. concurrent modifications of the
+/// storage may not always be consistent between two instances, and b. that the
+/// `try_to_owned` operation is fallible due to having to perform IO. Also note
+/// that the `TryToOwned` trait is not currently considered a stable API.
 pub struct PeerApi {
     key: SecretKey,
     protocol: Protocol<PeerStorage, Gossip>,
@@ -156,8 +165,11 @@ impl PeerApi {
         PeerId::from(&self.key)
     }
 
-    pub async fn subscribe(&self) -> impl futures::Stream<Item = PeerEvent> {
-        self.subscribers.subscribe().await
+    pub fn subscribe(&self) -> impl Future<Output = impl futures::Stream<Item = PeerEvent>> {
+        // Nb. `PeerApi` is not `Sync`, which means that any `async` method we'd
+        // define on it can never be `await`ed.
+        let subscribers = self.subscribers.clone();
+        async move { subscribers.subscribe().await }
     }
 
     pub fn paths(&self) -> &Paths {
