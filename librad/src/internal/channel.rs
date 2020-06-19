@@ -17,9 +17,9 @@
 
 //! A simple async single-producer multi-consumer channel
 
-use std::{mem, sync::Arc};
+use std::sync::Arc;
 
-use futures::{channel::mpsc, lock::Mutex, sink::SinkExt, stream::StreamExt};
+use futures::{channel::mpsc, lock::Mutex, sink::SinkExt};
 
 #[derive(Clone, Default)]
 pub struct Fanout<A> {
@@ -42,21 +42,28 @@ impl<A: Clone> Fanout<A> {
     pub async fn emit(&self, event: A) {
         let mut subscribers = self.subscribers.lock().await;
 
-        // Why is there no `retain` on streams?
-        let subscribers1: Vec<_> = futures::stream::iter(subscribers.iter_mut())
-            .filter_map(|ch| {
-                let event = event.clone();
-                async move {
-                    if ch.send(event).await.is_err() {
-                        Some(ch.clone())
-                    } else {
-                        None
-                    }
-                }
-            })
-            .collect()
-            .await;
+        // Copy&Pasta of `std::vec::Vec::retain` to support an async predicate.
+        //
+        // We simply move all sender channels which don't have a receiving end
+        // (ie. `send` fails) to the end of the vector, and then truncate it to
+        // the number of alive channels.
+        let len = subscribers.len();
+        let mut del = 0;
+        {
+            let v = &mut **subscribers;
+            for i in 0..len {
+                let mut ch = &v[i];
+                let keep = ch.send(event.clone()).await.is_ok();
 
-        let _ = mem::replace(&mut *subscribers, subscribers1);
+                if !keep {
+                    del += 1;
+                } else if del > 0 {
+                    v.swap(i - del, i)
+                }
+            }
+        }
+        if del > 0 {
+            subscribers.truncate(len - del)
+        }
     }
 }

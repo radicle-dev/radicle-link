@@ -68,7 +68,7 @@ rev = "a04f4dbaec4d05be2c7a516a36b5bbec02ee32aa"
 
 [dependencies.radicle-surf]
 git = "https://github.com/radicle-dev/radicle-surf"
-rev = "fc11489494fb76a2a6e1c7b425b164602f89ba23"
+rev = "a23f9406f00c3230a24b6ddd9b612a9b1d5accf1"
 
 [dependencies.rustls]
 version = "0.17"

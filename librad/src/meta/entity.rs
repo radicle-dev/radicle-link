@@ -409,12 +409,12 @@ where
         }
     }
 
-    pub fn try_map<U, E, F>(self, f: F) -> Result<Entity<U, ST>, E>
+    pub fn try_map<U, F>(self, f: F) -> Option<Entity<U, ST>>
     where
-        F: FnOnce(T) -> Result<U, E>,
+        F: FnOnce(T) -> Option<U>,
     {
         let info = f(self.info)?;
-        Ok(Entity {
+        Some(Entity {
             status_marker: self.status_marker,
             name: self.name,
             revision: self.revision,
