@@ -16,9 +16,11 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    borrow::Borrow,
     collections::{BTreeMap, HashMap, HashSet},
+    io,
     ops::{Deref, Range},
-    str::FromStr,
+    path::Path,
 };
 
 use radicle_surf::vcs::git as surf;
@@ -27,7 +29,13 @@ use thiserror::Error;
 
 use crate::{
     git::{
-        ext::{is_exists_err, is_not_found_err, Oid, References},
+        ext::{
+            blob::{self, Blob},
+            is_exists_err,
+            is_not_found_err,
+            Oid,
+            References,
+        },
         refs::{self, Refs},
         repo::Repo,
         types::{Reference, Refspec},
@@ -43,17 +51,14 @@ use crate::{
     meta::entity::{self, data::EntityInfoExt, Draft, Entity, GenericDraftEntity, Signatory},
     paths::Paths,
     peer::PeerId,
-    uri::{self, Path, Protocol, RadUrl, RadUrn},
+    uri::{self, RadUrl, RadUrn},
 };
+
+#[cfg(test)]
+mod test;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Blob {0} not found")]
-    NoSuchBlob(String),
-
-    #[error("Branch {0} not found")]
-    NoSuchBranch(String),
-
     #[error("Unknown repo {0}")]
     NoSuchUrn(RadUrn),
 
@@ -81,7 +86,13 @@ pub enum Error {
     Surf(#[from] surf::error::Error),
 
     #[error(transparent)]
+    Blob(#[from] blob::Error),
+
+    #[error(transparent)]
     Git(#[from] git2::Error),
+
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 pub struct Storage {
@@ -101,17 +112,6 @@ impl Deref for Storage {
 impl AsRef<git2::Repository> for Storage {
     fn as_ref(&self) -> &git2::Repository {
         self
-    }
-}
-
-pub struct LinearHistoryCommits<'a>(Option<git2::Commit<'a>>);
-
-impl<'a> Iterator for LinearHistoryCommits<'a> {
-    type Item = git2::Commit<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        let result = self.0.clone();
-        self.0 = self.0.as_ref().and_then(|commit| commit.parents().next());
-        result
     }
 }
 
@@ -422,7 +422,7 @@ impl Storage {
         for (peer, tracked) in remotes.iter_mut() {
             match self.rad_refs_of(urn, peer.clone()) {
                 Ok(refs) => *tracked = refs.remotes.cutoff(),
-                Err(Error::NoSuchBranch(_)) | Err(Error::NoSuchBlob(_)) => {},
+                Err(Error::Blob(blob::Error::NotFound(_))) => {},
                 Err(e) => return Err(e),
             }
         }
@@ -438,9 +438,9 @@ impl Storage {
     pub fn rad_refs_of(&self, urn: &RadUrn, peer: PeerId) -> Result<Refs, Error> {
         let signed = {
             let refs = Reference::rad_refs(urn.id.clone(), peer.clone());
-            let blob = WithBlob::Tip {
-                reference: &refs,
-                file_name: "refs",
+            let blob = Blob::Tip {
+                branch: refs.borrow().into(),
+                path: Path::new("refs"),
             }
             .get(&self)?;
             refs::Signed::from_json(blob.content(), &peer)
@@ -462,6 +462,7 @@ impl Storage {
         Ok(urns_from_refs(refnames).collect())
     }
 
+    // FIXME: REMOVE
     pub fn commit(
         &self,
         urn: &RadUrn,
@@ -486,118 +487,75 @@ impl Storage {
         Ok(oid)
     }
 
-    pub fn references_glob<'a>(
-        &'a self,
-        urn: &RadUrn,
-        globs: impl IntoIterator<Item = impl AsRef<str>>,
-    ) -> Result<impl Iterator<Item = (String, git2::Oid)> + 'a, Error> {
-        let namespace_prefix = format!("refs/namespaces/{}/", &urn.id);
-
-        let refs = References::from_globs(
-            &self,
-            globs
-                .into_iter()
-                .map(|glob| format!("{}{}", namespace_prefix, glob.as_ref())),
-        )?;
-
-        Ok(refs.peeled().filter_map(move |(name, target)| {
-            name.strip_prefix(&namespace_prefix)
-                .map(|name| (name.to_owned(), target))
-        }))
-    }
-
-    fn entity_blob<'a>(&'a self, commit: git2::Commit<'a>) -> Result<git2::Blob, Error> {
-        blob(&self, commit.tree()?, "id")
-    }
-
-    pub fn first_parent(&self, commit_oid: git2::Oid) -> Option<git2::Commit> {
-        self.backend
-            .find_commit(commit_oid)
-            .ok()
-            .and_then(|commit| match commit.parents().len() {
-                1 => commit.parents().next(),
-                _ => None,
-            })
-    }
-
-    pub fn linear_commit_history<'a>(
-        &'a self,
-        commit: git2::Commit<'a>,
-    ) -> LinearHistoryCommits<'a> {
-        LinearHistoryCommits(Some(commit))
-    }
-
-    fn entity_metadata_commit(&self, urn: &RadUrn) -> Result<git2::Commit, Error> {
-        self.backend
-            .find_reference(&Reference::rad_id(urn.id.clone()).to_string())
-            .map_err(Error::Git)
-            .and_then(|reference| {
-                reference
-                    .target()
-                    .ok_or_else(|| Error::NoSuchUrn(urn.clone()))
-            })
-            .and_then(|oid| Ok(self.backend.find_commit(oid)?))
-    }
-
-    /// Get the [`Entity`] found at the provided [`RadUrn`].
-    ///
-    /// To use this, the caller will need to specify which `T` they wish to
-    /// resolve to. This can be done one of two ways:
-    ///
-    /// * `let user: User = storage.entity(&urn);`
-    /// * `let user = storage.entity::<UserInfo>(&urn);`
-    ///
-    /// # Errors
-    ///   * If the entity resolution fails.
-    pub fn entity<T>(&self, urn: &RadUrn) -> Result<Entity<T, Draft>, Error>
+    /// Get the [`Entity`] metadata found at the provided [`RadUrn`].
+    pub fn metadata<T>(&self, urn: &RadUrn) -> Result<Entity<T, Draft>, Error>
     where
-        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+        T: Clone + Serialize + DeserializeOwned + EntityInfoExt,
     {
-        self.entity_metadata_commit(urn).and_then(|commit| {
-            Ok(Entity::<T, Draft>::from_json_slice(
-                self.entity_blob(commit)?.content(),
-            )?)
-        })
+        self.metadata_of(urn, None)
+    }
+
+    /// Get the [`Entity`] metadata of the tracked `peer` at the provided
+    /// [`RadUrn`].
+    ///
+    /// Note that "tracked" here refers to the transitive tracking graph. That
+    /// is, the metadata will resolve if, and only if, it has been fetched from
+    /// the network acc. to the replication rules prior to calling this method.
+    pub fn metadata_of<T, P>(&self, urn: &RadUrn, peer: P) -> Result<Entity<T, Draft>, Error>
+    where
+        T: Clone + Serialize + DeserializeOwned + EntityInfoExt,
+        P: Into<Option<PeerId>>,
+    {
+        let rad_id = Reference::rad_id(urn.id.clone()).set_remote(peer.into());
+        let blob = Blob::Tip {
+            branch: rad_id.borrow().into(),
+            path: Path::new("id"),
+        }
+        .get(&self.backend)?;
+
+        Entity::<T, Draft>::from_json_slice(blob.content()).map_err(Error::from)
+    }
+
+    /// Like [`Storage::metadata`], but for situations where the type is not
+    /// statically known.
+    pub fn some_metadata(&self, urn: &RadUrn) -> Result<GenericDraftEntity, Error> {
+        self.some_metadata_of(urn, None)
+    }
+
+    /// Like [`Storage::metadata_of`], but for situations where the type is not
+    /// statically known.
+    pub fn some_metadata_of<P>(&self, urn: &RadUrn, peer: P) -> Result<GenericDraftEntity, Error>
+    where
+        P: Into<Option<PeerId>>,
+    {
+        let rad_id = Reference::rad_id(urn.id.clone()).set_remote(peer.into());
+        let blob = Blob::Tip {
+            branch: rad_id.borrow().into(),
+            path: Path::new("id"),
+        }
+        .get(&self.backend)?;
+
+        GenericDraftEntity::from_json_slice(blob.content()).map_err(Error::from)
     }
 
     /// Get all the [`Entity`] data in this `Storage`.
     ///
     /// The caller has the choice to filter on the [`EntityInfo`], which is
     /// useful when the you want a list of a specific kind of `Entity`.
-    pub fn entities(&self) -> Result<Vec<GenericDraftEntity>, Error> {
-        let references = self.backend.references_glob("refs/namespaces/**/rad/id")?;
-
-        let commits = references.filter_map(|reference| {
-            let reference = reference.ok()?;
-            let oid = reference.target()?;
-            self.backend.find_commit(oid).ok()
-        });
-
-        // Fetch the entities generically
-        commits
-            .map(|commit| {
-                self.entity_blob(commit)
-                    .map(|blob| blob.content().to_vec())
-                    .and_then(|content| Ok(GenericDraftEntity::from_json_slice(&content)?))
-            })
-            .collect()
-    }
-
-    pub fn all_metadata_heads<'a>(
+    pub fn all_metadata<'a>(
         &'a self,
-    ) -> Result<impl Iterator<Item = (RadUrn, git2::Commit)> + 'a, Error> {
-        Ok(
-            References::from_globs(&self, &["refs/namespaces/*/refs/rad/id"])?
-                .peeled()
-                .filter_map(move |(refname, oid)| {
-                    urn_from_idref(&refname).and_then(|urn| {
-                        self.backend
-                            .find_commit(oid)
-                            .map(|commit| (urn, commit))
-                            .ok()
-                    })
-                }),
-        )
+    ) -> Result<impl Iterator<Item = Result<GenericDraftEntity, Error>> + 'a, Error> {
+        let iter = References::from_globs(&self.backend, &["refs/namespaces/*/rad/id"])?;
+
+        Ok(iter.map(move |reference| {
+            let reference = reference?;
+            let blob = Blob::Tip {
+                branch: reference.into(),
+                path: Path::new("id"),
+            }
+            .get(&self.backend)?;
+            GenericDraftEntity::from_json_slice(blob.content()).map_err(Error::from)
+        }))
     }
 
     pub fn certifiers_of(&self, urn: &RadUrn, peer: &PeerId) -> Result<HashSet<RadUrn>, Error> {
@@ -611,6 +569,8 @@ impl Storage {
         let refnames = refs.names();
         Ok(urns_from_refs(refnames).collect())
     }
+
+    // Helpers
 
     // FIXME: decide if we want to require verified entities
     // FIXME: yes, we do want that
@@ -651,9 +611,9 @@ impl Storage {
         }
 
         let entity: Entity<T, Draft> = {
-            let blob = WithBlob::Init {
-                reference: &id_branch,
-                file_name: "id",
+            let blob = Blob::Init {
+                branch: id_branch.borrow().into(),
+                path: Path::new("id"),
             }
             .get(&self)?;
             Entity::<T, Draft>::from_json_slice(blob.content())
@@ -667,14 +627,14 @@ impl Storage {
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         let canonical_data = Cjson(meta).canonical_form()?;
-        let blob = self.blob(&canonical_data)?;
+        let blob = self.backend.blob(&canonical_data)?;
         let tree = {
-            let mut builder = self.treebuilder(None)?;
+            let mut builder = self.backend.treebuilder(None)?;
             builder.insert("id", blob, 0o100_644)?;
             let oid = builder.write()?;
-            self.find_tree(oid)
+            self.backend.find_tree(oid)
         }?;
-        let author = self.signature()?;
+        let author = self.backend.signature()?;
 
         let branch_name = Reference::rad_id(meta.urn().id);
 
@@ -782,6 +742,26 @@ impl Storage {
         Ok(())
     }
 
+    fn references_glob<'a>(
+        &'a self,
+        urn: &RadUrn,
+        globs: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> Result<impl Iterator<Item = (String, git2::Oid)> + 'a, Error> {
+        let namespace_prefix = format!("refs/namespaces/{}/", &urn.id);
+
+        let refs = References::from_globs(
+            &self,
+            globs
+                .into_iter()
+                .map(|glob| format!("{}{}", namespace_prefix, glob.as_ref())),
+        )?;
+
+        Ok(refs.peeled().filter_map(move |(name, target)| {
+            name.strip_prefix(&namespace_prefix)
+                .map(|name| (name.to_owned(), target))
+        }))
+    }
+
     // TODO: allow users to supply callbacks
     fn fetch_options(&'_ self) -> git2::FetchOptions<'_> {
         let mut cbs = git2::RemoteCallbacks::new();
@@ -859,83 +839,8 @@ impl Iterator for Tracked {
     }
 }
 
-pub enum WithBlob<'a> {
-    Tip {
-        reference: &'a Reference,
-        file_name: &'a str,
-    },
-    Init {
-        reference: &'a Reference,
-        file_name: &'a str,
-    },
-}
-
-impl<'a> WithBlob<'a> {
-    pub fn get(self, git: &'a git2::Repository) -> Result<git2::Blob<'a>, Error> {
-        match self {
-            Self::Tip {
-                reference,
-                file_name,
-            } => {
-                let ref_name = reference.to_string();
-                let branch = git
-                    .find_reference(&ref_name)
-                    .or_matches(is_not_found_err, || Err(Error::NoSuchBranch(ref_name)))?;
-                let tree = branch.peel_to_tree()?;
-                blob(git, tree, file_name)
-            },
-
-            Self::Init {
-                reference,
-                file_name,
-            } => {
-                let mut revwalk = git.revwalk()?;
-                let mut sort = git2::Sort::TOPOLOGICAL;
-                sort.insert(git2::Sort::REVERSE);
-                revwalk.set_sorting(sort)?;
-                revwalk.simplify_first_parent()?;
-                revwalk.push_ref(&reference.to_string())?;
-
-                match revwalk.next() {
-                    None => Err(Error::NoSuchBlob(file_name.to_owned())),
-                    Some(oid) => {
-                        let oid = oid?;
-                        let tree = git.find_commit(oid)?.tree()?;
-                        blob(git, tree, file_name)
-                    },
-                }
-            },
-        }
-    }
-}
-
-fn blob<'a>(
-    repo: &'a git2::Repository,
-    tree: git2::Tree<'a>,
-    file_name: &'a str,
-) -> Result<git2::Blob<'a>, Error> {
-    let entry = tree
-        .get_name(file_name)
-        .ok_or_else(|| Error::NoSuchBlob(file_name.to_owned()))?;
-    let bob = entry.to_object(repo)?.peel_to_blob()?;
-
-    Ok(bob)
-}
-
 fn tracking_remote_name(urn: &RadUrn, peer: &PeerId) -> String {
     format!("{}/{}", urn.id, peer)
-}
-
-fn urn_from_idref(refname: &str) -> Option<RadUrn> {
-    refname
-        .strip_suffix("/refs/rad/id")
-        .and_then(|namespace_root| {
-            namespace_root
-                .split('/')
-                .next_back()
-                .and_then(|namespace| Hash::from_str(namespace).ok())
-                .map(|hash| RadUrn::new(hash, Protocol::Git, Path::empty()))
-        })
 }
 
 fn urn_from_ref(refname: &str) -> Option<RadUrn> {
@@ -949,327 +854,4 @@ fn urns_from_refs<'a, E>(
     refs: impl Iterator<Item = Result<&'a str, E>> + 'a,
 ) -> impl Iterator<Item = RadUrn> + 'a {
     refs.filter_map(|refname| refname.ok().and_then(urn_from_ref))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::meta::{
-        entity::{data::EntityInfo, Draft, GenericDraftEntity, Resolver},
-        Project,
-        User,
-    };
-    use async_trait::async_trait;
-    use futures_await_test::async_test;
-
-    use tempfile::tempdir;
-
-    use crate::{
-        hash::Hash,
-        uri::{self, RadUrn},
-    };
-
-    #[test]
-    fn test_tracking_read_after_write() {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp).unwrap();
-        let key = SecretKey::new();
-        let store = Storage::init(&paths, key).unwrap();
-
-        let urn = RadUrn {
-            id: Hash::hash(b"lala"),
-            proto: uri::Protocol::Git,
-            path: uri::Path::empty(),
-        };
-        let peer = PeerId::from(SecretKey::new());
-
-        store.track(&urn, &peer).unwrap();
-        let tracked = store.tracked(&urn).unwrap().next();
-        assert_eq!(tracked, Some(peer))
-    }
-
-    #[test]
-    fn test_idempotent_tracking() {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp).unwrap();
-        let key = SecretKey::new();
-        let store = Storage::init(&paths, key).unwrap();
-
-        let urn = RadUrn {
-            id: Hash::hash(b"lala"),
-            proto: uri::Protocol::Git,
-            path: uri::Path::empty(),
-        };
-        let peer = PeerId::from(SecretKey::new());
-
-        store.track(&urn, &peer).unwrap();
-
-        // Attempting to track again does not fail
-        store.track(&urn, &peer).unwrap();
-
-        let tracked = store.tracked(&urn).unwrap().next();
-        assert_eq!(tracked, Some(peer))
-    }
-
-    #[test]
-    fn test_untrack() {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp).unwrap();
-        let key = SecretKey::new();
-        let store = Storage::init(&paths, key).unwrap();
-
-        let urn = RadUrn {
-            id: Hash::hash(b"lala"),
-            proto: uri::Protocol::Git,
-            path: uri::Path::empty(),
-        };
-        let peer = PeerId::from(SecretKey::new());
-
-        store.track(&urn, &peer).unwrap();
-        store.untrack(&urn, &peer).unwrap();
-
-        assert!(store.tracked(&urn).unwrap().next().is_none())
-    }
-
-    #[async_test]
-    async fn test_specific_entity_resolution() -> Result<(), Error> {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp).unwrap();
-        let user_key = SecretKey::new();
-        let store = Storage::init(&paths, user_key.clone()).unwrap();
-
-        // Setup and verify owner
-        let mut owner = User::<Draft>::create("radicle".to_owned(), user_key.public()).unwrap();
-        owner.sign_owned(&user_key).unwrap();
-        let user_resolver = DummyUserResolver(owner.clone());
-        let verified_owner = owner
-            .clone()
-            .check_history_status(&user_resolver, &user_resolver)
-            .await
-            .unwrap();
-
-        // Store the owner in the monorepo
-        let _repo = store.create_repo(&owner)?;
-
-        // Assert we can fetch it back
-        assert_eq!(owner, store.entity(&owner.urn())?);
-
-        // Setup a project for the owner
-        let mut project_banana =
-            Project::<Draft>::create("banana".to_owned(), owner.urn()).unwrap();
-        project_banana
-            .sign_by_user(&user_key, &verified_owner)
-            .unwrap();
-
-        // Store the project in the monorepo
-        let _repo = store.create_repo(&project_banana)?;
-
-        // And assert we can get it back
-        assert_eq!(project_banana, store.entity(&project_banana.urn())?);
-
-        // Assert that getting the wrong entity provides the correct error
-        let is_it_a_user: Result<User<Draft>, Error> = store.entity(&project_banana.urn());
-        assert!(is_it_a_user.is_err());
-
-        let is_it_a_project: Result<Project<Draft>, Error> = store.entity(&owner.urn());
-        assert!(is_it_a_project.is_err());
-
-        Ok(())
-    }
-
-    #[async_test]
-    async fn test_listing_entities() -> Result<(), Error> {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp).unwrap();
-        let key = SecretKey::new();
-        let storage = Storage::open(&paths, key.clone())?;
-
-        // Setup and verify owner
-        let mut owner = User::<Draft>::create("radicle".to_owned(), key.public()).unwrap();
-        owner.sign_owned(&key)?;
-        let user_resolver = DummyUserResolver(owner.clone());
-        let verified_owner = owner
-            .clone()
-            .check_history_status(&user_resolver, &user_resolver)
-            .await
-            .unwrap();
-
-        let _repo = storage.create_repo(&owner)?;
-
-        let mut project_banana = Project::<Draft>::create("banana".to_owned(), owner.urn())?;
-        project_banana.sign_by_user(&key, &verified_owner)?;
-
-        let _repo = storage.create_repo(&project_banana)?;
-
-        let mut project_pineapple = Project::<Draft>::create("pineapple".to_owned(), owner.urn())?;
-        project_pineapple.sign_by_user(&key, &verified_owner)?;
-
-        let _repo = storage.create_repo(&project_pineapple)?;
-
-        let mut projects = storage
-            .entities()?
-            .into_iter()
-            .filter_map(|entity| {
-                entity.try_map(|info| match info {
-                    EntityInfo::Project(info) => Some(info),
-                    _ => None,
-                })
-            })
-            .collect::<Vec<_>>();
-
-        projects.sort_by_key(|project| {
-            let name = project.name();
-            name.to_owned()
-        });
-
-        assert_eq!(
-            projects,
-            vec![project_banana.clone(), project_pineapple.clone()]
-        );
-
-        let users = storage
-            .entities()?
-            .into_iter()
-            .filter_map(|entity| {
-                entity.try_map(|info| match info {
-                    EntityInfo::User(info) => Some(info),
-                    _ => None,
-                })
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(users, vec![owner.clone()]);
-
-        let mut all_entities = storage.entities()?;
-
-        all_entities.sort_by_key(|entity| {
-            let name = entity.name();
-            name.to_owned()
-        });
-
-        assert_eq!(
-            all_entities,
-            vec![
-                project_banana.map(EntityInfo::Project),
-                project_pineapple.map(EntityInfo::Project),
-                owner.map(EntityInfo::User),
-            ]
-        );
-        Ok(())
-    }
-
-    struct DummyUserResolver(User<Draft>);
-    #[async_trait]
-    impl Resolver<User<Draft>> for DummyUserResolver {
-        async fn resolve(&self, _uri: &RadUrn) -> Result<User<Draft>, entity::Error> {
-            Ok(self.0.clone())
-        }
-        async fn resolve_revision(
-            &self,
-            _uri: &RadUrn,
-            _revision: u64,
-        ) -> Result<User<Draft>, entity::Error> {
-            Ok(self.0.clone())
-        }
-    }
-
-    #[async_test]
-    async fn test_all_metadata_heads() {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp).unwrap();
-        let user_key = SecretKey::new();
-        let store = Storage::init(&paths, user_key.clone()).unwrap();
-
-        // Create signed and verified user
-        let mut user = User::<Draft>::create("user".to_owned(), user_key.public()).unwrap();
-        user.sign_owned(&user_key).unwrap();
-        let user_resolver = DummyUserResolver(user.clone());
-        let verified_user = user
-            .clone()
-            .check_history_status(&user_resolver, &user_resolver)
-            .await
-            .unwrap();
-
-        // Create and sign two projects
-        let mut project_foo = Project::<Draft>::create("foo".to_owned(), user.urn()).unwrap();
-        let mut project_bar = Project::<Draft>::create("bar".to_owned(), user.urn()).unwrap();
-        project_foo.sign_by_user(&user_key, &verified_user).unwrap();
-        project_bar.sign_by_user(&user_key, &verified_user).unwrap();
-
-        // Store the three entities in their respective namespaces
-        store.create_repo(&user).unwrap();
-        store.create_repo(&project_foo).unwrap();
-        store.create_repo(&project_bar).unwrap();
-
-        let mut ids = HashSet::new();
-        let mut urns = HashMap::new();
-        ids.insert(user.hash());
-        ids.insert(project_foo.hash());
-        ids.insert(project_bar.hash());
-
-        // Iterate ove all namespaces
-        for (urn, commit) in store.all_metadata_heads().unwrap() {
-            // Check that we found one of our IDs
-            let id = &urn.id;
-            assert!(ids.contains(id));
-
-            // Check that we can use the URN to find the same commit
-            let commit_from_urn = store.entity_metadata_commit(&urn).unwrap();
-            assert_eq!(commit_from_urn.id(), commit.id());
-
-            // Bookkeeping for more tests
-            ids.remove(id);
-            urns.insert(id.to_owned(), urn);
-        }
-
-        // Check that we found all the entities that we saved
-        assert!(ids.is_empty());
-
-        // Pull out user blob and deserialize
-        assert_eq!(
-            user,
-            User::<Draft>::from_json_slice(
-                store
-                    .entity_blob(store.entity_metadata_commit(&user.urn()).unwrap())
-                    .unwrap()
-                    .content()
-            )
-            .unwrap()
-        );
-        let generic_user: GenericDraftEntity = store.entity(&user.urn()).unwrap();
-        assert_eq!(generic_user.kind(), user.kind());
-        assert_eq!(generic_user.hash(), user.hash());
-
-        // Pull out foo blob and deserialize
-        assert_eq!(
-            project_foo,
-            Project::<Draft>::from_json_slice(
-                store
-                    .entity_blob(store.entity_metadata_commit(&project_foo.urn()).unwrap())
-                    .unwrap()
-                    .content()
-            )
-            .unwrap()
-        );
-        let generic_foo: GenericDraftEntity = store.entity(&project_foo.urn()).unwrap();
-        assert_eq!(generic_foo.kind(), project_foo.kind());
-        assert_eq!(generic_foo.hash(), project_foo.hash());
-
-        // Check user commit history length
-        let user_history =
-            store.linear_commit_history(store.entity_metadata_commit(&user.urn()).unwrap());
-        let user_commits: Vec<git2::Commit> = user_history.collect();
-        assert_eq!(user_commits.len(), 1);
-    }
-
-    #[test]
-    fn test_open_or_init() {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp).unwrap();
-        let key = SecretKey::new();
-        let store = Storage::open(&paths, key);
-        if let Err(err) = store {
-            assert!(false, "failed to open Storage: {:?}", err)
-        };
-    }
 }
