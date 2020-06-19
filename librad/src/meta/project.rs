@@ -147,8 +147,8 @@ impl<ST> Project<ST>
 where
     ST: Clone,
 {
-    pub fn maintainers(&self) -> &std::collections::HashSet<RadUrn> {
-        self.certifiers()
+    pub fn maintainers(&self) -> impl Iterator<Item = &RadUrn> {
+        self.certifiers().iter().map(|(k, _)| k)
     }
 
     pub fn description(&self) -> &Option<String> {

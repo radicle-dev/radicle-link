@@ -40,7 +40,7 @@ use crate::{
         result::ResultExt,
     },
     keys::SecretKey,
-    meta::entity::{self, data::EntityInfoExt, Draft, Entity, GenericDraftEntity, Signatory},
+    meta::entity::{self, data::EntityInfoExt, Draft, Entity, GenericDraftEntity},
     paths::Paths,
     peer::PeerId,
     uri::{self, Path, Protocol, RadUrl, RadUrn},
@@ -159,10 +159,6 @@ impl Storage {
 
         // FIXME: properly verify meta
 
-        if meta.signatures().is_empty() {
-            return Err(Error::UnsignedMetadata);
-        }
-
         // FIXME: certifier identities must exist, or be supplied
 
         let urn = RadUrn::new(
@@ -220,10 +216,6 @@ impl Storage {
         let meta: Entity<T, Draft> = self.fetch_id(git_url)?;
 
         // TODO: properly verify meta
-
-        if meta.signatures().is_empty() {
-            return Err(Error::UnsignedMetadata);
-        }
 
         if meta.root_hash() != &url.urn.id {
             return Err(Error::RootHashMismatch {
@@ -670,31 +662,25 @@ impl Storage {
         let _guard = span.enter();
 
         let meta_urn = meta.urn();
-        meta.signatures()
+        meta.certifiers()
             .iter()
-            .map(|(pk, sig)| {
-                let peer_id = PeerId::from(pk.clone());
-                match &sig.by {
-                    Signatory::User(urn) => (peer_id, Some(urn)),
-                    Signatory::OwnedKey => (peer_id, None),
-                }
+            .filter_map(|(urn, sig)| match sig {
+                Some(s) => Some((PeerId::from(s.key.clone()), urn)),
+                None => None,
             })
             .try_for_each(|(peer, urn)| {
                 tracing::debug!(
                     tracked.peer = %peer,
-                    tracked.urn =
-                        %urn.map(|urn| urn.to_string()).unwrap_or_else(|| "None".to_owned()),
+                    tracked.urn = %urn,
                     "Tracking signer of {}",
                     meta.urn()
                 );
 
-                // Track the signer's version of this repo (if any)
+                // Track the signer's version of this repo
                 self.track(&meta_urn, &peer)?;
                 // Track the signer's version of the identity she used for
                 // signing (if any)
-                if let Some(urn) = urn {
-                    self.track(urn, &peer)?;
-                }
+                self.track(urn, &peer)?;
 
                 Ok(())
             })
@@ -917,13 +903,7 @@ fn urns_from_refs<'a, E>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::meta::{
-        entity::{Draft, Resolver},
-        Project,
-        User,
-    };
-    use async_trait::async_trait;
-    use futures_await_test::async_test;
+    use crate::meta::{entity::Draft, Project, User};
 
     use tempfile::tempdir;
 
@@ -994,23 +974,8 @@ mod tests {
         assert!(store.tracked(&urn).unwrap().next().is_none())
     }
 
-    struct DummyUserResolver(User<Draft>);
-    #[async_trait]
-    impl Resolver<User<Draft>> for DummyUserResolver {
-        async fn resolve(&self, _uri: &RadUrn) -> Result<User<Draft>, entity::Error> {
-            Ok(self.0.clone())
-        }
-        async fn resolve_revision(
-            &self,
-            _uri: &RadUrn,
-            _revision: u64,
-        ) -> Result<User<Draft>, entity::Error> {
-            Ok(self.0.clone())
-        }
-    }
-
-    #[async_test]
-    async fn test_all_metadata_heads() {
+    #[test]
+    fn test_all_metadata_heads() {
         let tmp = tempdir().unwrap();
         let paths = Paths::from_root(tmp).unwrap();
         let user_key = SecretKey::new();
@@ -1019,12 +984,7 @@ mod tests {
         // Create signed and verified user
         let mut user = User::<Draft>::create("user".to_owned(), user_key.public()).unwrap();
         user.sign_owned(&user_key).unwrap();
-        let user_resolver = DummyUserResolver(user.clone());
-        let verified_user = user
-            .clone()
-            .check_history_status(&user_resolver, &user_resolver)
-            .await
-            .unwrap();
+        let verified_user = user.as_verified();
 
         // Create and sign two projects
         let mut project_foo = Project::<Draft>::create("foo".to_owned(), user.urn()).unwrap();

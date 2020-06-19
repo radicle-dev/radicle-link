@@ -22,7 +22,7 @@ use std::time::Duration;
 use futures::{future, stream::StreamExt};
 
 use librad::{
-    meta::{entity::Signatory, project::ProjectInfo},
+    meta::project::ProjectInfo,
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     uri::{self, RadUrn},
 };
@@ -45,8 +45,7 @@ async fn can_clone() {
         let alice = Alice::new(peer1.public_key());
         let mut radicle = Radicle::new(&alice);
         radicle
-            .sign(peer1.key(), &Signatory::User(alice.urn()), &alice)
-            .await
+            .sign_by_user(peer1.key(), &alice.clone().as_verified())
             .unwrap();
 
         tokio::task::spawn_blocking(move || {
@@ -78,8 +77,7 @@ async fn fetches_on_gossip_notify() {
         let alice = Alice::new(peer1.public_key());
         let mut radicle = Radicle::new(&alice);
         radicle
-            .sign(peer1.key(), &Signatory::User(alice.urn()), &alice)
-            .await
+            .sign_by_user(peer1.key(), &alice.clone().as_verified())
             .unwrap();
 
         let peer1_storage = peer1.storage();
