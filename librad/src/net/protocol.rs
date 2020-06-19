@@ -55,6 +55,7 @@ use crate::{
 pub enum ProtocolEvent {
     Connected(PeerId),
     Disconnected(PeerId),
+    Listening(SocketAddr),
 }
 
 /// Unification of the different inputs the run loop processes.
@@ -148,6 +149,10 @@ where
             .map(|event| Ok(Run::Gossip { event }));
 
         tracing::info!(msg = "Listening", local.addr = ?endpoint.local_addr());
+
+        self.subscribers
+            .emit(ProtocolEvent::Listening(endpoint.local_addr().unwrap()))
+            .await;
 
         futures::stream::select(incoming, futures::stream::select(bootstrap, gossip_events))
             .try_for_each_concurrent(None, |run| {
