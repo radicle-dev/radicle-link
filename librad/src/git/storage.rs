@@ -40,14 +40,7 @@ use crate::{
         result::ResultExt,
     },
     keys::SecretKey,
-    meta::entity::{
-        self,
-        data::{EntityInfo, EntityInfoExt},
-        Draft,
-        Entity,
-        GenericDraftEntity,
-        Signatory,
-    },
+    meta::entity::{self, data::EntityInfoExt, Draft, Entity, GenericDraftEntity, Signatory},
     paths::Paths,
     peer::PeerId,
     uri::{self, Path, Protocol, RadUrl, RadUrn},
@@ -571,11 +564,7 @@ impl Storage {
     ///
     /// The caller has the choice to filter on the [`EntityInfo`], which is
     /// useful when the you want a list of a specific kind of `Entity`.
-    pub fn entities<T, F>(&self, filter: &F) -> Result<Vec<Entity<T, Draft>>, Error>
-    where
-        F: Fn(EntityInfo) -> Option<T>,
-        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
-    {
+    pub fn entities(&self) -> Result<Vec<GenericDraftEntity>, Error> {
         let references = self.backend.references_glob("refs/namespaces/**/rad/id")?;
 
         let commits = references.filter_map(|reference| {
@@ -585,19 +574,13 @@ impl Storage {
         });
 
         // Fetch the entities generically
-        let entities = commits
+        commits
             .map(|commit| {
                 self.entity_blob(commit)
                     .map(|blob| blob.content().to_vec())
                     .and_then(|content| Ok(GenericDraftEntity::from_json_slice(&content)?))
             })
-            .collect::<Result<Vec<_>, Error>>()?;
-
-        // Apply the filter to the generic entity
-        Ok(entities
-            .into_iter()
-            .filter_map(|entity| entity.try_map(filter))
-            .collect())
+            .collect()
     }
 
     pub fn all_metadata_heads<'a>(
@@ -1103,7 +1086,7 @@ mod tests {
 
         // Setup and verify owner
         let mut owner = User::<Draft>::create("radicle".to_owned(), key.public()).unwrap();
-        owner.sign_owned(&key).unwrap();
+        owner.sign_owned(&key)?;
         let user_resolver = DummyUserResolver(owner.clone());
         let verified_owner = owner
             .clone()
@@ -1123,10 +1106,16 @@ mod tests {
 
         let _repo = storage.create_repo(&project_pineapple)?;
 
-        let mut projects = storage.entities(&|info| match info {
-            EntityInfo::Project(info) => Some(info),
-            _ => None,
-        })?;
+        let mut projects = storage
+            .entities()?
+            .into_iter()
+            .filter_map(|entity| {
+                entity.try_map(|info| match info {
+                    EntityInfo::Project(info) => Some(info),
+                    _ => None,
+                })
+            })
+            .collect::<Vec<_>>();
 
         projects.sort_by_key(|project| {
             let name = project.name();
@@ -1138,14 +1127,20 @@ mod tests {
             vec![project_banana.clone(), project_pineapple.clone()]
         );
 
-        let users = storage.entities(&|info| match info {
-            EntityInfo::User(info) => Some(info),
-            _ => None,
-        })?;
+        let users = storage
+            .entities()?
+            .into_iter()
+            .filter_map(|entity| {
+                entity.try_map(|info| match info {
+                    EntityInfo::User(info) => Some(info),
+                    _ => None,
+                })
+            })
+            .collect::<Vec<_>>();
 
         assert_eq!(users, vec![owner.clone()]);
 
-        let mut all_entities = storage.entities(&Some)?;
+        let mut all_entities = storage.entities()?;
 
         all_entities.sort_by_key(|entity| {
             let name = entity.name();
