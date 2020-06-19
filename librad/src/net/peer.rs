@@ -29,10 +29,10 @@ use crate::{
     git::{
         self,
         server::GitServer,
-        storage::{self, Storage as GitStorage},
+        storage::{self, Storage as GitStorage, WithSigner},
     },
     internal::{borrow::TryToOwned, channel::Fanout},
-    keys::{PublicKey, SecretKey},
+    keys::SecretKey,
     net::{
         connection::LocalInfo,
         discovery::Discovery,
@@ -137,9 +137,8 @@ where
 /// `try_to_owned` operation is fallible due to having to perform IO. Also note
 /// that the `TryToOwned` trait is not currently considered a stable API.
 pub struct PeerApi {
-    key: SecretKey,
     protocol: Protocol<PeerStorage, Gossip>,
-    storage: GitStorage,
+    storage: GitStorage<WithSigner>,
     subscribers: Fanout<PeerEvent>,
     paths: Paths,
 }
@@ -149,20 +148,12 @@ impl PeerApi {
         &self.protocol
     }
 
-    pub fn storage(&self) -> &GitStorage {
+    pub fn storage(&self) -> &GitStorage<WithSigner> {
         &self.storage
     }
 
-    pub fn key(&self) -> &SecretKey {
-        &self.key
-    }
-
-    pub fn public_key(&self) -> PublicKey {
-        self.key.public()
-    }
-
-    pub fn peer_id(&self) -> PeerId {
-        PeerId::from(&self.key)
+    pub fn peer_id(&self) -> &PeerId {
+        self.storage.peer_id()
     }
 
     pub fn subscribe(&self) -> impl Future<Output = impl futures::Stream<Item = PeerEvent>> {
@@ -184,7 +175,6 @@ impl TryToOwned for PeerApi {
     fn try_to_owned(&self) -> Result<Self::Owned, Self::Error> {
         let storage = self.storage.try_to_owned()?;
         Ok(Self {
-            key: self.key.clone(),
             protocol: self.protocol.clone(),
             storage,
             subscribers: self.subscribers.clone(),
@@ -208,10 +198,11 @@ pub type RunLoop = BoxFuture<'static, ()>;
 /// chosen by the operating system when the [`Peer`] was bootstrapped using
 /// `0.0.0.0:0`.
 pub struct Peer {
-    key: SecretKey,
     paths: Paths,
 
     listen_addr: SocketAddr,
+
+    storage: GitStorage<WithSigner>,
 
     protocol: Protocol<PeerStorage, Gossip>,
     run_loop: RunLoop,
@@ -224,19 +215,13 @@ impl Peer {
         self.listen_addr
     }
 
-    pub fn peer_id(&self) -> PeerId {
-        PeerId::from(&self.key)
-    }
-
-    pub fn public_key(&self) -> PublicKey {
-        self.key.public()
+    pub fn peer_id(&self) -> &PeerId {
+        self.storage.peer_id()
     }
 
     pub fn accept(self) -> Result<(PeerApi, RunLoop), AcceptError> {
-        let storage = GitStorage::open(&self.paths, self.key.clone())?;
         let api = PeerApi {
-            key: self.key,
-            storage,
+            storage: self.storage,
             protocol: self.protocol,
             subscribers: self.subscribers,
             paths: self.paths,
@@ -262,11 +247,11 @@ impl Peer {
         let listen_addr = endpoint.local_addr()?;
 
         let subscribers = Fanout::new();
+        let storage = GitStorage::open_or_init(&config.paths, config.key.clone())?;
         let peer_storage = {
-            let storage = GitStorage::open(&config.paths, config.key.clone())?;
+            let storage = storage.reopen()?;
             PeerStorage {
                 inner: Arc::new(Mutex::new(storage)),
-                peer_id: peer_id.clone(),
                 subscribers: subscribers.clone(),
             }
         };
@@ -287,9 +272,9 @@ impl Peer {
             .boxed();
 
         Ok(Self {
-            key: config.key,
             paths: config.paths,
             listen_addr,
+            storage,
             protocol,
             run_loop,
             subscribers,
@@ -299,9 +284,7 @@ impl Peer {
 
 #[derive(Clone)]
 pub struct PeerStorage {
-    inner: Arc<Mutex<GitStorage>>,
-    peer_id: PeerId,
-
+    inner: Arc<Mutex<GitStorage<WithSigner>>>,
     subscribers: Fanout<PeerEvent>,
 }
 
@@ -312,19 +295,16 @@ impl PeerStorage {
         urn: impl Into<OriginatesRef<'a, RadUrn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> Result<(), GitFetchError> {
-        let urn = self.urn_context(urn);
+        let git = self.inner.lock().unwrap();
+        let urn = urn_context(git.peer_id(), urn);
 
         if let Some(head) = head.into() {
-            if self.inner.lock().unwrap().has_commit(&urn, head)? {
+            if git.has_commit(&urn, head)? {
                 return Err(GitFetchError::KnownObject(head));
             }
         }
 
-        self.inner
-            .lock()
-            .unwrap()
-            .fetch_repo(&urn, from)
-            .map_err(|e| e.into())
+        git.fetch_repo(&urn, from).map_err(|e| e.into())
     }
 
     /// Determine if we have the given object locally
@@ -333,41 +313,38 @@ impl PeerStorage {
         urn: impl Into<OriginatesRef<'a, RadUrn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
-        let urn = self.urn_context(urn);
         let git = self.inner.lock().unwrap();
+        let urn = urn_context(git.peer_id(), urn);
         match head.into() {
             None => git.has_urn(&urn).unwrap_or(false),
             Some(head) => git.has_commit(&urn, head).unwrap_or(false),
         }
     }
+}
+/// If applicable, map the [`uri::Path`] of the given [`RadUrn`] to
+/// `refs/remotes/<origin>/<path>`
+fn urn_context<'a>(local_peer_id: &PeerId, urn: impl Into<OriginatesRef<'a, RadUrn>>) -> RadUrn {
+    let OriginatesRef { from, value } = urn.into();
+    let urn = value.clone();
 
-    /// Map the [`uri::Path`] of the given [`RadUrn`] to
-    /// `refs/remotes/<origin>/<path>` if applicable
-    fn urn_context<'a>(&'a self, urn: impl Into<OriginatesRef<'a, RadUrn>>) -> RadUrn {
-        let OriginatesRef { from, value } = urn.into();
-        let urn = value.clone();
+    if from == local_peer_id {
+        return urn;
+    }
 
-        if from == &self.peer_id {
-            return urn;
-        }
+    let path = urn
+        .path
+        .strip_prefix("refs/")
+        .map(|tail| {
+            uri::Path::parse(tail).expect("`Path` is still valid after stripping a valid prefix")
+        })
+        .unwrap_or(urn.path);
 
-        let path = urn
-            .path
-            .strip_prefix("refs/")
-            .map(|tail| {
-                uri::Path::parse(tail)
-                    .expect("`Path` is still valid after stripping a valid prefix")
-            })
-            .unwrap_or(urn.path);
+    let mut remote = uri::Path::parse(format!("refs/remotes/{}", from)).expect("Known valid path");
+    remote.push(path);
 
-        let mut remote =
-            uri::Path::parse(format!("refs/remotes/{}", from)).expect("Known valid path");
-        remote.push(path);
-
-        RadUrn {
-            path: remote,
-            ..urn
-        }
+    RadUrn {
+        path: remote,
+        ..urn
     }
 }
 

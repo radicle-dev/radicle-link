@@ -17,19 +17,19 @@
 
 use std::collections::HashSet;
 
+use radicle_surf::vcs::git as surf;
 use thiserror::Error;
 
 use crate::{
     git::{
         refs::Refs,
-        storage::{self, Storage},
+        storage::{self, Storage, WithSigner},
         types::Namespace,
     },
     internal::borrow::{TryCow, TryToOwned},
     peer::PeerId,
     uri::RadUrn,
 };
-use radicle_surf::vcs::git as surf;
 
 pub use storage::Tracked;
 
@@ -46,21 +46,14 @@ pub enum Error {
 ///
 /// This is just a (thin) wrapper around [`Storage`] so the [`RadUrn`] context
 /// doesn't need to be passed around.
-pub struct Repo<'a> {
+pub struct Repo<'a, S: Clone> {
     pub urn: RadUrn,
-    pub(super) storage: TryCow<'a, Storage>,
+    pub(super) storage: TryCow<'a, Storage<S>>,
 }
 
-impl<'a> Repo<'a> {
+impl<'a, S: Clone> Repo<'a, S> {
     pub fn namespace(&self) -> Namespace {
         self.urn.id.clone()
-    }
-
-    /// Fetch new refs and objects for this repo from [`PeerId`]
-    pub fn fetch(&self, from: &PeerId) -> Result<(), Error> {
-        self.storage
-            .fetch_repo(&self.urn, from)
-            .map_err(Error::from)
     }
 
     /// Obtain a read-only view of this repo
@@ -68,13 +61,6 @@ impl<'a> Repo<'a> {
         self.storage
             .browser(&self.urn, revision)
             .map_err(Error::from)
-    }
-
-    /// Track [`PeerId`]s view of this repo
-    ///
-    /// Equivalent to `git remote add`.
-    pub fn track(&self, peer: &PeerId) -> Result<(), Error> {
-        self.storage.track(&self.urn, peer).map_err(Error::from)
     }
 
     /// Stop tracking [`PeerId`]s view of this repo
@@ -106,17 +92,34 @@ impl<'a> Repo<'a> {
     pub fn has_commit(&self, oid: git2::Oid) -> Result<bool, Error> {
         self.storage.has_commit(&self.urn, oid).map_err(Error::from)
     }
+}
 
-    // TODO: find a better way to expose low-level git operations
+impl<'a> Repo<'a, WithSigner> {
+    /// Fetch new refs and objects for this repo from [`PeerId`]
+    pub fn fetch(&self, from: &PeerId) -> Result<(), Error> {
+        self.storage
+            .fetch_repo(&self.urn, from)
+            .map_err(Error::from)
+    }
 
+    /// Track [`PeerId`]s view of this repo
+    ///
+    /// Equivalent to `git remote add`.
+    pub fn track(&self, peer: &PeerId) -> Result<(), Error> {
+        self.storage.track(&self.urn, peer).map_err(Error::from)
+    }
+
+    // FIXME: remove. needed for testing atm
     pub fn index(&self) -> Result<git2::Index, Error> {
         self.storage.index().map_err(Error::from)
     }
 
+    // FIXME: remove. needed for testing atm
     pub fn find_tree(&self, oid: git2::Oid) -> Result<git2::Tree, Error> {
         self.storage.find_tree(oid).map_err(Error::from)
     }
 
+    // FIXME: remove. needed for testing atm
     pub fn commit(
         &self,
         branch: &str,
@@ -130,7 +133,7 @@ impl<'a> Repo<'a> {
     }
 }
 
-impl TryToOwned for Repo<'_> {
+impl<S: Clone> TryToOwned for Repo<'_, S> {
     type Owned = Self;
     type Error = Error;
 

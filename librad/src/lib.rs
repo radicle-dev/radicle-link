@@ -15,8 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#![feature(str_strip)]
 #![feature(bool_to_option)]
+#![feature(never_type)]
+#![feature(str_strip)]
 
 #[macro_use]
 extern crate async_trait;

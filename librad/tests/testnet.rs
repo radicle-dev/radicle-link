@@ -48,6 +48,7 @@ lazy_static! {
 pub struct TestPeer {
     _tmp: TempDir,
     pub peer: Peer,
+    pub key: SecretKey,
 }
 
 impl Deref for TestPeer {
@@ -75,7 +76,7 @@ async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
     git::storage::Storage::init(&paths, key.clone())?;
 
     let config = PeerConfig {
-        key,
+        key: key.clone(),
         paths,
         listen_addr,
         gossip_params,
@@ -85,7 +86,11 @@ async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
     config
         .try_into_peer()
         .await
-        .map(|peer| TestPeer { _tmp: tmp, peer })
+        .map(|peer| TestPeer {
+            _tmp: tmp,
+            peer,
+            key,
+        })
         .map_err(|e| e.into())
 }
 
@@ -95,7 +100,7 @@ pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
     }
 
     let seed = boot(vec![]).await?;
-    let seed_addrs = vec![(seed.peer_id(), seed.listen_addr())];
+    let seed_addrs = vec![(seed.peer_id().clone(), seed.listen_addr())];
 
     let mut peers = Vec::with_capacity(num_peers);
     peers.push(seed);
@@ -110,16 +115,19 @@ pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
 
 pub async fn run_on_testnet<F, Fut, A>(peers: Vec<TestPeer>, mut f: F) -> A
 where
-    F: FnMut(Vec<PeerApi>) -> Fut,
+    F: FnMut(Vec<(PeerApi, SecretKey)>) -> Fut,
     Fut: Future<Output = A>,
 {
     let len = peers.len();
 
     // move out tempdirs, so they don't get dropped
-    let (_tmps, peers) = peers
+    let (_tmps, peers_and_keys) = peers
         .into_iter()
-        .map(|TestPeer { _tmp, peer }| (_tmp, peer))
+        .map(|TestPeer { _tmp, peer, key }| (_tmp, (peer, key)))
         .unzip::<_, _, Vec<_>, Vec<_>>();
+
+    // unzip2, anyone?
+    let (peers, keys) = peers_and_keys.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
 
     let (apis, runners) = peers
         .into_iter()
@@ -139,7 +147,7 @@ where
         future::select_all(runners).boxed(),
         Box::pin(async {
             connected.await;
-            f(apis).await
+            f(apis.into_iter().zip(keys).collect()).await
         }),
     )
     .await;

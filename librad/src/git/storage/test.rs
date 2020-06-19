@@ -28,12 +28,12 @@ use crate::{
     uri::{self, RadUrn},
 };
 
-type TmpStorage = WithTmpDir<Storage>;
+type TmpStorage = WithTmpDir<Storage<WithSigner>>;
 
-fn storage() -> TmpStorage {
+fn storage(key: SecretKey) -> TmpStorage {
     WithTmpDir::new(|path| {
         let paths = Paths::from_root(path)?;
-        Storage::init(&paths, SecretKey::new())
+        Storage::init(&paths, key)
     })
     .unwrap()
 }
@@ -52,7 +52,7 @@ fn urn_from_idref(refname: &str) -> Option<RadUrn> {
 
 #[test]
 fn test_tracking_read_after_write() {
-    let store = storage();
+    let store = storage(SecretKey::new());
     let urn = RadUrn {
         id: Hash::hash(b"lala"),
         proto: uri::Protocol::Git,
@@ -67,7 +67,7 @@ fn test_tracking_read_after_write() {
 
 #[test]
 fn test_idempotent_tracking() {
-    let store = storage();
+    let store = storage(SecretKey::new());
     let urn = RadUrn {
         id: Hash::hash(b"lala"),
         proto: uri::Protocol::Git,
@@ -86,7 +86,7 @@ fn test_idempotent_tracking() {
 
 #[test]
 fn test_untrack() {
-    let store = storage();
+    let store = storage(SecretKey::new());
     let urn = RadUrn {
         id: Hash::hash(b"lala"),
         proto: uri::Protocol::Git,
@@ -102,11 +102,12 @@ fn test_untrack() {
 
 #[async_test]
 async fn test_all_metadata_heads() {
-    let store = storage();
+    let key = SecretKey::new();
+    let store = storage(key.clone());
 
     // Create signed and verified user
-    let mut user = User::<Draft>::create("user".to_owned(), store.key.public()).unwrap();
-    user.sign_owned(&store.key).unwrap();
+    let mut user = User::<Draft>::create("user".to_owned(), key.public()).unwrap();
+    user.sign_owned(&key).unwrap();
     let user_resolver = ConstResolver::new(user.clone());
     let verified_user = user
         .clone()
@@ -117,17 +118,11 @@ async fn test_all_metadata_heads() {
     // Create and sign two projects
     let mut project_foo = Project::<Draft>::create("foo".to_owned(), user.urn()).unwrap();
     let mut project_bar = Project::<Draft>::create("bar".to_owned(), user.urn()).unwrap();
-    project_foo
-        .sign_by_user(&store.key, &verified_user)
-        .unwrap();
-    project_bar
-        .sign_by_user(&store.key, &verified_user)
-        .unwrap();
+    project_foo.sign_by_user(&key, &verified_user).unwrap();
+    project_bar.sign_by_user(&key, &verified_user).unwrap();
 
     // Store the three entities in their respective namespaces
-    println!("poop");
     store.create_repo(&user).unwrap();
-    println!("piep");
     store.create_repo(&project_foo).unwrap();
     store.create_repo(&project_bar).unwrap();
 

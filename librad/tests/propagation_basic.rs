@@ -39,13 +39,13 @@ async fn can_clone() {
 
     let peers = testnet::setup(2).await.unwrap();
     testnet::run_on_testnet(peers, async move |mut apis| {
-        let peer1 = apis.pop().unwrap();
-        let peer2 = apis.pop().unwrap();
+        let (peer1, peer1_key) = apis.pop().unwrap();
+        let (peer2, _) = apis.pop().unwrap();
 
-        let alice = Alice::new(peer1.public_key());
+        let alice = Alice::new(peer1_key.public());
         let mut radicle = Radicle::new(&alice);
         radicle
-            .sign(peer1.key(), &Signatory::User(alice.urn()), &alice)
+            .sign(&peer1_key, &Signatory::User(alice.urn()), &alice)
             .await
             .unwrap();
 
@@ -54,7 +54,7 @@ async fn can_clone() {
 
             {
                 let git2 = peer2.storage();
-                git2.clone_repo::<ProjectInfo>(radicle.urn().into_rad_url(peer1.peer_id()))
+                git2.clone_repo::<ProjectInfo>(radicle.urn().into_rad_url(peer1.peer_id().clone()))
                     .unwrap();
                 // sanity check
                 git2.open_repo(radicle.urn()).unwrap();
@@ -72,13 +72,13 @@ async fn fetches_on_gossip_notify() {
 
     let peers = testnet::setup(2).await.unwrap();
     testnet::run_on_testnet(peers, async move |mut apis| {
-        let peer1 = apis.pop().unwrap();
-        let peer2 = apis.pop().unwrap();
+        let (peer1, peer1_key) = apis.pop().unwrap();
+        let (peer2, _) = apis.pop().unwrap();
 
-        let alice = Alice::new(peer1.public_key());
+        let alice = Alice::new(peer1_key.public());
         let mut radicle = Radicle::new(&alice);
         radicle
-            .sign(peer1.key(), &Signatory::User(alice.urn()), &alice)
+            .sign(&peer1_key, &Signatory::User(alice.urn()), &alice)
             .await
             .unwrap();
 
@@ -89,7 +89,7 @@ async fn fetches_on_gossip_notify() {
         {
             peer1_storage.create_repo(&radicle).unwrap();
             let peer2_storage = peer2_storage.reopen().unwrap();
-            let url = radicle.urn().into_rad_url(peer1.peer_id());
+            let url = radicle.urn().into_rad_url(peer1.peer_id().clone());
             tokio::task::spawn_blocking(move || {
                 peer2_storage.clone_repo::<ProjectInfo>(url).unwrap();
             })
@@ -116,7 +116,7 @@ async fn fetches_on_gossip_notify() {
             peer1
                 .protocol()
                 .announce(Gossip {
-                    origin: peer1.peer_id(),
+                    origin: peer1.peer_id().clone(),
                     urn: RadUrn {
                         path: uri::Path::parse("refs/heads/master").unwrap(),
                         ..radicle.urn()
@@ -131,7 +131,7 @@ async fn fetches_on_gossip_notify() {
                 peer2_events
                     .filter(|event| match event {
                         PeerEvent::GossipFetch(FetchInfo { provider, .. }) => {
-                            future::ready(provider == &peer1_id)
+                            future::ready(provider == peer1_id)
                         },
                     })
                     .map(|_| ())
