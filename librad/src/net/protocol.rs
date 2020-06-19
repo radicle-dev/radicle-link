@@ -151,7 +151,11 @@ where
         tracing::info!(msg = "Listening", local.addr = ?endpoint.local_addr());
 
         self.subscribers
-            .emit(ProtocolEvent::Listening(endpoint.local_addr().unwrap()))
+            .emit(ProtocolEvent::Listening(
+                endpoint
+                    .local_addr()
+                    .expect("unable to get local endpoint addr"),
+            ))
             .await;
 
         futures::stream::select(incoming, futures::stream::select(bootstrap, gossip_events))
