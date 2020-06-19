@@ -40,7 +40,7 @@ use crate::{
         result::ResultExt,
     },
     keys::SecretKey,
-    meta::entity::{self, data::EntityInfoExt, Draft, Entity, GenericDraftEntity, Signatory},
+    meta::entity::{self, data::EntityInfoExt, Draft, Entity, Signatory},
     paths::Paths,
     peer::PeerId,
     uri::{self, Path, Protocol, RadUrl, RadUrn},
@@ -539,9 +539,22 @@ impl Storage {
             .and_then(|oid| Ok(self.backend.find_commit(oid)?))
     }
 
-    pub fn metadata(&self, urn: &RadUrn) -> Result<GenericDraftEntity, Error> {
+    /// Get the [`Entity`] found at the provided [`RadUrn`].
+    ///
+    /// To use this, the caller will need to specify which `T` they wish to
+    /// resolve to. This can be done one of two ways:
+    ///
+    /// * `let user: User = storage.entity(&urn);`
+    /// * `let user = storage.entity::<UserInfo>(&urn);`
+    ///
+    /// # Errors
+    ///   * If the entity resolution fails.
+    pub fn entity<T>(&self, urn: &RadUrn) -> Result<Entity<T, Draft>, Error>
+    where
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+    {
         self.entity_metadata_commit(urn).and_then(|commit| {
-            GenericDraftEntity::from_json_slice(self.entity_blob(commit).unwrap().content())
+            Entity::<T, Draft>::from_json_slice(self.entity_blob(commit).unwrap().content())
                 .map_err(Error::Entity)
         })
     }
@@ -918,7 +931,7 @@ fn urns_from_refs<'a, E>(
 mod tests {
     use super::*;
     use crate::meta::{
-        entity::{Draft, Resolver},
+        entity::{Draft, GenericDraftEntity, Resolver},
         Project,
         User,
     };
@@ -992,6 +1005,52 @@ mod tests {
         store.untrack(&urn, &peer).unwrap();
 
         assert!(store.tracked(&urn).unwrap().next().is_none())
+    }
+
+    #[async_test]
+    async fn test_specific_entity_resolution() -> Result<(), Error> {
+        let tmp = tempdir().unwrap();
+        let paths = Paths::from_root(tmp).unwrap();
+        let user_key = SecretKey::new();
+        let store = Storage::init(&paths, user_key.clone()).unwrap();
+
+        // Setup and verify owner
+        let mut owner = User::<Draft>::create("radicle".to_owned(), user_key.public()).unwrap();
+        owner.sign_owned(&user_key).unwrap();
+        let user_resolver = DummyUserResolver(owner.clone());
+        let verified_owner = owner
+            .clone()
+            .check_history_status(&user_resolver, &user_resolver)
+            .await
+            .unwrap();
+
+        // Store the owner in the monorepo
+        let _repo = store.create_repo(&owner)?;
+
+        // Assert we can fetch it back
+        assert_eq!(owner, store.entity(&owner.urn())?);
+
+        // Setup a project for the owner
+        let mut project_banana =
+            Project::<Draft>::create("banana".to_owned(), owner.urn()).unwrap();
+        project_banana
+            .sign_by_user(&user_key, &verified_owner)
+            .unwrap();
+
+        // Store the project in the monorepo
+        let _repo = store.create_repo(&project_banana)?;
+
+        // And assert we can get it back
+        assert_eq!(project_banana, store.entity(&project_banana.urn())?);
+
+        // Assert that getting the wrong entity provides the correct error
+        let is_it_a_user: Result<User<Draft>, Error> = store.entity(&project_banana.urn());
+        assert!(is_it_a_user.is_err());
+
+        let is_it_a_project: Result<Project<Draft>, Error> = store.entity(&owner.urn());
+        assert!(is_it_a_project.is_err());
+
+        Ok(())
     }
 
     struct DummyUserResolver(User<Draft>);
@@ -1072,7 +1131,7 @@ mod tests {
             )
             .unwrap()
         );
-        let generic_user = store.metadata(&user.urn()).unwrap();
+        let generic_user: GenericDraftEntity = store.entity(&user.urn()).unwrap();
         assert_eq!(generic_user.kind(), user.kind());
         assert_eq!(generic_user.hash(), user.hash());
 
@@ -1087,7 +1146,7 @@ mod tests {
             )
             .unwrap()
         );
-        let generic_foo = store.metadata(&project_foo.urn()).unwrap();
+        let generic_foo: GenericDraftEntity = store.entity(&project_foo.urn()).unwrap();
         assert_eq!(generic_foo.kind(), project_foo.kind());
         assert_eq!(generic_foo.hash(), project_foo.hash());
 

@@ -390,6 +390,45 @@ where
         self.to_data().canonical_data()
     }
 
+    pub fn map<U, F>(self, f: F) -> Entity<U, ST>
+    where
+        F: FnOnce(T) -> U,
+    {
+        Entity {
+            status_marker: self.status_marker,
+            name: self.name,
+            revision: self.revision,
+            rad_version: self.rad_version,
+            hash: self.hash,
+            root_hash: self.root_hash,
+            parent_hash: self.parent_hash,
+            signatures: self.signatures,
+            keys: self.keys,
+            certifiers: self.certifiers,
+            info: f(self.info),
+        }
+    }
+
+    pub fn try_map<U, E, F>(self, f: F) -> Result<Entity<U, ST>, E>
+    where
+        F: FnOnce(T) -> Result<U, E>,
+    {
+        let info = f(self.info)?;
+        Ok(Entity {
+            status_marker: self.status_marker,
+            name: self.name,
+            revision: self.revision,
+            rad_version: self.rad_version,
+            hash: self.hash,
+            root_hash: self.root_hash,
+            parent_hash: self.parent_hash,
+            signatures: self.signatures,
+            keys: self.keys,
+            certifiers: self.certifiers,
+            info,
+        })
+    }
+
     /// Check that this key is allowed to sign the entity by checking that the
     /// `by` argument is correct:
     ///
