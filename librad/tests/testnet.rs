@@ -131,7 +131,7 @@ where
         for api in &apis {
             events.push(api.protocol().subscribe().await);
         }
-        stream::iter(events).flatten()
+        events
     };
     let connected = wait_connected(events, len);
 
@@ -150,11 +150,11 @@ where
     }
 }
 
-pub async fn wait_connected<S>(events: S, min_connected: usize)
+pub async fn wait_connected<S>(events: Vec<S>, min_connected: usize)
 where
-    S: futures::Stream<Item = ProtocolEvent>,
+    S: futures::Stream<Item = ProtocolEvent> + Unpin,
 {
-    events
+    stream::select_all(events)
         .scan(0, |connected, event| {
             if let ProtocolEvent::Connected(_) = event {
                 *connected += 1;
