@@ -72,7 +72,7 @@ pub enum EntityKind {
 ///
 /// Care has been taken to ensure that the same data can be deserialized both
 /// "generically" (as `EntityData<EntityInfo>`) and using its specific type
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 #[serde(untagged)]
 pub enum EntityInfo {
     User(UserInfo),
