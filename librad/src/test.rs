@@ -20,7 +20,19 @@
 #[cfg(test)]
 use std::{
     fmt::{Debug, Display},
+    io,
+    ops::{Deref, DerefMut},
+    path::Path,
     str::FromStr,
+};
+
+use async_trait::async_trait;
+use serde::{de::DeserializeOwned, Serialize};
+use tempfile::{tempdir, TempDir};
+
+use crate::{
+    meta::entity::{self, data::EntityInfoExt, Entity, Resolver},
+    uri::RadUrn,
 };
 
 pub(crate) fn json_roundtrip<A>(a: A)
@@ -46,4 +58,83 @@ where
     <A as FromStr>::Err: Debug,
 {
     assert_eq!(a, a.to_string().parse().unwrap())
+}
+
+pub(crate) struct WithTmpDir<A> {
+    _tmp: TempDir,
+    inner: A,
+}
+
+impl<A> WithTmpDir<A> {
+    pub(crate) fn new<F, E>(mk_inner: F) -> Result<Self, E>
+    where
+        F: FnOnce(&Path) -> Result<A, E>,
+        E: From<io::Error>,
+    {
+        let tmp = tempdir()?;
+        let inner = mk_inner(tmp.path())?;
+        Ok(Self { _tmp: tmp, inner })
+    }
+}
+
+impl<A> Deref for WithTmpDir<A> {
+    type Target = A;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<A> DerefMut for WithTmpDir<A> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+/// A Resolver which always resolves to the same value.
+///
+/// The `RadUrn` must match, however.
+pub(crate) struct ConstResolver<A, S> {
+    entity: Entity<A, S>,
+    urn: RadUrn,
+}
+
+impl<A, S> ConstResolver<A, S>
+where
+    A: Clone + Default + Serialize + DeserializeOwned + EntityInfoExt,
+{
+    pub(crate) fn new(entity: Entity<A, S>) -> Self {
+        let urn = entity.urn();
+        Self { entity, urn }
+    }
+}
+
+#[async_trait]
+impl<A, S> Resolver<Entity<A, S>> for ConstResolver<A, S>
+where
+    A: Clone + Send + Sync + Default + Serialize + DeserializeOwned,
+    S: Clone + Send + Sync,
+{
+    async fn resolve(&self, urn: &RadUrn) -> Result<Entity<A, S>, entity::Error> {
+        if &self.urn == urn {
+            Ok(self.entity.clone())
+        } else {
+            Err(entity::Error::ResolutionFailed(urn.clone()))
+        }
+    }
+
+    async fn resolve_revision(
+        &self,
+        urn: &RadUrn,
+        revision: u64,
+    ) -> Result<Entity<A, S>, entity::Error> {
+        if &self.urn == urn {
+            Ok(self.entity.clone())
+        } else {
+            Err(entity::Error::RevisionResolutionFailed(
+                urn.clone(),
+                revision,
+            ))
+        }
+    }
 }

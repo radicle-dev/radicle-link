@@ -15,16 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-//! Extensions and wrappers for `git2` types
+pub fn is_not_found_err(e: &git2::Error) -> bool {
+    e.code() == git2::ErrorCode::NotFound
+}
 
-pub mod blob;
-pub mod error;
-pub mod oid;
-pub mod reference;
-pub mod revwalk;
-
-pub use blob::*;
-pub use error::*;
-pub use oid::*;
-pub use reference::*;
-pub use revwalk::*;
+pub fn is_exists_err(e: &git2::Error) -> bool {
+    e.code() == git2::ErrorCode::Exists
+}

@@ -20,7 +20,12 @@ use std::{
     fmt::{self, Display},
 };
 
-use crate::{git::refs::Refs, hash::Hash, peer::PeerId, uri::RadUrn};
+use crate::{
+    git::{ext, refs::Refs},
+    hash::Hash,
+    peer::PeerId,
+    uri::RadUrn,
+};
 
 pub type Namespace = Hash;
 
@@ -59,6 +64,10 @@ impl Display for Reference {
 }
 
 impl Reference {
+    pub fn find<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error> {
+        repo.find_reference(&self.to_string())
+    }
+
     pub fn rad_id(namespace: Namespace) -> Self {
         Self {
             namespace,
@@ -117,6 +126,12 @@ impl Reference {
             name: name.to_owned(),
             ..self.clone()
         }
+    }
+}
+
+impl<'a> Into<ext::blob::Branch<'a>> for &'a Reference {
+    fn into(self) -> ext::blob::Branch<'a> {
+        ext::blob::Branch::from(self.to_string())
     }
 }
 
