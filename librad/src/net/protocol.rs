@@ -137,7 +137,10 @@ where
     ) where
         Disco: futures::stream::Stream<Item = (PeerId, Vec<SocketAddr>)>,
     {
-        let span = tracing::trace_span!("Protocol::run");
+        let local_addr = endpoint
+            .local_addr()
+            .expect("unable to get local endpoint addr");
+        let span = tracing::trace_span!("Protocol::run", local_addr = %local_addr);
         let _guard = span.enter();
 
         let incoming = incoming.map(|(conn, i)| Ok(Run::Incoming { conn, incoming: i }));
@@ -148,14 +151,10 @@ where
             .await
             .map(|event| Ok(Run::Gossip { event }));
 
-        tracing::info!(msg = "Listening", local.addr = ?endpoint.local_addr());
+        tracing::info!(msg = "Listening", local.addr = %local_addr);
 
         self.subscribers
-            .emit(ProtocolEvent::Listening(
-                endpoint
-                    .local_addr()
-                    .expect("unable to get local endpoint addr"),
-            ))
+            .emit(ProtocolEvent::Listening(local_addr))
             .await;
 
         futures::stream::select(incoming, futures::stream::select(bootstrap, gossip_events))
