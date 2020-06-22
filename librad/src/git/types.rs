@@ -29,7 +29,7 @@ use crate::{
 
 pub type Namespace = Hash;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RefsCategory {
     Heads,
     Rad,
@@ -44,7 +44,7 @@ impl Display for RefsCategory {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Reference {
     pub namespace: Namespace,
     pub remote: Option<PeerId>,
@@ -86,12 +86,30 @@ impl Reference {
         }
     }
 
+    pub fn rad_certifier(namespace: Namespace, urn: &RadUrn) -> Self {
+        Self {
+            namespace,
+            remote: None,
+            category: RefsCategory::Rad,
+            name: format!("ids/{}", urn.id),
+        }
+    }
+
     pub fn rad_refs(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
         Self {
             namespace,
             remote: remote.into(),
             category: RefsCategory::Rad,
             name: "refs".to_owned(),
+        }
+    }
+
+    pub fn rad_self(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
+        Self {
+            namespace,
+            remote: remote.into(),
+            category: RefsCategory::Rad,
+            name: "self".to_owned(),
         }
     }
 
@@ -177,7 +195,7 @@ impl Refspec {
 
     pub fn fetch_heads<'a, E>(
         namespace: Namespace,
-        remote_heads: HashMap<&'a str, git2::Oid>,
+        remote_heads: HashMap<String, git2::Oid>,
         tracked_peers: impl Iterator<Item = &'a PeerId> + 'a,
         remote_peer: &'a PeerId,
         rad_refs_of: impl Fn(PeerId) -> Result<Refs, E>,
@@ -237,6 +255,25 @@ impl Refspec {
                     remote,
                     force: false,
                 });
+            }
+
+            // Self
+            //
+            // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/self \
+            // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/self`
+            {
+                let local = Reference::rad_self(namespace.clone(), tracked_peer.clone());
+                let remote = if tracked_peer == remote_peer {
+                    local.with_remote(None)
+                } else {
+                    local.clone()
+                };
+
+                refspecs.push(Self {
+                    local,
+                    remote,
+                    force: false,
+                })
             }
 
             // Certifiers

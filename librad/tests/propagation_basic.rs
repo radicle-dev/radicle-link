@@ -42,16 +42,27 @@ async fn can_clone() {
         let (peer1, peer1_key) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
 
-        let alice = Alice::new(peer1_key.public());
+        let mut alice = Alice::new(peer1_key.public());
         let mut radicle = Radicle::new(&alice);
-        radicle
-            .sign(&peer1_key, &Signatory::User(alice.urn()), &alice)
-            .await
-            .unwrap();
+        {
+            let resolves_to_alice = alice.clone();
+            alice
+                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
+                .await
+                .unwrap();
+            radicle
+                .sign(
+                    &peer1_key,
+                    &Signatory::User(alice.urn()),
+                    &resolves_to_alice,
+                )
+                .await
+                .unwrap();
+        }
 
         tokio::task::spawn_blocking(move || {
+            peer1.storage().create_repo(&alice).unwrap();
             peer1.storage().create_repo(&radicle).unwrap();
-
             {
                 let git2 = peer2.storage();
                 git2.clone_repo::<ProjectInfo>(radicle.urn().into_rad_url(peer1.peer_id().clone()))
@@ -75,18 +86,30 @@ async fn fetches_on_gossip_notify() {
         let (peer1, peer1_key) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
 
-        let alice = Alice::new(peer1_key.public());
+        let mut alice = Alice::new(peer1_key.public());
         let mut radicle = Radicle::new(&alice);
-        radicle
-            .sign(&peer1_key, &Signatory::User(alice.urn()), &alice)
-            .await
-            .unwrap();
+        {
+            let resolves_to_alice = alice.clone();
+            alice
+                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
+                .await
+                .unwrap();
+            radicle
+                .sign(
+                    &peer1_key,
+                    &Signatory::User(alice.urn()),
+                    &resolves_to_alice,
+                )
+                .await
+                .unwrap();
+        }
 
         let peer1_storage = peer1.storage();
         let peer2_storage = peer2.storage();
 
         // Create project on peer1, and clone from peer2
         {
+            peer1_storage.create_repo(&alice).unwrap();
             peer1_storage.create_repo(&radicle).unwrap();
             let peer2_storage = peer2_storage.reopen().unwrap();
             let url = radicle.urn().into_rad_url(peer1.peer_id().clone());

@@ -42,7 +42,7 @@ use crate::{
     },
     paths::Paths,
     peer::{Originates, OriginatesRef, PeerId},
-    uri::{self, RadUrn},
+    uri::{self, RadUrl, RadUrn},
 };
 
 pub mod types;
@@ -304,7 +304,11 @@ impl PeerStorage {
             }
         }
 
-        git.fetch_repo(&urn, from).map_err(|e| e.into())
+        let url = RadUrl {
+            authority: from.clone(),
+            urn,
+        };
+        git.fetch_repo(url).map_err(|e| e.into())
     }
 
     /// Determine if we have the given object locally

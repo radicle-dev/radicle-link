@@ -28,9 +28,10 @@ use url::Url;
 use crate::{
     hash::{self, Hash},
     peer::{self, PeerId},
-    uri::{RadUrl, RadUrlRef, RadUrn},
+    uri::{self, RadUrl, RadUrlRef, RadUrn},
 };
 
+#[derive(Clone)]
 pub struct GitUrl {
     pub local_peer: PeerId,
     pub remote_peer: PeerId,
@@ -56,6 +57,10 @@ impl GitUrl {
             remote_peer: &self.remote_peer,
             repo: &self.repo,
         }
+    }
+
+    pub fn into_rad_url(self) -> RadUrl {
+        self.into()
     }
 }
 
@@ -120,6 +125,19 @@ impl FromStr for GitUrl {
             remote_peer,
             repo,
         })
+    }
+}
+
+impl Into<RadUrl> for GitUrl {
+    fn into(self) -> RadUrl {
+        RadUrl {
+            authority: self.remote_peer,
+            urn: RadUrn {
+                id: self.repo,
+                proto: uri::Protocol::Git,
+                path: uri::Path::empty(),
+            },
+        }
     }
 }
 

@@ -19,8 +19,6 @@ use super::*;
 
 use std::str::FromStr;
 
-use futures_await_test::async_test;
-
 use crate::{
     hash::Hash,
     meta::{entity::Draft, Project, User},

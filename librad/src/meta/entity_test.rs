@@ -17,7 +17,6 @@
 
 use std::str::FromStr;
 
-use futures_await_test::async_test;
 use sodiumoxide::crypto::sign::ed25519::Seed;
 
 use super::{
@@ -70,7 +69,7 @@ lazy_static! {
 }
 
 fn peer_key_string(peer: &PeerId) -> PublicKey {
-    peer.device_key().clone()
+    peer.as_public_key().clone()
 }
 
 lazy_static! {
@@ -224,9 +223,9 @@ async fn test_adding_user_signatures() {
 
     // Check signatures collection contents
     assert_eq!(3, user.signatures().len());
-    assert!(user.signatures().contains_key(&D1.device_key()));
-    assert!(user.signatures().contains_key(&D2.device_key()));
-    assert!(user.signatures().contains_key(&D3.device_key()));
+    assert!(user.signatures().contains_key(D1.as_public_key()));
+    assert!(user.signatures().contains_key(D2.as_public_key()));
+    assert!(user.signatures().contains_key(D3.as_public_key()));
 
     // Check signature verification
     let data = user.canonical_data().unwrap();

@@ -254,7 +254,6 @@ mod tests {
 
     use anyhow::{anyhow, Error};
     use futures::try_join;
-    use futures_await_test::async_test;
 
     use crate::{keys::SecretKey, net::connection::mock::MockStream, test::cbor_roundtrip};
 

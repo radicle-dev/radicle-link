@@ -28,7 +28,7 @@ use crate::keys::{self, PublicKey, SecretKey};
 pub struct PeerId(#[n(0)] PublicKey);
 
 impl PeerId {
-    pub fn device_key(&self) -> &PublicKey {
+    pub fn as_public_key(&self) -> &PublicKey {
         &self.0
     }
 

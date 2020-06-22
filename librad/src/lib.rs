@@ -41,3 +41,7 @@ pub mod uri;
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+#[macro_use]
+extern crate futures_await_test;

@@ -23,12 +23,12 @@ use thiserror::Error;
 use crate::{
     git::{
         refs::Refs,
-        storage::{self, Storage, WithSigner},
+        storage::{self, RadSelfSpec, Storage, WithSigner},
         types::Namespace,
     },
     internal::borrow::{TryCow, TryToOwned},
     peer::PeerId,
-    uri::RadUrn,
+    uri::{RadUrl, RadUrn},
 };
 
 pub use storage::Tracked;
@@ -98,7 +98,10 @@ impl<'a> Repo<'a, WithSigner> {
     /// Fetch new refs and objects for this repo from [`PeerId`]
     pub fn fetch(&self, from: &PeerId) -> Result<(), Error> {
         self.storage
-            .fetch_repo(&self.urn, from)
+            .fetch_repo(RadUrl {
+                authority: from.clone(),
+                urn: self.urn.clone(),
+            })
             .map_err(Error::from)
     }
 
@@ -129,6 +132,18 @@ impl<'a> Repo<'a, WithSigner> {
     ) -> Result<git2::Oid, Error> {
         self.storage
             .commit(&self.urn, branch, msg, tree, parents)
+            .map_err(Error::from)
+    }
+
+    /// Set the `rad/self` identity for this repo
+    ///
+    /// [`None`] removes `rad/self`, if present.
+    pub fn set_rad_self<S>(&self, spec: S) -> Result<(), Error>
+    where
+        S: Into<Option<RadSelfSpec>>,
+    {
+        self.storage
+            .set_rad_self(&self.urn, spec)
             .map_err(Error::from)
     }
 }
