@@ -151,7 +151,7 @@ where
             .await
             .map(|event| Ok(Run::Gossip { event }));
 
-        tracing::info!(msg = "Listening", local.addr = %local_addr);
+        tracing::info!(msg = "Listening");
 
         self.subscribers
             .emit(ProtocolEvent::Listening(local_addr))
