@@ -1418,12 +1418,13 @@ dependencies = [
 [[package]]
 name = "radicle-surf"
 version = "0.2.1"
-source = "git+https://github.com/radicle-dev/radicle-surf?rev=a23f9406f00c3230a24b6ddd9b612a9b1d5accf1#a23f9406f00c3230a24b6ddd9b612a9b1d5accf1"
+source = "git+https://github.com/radicle-dev/radicle-surf?rev=983c95bba92621afa67af070e8c725a7aa658fec#983c95bba92621afa67af070e8c725a7aa658fec"
 dependencies = [
  "git2",
  "lazy_static",
  "nonempty 0.5.0",
  "regex",
+ "serde",
  "thiserror",
 ]
 
