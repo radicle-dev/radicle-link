@@ -193,6 +193,9 @@ impl TryToOwned for PeerApi {
     }
 }
 
+/// Future driving the networking stack
+pub type RunLoop = BoxFuture<'static, ()>;
+
 /// A bootstrapped network peer
 ///
 /// The peer is already bound to a network socket, and ready to execute the
@@ -211,7 +214,7 @@ pub struct Peer {
     listen_addr: SocketAddr,
 
     protocol: Protocol<PeerStorage, Gossip>,
-    run_loop: BoxFuture<'static, ()>,
+    run_loop: RunLoop,
 
     subscribers: Fanout<PeerEvent>,
 }
@@ -229,7 +232,7 @@ impl Peer {
         self.key.public()
     }
 
-    pub fn accept(self) -> Result<(PeerApi, impl Future), AcceptError> {
+    pub fn accept(self) -> Result<(PeerApi, RunLoop), AcceptError> {
         let storage = GitStorage::open(&self.paths, self.key.clone())?;
         let api = PeerApi {
             key: self.key,
