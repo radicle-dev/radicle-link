@@ -36,6 +36,7 @@ use crate::{
     uri::{Path, Protocol, RadUrn},
 };
 
+pub mod cache;
 pub mod data;
 
 use data::{EntityData, EntityInfo, EntityInfoExt, EntityKind};
@@ -104,6 +105,9 @@ pub enum Error {
 
     #[error("Resolution at revision failed ({0}, revision {1})")]
     RevisionResolutionFailed(RadUrn, u64),
+
+    #[error("Entity cache error ({0})")]
+    CacheError(#[from] cache::Error),
 }
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -216,6 +220,19 @@ pub struct Signed;
 /// Type witness for a draft [`Entity`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Draft;
+
+/// Verification status of an entity revision
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EntityRevisionStatus {
+    /// Unverified, signatures are still missing or otherwise invalid
+    Draft,
+    /// Fully verified
+    Verified,
+    /// Fully verified but tainted because of a retroactive key revocation
+    /// or a legitimate fork of the same revision
+    /// TODO: add relevant info to this status
+    Tainted,
+}
 
 /// A type expressing *who* is signing an `Entity`
 #[derive(Clone, Debug, PartialEq, Eq)]
