@@ -23,9 +23,10 @@ use crate::{
     meta::{
         common::{EmailAddr, Label, Url},
         entity::{
-            data::{EntityData, EntityInfoExt, EntityKind},
+            data::{EntityData, EntityInfo, EntityInfoExt, EntityKind},
             Draft,
             Entity,
+            EntityTimestamp,
             Error,
         },
         profile::{Geo, ProfileImage, UserProfile},
@@ -71,6 +72,10 @@ impl EntityInfoExt for UserInfo {
             return Err(Error::InvalidData("Missing keys".to_owned()));
         }
         Ok(())
+    }
+
+    fn as_info(&self) -> EntityInfo {
+        EntityInfo::User(self.clone())
     }
 }
 
@@ -175,7 +180,7 @@ where
     ST: Clone,
 {
     pub fn create(name: String, key: PublicKey) -> Result<User<Draft>, Error> {
-        UserData::default()
+        UserData::new(EntityTimestamp::current_time())
             .set_name(name)
             .set_revision(1)
             .add_key(key)
@@ -224,7 +229,7 @@ pub mod tests {
     pub fn gen_user() -> impl Strategy<Value = User<Draft>> {
         (proptest::option::of(gen_profile_ref()), gen_largefiles()).prop_map(
             |(profile, largefiles)| {
-                UserData::default()
+                UserData::new(EntityTimestamp::current_time())
                     .set_name("foo".to_owned())
                     .set_revision(1)
                     .add_key(K1.public())

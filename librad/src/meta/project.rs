@@ -23,9 +23,10 @@ use crate::{
     meta::{
         common::{Label, Url},
         entity::{
-            data::{EntityData, EntityInfoExt, EntityKind},
+            data::{EntityData, EntityInfo, EntityInfoExt, EntityKind},
             Draft,
             Entity,
+            EntityTimestamp,
             Error,
         },
     },
@@ -74,6 +75,10 @@ impl EntityInfoExt for ProjectInfo {
             return Err(Error::InvalidData("Missing certifier".to_owned()));
         }
         Ok(())
+    }
+
+    fn as_info(&self) -> EntityInfo {
+        EntityInfo::Project(self.clone())
     }
 }
 
@@ -164,7 +169,7 @@ where
     }
 
     pub fn create(name: String, owner: RadUrn) -> Result<Project<Draft>, Error> {
-        ProjectData::default()
+        ProjectData::new(EntityTimestamp::current_time())
             .set_name(name)
             .set_revision(1)
             .add_certifier(owner)
@@ -196,7 +201,7 @@ pub mod tests {
             proptest::collection::vec(gen_relation(), 0..16),
         )
             .prop_map(|(name, description, branch, maintainers, rels)| {
-                ProjectData::default()
+                ProjectData::new(EntityTimestamp::current_time())
                     .set_revision(1)
                     .set_name(name)
                     .set_optional_description(description)

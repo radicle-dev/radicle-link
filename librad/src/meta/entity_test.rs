@@ -186,7 +186,7 @@ fn new_user(
     revision: u64,
     devices: &[&'static PublicKey],
 ) -> Result<User<Draft>, Error> {
-    let mut data = UserData::default()
+    let mut data = UserData::new(EntityTimestamp::current_time())
         .set_name(name.to_owned())
         .set_revision(revision);
     for k in devices.iter() {

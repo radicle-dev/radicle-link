@@ -401,6 +401,8 @@ pub struct Entity<T, ST> {
     name: String,
     /// Entity revision, to be incremented at each entity update
     revision: EntityRevision,
+    /// Entity revision creation timestamp
+    timestamp: EntityTimestamp,
     /// Radicle software version used to serialize the entity
     rad_version: u8,
     /// Entity hash, computed on everything except the signatures and
@@ -470,6 +472,7 @@ where
 impl<T, ST> Entity<T, ST>
 where
     T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+    ST: Clone,
 {
     /// `name` getter
     pub fn name(&self) -> &str {
@@ -496,12 +499,29 @@ where
         self.info.kind()
     }
 
+    pub fn as_generic_entity(&self) -> GenericEntity<ST> {
+        GenericEntity {
+            status_marker: PhantomData,
+            name: self.name.clone(),
+            revision: self.revision,
+            timestamp: self.timestamp,
+            rad_version: self.rad_version,
+            hash: self.hash.clone(),
+            root_hash: self.root_hash.clone(),
+            parent_hash: self.parent_hash.clone(),
+            keys: self.keys.clone(),
+            certifiers: self.certifiers.clone(),
+            info: self.info.as_info(),
+        }
+    }
+
     /// Turn the entity in to its raw data
     /// (first step of serialization and reverse of [`Entity::from_data`])
     pub fn to_data(&self) -> EntityData<T> {
         EntityData {
             name: Some(self.name.to_owned()),
             revision: Some(self.revision),
+            timestamp: self.timestamp,
             rad_version: self.rad_version,
             hash: Some(self.hash.clone()),
             root_hash: Some(self.root_hash.clone()),
@@ -515,7 +535,16 @@ where
     /// Helper to build a new entity cloning the current one
     /// (signatures are cleared because they would be invalid anyway)
     pub fn to_builder(&self) -> EntityData<T> {
-        self.to_data().clear_hash().clear_signatures()
+        self.to_data()
+            .clear_hash()
+            .clear_signatures()
+            .reset_timestamp()
+    }
+
+    /// Helper to build a new entity cloning the current one
+    /// (signatures are cleared because they would be invalid anyway)
+    pub fn prepare_next_revision(&self) -> EntityData<T> {
+        self.to_builder().set_parent(self)
     }
 
     /// `hash` getter
@@ -625,6 +654,7 @@ where
             status_marker: PhantomData,
             name: self.name,
             revision: self.revision,
+            timestamp: self.timestamp,
             rad_version: self.rad_version,
             hash: self.hash,
             root_hash: self.root_hash,
@@ -642,6 +672,7 @@ where
             status_marker: PhantomData,
             name: self.name.clone(),
             revision: self.revision,
+            timestamp: self.timestamp,
             rad_version: self.rad_version,
             hash: self.hash.clone(),
             root_hash: self.root_hash.clone(),
@@ -862,6 +893,7 @@ where
             status_marker: PhantomData,
             name: data.name.unwrap(),
             revision: data.revision.unwrap(),
+            timestamp: data.timestamp,
             rad_version: data.rad_version,
             hash: actual_hash,
             root_hash,

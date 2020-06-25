@@ -19,13 +19,11 @@ use crate::{
     hash::Hash,
     keys::PublicKey,
     meta::entity::{
-        Draft,
         Entity,
-        EntityCertifierSignature,
         EntityInfoExt,
+        EntityKeyOwnershipStore,
         EntityRevision,
         EntityRevisionStatus,
-        EntitySelfSignature,
         EntityTimestamp,
         GenericEntity,
         Verified,
@@ -95,7 +93,6 @@ struct EntitySignatureTargetInfo {
 #[derive(Clone, Debug)]
 struct EntityInfo {
     pub last_verified_revision: Option<GenericEntity<Verified>>,
-    pub draft_revision: Option<GenericEntity<Draft>>,
     pub revisions: Vec<EntityRevisionInfo>,
 }
 
@@ -103,7 +100,6 @@ impl EntityInfo {
     pub fn new() -> Self {
         Self {
             last_verified_revision: None,
-            draft_revision: None,
             revisions: Vec::new(),
         }
     }
@@ -147,6 +143,7 @@ struct EntityRevisionInfo {
     pub signature_targets: BTreeSet<EntitySignatureTargetInfo>,
 }
 
+#[derive(Default)]
 pub struct EntityMemoryCache {
     hashes: HashMap<Hash, EntityHashInfo>,
     key_ids: HashMap<PublicKey, KeyInternalId>,
@@ -156,16 +153,6 @@ pub struct EntityMemoryCache {
 }
 
 impl EntityMemoryCache {
-    pub fn new() -> Self {
-        Self {
-            hashes: HashMap::new(),
-            key_ids: HashMap::new(),
-            keys: Vec::new(),
-            entities: Vec::new(),
-            entity_ids: HashMap::new(),
-        }
-    }
-
     fn get_or_create_entity_info<T>(
         &mut self,
         entity: &Entity<T, Verified>,
@@ -211,9 +198,9 @@ impl EntityMemoryCache {
         &mut self,
         id: EntityInternalId,
         revision: EntityRevision,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         if revision <= 1 {
-            return Ok(());
+            return Ok(false);
         }
 
         let info = self.entity_info(id)?;
@@ -250,7 +237,7 @@ impl EntityMemoryCache {
             })
             .collect();
 
-        if revoked_signatures.len() > 0 {
+        if !revoked_signatures.is_empty() {
             let mut tainted = Vec::new();
             for sig in revoked_signatures {
                 tainted.push((sig.id, sig.revision));
@@ -263,11 +250,11 @@ impl EntityMemoryCache {
                 revoked_signature.revoked = true;
             }
             for (id, revision) in tainted {
-                self.set_tainted(id, revision);
+                self.set_tainted(id, revision)?;
             }
-            Err(Error::SignaturesRevoked())
+            Ok(true)
         } else {
-            Ok(())
+            Ok(false)
         }
     }
 
@@ -281,20 +268,12 @@ impl EntityMemoryCache {
     {
         let mut signed_by = Vec::new();
         for (certifier_urn, s) in entity.certifiers().iter() {
-            let certifier_id =
-                *self
-                    .entity_ids
-                    .get(&certifier_urn)
-                    .ok_or(Error::MissingCertifier(
-                        entity.urn(),
-                        entity.revision(),
-                        certifier_urn.to_owned(),
-                    ))?;
-            let sig = s.as_ref().ok_or(Error::MissingSignature(
-                entity.urn(),
-                entity.revision(),
-                certifier_urn.to_owned(),
-            ))?;
+            let certifier_id = *self.entity_ids.get(&certifier_urn).ok_or_else(|| {
+                Error::MissingCertifier(entity.urn(), entity.revision(), certifier_urn.to_owned())
+            })?;
+            let sig = s.as_ref().ok_or_else(|| {
+                Error::MissingSignature(entity.urn(), entity.revision(), certifier_urn.to_owned())
+            })?;
 
             self.entity_info_mut(certifier_id)?
                 .revision_mut(sig.revision)
@@ -313,7 +292,7 @@ impl EntityMemoryCache {
                     key_id: self
                         .key_ids
                         .get(&sig.key)
-                        .ok_or(Error::MissingKey(sig.key.to_owned()))?
+                        .ok_or_else(|| Error::MissingKey(sig.key.to_owned()))?
                         .to_owned(),
                     revoked: false,
                 },
@@ -322,9 +301,9 @@ impl EntityMemoryCache {
 
         let sigs = &mut self
             .entity_info_mut(id)
-            .map_err(|_| Error::MissingEntity(entity.urn().to_owned()))?
+            .map_err(|_| Error::MissingEntity(entity.urn()))?
             .revision_mut(entity.revision())
-            .map_err(|_| Error::MissingEntityRevision(entity.urn().to_owned(), entity.revision()))?
+            .map_err(|_| Error::MissingEntityRevision(entity.urn(), entity.revision()))?
             .signed_by;
         for (key, sig) in signed_by.iter() {
             sigs.insert(*key, sig.to_owned());
@@ -342,7 +321,7 @@ impl EntityMemoryCache {
             tainted_revisions.push((id, rev));
         }
 
-        while tainted_revisions.len() > 0 {
+        while !tainted_revisions.is_empty() {
             let (id, r) = tainted_revisions.pop().unwrap();
 
             let rev = self.entity_info_mut(id)?.revision_mut(r)?;
@@ -353,7 +332,7 @@ impl EntityMemoryCache {
                 }
             }
 
-            while tainted_targets.len() > 0 {
+            while !tainted_targets.is_empty() {
                 let target = tainted_targets.pop().unwrap();
                 for rev in self.entity_info(target.id)?.revisions_from(target.revision) {
                     tainted_revisions.push((id, rev));
@@ -363,14 +342,14 @@ impl EntityMemoryCache {
         Ok(())
     }
 
-    pub fn register_entity_revision<T>(&mut self, entity: &Entity<T, Verified>) -> Result<(), Error>
+    pub fn register_verified_entity<T>(&mut self, entity: &Entity<T, Verified>) -> Result<(), Error>
     where
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
         let urn = entity.urn();
         let revision = entity.revision();
         let mut owned_keys = BTreeSet::new();
-        for (k, _) in entity.keys() {
+        for k in entity.keys().keys() {
             let key_id = match self.key_ids.get(k) {
                 Some(key_id) => *key_id,
                 None => {
@@ -381,7 +360,7 @@ impl EntityMemoryCache {
             };
             owned_keys.insert(key_id);
         }
-        let (key, info) = self.get_or_create_entity_info(entity);
+        let (id, info) = self.get_or_create_entity_info(entity);
 
         let required_previous_revisions = revision as usize - 1;
         if info.revisions.len() < required_previous_revisions {
@@ -392,23 +371,88 @@ impl EntityMemoryCache {
             info.revisions.push(EntityRevisionInfo {
                 hash: entity.hash().to_owned(),
                 status: EntityRevisionStatus::Verified,
-                timestamp: unimplemented!(),
+                timestamp: entity.timestamp,
                 owned_keys,
                 signed_by: BTreeMap::new(),
                 signature_targets: BTreeSet::new(),
             });
+            info.last_verified_revision = Some(entity.as_generic_entity());
             false
         } else {
             &info.revisions[required_previous_revisions].hash != entity.hash()
         };
 
-        self.apply_signatures(key, entity)?;
+        self.apply_signatures(id, entity)?;
+        let signatures_revoked = self.check_revocations(id, entity.revision())?;
 
         if tainted {
-            self.set_tainted(key, revision)?;
+            self.set_tainted(id, revision)?;
             Err(Error::EntityTainted(urn, entity.revision()))
+        } else if signatures_revoked {
+            Err(Error::SignaturesRevoked())
         } else {
             Ok(())
+        }
+    }
+
+    pub fn last_verified_revision(&self, uri: &RadUrn) -> Option<GenericEntity<Verified>> {
+        self.entity_ids
+            .get(uri)
+            .and_then(|id| self.entity_info(*id).ok())
+            .and_then(|info| {
+                if info.tainted() {
+                    None
+                } else {
+                    info.last_verified_revision.clone()
+                }
+            })
+    }
+
+    pub fn is_tainted(&self, uri: &RadUrn) -> bool {
+        self.entity_ids
+            .get(uri)
+            .and_then(|id| self.entity_info(*id).ok())
+            .map_or(false, |info| info.tainted())
+    }
+}
+
+impl EntityKeyOwnershipStore for EntityMemoryCache {
+    fn check_ownership(
+        &self,
+        key: &PublicKey,
+        uri: &RadUrn,
+        revision: EntityRevision,
+        time: EntityTimestamp,
+    ) -> bool {
+        let key_id = match self.key_ids.get(key) {
+            Some(key_id) => key_id,
+            None => return false,
+        };
+        let id = match self.entity_ids.get(uri) {
+            Some(id) => id,
+            None => return false,
+        };
+        let info = match self.entity_info(*id).ok() {
+            Some(info) => info,
+            None => return false,
+        };
+        let rev = match info.revision(revision).ok() {
+            Some(rev) => rev,
+            None => return false,
+        };
+
+        if !rev.owned_keys.contains(key_id) {
+            return false;
+        }
+        match info.revision(revision + 1).ok() {
+            Some(next) => {
+                if next.owned_keys.contains(key_id) {
+                    true
+                } else {
+                    next.timestamp > time
+                }
+            },
+            None => true,
         }
     }
 }

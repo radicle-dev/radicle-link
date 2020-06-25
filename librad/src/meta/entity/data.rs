@@ -25,6 +25,7 @@ use crate::{
             EntityCertifierSignature,
             EntityRevision,
             EntitySelfSignature,
+            EntityTimestamp,
             Error,
         },
         project::ProjectInfo,
@@ -88,6 +89,7 @@ pub enum EntityInfo {
 pub trait EntityInfoExt: Sized {
     fn kind(&self) -> EntityKind;
     fn check_invariants<T>(&self, data: &EntityData<T>) -> Result<(), Error>;
+    fn as_info(&self) -> EntityInfo;
 }
 
 impl EntityInfoExt for EntityInfo {
@@ -103,6 +105,10 @@ impl EntityInfoExt for EntityInfo {
             EntityInfo::User(info) => info.check_invariants(data),
             EntityInfo::Project(info) => info.check_invariants(data),
         }
+    }
+
+    fn as_info(&self) -> EntityInfo {
+        self.clone()
     }
 }
 
@@ -122,6 +128,7 @@ pub struct EntityData<T> {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revision: Option<EntityRevision>,
+    pub timestamp: EntityTimestamp,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hash: Option<Hash>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -145,15 +152,16 @@ pub struct EntityData<T> {
     pub info: T,
 }
 
-impl<T> Default for EntityData<T>
+impl<T> EntityData<T>
 where
-    T: Serialize + DeserializeOwned + Clone + Default,
+    T: Serialize + DeserializeOwned + Clone + Default + EntityInfoExt,
 {
-    fn default() -> Self {
+    pub fn new(time: EntityTimestamp) -> Self {
         Self {
             rad_version: RAD_VERSION,
             name: None,
             revision: Some(1),
+            timestamp: time,
             hash: None,
             root_hash: None,
             parent_hash: None,
@@ -197,6 +205,7 @@ where
         let cleaned = Self {
             name: self.name.to_owned(),
             revision: self.revision.to_owned(),
+            timestamp: self.timestamp,
             hash: None,
             root_hash: if self.parent_hash.is_some() {
                 self.root_hash.to_owned()
@@ -237,6 +246,11 @@ where
     }
     pub fn set_optional_name(mut self, name: Option<String>) -> Self {
         self.name = name;
+        self
+    }
+
+    pub fn reset_timestamp(mut self) -> Self {
+        self.timestamp = EntityTimestamp::current_time();
         self
     }
 
