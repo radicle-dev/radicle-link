@@ -21,7 +21,7 @@ use futures_await_test::async_test;
 use sodiumoxide::crypto::sign::ed25519::Seed;
 
 use super::{
-    entity::*,
+    entity::{cache::EntityMemoryCache, *},
     user::{User, UserData},
 };
 
@@ -113,6 +113,7 @@ impl UserHistory {
     }
 
     pub async fn check(&self) -> Result<User<Verified>, HistoryVerificationError> {
+        let mut cache = EntityMemoryCache::default();
         let mut previous = None;
         for current in self.revisions.iter() {
             let current = current.clone();
@@ -135,6 +136,7 @@ impl UserHistory {
                     error: err,
                 }
             })?;
+            cache.register_verified_entity(&current)?;
             previous = Some(current);
         }
         match previous {
@@ -401,8 +403,8 @@ async fn test_project_update() {
         .last()
         .unwrap()
         .to_builder()
-        .add_key((*D2K).clone())
         .set_parent(history.revisions.last().unwrap())
+        .add_key((*D2K).clone())
         .build()
         .unwrap();
     user.sign_owned(&K1).unwrap();

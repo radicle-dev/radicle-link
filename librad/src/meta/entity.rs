@@ -144,6 +144,9 @@ pub enum HistoryVerificationError {
         revision: EntityRevision,
         error: UpdateVerificationError,
     },
+
+    #[error("Entity cache error ({0})")]
+    CacheError(#[from] cache::Error),
 }
 
 /// Type representing an entity revision
@@ -559,7 +562,7 @@ where
 
     /// `urn` getter
     pub fn urn(&self) -> RadUrn {
-        RadUrn::new(self.hash.to_owned(), Protocol::Git, Path::new())
+        RadUrn::new(self.root_hash.to_owned(), Protocol::Git, Path::new())
     }
 
     /// `parent_hash` getter

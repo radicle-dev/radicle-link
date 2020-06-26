@@ -160,12 +160,14 @@ impl EntityMemoryCache {
     where
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
-        let id = match self.entity_ids.get(&entity.urn()) {
+        let urn = entity.urn();
+        let id = match self.entity_ids.get(&urn) {
             Some(id) => *id,
             None => {
                 let new_id = self.entities.len();
                 let info = EntityInfo::new();
                 self.entities.push(info);
+                self.entity_ids.insert(urn, new_id);
                 self.register_hash(entity.hash(), new_id, entity.revision());
                 new_id
             },
@@ -355,13 +357,13 @@ impl EntityMemoryCache {
                 None => {
                     let new_key_id = self.keys.len();
                     self.keys.push(k.to_owned());
+                    self.key_ids.insert(k.to_owned(), new_key_id);
                     new_key_id
                 },
             };
             owned_keys.insert(key_id);
         }
         let (id, info) = self.get_or_create_entity_info(entity);
-
         let required_previous_revisions = revision as usize - 1;
         if info.revisions.len() < required_previous_revisions {
             return Err(Error::MissingParentEntity(urn, revision));
