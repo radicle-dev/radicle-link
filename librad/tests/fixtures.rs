@@ -45,6 +45,12 @@ impl Deref for Alice {
     }
 }
 
+impl DerefMut for Alice {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[async_trait]
 impl Resolver<User<Draft>> for Alice {
     async fn resolve(&self, _uri: &RadUrn) -> Result<User<Draft>, Error> {

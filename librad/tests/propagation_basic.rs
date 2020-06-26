@@ -22,7 +22,7 @@ use std::time::Duration;
 use futures::{future, stream::StreamExt};
 
 use librad::{
-    meta::project::ProjectInfo,
+    meta::{entity::cache::EntityMemoryCache, project::ProjectInfo},
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     uri::{self, RadUrn},
 };
@@ -41,12 +41,21 @@ async fn can_clone() {
     testnet::run_on_testnet(peers, async move |mut apis| {
         let peer1 = apis.pop().unwrap();
         let peer2 = apis.pop().unwrap();
+        let mut cache = EntityMemoryCache::default();
 
-        let alice = Alice::new(peer1.public_key());
-        let mut radicle = Radicle::new(&alice);
-        radicle
-            .sign_by_user(peer1.key(), &alice.clone().as_verified())
+        let mut alice = Alice::new(peer1.public_key());
+        alice.sign_owned(peer1.key()).unwrap();
+        let verified_alice = alice
+            .clone()
+            .check_signatures()
+            .unwrap()
+            .check_signatures_ownership(&cache)
+            .unwrap()
+            .check_update(&None)
             .unwrap();
+        cache.register_verified_entity(&verified_alice).unwrap();
+        let mut radicle = Radicle::new(&alice);
+        radicle.sign_by_user(peer1.key(), &verified_alice).unwrap();
 
         tokio::task::spawn_blocking(move || {
             peer1.storage().create_repo(&radicle).unwrap();
@@ -73,12 +82,21 @@ async fn fetches_on_gossip_notify() {
     testnet::run_on_testnet(peers, async move |mut apis| {
         let peer1 = apis.pop().unwrap();
         let peer2 = apis.pop().unwrap();
+        let mut cache = EntityMemoryCache::default();
 
-        let alice = Alice::new(peer1.public_key());
-        let mut radicle = Radicle::new(&alice);
-        radicle
-            .sign_by_user(peer1.key(), &alice.clone().as_verified())
+        let mut alice = Alice::new(peer1.public_key());
+        alice.sign_owned(peer1.key()).unwrap();
+        let verified_alice = alice
+            .clone()
+            .check_signatures()
+            .unwrap()
+            .check_signatures_ownership(&cache)
+            .unwrap()
+            .check_update(&None)
             .unwrap();
+        cache.register_verified_entity(&verified_alice).unwrap();
+        let mut radicle = Radicle::new(&alice);
+        radicle.sign_by_user(peer1.key(), &verified_alice).unwrap();
 
         let peer1_storage = peer1.storage();
         let peer2_storage = peer2.storage();

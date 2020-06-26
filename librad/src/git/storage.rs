@@ -903,7 +903,11 @@ fn urns_from_refs<'a, E>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::meta::{entity::Draft, Project, User};
+    use crate::meta::{
+        entity::{cache::EntityMemoryCache, Draft},
+        Project,
+        User,
+    };
 
     use tempfile::tempdir;
 
@@ -980,11 +984,19 @@ mod tests {
         let paths = Paths::from_root(tmp).unwrap();
         let user_key = SecretKey::new();
         let store = Storage::init(&paths, user_key.clone()).unwrap();
+        let cache = EntityMemoryCache::default();
 
         // Create signed and verified user
         let mut user = User::<Draft>::create("user".to_owned(), user_key.public()).unwrap();
         user.sign_owned(&user_key).unwrap();
-        let verified_user = user.as_verified();
+        let verified_user = user
+            .clone()
+            .check_signatures()
+            .unwrap()
+            .check_signatures_ownership(&cache)
+            .unwrap()
+            .check_update(&None)
+            .unwrap();
 
         // Create and sign two projects
         let mut project_foo = Project::<Draft>::create("foo".to_owned(), user.urn()).unwrap();

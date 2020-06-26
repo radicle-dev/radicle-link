@@ -667,24 +667,6 @@ where
             info: self.info,
         }
     }
-
-    //FIXME[MASSI] this is only for `#[cfg(test)]`!!!
-    //#[cfg(test)]
-    pub fn as_verified(&self) -> Entity<T, Verified> {
-        Entity::<T, Verified> {
-            status_marker: PhantomData,
-            name: self.name.clone(),
-            revision: self.revision,
-            timestamp: self.timestamp,
-            rad_version: self.rad_version,
-            hash: self.hash.clone(),
-            root_hash: self.root_hash.clone(),
-            parent_hash: self.parent_hash.clone(),
-            keys: self.keys.clone(),
-            certifiers: self.certifiers.clone(),
-            info: self.info.clone(),
-        }
-    }
 }
 
 impl<T> Entity<T, Draft>
