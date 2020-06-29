@@ -22,6 +22,7 @@ use std::{
     process::{ChildStdin, ChildStdout, Command, Stdio},
     str::FromStr,
     sync::{Arc, Mutex, Once, RwLock},
+    thread,
 };
 
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
@@ -220,7 +221,7 @@ impl LocalTransport {
             git.arg("--advertise-refs");
         }
 
-        let child = git
+        let mut child = git
             .arg(".")
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
@@ -228,8 +229,23 @@ impl LocalTransport {
             .spawn()
             .map_err(into_git_err)?;
 
-        let stdin = child.stdin.unwrap();
-        let stdout = child.stdout.unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+
+        // Spawn a thread to `wait(2)` on the child process, to ensure it gets
+        // reaped by the OS. Also update `rad/refs` while we're there.
+        let this = self.clone();
+        let was_push = matches!(service, Service::ReceivePack);
+        thread::spawn(move || match child.wait() {
+            Err(e) => eprintln!("Error waiting for child: {}", e),
+            Ok(status) => {
+                if status.success() && was_push {
+                    this.try_update_refs(&urn)
+                } else {
+                    eprintln!("Child exited non-zero: {:?}", status)
+                }
+            },
+        });
 
         let header = match service {
             Service::UploadPackLs => Some(b"001e# service=git-upload-pack\n0000\n".to_vec()),
@@ -238,8 +254,6 @@ impl LocalTransport {
         };
 
         Ok(Box::new(LocalStream {
-            trans: self.clone(),
-            urn,
             header,
             read: stdout,
             write: stdin,
@@ -248,17 +262,9 @@ impl LocalTransport {
 }
 
 pub struct LocalStream {
-    trans: LocalTransport,
-    urn: RadUrn,
     header: Option<Vec<u8>>,
     read: ChildStdout,
     write: ChildStdin,
-}
-
-impl Drop for LocalStream {
-    fn drop(&mut self) {
-        self.trans.try_update_refs(&self.urn)
-    }
 }
 
 impl Read for LocalStream {
