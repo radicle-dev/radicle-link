@@ -31,7 +31,7 @@ use thiserror::Error;
 use crate::{
     git::{
         ext::into_git_err,
-        storage::{NoSigner, Storage, WithSigner},
+        storage::{Storage, WithSigner},
     },
     hash::{self, Hash},
     keys::SecretKey,
@@ -48,7 +48,7 @@ lazy_static! {
 #[derive(Clone)]
 pub struct Settings {
     pub paths: Paths,
-    pub signer: Option<SecretKey>,
+    pub signer: SecretKey,
 }
 
 pub fn register(settings: Settings) {
@@ -103,81 +103,52 @@ impl SmartSubtransport for LocalTransportFactory {
 }
 
 #[derive(Clone)]
-enum LocalTransport {
-    Auth {
-        storage: Arc<Mutex<Storage<WithSigner>>>,
-    },
-    Anon {
-        storage: Arc<Mutex<Storage<NoSigner>>>,
-    },
+struct LocalTransport {
+    storage: Arc<Mutex<Storage<WithSigner>>>,
 }
 
 impl LocalTransport {
     fn new(settings: Settings) -> Result<Self, Box<dyn std::error::Error>> {
-        let storage = Storage::open(&settings.paths)?;
-        match settings.signer {
-            None => Ok(LocalTransport::Anon {
-                storage: Arc::new(Mutex::new(storage)),
-            }),
-
-            Some(key) => {
-                let storage = storage.with_signer(key)?;
-                Ok(LocalTransport::Auth {
-                    storage: Arc::new(Mutex::new(storage)),
-                })
-            },
-        }
+        let storage = Storage::open(&settings.paths)?.with_signer(settings.signer)?;
+        Ok(LocalTransport {
+            storage: Arc::new(Mutex::new(storage)),
+        })
     }
 
     fn guard_has_urn(&self, urn: &RadUrn) -> Result<(), git2::Error> {
-        match self {
-            Self::Anon { storage } => storage.lock().unwrap().has_urn(urn),
-            Self::Auth { storage } => storage.lock().unwrap().has_urn(urn),
-        }
-        .map_err(into_git_err)
-        .and_then(|have| {
-            have.then_some(())
-                .ok_or_else(|| git2::Error::from_str(&format!("`{}` not found", urn)))
-        })
+        self.storage
+            .lock()
+            .unwrap()
+            .has_urn(urn)
+            .map_err(into_git_err)
+            .and_then(|have| {
+                have.then_some(())
+                    .ok_or_else(|| git2::Error::from_str(&format!("`{}` not found", urn)))
+            })
     }
 
     fn visible_remotes(&self, urn: &RadUrn) -> Result<impl Iterator<Item = String>, git2::Error> {
         const GLOBS: &[&str] = &["remotes/**/heads/*", "remotes/**/tags/*"];
 
-        match self {
-            Self::Anon { storage } => storage
-                .lock()
-                .unwrap()
-                .references_glob(urn, GLOBS)
-                .map(|iter| iter.map(|(name, _)| name).collect::<Vec<_>>()),
-
-            Self::Auth { storage } => storage
-                .lock()
-                .unwrap()
-                .references_glob(urn, GLOBS)
-                .map(|iter| iter.map(|(name, _)| name).collect::<Vec<_>>()),
-        }
-        .map_err(into_git_err)
-        .map(|v| v.into_iter())
+        self.storage
+            .lock()
+            .unwrap()
+            .references_glob(urn, GLOBS)
+            .map(|iter| iter.map(|(name, _)| name).collect::<Vec<_>>())
+            .map_err(into_git_err)
+            .map(|v| v.into_iter())
     }
 
     fn repo_path(&self) -> PathBuf {
-        let path = match self {
-            Self::Anon { storage } => storage.lock().unwrap().path().to_path_buf(),
-            Self::Auth { storage } => storage.lock().unwrap().path().to_path_buf(),
-        };
-        ::std::fs::canonicalize(path).unwrap()
+        self.storage.lock().unwrap().path().to_path_buf()
     }
 
-    fn try_update_refs(&self, urn: &RadUrn) {
-        if let Self::Auth { storage } = self {
-            eprintln!("update refs on {}", urn);
-            storage
-                .lock()
-                .unwrap()
-                .update_refs(urn)
-                .unwrap_or_else(|e| eprintln!("Failed to sign updated refs!\n{}", e))
-        }
+    fn update_refs(&self, urn: &RadUrn) {
+        self.storage
+            .lock()
+            .unwrap()
+            .update_refs(urn)
+            .unwrap_or_else(|e| eprintln!("Failed to sign updated refs!\n{}", e))
     }
 
     fn action(
@@ -240,7 +211,7 @@ impl LocalTransport {
             Err(e) => eprintln!("Error waiting for child: {}", e),
             Ok(status) => {
                 if status.success() && was_push {
-                    this.try_update_refs(&urn)
+                    this.update_refs(&urn)
                 } else {
                     eprintln!("Child exited non-zero: {:?}", status)
                 }

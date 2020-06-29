@@ -125,7 +125,7 @@ async fn fetches_on_gossip_notify() {
         let commit_id = {
             librad::git::transport::local::register(librad::git::transport::local::Settings {
                 paths: peer1.paths().clone(),
-                signer: Some(peer1_key),
+                signer: peer1_key,
             });
 
             let tmp = tempdir().unwrap();
