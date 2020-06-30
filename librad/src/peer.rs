@@ -215,7 +215,7 @@ impl<'a, T> From<&'a Originates<T>> for OriginatesRef<'a, T> {
 pub mod tests {
     use super::*;
 
-    use crate::test::*;
+    use librad_test::roundtrip::*;
 
     #[test]
     fn test_default_encoding_roundtrip() {

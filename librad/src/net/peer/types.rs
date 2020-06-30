@@ -119,7 +119,8 @@ impl Gossip {
 mod tests {
     use super::*;
 
-    use crate::{hash::Hash, keys::SecretKey, peer::PeerId, test::cbor_roundtrip, uri::Path};
+    use crate::{hash::Hash, keys::SecretKey, peer::PeerId, uri::Path};
+    use librad_test::roundtrip::*;
 
     lazy_static! {
         static ref OID: git2::Oid =

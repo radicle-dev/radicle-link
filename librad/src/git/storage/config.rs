@@ -201,11 +201,8 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use crate::{
-        keys::SecretKey,
-        meta::entity::Draft,
-        test::{ConstResolver, WithTmpDir},
-    };
+    use crate::{keys::SecretKey, meta::entity::Draft, test::ConstResolver};
+    use librad_test::tempdir::WithTmpDir;
 
     struct TmpConfig {
         repo: git2::Repository,

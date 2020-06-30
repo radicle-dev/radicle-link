@@ -17,7 +17,7 @@
 
 use serde::{de::DeserializeOwned, Serialize};
 
-use crate::{
+use librad::{
     meta::entity::{self, data::EntityInfoExt, Entity, Resolver},
     uri::RadUrn,
 };
@@ -25,9 +25,6 @@ use crate::{
 /// A Resolver which always resolves to the same value.
 ///
 /// The `RadUrn` must match, however.
-///
-/// _Note that this same type appears in `librad-test`, because `use`ing via
-/// `crate::` vs. `library::` resolves to different types._
 pub struct ConstResolver<A, S> {
     entity: Entity<A, S>,
     urn: RadUrn,

@@ -1,0 +1,23 @@
+[package]
+name = "librad-test"
+description = "Common testing utilities"
+version = "0.1.0"
+authors = ["The Radicle Team <dev@radicle.xyz>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+anyhow = "1"
+async-trait = "0"
+env_logger = "0"
+futures = ">= 0.3"
+lazy_static = "1"
+minicbor = "0"
+serde = "1"
+serde_json = "1"
+tempfile = "3"
+tracing = ">= 0.1"
+tracing-subscriber = ">= 0.2"
+
+[dependencies.librad]
+path = "../librad"

@@ -849,7 +849,6 @@ dependencies = [
  "bs58",
  "bytes",
  "directories",
- "env_logger",
  "fnv",
  "futures",
  "futures-await-test",
@@ -861,6 +860,7 @@ dependencies = [
  "hex",
  "lazy_static",
  "libgit2-sys",
+ "librad-test",
  "log",
  "matches",
  "minicbor",
@@ -888,11 +888,28 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "tracing-subscriber",
  "url 2.1.1",
  "urltemplate",
  "webpki",
  "yasna",
+]
+
+[[package]]
+name = "librad-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "env_logger",
+ "futures",
+ "lazy_static",
+ "librad",
+ "minicbor",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

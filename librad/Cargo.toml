@@ -97,10 +97,11 @@ features = ["bit-vec"]
 
 [dev-dependencies]
 anyhow = "1.0"
-env_logger = "0.7"
 fnv = "1.0"
 futures-await-test = "0.3"
 futures_ringbuf = "0.2"
 matches = "0.1"
 proptest = "0.9"
-tracing-subscriber = "0.2"
+
+[dev-dependencies.librad-test]
+path = "../librad-test"

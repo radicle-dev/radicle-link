@@ -607,11 +607,9 @@ mod tests {
 
     use sodiumoxide::crypto::sign::Seed;
 
-    use crate::{
-        keys::SecretKey,
-        peer::PeerId,
-        test::{cbor_roundtrip, str_roundtrip},
-    };
+    use crate::{keys::SecretKey, peer::PeerId};
+
+    use librad_test::roundtrip::*;
 
     const SEED: Seed = Seed([
         20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81,

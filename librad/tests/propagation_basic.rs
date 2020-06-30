@@ -27,11 +27,13 @@ use librad::{
     uri::{self, RadUrn},
 };
 
-mod fixtures;
-mod logging;
-mod testnet;
-
-use fixtures::{Alice, Radicle};
+use librad_test::{
+    logging,
+    rad::{
+        entity::{Alice, Radicle},
+        testnet,
+    },
+};
 
 #[tokio::test]
 async fn can_clone() {

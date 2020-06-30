@@ -255,7 +255,8 @@ mod tests {
     use anyhow::{anyhow, Error};
     use futures::try_join;
 
-    use crate::{keys::SecretKey, net::connection::mock::MockStream, test::cbor_roundtrip};
+    use crate::{keys::SecretKey, net::connection::mock::MockStream};
+    use librad_test::roundtrip::*;
 
     #[async_test]
     async fn test_upgrade() -> Result<(), Error> {
