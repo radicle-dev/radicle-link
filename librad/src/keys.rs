@@ -436,7 +436,7 @@ impl<'b> minicbor::Decode<'b> for Signature {
 pub mod tests {
     use super::*;
 
-    use crate::test::*;
+    use librad_test::roundtrip::*;
 
     const DATA_TO_SIGN: &[u8] = b"alors monsieur";
 

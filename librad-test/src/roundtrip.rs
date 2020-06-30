@@ -15,31 +15,32 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#![feature(bool_to_option)]
-#![feature(never_type)]
-#![feature(str_strip)]
+use std::{
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
-#[macro_use]
-extern crate async_trait;
-#[macro_use]
-extern crate lazy_static;
+pub fn json_roundtrip<A>(a: A)
+where
+    for<'de> A: Debug + PartialEq + serde::Serialize + serde::Deserialize<'de>,
+{
+    assert_eq!(
+        a,
+        serde_json::from_str(&serde_json::to_string(&a).unwrap()).unwrap()
+    )
+}
 
-extern crate radicle_keystore as keystore;
-extern crate sodiumoxide;
+pub fn cbor_roundtrip<A>(a: A)
+where
+    for<'de> A: Debug + PartialEq + minicbor::Encode + minicbor::Decode<'de>,
+{
+    assert_eq!(a, minicbor::decode(&minicbor::to_vec(&a).unwrap()).unwrap())
+}
 
-pub mod git;
-pub mod hash;
-pub mod internal;
-pub mod keys;
-pub mod meta;
-pub mod net;
-pub mod paths;
-pub mod peer;
-pub mod uri;
-
-#[cfg(test)]
-mod test;
-
-#[cfg(test)]
-#[macro_use]
-extern crate futures_await_test;
+pub fn str_roundtrip<A>(a: A)
+where
+    A: Debug + PartialEq + Display + FromStr,
+    <A as FromStr>::Err: Debug,
+{
+    assert_eq!(a, a.to_string().parse().unwrap())
+}

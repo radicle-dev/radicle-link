@@ -25,7 +25,6 @@ use futures::{
     future::{self, Either, FutureExt},
     stream::{self, StreamExt},
 };
-use lazy_static::lazy_static;
 use tempfile::{tempdir, TempDir};
 
 use librad::{

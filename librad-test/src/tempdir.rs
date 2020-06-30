@@ -15,31 +15,41 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#![feature(bool_to_option)]
-#![feature(never_type)]
-#![feature(str_strip)]
+use std::{
+    io,
+    ops::{Deref, DerefMut},
+    path::Path,
+};
 
-#[macro_use]
-extern crate async_trait;
-#[macro_use]
-extern crate lazy_static;
+use tempfile::{tempdir, TempDir};
 
-extern crate radicle_keystore as keystore;
-extern crate sodiumoxide;
+pub struct WithTmpDir<A> {
+    _tmp: TempDir,
+    inner: A,
+}
 
-pub mod git;
-pub mod hash;
-pub mod internal;
-pub mod keys;
-pub mod meta;
-pub mod net;
-pub mod paths;
-pub mod peer;
-pub mod uri;
+impl<A> WithTmpDir<A> {
+    pub fn new<F, E>(mk_inner: F) -> Result<Self, E>
+    where
+        F: FnOnce(&Path) -> Result<A, E>,
+        E: From<io::Error>,
+    {
+        let tmp = tempdir()?;
+        let inner = mk_inner(tmp.path())?;
+        Ok(Self { _tmp: tmp, inner })
+    }
+}
 
-#[cfg(test)]
-mod test;
+impl<A> Deref for WithTmpDir<A> {
+    type Target = A;
 
-#[cfg(test)]
-#[macro_use]
-extern crate futures_await_test;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<A> DerefMut for WithTmpDir<A> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}

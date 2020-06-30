@@ -262,7 +262,7 @@ mod tests {
 
     use rand::random;
 
-    use crate::test::*;
+    use librad_test::roundtrip::*;
 
     fn is_a_deterministic_function<H: Hasher + Debug>() {
         let data: [u8; 32] = random();

@@ -22,9 +22,10 @@ use std::str::FromStr;
 use crate::{
     hash::Hash,
     meta::{entity::Draft, Project, User},
-    test::{ConstResolver, WithTmpDir},
+    test::ConstResolver,
     uri::{self, RadUrn},
 };
+use librad_test::tempdir::WithTmpDir;
 
 type TmpStorage = WithTmpDir<Storage<WithSigner>>;
 

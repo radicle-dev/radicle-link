@@ -17,8 +17,6 @@
 
 use std::ops::{Deref, DerefMut};
 
-use async_trait::async_trait;
-
 use librad::{
     keys::PublicKey,
     meta::{
