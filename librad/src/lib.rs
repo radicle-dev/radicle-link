@@ -27,8 +27,6 @@ extern crate lazy_static;
 extern crate radicle_keystore as keystore;
 extern crate sodiumoxide;
 
-pub use radicle_surf as surf;
-
 pub mod git;
 pub mod hash;
 pub mod internal;

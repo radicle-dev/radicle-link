@@ -872,7 +872,6 @@ dependencies = [
  "proptest",
  "quinn",
  "radicle-keystore",
- "radicle-surf",
  "rand 0.7.3",
  "rand_pcg 0.2.1",
  "rcgen",
@@ -1118,12 +1117,6 @@ name = "nonempty"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7747482c817116898e7aeda0d68c90998d47ee0db28b7030d44584ef7695d355"
-
-[[package]]
-name = "nonempty"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ff7ac1e5ea23db6d61ad103e91864675049644bf47c35912336352fa4e9c109"
 
 [[package]]
 name = "nonzero_ext"
@@ -1429,19 +1422,6 @@ dependencies = [
  "serde",
  "serde_cbor",
  "sodiumoxide",
- "thiserror",
-]
-
-[[package]]
-name = "radicle-surf"
-version = "0.2.1"
-source = "git+https://github.com/radicle-dev/radicle-surf?rev=5728b74e77d12769ac917d04c4901994f30092ae#5728b74e77d12769ac917d04c4901994f30092ae"
-dependencies = [
- "git2",
- "lazy_static",
- "nonempty 0.5.0",
- "regex",
- "serde",
  "thiserror",
 ]
 

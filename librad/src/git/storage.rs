@@ -26,7 +26,6 @@ use std::{
     path::Path,
 };
 
-use radicle_surf::vcs::git as surf;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
@@ -127,9 +126,6 @@ pub enum Error {
     Cjson(#[from] CjsonError),
 
     #[error(transparent)]
-    Surf(#[from] surf::error::Error),
-
-    #[error(transparent)]
     Blob(#[from] blob::Error),
 
     #[error(transparent)]
@@ -196,19 +192,6 @@ impl<S: Clone> Storage<S> {
             urn,
             storage: self.into(),
         })
-    }
-
-    /// Get a [`surf::Browser`] for the project at `urn`. The `Browser` will be
-    /// initialised with history found at the given `revision`.
-    pub fn browser(&'_ self, urn: &RadUrn, revision: &str) -> Result<surf::Browser<'_>, Error> {
-        let namespace = surf::Namespace::from(urn.id.to_string().as_str());
-        // TODO(finto): Should the revision be the default branch of the project?
-        // If so we need resolvers to fetch the project from the urn.
-        Ok(surf::Browser::new_with_namespace(
-            &self.backend,
-            &namespace,
-            revision,
-        )?)
     }
 
     /// Get the [`Entity`] metadata found at the provided [`RadUrn`].

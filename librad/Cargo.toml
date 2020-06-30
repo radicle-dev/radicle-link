@@ -66,11 +66,6 @@ features = ["tls-rustls"]
 git = "https://github.com/radicle-dev/radicle-keystore"
 rev = "a04f4dbaec4d05be2c7a516a36b5bbec02ee32aa"
 
-[dependencies.radicle-surf]
-git = "https://github.com/radicle-dev/radicle-surf"
-rev = "5728b74e77d12769ac917d04c4901994f30092ae"
-features = ["serialize"]
-
 [dependencies.rustls]
 version = "0.17"
 features = ["logging", "dangerous_configuration"]

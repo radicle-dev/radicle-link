@@ -17,7 +17,6 @@
 
 use std::collections::HashSet;
 
-use radicle_surf::vcs::git as surf;
 use thiserror::Error;
 
 use crate::{
@@ -54,13 +53,6 @@ pub struct Repo<'a, S: Clone> {
 impl<'a, S: Clone> Repo<'a, S> {
     pub fn namespace(&self) -> Namespace {
         self.urn.id.clone()
-    }
-
-    /// Obtain a read-only view of this repo
-    pub fn browser(&'_ self, revision: &str) -> Result<surf::Browser<'_>, Error> {
-        self.storage
-            .browser(&self.urn, revision)
-            .map_err(Error::from)
     }
 
     /// Stop tracking [`PeerId`]s view of this repo
