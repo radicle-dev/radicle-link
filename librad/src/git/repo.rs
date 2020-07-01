@@ -76,6 +76,21 @@ impl<'a, S: Clone> Repo<'a, S> {
         self.storage.rad_refs(&self.urn).map_err(Error::from)
     }
 
+    /// Get `rad/self` identity for this repo.
+    pub fn get_rad_self(&self) -> Result<User<Draft>, Error> {
+        self.get_rad_self_of(None)
+    }
+
+    /// Get the `rad/self` identity for the remote `peer` under the `urn`.
+    pub fn get_rad_self_of<P>(&self, peer: P) -> Result<User<Draft>, Error>
+    where
+        P: Into<Option<PeerId>>,
+    {
+        self.storage
+            .get_rad_self_of(&self.urn, peer)
+            .map_err(Error::from)
+    }
+
     /// Retrieve the certifier URNs of this repo's identity
     pub fn certifiers(&self) -> Result<HashSet<RadUrn>, Error> {
         self.storage.certifiers(&self.urn).map_err(Error::from)
@@ -137,21 +152,6 @@ impl<'a> Repo<'a, WithSigner> {
     {
         self.storage
             .set_rad_self(&self.urn, spec)
-            .map_err(Error::from)
-    }
-
-    /// Get `rad/self` identity for this repo.
-    pub fn get_rad_self(&self) -> Result<User<Draft>, Error> {
-        self.get_rad_self_of(None)
-    }
-
-    /// Get the `rad/self` identity for the remote `peer` under the `urn`.
-    pub fn get_rad_self_of<P>(&self, peer: P) -> Result<User<Draft>, Error>
-    where
-        P: Into<Option<PeerId>>,
-    {
-        self.storage
-            .get_rad_self_of(&self.urn, peer)
             .map_err(Error::from)
     }
 }
