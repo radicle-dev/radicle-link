@@ -17,6 +17,7 @@
 
 use std::{
     collections::HashMap,
+    env,
     fs,
     io,
     path::{Path, PathBuf},
@@ -59,6 +60,13 @@ impl Paths {
             git_dir: root.join("git"),
         }
         .init()
+    }
+
+    pub fn from_env() -> Result<Self, io::Error> {
+        match env::var_os("RAD_HOME") {
+            None => Self::new(),
+            Some(root) => Self::from_root(root),
+        }
     }
 
     pub fn keys_dir(&self) -> &Path {

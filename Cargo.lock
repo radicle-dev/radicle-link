@@ -672,6 +672,8 @@ dependencies = [
  "libc",
  "libgit2-sys",
  "log",
+ "openssl-probe",
+ "openssl-sys",
  "url 2.1.1",
 ]
 
@@ -835,7 +837,9 @@ checksum = "4d5d1459353d397a029fb18862166338de938e6be976606bd056cf8f1a912ecf"
 dependencies = [
  "cc",
  "libc",
+ "libssh2-sys",
  "libz-sys",
+ "openssl-sys",
  "pkg-config",
 ]
 
@@ -922,6 +926,20 @@ dependencies = [
  "libflate",
  "pkg-config",
  "tar",
+ "vcpkg",
+]
+
+[[package]]
+name = "libssh2-sys"
+version = "0.2.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eafa907407504b0e683786d4aba47acf250f114d37357d56608333fd167dd0fc"
+dependencies = [
+ "cc",
+ "libc",
+ "libz-sys",
+ "openssl-sys",
+ "pkg-config",
  "vcpkg",
 ]
 
@@ -1194,6 +1212,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2839e79665f131bdb5782e51f2c6c9599c133c6098982a54c794358bf432529c"
 
 [[package]]
+name = "openssl-probe"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77af24da69f9d9341038eba93a073b1fdaaa1b788221b00a69bce9e762cb32de"
+
+[[package]]
+name = "openssl-sys"
+version = "0.9.58"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a842db4709b604f0fe5d1170ae3565899be2ad3d9cbc72dedc789ac0511f78de"
+dependencies = [
+ "autocfg 1.0.0",
+ "cc",
+ "libc",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1412,10 +1449,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "radicle-git-helpers"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "git2",
+ "librad",
+ "librad-test",
+ "radicle-keystore",
+ "tempfile",
+]
+
+[[package]]
 name = "radicle-keystore"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-keystore?rev=a04f4dbaec4d05be2c7a516a36b5bbec02ee32aa#a04f4dbaec4d05be2c7a516a36b5bbec02ee32aa"
+source = "git+https://github.com/radicle-dev/radicle-keystore?rev=27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6#27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6"
 dependencies = [
+ "async-trait",
+ "futures",
  "lazy_static",
  "rpassword",
  "secstr",
