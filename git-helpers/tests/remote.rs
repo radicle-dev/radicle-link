@@ -154,7 +154,13 @@ fn setup_credential_cache(
     config: &mut git2::Config,
     urn: &RadUrn,
 ) -> anyhow::Result<()> {
-    config.set_str("credential.helper", "cache")?;
+    config.set_str(
+        "credential.helper",
+        &format!(
+            "cache --timeout=10 --socket {}",
+            git_dir.join(".git-credential-cache/socket").display()
+        ),
+    )?;
     let mut child = Command::new("git")
         .env("GIT_DIR", git_dir)
         .envs(::std::env::vars().filter(|(key, _)| key.starts_with("GIT_TRACE")))
