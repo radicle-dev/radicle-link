@@ -33,8 +33,6 @@ use radicle_git_helpers::askpass;
 use radicle_keystore::{crypto::Pwhash, FileStorage, Keystore};
 
 fn main() -> anyhow::Result<()> {
-    eprintln!("helper: main");
-
     let url = {
         let args = env::args().skip(1).take(2).collect::<Vec<_>>();
         args[0]
@@ -61,7 +59,6 @@ fn main() -> anyhow::Result<()> {
         let mut buf = String::with_capacity(32);
         io::stdin().read_line(&mut buf)?;
         let line = buf.trim();
-        eprintln!("helper: > {}", line);
 
         if line == "capabilities" {
             println!("connect\n\n");
@@ -75,7 +72,6 @@ fn main() -> anyhow::Result<()> {
                 unknown => Err(anyhow::anyhow!("unknown service: {}", unknown)),
             }?;
 
-            eprintln!("helper: transport.connect {}", url);
             let (read, mut write) = transport.connect(url, service, Stateful)?.split();
 
             // ack ok
