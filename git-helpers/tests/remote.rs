@@ -21,7 +21,9 @@ extern crate radicle_keystore as keystore;
 
 use std::{
     env,
+    fs::{self, Permissions},
     io::Write,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -56,10 +58,14 @@ fn smoke() {
     setup_keystore(rad_paths.keys_dir(), key).unwrap();
     let path = setup_path().unwrap();
 
+    let credentials_cache_dir = tempdir().unwrap();
+    fs::set_permissions(credentials_cache_dir.path(), Permissions::from_mode(0o700)).unwrap();
+    let credentials_cache_socket = credentials_cache_dir.path().join("socket");
+
     // Push something to `urn`
     {
         let repo_dir = tempdir().unwrap();
-        setup_repo(repo_dir.path(), &urn).unwrap();
+        setup_repo(repo_dir.path(), &credentials_cache_socket, &urn).unwrap();
 
         let mut child = Command::new("git")
             .args(&["push", "origin", "master"])
@@ -79,7 +85,12 @@ fn smoke() {
     {
         let repo_dir = tempdir().unwrap();
         let mut child = Command::new("git")
-            .args(&["-c", "credential.helper=cache", "clone"])
+            .arg("-c")
+            .arg(format!(
+                "credential.helper=cache --socket {}",
+                credentials_cache_socket.to_string_lossy()
+            ))
+            .arg("clone")
             .arg(format!("radl://{}", urn.id))
             .arg(repo_dir.path())
             .env("PATH", &path)
@@ -123,7 +134,7 @@ fn setup_keystore(dir: &Path, key: SecretKey) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn setup_repo(path: &Path, origin: &RadUrn) -> anyhow::Result<()> {
+fn setup_repo(path: &Path, credentials_cache_socket: &Path, origin: &RadUrn) -> anyhow::Result<()> {
     let repo = git2::Repository::init(path)?;
     let blob = repo.blob(b"do you know who I am?")?;
     let tree = {
@@ -146,11 +157,12 @@ fn setup_repo(path: &Path, origin: &RadUrn) -> anyhow::Result<()> {
     repo.remote("origin", &format!("radl://{}", origin.id))?;
 
     let mut config = repo.config()?;
-    setup_credential_cache(repo.path(), &mut config, origin)
+    setup_credential_cache(repo.path(), credentials_cache_socket, &mut config, origin)
 }
 
 fn setup_credential_cache(
     git_dir: &Path,
+    credentials_cache_socket: &Path,
     config: &mut git2::Config,
     urn: &RadUrn,
 ) -> anyhow::Result<()> {
@@ -158,7 +170,7 @@ fn setup_credential_cache(
         "credential.helper",
         &format!(
             "cache --timeout=10 --socket {}",
-            git_dir.join(".git-credential-cache/socket").display()
+            credentials_cache_socket.display()
         ),
     )?;
     let mut child = Command::new("git")
