@@ -133,7 +133,7 @@ impl LocalTransport {
         service: Service,
         mode: Mode,
     ) -> Result<LocalStream, git2::Error> {
-        let urn = url.clone().into();
+        let urn = url.into();
         self.guard_has_urn(&urn)?;
 
         let mut git = Command::new("git");

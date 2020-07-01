@@ -79,7 +79,7 @@ fn main() -> anyhow::Result<()> {
             let (read, mut write) = transport.connect(url, service, Stateful)?.split();
 
             // ack ok
-            println!("");
+            println!();
 
             thread::spawn(move || {
                 // For the ways of the IOs are inscrutable, thou shallt not

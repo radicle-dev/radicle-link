@@ -4,6 +4,7 @@ description = "Git helpers for radicle-link"
 version = "0.1.0"
 authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
+license = "GPL-3.0-or-later"
 
 [dependencies]
 anyhow = "1"
