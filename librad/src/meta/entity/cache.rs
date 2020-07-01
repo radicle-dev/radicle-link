@@ -20,6 +20,7 @@ use crate::{
     keys::PublicKey,
     meta::entity::{
         Entity,
+        EntityCache,
         EntityInfoExt,
         EntityKeyOwnershipStore,
         EntityRevision,
@@ -397,7 +398,16 @@ impl EntityMemoryCache {
         }
     }
 
-    pub fn last_verified_revision(&self, uri: &RadUrn) -> Option<GenericEntity<Verified>> {
+    pub fn is_tainted(&self, uri: &RadUrn) -> bool {
+        self.entity_ids
+            .get(uri)
+            .and_then(|id| self.entity_info(*id).ok())
+            .map_or(false, |info| info.tainted())
+    }
+}
+
+impl EntityCache for EntityMemoryCache {
+    fn last_verified_revision(&self, uri: &RadUrn) -> Option<GenericEntity<Verified>> {
         self.entity_ids
             .get(uri)
             .and_then(|id| self.entity_info(*id).ok())
@@ -410,11 +420,16 @@ impl EntityMemoryCache {
             })
     }
 
-    pub fn is_tainted(&self, uri: &RadUrn) -> bool {
+    fn revision_status(
+        &self,
+        uri: &RadUrn,
+        revision: EntityRevision,
+    ) -> Option<EntityRevisionStatus> {
         self.entity_ids
             .get(uri)
             .and_then(|id| self.entity_info(*id).ok())
-            .map_or(false, |info| info.tainted())
+            .and_then(|info| info.revision(revision).ok())
+            .map(|info| info.status.clone())
     }
 }
 

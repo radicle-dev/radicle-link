@@ -991,11 +991,11 @@ mod tests {
         user.sign_owned(&user_key).unwrap();
         let verified_user = user
             .clone()
-            .check_signatures()
+            .verify_signatures()
             .unwrap()
-            .check_signatures_ownership(&cache)
+            .verify_certifiers(&cache)
             .unwrap()
-            .check_update(&None)
+            .verify_update(&None)
             .unwrap();
 
         // Create and sign two projects

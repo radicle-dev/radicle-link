@@ -118,19 +118,19 @@ impl UserHistory {
         for current in self.revisions.iter() {
             let current = current.clone();
             let current_revision = current.revision();
-            let current = current.check_signatures().map_err(|err| {
+            let current = current.verify_signatures().map_err(|err| {
                 HistoryVerificationError::ErrorAtRevision {
                     revision: current_revision,
                     error: err,
                 }
             })?;
-            let current = current.check_signatures_ownership(self).map_err(|err| {
+            let current = current.verify_certifiers(self).map_err(|err| {
                 HistoryVerificationError::ErrorAtRevision {
                     revision: current_revision,
                     error: err,
                 }
             })?;
-            let current = current.check_update(&previous).map_err(|err| {
+            let current = current.verify_update(&previous).map_err(|err| {
                 HistoryVerificationError::UpdateError {
                     revision: current_revision,
                     error: err,
@@ -253,13 +253,13 @@ fn test_user_verification() {
     // A new user is structurally valid but it is not signed
     let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
     assert!(matches!(
-        user.clone().check_signatures(),
+        user.check_signatures(),
         Err(Error::SignatureMissing)
     ));
 
     // Adding the signature fixes it
     user.sign_owned(&K1).unwrap();
-    assert!(matches!(user.clone().check_signatures(), Ok(_)));
+    assert!(matches!(user.check_signatures(), Ok(_)));
 
     // Changing name (any mutation would do) invalidates the signature
     let user = user
@@ -270,7 +270,7 @@ fn test_user_verification() {
         .build()
         .unwrap();
     assert!(matches!(
-        user.clone().check_signatures(),
+        user.check_signatures(),
         Err(Error::SignatureVerificationFailed(_))
     ));
 
@@ -288,7 +288,7 @@ fn test_user_verification() {
     user.sign_owned(&K2).unwrap();
     user.sign_owned(&K3).unwrap();
     assert!(matches!(
-        user.clone().check_signatures(),
+        user.check_signatures(),
         Err(Error::SignatureVerificationFailed(_))
     ));
 
@@ -307,7 +307,7 @@ fn test_user_verification() {
         .build()
         .unwrap();
     user.sign_owned(&K1).unwrap();
-    assert!(matches!(user.clone().check_signatures(), Ok(_)));
+    assert!(matches!(user.check_signatures(), Ok(_)));
 
     // Removing a maintainer invalidates it again
     let user = user

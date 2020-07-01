@@ -45,14 +45,7 @@ async fn can_clone() {
 
         let mut alice = Alice::new(peer1.public_key());
         alice.sign_owned(peer1.key()).unwrap();
-        let verified_alice = alice
-            .clone()
-            .check_signatures()
-            .unwrap()
-            .check_signatures_ownership(&cache)
-            .unwrap()
-            .check_update(&None)
-            .unwrap();
+        let verified_alice = alice.clone().verify(&mut cache).unwrap();
         cache.register_verified_entity(&verified_alice).unwrap();
         let mut radicle = Radicle::new(&alice);
         radicle.sign_by_user(peer1.key(), &verified_alice).unwrap();
@@ -86,14 +79,7 @@ async fn fetches_on_gossip_notify() {
 
         let mut alice = Alice::new(peer1.public_key());
         alice.sign_owned(peer1.key()).unwrap();
-        let verified_alice = alice
-            .clone()
-            .check_signatures()
-            .unwrap()
-            .check_signatures_ownership(&cache)
-            .unwrap()
-            .check_update(&None)
-            .unwrap();
+        let verified_alice = alice.clone().verify(&mut cache).unwrap();
         cache.register_verified_entity(&verified_alice).unwrap();
         let mut radicle = Radicle::new(&alice);
         radicle.sign_by_user(peer1.key(), &verified_alice).unwrap();

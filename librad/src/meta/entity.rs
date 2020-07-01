@@ -32,7 +32,7 @@ use thiserror::Error;
 use crate::{
     hash::{Hash, ParseError as HashParseError},
     keys::{PublicKey, SecretKey, Signature},
-    meta::user::User,
+    meta::{project::Project, user::User},
     uri::{Path, Protocol, RadUrn},
 };
 
@@ -45,6 +45,9 @@ use data::{EntityData, EntityInfo, EntityInfoExt, EntityKind};
 pub enum Error {
     #[error("Serialization failed ({0})")]
     SerializationFailed(String),
+
+    #[error("Wrong entity type")]
+    WrongEntityType,
 
     #[error("Invalid UTF8 ({0})")]
     InvalidUtf8(String),
@@ -108,6 +111,9 @@ pub enum Error {
 
     #[error("Entity cache error ({0})")]
     CacheError(#[from] cache::Error),
+
+    #[error("Update error ({0})")]
+    UpdateError(#[from] UpdateVerificationError),
 }
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -210,11 +216,11 @@ impl Into<SystemTime> for EntityTimestamp {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Verified;
 
-/// Type witness for a signed [`Entity`] whose signature keys ownership has been
-/// checked (they actually belonged to the specified entities at the appropriate
-/// time and revision).
+/// Type witness for a signed [`Entity`] whose certifier's keys ownership has
+/// been checked (they actually belonged to the specified certifiers at the
+/// appropriate time and revision).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignaturesChecked;
+pub struct Certified;
 
 /// Type witness for a signed [`Entity`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -364,6 +370,19 @@ pub trait Resolver<T> {
     async fn resolve_revision(&self, uri: &RadUrn, revision: EntityRevision) -> Result<T, Error>;
 }
 
+/// Caches entity revisions and their status
+pub trait EntityCache {
+    /// Get the last verified revision of a given entity, if any
+    fn last_verified_revision(&self, uri: &RadUrn) -> Option<GenericEntity<Verified>>;
+
+    /// Get the status of a given entity revision, if any
+    fn revision_status(
+        &self,
+        uri: &RadUrn,
+        revision: EntityRevision,
+    ) -> Option<EntityRevisionStatus>;
+}
+
 /// Stores (or caches) information about whether an entity owns (or owned) a key
 pub trait EntityKeyOwnershipStore {
     /// Checks if `key` is or was owned by the entity identified by `uri` at the
@@ -485,6 +504,11 @@ where
     /// `revision` getter
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// `timestamp` getter
+    pub fn timestamp(&self) -> EntityTimestamp {
+        self.timestamp
     }
 
     /// `rad_version` getter
@@ -669,17 +693,18 @@ where
     }
 }
 
-impl<T> Entity<T, Draft>
+impl<T, ST> Entity<T, ST>
 where
     T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+    ST: Clone,
 {
-    /// Compute the signature status of this entity
+    /// Checks the signature status of this entity
     /// (only this revision is checked)
     ///
     /// This checks that:
     /// - every owned key and certifier has a corresponding signature
     /// - the first revision has no parent and a matching root hash
-    pub fn check_signatures(self) -> Result<Entity<T, Signed>, Error> {
+    pub fn check_signatures(&self) -> Result<(), Error> {
         if self.revision == 1 && (self.parent_hash.is_some() || self.root_hash != self.hash) {
             // TODO: define a better error if `self.parent_hash.is_some()`
             // (should be "revision 1 cannot have a parent hash")
@@ -708,24 +733,36 @@ where
             }
         }
 
-        Ok(self.with_status::<Signed>())
+        Ok(())
     }
 }
 
-impl<T> Entity<T, Signed>
+impl<T> Entity<T, Draft>
 where
     T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
 {
-    /// Compute the signature status of this entity
+    /// Verifies the signature status of this entity
     /// (only this revision is checked)
     ///
-    /// This checks that:
-    /// - every owned key and certifier has a corresponding signature
-    /// - the first revision has no parent and a matching root hash
-    pub fn check_signatures_ownership(
-        self,
-        store: &impl EntityKeyOwnershipStore,
-    ) -> Result<Entity<T, SignaturesChecked>, Error> {
+    /// Does the same checks as `Entity::check_signatures` but returns
+    /// a typed verified value
+    pub fn verify_signatures(self) -> Result<Entity<T, Signed>, Error> {
+        self.check_signatures()
+            .map(|_| self.with_status::<Signed>())
+    }
+}
+
+impl<T, ST> Entity<T, ST>
+where
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+    ST: Clone,
+{
+    /// Checks the certification status of this entity
+    /// (only this revision is checked)
+    ///
+    /// This checks that every certifier's signature key actually belonged
+    /// to the specified certifier at the given revision and time
+    pub fn check_certifiers(&self, store: &impl EntityKeyOwnershipStore) -> Result<(), Error> {
         for (urn, s) in self.certifiers.iter() {
             match s {
                 Some(s) => {
@@ -737,13 +774,32 @@ where
             }
         }
 
-        Ok(self.with_status::<SignaturesChecked>())
+        Ok(())
     }
 }
 
-impl<T> Entity<T, SignaturesChecked>
+impl<T> Entity<T, Signed>
 where
     T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+{
+    /// Verifies the certification status of this entity
+    /// (only this revision is checked)
+    ///
+    /// Does the same checks as `Entity::check_certifiers` but returns
+    /// a typed verified value
+    pub fn verify_certifiers(
+        self,
+        store: &impl EntityKeyOwnershipStore,
+    ) -> Result<Entity<T, Certified>, Error> {
+        self.check_certifiers(store)
+            .map(|_| self.with_status::<Certified>())
+    }
+}
+
+impl<T, ST> Entity<T, ST>
+where
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+    ST: Clone,
 {
     /// Given an entity and its previous revision check that the update is
     /// valid:
@@ -756,9 +812,9 @@ where
     /// FIXME[ENTITY]: probably we should merge owned keys and certifiers when
     /// checking the quorum rules (now we are handling them separately)
     pub fn check_update(
-        self,
+        &self,
         previous: &Option<Entity<T, Verified>>,
-    ) -> Result<Entity<T, Verified>, UpdateVerificationError> {
+    ) -> Result<(), UpdateVerificationError> {
         let previous = match previous {
             None => {
                 if self.revision != 1 || self.parent_hash.is_some() {
@@ -766,7 +822,7 @@ where
                 } else if self.root_hash() != self.hash() {
                     return Err(UpdateVerificationError::WrongRootHash);
                 } else {
-                    return Ok(self.with_status::<Verified>());
+                    return Ok(());
                 }
             },
             Some(p) => p,
@@ -823,7 +879,80 @@ where
             return Err(UpdateVerificationError::NoPreviousQuorum);
         }
 
-        Ok(self.with_status::<Verified>())
+        Ok(())
+    }
+}
+
+impl<T> Entity<T, Certified>
+where
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+{
+    /// Given an entity and its previous revision verifies that the update is
+    /// valid
+    ///
+    /// Does the same checks as `Entity::check_update` but returns
+    /// a typed verified value
+    pub fn verify_update(
+        self,
+        previous: &Option<Entity<T, Verified>>,
+    ) -> Result<Entity<T, Verified>, UpdateVerificationError> {
+        self.check_update(previous)
+            .map(|_| self.with_status::<Verified>())
+    }
+}
+
+impl<T> Entity<T, Draft>
+where
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+{
+    /// Fully verify this entity
+    pub fn check<CACHE>(&self, cache: &mut CACHE) -> Result<(), Error>
+    where
+        CACHE: EntityCache + EntityKeyOwnershipStore,
+    {
+        self.check_signatures()?;
+        self.check_certifiers(cache)?;
+        let revision = self.revision();
+        if revision == 1 {
+            self.check_update(&None)?;
+            Ok(())
+        } else {
+            let urn = self.urn();
+            match cache.last_verified_revision(&urn) {
+                Some(parent) => {
+                    let generic_parent = parent.as_generic_entity();
+                    let generic_self = self.as_generic_entity();
+                    generic_self.check_update(&Some(generic_parent))?;
+                    Ok(())
+                },
+                None => match cache.revision_status(&urn, revision - 1) {
+                    Some(status) => match status {
+                        EntityRevisionStatus::Verified => Ok(()),
+                        _ => Err(Error::CacheError(cache::Error::MissingParentEntity(
+                            urn.to_owned(),
+                            revision,
+                        ))),
+                    },
+                    None => Err(Error::CacheError(cache::Error::MissingParentEntity(
+                        urn.to_owned(),
+                        revision,
+                    ))),
+                },
+            }
+        }
+    }
+}
+
+impl<T> Entity<T, Draft>
+where
+    T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+{
+    /// Fully verify this entity
+    pub fn verify<CACHE>(self, cache: &mut CACHE) -> Result<Entity<T, Verified>, Error>
+    where
+        CACHE: EntityCache + EntityKeyOwnershipStore,
+    {
+        self.check_certifiers(cache).map(|_| self.with_status())
     }
 }
 
@@ -924,3 +1053,71 @@ where
 
 pub type GenericEntity<ST> = Entity<EntityInfo, ST>;
 pub type GenericDraftEntity = GenericEntity<Draft>;
+
+impl<ST> std::convert::TryFrom<&GenericEntity<ST>> for User<ST>
+where
+    ST: Clone,
+{
+    type Error = Error;
+    fn try_from(entity: &GenericEntity<ST>) -> Result<Self, Self::Error> {
+        match entity.info() {
+            EntityInfo::User(info) => Ok(Self {
+                status_marker: std::marker::PhantomData,
+                name: entity.name().to_owned(),
+                revision: entity.revision(),
+                timestamp: entity.timestamp(),
+                rad_version: entity.rad_version(),
+                hash: entity.hash().clone(),
+                root_hash: entity.root_hash().clone(),
+                parent_hash: entity.parent_hash().clone(),
+                keys: entity.keys().clone(),
+                certifiers: entity.certifiers().clone(),
+                info: info.clone(),
+            }),
+            _ => Err(Error::WrongEntityType),
+        }
+    }
+}
+
+impl<ST> std::convert::TryFrom<&GenericEntity<ST>> for Project<ST>
+where
+    ST: Clone,
+{
+    type Error = Error;
+    fn try_from(entity: &GenericEntity<ST>) -> Result<Self, Self::Error> {
+        match entity.info() {
+            EntityInfo::Project(info) => Ok(Self {
+                status_marker: std::marker::PhantomData,
+                name: entity.name().to_owned(),
+                revision: entity.revision(),
+                timestamp: entity.timestamp(),
+                rad_version: entity.rad_version(),
+                hash: entity.hash().clone(),
+                root_hash: entity.root_hash().clone(),
+                parent_hash: entity.parent_hash().clone(),
+                keys: entity.keys().clone(),
+                certifiers: entity.certifiers().clone(),
+                info: info.clone(),
+            }),
+            _ => Err(Error::WrongEntityType),
+        }
+    }
+}
+
+impl<ST> From<User<ST>> for GenericEntity<ST>
+where
+    ST: Clone,
+{
+    fn from(entity: User<ST>) -> Self {
+        entity.as_generic_entity()
+    }
+}
+
+impl<ST> From<Project<ST>> for GenericEntity<ST>
+where
+    ST: Clone,
+{
+    fn from(entity: Project<ST>) -> Self {
+        entity.as_generic_entity()
+    }
+}
