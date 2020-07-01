@@ -60,7 +60,7 @@ use crate::{
             Signatory,
             Verified,
         },
-        user::User,
+        user::{User, UserInfo},
     },
     paths::Paths,
     peer::{self, PeerId},
@@ -804,6 +804,27 @@ impl Storage<WithSigner> {
                     .map_err(Error::from)
             },
         }
+    }
+
+    /// Get the `rad/self` identity for `urn`.
+    pub fn get_rad_self(&self, urn: &RadUrn) -> Result<User<Draft>, Error> {
+        self.get_rad_self_of(urn, None)
+    }
+
+    /// Get the `rad/self` identity for the remote `peer` under the `urn`.
+    pub fn get_rad_self_of<P>(&self, urn: &RadUrn, peer: P) -> Result<User<Draft>, Error>
+    where
+        P: Into<Option<PeerId>>,
+    {
+        let rad_self = Reference::rad_self(urn.id.clone(), None).set_remote(peer.into());
+
+        let blob = Blob::Tip {
+            branch: rad_self.borrow().into(),
+            path: Path::new("id"),
+        }
+        .get(&self.backend)?;
+
+        Entity::<UserInfo, Draft>::from_json_slice(blob.content()).map_err(Error::from)
     }
 
     pub fn track(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {

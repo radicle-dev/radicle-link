@@ -191,3 +191,30 @@ async fn test_all_metadata_heads() {
     };
     assert_eq!(user_history.len(), 1);
 }
+
+#[async_test]
+async fn set_and_get_rad_self() -> Result<(), Error> {
+    let key = SecretKey::new();
+    let store = storage(key.clone());
+
+    // Create signed and verified user
+    let mut user = User::<Draft>::create("user".to_owned(), key.public())?;
+    user.sign_owned(&key)?;
+    let user_resolver = ConstResolver::new(user.clone());
+    let verified_user = user
+        .clone()
+        .check_history_status(&user_resolver, &user_resolver)
+        .await
+        .unwrap();
+
+    let mut project = Project::<Draft>::create("banana".to_owned(), user.urn())?;
+    project.sign_by_user(&key, &verified_user)?;
+
+    // Store the three entities in their respective namespaces
+    store.create_repo(&user)?;
+    let repo = store.create_repo(&project)?;
+
+    assert_eq!(repo.get_rad_self().expect("repo error:"), user);
+    assert_eq!(store.get_rad_self(&project.urn())?, user);
+    Ok(())
+}
