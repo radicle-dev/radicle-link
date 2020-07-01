@@ -146,7 +146,7 @@ impl UserHistory {
     }
 }
 
-impl EntityKeyOwnershipStore for UserHistory {
+impl KeyOwnershipStore for UserHistory {
     fn check_ownership(
         &self,
         _key: &PublicKey,

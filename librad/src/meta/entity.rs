@@ -198,16 +198,12 @@ impl EntityTimestamp {
     }
 }
 
-impl Into<SystemTime> for EntityTimestamp {
-    fn into(self) -> SystemTime {
-        if self.0 >= 0 {
-            UNIX_EPOCH
-                .checked_add(Duration::from_millis(self.0 as u64))
-                .unwrap()
+impl From<EntityTimestamp> for SystemTime {
+    fn from(timestamp: EntityTimestamp) -> Self {
+        if timestamp.0 >= 0 {
+            UNIX_EPOCH + Duration::from_millis(timestamp.0 as u64)
         } else {
-            UNIX_EPOCH
-                .checked_sub(Duration::from_millis((-self.0) as u64))
-                .unwrap()
+            UNIX_EPOCH - Duration::from_millis((-timestamp.0) as u64)
         }
     }
 }
@@ -247,7 +243,7 @@ pub enum EntityRevisionStatus {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Signatory {
     /// A specific certifier (identified by their URN)
-    Certifier(RadUrn, u64),
+    Certifier(RadUrn, EntityRevision),
     /// The entity itself (with an owned key)
     OwnedKey,
 }
@@ -296,14 +292,14 @@ fn verify_signature(
 
 /// A signature for an `Entity`, when signed using an owned key
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct EntitySelfSignature {
+pub struct SelfSignature {
     /// Signature time
     pub timestamp: EntityTimestamp,
     /// The signature data
     pub sig: Signature,
 }
 
-impl EntitySelfSignature {
+impl SelfSignature {
     fn build(
         key: &SecretKey,
         hash: &Hash,
@@ -325,7 +321,7 @@ impl EntitySelfSignature {
 
 /// A signature for an `Entity`, when signed by a certifier
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct EntityCertifierSignature {
+pub struct CertifierSignature {
     /// Signature time
     pub timestamp: EntityTimestamp,
     /// Certifier revision
@@ -336,7 +332,7 @@ pub struct EntityCertifierSignature {
     pub sig: Signature,
 }
 
-impl EntityCertifierSignature {
+impl CertifierSignature {
     fn build(
         key: &SecretKey,
         hash: &Hash,
@@ -384,7 +380,7 @@ pub trait EntityCache {
 }
 
 /// Stores (or caches) information about whether an entity owns (or owned) a key
-pub trait EntityKeyOwnershipStore {
+pub trait KeyOwnershipStore {
     /// Checks if `key` is or was owned by the entity identified by `uri` at the
     /// given `revision` and `time`
     fn check_ownership(
@@ -436,9 +432,9 @@ pub struct Entity<T, ST> {
     /// (in this case the entity hash is actually the entity ID)
     parent_hash: Option<Hash>,
     /// Set of owned keys and signatures
-    keys: HashMap<PublicKey, Option<EntitySelfSignature>>,
+    keys: HashMap<PublicKey, Option<SelfSignature>>,
     /// Set of certifiers (entities identified by their URN) and signatures
-    certifiers: HashMap<RadUrn, Option<EntityCertifierSignature>>,
+    certifiers: HashMap<RadUrn, Option<CertifierSignature>>,
     /// Specific `Entity` data
     info: T,
 }
@@ -595,7 +591,7 @@ where
     }
 
     /// `keys` getter
-    pub fn keys(&self) -> &HashMap<PublicKey, Option<EntitySelfSignature>> {
+    pub fn keys(&self) -> &HashMap<PublicKey, Option<SelfSignature>> {
         &self.keys
     }
     /// Keys count
@@ -608,7 +604,7 @@ where
     }
 
     /// `certifiers` getter
-    pub fn certifiers(&self) -> &HashMap<RadUrn, Option<EntityCertifierSignature>> {
+    pub fn certifiers(&self) -> &HashMap<RadUrn, Option<CertifierSignature>> {
         &self.certifiers
     }
     /// Certifiers count
@@ -642,7 +638,7 @@ where
             .map(|opt| match opt {
                 Some(_) => Err(Error::SignatureAlreadyPresent(public_key)),
                 None => {
-                    *opt = Some(EntitySelfSignature::new(key, &hash, revision));
+                    *opt = Some(SelfSignature::new(key, &hash, revision));
                     Ok(())
                 },
             })??;
@@ -669,7 +665,7 @@ where
             .map(|opt| match opt {
                 Some(_) => Err(Error::SignatureAlreadyPresent(public_key)),
                 None => {
-                    *opt = Some(EntityCertifierSignature::new(key, &hash, revision));
+                    *opt = Some(CertifierSignature::new(key, &hash, revision));
                     Ok(())
                 },
             })??;
@@ -762,7 +758,7 @@ where
     ///
     /// This checks that every certifier's signature key actually belonged
     /// to the specified certifier at the given revision and time
-    pub fn check_certifiers(&self, store: &impl EntityKeyOwnershipStore) -> Result<(), Error> {
+    pub fn check_certifiers(&self, store: &impl KeyOwnershipStore) -> Result<(), Error> {
         for (urn, s) in self.certifiers.iter() {
             match s {
                 Some(s) => {
@@ -789,7 +785,7 @@ where
     /// a typed verified value
     pub fn verify_certifiers(
         self,
-        store: &impl EntityKeyOwnershipStore,
+        store: &impl KeyOwnershipStore,
     ) -> Result<Entity<T, Certified>, Error> {
         self.check_certifiers(store)
             .map(|_| self.with_status::<Certified>())
@@ -908,7 +904,7 @@ where
     /// Fully verify this entity
     pub fn check<CACHE>(&self, cache: &mut CACHE) -> Result<(), Error>
     where
-        CACHE: EntityCache + EntityKeyOwnershipStore,
+        CACHE: EntityCache + KeyOwnershipStore,
     {
         self.check_signatures()?;
         self.check_certifiers(cache)?;
@@ -950,7 +946,7 @@ where
     /// Fully verify this entity
     pub fn verify<CACHE>(self, cache: &mut CACHE) -> Result<Entity<T, Verified>, Error>
     where
-        CACHE: EntityCache + EntityKeyOwnershipStore,
+        CACHE: EntityCache + KeyOwnershipStore,
     {
         self.check_certifiers(cache).map(|_| self.with_status())
     }

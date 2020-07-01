@@ -20,13 +20,13 @@ use crate::{
     keys::PublicKey,
     meta::{
         entity::{
+            CertifierSignature,
             Draft,
             Entity,
-            EntityCertifierSignature,
             EntityRevision,
-            EntitySelfSignature,
             EntityTimestamp,
             Error,
+            SelfSignature,
         },
         project::ProjectInfo,
         user::UserInfo,
@@ -40,26 +40,26 @@ use std::collections::{BTreeMap, HashMap};
 
 /// Helper to serialize entity self signatures in a canonical way
 fn serialize_certifiers<S>(
-    value: &HashMap<RadUrn, Option<EntityCertifierSignature>>,
+    value: &HashMap<RadUrn, Option<CertifierSignature>>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let ordered: BTreeMap<RadUrn, Option<EntityCertifierSignature>> =
+    let ordered: BTreeMap<RadUrn, Option<CertifierSignature>> =
         value.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     ordered.serialize(serializer)
 }
 
 /// Helper to serialize entity certifier signatures in a canonical way
 fn serialize_keys<S>(
-    value: &HashMap<PublicKey, Option<EntitySelfSignature>>,
+    value: &HashMap<PublicKey, Option<SelfSignature>>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let ordered: BTreeMap<PublicKey, Option<EntitySelfSignature>> =
+    let ordered: BTreeMap<PublicKey, Option<SelfSignature>> =
         value.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     ordered.serialize(serializer)
 }
@@ -141,13 +141,13 @@ pub struct EntityData<T> {
         serialize_with = "serialize_keys",
         default
     )]
-    pub keys: HashMap<PublicKey, Option<EntitySelfSignature>>,
+    pub keys: HashMap<PublicKey, Option<SelfSignature>>,
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
         serialize_with = "serialize_certifiers",
         default
     )]
-    pub certifiers: HashMap<RadUrn, Option<EntityCertifierSignature>>,
+    pub certifiers: HashMap<RadUrn, Option<CertifierSignature>>,
 
     pub info: T,
 }

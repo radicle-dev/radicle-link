@@ -22,11 +22,11 @@ use crate::{
         Entity,
         EntityCache,
         EntityInfoExt,
-        EntityKeyOwnershipStore,
         EntityRevision,
         EntityRevisionStatus,
         EntityTimestamp,
         GenericEntity,
+        KeyOwnershipStore,
         Verified,
     },
     uri::RadUrn,
@@ -56,7 +56,7 @@ pub enum Error {
     EntityTainted(RadUrn, EntityRevision),
 
     #[error("Signatures revoked")]
-    SignaturesRevoked(),
+    SignaturesRevoked,
 
     #[error("Missing internal entity id ({0})")]
     MissingInternalEntityId(EntityInternalId),
@@ -218,17 +218,8 @@ impl EntityMemoryCache {
                         .ok()
                         .and_then(|target_entity| {
                             target_entity.revision(target_signature.revision).ok()
-                        });
-                let signed_revision = match signed_revision {
-                    Some(rev) => rev,
-                    None => return None,
-                };
-
-                let signature_info = signed_revision.signed_by.get(&id);
-                let signature_info = match signature_info {
-                    Some(sig) => sig,
-                    None => return None,
-                };
+                        })?;
+                let signature_info = signed_revision.signed_by.get(&id)?;
 
                 if signature_info.time >= current.timestamp
                     && !current.owned_keys.contains(&signature_info.key_id)
@@ -392,7 +383,7 @@ impl EntityMemoryCache {
             self.set_tainted(id, revision)?;
             Err(Error::EntityTainted(urn, entity.revision()))
         } else if signatures_revoked {
-            Err(Error::SignaturesRevoked())
+            Err(Error::SignaturesRevoked)
         } else {
             Ok(())
         }
@@ -433,7 +424,7 @@ impl EntityCache for EntityMemoryCache {
     }
 }
 
-impl EntityKeyOwnershipStore for EntityMemoryCache {
+impl KeyOwnershipStore for EntityMemoryCache {
     fn check_ownership(
         &self,
         key: &PublicKey,
