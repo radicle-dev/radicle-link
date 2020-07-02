@@ -806,12 +806,15 @@ impl Storage<WithSigner> {
                     },
                 }?;
 
+                let sym_log_msg = &format!("{} -> {}", src, target);
+                tracing::info!("creating symbolic link: {}", sym_log_msg);
+
                 self.backend
                     .reference_symbolic(
                         &src.to_string(),
                         &target.to_string(),
                         /* force */ true,
-                        &format!("{} -> {}", src, target),
+                        sym_log_msg,
                     )
                     .and(Ok(()))
                     .map_err(Error::from)
