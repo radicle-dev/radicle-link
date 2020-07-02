@@ -20,13 +20,11 @@ use crate::{
     keys::PublicKey,
     meta::entity::{
         Entity,
-        EntityCache,
         EntityInfoExt,
         EntityRevision,
         EntityRevisionStatus,
         EntityTimestamp,
         GenericEntity,
-        KeyOwnershipStore,
         Verified,
     },
     uri::RadUrn,
@@ -66,6 +64,37 @@ pub enum Error {
 
     #[error("Missing key ({0})")]
     MissingKey(PublicKey),
+}
+
+/// Caches entity revisions and their status
+pub trait EntityCache {
+    /// Get the last verified revision of a given entity, if any
+    fn last_verified_revision(&self, uri: &RadUrn) -> Option<GenericEntity<Verified>>;
+
+    /// Get the status of a given entity revision, if any
+    fn revision_status(
+        &self,
+        uri: &RadUrn,
+        revision: EntityRevision,
+    ) -> Option<EntityRevisionStatus>;
+
+    /// Register a verified entity into the cache
+    fn register_verified_entity<T>(&mut self, entity: &Entity<T, Verified>) -> Result<(), Error>
+    where
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt;
+}
+
+/// Stores (or caches) information about whether an entity owns (or owned) a key
+pub trait KeyOwnershipStore {
+    /// Checks if `key` is or was owned by the entity identified by `uri` at the
+    /// given `revision` and `time`
+    fn check_ownership(
+        &self,
+        key: &PublicKey,
+        uri: &RadUrn,
+        revision: EntityRevision,
+        time: EntityTimestamp,
+    ) -> bool;
 }
 
 type EntityInternalId = usize;
@@ -221,9 +250,7 @@ impl EntityMemoryCache {
                         })?;
                 let signature_info = signed_revision.signed_by.get(&id)?;
 
-                if signature_info.time >= current.timestamp
-                    && !current.owned_keys.contains(&signature_info.key_id)
-                {
+                if signature_info.time >= current.timestamp {
                     Some(target_signature.to_owned())
                 } else {
                     None
@@ -421,6 +448,59 @@ impl EntityCache for EntityMemoryCache {
             .and_then(|id| self.entity_info(*id).ok())
             .and_then(|info| info.revision(revision).ok())
             .map(|info| info.status.clone())
+    }
+
+    fn register_verified_entity<T>(&mut self, entity: &Entity<T, Verified>) -> Result<(), Error>
+    where
+        T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+    {
+        let urn = entity.urn();
+        let revision = entity.revision();
+        let mut owned_keys = BTreeSet::new();
+        for k in entity.keys().keys() {
+            let key_id = match self.key_ids.get(k) {
+                Some(key_id) => *key_id,
+                None => {
+                    let new_key_id = self.keys.len();
+                    self.keys.push(k.to_owned());
+                    self.key_ids.insert(k.to_owned(), new_key_id);
+                    new_key_id
+                },
+            };
+            owned_keys.insert(key_id);
+        }
+        let (id, info) = self.get_or_create_entity_info(entity);
+        let required_previous_revisions = revision as usize - 1;
+        if info.revisions.len() < required_previous_revisions {
+            return Err(Error::MissingParentEntity(urn, revision));
+        };
+
+        let tainted = if info.revisions.len() == required_previous_revisions {
+            info.revisions.push(EntityRevisionInfo {
+                hash: entity.hash().to_owned(),
+                status: EntityRevisionStatus::Verified,
+                timestamp: entity.timestamp,
+                owned_keys,
+                signed_by: BTreeMap::new(),
+                signature_targets: BTreeSet::new(),
+            });
+            info.last_verified_revision = Some(entity.as_generic_entity());
+            false
+        } else {
+            &info.revisions[required_previous_revisions].hash != entity.hash()
+        };
+
+        self.apply_signatures(id, entity)?;
+        let signatures_revoked = self.check_revocations(id, entity.revision())?;
+
+        if tainted {
+            self.set_tainted(id, revision)?;
+            Err(Error::EntityTainted(urn, entity.revision()))
+        } else if signatures_revoked {
+            Err(Error::SignaturesRevoked)
+        } else {
+            Ok(())
+        }
     }
 }
 

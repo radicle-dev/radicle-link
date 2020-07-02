@@ -124,7 +124,7 @@ impl UserHistory {
                     error: err,
                 }
             })?;
-            let current = current.verify_certifiers(self).map_err(|err| {
+            let current = current.verify_certifiers(&cache).map_err(|err| {
                 HistoryVerificationError::ErrorAtRevision {
                     revision: current_revision,
                     error: err,
@@ -143,18 +143,6 @@ impl UserHistory {
             Some(user) => Ok(user),
             None => Err(HistoryVerificationError::EmptyHistory),
         }
-    }
-}
-
-impl KeyOwnershipStore for UserHistory {
-    fn check_ownership(
-        &self,
-        _key: &PublicKey,
-        _uri: &RadUrn,
-        _revision: EntityRevision,
-        _time: EntityTimestamp,
-    ) -> bool {
-        true
     }
 }
 

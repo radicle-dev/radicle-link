@@ -39,6 +39,7 @@ use crate::{
 pub mod cache;
 pub mod data;
 
+pub use cache::{EntityCache, KeyOwnershipStore};
 use data::{EntityData, EntityInfo, EntityInfoExt, EntityKind};
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -363,32 +364,6 @@ pub trait Resolver<T> {
     /// Resolve the given URN and deserialize the target `Entity`
     async fn resolve(&self, uri: &RadUrn) -> Result<T, Error>;
     async fn resolve_revision(&self, uri: &RadUrn, revision: EntityRevision) -> Result<T, Error>;
-}
-
-/// Caches entity revisions and their status
-pub trait EntityCache {
-    /// Get the last verified revision of a given entity, if any
-    fn last_verified_revision(&self, uri: &RadUrn) -> Option<GenericEntity<Verified>>;
-
-    /// Get the status of a given entity revision, if any
-    fn revision_status(
-        &self,
-        uri: &RadUrn,
-        revision: EntityRevision,
-    ) -> Option<EntityRevisionStatus>;
-}
-
-/// Stores (or caches) information about whether an entity owns (or owned) a key
-pub trait KeyOwnershipStore {
-    /// Checks if `key` is or was owned by the entity identified by `uri` at the
-    /// given `revision` and `time`
-    fn check_ownership(
-        &self,
-        key: &PublicKey,
-        uri: &RadUrn,
-        revision: EntityRevision,
-        time: EntityTimestamp,
-    ) -> bool;
 }
 
 /// The base entity definition.
@@ -947,7 +922,9 @@ where
     where
         Cache: EntityCache + KeyOwnershipStore,
     {
-        self.check_certifiers(cache).map(|_| self.with_status())
+        let verified = self.check_certifiers(cache).map(|_| self.with_status())?;
+        cache.register_verified_entity(&verified)?;
+        Ok(verified)
     }
 }
 
