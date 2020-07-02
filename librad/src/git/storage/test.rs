@@ -206,15 +206,26 @@ async fn set_and_get_rad_self() -> Result<(), Error> {
         .check_history_status(&user_resolver, &user_resolver)
         .await
         .unwrap();
+    store.create_repo(&user)?;
+    store.set_default_rad_self(verified_user.clone())?;
 
     let mut project = Project::<Draft>::create("banana".to_owned(), user.urn())?;
     project.sign_by_user(&key, &verified_user)?;
 
-    // Store the three entities in their respective namespaces
-    store.create_repo(&user)?;
     let repo = store.create_repo(&project)?;
+    repo.set_rad_self(RadSelfSpec::Default)
+        .expect("repo error:");
 
-    assert_eq!(repo.get_rad_self().expect("repo error:"), user);
-    assert_eq!(store.get_rad_self(&project.urn())?, user);
+    assert_eq!(
+        repo.get_rad_self().expect("repo error:"),
+        store.default_rad_self()?
+    );
+    assert_eq!(
+        store.get_rad_self(&project.urn())?,
+        store.default_rad_self()?
+    );
+    Ok(())
+}
+
     Ok(())
 }
