@@ -227,5 +227,61 @@ async fn set_and_get_rad_self() -> Result<(), Error> {
     Ok(())
 }
 
+/// We want to test that structure of the storage is compliant with the
+/// [RFC](https://github.com/radicle-dev/radicle-link/blob/504fe66dd974eaddb329520264d1cfdeb492b28f/docs/rfc/identity_resolution.md).
+/// So for every namespace there should be a `rad/id` and `rad/refs`.
+#[async_test]
+async fn test_structure_of_refs() -> Result<(), Error> {
+    let key = SecretKey::new();
+    let store = storage(key.clone());
+    let mut refs = vec![];
+
+    // Create signed and verified user
+    let mut user = User::<Draft>::create("user".to_owned(), key.public())?;
+    user.sign_owned(&key)?;
+    let user_resolver = ConstResolver::new(user.clone());
+    let verified_user = user
+        .clone()
+        .check_history_status(&user_resolver, &user_resolver)
+        .await
+        .unwrap();
+    refs.push(Reference::rad_id(user.urn().id));
+    refs.push(Reference::rad_refs(user.urn().id, None));
+    store.create_repo(&user)?;
+    store.set_default_rad_self(verified_user)?;
+
+    // Set up project banana
+    {
+        let mut project = Project::<Draft>::create("banana".to_owned(), user.urn())?
+            .to_builder()
+            .add_key(key.public())
+            .build()?;
+        project.sign_owned(&key)?;
+        let namespace = project.urn().id;
+        refs.push(Reference::rad_id(namespace.clone()));
+        refs.push(Reference::rad_refs(namespace, None));
+        let _repo = store.create_repo(&project)?;
+    }
+
+    // Set up project pineapple
+    {
+        let mut project = Project::<Draft>::create("pineapple".to_owned(), user.urn())?
+            .to_builder()
+            .add_key(key.public())
+            .build()?;
+        project.sign_owned(&key)?;
+        let namespace = project.urn().id;
+        refs.push(Reference::rad_id(namespace.clone()));
+        refs.push(Reference::rad_refs(namespace, None));
+        let _repo = store.create_repo(&project)?;
+    }
+
+    // Ensure that we can find all the references
+    for reference in refs {
+        reference
+            .find(&store.backend)
+            .unwrap_or_else(|err| panic!("could not find ref '{}', error: {}", reference, err));
+    }
+
     Ok(())
 }
