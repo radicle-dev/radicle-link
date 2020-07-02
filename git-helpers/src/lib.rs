@@ -17,4 +17,6 @@
 
 #![feature(str_strip)]
 
-pub mod askpass;
+extern crate radicle_keystore as keystore;
+
+pub mod credential;

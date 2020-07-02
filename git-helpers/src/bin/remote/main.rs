@@ -29,7 +29,7 @@ use librad::{
     keys::PublicKey,
     paths::Paths,
 };
-use radicle_git_helpers::askpass;
+use radicle_git_helpers::credential;
 use radicle_keystore::{crypto::Pwhash, FileStorage, Keystore};
 
 fn main() -> anyhow::Result<()> {
@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     let git_dir = env::var("GIT_DIR").map(PathBuf::from)?;
 
     let transport = {
-        let pass = askpass::git_credential(&git_dir, &url)?;
+        let pass = credential::Git::new(&git_dir).get(&url)?;
         let paths = Paths::from_env()?;
         let keystore = FileStorage::<_, PublicKey, _, _>::new(
             &paths.keys_dir().join("librad.key"),

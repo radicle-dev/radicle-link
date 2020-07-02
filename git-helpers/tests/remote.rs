@@ -22,10 +22,9 @@ extern crate radicle_keystore as keystore;
 use std::{
     env,
     fs::{self, Permissions},
-    io::Write,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
 };
 
 use futures::executor::block_on;
@@ -33,10 +32,7 @@ use keystore::{pinentry::SecUtf8, Keystore};
 use tempfile::tempdir;
 
 use librad::{
-    git::{
-        local::{self, url::LocalUrl},
-        storage::Storage,
-    },
+    git::{local::url::LocalUrl, storage::Storage},
     keys::{PublicKey, SecretKey},
     meta::entity::Signatory,
     paths::Paths,
@@ -46,6 +42,7 @@ use librad_test::{
     logging,
     rad::entity::{Alice, Radicle},
 };
+use radicle_git_helpers::credential;
 
 const PASSPHRASE: &str = "123";
 
@@ -130,7 +127,7 @@ async fn setup_entity(paths: &Paths, key: SecretKey) -> anyhow::Result<RadUrn> {
 fn setup_keystore(dir: &Path, key: SecretKey) -> anyhow::Result<()> {
     let mut keystore = keystore::FileStorage::<_, PublicKey, _, _>::new(
         &dir.join("librad.key"),
-        keystore::crypto::Pwhash::new(SecUtf8::from(PASSPHRASE.as_bytes())),
+        keystore::crypto::Pwhash::new(SecUtf8::from(PASSPHRASE)),
     );
     keystore.put_key(key)?;
 
@@ -176,30 +173,8 @@ fn setup_credential_cache(
             credentials_cache_socket.display()
         ),
     )?;
-    let mut child = Command::new("git")
-        .env("GIT_DIR", git_dir)
-        .envs(::std::env::vars().filter(|(key, _)| key.starts_with("GIT_TRACE")))
-        .args(&["credential", "approve"])
-        .stdin(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .spawn()?;
-    {
-        let stdin = child.stdin.as_mut().expect("could not obtain stdin");
-        stdin.write_all(
-            format!(
-                "protocol={}\nhost={}\nusername=radicle\npassword={}",
-                local::URL_SCHEME,
-                urn.id,
-                PASSPHRASE
-            )
-            .as_bytes(),
-        )?;
-    }
-    let status = child.wait()?;
-    if !status.success() {
-        return Err(anyhow::anyhow!("failed to cache credential"));
-    }
+
+    credential::Git::new(&git_dir).put(&urn.into(), SecUtf8::from(PASSPHRASE))?;
 
     Ok(())
 }
