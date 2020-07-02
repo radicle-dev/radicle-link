@@ -21,7 +21,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use librad::git::transport::local::LocalUrl;
+use librad::git::local::{self, url::LocalUrl};
 use radicle_keystore::pinentry::SecUtf8;
 
 pub fn git_credential(git_dir: &Path, url: &LocalUrl) -> io::Result<SecUtf8> {
@@ -37,7 +37,12 @@ pub fn git_credential(git_dir: &Path, url: &LocalUrl) -> io::Result<SecUtf8> {
     {
         let stdin = child.stdin.as_mut().expect("could not obtain stdin");
         stdin.write_all(
-            format!("protocol=radl\nhost={}\nusername=radicle\n\n", url.repo).as_bytes(),
+            format!(
+                "protocol={}\nhost={}\nusername=radicle\n\n",
+                local::URL_SCHEME,
+                url.repo()
+            )
+            .as_bytes(),
         )?;
     }
 
@@ -47,7 +52,7 @@ pub fn git_credential(git_dir: &Path, url: &LocalUrl) -> io::Result<SecUtf8> {
         .lines()
         .find_map(|line| line.strip_prefix("password=").map(SecUtf8::from));
 
-    passphrase.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "couldn't obtain passphrase"))
+    passphrase.ok_or_else(no_pass_err)
 }
 
 // FIXME: this should be equivalent to `git_credential`, but without shelling
@@ -59,6 +64,10 @@ pub fn credential_helper(config: &git2::Config, url: &LocalUrl) -> io::Result<Se
 
     helper
         .execute()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "couldn't obtain passphrase"))
+        .ok_or_else(no_pass_err)
         .map(|(_, pass)| SecUtf8::from(pass))
+}
+
+fn no_pass_err() -> io::Error {
+    io::Error::new(io::ErrorKind::NotFound, "couldn't obtain passphrase")
 }

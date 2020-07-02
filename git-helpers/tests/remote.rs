@@ -33,7 +33,10 @@ use keystore::{pinentry::SecUtf8, Keystore};
 use tempfile::tempdir;
 
 use librad::{
-    git::storage::Storage,
+    git::{
+        local::{self, url::LocalUrl},
+        storage::Storage,
+    },
     keys::{PublicKey, SecretKey},
     meta::entity::Signatory,
     paths::Paths,
@@ -91,7 +94,7 @@ fn smoke() {
                 credentials_cache_socket.to_string_lossy()
             ))
             .arg("clone")
-            .arg(format!("radl://{}", urn.id))
+            .arg(LocalUrl::from(urn).to_string())
             .arg(repo_dir.path())
             .env("PATH", &path)
             .env("RAD_HOME", rad_dir.path())
@@ -143,7 +146,7 @@ fn setup_repo(path: &Path, credentials_cache_socket: &Path, origin: &RadUrn) -> 
         let oid = builder.write()?;
         repo.find_tree(oid)
     }?;
-    let author = git2::Signature::now("C. Hoskinson", "ch@iohk.io")?;
+    let author = git2::Signature::now("Charlie H.", "ch@iohk.io")?;
     repo.commit(
         Some("refs/heads/master"),
         &author,
@@ -154,7 +157,7 @@ fn setup_repo(path: &Path, credentials_cache_socket: &Path, origin: &RadUrn) -> 
     )?;
 
     repo.set_head("refs/heads/master")?;
-    repo.remote("origin", &format!("radl://{}", origin.id))?;
+    repo.remote("origin", &LocalUrl::from(origin).to_string())?;
 
     let mut config = repo.config()?;
     setup_credential_cache(repo.path(), credentials_cache_socket, &mut config, origin)
@@ -185,8 +188,10 @@ fn setup_credential_cache(
         let stdin = child.stdin.as_mut().expect("could not obtain stdin");
         stdin.write_all(
             format!(
-                "protocol=radl\nhost={}\nusername=radicle\npassword={}",
-                urn.id, PASSPHRASE
+                "protocol={}\nhost={}\nusername=radicle\npassword={}",
+                local::URL_SCHEME,
+                urn.id,
+                PASSPHRASE
             )
             .as_bytes(),
         )?;
@@ -200,8 +205,8 @@ fn setup_credential_cache(
 }
 
 fn setup_path() -> anyhow::Result<PathBuf> {
-    let helper_path = env!("CARGO_BIN_EXE_git-remote-radl");
-    let helper_path = Path::new(helper_path.strip_suffix("git-remote-radl").unwrap());
+    let helper_path = env!("CARGO_BIN_EXE_git-remote-rad");
+    let helper_path = Path::new(helper_path.strip_suffix("git-remote-rad").unwrap());
     let path = match env::var_os("PATH") {
         None => env::join_paths(Some(helper_path)),
         Some(path) => {

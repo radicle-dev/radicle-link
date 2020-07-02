@@ -23,6 +23,7 @@ use futures::{future, stream::StreamExt};
 use tempfile::tempdir;
 
 use librad::{
+    git::local::url::LocalUrl,
     meta::{entity::Signatory, project::ProjectInfo},
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     uri::{self, RadUrn},
@@ -125,7 +126,7 @@ async fn fetches_on_gossip_notify() {
 
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = {
-            librad::git::transport::local::register(librad::git::transport::local::Settings {
+            librad::git::local::transport::register(librad::git::local::transport::Settings {
                 paths: peer1.paths().clone(),
                 signer: peer1_key,
             });
@@ -150,7 +151,7 @@ async fn fetches_on_gossip_notify() {
                 .unwrap()
             };
             let mut origin = repo
-                .remote("origin", &format!("radl://{}", radicle.urn().id))
+                .remote("origin", &LocalUrl::from(radicle.urn()).to_string())
                 .unwrap();
             origin.push(&["refs/heads/master"], None).unwrap();
 

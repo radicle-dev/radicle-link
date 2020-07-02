@@ -16,33 +16,25 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    fmt::{self, Display},
     io::{self, Read, Write},
     path::PathBuf,
     process::{ChildStdin, ChildStdout, Command, Stdio},
-    str::FromStr,
     sync::{Arc, Mutex, Once, RwLock},
     thread,
 };
 
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
-use thiserror::Error;
 
 use crate::{
     git::{
-        ext::into_git_err,
+        ext::{into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER},
+        local::{self, url::LocalUrl},
         storage::{self, Storage, WithSigner},
     },
-    hash::{self, Hash},
     keys::SecretKey,
     paths::Paths,
-    uri::{self, RadUrn},
+    uri::RadUrn,
 };
-
-const URL_SCHEME: &str = "radl";
-
-const UPLOAD_PACK_HEADER: &[u8] = b"001e# service=git-upload-pack\n0000";
-const RECEIVE_PACK_HEADER: &[u8] = b"001f# service=git-receive-pack\n0000";
 
 lazy_static! {
     static ref SETTINGS: Arc<RwLock<Option<Settings>>> = Arc::new(RwLock::new(None));
@@ -60,7 +52,7 @@ pub fn register(settings: Settings) {
     LocalTransportFactory::new().configure(settings);
     unsafe {
         INIT.call_once(move || {
-            git2::transport::register(URL_SCHEME, move |remote| {
+            git2::transport::register(local::URL_SCHEME, move |remote| {
                 Transport::smart(&remote, true, LocalTransportFactory::new())
             })
             .unwrap()
@@ -313,64 +305,5 @@ impl Write for LocalWrite {
 
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
-    }
-}
-
-#[derive(Clone)]
-pub struct LocalUrl {
-    pub repo: Hash,
-}
-
-impl Display for LocalUrl {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}://{}.git", URL_SCHEME, self.repo)
-    }
-}
-
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum ParseError {
-    #[error("Invalid scheme: {0}")]
-    InvalidScheme(String),
-
-    #[error("Cannot-be-a-base URL")]
-    CannotBeABase,
-
-    #[error("Malformed URL")]
-    Url(#[from] url::ParseError),
-
-    #[error(transparent)]
-    Hash(#[from] hash::ParseError),
-}
-
-impl FromStr for LocalUrl {
-    type Err = ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let url = url::Url::parse(s)?;
-        if url.scheme() != URL_SCHEME {
-            return Err(Self::Err::InvalidScheme(url.scheme().to_owned()));
-        }
-        if url.cannot_be_a_base() {
-            return Err(Self::Err::CannotBeABase);
-        }
-
-        let repo = url
-            .host_str()
-            .expect("we checked for cannot-be-a-base. qed")
-            .trim_end_matches(".git")
-            .parse()?;
-
-        Ok(Self { repo })
-    }
-}
-
-impl Into<RadUrn> for LocalUrl {
-    fn into(self) -> RadUrn {
-        RadUrn {
-            id: self.repo,
-            proto: uri::Protocol::Git,
-            path: uri::Path::empty(),
-        }
     }
 }

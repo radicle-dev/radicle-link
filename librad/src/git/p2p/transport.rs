@@ -60,11 +60,7 @@ use futures::{
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
 
 use crate::{
-    git::{
-        ext::into_git_err,
-        header::Header,
-        p2p::{self, url::GitUrl},
-    },
+    git::{ext::into_git_err, header::Header, p2p::url::GitUrl},
     peer::PeerId,
     uri::{self, RadUrn},
 };
@@ -103,7 +99,7 @@ pub fn register() -> RadTransport {
 
     unsafe {
         INIT.call_once(|| {
-            git2::transport::register(p2p::URL_SCHEME, move |remote| {
+            git2::transport::register(super::URL_SCHEME, move |remote| {
                 Transport::smart(&remote, true, RadTransport::new())
             })
             .unwrap();

@@ -41,7 +41,7 @@ use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
 use crate::{
     git::{
-        ext::{into_io_err, References},
+        ext::{into_io_err, References, UPLOAD_PACK_HEADER},
         header::{self, Header},
         types::Namespace,
     },
@@ -108,8 +108,6 @@ impl GitServer {
         }
     }
 }
-
-const ADVERTISE_REFS_HEADER: &[u8] = b"001e# service=git-upload-pack\n0000";
 
 enum UploadPack {
     AdvertiseRefs(process::Child),
@@ -193,7 +191,7 @@ impl UploadPack {
 
                 spawn_child(child);
 
-                send.write_all(ADVERTISE_REFS_HEADER).await?;
+                send.write_all(UPLOAD_PACK_HEADER).await?;
                 futures::io::copy(&mut stdout, &mut send).await.map(|_| ())
             },
 

@@ -18,8 +18,8 @@ git = "https://github.com/radicle-dev/radicle-keystore"
 rev = "27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6"
 
 [[bin]]
-name = "git-remote-radl"
-path = "src/bin/git-remote-radl.rs"
+name = "git-remote-rad"
+path = "src/bin/remote/main.rs"
 
 [dev-dependencies]
 futures = ">= 0.3"

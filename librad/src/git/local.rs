@@ -15,18 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-//! Extensions and wrappers for `git2` types
-
-pub mod blob;
-pub mod error;
-pub mod oid;
-pub mod reference;
-pub mod revwalk;
 pub mod transport;
+pub mod url;
 
-pub use blob::*;
-pub use error::*;
-pub use oid::*;
-pub use reference::*;
-pub use revwalk::*;
-pub use transport::*;
+pub const URL_SCHEME: &str = "rad";

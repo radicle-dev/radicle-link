@@ -16,11 +16,11 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub mod ext;
+pub mod local;
 pub mod p2p;
 pub mod refs;
 pub mod repo;
 pub mod storage;
-pub mod transport;
 pub mod types;
 
 pub(crate) mod header;

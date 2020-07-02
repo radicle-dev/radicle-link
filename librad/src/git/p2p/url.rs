@@ -24,7 +24,6 @@ use thiserror::Error;
 use url::Url;
 
 use crate::{
-    git::p2p,
     hash::{self, Hash},
     peer::{self, PeerId},
     uri::{self, RadUrl, RadUrlRef, RadUrn},
@@ -96,7 +95,7 @@ impl FromStr for GitUrl {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let url = Url::parse(s)?;
-        if url.scheme() != p2p::URL_SCHEME {
+        if url.scheme() != super::URL_SCHEME {
             return Err(Self::Err::InvalidScheme(url.scheme().to_owned()));
         }
         if url.cannot_be_a_base() {
@@ -177,7 +176,7 @@ impl<'a> Display for GitUrlRef<'a> {
         write!(
             f,
             "{}://{}@{}/{}.git",
-            p2p::URL_SCHEME,
+            super::URL_SCHEME,
             self.local_peer,
             self.remote_peer,
             self.repo

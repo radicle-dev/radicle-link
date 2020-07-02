@@ -25,7 +25,7 @@ use std::{
 };
 
 use librad::{
-    git::transport::local::{LocalTransport, Mode::Stateful, Settings},
+    git::local::transport::{LocalTransport, Mode::Stateful, Settings},
     keys::PublicKey,
     paths::Paths,
 };
