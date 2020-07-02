@@ -165,11 +165,10 @@ pub struct EntityTimestamp(i64);
 impl EntityTimestamp {
     /// Current time as Entity timestamp
     pub fn current_time() -> Self {
-        EntityTimestamp(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |elapsed| elapsed.as_millis() as i64),
-        )
+        EntityTimestamp(SystemTime::now().duration_since(UNIX_EPOCH).map_or_else(
+            |err| -(err.duration().as_millis() as i64),
+            |elapsed| elapsed.as_millis() as i64,
+        ))
     }
 
     /// Milliseconds from Unix epoch
@@ -902,9 +901,9 @@ where
     T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
 {
     /// Fully verify this entity
-    pub fn check<CACHE>(&self, cache: &mut CACHE) -> Result<(), Error>
+    pub fn check<Cache>(&self, cache: &mut Cache) -> Result<(), Error>
     where
-        CACHE: EntityCache + KeyOwnershipStore,
+        Cache: EntityCache + KeyOwnershipStore,
     {
         self.check_signatures()?;
         self.check_certifiers(cache)?;
@@ -944,9 +943,9 @@ where
     T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
 {
     /// Fully verify this entity
-    pub fn verify<CACHE>(self, cache: &mut CACHE) -> Result<Entity<T, Verified>, Error>
+    pub fn verify<Cache>(self, cache: &mut Cache) -> Result<Entity<T, Verified>, Error>
     where
-        CACHE: EntityCache + KeyOwnershipStore,
+        Cache: EntityCache + KeyOwnershipStore,
     {
         self.check_certifiers(cache).map(|_| self.with_status())
     }

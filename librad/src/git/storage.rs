@@ -984,19 +984,12 @@ mod tests {
         let paths = Paths::from_root(tmp).unwrap();
         let user_key = SecretKey::new();
         let store = Storage::init(&paths, user_key.clone()).unwrap();
-        let cache = EntityMemoryCache::default();
+        let mut cache = EntityMemoryCache::default();
 
         // Create signed and verified user
         let mut user = User::<Draft>::create("user".to_owned(), user_key.public()).unwrap();
         user.sign_owned(&user_key).unwrap();
-        let verified_user = user
-            .clone()
-            .verify_signatures()
-            .unwrap()
-            .verify_certifiers(&cache)
-            .unwrap()
-            .verify_update(&None)
-            .unwrap();
+        let verified_user = user.clone().verify(&mut cache).unwrap();
 
         // Create and sign two projects
         let mut project_foo = Project::<Draft>::create("foo".to_owned(), user.urn()).unwrap();
