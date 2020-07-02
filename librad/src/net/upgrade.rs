@@ -33,7 +33,7 @@ use minicbor::{Decode, Encode};
 use thiserror::Error;
 
 use crate::{
-    git::transport::p2p::GitStream,
+    git::p2p::transport::GitStream,
     net::{
         codec::{CborCodec, CborCodecError},
         quic,

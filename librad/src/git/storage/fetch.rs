@@ -21,8 +21,8 @@ use thiserror::Error;
 
 use crate::{
     git::{
+        p2p::url::GitUrl,
         refs::Refs,
-        transport::p2p::GitUrl,
         types::{Reference, Refspec},
     },
     peer::PeerId,

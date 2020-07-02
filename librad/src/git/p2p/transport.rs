@@ -20,7 +20,7 @@
 //! The `register` function registers a transport which expects URLs of the
 //! form:
 //!
-//! `radp://LOCAL_PEER_ID@REMOTE_PEER_ID/PROJECT_ID`
+//! `rad-p2p://LOCAL_PEER_ID@REMOTE_PEER_ID/PROJECT_ID`
 //!
 //! The local peer id is needed to support testing with multiple peers:
 //! `libgit2` stores custom transports in a `static` variable, so we can
@@ -48,9 +48,8 @@
 
 use std::{
     collections::HashMap,
-    fmt::{self, Display},
+    fmt::Display,
     io::{self, Read, Write},
-    str::FromStr,
     sync::{Arc, Once, RwLock},
 };
 
@@ -59,17 +58,16 @@ use futures::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
-use thiserror::Error;
-use url::Url;
 
 use crate::{
-    git::{ext::into_git_err, header::Header},
-    hash::{self, Hash},
-    peer::{self, PeerId},
-    uri::{self, RadUrl, RadUrlRef, RadUrn},
+    git::{
+        ext::into_git_err,
+        header::Header,
+        p2p::{self, url::GitUrl},
+    },
+    peer::PeerId,
+    uri::{self, RadUrn},
 };
-
-const URL_SCHEME: &str = "radp";
 
 type Factories = Arc<RwLock<HashMap<PeerId, Box<dyn GitStreamFactory>>>>;
 
@@ -90,7 +88,7 @@ pub trait GitStreamFactory: Sync + Send {
     async fn open_stream(&self, to: &PeerId) -> Option<Box<dyn GitStream>>;
 }
 
-/// Register the `radp://` transport with `libgit`.
+/// Register the `rad-p2p://` transport with `libgit`.
 ///
 /// # Safety:
 ///
@@ -105,7 +103,7 @@ pub fn register() -> RadTransport {
 
     unsafe {
         INIT.call_once(|| {
-            git2::transport::register(URL_SCHEME, move |remote| {
+            git2::transport::register(p2p::URL_SCHEME, move |remote| {
                 Transport::smart(&remote, true, RadTransport::new())
             })
             .unwrap();
@@ -217,158 +215,6 @@ impl Write for RadSubTransport {
             self.ensure_header_sent().await?;
             self.stream.flush().await.map_err(io_error)
         })
-    }
-}
-
-#[derive(Clone)]
-pub struct GitUrl {
-    pub local_peer: PeerId,
-    pub remote_peer: PeerId,
-    pub repo: Hash,
-}
-
-impl GitUrl {
-    pub fn from_rad_url(url: RadUrl, local_peer: PeerId) -> Self {
-        Self::from_rad_urn(url.urn, local_peer, url.authority)
-    }
-
-    pub fn from_rad_urn(urn: RadUrn, local_peer: PeerId, remote_peer: PeerId) -> Self {
-        Self {
-            local_peer,
-            remote_peer,
-            repo: urn.id,
-        }
-    }
-
-    pub fn as_ref(&self) -> GitUrlRef {
-        GitUrlRef {
-            local_peer: &self.local_peer,
-            remote_peer: &self.remote_peer,
-            repo: &self.repo,
-        }
-    }
-
-    pub fn into_rad_url(self) -> RadUrl {
-        self.into()
-    }
-}
-
-impl Display for GitUrl {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.as_ref().fmt(f)
-    }
-}
-
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum ParseError {
-    #[error("Invalid scheme: {0}")]
-    InvalidScheme(String),
-
-    #[error("Missing repo path")]
-    MissingRepo,
-
-    #[error("Cannot-be-a-base URL")]
-    CannotBeABase,
-
-    #[error(transparent)]
-    PeerId(#[from] peer::conversion::Error),
-
-    #[error("Malformed URL")]
-    Url(#[from] url::ParseError),
-
-    #[error(transparent)]
-    Hash(#[from] hash::ParseError),
-}
-
-impl FromStr for GitUrl {
-    type Err = ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let url = Url::parse(s)?;
-        if url.scheme() != URL_SCHEME {
-            return Err(Self::Err::InvalidScheme(url.scheme().to_owned()));
-        }
-        if url.cannot_be_a_base() {
-            return Err(Self::Err::CannotBeABase);
-        }
-
-        let local_peer = url.username().parse()?;
-        let remote_peer = url
-            .host_str()
-            .expect("we checked for cannot-be-a-base. qed")
-            .parse()?;
-        let repo = url
-            .path_segments()
-            .expect("we checked for cannot-be-a-base. qed")
-            .next()
-            .ok_or_else(|| Self::Err::MissingRepo)
-            .and_then(|path| {
-                path.trim_end_matches(".git")
-                    .parse()
-                    .map_err(Self::Err::Hash)
-            })?;
-
-        Ok(Self {
-            local_peer,
-            remote_peer,
-            repo,
-        })
-    }
-}
-
-impl Into<RadUrl> for GitUrl {
-    fn into(self) -> RadUrl {
-        RadUrl {
-            authority: self.remote_peer,
-            urn: RadUrn {
-                id: self.repo,
-                proto: uri::Protocol::Git,
-                path: uri::Path::empty(),
-            },
-        }
-    }
-}
-
-pub struct GitUrlRef<'a> {
-    pub local_peer: &'a PeerId,
-    pub remote_peer: &'a PeerId,
-    pub repo: &'a Hash,
-}
-
-impl<'a> GitUrlRef<'a> {
-    pub fn from_rad_url(url: &'a RadUrl, local_peer: &'a PeerId) -> Self {
-        Self::from_rad_urn(&url.urn, local_peer, &url.authority)
-    }
-
-    pub fn from_rad_url_ref(url: RadUrlRef<'a>, local_peer: &'a PeerId) -> Self {
-        Self::from_rad_urn(url.urn, local_peer, url.authority)
-    }
-
-    pub fn from_rad_urn(urn: &'a RadUrn, local_peer: &'a PeerId, remote_peer: &'a PeerId) -> Self {
-        Self {
-            local_peer,
-            remote_peer,
-            repo: &urn.id,
-        }
-    }
-
-    pub fn to_owned(&self) -> GitUrl {
-        GitUrl {
-            local_peer: self.local_peer.clone(),
-            remote_peer: self.remote_peer.clone(),
-            repo: self.repo.clone(),
-        }
-    }
-}
-
-impl<'a> Display for GitUrlRef<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}://{}@{}/{}.git",
-            URL_SCHEME, self.local_peer, self.remote_peer, self.repo
-        )
     }
 }
 

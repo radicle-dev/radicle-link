@@ -15,12 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod ext;
-pub mod p2p;
-pub mod refs;
-pub mod repo;
-pub mod storage;
+pub mod server;
 pub mod transport;
-pub mod types;
+pub mod url;
 
-pub(crate) mod header;
+pub const URL_SCHEME: &str = "rad-p2p";
