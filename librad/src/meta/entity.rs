@@ -345,7 +345,7 @@ where
 
     /// `urn` getter
     pub fn urn(&self) -> RadUrn {
-        RadUrn::new(self.hash.to_owned(), Protocol::Git, Path::new())
+        RadUrn::new(self.root_hash.to_owned(), Protocol::Git, Path::new())
     }
 
     /// `parent_hash` getter
