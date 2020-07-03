@@ -1413,10 +1413,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "radicle-git-helpers"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "git2",
+ "libgit2-sys",
+ "librad",
+ "librad-test",
+ "radicle-keystore",
+ "tempfile",
+]
+
+[[package]]
 name = "radicle-keystore"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-keystore?rev=a04f4dbaec4d05be2c7a516a36b5bbec02ee32aa#a04f4dbaec4d05be2c7a516a36b5bbec02ee32aa"
+source = "git+https://github.com/radicle-dev/radicle-keystore?rev=27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6#27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6"
 dependencies = [
+ "async-trait",
+ "futures",
  "lazy_static",
  "rpassword",
  "secstr",

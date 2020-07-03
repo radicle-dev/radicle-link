@@ -65,7 +65,7 @@ features = ["tls-rustls"]
 
 [dependencies.radicle-keystore]
 git = "https://github.com/radicle-dev/radicle-keystore"
-rev = "a04f4dbaec4d05be2c7a516a36b5bbec02ee32aa"
+rev = "27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6"
 
 [dependencies.rustls]
 version = "0.17"

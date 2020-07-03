@@ -1,0 +1,38 @@
+[package]
+name = "radicle-git-helpers"
+description = "Git helpers for radicle-link"
+version = "0.1.0"
+authors = ["The Radicle Team <dev@radicle.xyz>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+anyhow = "1"
+
+[dependencies.librad]
+path = "../librad"
+
+[dependencies.radicle-keystore]
+git = "https://github.com/radicle-dev/radicle-keystore"
+rev = "27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6"
+
+[dependencies.git2]
+version = "0"
+default-features = false
+features = []
+
+[dependencies.libgit2-sys]
+version = "0"
+default-features = false
+features = []
+
+[[bin]]
+name = "git-remote-rad"
+path = "src/bin/remote/main.rs"
+
+[dev-dependencies]
+futures = ">= 0.3"
+tempfile = "3"
+
+[dev-dependencies.librad-test]
+path = "../librad-test"
