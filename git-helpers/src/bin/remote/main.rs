@@ -19,18 +19,23 @@
 
 use std::{
     env,
-    io::{self, BufRead, BufReader, Write},
-    path::PathBuf,
-    thread,
+    io,
+    path::{Path, PathBuf},
 };
 
 use librad::{
-    git::local::transport::{LocalTransport, Mode::Stateful, Settings},
-    keys::PublicKey,
+    git::local::{
+        transport::{LocalTransport, Localio, Mode::Stateful, Settings},
+        url::LocalUrl,
+    },
+    keys::{PublicKey, SecretKey},
     paths::Paths,
 };
 use radicle_git_helpers::credential;
 use radicle_keystore::{crypto::Pwhash, FileStorage, Keystore};
+
+// FIXME: this should be defined elsewhere to be consistent between applications
+const SECRET_KEY_FILE: &str = "librad.key";
 
 fn main() -> anyhow::Result<()> {
     let url = {
@@ -43,15 +48,9 @@ fn main() -> anyhow::Result<()> {
 
     let git_dir = env::var("GIT_DIR").map(PathBuf::from)?;
 
-    let transport = {
-        let pass = credential::Git::new(&git_dir).get(&url)?;
+    let mut transport = {
         let paths = Paths::from_env()?;
-        let keystore = FileStorage::<_, PublicKey, _, _>::new(
-            &paths.keys_dir().join("librad.key"),
-            Pwhash::new(pass),
-        );
-        let key = keystore.get_key().map(|keypair| keypair.secret_key)?;
-
+        let key = get_signer(&git_dir, paths.keys_dir(), &url)?;
         LocalTransport::new(Settings { paths, signer: key })
     }?;
 
@@ -72,48 +71,11 @@ fn main() -> anyhow::Result<()> {
                 unknown => Err(anyhow::anyhow!("unknown service: {}", unknown)),
             }?;
 
-            let (read, mut write) = transport.connect(url, service, Stateful)?.split();
-
-            // ack ok
             println!();
 
-            thread::spawn(move || {
-                // For the ways of the IOs are inscrutable, thou shallt not
-                // simply `io::copy` from the child's stdout to stdout. Instead,
-                // a `pkt-line` flush packet shallt conjure a flush on the
-                // handle -- or else thou shallt block in eternity!
-                let t1: thread::JoinHandle<io::Result<()>> = thread::spawn(move || {
-                    let mut read = BufReader::new(read);
-                    let mut stdout = io::stdout();
-                    loop {
-                        let bytes = read.fill_buf()?;
-                        let len = bytes.len();
-                        let flush = bytes.ends_with(b"0000");
-
-                        stdout.write_all(bytes)?;
-                        read.consume(len);
-
-                        if flush {
-                            stdout.flush()?;
-                        }
-
-                        if len == 0 {
-                            stdout.flush()?;
-                            break;
-                        }
-                    }
-
-                    Ok(())
-                });
-                let t2: thread::JoinHandle<io::Result<()>> =
-                    thread::spawn(move || io::copy(&mut io::stdin(), &mut write).and(Ok(())));
-
-                t1.join()
-                    .expect("child read->stdout panicked")
-                    .and_then(|()| t2.join().expect("stdin->child write panicked"))
-            })
-            .join()
-            .expect("IO pipe panicked")?;
+            transport
+                .connect(url, service, Stateful, unsafe { Localio::native() })?
+                .wait()?;
 
             break;
         }
@@ -122,4 +84,14 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn get_signer(git_dir: &Path, keys_dir: &Path, url: &LocalUrl) -> anyhow::Result<SecretKey> {
+    let pass = credential::Git::new(git_dir).get(url)?;
+    let file = keys_dir.join(SECRET_KEY_FILE);
+    let keystore = FileStorage::<_, PublicKey, _, _>::new(&file, Pwhash::new(pass));
+    keystore
+        .get_key()
+        .map(|keypair| keypair.secret_key)
+        .map_err(|e| e.into())
 }

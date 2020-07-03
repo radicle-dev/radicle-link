@@ -16,14 +16,15 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    io::{self, Read, Write},
+    io::{self, Cursor, Read, Write},
     path::PathBuf,
-    process::{ChildStdin, ChildStdout, Command, Stdio},
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{Arc, Mutex, Once, RwLock},
     thread,
 };
 
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
+use thiserror::Error;
 
 use crate::{
     git::{
@@ -88,8 +89,12 @@ impl SmartSubtransport for LocalTransportFactory {
             None => Err(git2::Error::from_str("local transport unconfigured")),
             Some(ref settings) => {
                 let url = url.parse::<LocalUrl>().map_err(into_git_err)?;
-                let transport = LocalTransport::new(settings.clone()).map_err(into_git_err)?;
-                let stream = transport.connect(url, service, Mode::Stateless)?;
+
+                let mut transport = LocalTransport::new(settings.clone()).map_err(into_git_err)?;
+                let stream = transport
+                    .stream(url, service, Localio::piped())
+                    .map_err(into_git_err)?;
+
                 Ok(Box::new(stream))
             },
         }
@@ -106,25 +111,120 @@ pub enum Mode {
     Stateful,
 }
 
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("No such URN: {0}")]
+    NoSuchUrn(RadUrn),
+
+    #[error(transparent)]
+    Storage(#[from] storage::Error),
+
+    #[error(transparent)]
+    Git(#[from] git2::Error),
+
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+pub struct Localio {
+    pub child_stdin: Stdio,
+    pub child_stdout: Stdio,
+}
+
+pub struct Connected {
+    process: Child,
+    on_success: Box<dyn FnOnce() -> Result<(), Error> + Send + 'static>,
+}
+
+impl Connected {
+    pub fn wait(mut self) -> Result<(), Error> {
+        let status = self.process.wait()?;
+        if status.success() {
+            (self.on_success)()
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Localio {
+    pub fn piped() -> Self {
+        Self {
+            child_stdin: Stdio::piped(),
+            child_stdout: Stdio::piped(),
+        }
+    }
+
+    #[cfg(unix)]
+    pub unsafe fn native() -> Self {
+        use std::os::unix::io::{AsRawFd, FromRawFd};
+
+        Self {
+            child_stdout: Stdio::from_raw_fd(io::stdout().as_raw_fd()),
+            child_stdin: Stdio::from_raw_fd(io::stdin().as_raw_fd()),
+        }
+    }
+
+    #[cfg(windows)]
+    pub unsafe fn native() -> Self {
+        use std::os::windows::io::{AsRawFd, FromRawFd};
+
+        Self {
+            child_stdout: Stdio::from_raw_fd(io::stdout().as_raw_fd()),
+            child_stdin: Stdio::from_raw_fd(io::stdin().as_raw_fd()),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct LocalTransport {
     storage: Arc<Mutex<Storage<WithSigner>>>,
 }
 
 impl LocalTransport {
-    pub fn new(settings: Settings) -> Result<Self, storage::Error> {
+    pub fn new(settings: Settings) -> Result<Self, Error> {
         let storage = Storage::open(&settings.paths)?.with_signer(settings.signer)?;
         Ok(LocalTransport {
             storage: Arc::new(Mutex::new(storage)),
         })
     }
 
+    pub fn stream(
+        &mut self,
+        url: LocalUrl,
+        service: Service,
+        stdio: Localio,
+    ) -> Result<LocalStream, Error> {
+        let mut child = self.connect(url, service, Mode::Stateless, stdio)?;
+
+        let stdin = child.process.stdin.take().unwrap();
+        let stdout = child.process.stdout.take().unwrap();
+
+        // Spawn a thread to `wait(2)` on the child process
+        thread::spawn(move || child.wait());
+
+        let header = match service {
+            Service::UploadPackLs => Some(UPLOAD_PACK_HEADER.to_vec()),
+            Service::ReceivePackLs => Some(RECEIVE_PACK_HEADER.to_vec()),
+            _ => None,
+        };
+
+        Ok(LocalStream {
+            read: LocalRead {
+                header,
+                inner: stdout,
+            },
+            write: stdin,
+        })
+    }
+
     pub fn connect(
-        &self,
+        &mut self,
         url: LocalUrl,
         service: Service,
         mode: Mode,
-    ) -> Result<LocalStream, git2::Error> {
+        stdio: Localio,
+    ) -> Result<Connected, Error> {
         let urn = url.into();
         self.guard_has_urn(&urn)?;
 
@@ -164,66 +264,44 @@ impl LocalTransport {
             git.arg("--advertise-refs");
         }
 
-        let mut child = git
+        let Localio {
+            child_stdin,
+            child_stdout,
+        } = stdio;
+
+        let child = git
             .arg(".")
-            .stdout(Stdio::piped())
-            .stdin(Stdio::piped())
+            .stdin(child_stdin)
+            .stdout(child_stdout)
             .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(into_git_err)?;
+            .spawn()?;
 
-        let stdin = child.stdin.take().unwrap();
-        let stdout = child.stdout.take().unwrap();
-
-        // Spawn a thread to `wait(2)` on the child process, to ensure it gets
-        // reaped by the OS. Also update `rad/refs` while we're there.
         let this = self.clone();
-        let was_push = matches!(service, Service::ReceivePack);
-        thread::spawn(move || match child.wait() {
-            Err(e) => eprintln!("error waiting for child: {}", e),
-            Ok(status) => {
-                if status.success() {
-                    if was_push {
-                        this.update_refs(&urn)
-                    }
-                } else {
-                    eprintln!("child exited non-zero: {:?}", status)
+        Ok(Connected {
+            process: child,
+            on_success: Box::new(move || {
+                if matches!(service, Service::ReceivePack) {
+                    return this.update_refs(&urn);
                 }
-            },
-        });
 
-        let header = match mode {
-            Mode::Stateless => match service {
-                Service::UploadPackLs => Some(UPLOAD_PACK_HEADER.to_vec()),
-                Service::ReceivePackLs => Some(RECEIVE_PACK_HEADER.to_vec()),
-                _ => None,
-            },
-
-            Mode::Stateful => None,
-        };
-
-        Ok(LocalStream {
-            read: LocalRead {
-                header,
-                inner: stdout,
-            },
-            write: LocalWrite { inner: stdin },
+                Ok(())
+            }),
         })
     }
 
-    fn guard_has_urn(&self, urn: &RadUrn) -> Result<(), git2::Error> {
+    fn guard_has_urn(&self, urn: &RadUrn) -> Result<(), Error> {
         self.storage
             .lock()
             .unwrap()
             .has_urn(urn)
-            .map_err(into_git_err)
+            .map_err(Error::from)
             .and_then(|have| {
                 have.then_some(())
-                    .ok_or_else(|| git2::Error::from_str(&format!("`{}` not found", urn)))
+                    .ok_or_else(|| Error::NoSuchUrn(urn.clone()))
             })
     }
 
-    fn visible_remotes(&self, urn: &RadUrn) -> Result<impl Iterator<Item = String>, git2::Error> {
+    fn visible_remotes(&self, urn: &RadUrn) -> Result<impl Iterator<Item = String>, Error> {
         const GLOBS: &[&str] = &["remotes/**/heads/*", "remotes/**/tags/*"];
 
         self.storage
@@ -231,33 +309,26 @@ impl LocalTransport {
             .unwrap()
             .references_glob(urn, GLOBS)
             .map(|iter| iter.map(|(name, _)| name).collect::<Vec<_>>())
-            .map_err(into_git_err)
             .map(|v| v.into_iter())
+            .map_err(Error::from)
     }
 
     fn repo_path(&self) -> PathBuf {
         self.storage.lock().unwrap().path().to_path_buf()
     }
 
-    fn update_refs(&self, urn: &RadUrn) {
+    fn update_refs(&self, urn: &RadUrn) -> Result<(), Error> {
         self.storage
             .lock()
             .unwrap()
             .update_refs(urn)
-            .unwrap_or_else(|e| eprintln!("Failed to sign updated refs!\n{}", e))
+            .map_err(Error::from)
     }
 }
 
 pub struct LocalStream {
     read: LocalRead,
-    write: LocalWrite,
-}
-
-impl LocalStream {
-    pub fn split(self) -> (LocalRead, LocalWrite) {
-        let LocalStream { read, write } = self;
-        (read, write)
-    }
+    write: ChildStdin,
 }
 
 impl Read for LocalStream {
@@ -285,25 +356,7 @@ impl Read for LocalRead {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.header.take() {
             None => self.inner.read(buf),
-            Some(hdr) => {
-                buf[..hdr.len()].copy_from_slice(&hdr);
-                buf[hdr.len()] = b'\n';
-                Ok(hdr.len())
-            },
+            Some(hdr) => Cursor::new(hdr).read(buf),
         }
-    }
-}
-
-pub struct LocalWrite {
-    inner: ChildStdin,
-}
-
-impl Write for LocalWrite {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.inner.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
     }
 }
