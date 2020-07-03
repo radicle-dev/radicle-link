@@ -161,6 +161,7 @@ async fn fetches_on_gossip_notify() {
 
         let peer1_storage = peer1.storage();
         let peer2_storage = peer2.storage();
+        let peer2_events = peer2.subscribe().await;
 
         // Create project on peer1, and clone from peer2
         {
@@ -211,27 +212,42 @@ async fn fetches_on_gossip_notify() {
                     &LocalUrl::from_urn(radicle.urn(), peer1.peer_id().clone()).to_string(),
                 )
                 .unwrap();
-            origin.push(&["refs/heads/master"], None).unwrap();
+
+            let mut remote_callbacks = git2::RemoteCallbacks::new();
+            remote_callbacks.push_update_reference(|refname, maybe_error| match maybe_error {
+                None => {
+                    let rev = repo.find_reference(refname)?.target().unwrap();
+
+                    futures::executor::block_on(peer1.protocol().announce(Gossip {
+                        origin: Some(peer1.peer_id().clone()),
+                        urn: RadUrn {
+                            path: uri::Path::parse(refname).unwrap(),
+                            ..radicle.urn()
+                        },
+                        rev: Some(Rev::Git(rev)),
+                    }));
+
+                    Ok(())
+                },
+
+                Some(err) => Err(git2::Error::from_str(&format!(
+                    "Remote rejected {}: {}",
+                    refname, err
+                ))),
+            });
+
+            origin
+                .push(
+                    &["refs/heads/master"],
+                    Some(git2::PushOptions::new().remote_callbacks(remote_callbacks)),
+                )
+                .unwrap();
 
             commit_id
         };
 
-        // Announce the update, and wait for peer2 to receive it
+        // Wait for peer2 to receive the gossip announcement
         {
-            let peer2_events = peer2.subscribe().await;
-
-            peer1
-                .protocol()
-                .announce(Gossip {
-                    origin: Some(peer1.peer_id().clone()),
-                    urn: RadUrn {
-                        path: uri::Path::parse("refs/heads/master").unwrap(),
-                        ..radicle.urn()
-                    },
-                    rev: Some(Rev::Git(commit_id)),
-                })
-                .await;
-
             let peer1_id = peer1.peer_id();
             tokio::time::timeout(
                 Duration::from_secs(5),
