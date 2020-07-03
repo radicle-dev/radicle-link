@@ -126,19 +126,37 @@ pub enum Error {
     Io(#[from] io::Error),
 }
 
+/// A running service (as per the [`Service`] argument) with it's stdio
+/// connected as per [`Localio`].
+///
+/// [`Connected::wait`] MUST be called, in order to `wait(2)` on the child
+/// process, and run post-service hooks.
+#[must_use = "`wait` must be called"]
 pub struct Connected {
     process: Child,
-    on_success: Box<dyn FnOnce() -> Result<(), Error> + Send + 'static>,
+    on_success: Option<Box<dyn FnOnce() -> Result<(), Error> + Send + 'static>>,
 }
 
 impl Connected {
-    pub fn wait(mut self) -> Result<(), Error> {
+    pub fn wait(&mut self) -> Result<(), Error> {
         let status = self.process.wait()?;
         if status.success() {
-            (self.on_success)()
+            match self.on_success.take() {
+                None => Ok(()),
+                Some(f) => f(),
+            }
         } else {
             Ok(())
         }
+    }
+}
+
+// Belts + suspenders
+impl Drop for Connected {
+    fn drop(&mut self) {
+        let _ = self
+            .wait()
+            .map_err(|e| eprintln!("Error in `Drop` for `Connected`: {}", e));
     }
 }
 
@@ -287,13 +305,13 @@ impl LocalTransport {
         let this = self.clone();
         Ok(Connected {
             process: child,
-            on_success: Box::new(move || {
+            on_success: Some(Box::new(move || {
                 if matches!(service, Service::ReceivePack) {
                     return this.update_refs(&urn);
                 }
 
                 Ok(())
-            }),
+            })),
         })
     }
 
