@@ -126,11 +126,6 @@ pub enum Error {
     Io(#[from] io::Error),
 }
 
-pub struct Localio {
-    pub child_stdin: Stdio,
-    pub child_stdout: Stdio,
-}
-
 pub struct Connected {
     process: Child,
     on_success: Box<dyn FnOnce() -> Result<(), Error> + Send + 'static>,
@@ -147,7 +142,17 @@ impl Connected {
     }
 }
 
+/// Connect the forked service's stdio to any [`Stdio`].
+///
+/// The service is either `git-upload-pack` or `git-receive-pack` depending on
+/// the [`Service`] passed to [`LocalTransport::connect`].
+pub struct Localio {
+    pub child_stdin: Stdio,
+    pub child_stdout: Stdio,
+}
+
 impl Localio {
+    /// Arrange for pipes to be arranged between parent and child.
     pub fn piped() -> Self {
         Self {
             child_stdin: Stdio::piped(),
@@ -155,18 +160,21 @@ impl Localio {
         }
     }
 
-    #[cfg(unix)]
+    /// Connect the raw file descriptors of the current process.
+    ///
+    /// That is, [`io::stdout`] is set as the child's stdout, and [`io::stdin`]
+    /// is set as the child's stdin. This avoids having to shuffle the data
+    /// through userspace.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe as per [`FromRawFd`]. Specifically, the function
+    /// assumes exclusive ownership of the underlying file descriptors.
+    /// Failure to adhere to this contract may result in memory unsafety.
     pub unsafe fn native() -> Self {
+        #[cfg(unix)]
         use std::os::unix::io::{AsRawFd, FromRawFd};
-
-        Self {
-            child_stdout: Stdio::from_raw_fd(io::stdout().as_raw_fd()),
-            child_stdin: Stdio::from_raw_fd(io::stdin().as_raw_fd()),
-        }
-    }
-
-    #[cfg(windows)]
-    pub unsafe fn native() -> Self {
+        #[cfg(windows)]
         use std::os::windows::io::{AsRawFd, FromRawFd};
 
         Self {
