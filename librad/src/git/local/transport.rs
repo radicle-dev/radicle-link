@@ -170,7 +170,7 @@ pub struct Localio {
 }
 
 impl Localio {
-    /// Arrange for pipes to be arranged between parent and child.
+    /// Arrange for pipes between parent and child.
     pub fn piped() -> Self {
         Self {
             child_stdin: Stdio::piped(),
