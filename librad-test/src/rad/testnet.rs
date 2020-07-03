@@ -124,37 +124,36 @@ where
         .into_iter()
         .map(|TestPeer { _tmp, peer, key }| (_tmp, (peer, key)))
         .unzip::<_, _, Vec<_>, Vec<_>>();
-    {
-        // unzip2, anyone?
-        let (peers, keys) = peers_and_keys.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
 
-        let (apis, runners) = peers
-            .into_iter()
-            .map(|peer| peer.accept().unwrap())
-            .unzip::<_, _, Vec<_>, Vec<_>>();
+    // unzip2, anyone?
+    let (peers, keys) = peers_and_keys.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
 
-        let events = {
-            let mut events = Vec::with_capacity(len);
-            for api in &apis {
-                events.push(api.protocol().subscribe().await);
-            }
-            events
-        };
-        let connected = wait_connected(events, len);
+    let (apis, runners) = peers
+        .into_iter()
+        .map(|peer| peer.accept().unwrap())
+        .unzip::<_, _, Vec<_>, Vec<_>>();
 
-        let res = future::select(
-            future::select_all(runners).boxed(),
-            Box::pin(async {
-                connected.await;
-                f(apis.into_iter().zip(keys).collect()).await
-            }),
-        )
-        .await;
-
-        match res {
-            Either::Left(_) => unreachable!(),
-            Either::Right((output, _)) => output,
+    let events = {
+        let mut events = Vec::with_capacity(len);
+        for api in &apis {
+            events.push(api.protocol().subscribe().await);
         }
+        events
+    };
+    let connected = wait_connected(events, len);
+
+    let res = future::select(
+        future::select_all(runners).boxed(),
+        Box::pin(async {
+            connected.await;
+            f(apis.into_iter().zip(keys).collect()).await
+        }),
+    )
+    .await;
+
+    match res {
+        Either::Left(_) => unreachable!(),
+        Either::Right((output, _)) => output,
     }
 }
 
