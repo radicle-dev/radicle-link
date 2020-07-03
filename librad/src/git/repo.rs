@@ -120,29 +120,6 @@ impl<'a> Repo<'a, WithSigner> {
         self.storage.track(&self.urn, peer).map_err(Error::from)
     }
 
-    // FIXME: remove. needed for testing atm
-    pub fn index(&self) -> Result<git2::Index, Error> {
-        self.storage.index().map_err(Error::from)
-    }
-
-    // FIXME: remove. needed for testing atm
-    pub fn find_tree(&self, oid: git2::Oid) -> Result<git2::Tree, Error> {
-        self.storage.find_tree(oid).map_err(Error::from)
-    }
-
-    // FIXME: remove. needed for testing atm
-    pub fn commit(
-        &self,
-        branch: &str,
-        msg: &str,
-        tree: &git2::Tree,
-        parents: &[&git2::Commit],
-    ) -> Result<git2::Oid, Error> {
-        self.storage
-            .commit(&self.urn, branch, msg, tree, parents)
-            .map_err(Error::from)
-    }
-
     /// Set the `rad/self` identity for this repo
     ///
     /// [`None`] removes `rad/self`, if present.

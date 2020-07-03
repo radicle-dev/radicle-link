@@ -20,8 +20,10 @@
 use std::time::Duration;
 
 use futures::{future, stream::StreamExt};
+use tempfile::tempdir;
 
 use librad::{
+    git::local::url::LocalUrl,
     meta::{entity::Signatory, project::ProjectInfo},
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     uri::{self, RadUrn},
@@ -122,16 +124,38 @@ async fn fetches_on_gossip_notify() {
             .unwrap();
         }
 
-        // Add a commit on peer1
+        // Check out a working copy on peer1, add a commit, and push it
         let commit_id = {
-            let repo = peer1_storage.open_repo(radicle.urn()).unwrap();
-            let empty_tree = {
-                let mut index = repo.index().unwrap();
-                let oid = index.write_tree().unwrap();
-                repo.find_tree(oid).unwrap()
-            };
-            repo.commit("master", "Initial commit", &empty_tree, &[])
+            librad::git::local::transport::register(librad::git::local::transport::Settings {
+                paths: peer1.paths().clone(),
+                signer: peer1_key,
+            });
+
+            let tmp = tempdir().unwrap();
+            let repo = git2::Repository::init(tmp.path()).unwrap();
+            let commit_id = {
+                let empty_tree = {
+                    let mut index = repo.index().unwrap();
+                    let oid = index.write_tree().unwrap();
+                    repo.find_tree(oid).unwrap()
+                };
+                let author = git2::Signature::now("The Animal", "animal@muppets.com").unwrap();
+                repo.commit(
+                    Some("refs/heads/master"),
+                    &author,
+                    &author,
+                    "Initial commit",
+                    &empty_tree,
+                    &[],
+                )
                 .unwrap()
+            };
+            let mut origin = repo
+                .remote("origin", &LocalUrl::from(radicle.urn()).to_string())
+                .unwrap();
+            origin.push(&["refs/heads/master"], None).unwrap();
+
+            commit_id
         };
 
         // Announce the update, and wait for peer2 to receive it

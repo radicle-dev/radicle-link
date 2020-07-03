@@ -859,6 +859,7 @@ dependencies = [
  "governor",
  "hex",
  "lazy_static",
+ "libc",
  "libgit2-sys",
  "librad-test",
  "log",
