@@ -22,9 +22,11 @@ pub mod error;
 pub mod oid;
 pub mod reference;
 pub mod revwalk;
+pub mod transport;
 
 pub use blob::*;
 pub use error::*;
 pub use oid::*;
 pub use reference::*;
 pub use revwalk::*;
+pub use transport::*;

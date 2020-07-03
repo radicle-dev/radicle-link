@@ -20,7 +20,7 @@
 //! The `register` function registers a transport which expects URLs of the
 //! form:
 //!
-//! `rad://LOCAL_PEER_ID@REMOTE_PEER_ID/PROJECT_ID`
+//! `rad-p2p://LOCAL_PEER_ID@REMOTE_PEER_ID/PROJECT_ID`
 //!
 //! The local peer id is needed to support testing with multiple peers:
 //! `libgit2` stores custom transports in a `static` variable, so we can
@@ -60,8 +60,7 @@ use futures::{
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
 
 use crate::{
-    git::{header::Header, url::GitUrl},
-    hash::Hash,
+    git::{ext::into_git_err, header::Header, p2p::url::GitUrl},
     peer::PeerId,
     uri::{self, RadUrn},
 };
@@ -72,7 +71,7 @@ lazy_static! {
     static ref FACTORIES: Factories = Arc::new(RwLock::new(HashMap::with_capacity(1)));
 }
 
-/// The underlying [`AsyncRead`] + [`AsyncRead`] of a [`RadSubTransport`]
+/// The underlying [`AsyncRead`] + [`AsyncWrite`] of a [`RadSubTransport`]
 ///
 /// We need this as a trait because we can't write `Box<dyn AsyncRead +
 /// AsyncWrite + Unpin + Send>` directly.
@@ -85,7 +84,7 @@ pub trait GitStreamFactory: Sync + Send {
     async fn open_stream(&self, to: &PeerId) -> Option<Box<dyn GitStream>>;
 }
 
-/// Register the `rad+git://` transport with `libgit`.
+/// Register the `rad-p2p://` transport with `libgit`.
 ///
 /// # Safety:
 ///
@@ -100,7 +99,7 @@ pub fn register() -> RadTransport {
 
     unsafe {
         INIT.call_once(|| {
-            git2::transport::register("rad+git", move |remote| {
+            git2::transport::register(super::URL_SCHEME, move |remote| {
                 Transport::smart(&remote, true, RadTransport::new())
             })
             .unwrap();
@@ -143,18 +142,17 @@ impl SmartSubtransport for RadTransport {
     fn action(
         &self,
         url: &str,
-        action: Service,
+        service: Service,
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        let url: GitUrl = url.parse().map_err(git_error)?;
+        let url: GitUrl = url.parse().map_err(into_git_err)?;
         let stream = self
             .open_stream(&url.local_peer, &url.remote_peer)
-            .ok_or_else(|| git_error(format!("No connection to {}", url.remote_peer)))?;
+            .ok_or_else(|| into_git_err(format!("No connection to {}", url.remote_peer)))?;
 
         Ok(Box::new(RadSubTransport {
             header_sent: false,
-            remote_peer: url.remote_peer,
-            remote_repo: url.repo,
-            service: action,
+            url,
+            service,
             stream,
         }))
     }
@@ -166,8 +164,7 @@ impl SmartSubtransport for RadTransport {
 
 struct RadSubTransport {
     header_sent: bool,
-    remote_peer: PeerId,
-    remote_repo: Hash,
+    url: GitUrl,
     service: Service,
     stream: Box<dyn GitStream>,
 }
@@ -179,11 +176,11 @@ impl RadSubTransport {
             let header = Header::new(
                 self.service,
                 RadUrn::new(
-                    self.remote_repo.clone(),
+                    self.url.repo.clone(),
                     uri::Protocol::Git,
                     uri::Path::empty(),
                 ),
-                self.remote_peer.clone(),
+                self.url.remote_peer.clone(),
             );
             self.stream.write_all(header.to_string().as_bytes()).await
         } else {
@@ -215,13 +212,6 @@ impl Write for RadSubTransport {
             self.stream.flush().await.map_err(io_error)
         })
     }
-}
-
-fn git_error<E: Display>(err: E) -> git2::Error {
-    // libgit will always tell us "an unknown error occurred", so log them out
-    // here
-    tracing::error!("git transport error: {}", err);
-    git2::Error::from_str(&err.to_string())
 }
 
 fn io_error<E: Display>(err: E) -> io::Error {

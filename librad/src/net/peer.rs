@@ -28,7 +28,7 @@ use thiserror::Error;
 use crate::{
     git::{
         self,
-        server::GitServer,
+        p2p::server::GitServer,
         storage::{self, Storage as GitStorage, WithSigner},
     },
     internal::{borrow::TryToOwned, channel::Fanout},
@@ -264,7 +264,8 @@ impl Peer {
         );
 
         let protocol = Protocol::new(gossip, git);
-        git::transport::register().register_stream_factory(&peer_id, Box::new(protocol.clone()));
+        git::p2p::transport::register()
+            .register_stream_factory(&peer_id, Box::new(protocol.clone()));
 
         let run_loop = protocol
             .clone()

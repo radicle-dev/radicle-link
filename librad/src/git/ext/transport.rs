@@ -15,11 +15,5 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod ext;
-pub mod p2p;
-pub mod refs;
-pub mod repo;
-pub mod storage;
-pub mod types;
-
-pub(crate) mod header;
+pub const UPLOAD_PACK_HEADER: &[u8] = b"001e# service=git-upload-pack\n0000";
+pub const RECEIVE_PACK_HEADER: &[u8] = b"001f# service=git-receive-pack\n0000";

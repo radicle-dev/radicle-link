@@ -36,7 +36,7 @@ use minicbor::{Decode, Encode};
 use thiserror::Error;
 
 use crate::{
-    git::{
+    git::p2p::{
         server::GitServer,
         transport::{GitStream, GitStreamFactory},
     },

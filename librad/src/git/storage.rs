@@ -38,10 +38,10 @@ use crate::{
             Oid,
             References,
         },
+        p2p::url::{GitUrl, GitUrlRef},
         refs::{self, Refs},
         repo::Repo,
         types::Reference,
-        url::{GitUrl, GitUrlRef},
     },
     hash::Hash,
     internal::{

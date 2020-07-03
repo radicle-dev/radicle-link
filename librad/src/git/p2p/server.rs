@@ -33,9 +33,7 @@ use std::{
 
 use futures::{
     self,
-    future,
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
-    stream::TryStreamExt,
 };
 use git2::transport::Service;
 use tokio::process::{self, Command};
@@ -43,7 +41,7 @@ use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
 use crate::{
     git::{
-        ext::References,
+        ext::{into_io_err, References, UPLOAD_PACK_HEADER},
         header::{self, Header},
         types::Namespace,
     },
@@ -111,15 +109,9 @@ impl GitServer {
     }
 }
 
-const ADVERTISE_REFS_HEADER: &[u8] = b"001e# service=git-upload-pack\n0000";
-
 enum UploadPack {
     AdvertiseRefs(process::Child),
     UploadPack(process::Child),
-}
-
-fn git2io(e: git2::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, e)
 }
 
 impl UploadPack {
@@ -135,7 +127,7 @@ impl UploadPack {
 
         // FIXME: we should probably keep one git2::Repository around, but
         // `GitServer` needs to be `Sync`
-        let repo = git2::Repository::open_bare(repo_path).map_err(git2io)?;
+        let repo = git2::Repository::open_bare(repo_path).map_err(into_io_err)?;
         let mut refs = References::from_globs(
             &repo,
             &[
@@ -143,7 +135,7 @@ impl UploadPack {
                 format!("refs/namespaces/{}/refs/remotes/**/rad/ids/*", namespace),
             ],
         )
-        .map_err(git2io)?;
+        .map_err(into_io_err)?;
 
         for id_ref in refs.names() {
             if let Some(id) = id_ref.ok().and_then(|name| name.split('/').next_back()) {
@@ -165,7 +157,7 @@ impl UploadPack {
         ])
         .current_dir(repo_path)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::inherit())
         .spawn()
         .map(Self::AdvertiseRefs)
     }
@@ -183,7 +175,7 @@ impl UploadPack {
         .current_dir(repo_path)
         .stdout(Stdio::piped())
         .stdin(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::inherit())
         .spawn()
         .map(Self::UploadPack)
     }
@@ -196,35 +188,22 @@ impl UploadPack {
         match self {
             Self::AdvertiseRefs(mut child) => {
                 let mut stdout = child.stdout.take().unwrap().compat();
-                let stderr = BufReader::new(child.stderr.take().unwrap().compat());
 
                 spawn_child(child);
 
-                send.write_all(ADVERTISE_REFS_HEADER).await?;
-                futures::try_join!(
-                    futures::io::copy(&mut stdout, &mut send),
-                    stderr.lines().try_for_each(|line| {
-                        tracing::trace!(git.uploadpack = %line);
-                        future::ready(Ok(()))
-                    })
-                )
-                .map(|_| ())
+                send.write_all(UPLOAD_PACK_HEADER).await?;
+                futures::io::copy(&mut stdout, &mut send).await.map(|_| ())
             },
 
             Self::UploadPack(mut child) => {
                 let mut stdin = child.stdin.take().unwrap().compat_write();
                 let mut stdout = child.stdout.take().unwrap().compat();
-                let stderr = BufReader::new(child.stderr.take().unwrap().compat());
 
                 spawn_child(child);
 
                 futures::try_join!(
                     futures::io::copy(&mut recv, &mut stdin),
                     futures::io::copy(&mut stdout, &mut send),
-                    stderr.lines().try_for_each(|line| {
-                        tracing::trace!(git.uploadpack = %line);
-                        future::ready(Ok(()))
-                    })
                 )
                 .map(|_| ())
             },
@@ -233,11 +212,7 @@ impl UploadPack {
 }
 
 fn git_tracing(git: &mut Command) {
-    let mut enable = || {
-        git.env("GIT_TRACE", "1").env("GIT_TRACE_PACKET", "1");
-        true
-    };
-    tracing::trace!(git.trace.enabled = enable())
+    git.envs(::std::env::vars().filter(|(key, _)| key.starts_with("GIT_TRACE")));
 }
 
 async fn send_err<W>(writer: &mut W, msg: &str) -> io::Result<()>

@@ -15,8 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#![allow(unused)]
-
 use std::{
     fmt::{self, Display},
     str::FromStr,
@@ -73,7 +71,7 @@ impl Display for GitUrl {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ParseError {
-    #[error("Invalid scheme: {0}, expected rad+git://")]
+    #[error("Invalid scheme: {0}")]
     InvalidScheme(String),
 
     #[error("Missing repo path")]
@@ -97,7 +95,7 @@ impl FromStr for GitUrl {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let url = Url::parse(s)?;
-        if url.scheme() != "rad+git" {
+        if url.scheme() != super::URL_SCHEME {
             return Err(Self::Err::InvalidScheme(url.scheme().to_owned()));
         }
         if url.cannot_be_a_base() {
@@ -177,8 +175,11 @@ impl<'a> Display for GitUrlRef<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "rad+git://{}@{}/{}.git",
-            self.local_peer, self.remote_peer, self.repo
+            "{}://{}@{}/{}.git",
+            super::URL_SCHEME,
+            self.local_peer,
+            self.remote_peer,
+            self.repo
         )
     }
 }
