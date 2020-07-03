@@ -198,14 +198,11 @@ impl<S: Clone> Storage<S> {
         T: Clone + Serialize + DeserializeOwned + EntityInfoExt,
         P: Into<Option<PeerId>>,
     {
-        let rad_id = Reference::rad_id(urn.id.clone()).set_remote(peer.into());
-        let blob = Blob::Tip {
-            branch: rad_id.borrow().into(),
-            path: Path::new("id"),
-        }
-        .get(&self.backend)?;
-
-        Entity::<T, Draft>::from_json_slice(blob.content()).map_err(Error::from)
+        self.metadata_from_reference(
+            Reference::rad_id(urn.id.clone())
+                .set_remote(peer.into())
+                .borrow(),
+        )
     }
 
     /// Like [`Storage::metadata`], but for situations where the type is not
@@ -220,14 +217,11 @@ impl<S: Clone> Storage<S> {
     where
         P: Into<Option<PeerId>>,
     {
-        let rad_id = Reference::rad_id(urn.id.clone()).set_remote(peer.into());
-        let blob = Blob::Tip {
-            branch: rad_id.borrow().into(),
-            path: Path::new("id"),
-        }
-        .get(&self.backend)?;
-
-        GenericDraftEntity::from_json_slice(blob.content()).map_err(Error::from)
+        self.metadata_from_reference(
+            Reference::rad_id(urn.id.clone())
+                .set_remote(peer.into())
+                .borrow(),
+        )
     }
 
     /// Get all the [`Entity`] data in this `Storage`.
@@ -239,15 +233,7 @@ impl<S: Clone> Storage<S> {
     ) -> Result<impl Iterator<Item = Result<GenericDraftEntity, Error>> + 'a, Error> {
         let iter = References::from_globs(&self.backend, &["refs/namespaces/*/rad/id"])?;
 
-        Ok(iter.map(move |reference| {
-            let reference = reference?;
-            let blob = Blob::Tip {
-                branch: reference.into(),
-                path: Path::new("id"),
-            }
-            .get(&self.backend)?;
-            GenericDraftEntity::from_json_slice(blob.content()).map_err(Error::from)
-        }))
+        Ok(iter.map(move |reference| self.metadata_from_reference(reference?)))
     }
 
     /// Retrieve the `rad/self` identity configured via
@@ -255,6 +241,19 @@ impl<S: Clone> Storage<S> {
     pub fn default_rad_self(&self) -> Result<User<Draft>, Error> {
         let urn = Config::try_from(&self.backend)?.user()?;
         self.metadata(&urn)
+    }
+
+    /// Get the `rad/self` identity for `urn`.
+    pub fn get_rad_self(&self, urn: &RadUrn) -> Result<User<Draft>, Error> {
+        self.get_rad_self_of(urn, None)
+    }
+
+    /// Get the `rad/self` identity for the remote `peer` under the `urn`.
+    pub fn get_rad_self_of<P>(&self, urn: &RadUrn, peer: P) -> Result<User<Draft>, Error>
+    where
+        P: Into<Option<PeerId>>,
+    {
+        self.metadata_from_reference(Reference::rad_self(urn.id.clone(), peer).borrow())
     }
 
     pub fn certifiers_of(&self, urn: &RadUrn, peer: &PeerId) -> Result<HashSet<RadUrn>, Error> {
@@ -417,6 +416,20 @@ impl<S: Clone> Storage<S> {
             name.strip_prefix(&namespace_prefix)
                 .map(|name| (name.to_owned(), target))
         }))
+    }
+
+    fn metadata_from_reference<'a, R, T>(&self, reference: R) -> Result<Entity<T, Draft>, Error>
+    where
+        R: Into<blob::Branch<'a>>,
+        T: Clone + Serialize + DeserializeOwned + EntityInfoExt,
+    {
+        let blob = Blob::Tip {
+            branch: reference.into(),
+            path: Path::new("id"),
+        }
+        .get(&self.backend)?;
+
+        Entity::<T, Draft>::from_json_slice(blob.content()).map_err(Error::from)
     }
 
     pub(crate) fn path(&self) -> &Path {
@@ -799,12 +812,15 @@ impl Storage<WithSigner> {
                     },
                 }?;
 
+                let sym_log_msg = &format!("{} -> {}", src, target);
+                tracing::info!("creating symbolic link: {}", sym_log_msg);
+
                 self.backend
                     .reference_symbolic(
                         &src.to_string(),
                         &target.to_string(),
                         /* force */ true,
-                        &format!("{} -> {}", src, target),
+                        sym_log_msg,
                     )
                     .and(Ok(()))
                     .map_err(Error::from)

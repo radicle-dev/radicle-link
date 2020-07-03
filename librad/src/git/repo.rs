@@ -26,6 +26,7 @@ use crate::{
         types::Namespace,
     },
     internal::borrow::{TryCow, TryToOwned},
+    meta::{entity::Draft, user::User},
     peer::PeerId,
     uri::{RadUrl, RadUrn},
 };
@@ -73,6 +74,21 @@ impl<'a, S: Clone> Repo<'a, S> {
     /// Retrieve all directly _as well_ as transitively tracked peers
     pub fn rad_refs(&self) -> Result<Refs, Error> {
         self.storage.rad_refs(&self.urn).map_err(Error::from)
+    }
+
+    /// Get `rad/self` identity for this repo.
+    pub fn get_rad_self(&self) -> Result<User<Draft>, Error> {
+        self.get_rad_self_of(None)
+    }
+
+    /// Get the `rad/self` identity for the remote `peer` under the `urn`.
+    pub fn get_rad_self_of<P>(&self, peer: P) -> Result<User<Draft>, Error>
+    where
+        P: Into<Option<PeerId>>,
+    {
+        self.storage
+            .get_rad_self_of(&self.urn, peer)
+            .map_err(Error::from)
     }
 
     /// Retrieve the certifier URNs of this repo's identity
