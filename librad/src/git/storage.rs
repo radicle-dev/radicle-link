@@ -51,15 +51,7 @@ use crate::{
     },
     keys::SecretKey,
     meta::{
-        entity::{
-            self,
-            data::EntityInfoExt,
-            Draft,
-            Entity,
-            GenericDraftEntity,
-            Signatory,
-            Verified,
-        },
+        entity::{self, data::EntityInfoExt, Draft, Entity, GenericDraftEntity, Verified},
         user::User,
     },
     paths::Paths,
@@ -528,27 +520,18 @@ impl Storage<WithSigner> {
 
         // FIXME: properly verify meta
 
-        if meta.signatures().is_empty() {
-            return Err(Error::UnsignedMetadata);
-        }
-
         let urn = RadUrn::new(
             meta.root_hash().to_owned(),
             uri::Protocol::Git,
             uri::Path::empty(),
         );
 
-        let self_sig = meta
-            .signatures()
-            .get(&self.signer.public())
-            .ok_or(Error::NotSignedBySelf)?;
-
         let rad_id = Reference::rad_id(meta.urn().id);
         let rad_self = Reference::rad_self(meta.urn().id, None);
-        let rad_self_target = match &self_sig.by {
-            Signatory::OwnedKey => rad_id.clone(),
-            Signatory::User(urn) => Reference::rad_id(urn.id.clone()),
-        };
+        let rad_self_urn = meta
+            .signer_by_key(&self.signer.public())
+            .ok_or(Error::NotSignedBySelf)?;
+        let rad_self_target = Reference::rad_id(rad_self_urn.id);
 
         // Invariants
         {
@@ -558,7 +541,7 @@ impl Storage<WithSigner> {
             }
 
             // Check if `rad/ids/*` have valid targets
-            for certifier in meta.certifiers() {
+            for certifier in meta.certifiers().keys() {
                 if !self.has_urn(certifier)? {
                     let certifier = certifier.clone();
                     return Err(Error::MissingCertifier { certifier, urn });
@@ -571,7 +554,7 @@ impl Storage<WithSigner> {
         // self and certifier symrefs
         {
             let res = iter::once((rad_self, rad_self_target))
-                .chain(meta.certifiers().iter().map(|certifier| {
+                .chain(meta.certifiers().keys().map(|certifier| {
                     (
                         Reference::rad_certifier(meta.urn().id, certifier),
                         Reference::rad_id(certifier.id.clone()),
@@ -634,9 +617,7 @@ impl Storage<WithSigner> {
 
         // TODO: properly verify
         let valid: Result<(), Error> = {
-            if meta.signatures().is_empty() {
-                Err(Error::UnsignedMetadata)
-            } else if meta.root_hash() != &urn.id {
+            if meta.root_hash() != &urn.id {
                 Err(Error::RootHashMismatch {
                     expected: urn.id.clone(),
                     actual: meta.root_hash().to_owned(),
@@ -915,14 +896,7 @@ impl Storage<WithSigner> {
 
         let meta_urn = meta.urn();
         meta.signatures()
-            .iter()
-            .map(|(pk, sig)| {
-                let peer_id = PeerId::from(pk.clone());
-                match &sig.by {
-                    Signatory::User(urn) => (peer_id, Some(urn)),
-                    Signatory::OwnedKey => (peer_id, None),
-                }
-            })
+            .map(|(pk, urn)| (PeerId::from(pk.clone()), urn))
             .filter(|(peer, _)| peer != self.peer_id())
             .try_for_each(|(peer, urn)| {
                 tracing::debug!(

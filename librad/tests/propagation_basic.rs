@@ -22,7 +22,7 @@ use std::time::Duration;
 use futures::{future, stream::StreamExt};
 
 use librad::{
-    meta::{entity::Signatory, project::ProjectInfo},
+    meta::project::ProjectInfo,
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     uri::{self, RadUrn},
 };
@@ -47,18 +47,9 @@ async fn can_clone() {
         let mut alice = Alice::new(peer1_key.public());
         let mut radicle = Radicle::new(&alice);
         {
-            let resolves_to_alice = alice.clone();
-            alice
-                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-                .await
-                .unwrap();
+            alice.sign_owned(&peer1_key).unwrap();
             radicle
-                .sign(
-                    &peer1_key,
-                    &Signatory::User(alice.urn()),
-                    &resolves_to_alice,
-                )
-                .await
+                .sign_by_user(&peer1_key, &(*alice).as_verified())
                 .unwrap();
         }
 
@@ -91,18 +82,9 @@ async fn fetches_on_gossip_notify() {
         let mut alice = Alice::new(peer1_key.public());
         let mut radicle = Radicle::new(&alice);
         {
-            let resolves_to_alice = alice.clone();
-            alice
-                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-                .await
-                .unwrap();
+            alice.sign_owned(&peer1_key).unwrap();
             radicle
-                .sign(
-                    &peer1_key,
-                    &Signatory::User(alice.urn()),
-                    &resolves_to_alice,
-                )
-                .await
+                .sign_by_user(&peer1_key, &(*alice).as_verified())
                 .unwrap();
         }
 

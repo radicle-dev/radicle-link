@@ -143,7 +143,7 @@ fn new_user(
     revision: u64,
     devices: &[&'static PublicKey],
 ) -> Result<User<Draft>, Error> {
-    let mut data = UserData::default()
+    let mut data = UserData::new(EntityTimestamp::current_time())
         .set_name(name.to_owned())
         .set_revision(revision);
     for k in devices.iter() {
@@ -155,18 +155,14 @@ fn new_user(
 #[async_test]
 async fn test_user_signatures() {
     // Keep signing the user while adding devices
-    let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
+    let mut user1 = new_user("foo", 1, &[&*D1K]).unwrap();
 
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    let sig1 = user.compute_signature(&K1).unwrap();
+    user1.sign_owned(&K1).unwrap();
+    let sig1 = &user1.keys().get(&K1.public()).unwrap().clone().unwrap().sig;
 
-    let mut user = user.to_builder().add_key((*D2K).clone()).build().unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    let sig2 = user.compute_signature(&K1).unwrap();
+    let mut user2 = user1.to_builder().add_key((*D2K).clone()).build().unwrap();
+    user2.sign_owned(&K2).unwrap();
+    let sig2 = &user2.keys().get(&K2.public()).unwrap().clone().unwrap().sig;
 
     assert_ne!(&sig1, &sig2);
 }
@@ -177,16 +173,12 @@ fn test_self_signatures() {
     let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
 
     user.sign_owned(&K1).unwrap();
-    let sig1 = user.compute_signature(&K1).unwrap();
 
     // Cannot sign with a not-owned key
     assert!(matches!(user.sign_owned(&K2), Err(Error::KeyNotPresent(_))));
 
     let mut user = user.to_builder().add_key((*D2K).clone()).build().unwrap();
     user.sign_owned(&K2).unwrap();
-    let sig2 = user.compute_signature(&K1).unwrap();
-
-    assert_ne!(&sig1, &sig2);
 }
 
 #[async_test]
@@ -204,17 +196,11 @@ async fn test_adding_user_signatures() {
     assert_ne!(&data2, &data3);
 
     // Check that canonical data does not change manipulating signatures
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K1).unwrap();
     let data4 = user.canonical_data().unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K2).unwrap();
     let data5 = user.canonical_data().unwrap();
-    user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K3).unwrap();
     let data6 = user.canonical_data().unwrap();
 
     assert_eq!(&data3, &data4);
@@ -222,15 +208,20 @@ async fn test_adding_user_signatures() {
     assert_eq!(&data3, &data6);
 
     // Check signatures collection contents
-    assert_eq!(3, user.signatures().len());
-    assert!(user.signatures().contains_key(D1.as_public_key()));
-    assert!(user.signatures().contains_key(D2.as_public_key()));
-    assert!(user.signatures().contains_key(D3.as_public_key()));
+    assert_eq!(3, user.keys().len());
+    assert!(user.keys().contains_key(D1.as_public_key()));
+    assert!(user.keys().contains_key(D2.as_public_key()));
+    assert!(user.keys().contains_key(D3.as_public_key()));
 
     // Check signature verification
-    let data = user.canonical_data().unwrap();
-    for (k, s) in user.signatures().iter() {
-        assert!(s.sig.verify(&data, k));
+    for (k, s) in user.keys().iter().filter_map(|(k, s)| {
+        if let Some(sig) = s {
+            Some((k, sig))
+        } else {
+            None
+        }
+    }) {
+        assert!(s.verify(k, user.hash(), user.revision()));
     }
 }
 
@@ -244,9 +235,7 @@ async fn test_user_verification() {
     ));
 
     // Adding the signature fixes it
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K1).unwrap();
     assert!(matches!(
         user.clone().check_signatures(&EMPTY_RESOLVER).await,
         Ok(_)
@@ -261,53 +250,42 @@ async fn test_user_verification() {
         .add_key((*D3K).clone())
         .build()
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         user.clone().check_signatures(&EMPTY_RESOLVER).await,
-        Err(Error::SignatureVerificationFailed)
-    );
+        Err(_)
+    ));
 
     // Adding the missing signatures does not fix it: D1 signed a previous
     // revision
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    assert_eq!(
+    user.sign_owned(&K2).unwrap();
+    user.sign_owned(&K3).unwrap();
+    assert!(matches!(
         user.clone().check_signatures(&EMPTY_RESOLVER).await,
-        Err(Error::SignatureVerificationFailed)
-    );
+        Err(Error::SignatureVerificationFailed(_))
+    ));
 
     // Cannot sign a project twice with the same key
-    assert_eq!(
-        user.clone()
-            .sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-            .await,
-        Err(Error::SignatureAlreadyPresent(K1.public()))
-    );
+    assert!(matches!(
+        user.clone().sign_owned(&K1),
+        Err(Error::SignatureAlreadyPresent(_))
+    ));
 
     // Removing the signature and re adding it fixes it
     let mut user = user
         .to_data()
         .clear_hash()
-        .map(|mut u| {
-            if let Some(s) = &mut u.signatures {
-                s.remove(&*D1K);
-            }
-            u
-        })
+        .clear_signatures()
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K1).unwrap();
+    user.sign_owned(&K2).unwrap();
+    user.sign_owned(&K3).unwrap();
     assert!(matches!(
         user.clone().check_signatures(&EMPTY_RESOLVER).await,
         Ok(_)
     ));
 
-    // Removing a maintainer invalidates it again
+    // Removing a key invalidates it again
     let user = user
         .to_data()
         .clear_hash()
@@ -349,8 +327,7 @@ async fn test_project_update() {
         .revisions
         .last_mut()
         .unwrap()
-        .sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
+        .sign_owned(&K1)
         .unwrap();
 
     // History with single valid user is valid
@@ -366,9 +343,7 @@ async fn test_project_update() {
         .clear_parent_hash()
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K1).unwrap();
     let some_random_hash = user.to_data().hash.unwrap().to_owned();
     history.revisions.push(user);
     assert!(matches!(
@@ -390,9 +365,7 @@ async fn test_project_update() {
         .set_parent_hash(some_random_hash)
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K1).unwrap();
     history.revisions.push(user);
     assert!(matches!(
         history.check().await,
@@ -413,12 +386,8 @@ async fn test_project_update() {
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K1).unwrap();
+    user.sign_owned(&K2).unwrap();
     history.revisions.push(user);
     assert!(matches!(history.check().await, Ok(_)));
 
@@ -434,15 +403,9 @@ async fn test_project_update() {
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K1).unwrap();
+    user.sign_owned(&K2).unwrap();
+    user.sign_owned(&K3).unwrap();
     history.revisions.push(user);
     assert!(matches!(
         history.check().await,
@@ -463,12 +426,8 @@ async fn test_project_update() {
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K1).unwrap();
+    user.sign_owned(&K2).unwrap();
     history.revisions.push(user);
     assert!(matches!(history.check().await, Ok(_)));
 
@@ -481,22 +440,21 @@ async fn test_project_update() {
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K1).unwrap();
+    user.sign_owned(&K2).unwrap();
+    user.sign_owned(&K3).unwrap();
     history.revisions.push(user);
     assert!(matches!(history.check().await, Ok(_)));
 
     // Also check directly signing a user
     let verified_user = history.check().await.unwrap();
-    let mut user2 = new_user("bar", 1, &[&*D4K]).unwrap();
-    assert!(matches!(user2.sign_by_user(&K1, &verified_user), Ok(_)));
+    let user2 = new_user("bar", 1, &[&*D4K]).unwrap();
+    let mut user2 = user2
+        .to_builder()
+        .add_certifier(verified_user.urn())
+        .build()
+        .unwrap();
+    assert!(matches!(user2.sign_by_user(&K2, &verified_user), Ok(_)));
 
     // Changing two devices out of three is not ok
     let mut user = history
@@ -511,15 +469,9 @@ async fn test_project_update() {
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    user.sign(&K4, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
-    user.sign(&K5, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K1).unwrap();
+    user.sign_owned(&K4).unwrap();
+    user.sign_owned(&K5).unwrap();
     history.revisions.push(user);
     assert!(matches!(
         history.check().await,
@@ -541,9 +493,7 @@ async fn test_project_update() {
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
-        .unwrap();
+    user.sign_owned(&K1).unwrap();
     history.revisions.push(user);
     assert!(matches!(
         history.check().await,

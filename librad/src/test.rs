@@ -36,6 +36,7 @@ pub struct ConstResolver<A, S> {
 impl<A, S> ConstResolver<A, S>
 where
     A: Clone + Default + Serialize + DeserializeOwned + EntityInfoExt,
+    S: Clone,
 {
     pub fn new(entity: Entity<A, S>) -> Self {
         let urn = entity.urn();

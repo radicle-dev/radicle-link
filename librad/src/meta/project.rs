@@ -26,6 +26,7 @@ use crate::{
             data::{EntityData, EntityInfoExt, EntityKind},
             Draft,
             Entity,
+            EntityTimestamp,
             Error,
         },
     },
@@ -147,8 +148,8 @@ impl<ST> Project<ST>
 where
     ST: Clone,
 {
-    pub fn maintainers(&self) -> &std::collections::HashSet<RadUrn> {
-        self.certifiers()
+    pub fn maintainers(&self) -> impl Iterator<Item = &RadUrn> {
+        self.certifiers().iter().map(|(k, _)| k)
     }
 
     pub fn description(&self) -> &Option<String> {
@@ -164,7 +165,7 @@ where
     }
 
     pub fn create(name: String, owner: RadUrn) -> Result<Project<Draft>, Error> {
-        ProjectData::default()
+        ProjectData::new(EntityTimestamp::current_time())
             .set_name(name)
             .set_revision(1)
             .add_certifier(owner)
@@ -196,7 +197,7 @@ pub mod tests {
             proptest::collection::vec(gen_relation(), 0..16),
         )
             .prop_map(|(name, description, branch, maintainers, rels)| {
-                ProjectData::default()
+                ProjectData::new(EntityTimestamp::current_time())
                     .set_revision(1)
                     .set_name(name)
                     .set_optional_description(description)

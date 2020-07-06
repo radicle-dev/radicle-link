@@ -16,10 +16,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     convert::{Into, TryFrom},
     marker::PhantomData,
-    str::FromStr,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{
@@ -84,14 +84,20 @@ pub enum Error {
     #[error("User key not present (uri {0}, key {1})")]
     UserKeyNotPresent(RadUrn, PublicKey),
 
+    #[error("Certifier not present (uri {0})")]
+    CertifierNotPresent(RadUrn),
+
     #[error("Signature missing")]
     SignatureMissing,
 
     #[error("Signature decoding failed")]
     SignatureDecodingFailed,
 
-    #[error("Signature verification failed")]
-    SignatureVerificationFailed,
+    #[error("Signature verification failed (key {0})")]
+    SignatureVerificationFailed(PublicKey),
+
+    #[error("Signature ownership check failed (key {0})")]
+    SignatureOwnershipCheckFailed(PublicKey),
 
     #[error("Resolution failed ({0})")]
     ResolutionFailed(RadUrn),
@@ -124,13 +130,68 @@ pub enum HistoryVerificationError {
     EmptyHistory,
 
     #[error("Error at revsion (rev {revision:?}, err {error:?})")]
-    ErrorAtRevision { revision: u64, error: Error },
+    ErrorAtRevision {
+        revision: EntityRevision,
+        error: Error,
+    },
 
     #[error("Update error (rev {revision:?}, err {error:?})")]
     UpdateError {
-        revision: u64,
+        revision: EntityRevision,
         error: UpdateVerificationError,
     },
+}
+
+/// Type representing an entity revision
+pub type EntityRevision = u64;
+
+/// Timestamp for entities and signatures, as milliseconds from Unix epoch
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+pub struct EntityTimestamp(i64);
+
+impl EntityTimestamp {
+    /// Current time as Entity timestamp
+    pub fn current_time() -> Self {
+        EntityTimestamp(SystemTime::now().duration_since(UNIX_EPOCH).map_or_else(
+            |err| -(err.duration().as_millis() as i64),
+            |elapsed| elapsed.as_millis() as i64,
+        ))
+    }
+
+    /// Milliseconds from Unix epoch
+    pub fn epoch_millis(self) -> i64 {
+        self.0
+    }
+
+    /// Time elpsed since another timestamp, if positive or zero
+    pub fn time_since(self, other: Self) -> Option<Duration> {
+        if self.0 >= other.0 {
+            Some(Duration::from_millis((self.0 - other.0) as u64))
+        } else {
+            None
+        }
+    }
+
+    /// Time interval after another timestamp, if positive or zero
+    pub fn time_after(self, other: Self) -> Option<Duration> {
+        other.time_since(self)
+    }
+
+    /// Check that a timestamp is included in a time interval
+    /// (before closed, after open)
+    pub fn is_between(self, before: Self, after: Self) -> bool {
+        self >= before && self < after
+    }
+}
+
+impl From<EntityTimestamp> for SystemTime {
+    fn from(timestamp: EntityTimestamp) -> Self {
+        if timestamp.0 >= 0 {
+            UNIX_EPOCH + Duration::from_millis(timestamp.0 as u64)
+        } else {
+            UNIX_EPOCH - Duration::from_millis((-timestamp.0) as u64)
+        }
+    }
 }
 
 /// Type witness for a fully verified [`Entity`].
@@ -145,22 +206,104 @@ pub struct Signed;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Draft;
 
-/// A type expressing *who* is signing an `Entity`
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Signatory {
-    /// A specific user (identified by their URN)
-    User(RadUrn),
-    /// The entity itself (with an owned key)
-    OwnedKey,
+fn build_signature_data(
+    hash: &Hash,
+    revision: EntityRevision,
+    timestamp: EntityTimestamp,
+) -> Vec<u8> {
+    let mut data: Vec<u8> = Vec::with_capacity(hash.as_bytes().len() + 8 + 8);
+    data.extend_from_slice(&revision.to_ne_bytes());
+    data.extend_from_slice(&timestamp.epoch_millis().to_ne_bytes());
+    data.extend_from_slice(hash.as_bytes());
+    data
 }
 
-/// A signature for an `Entity``
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EntitySignature {
-    /// Who is producing this signature
-    pub by: Signatory,
+fn build_signature(
+    key: &SecretKey,
+    hash: &Hash,
+    revision: EntityRevision,
+    timestamp: EntityTimestamp,
+) -> Signature {
+    let data = build_signature_data(hash, revision, timestamp);
+    key.sign(&data)
+}
+
+fn verify_signature(
+    sig: &Signature,
+    key: &PublicKey,
+    hash: &Hash,
+    revision: EntityRevision,
+    timestamp: EntityTimestamp,
+) -> bool {
+    let data = build_signature_data(hash, revision, timestamp);
+    sig.verify(&data, key)
+}
+
+/// A signature for an `Entity`, when signed using an owned key
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct SelfSignature {
+    /// Signature time
+    pub timestamp: EntityTimestamp,
     /// The signature data
     pub sig: Signature,
+}
+
+impl SelfSignature {
+    fn build(
+        key: &SecretKey,
+        hash: &Hash,
+        revision: EntityRevision,
+        timestamp: EntityTimestamp,
+    ) -> Self {
+        let sig = build_signature(key, hash, revision, timestamp);
+        Self { timestamp, sig }
+    }
+
+    fn new(key: &SecretKey, hash: &Hash, revision: EntityRevision) -> Self {
+        Self::build(key, hash, revision, EntityTimestamp::current_time())
+    }
+
+    pub(crate) fn verify(&self, key: &PublicKey, hash: &Hash, revision: EntityRevision) -> bool {
+        verify_signature(&self.sig, key, hash, revision, self.timestamp)
+    }
+}
+
+/// A signature for an `Entity`, when signed by a certifier
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct CertifierSignature {
+    /// Signature time
+    pub timestamp: EntityTimestamp,
+    /// Certifier revision
+    pub revision: EntityRevision,
+    /// Key used by the certifier
+    pub key: PublicKey,
+    /// The signature data
+    pub sig: Signature,
+}
+
+impl CertifierSignature {
+    fn build(
+        key: &SecretKey,
+        hash: &Hash,
+        revision: EntityRevision,
+        timestamp: EntityTimestamp,
+    ) -> Self {
+        let sig = build_signature(key, hash, revision, timestamp);
+        Self {
+            timestamp,
+            revision,
+            key: key.public(),
+            sig,
+        }
+    }
+
+    fn new(key: &SecretKey, hash: &Hash, revision: EntityRevision) -> Self {
+        Self::build(key, hash, revision, EntityTimestamp::current_time())
+    }
+
+    fn verify(&self, hash: &Hash) -> bool {
+        verify_signature(&self.sig, &self.key, hash, self.revision, self.timestamp)
+    }
 }
 
 /// An URN resolver that turns URNs into `Entity` instances
@@ -169,7 +312,7 @@ pub struct EntitySignature {
 pub trait Resolver<T> {
     /// Resolve the given URN and deserialize the target `Entity`
     async fn resolve(&self, uri: &RadUrn) -> Result<T, Error>;
-    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<T, Error>;
+    async fn resolve_revision(&self, uri: &RadUrn, revision: EntityRevision) -> Result<T, Error>;
 }
 
 /// The base entity definition.
@@ -198,7 +341,9 @@ pub struct Entity<T, ST> {
     /// The entity name (useful for humans because the hash is unreadable)
     name: String,
     /// Entity revision, to be incremented at each entity update
-    revision: u64,
+    revision: EntityRevision,
+    /// Entity revision creation timestamp
+    timestamp: EntityTimestamp,
     /// Radicle software version used to serialize the entity
     rad_version: u8,
     /// Entity hash, computed on everything except the signatures and
@@ -209,12 +354,10 @@ pub struct Entity<T, ST> {
     /// Hash of the previous revision, `None` for the initial revision
     /// (in this case the entity hash is actually the entity ID)
     parent_hash: Option<Hash>,
-    /// Set of signatures
-    signatures: HashMap<PublicKey, EntitySignature>,
-    /// Set of owned keys
-    keys: HashSet<PublicKey>,
-    /// Set of certifiers (entities identified by their URN)
-    certifiers: HashSet<RadUrn>,
+    /// Set of owned keys and signatures
+    keys: HashMap<PublicKey, Option<SelfSignature>>,
+    /// Set of certifiers (entities identified by their URN) and signatures
+    certifiers: HashMap<RadUrn, Option<CertifierSignature>>,
     /// Specific `Entity` data
     info: T,
 }
@@ -270,6 +413,7 @@ where
 impl<T, ST> Entity<T, ST>
 where
     T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+    ST: Clone,
 {
     /// `name` getter
     pub fn name(&self) -> &str {
@@ -279,6 +423,11 @@ where
     /// `revision` getter
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// `timestamp` getter
+    pub fn timestamp(&self) -> EntityTimestamp {
+        self.timestamp
     }
 
     /// `rad_version` getter
@@ -299,28 +448,14 @@ where
     /// Turn the entity in to its raw data
     /// (first step of serialization and reverse of [`Entity::from_data`])
     pub fn to_data(&self) -> EntityData<T> {
-        let mut signatures = HashMap::new();
-        for (k, s) in self.signatures() {
-            signatures.insert(
-                k.to_owned(),
-                data::EntitySignatureData {
-                    user: match &s.by {
-                        Signatory::User(uri) => Some(uri.to_string()),
-                        Signatory::OwnedKey => None,
-                    },
-                    sig: s.sig.to_bs58(),
-                },
-            );
-        }
-
         EntityData {
             name: Some(self.name.to_owned()),
             revision: Some(self.revision),
+            timestamp: self.timestamp,
             rad_version: self.rad_version,
             hash: Some(self.hash.clone()),
             root_hash: Some(self.root_hash.clone()),
             parent_hash: self.parent_hash.clone(),
-            signatures: Some(signatures),
             keys: self.keys.clone(),
             certifiers: self.certifiers.clone(),
             info: self.info.to_owned(),
@@ -330,7 +465,16 @@ where
     /// Helper to build a new entity cloning the current one
     /// (signatures are cleared because they would be invalid anyway)
     pub fn to_builder(&self) -> EntityData<T> {
-        self.to_data().clear_hash().clear_signatures()
+        self.to_data()
+            .clear_hash()
+            .clear_signatures()
+            .reset_timestamp()
+    }
+
+    /// Helper to build a new entity cloning the current one
+    /// (signatures are cleared because they would be invalid anyway)
+    pub fn prepare_next_revision(&self) -> EntityData<T> {
+        self.to_builder().set_parent(&self)
     }
 
     /// `hash` getter
@@ -353,13 +497,8 @@ where
         &self.parent_hash
     }
 
-    /// `signatures` getter
-    pub fn signatures(&self) -> &HashMap<PublicKey, EntitySignature> {
-        &self.signatures
-    }
-
     /// `keys` getter
-    pub fn keys(&self) -> &HashSet<PublicKey> {
+    pub fn keys(&self) -> &HashMap<PublicKey, Option<SelfSignature>> {
         &self.keys
     }
     /// Keys count
@@ -368,11 +507,11 @@ where
     }
     /// Check key presence
     fn has_key(&self, key: &PublicKey) -> bool {
-        self.keys.contains(key)
+        self.keys.contains_key(key)
     }
 
     /// `certifiers` getter
-    pub fn certifiers(&self) -> &HashSet<RadUrn> {
+    pub fn certifiers(&self) -> &HashMap<RadUrn, Option<CertifierSignature>> {
         &self.certifiers
     }
     /// Certifiers count
@@ -381,87 +520,54 @@ where
     }
     /// Check certifier presence
     fn has_certifier(&self, c: &RadUrn) -> bool {
-        self.certifiers.contains(c)
+        self.certifiers.contains_key(c)
+    }
+
+    /// Get the URN of the entity that signed this one using `key`, if any
+    pub fn signer_by_key(&self, key: &PublicKey) -> Option<RadUrn> {
+        self.keys()
+            .get(key)
+            .and_then(Option::as_ref)
+            .map(|_| self.urn())
+            .or_else(|| {
+                for (urn, sig) in self.certifiers() {
+                    if let Some(signature) = sig {
+                        if &signature.key == key {
+                            return Some(urn.clone());
+                        }
+                    }
+                }
+                None
+            })
+    }
+
+    /// Iterate over all signatures, giving the signing key and, for certifiers,
+    /// the certifier URN
+    pub fn signatures(&self) -> impl Iterator<Item = (&PublicKey, Option<&RadUrn>)> {
+        let owned_sigs =
+            self.keys().iter().filter_map(
+                |(k, s)| {
+                    if s.is_some() {
+                        Some((k, None))
+                    } else {
+                        None
+                    }
+                },
+            );
+        let certifier_sigs = self.certifiers().iter().filter_map(|(urn, s)| {
+            if let Some(sig) = s {
+                Some((&sig.key, Some(urn)))
+            } else {
+                None
+            }
+        });
+        owned_sigs.chain(certifier_sigs)
     }
 
     /// Turn the entity into its canonical data representation
-    /// (for hashing or signing)
+    /// (for hashing)
     pub fn canonical_data(&self) -> Result<Vec<u8>, Error> {
         self.to_data().canonical_data()
-    }
-
-    pub fn map<U, F>(self, f: F) -> Entity<U, ST>
-    where
-        F: FnOnce(T) -> U,
-    {
-        Entity {
-            status_marker: self.status_marker,
-            name: self.name,
-            revision: self.revision,
-            rad_version: self.rad_version,
-            hash: self.hash,
-            root_hash: self.root_hash,
-            parent_hash: self.parent_hash,
-            signatures: self.signatures,
-            keys: self.keys,
-            certifiers: self.certifiers,
-            info: f(self.info),
-        }
-    }
-
-    pub fn try_map<U, F>(self, f: F) -> Option<Entity<U, ST>>
-    where
-        F: FnOnce(T) -> Option<U>,
-    {
-        let info = f(self.info)?;
-        Some(Entity {
-            status_marker: self.status_marker,
-            name: self.name,
-            revision: self.revision,
-            rad_version: self.rad_version,
-            hash: self.hash,
-            root_hash: self.root_hash,
-            parent_hash: self.parent_hash,
-            signatures: self.signatures,
-            keys: self.keys,
-            certifiers: self.certifiers,
-            info,
-        })
-    }
-
-    /// Check that this key is allowed to sign the entity by checking that the
-    /// `by` argument is correct:
-    ///
-    /// - either the key is owned by `self`
-    /// - or it belongs to the given certifier
-    pub async fn check_key(
-        &self,
-        key: &PublicKey,
-        by: &Signatory,
-        resolver: &impl Resolver<User<Draft>>,
-    ) -> Result<(), Error> {
-        match by {
-            Signatory::OwnedKey => {
-                if !self.has_key(key) {
-                    return Err(Error::KeyNotPresent(key.to_owned()));
-                }
-            },
-            Signatory::User(uri) => {
-                let user = resolver.resolve(&uri).await?;
-                if !user.has_key(key) {
-                    return Err(Error::UserKeyNotPresent(uri.to_owned(), key.to_owned()));
-                }
-            },
-        }
-        Ok(())
-    }
-
-    /// Given a private key, compute the signature of the entity canonical data
-    /// FIXME[ENTITY]: we should check the hash instead: it is cheaper and makes
-    /// also verification way faster because we would not need to rebuild the
-    /// canonical data at every check (we can trust the hash correctness)
-    pub fn compute_signature(&self, key: &SecretKey) -> Result<Signature, Error> {
-        Ok(key.sign(&self.canonical_data()?))
     }
 
     /// Given a private key owned by the entity, sign the current entity
@@ -471,18 +577,19 @@ where
     /// - the entity has not been already signed using this same key
     /// - this key is owned by the current entity
     pub fn sign_owned(&mut self, key: &SecretKey) -> Result<(), Error> {
+        let hash = self.hash().clone();
+        let revision = self.revision;
         let public_key = key.public();
-        if self.signatures().contains_key(&public_key) {
-            return Err(Error::SignatureAlreadyPresent(public_key));
-        }
-        if !self.has_key(&public_key) {
-            return Err(Error::KeyNotPresent(public_key));
-        }
-        let signature = EntitySignature {
-            by: Signatory::OwnedKey,
-            sig: self.compute_signature(key)?,
-        };
-        self.signatures.insert(public_key, signature);
+        self.keys
+            .get_mut(&public_key)
+            .ok_or_else(|| Error::KeyNotPresent(public_key.clone()))
+            .map(|opt| match opt {
+                Some(_) => Err(Error::SignatureAlreadyPresent(public_key)),
+                None => {
+                    *opt = Some(SelfSignature::new(key, &hash, revision));
+                    Ok(())
+                },
+            })??;
         Ok(())
     }
 
@@ -493,63 +600,24 @@ where
     /// - the entity has not been already signed using this same key
     /// - this key is owned by the provided user
     pub fn sign_by_user(&mut self, key: &SecretKey, user: &User<Verified>) -> Result<(), Error> {
+        let hash = self.hash().clone();
+        let revision = self.revision;
+        let urn = user.urn();
         let public_key = key.public();
-        if self.signatures().contains_key(&public_key) {
-            return Err(Error::SignatureAlreadyPresent(public_key));
-        }
         if !user.has_key(&public_key) {
             return Err(Error::UserKeyNotPresent(user.urn(), public_key));
         }
-        let signature = EntitySignature {
-            by: Signatory::User(user.urn()),
-            sig: self.compute_signature(key)?,
-        };
-        self.signatures.insert(public_key, signature);
+        self.certifiers
+            .get_mut(&urn)
+            .ok_or_else(|| Error::CertifierNotPresent(urn.to_owned()))
+            .map(|opt| match opt {
+                Some(_) => Err(Error::SignatureAlreadyPresent(public_key)),
+                None => {
+                    *opt = Some(CertifierSignature::new(key, &hash, revision));
+                    Ok(())
+                },
+            })??;
         Ok(())
-    }
-
-    /// Given a private key, sign the current entity
-    ///
-    /// The following checks are performed:
-    ///
-    /// - the entity has not been already signed using this same key
-    /// - this key is allowed to sign the entity (using `check_key`)
-    pub async fn sign(
-        &mut self,
-        key: &SecretKey,
-        by: &Signatory,
-        resolver: &impl Resolver<User<Draft>>,
-    ) -> Result<(), Error> {
-        let public_key = key.public();
-        if self.signatures().contains_key(&public_key) {
-            return Err(Error::SignatureAlreadyPresent(public_key.to_owned()));
-        }
-        self.check_key(&public_key, by, resolver).await?;
-        let signature = EntitySignature {
-            by: by.to_owned(),
-            sig: self.compute_signature(key)?,
-        };
-        self.signatures.insert(public_key, signature);
-        Ok(())
-    }
-
-    /// Check that an entity signature is valid
-    pub async fn check_signature(
-        &self,
-        key: &PublicKey,
-        by: &Signatory,
-        signature: &Signature,
-        resolver: &impl Resolver<User<Draft>>,
-    ) -> Result<Entity<T, Signed>, Error>
-    where
-        ST: Clone,
-    {
-        self.check_key(key, by, resolver).await?;
-        if signature.verify(&self.canonical_data()?, key) {
-            Ok(self.clone().with_status::<Signed>())
-        } else {
-            Err(Error::SignatureVerificationFailed)
-        }
     }
 
     fn with_status<NewSt>(self) -> Entity<T, NewSt> {
@@ -557,18 +625,23 @@ where
             status_marker: PhantomData,
             name: self.name,
             revision: self.revision,
+            timestamp: self.timestamp,
             rad_version: self.rad_version,
             hash: self.hash,
             root_hash: self.root_hash,
             parent_hash: self.parent_hash,
             keys: self.keys,
             certifiers: self.certifiers,
-            signatures: self.signatures,
             info: self.info,
         }
     }
 
-    /// Compute the status of this entity (only this revision is checked)
+    /// FIXME: For tests, remove after we have a real verifier
+    pub fn as_verified(&self) -> Entity<T, Verified> {
+        self.clone().with_status()
+    }
+
+    /// Check the signatures of this entity (only this revision is checked)
     ///
     /// This checks that:
     /// - every owned key and certifier has a corresponding signature
@@ -581,35 +654,41 @@ where
     where
         ST: Clone,
     {
-        let mut keys = self.keys().iter().cloned().collect::<HashSet<_>>();
-        let mut users = self.certifiers().iter().cloned().collect::<HashSet<_>>();
-
         if self.revision == 1 && (self.parent_hash.is_some() || self.root_hash != self.hash) {
             // TODO: define a better error if `self.parent_hash.is_some()`
             // (should be "revision 1 cannot have a parent hash")
             return Err(Error::InvalidRootHash);
         }
 
-        for (k, s) in self.signatures() {
-            match self.check_signature(k, &s.by, &s.sig, resolver).await {
-                Err(e) => return Err(e),
-                Ok(_signed) => {},
-            };
-
-            match &s.by {
-                Signatory::OwnedKey => {
-                    keys.remove(k);
+        for (k, s) in self.keys.iter() {
+            match s {
+                Some(sig) => {
+                    if !sig.verify(k, self.hash(), self.revision) {
+                        return Err(Error::SignatureVerificationFailed(k.to_owned()));
+                    }
                 },
-                Signatory::User(user) => {
-                    users.remove(&user);
-                },
+                None => return Err(Error::SignatureMissing),
             }
         }
-        if keys.is_empty() && users.is_empty() {
-            Ok(self.with_status::<Signed>())
-        } else {
-            Err(Error::SignatureMissing)
+
+        for (urn, s) in self.certifiers.iter() {
+            match s {
+                Some(sig) => {
+                    if !sig.verify(self.hash()) {
+                        return Err(Error::SignatureVerificationFailed(sig.key.to_owned()));
+                    }
+                    resolver
+                        .resolve_revision(urn, sig.revision)
+                        .await?
+                        .keys()
+                        .get(&sig.key)
+                        .ok_or_else(|| Error::SignatureOwnershipCheckFailed(sig.key.to_owned()))?;
+                },
+                None => return Err(Error::SignatureMissing),
+            }
         }
+
+        Ok(self.with_status())
     }
 
     /// Given an entity and its previous revision check that the update is
@@ -627,7 +706,10 @@ where
     fn check_update<OtherST>(
         self,
         previous: Entity<T, OtherST>,
-    ) -> Result<Entity<T, OtherST>, UpdateVerificationError> {
+    ) -> Result<Entity<T, OtherST>, UpdateVerificationError>
+    where
+        OtherST: Clone,
+    {
         if self.revision() <= previous.revision() {
             return Err(UpdateVerificationError::NonMonotonicRevision);
         }
@@ -647,7 +729,11 @@ where
             return Err(UpdateVerificationError::WrongRootHash);
         }
 
-        let retained_keys = self.keys().iter().filter(|k| previous.has_key(k)).count();
+        let retained_keys = self
+            .keys()
+            .iter()
+            .filter(|(k, _)| previous.has_key(k))
+            .count();
         let total_keys = self.keys_count();
         let added_keys = total_keys - retained_keys;
         let removed_keys = previous.keys_count() - retained_keys;
@@ -662,7 +748,7 @@ where
         let retained_certifiers = self
             .certifiers()
             .iter()
-            .filter(|c| previous.has_certifier(c))
+            .filter(|(c, _)| previous.has_certifier(c))
             .count();
         let total_certifiers = self.certifiers_count();
         let added_certifiers = total_certifiers - retained_certifiers;
@@ -762,25 +848,6 @@ where
         // Check specific invariants
         data.check_invariants()?;
 
-        let mut signatures = HashMap::new();
-        if let Some(s) = &data.signatures {
-            for (key, sig) in s.iter() {
-                let signature = EntitySignature {
-                    by: match &sig.user {
-                        Some(uri) => Signatory::User(
-                            RadUrn::from_str(&uri)
-                                .map_err(|_| Error::InvalidUri(uri.to_owned()))?,
-                        ),
-                        None => Signatory::OwnedKey,
-                    },
-                    sig: Signature::from_bs58(&sig.sig).ok_or_else(|| {
-                        Error::InvalidData(format!("signature data: {}", &sig.sig))
-                    })?,
-                };
-                signatures.insert(key.to_owned(), signature);
-            }
-        }
-
         let actual_hash = data.compute_hash()?;
         if let Some(claimed_hash) = &data.hash {
             if claimed_hash != &actual_hash {
@@ -809,13 +876,13 @@ where
             status_marker: PhantomData,
             name: data.name.unwrap(),
             revision: data.revision.unwrap(),
+            timestamp: data.timestamp,
             rad_version: data.rad_version,
             hash: actual_hash,
             root_hash,
             parent_hash,
             keys: data.keys,
             certifiers: data.certifiers,
-            signatures,
             info: data.info,
         })
     }

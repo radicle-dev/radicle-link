@@ -19,7 +19,15 @@ use crate::{
     hash::Hash,
     keys::PublicKey,
     meta::{
-        entity::{Draft, Entity, Error},
+        entity::{
+            CertifierSignature,
+            Draft,
+            Entity,
+            EntityRevision,
+            EntityTimestamp,
+            Error,
+            SelfSignature,
+        },
         project::ProjectInfo,
         user::UserInfo,
         RAD_VERSION,
@@ -28,32 +36,31 @@ use crate::{
 };
 use olpc_cjson::CanonicalFormatter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
-/// Raw data for an entity signature
-#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
-pub struct EntitySignatureData {
-    /// `None` for signatures by owned keys, otherwise the certifier URN
-    pub user: Option<String>,
-    /// The signature data
-    pub sig: String,
-}
-
-/// Helper to serialize `HashSet<RadUrn>` in a canonical way
-fn serialize_certifiers<S>(value: &HashSet<RadUrn>, serializer: S) -> Result<S::Ok, S::Error>
+/// Helper to serialize entity self signatures in a canonical way
+fn serialize_certifiers<S>(
+    value: &HashMap<RadUrn, Option<CertifierSignature>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let ordered: BTreeSet<RadUrn> = value.iter().cloned().collect();
+    let ordered: BTreeMap<RadUrn, Option<CertifierSignature>> =
+        value.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     ordered.serialize(serializer)
 }
 
-/// Helper to serialize `HashSet<PublicKey>` in a canonical way
-fn serialize_keys<S>(value: &HashSet<PublicKey>, serializer: S) -> Result<S::Ok, S::Error>
+/// Helper to serialize entity certifier signatures in a canonical way
+fn serialize_keys<S>(
+    value: &HashMap<PublicKey, Option<SelfSignature>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let ordered: BTreeSet<PublicKey> = value.iter().cloned().collect();
+    let ordered: BTreeMap<PublicKey, Option<SelfSignature>> =
+        value.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     ordered.serialize(serializer)
 }
 
@@ -72,7 +79,7 @@ pub enum EntityKind {
 ///
 /// Care has been taken to ensure that the same data can be deserialized both
 /// "generically" (as `EntityData<EntityInfo>`) and using its specific type
-#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 #[serde(untagged)]
 pub enum EntityInfo {
     User(UserInfo),
@@ -115,7 +122,8 @@ pub struct EntityData<T> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub revision: Option<u64>,
+    pub revision: Option<EntityRevision>,
+    pub timestamp: EntityTimestamp,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hash: Option<Hash>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -123,42 +131,37 @@ pub struct EntityData<T> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_hash: Option<Hash>,
 
-    // serialize_with = "serialize_signatures",
-    // deserialize_with = "deserialize_signatures"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signatures: Option<HashMap<PublicKey, EntitySignatureData>>,
-
     #[serde(
-        skip_serializing_if = "HashSet::is_empty",
+        skip_serializing_if = "HashMap::is_empty",
         serialize_with = "serialize_keys",
         default
     )]
-    pub keys: HashSet<PublicKey>,
+    pub keys: HashMap<PublicKey, Option<SelfSignature>>,
     #[serde(
-        skip_serializing_if = "HashSet::is_empty",
+        skip_serializing_if = "HashMap::is_empty",
         serialize_with = "serialize_certifiers",
         default
     )]
-    pub certifiers: HashSet<RadUrn>,
+    pub certifiers: HashMap<RadUrn, Option<CertifierSignature>>,
 
     pub info: T,
 }
 
-impl<T> Default for EntityData<T>
+impl<T> EntityData<T>
 where
-    T: Serialize + DeserializeOwned + Clone + Default,
+    T: Serialize + DeserializeOwned + Clone + Default + EntityInfoExt,
 {
-    fn default() -> Self {
+    pub fn new(time: EntityTimestamp) -> Self {
         Self {
             rad_version: RAD_VERSION,
             name: None,
             revision: Some(1),
+            timestamp: time,
             hash: None,
             root_hash: None,
             parent_hash: None,
-            signatures: None,
-            keys: HashSet::default(),
-            certifiers: HashSet::default(),
+            keys: HashMap::default(),
+            certifiers: HashMap::default(),
             info: T::default(),
         }
     }
@@ -197,6 +200,7 @@ where
         let cleaned = Self {
             name: self.name.to_owned(),
             revision: self.revision.to_owned(),
+            timestamp: self.timestamp,
             hash: None,
             root_hash: if self.parent_hash.is_some() {
                 self.root_hash.to_owned()
@@ -204,11 +208,14 @@ where
                 None
             },
             parent_hash: self.parent_hash.to_owned(),
-            keys: self.keys.to_owned(),
-            certifiers: self.certifiers.to_owned(),
+            keys: self.keys.iter().map(|(k, _)| (k.clone(), None)).collect(),
+            certifiers: self
+                .certifiers
+                .iter()
+                .map(|(k, _)| (k.clone(), None))
+                .collect(),
             info: self.info.to_owned(),
             rad_version: self.rad_version,
-            signatures: None,
         };
 
         let mut buffer: Vec<u8> = vec![];
@@ -234,6 +241,11 @@ where
     }
     pub fn set_optional_name(mut self, name: Option<String>) -> Self {
         self.name = name;
+        self
+    }
+
+    pub fn reset_timestamp(mut self) -> Self {
+        self.timestamp = EntityTimestamp::current_time();
         self
     }
 
@@ -280,12 +292,18 @@ where
     }
 
     pub fn clear_signatures(mut self) -> Self {
-        self.signatures = None;
+        self.keys = self.keys.iter().map(|(k, _)| (k.clone(), None)).collect();
+        self.certifiers = self
+            .certifiers
+            .iter()
+            .map(|(k, _)| (k.clone(), None))
+            .collect();
+
         self
     }
 
     pub fn add_key(mut self, key: PublicKey) -> Self {
-        self.keys.insert(key);
+        self.keys.insert(key, None);
         self
     }
     pub fn remove_key(mut self, key: &PublicKey) -> Self {
@@ -298,13 +316,13 @@ where
     }
     pub fn add_keys(mut self, keys: impl IntoIterator<Item = PublicKey>) -> Self {
         for s in keys.into_iter() {
-            self.keys.insert(s);
+            self.keys.insert(s, None);
         }
         self
     }
 
     pub fn add_certifier(mut self, certifier: RadUrn) -> Self {
-        self.certifiers.insert(certifier);
+        self.certifiers.insert(certifier, None);
         self
     }
     pub fn remove_certifier(mut self, certifier: &RadUrn) -> Self {
@@ -317,7 +335,7 @@ where
     }
     pub fn add_certifiers(mut self, certifiers: impl IntoIterator<Item = RadUrn>) -> Self {
         for c in certifiers.into_iter() {
-            self.certifiers.insert(c);
+            self.certifiers.insert(c, None);
         }
         self
     }
