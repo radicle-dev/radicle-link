@@ -76,6 +76,23 @@ impl<'a, S: Clone> Repo<'a, S> {
         self.storage.rad_refs(&self.urn).map_err(Error::from)
     }
 
+    /// Get the names of the references that live under
+    /// `namespaces/<urn-id>/refs/heads/*`.
+    pub fn refs_heads(&self) -> Result<Vec<String>, Error> {
+        self.storage.refs_heads(&self.urn).map_err(Error::from)
+    }
+
+    /// Get the names of the references that live under
+    /// `namspaces/<urn-id>/refs/remotes/<peer-id>refs/heads/*`.
+    pub fn refs_heads_of<P>(&self) -> Result<Vec<String>, Error>
+    where
+        P: Into<Option<PeerId>>,
+    {
+        self.storage
+            .refs_heads_of(&self.urn, None)
+            .map_err(Error::from)
+    }
+
     /// Get `rad/self` identity for this repo.
     pub fn get_rad_self(&self) -> Result<User<Draft>, Error> {
         self.get_rad_self_of(None)
