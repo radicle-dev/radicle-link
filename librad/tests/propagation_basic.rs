@@ -52,7 +52,6 @@ async fn can_clone() {
             let resolves_to_alice = alice.clone();
             alice
                 .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-                .await
                 .unwrap();
             radicle
                 .sign(
@@ -60,7 +59,6 @@ async fn can_clone() {
                     &Signatory::User(alice.urn()),
                     &resolves_to_alice,
                 )
-                .await
                 .unwrap();
         }
 
@@ -96,7 +94,6 @@ async fn fetches_on_gossip_notify() {
             let resolves_to_alice = alice.clone();
             alice
                 .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-                .await
                 .unwrap();
             radicle
                 .sign(
@@ -104,7 +101,6 @@ async fn fetches_on_gossip_notify() {
                     &Signatory::User(alice.urn()),
                     &resolves_to_alice,
                 )
-                .await
                 .unwrap();
         }
 

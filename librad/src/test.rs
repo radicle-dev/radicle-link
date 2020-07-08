@@ -43,13 +43,12 @@ where
     }
 }
 
-#[async_trait]
 impl<A, S> Resolver<Entity<A, S>> for ConstResolver<A, S>
 where
     A: Clone + Send + Sync + Default + Serialize + DeserializeOwned,
     S: Clone + Send + Sync,
 {
-    async fn resolve(&self, urn: &RadUrn) -> Result<Entity<A, S>, entity::Error> {
+    fn resolve(&self, urn: &RadUrn) -> Result<Entity<A, S>, entity::Error> {
         if &self.urn == urn {
             Ok(self.entity.clone())
         } else {
@@ -57,11 +56,7 @@ where
         }
     }
 
-    async fn resolve_revision(
-        &self,
-        urn: &RadUrn,
-        revision: u64,
-    ) -> Result<Entity<A, S>, entity::Error> {
+    fn resolve_revision(&self, urn: &RadUrn, revision: u64) -> Result<Entity<A, S>, entity::Error> {
         if &self.urn == urn {
             Ok(self.entity.clone())
         } else {

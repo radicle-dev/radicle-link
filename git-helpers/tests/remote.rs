@@ -109,12 +109,8 @@ async fn setup_entity(paths: &Paths, key: SecretKey) -> anyhow::Result<RadUrn> {
     let mut radicle = Radicle::new(&alice);
     {
         let resolves_to_alice = alice.clone();
-        alice
-            .sign(&key, &Signatory::OwnedKey, &resolves_to_alice)
-            .await?;
-        radicle
-            .sign(&key, &Signatory::User(alice.urn()), &resolves_to_alice)
-            .await?;
+        alice.sign(&key, &Signatory::OwnedKey, &resolves_to_alice)?;
+        radicle.sign(&key, &Signatory::User(alice.urn()), &resolves_to_alice)?;
 
         let store = Storage::open_or_init(&paths, key)?;
         store.create_repo(&alice)?;

@@ -254,8 +254,8 @@ mod tests {
         ))
     }
 
-    #[async_test]
-    async fn test_guard_user_not_self_signed() {
+    #[test]
+    fn test_guard_user_not_self_signed() {
         let key = SecretKey::new();
         let config = setup(&key);
 
@@ -263,12 +263,7 @@ mod tests {
         {
             let bob = User::<Draft>::create("bob".to_owned(), key.public()).unwrap();
             alice
-                .sign(
-                    &key,
-                    &Signatory::User(bob.urn()),
-                    &ConstResolver::new(bob.clone()),
-                )
-                .await
+                .sign(&key, &Signatory::User(bob.urn()), &ConstResolver::new(bob))
                 .unwrap();
         }
 
@@ -278,8 +273,8 @@ mod tests {
         ))
     }
 
-    #[async_test]
-    async fn test_guard_user_valid() {
+    #[test]
+    fn test_guard_user_valid() {
         let key = SecretKey::new();
         let config = setup(&key);
 
@@ -291,7 +286,6 @@ mod tests {
                     &Signatory::OwnedKey,
                     &ConstResolver::new(alice.clone()),
                 )
-                .await
                 .unwrap();
         }
 

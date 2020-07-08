@@ -99,8 +99,8 @@ fn test_untrack() {
     assert!(store.tracked(&urn).unwrap().next().is_none())
 }
 
-#[async_test]
-async fn test_all_metadata_heads() {
+#[test]
+fn test_all_metadata_heads() {
     let key = SecretKey::new();
     let store = storage(key.clone());
 
@@ -111,7 +111,6 @@ async fn test_all_metadata_heads() {
     let verified_user = user
         .clone()
         .check_history_status(&user_resolver, &user_resolver)
-        .await
         .unwrap();
 
     // Create and sign two projects
@@ -192,8 +191,8 @@ async fn test_all_metadata_heads() {
     assert_eq!(user_history.len(), 1);
 }
 
-#[async_test]
-async fn set_and_get_rad_self() -> Result<(), Error> {
+#[test]
+fn set_and_get_rad_self() -> Result<(), Error> {
     let key = SecretKey::new();
     let store = storage(key.clone());
 
@@ -204,7 +203,6 @@ async fn set_and_get_rad_self() -> Result<(), Error> {
     let verified_user = user
         .clone()
         .check_history_status(&user_resolver, &user_resolver)
-        .await
         .unwrap();
     store.create_repo(&user)?;
     store.set_default_rad_self(verified_user.clone())?;
@@ -243,7 +241,6 @@ async fn test_structure_of_refs() -> Result<(), Error> {
     let verified_user = user
         .clone()
         .check_history_status(&user_resolver, &user_resolver)
-        .await
         .unwrap();
     refs.push(Reference::rad_id(user.urn().id));
     refs.push(Reference::rad_refs(user.urn().id, None));
