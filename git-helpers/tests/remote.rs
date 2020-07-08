@@ -87,8 +87,8 @@ fn smoke() {
         let mut child = Command::new("git")
             .arg("-c")
             .arg(format!(
-                "credential.helper=cache --timeout 10 --socket {}",
-                credentials_cache_socket.to_string_lossy()
+                "credential.helper={}",
+                credential_cache_config(&credentials_cache_socket)
             ))
             .arg("clone")
             .arg(LocalUrl::from(urn).to_string())
@@ -164,15 +164,16 @@ fn setup_credential_cache(
 ) -> anyhow::Result<()> {
     config.set_str(
         "credential.helper",
-        &format!(
-            "cache --timeout=10 --socket {}",
-            credentials_cache_socket.display()
-        ),
+        &credential_cache_config(credentials_cache_socket),
     )?;
 
     credential::Git::new(&git_dir).put(&urn.into(), SecUtf8::from(PASSPHRASE))?;
 
     Ok(())
+}
+
+fn credential_cache_config(socket: &Path) -> String {
+    format!("cache --timeout 10 --socket {}", socket.to_string_lossy())
 }
 
 fn setup_path() -> anyhow::Result<PathBuf> {
