@@ -41,7 +41,7 @@ use crate::{
         p2p::url::{GitUrl, GitUrlRef},
         refs::{self, Refs},
         repo::Repo,
-        types::Reference,
+        types::{Reference, RefsCategory},
     },
     hash::Hash,
     internal::{
@@ -383,6 +383,32 @@ impl<S: Clone> Storage<S> {
         }?;
 
         Ok(Refs::from(signed))
+    }
+
+    /// Get the names of the references that live under
+    /// `namespaces/<urn-id>/refs/heads/*`.
+    pub fn refs_heads(&self, urn: &RadUrn) -> Result<Vec<String>, Error> {
+        self.refs_heads_of(urn, None)
+    }
+
+    /// Get the names of the references that live under
+    /// `namspaces/<urn-id>/refs/remotes/<peer-id>refs/heads/*`.
+    pub fn refs_heads_of<P>(&self, urn: &RadUrn, peer: P) -> Result<Vec<String>, Error>
+    where
+        P: Into<Option<PeerId>>,
+    {
+        let heads = Reference {
+            namespace: urn.id.clone(),
+            remote: peer.into(),
+            category: RefsCategory::Heads,
+            name: "*".to_string(),
+        };
+
+        let mut names = vec![];
+        for name in References::from_globs(&self.backend, &[heads.to_string()])?.names() {
+            names.push(name?.to_string());
+        }
+        Ok(names)
     }
 
     /// The set of all certifiers of the given identity, transitively
