@@ -16,8 +16,6 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #[macro_use]
-extern crate async_trait;
-#[macro_use]
 extern crate lazy_static;
 
 pub mod logging;

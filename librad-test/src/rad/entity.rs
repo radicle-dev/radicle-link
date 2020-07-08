@@ -50,13 +50,12 @@ impl DerefMut for Alice {
     }
 }
 
-#[async_trait]
 impl Resolver<User<Draft>> for Alice {
-    async fn resolve(&self, _uri: &RadUrn) -> Result<User<Draft>, Error> {
+    fn resolve(&self, _uri: &RadUrn) -> Result<User<Draft>, Error> {
         Ok(self.0.clone())
     }
 
-    async fn resolve_revision(&self, _uri: &RadUrn, _revision: u64) -> Result<User<Draft>, Error> {
+    fn resolve_revision(&self, _uri: &RadUrn, _revision: u64) -> Result<User<Draft>, Error> {
         Ok(self.0.clone())
     }
 }

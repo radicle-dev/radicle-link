@@ -82,12 +82,11 @@ lazy_static! {
 
 struct EmptyResolver {}
 
-#[async_trait]
 impl Resolver<User<Draft>> for EmptyResolver {
-    async fn resolve(&self, uri: &RadUrn) -> Result<User<Draft>, Error> {
+    fn resolve(&self, uri: &RadUrn) -> Result<User<Draft>, Error> {
         Err(Error::ResolutionFailed(uri.to_owned()))
     }
-    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User<Draft>, Error> {
+    fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User<Draft>, Error> {
         Err(Error::RevisionResolutionFailed(uri.to_owned(), revision))
     }
 }
@@ -104,24 +103,23 @@ impl UserHistory {
         Self { revisions: vec![] }
     }
 
-    async fn check(&self) -> Result<User<Verified>, HistoryVerificationError> {
+    fn check(&self) -> Result<User<Verified>, HistoryVerificationError> {
         let history = self.clone();
         match self.revisions.last().cloned() {
-            Some(user) => user.check_history_status(&history, &EMPTY_RESOLVER).await,
+            Some(user) => user.check_history_status(&history, &EMPTY_RESOLVER),
             None => Err(HistoryVerificationError::EmptyHistory),
         }
     }
 }
 
-#[async_trait]
 impl Resolver<User<Draft>> for UserHistory {
-    async fn resolve(&self, uri: &RadUrn) -> Result<User<Draft>, Error> {
+    fn resolve(&self, uri: &RadUrn) -> Result<User<Draft>, Error> {
         match self.revisions.last() {
             Some(user) => Ok(user.to_owned()),
             None => Err(Error::ResolutionFailed(uri.to_owned())),
         }
     }
-    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User<Draft>, Error> {
+    fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<User<Draft>, Error> {
         if revision >= 1 && revision <= self.revisions.len() as u64 {
             Ok(self.revisions[revision as usize - 1].clone())
         } else {
@@ -152,19 +150,17 @@ fn new_user(
     data.build()
 }
 
-#[async_test]
-async fn test_user_signatures() {
+#[test]
+fn test_user_signatures() {
     // Keep signing the user while adding devices
     let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
 
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     let sig1 = user.compute_signature(&K1).unwrap();
 
     let mut user = user.to_builder().add_key((*D2K).clone()).build().unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     let sig2 = user.compute_signature(&K1).unwrap();
 
@@ -189,8 +185,8 @@ fn test_self_signatures() {
     assert_ne!(&sig1, &sig2);
 }
 
-#[async_test]
-async fn test_adding_user_signatures() {
+#[test]
+fn test_adding_user_signatures() {
     let user = new_user("foo", 1, &[&*D1K]).unwrap();
 
     // Check that canonical data changes while adding devices
@@ -205,15 +201,12 @@ async fn test_adding_user_signatures() {
 
     // Check that canonical data does not change manipulating signatures
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     let data4 = user.canonical_data().unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     let data5 = user.canonical_data().unwrap();
     user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     let data6 = user.canonical_data().unwrap();
 
@@ -234,21 +227,20 @@ async fn test_adding_user_signatures() {
     }
 }
 
-#[async_test]
-async fn test_user_verification() {
+#[test]
+fn test_user_verification() {
     // A new user is structurally valid but it is not signed
     let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
     assert!(matches!(
-        user.clone().check_signatures(&EMPTY_RESOLVER).await,
+        user.clone().check_signatures(&EMPTY_RESOLVER),
         Err(Error::SignatureMissing)
     ));
 
     // Adding the signature fixes it
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     assert!(matches!(
-        user.clone().check_signatures(&EMPTY_RESOLVER).await,
+        user.clone().check_signatures(&EMPTY_RESOLVER),
         Ok(_)
     ));
 
@@ -262,28 +254,25 @@ async fn test_user_verification() {
         .build()
         .unwrap();
     assert_eq!(
-        user.clone().check_signatures(&EMPTY_RESOLVER).await,
+        user.clone().check_signatures(&EMPTY_RESOLVER),
         Err(Error::SignatureVerificationFailed)
     );
 
     // Adding the missing signatures does not fix it: D1 signed a previous
     // revision
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     assert_eq!(
-        user.clone().check_signatures(&EMPTY_RESOLVER).await,
+        user.clone().check_signatures(&EMPTY_RESOLVER),
         Err(Error::SignatureVerificationFailed)
     );
 
     // Cannot sign a project twice with the same key
     assert_eq!(
         user.clone()
-            .sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-            .await,
+            .sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER),
         Err(Error::SignatureAlreadyPresent(K1.public()))
     );
 
@@ -300,10 +289,9 @@ async fn test_user_verification() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     assert!(matches!(
-        user.clone().check_signatures(&EMPTY_RESOLVER).await,
+        user.clone().check_signatures(&EMPTY_RESOLVER),
         Ok(_)
     ));
 
@@ -318,18 +306,15 @@ async fn test_user_verification() {
     // TODO(finto): I tried matching on a specific error. There
     // seems to be a race condition between error cases in
     // check_signature.
-    assert!(matches!(
-        user.check_signatures(&EMPTY_RESOLVER).await,
-        Err(_)
-    ));
+    assert!(matches!(user.check_signatures(&EMPTY_RESOLVER), Err(_)));
 }
 
-#[async_test]
-async fn test_project_update() {
+#[test]
+fn test_project_update() {
     // Empty history is invalid
     let mut history = UserHistory::new();
     assert!(matches!(
-        history.check().await,
+        history.check(),
         Err(HistoryVerificationError::EmptyHistory)
     ));
 
@@ -338,7 +323,7 @@ async fn test_project_update() {
     history.revisions.push(user);
 
     assert!(matches!(
-        history.check().await,
+        history.check(),
         Err(HistoryVerificationError::ErrorAtRevision {
             revision: 1,
             error: Error::SignatureMissing,
@@ -350,11 +335,10 @@ async fn test_project_update() {
         .last_mut()
         .unwrap()
         .sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
 
     // History with single valid user is valid
-    assert!(matches!(history.check().await, Ok(_)));
+    assert!(matches!(history.check(), Ok(_)));
 
     // Having a parent but no parent hash is not ok
     let mut user = history
@@ -367,12 +351,11 @@ async fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
-    let some_random_hash = user.to_data().hash.unwrap().to_owned();
+    let some_random_hash = user.to_data().hash.unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        history.check().await,
+        history.check(),
         Err(HistoryVerificationError::UpdateError {
             revision: 2,
             error: UpdateVerificationError::WrongParentHash,
@@ -391,11 +374,10 @@ async fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        history.check().await,
+        history.check(),
         Err(HistoryVerificationError::UpdateError {
             revision: 2,
             error: UpdateVerificationError::WrongParentHash,
@@ -414,13 +396,11 @@ async fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     history.revisions.push(user);
-    assert!(matches!(history.check().await, Ok(_)));
+    assert!(matches!(history.check(), Ok(_)));
 
     // Adding two keys starting from one is not ok
     history.revisions.pop();
@@ -435,17 +415,14 @@ async fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        history.check().await,
+        history.check(),
         Err(HistoryVerificationError::UpdateError {
             revision: 2,
             error: UpdateVerificationError::NoCurrentQuorum,
@@ -464,13 +441,11 @@ async fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     history.revisions.push(user);
-    assert!(matches!(history.check().await, Ok(_)));
+    assert!(matches!(history.check(), Ok(_)));
 
     let mut user = history
         .revisions
@@ -482,19 +457,16 @@ async fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     history.revisions.push(user);
-    assert!(matches!(history.check().await, Ok(_)));
+    assert!(matches!(history.check(), Ok(_)));
 
     // Also check directly signing a user
-    let verified_user = history.check().await.unwrap();
+    let verified_user = history.check().unwrap();
     let mut user2 = new_user("bar", 1, &[&*D4K]).unwrap();
     assert!(matches!(user2.sign_by_user(&K1, &verified_user), Ok(_)));
 
@@ -512,17 +484,14 @@ async fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     user.sign(&K4, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     user.sign(&K5, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        history.check().await,
+        history.check(),
         Err(HistoryVerificationError::UpdateError {
             revision: 4,
             error: UpdateVerificationError::NoCurrentQuorum,
@@ -542,11 +511,10 @@ async fn test_project_update() {
         .build()
         .unwrap();
     user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
-        .await
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
-        history.check().await,
+        history.check(),
         Err(HistoryVerificationError::UpdateError {
             revision: 4,
             error: UpdateVerificationError::NoPreviousQuorum,

@@ -165,11 +165,10 @@ pub struct EntitySignature {
 
 /// An URN resolver that turns URNs into `Entity` instances
 /// (`T` is the entity type)
-#[async_trait]
 pub trait Resolver<T> {
     /// Resolve the given URN and deserialize the target `Entity`
-    async fn resolve(&self, uri: &RadUrn) -> Result<T, Error>;
-    async fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<T, Error>;
+    fn resolve(&self, uri: &RadUrn) -> Result<T, Error>;
+    fn resolve_revision(&self, uri: &RadUrn, revision: u64) -> Result<T, Error>;
 }
 
 /// The base entity definition.
@@ -434,7 +433,7 @@ where
     ///
     /// - either the key is owned by `self`
     /// - or it belongs to the given certifier
-    pub async fn check_key(
+    pub fn check_key(
         &self,
         key: &PublicKey,
         by: &Signatory,
@@ -447,7 +446,7 @@ where
                 }
             },
             Signatory::User(uri) => {
-                let user = resolver.resolve(&uri).await?;
+                let user = resolver.resolve(&uri)?;
                 if !user.has_key(key) {
                     return Err(Error::UserKeyNotPresent(uri.to_owned(), key.to_owned()));
                 }
@@ -514,7 +513,7 @@ where
     ///
     /// - the entity has not been already signed using this same key
     /// - this key is allowed to sign the entity (using `check_key`)
-    pub async fn sign(
+    pub fn sign(
         &mut self,
         key: &SecretKey,
         by: &Signatory,
@@ -522,9 +521,9 @@ where
     ) -> Result<(), Error> {
         let public_key = key.public();
         if self.signatures().contains_key(&public_key) {
-            return Err(Error::SignatureAlreadyPresent(public_key.to_owned()));
+            return Err(Error::SignatureAlreadyPresent(public_key));
         }
-        self.check_key(&public_key, by, resolver).await?;
+        self.check_key(&public_key, by, resolver)?;
         let signature = EntitySignature {
             by: by.to_owned(),
             sig: self.compute_signature(key)?,
@@ -534,7 +533,7 @@ where
     }
 
     /// Check that an entity signature is valid
-    pub async fn check_signature(
+    pub fn check_signature(
         &self,
         key: &PublicKey,
         by: &Signatory,
@@ -544,7 +543,7 @@ where
     where
         ST: Clone,
     {
-        self.check_key(key, by, resolver).await?;
+        self.check_key(key, by, resolver)?;
         if signature.verify(&self.canonical_data()?, key) {
             Ok(self.clone().with_status::<Signed>())
         } else {
@@ -574,7 +573,7 @@ where
     /// - every owned key and certifier has a corresponding signature
     /// - only owned keys and certifiers have signed the entity
     /// - the first revision has no parent and a matching root hash
-    pub async fn check_signatures(
+    pub fn check_signatures(
         self,
         resolver: &impl Resolver<User<Draft>>,
     ) -> Result<Entity<T, Signed>, Error>
@@ -591,7 +590,7 @@ where
         }
 
         for (k, s) in self.signatures() {
-            match self.check_signature(k, &s.by, &s.sig, resolver).await {
+            match self.check_signature(k, &s.by, &s.sig, resolver) {
                 Err(e) => return Err(e),
                 Ok(_signed) => {},
             };
@@ -682,7 +681,7 @@ where
     /// valid
     ///
     /// FIXME[ENTITY]: should we allow certifiers that are not `User` entities?
-    pub async fn check_history_status(
+    pub fn check_history_status(
         self,
         resolver: &impl Resolver<Entity<T, ST>>,
         certifier_resolver: &impl Resolver<User<Draft>>,
@@ -695,7 +694,7 @@ where
         loop {
             let revision = current.revision();
             // Check current status
-            let signed = match current.check_signatures(certifier_resolver).await {
+            let signed = match current.check_signatures(certifier_resolver) {
                 Err(err) => {
                     let err = HistoryVerificationError::ErrorAtRevision {
                         revision,
@@ -712,7 +711,7 @@ where
             }
 
             // Resolve previous revision
-            current = match resolver.resolve_revision(&self.urn(), revision - 1).await {
+            current = match resolver.resolve_revision(&self.urn(), revision - 1) {
                 // Check update between current and previous
                 Ok(previous) => match signed.check_update(previous) {
                     // Update verification failed
