@@ -68,6 +68,13 @@ impl Reference {
         repo.find_reference(&self.to_string())
     }
 
+    pub fn references<'a>(
+        &self,
+        repo: &'a git2::Repository,
+    ) -> Result<ext::References<'a>, git2::Error> {
+        ext::References::from_globs(repo, &[self.to_string()])
+    }
+
     pub fn rad_id(namespace: Namespace) -> Self {
         Self {
             namespace,
@@ -119,6 +126,15 @@ impl Reference {
             remote: remote.into(),
             category: RefsCategory::Heads,
             name: name.to_owned(),
+        }
+    }
+
+    pub fn heads(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
+        Self {
+            namespace,
+            remote: remote.into(),
+            category: RefsCategory::Heads,
+            name: "*".to_owned(),
         }
     }
 
