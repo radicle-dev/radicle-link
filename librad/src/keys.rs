@@ -19,12 +19,11 @@ use std::{fmt, iter, ops::Deref};
 
 use bit_vec::BitVec;
 use multibase::Base;
-use secstr::SecStr;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use sodiumoxide::crypto::sign::ed25519;
 use thiserror::Error;
 
-use keystore::SecretKeyExt;
+use keystore::{SecStr, SecretKeyExt};
 
 pub use ed25519::PUBLICKEYBYTES;
 
