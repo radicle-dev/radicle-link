@@ -124,8 +124,7 @@ fn new_connection<'a>(
 ) -> (Connection, Incoming<'a>) {
     let peer_id = tls::extract_peer_id(
         connection
-            .authentication_data()
-            .peer_certificates
+            .peer_identity()
             .expect("Certificates must be presented. qed")
             .iter()
             .next()
