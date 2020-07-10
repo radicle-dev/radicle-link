@@ -385,16 +385,18 @@ impl<S: Clone> Storage<S> {
         Ok(Refs::from(signed))
     }
 
+    /// Get the [`Reference`] provided, if it exists.
     pub fn reference<'a>(
         &'a self,
-        reference: Reference<Single>,
+        reference: &Reference<Single>,
     ) -> Result<git2::Reference<'a>, Error> {
         reference.find(&self.backend).map_err(Error::from)
     }
 
+    /// Get the [`Reference`]s provided, if they exist.
     pub fn references<'a>(
         &'a self,
-        reference: Reference<Multiple>,
+        reference: &Reference<Multiple>,
     ) -> Result<References<'a>, Error> {
         reference.references(&self.backend).map_err(Error::from)
     }
@@ -660,13 +662,16 @@ impl Storage<WithSigner> {
         {
             let local_id = Reference::rad_id(urn.id.clone());
             let remote_id = local_id.with_remote(remote_peer);
-            let remote_id_head = remote_id.find(&self.backend).and_then(|reference| {
-                reference.target().ok_or_else(|| {
-                    git2::Error::from_str(&format!(
-                        "We just read `{}`, but now it's gone",
-                        remote_id
-                    ))
-                })
+            let remote_id_head = self.reference(&remote_id).and_then(|reference| {
+                reference
+                    .target()
+                    .ok_or_else(|| {
+                        git2::Error::from_str(&format!(
+                            "We just read `{}`, but now it's gone",
+                            remote_id
+                        ))
+                    })
+                    .map_err(Error::from)
             })?;
             self.backend.reference(
                 &local_id.to_string(),
@@ -787,7 +792,7 @@ impl Storage<WithSigner> {
     {
         match spec.into() {
             None => {
-                let have = Reference::rad_self(urn.id.clone(), None).find(&self.backend);
+                let have = self.reference(&Reference::rad_self(urn.id.clone(), None));
                 match have {
                     Err(_) => Ok(()),
                     Ok(mut reference) => reference.delete().map_err(Error::from),
