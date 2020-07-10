@@ -162,16 +162,36 @@ pub struct SymbolicReferenceSource<'a> {
     source: String,
 }
 
+enum SymbolicReferenceTargetArgument<'a> {
+    RadReference(&'a Reference),
+    GitReference(&'a git2::Reference<'a>),
+}
+
+impl<'a> SymbolicReferenceTargetArgument<'a> {
+    pub fn resolve(&self, repo: &'a git2::Repository) -> Result<String, git2::Error> {
+        match *self {
+            SymbolicReferenceTargetArgument::RadReference(reference) => {
+                reference.find(repo)?;
+                Ok(reference.to_string())
+            },
+            SymbolicReferenceTargetArgument::GitReference(reference) => Ok(reference
+                .name()
+                .ok_or_else(|| git2::Error::from_str("Invalid target reference name"))?
+                .to_owned()),
+        }
+    }
+}
+
 pub struct SymbolicReferenceTarget<'a> {
     repo: &'a git2::Repository,
     source: String,
-    target: String,
+    target: SymbolicReferenceTargetArgument<'a>,
 }
 
 pub struct SymbolicReferenceForce<'a> {
     repo: &'a git2::Repository,
     source: String,
-    target: String,
+    target: SymbolicReferenceTargetArgument<'a>,
     force_value: bool,
 }
 
@@ -198,29 +218,22 @@ impl<'a> SymbolicReference<'a> {
 impl<'a> SymbolicReferenceSource<'a> {
     /// Specify the symbolic reference target
     /// (checks that the ref exists and fails otherwise)
-    pub fn target(self, target: &'a Reference) -> Result<SymbolicReferenceTarget, git2::Error> {
-        target.find(self.repo)?;
-        Ok(SymbolicReferenceTarget {
+    pub fn target(self, target: &'a Reference) -> SymbolicReferenceTarget {
+        SymbolicReferenceTarget {
             repo: self.repo,
             source: self.source,
-            target: target.to_string(),
-        })
+            target: SymbolicReferenceTargetArgument::RadReference(target),
+        }
     }
 
     /// Specify the symbolic reference target using a `git2::Reference` that we
     /// trust to exist (fails if its `name` is not a valid string)
-    pub fn target_ref(
-        self,
-        target: &'a git2::Reference,
-    ) -> Result<SymbolicReferenceTarget<'a>, git2::Error> {
-        Ok(SymbolicReferenceTarget {
+    pub fn target_ref(self, target: &'a git2::Reference) -> SymbolicReferenceTarget<'a> {
+        SymbolicReferenceTarget {
             repo: self.repo,
             source: self.source,
-            target: target
-                .name()
-                .ok_or_else(|| git2::Error::from_str("Invalid target reference name"))?
-                .to_owned(),
-        })
+            target: SymbolicReferenceTargetArgument::GitReference(target),
+        }
     }
 }
 
@@ -241,11 +254,12 @@ impl<'a> SymbolicReferenceTarget<'a> {
 impl<'a> SymbolicReferenceForce<'a> {
     /// Creates the symbolic reference
     pub fn create(self) -> Result<git2::Reference<'a>, git2::Error> {
+        let target = self.target.resolve(self.repo)?;
         self.repo.reference_symbolic(
             &self.source,
-            &self.target,
+            &target,
             self.force_value,
-            &format!("creating symref {} -> {}", self.source, self.target),
+            &format!("creating symref {} -> {}", self.source, target),
         )
     }
 }
