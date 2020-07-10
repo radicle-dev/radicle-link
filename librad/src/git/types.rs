@@ -132,6 +132,8 @@ impl Reference<Multiple> {
         ext::References::from_globs(repo, &[self.to_string()])
     }
 
+    /// Build a reference that points to
+    /// `refs/namespaces/<namespace>/refs/rad/ids/*`
     pub fn rad_ids_glob(namespace: Namespace) -> Self {
         Self {
             namespace,
@@ -142,6 +144,8 @@ impl Reference<Multiple> {
         }
     }
 
+    /// Build a reference that points to
+    /// `refs/namespaces/<namespace>/refs/rad/[peer_id]/heads/*`
     pub fn heads(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
         Self {
             namespace,
@@ -158,6 +162,8 @@ impl Reference<Single> {
         repo.find_reference(&self.to_string())
     }
 
+    /// Build a reference that points to:
+    ///     * `refs/namespaces/<namespace>/refs/rad/id`
     pub fn rad_id(namespace: Namespace) -> Self {
         Self {
             namespace,
@@ -168,6 +174,8 @@ impl Reference<Single> {
         }
     }
 
+    /// Build a reference that points to:
+    ///     * `refs/namespaces/<namespace>/refs/rad/ids/<id>`
     pub fn rad_certifier(namespace: Namespace, urn: &RadUrn) -> Self {
         Self {
             namespace,
@@ -178,6 +186,9 @@ impl Reference<Single> {
         }
     }
 
+    /// Build a reference that points to:
+    ///     * `refs/namespaces/<namespace>/refs/rad/refs`
+    ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/rad/refs`
     pub fn rad_refs(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
         Self {
             namespace,
@@ -188,6 +199,9 @@ impl Reference<Single> {
         }
     }
 
+    /// Build a reference that points to:
+    ///     * `refs/namespaces/<namespace>/refs/rad/self`
+    ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/rad/self`
     pub fn rad_self(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
         Self {
             namespace,
@@ -198,6 +212,9 @@ impl Reference<Single> {
         }
     }
 
+    /// Build a reference that points to:
+    ///     * `refs/namespaces/<namespace>/refs/heads/<name>`
+    ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/heads/<name>
     pub fn head(namespace: Namespace, remote: impl Into<Option<PeerId>>, name: &str) -> Self {
         Self {
             namespace,
