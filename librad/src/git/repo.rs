@@ -21,7 +21,6 @@ use thiserror::Error;
 
 use crate::{
     git::{
-        ext::reference::References,
         refs::Refs,
         storage::{self, RadSelfSpec, Storage, WithSigner},
         types::Namespace,
@@ -75,23 +74,6 @@ impl<'a, S: Clone> Repo<'a, S> {
     /// Retrieve all directly _as well_ as transitively tracked peers
     pub fn rad_refs(&self) -> Result<Refs, Error> {
         self.storage.rad_refs(&self.urn).map_err(Error::from)
-    }
-
-    /// Get the names of the references that live under
-    /// `namespaces/<urn-id>/refs/heads/*`.
-    pub fn refs_heads(&'a self) -> Result<References<'a>, Error> {
-        self.storage.refs_heads(&self.urn).map_err(Error::from)
-    }
-
-    /// Get the names of the references that live under
-    /// `namspaces/<urn-id>/refs/remotes/<peer-id>refs/heads/*`.
-    pub fn refs_heads_of<P>(&'a self) -> Result<References<'a>, Error>
-    where
-        P: Into<Option<PeerId>>,
-    {
-        self.storage
-            .refs_heads_of(&self.urn, None)
-            .map_err(Error::from)
     }
 
     /// Get `rad/self` identity for this repo.

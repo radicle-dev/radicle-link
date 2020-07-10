@@ -385,23 +385,6 @@ impl<S: Clone> Storage<S> {
         Ok(Refs::from(signed))
     }
 
-    /// Get the names of the references that live under
-    /// `namespaces/<urn-id>/refs/heads/*`.
-    pub fn refs_heads<'a>(&'a self, urn: &RadUrn) -> Result<References<'a>, Error> {
-        self.refs_heads_of(urn, None)
-    }
-
-    /// Get the names of the references that live under
-    /// `namspaces/<urn-id>/refs/remotes/<peer-id>refs/heads/*`.
-    pub fn refs_heads_of<'a, P>(&'a self, urn: &RadUrn, peer: P) -> Result<References<'a>, Error>
-    where
-        P: Into<Option<PeerId>>,
-    {
-        Reference::heads(urn.id.clone(), peer)
-            .references(&self.backend)
-            .map_err(Error::from)
-    }
-
     pub fn reference<'a>(
         &'a self,
         reference: Reference<Single>,
