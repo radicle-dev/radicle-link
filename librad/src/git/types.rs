@@ -53,12 +53,20 @@ pub struct Single;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Multiple;
 
-/// Type witness for a [`Reference`] that should point to either a single or
-/// multiple references.
-///
-/// N.B. It is protected because this should be used internally.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Any;
+#[derive(Debug, Clone, PartialEq)]
+pub enum SomeReference {
+    Single(Reference<Single>),
+    Multiple(Reference<Multiple>),
+}
+
+impl Display for SomeReference {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Single(reference) => write!(f, "{}", reference),
+            Self::Multiple(reference) => write!(f, "{}", reference),
+        }
+    }
+}
 
 /// A structure for building a git reference.
 #[derive(Clone, Debug, PartialEq)]
@@ -110,16 +118,6 @@ impl<N: Clone> Reference<N> {
         Self {
             name: name.to_owned(),
             ..self.clone()
-        }
-    }
-
-    pub(crate) fn into_any(self) -> Reference<Any> {
-        Reference {
-            namespace: self.namespace,
-            remote: self.remote,
-            category: self.category,
-            name: self.name,
-            marker: PhantomData,
         }
     }
 }
@@ -234,8 +232,8 @@ impl<'a> Into<ext::blob::Branch<'a>> for &'a Reference<Single> {
 
 #[derive(Clone)]
 pub struct Refspec {
-    pub(crate) remote: Reference<Any>,
-    pub(crate) local: Reference<Any>,
+    pub(crate) remote: SomeReference,
+    pub(crate) local: SomeReference,
     pub force: bool,
 }
 
@@ -257,17 +255,16 @@ impl Refspec {
         tracked: impl Iterator<Item = &'a PeerId> + 'a,
     ) -> impl Iterator<Item = Self> + 'a {
         tracked.map(move |peer| {
-            let local = Reference::rad_refs(namespace.clone(), (*peer).clone()).into_any();
+            let local = Reference::rad_refs(namespace.clone(), (*peer).clone());
             let remote = if peer == remote_peer {
                 local.with_remote(None)
             } else {
                 local.clone()
-            }
-            .into_any();
+            };
 
             Self {
-                local,
-                remote,
+                local: SomeReference::Single(local),
+                remote: SomeReference::Single(remote),
                 force: false,
             }
         })
@@ -301,18 +298,16 @@ impl Refspec {
 
                         if targets_match {
                             let local =
-                                Reference::head(namespace.clone(), tracked_peer.clone(), &name)
-                                    .into_any();
+                                Reference::head(namespace.clone(), tracked_peer.clone(), &name);
                             let remote = if tracked_peer == remote_peer {
                                 local.with_remote(None)
                             } else {
                                 local.clone()
-                            }
-                            .into_any();
+                            };
 
                             refspecs.push(Self {
-                                local,
-                                remote,
+                                local: SomeReference::Single(local),
+                                remote: SomeReference::Single(remote),
                                 force: true,
                             })
                         }
@@ -325,19 +320,16 @@ impl Refspec {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/id \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/id`
             {
-                let local = Reference::rad_id(namespace.clone())
-                    .set_remote(tracked_peer.clone())
-                    .into_any();
+                let local = Reference::rad_id(namespace.clone()).set_remote(tracked_peer.clone());
                 let remote = if tracked_peer == remote_peer {
                     local.with_remote(None)
                 } else {
                     local.clone()
-                }
-                .into_any();
+                };
 
                 refspecs.push(Self {
-                    local,
-                    remote,
+                    local: SomeReference::Single(local),
+                    remote: SomeReference::Single(remote),
                     force: false,
                 });
             }
@@ -347,17 +339,16 @@ impl Refspec {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/self \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/self`
             {
-                let local = Reference::rad_self(namespace.clone(), tracked_peer.clone()).into_any();
+                let local = Reference::rad_self(namespace.clone(), tracked_peer.clone());
                 let remote = if tracked_peer == remote_peer {
                     local.with_remote(None)
                 } else {
                     local.clone()
-                }
-                .into_any();
+                };
 
                 refspecs.push(Self {
-                    local,
-                    remote,
+                    local: SomeReference::Single(local),
+                    remote: SomeReference::Single(remote),
                     force: false,
                 })
             }
@@ -367,19 +358,17 @@ impl Refspec {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/ids/* \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/ids/*`
             {
-                let local = Reference::rad_ids_glob(namespace.clone())
-                    .set_remote(tracked_peer.clone())
-                    .into_any();
+                let local =
+                    Reference::rad_ids_glob(namespace.clone()).set_remote(tracked_peer.clone());
                 let remote = if tracked_peer == remote_peer {
                     local.with_remote(None)
                 } else {
                     local.clone()
-                }
-                .into_any();
+                };
 
                 refspecs.push(Self {
-                    local,
-                    remote,
+                    local: SomeReference::Multiple(local),
+                    remote: SomeReference::Multiple(remote),
                     force: false,
                 });
             }
@@ -398,19 +387,17 @@ impl Refspec {
                 for urn in their_certifiers {
                     // id
                     {
-                        let local = Reference::rad_id(urn.id.clone())
-                            .set_remote(tracked_peer.clone())
-                            .into_any();
+                        let local =
+                            Reference::rad_id(urn.id.clone()).set_remote(tracked_peer.clone());
                         let remote = if tracked_peer == remote_peer {
                             local.with_remote(None)
                         } else {
                             local.clone()
-                        }
-                        .into_any();
+                        };
 
                         refspecs.push(Self {
-                            local,
-                            remote,
+                            local: SomeReference::Single(local),
+                            remote: SomeReference::Single(remote),
                             force: false,
                         });
                     }
@@ -418,18 +405,16 @@ impl Refspec {
                     // rad/ids/* of id
                     {
                         let local = Reference::rad_ids_glob(urn.id.clone())
-                            .set_remote(tracked_peer.clone())
-                            .into_any();
+                            .set_remote(tracked_peer.clone());
                         let remote = if tracked_peer == remote_peer {
                             local.with_remote(None)
                         } else {
                             local.clone()
-                        }
-                        .into_any();
+                        };
 
                         refspecs.push(Self {
-                            local,
-                            remote,
+                            local: SomeReference::Multiple(local),
+                            remote: SomeReference::Multiple(remote),
                             force: false,
                         });
                     }

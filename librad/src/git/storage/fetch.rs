@@ -23,7 +23,7 @@ use crate::{
     git::{
         p2p::url::GitUrl,
         refs::Refs,
-        types::{Reference, Refspec},
+        types::{Reference, Refspec, SomeReference},
     },
     peer::PeerId,
     uri::RadUrn,
@@ -76,20 +76,18 @@ impl<'a> Fetcher<'a> {
         // :refs/namespaces/<namespace>/refs/remotes/<remote_peer>/rad/ids/*`
         let refspecs = [
             Refspec {
-                remote: remote_id.clone().into_any(),
-                local: remote_id.with_remote(remote_peer.clone()).into_any(),
+                remote: SomeReference::Single(remote_id.clone()),
+                local: SomeReference::Single(remote_id.with_remote(remote_peer.clone())),
                 force: false,
             },
             Refspec {
-                remote: remote_self.clone().into_any(),
-                local: remote_self.with_remote(remote_peer.clone()).into_any(),
+                remote: SomeReference::Single(remote_self.clone()),
+                local: SomeReference::Single(remote_self.with_remote(remote_peer.clone())),
                 force: false,
             },
             Refspec {
-                remote: remote_certifiers.clone().into_any(),
-                local: remote_certifiers
-                    .with_remote(remote_peer.clone())
-                    .into_any(),
+                remote: SomeReference::Multiple(remote_certifiers.clone()),
+                local: SomeReference::Multiple(remote_certifiers.with_remote(remote_peer.clone())),
                 force: false,
             },
         ]
