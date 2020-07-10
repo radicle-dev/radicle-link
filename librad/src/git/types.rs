@@ -217,7 +217,7 @@ impl<'a> SymbolicReference<'a> {
 /// Intermediate symbolic reference builder
 impl<'a> SymbolicReferenceSource<'a> {
     /// Specify the symbolic reference target
-    /// (checks that the ref exists and fails otherwise)
+    /// (`create` will fail if the reference does not exist)
     pub fn target(self, target: &'a Reference) -> SymbolicReferenceTarget {
         SymbolicReferenceTarget {
             repo: self.repo,
@@ -227,7 +227,8 @@ impl<'a> SymbolicReferenceSource<'a> {
     }
 
     /// Specify the symbolic reference target using a `git2::Reference` that we
-    /// trust to exist (fails if its `name` is not a valid string)
+    /// trust to exist
+    /// ('create' will fail if its `name` is not a valid string)
     pub fn target_ref(self, target: &'a git2::Reference) -> SymbolicReferenceTarget<'a> {
         SymbolicReferenceTarget {
             repo: self.repo,
