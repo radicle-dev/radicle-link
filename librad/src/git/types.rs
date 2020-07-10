@@ -18,6 +18,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display},
+    marker::PhantomData,
 };
 
 use crate::{
@@ -44,15 +45,39 @@ impl Display for RefsCategory {
     }
 }
 
+/// Type witness for a [`Reference`] that should point to a single reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Single;
+
+/// Type witness for a [`Reference`] that should point to multiple references.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Multiple;
+
+/// Type witness for a [`Reference`] that should point to either a single or
+/// multiple references.
+///
+/// N.B. It is protected because this should be used internally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Any;
+
+/// A structure for building a git reference.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Reference {
+pub struct Reference<N> {
+    /// The namespace the reference lives under.
     pub namespace: Namespace,
+    /// The remote peer the reference might live under.
     pub remote: Option<PeerId>,
+    /// The category of the reference.
     pub category: RefsCategory,
+    /// The suffix path of the reference, e.g. `self`, `id`, `banana/pineapple`.
     pub name: String, // TODO: apply validation like `uri::Path`
+
+    /// Type witness for the cardinality this reference could point to, i.e. if
+    /// we are pointing to exactly one, zero or more, or both.
+    marker: PhantomData<N>,
 }
 
-impl Display for Reference {
+impl<N> Display for Reference<N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "refs/namespaces/{}/refs/", self.namespace)?;
 
@@ -63,81 +88,7 @@ impl Display for Reference {
     }
 }
 
-impl Reference {
-    pub fn find<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error> {
-        repo.find_reference(&self.to_string())
-    }
-
-    pub fn references<'a>(
-        &self,
-        repo: &'a git2::Repository,
-    ) -> Result<ext::References<'a>, git2::Error> {
-        ext::References::from_globs(repo, &[self.to_string()])
-    }
-
-    pub fn rad_id(namespace: Namespace) -> Self {
-        Self {
-            namespace,
-            remote: None,
-            category: RefsCategory::Rad,
-            name: "id".to_owned(),
-        }
-    }
-
-    pub fn rad_ids_glob(namespace: Namespace) -> Self {
-        Self {
-            namespace,
-            remote: None,
-            category: RefsCategory::Rad,
-            name: "ids/*".to_owned(),
-        }
-    }
-
-    pub fn rad_certifier(namespace: Namespace, urn: &RadUrn) -> Self {
-        Self {
-            namespace,
-            remote: None,
-            category: RefsCategory::Rad,
-            name: format!("ids/{}", urn.id),
-        }
-    }
-
-    pub fn rad_refs(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
-        Self {
-            namespace,
-            remote: remote.into(),
-            category: RefsCategory::Rad,
-            name: "refs".to_owned(),
-        }
-    }
-
-    pub fn rad_self(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
-        Self {
-            namespace,
-            remote: remote.into(),
-            category: RefsCategory::Rad,
-            name: "self".to_owned(),
-        }
-    }
-
-    pub fn head(namespace: Namespace, remote: impl Into<Option<PeerId>>, name: &str) -> Self {
-        Self {
-            namespace,
-            remote: remote.into(),
-            category: RefsCategory::Heads,
-            name: name.to_owned(),
-        }
-    }
-
-    pub fn heads(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
-        Self {
-            namespace,
-            remote: remote.into(),
-            category: RefsCategory::Heads,
-            name: "*".to_owned(),
-        }
-    }
-
+impl<N: Clone> Reference<N> {
     pub fn set_remote(mut self, remote: impl Into<Option<PeerId>>) -> Self {
         self.remote = remote.into();
         self
@@ -161,9 +112,104 @@ impl Reference {
             ..self.clone()
         }
     }
+
+    pub(crate) fn into_any(self) -> Reference<Any> {
+        Reference {
+            namespace: self.namespace,
+            remote: self.remote,
+            category: self.category,
+            name: self.name,
+            marker: PhantomData,
+        }
+    }
 }
 
-impl<'a> Into<ext::blob::Branch<'a>> for &'a Reference {
+impl Reference<Multiple> {
+    pub fn references<'a>(
+        &self,
+        repo: &'a git2::Repository,
+    ) -> Result<ext::References<'a>, git2::Error> {
+        ext::References::from_globs(repo, &[self.to_string()])
+    }
+
+    pub fn rad_ids_glob(namespace: Namespace) -> Self {
+        Self {
+            namespace,
+            remote: None,
+            category: RefsCategory::Rad,
+            name: "ids/*".to_owned(),
+            marker: PhantomData,
+        }
+    }
+
+    pub fn heads(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
+        Self {
+            namespace,
+            remote: remote.into(),
+            category: RefsCategory::Heads,
+            name: "*".to_owned(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl Reference<Single> {
+    pub fn find<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error> {
+        repo.find_reference(&self.to_string())
+    }
+
+    pub fn rad_id(namespace: Namespace) -> Self {
+        Self {
+            namespace,
+            remote: None,
+            category: RefsCategory::Rad,
+            name: "id".to_owned(),
+            marker: PhantomData,
+        }
+    }
+
+    pub fn rad_certifier(namespace: Namespace, urn: &RadUrn) -> Self {
+        Self {
+            namespace,
+            remote: None,
+            category: RefsCategory::Rad,
+            name: format!("ids/{}", urn.id),
+            marker: PhantomData,
+        }
+    }
+
+    pub fn rad_refs(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
+        Self {
+            namespace,
+            remote: remote.into(),
+            category: RefsCategory::Rad,
+            name: "refs".to_owned(),
+            marker: PhantomData,
+        }
+    }
+
+    pub fn rad_self(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
+        Self {
+            namespace,
+            remote: remote.into(),
+            category: RefsCategory::Rad,
+            name: "self".to_owned(),
+            marker: PhantomData,
+        }
+    }
+
+    pub fn head(namespace: Namespace, remote: impl Into<Option<PeerId>>, name: &str) -> Self {
+        Self {
+            namespace,
+            remote: remote.into(),
+            category: RefsCategory::Heads,
+            name: name.to_owned(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'a> Into<ext::blob::Branch<'a>> for &'a Reference<Single> {
     fn into(self) -> ext::blob::Branch<'a> {
         ext::blob::Branch::from(self.to_string())
     }
@@ -171,8 +217,8 @@ impl<'a> Into<ext::blob::Branch<'a>> for &'a Reference {
 
 #[derive(Clone)]
 pub struct Refspec {
-    pub remote: Reference,
-    pub local: Reference,
+    pub(crate) remote: Reference<Any>,
+    pub(crate) local: Reference<Any>,
     pub force: bool,
 }
 
@@ -194,12 +240,13 @@ impl Refspec {
         tracked: impl Iterator<Item = &'a PeerId> + 'a,
     ) -> impl Iterator<Item = Self> + 'a {
         tracked.map(move |peer| {
-            let local = Reference::rad_refs(namespace.clone(), (*peer).clone());
+            let local = Reference::rad_refs(namespace.clone(), (*peer).clone()).into_any();
             let remote = if peer == remote_peer {
                 local.with_remote(None)
             } else {
                 local.clone()
-            };
+            }
+            .into_any();
 
             Self {
                 local,
@@ -237,12 +284,14 @@ impl Refspec {
 
                         if targets_match {
                             let local =
-                                Reference::head(namespace.clone(), tracked_peer.clone(), &name);
+                                Reference::head(namespace.clone(), tracked_peer.clone(), &name)
+                                    .into_any();
                             let remote = if tracked_peer == remote_peer {
                                 local.with_remote(None)
                             } else {
                                 local.clone()
-                            };
+                            }
+                            .into_any();
 
                             refspecs.push(Self {
                                 local,
@@ -259,12 +308,15 @@ impl Refspec {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/id \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/id`
             {
-                let local = Reference::rad_id(namespace.clone()).set_remote(tracked_peer.clone());
+                let local = Reference::rad_id(namespace.clone())
+                    .set_remote(tracked_peer.clone())
+                    .into_any();
                 let remote = if tracked_peer == remote_peer {
                     local.with_remote(None)
                 } else {
                     local.clone()
-                };
+                }
+                .into_any();
 
                 refspecs.push(Self {
                     local,
@@ -278,12 +330,13 @@ impl Refspec {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/self \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/self`
             {
-                let local = Reference::rad_self(namespace.clone(), tracked_peer.clone());
+                let local = Reference::rad_self(namespace.clone(), tracked_peer.clone()).into_any();
                 let remote = if tracked_peer == remote_peer {
                     local.with_remote(None)
                 } else {
                     local.clone()
-                };
+                }
+                .into_any();
 
                 refspecs.push(Self {
                     local,
@@ -297,13 +350,15 @@ impl Refspec {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/ids/* \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/ids/*`
             {
-                let local =
-                    Reference::rad_ids_glob(namespace.clone()).set_remote(tracked_peer.clone());
+                let local = Reference::rad_ids_glob(namespace.clone())
+                    .set_remote(tracked_peer.clone())
+                    .into_any();
                 let remote = if tracked_peer == remote_peer {
                     local.with_remote(None)
                 } else {
                     local.clone()
-                };
+                }
+                .into_any();
 
                 refspecs.push(Self {
                     local,
@@ -326,13 +381,15 @@ impl Refspec {
                 for urn in their_certifiers {
                     // id
                     {
-                        let local =
-                            Reference::rad_id(urn.id.clone()).set_remote(tracked_peer.clone());
+                        let local = Reference::rad_id(urn.id.clone())
+                            .set_remote(tracked_peer.clone())
+                            .into_any();
                         let remote = if tracked_peer == remote_peer {
                             local.with_remote(None)
                         } else {
                             local.clone()
-                        };
+                        }
+                        .into_any();
 
                         refspecs.push(Self {
                             local,
@@ -344,12 +401,14 @@ impl Refspec {
                     // rad/ids/* of id
                     {
                         let local = Reference::rad_ids_glob(urn.id.clone())
-                            .set_remote(tracked_peer.clone());
+                            .set_remote(tracked_peer.clone())
+                            .into_any();
                         let remote = if tracked_peer == remote_peer {
                             local.with_remote(None)
                         } else {
                             local.clone()
-                        };
+                        }
+                        .into_any();
 
                         refspecs.push(Self {
                             local,

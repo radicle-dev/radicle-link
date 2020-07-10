@@ -41,7 +41,7 @@ use crate::{
         p2p::url::{GitUrl, GitUrlRef},
         refs::{self, Refs},
         repo::Repo,
-        types::Reference,
+        types::{Multiple, Reference, Single},
     },
     hash::Hash,
     internal::{
@@ -102,7 +102,7 @@ pub enum Error {
     NotSignedBySelf,
 
     #[error("Local key certifier not found: {0}")]
-    NoSelf(Reference),
+    NoSelf(Reference<Single>),
 
     #[error("Missing certifier {certifier} of {urn}")]
     MissingCertifier { certifier: RadUrn, urn: RadUrn },
@@ -304,7 +304,7 @@ impl<S: Clone> Storage<S> {
         }
     }
 
-    pub fn has_ref(&self, reference: &Reference) -> Result<bool, Error> {
+    pub fn has_ref(&self, reference: &Reference<Single>) -> Result<bool, Error> {
         self.backend
             .find_reference(&reference.to_string())
             .map(|_| true)
@@ -400,6 +400,20 @@ impl<S: Clone> Storage<S> {
         Reference::heads(urn.id.clone(), peer)
             .references(&self.backend)
             .map_err(Error::from)
+    }
+
+    pub fn reference<'a>(
+        &'a self,
+        reference: Reference<Single>,
+    ) -> Result<git2::Reference<'a>, Error> {
+        reference.find(&self.backend).map_err(Error::from)
+    }
+
+    pub fn references<'a>(
+        &'a self,
+        reference: Reference<Multiple>,
+    ) -> Result<References<'a>, Error> {
+        reference.references(&self.backend).map_err(Error::from)
     }
 
     /// The set of all certifiers of the given identity, transitively
