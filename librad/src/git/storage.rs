@@ -573,9 +573,9 @@ impl Storage<WithSigner> {
                 .try_for_each(|(src, target)| {
                     self.symbolic_reference()
                         .source(&src)
-                        .target(&target)
+                        .target(&target)?
                         .force(true)
-                        .build()
+                        .create()
                         .and(Ok(()))
                 });
 
@@ -726,9 +726,9 @@ impl Storage<WithSigner> {
                         let certifier_id = Reference::rad_id(certifier_hash);
                         self.symbolic_reference()
                             .source(&certifier_here)
-                            .target(&certifier_id)
+                            .target(&certifier_id)?
                             .force(false)
-                            .build()
+                            .create()
                             .and(Ok(()))
                     },
                 }
@@ -796,9 +796,9 @@ impl Storage<WithSigner> {
 
                 self.symbolic_reference()
                     .source(&src)
-                    .target(&target)
+                    .target(&target)?
                     .force(true)
-                    .build()
+                    .create()
                     .and(Ok(()))
                     .map_err(Error::from)
             },
