@@ -153,6 +153,72 @@ impl<'a> Into<ext::blob::Branch<'a>> for &'a Reference {
     }
 }
 
+pub struct SymbolicReference<'a> {
+    repo: &'a git2::Repository,
+}
+
+pub struct SymbolicReferenceSource<'a> {
+    repo: &'a git2::Repository,
+    source: &'a Reference,
+}
+
+pub struct SymbolicReferenceTarget<'a> {
+    repo: &'a git2::Repository,
+    source: &'a Reference,
+    target: &'a Reference,
+}
+
+pub struct SymbolicReferenceForce<'a> {
+    repo: &'a git2::Repository,
+    source: &'a Reference,
+    target: &'a Reference,
+    force_value: bool,
+}
+
+impl<'a> SymbolicReference<'a> {
+    pub fn new(repo: &'a git2::Repository) -> Self {
+        Self { repo }
+    }
+
+    pub fn source(self, source: &'a Reference) -> SymbolicReferenceSource {
+        SymbolicReferenceSource {
+            repo: self.repo,
+            source,
+        }
+    }
+}
+
+impl<'a> SymbolicReferenceSource<'a> {
+    pub fn target(self, target: &'a Reference) -> SymbolicReferenceTarget {
+        SymbolicReferenceTarget {
+            repo: self.repo,
+            source: self.source,
+            target,
+        }
+    }
+}
+
+impl<'a> SymbolicReferenceTarget<'a> {
+    pub fn force(self, force: bool) -> SymbolicReferenceForce<'a> {
+        SymbolicReferenceForce {
+            repo: self.repo,
+            source: self.source,
+            target: self.target,
+            force_value: force,
+        }
+    }
+}
+
+impl<'a> SymbolicReferenceForce<'a> {
+    pub fn build(self) -> Result<git2::Reference<'a>, git2::Error> {
+        let name = self.source.to_string();
+        let target = self.target.to_string();
+        let message = format!("creating symref {} -> {}", name, target);
+        self.repo
+            .reference_symbolic(&name, &target, self.force_value, &message)
+    }
+}
+
 #[derive(Clone)]
 pub struct Refspec {
     pub remote: Reference,

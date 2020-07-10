@@ -41,7 +41,7 @@ use crate::{
         p2p::url::{GitUrl, GitUrlRef},
         refs::{self, Refs},
         repo::Repo,
-        types::Reference,
+        types::{Reference, SymbolicReference},
     },
     hash::Hash,
     internal::{
@@ -508,6 +508,10 @@ impl Storage<WithSigner> {
         }
     }
 
+    fn symbolic_reference(&self) -> SymbolicReference {
+        SymbolicReference::new(&self.backend)
+    }
+
     pub fn create_repo<T>(&self, meta: &Entity<T, Draft>) -> Result<Repo<WithSigner>, Error>
     where
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
@@ -567,13 +571,11 @@ impl Storage<WithSigner> {
                     )
                 }))
                 .try_for_each(|(src, target)| {
-                    self.backend
-                        .reference_symbolic(
-                            &src.to_string(),
-                            &target.to_string(),
-                            true,
-                            &format!("{} -> {}", src, target),
-                        )
+                    self.symbolic_reference()
+                        .source(&src)
+                        .target(&target)
+                        .force(true)
+                        .build()
                         .and(Ok(()))
                 });
 
@@ -722,16 +724,11 @@ impl Storage<WithSigner> {
                             ),
                         );
                         let certifier_id = Reference::rad_id(certifier_hash);
-                        self.backend
-                            .reference_symbolic(
-                                &certifier_here.to_string(),
-                                &certifier_id.to_string(),
-                                /* force */ false,
-                                &format!(
-                                    "Symref certifier: `{}` -> `{}`",
-                                    certifier_here, certifier_id
-                                ),
-                            )
+                        self.symbolic_reference()
+                            .source(&certifier_here)
+                            .target(&certifier_id)
+                            .force(false)
+                            .build()
                             .and(Ok(()))
                     },
                 }
@@ -795,16 +792,13 @@ impl Storage<WithSigner> {
                     },
                 }?;
 
-                let sym_log_msg = &format!("{} -> {}", src, target);
-                tracing::info!("creating symbolic link: {}", sym_log_msg);
+                tracing::info!("creating symbolic link: {} -> {}", src, target);
 
-                self.backend
-                    .reference_symbolic(
-                        &src.to_string(),
-                        &target.to_string(),
-                        /* force */ true,
-                        sym_log_msg,
-                    )
+                self.symbolic_reference()
+                    .source(&src)
+                    .target(&target)
+                    .force(true)
+                    .build()
                     .and(Ok(()))
                     .map_err(Error::from)
             },
