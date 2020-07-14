@@ -65,15 +65,15 @@ impl<'a, S: Clone> Repo<'a, S> {
 
     /// Retrieve all _directly_ tracked peers
     ///
-    /// To retrieve the transitively tracked peers, use [`rad_refs`] and inspect
-    /// the `remotes`.
+    /// To retrieve the transitively tracked peers, use [`rad_signed_refs`] and
+    /// inspect the `remotes`.
     pub fn tracked(&self) -> Result<Tracked, Error> {
         self.storage.tracked(&self.urn).map_err(Error::from)
     }
 
     /// Retrieve all directly _as well_ as transitively tracked peers
-    pub fn rad_refs(&self) -> Result<Refs, Error> {
-        self.storage.rad_refs(&self.urn).map_err(Error::from)
+    pub fn rad_signed_refs(&self) -> Result<Refs, Error> {
+        self.storage.rad_signed_refs(&self.urn).map_err(Error::from)
     }
 
     /// Get `rad/self` identity for this repo.

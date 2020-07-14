@@ -81,7 +81,7 @@ The namespacing scheme could look as follows:
                 |-- heads # <-- code branches owned by $PEER_ID go here
                 |-- rad
                 |   |-- id # <-- points to the identity document history
-                |   |-- refs # <-- signature document
+                |   |-- signed_refs # <-- signed refs of the peer
                 |   |-- self # <-- points to the identity of $PEER_ID
                 |   `-- ids
                 |       |-- $CERTIFIER[1]
@@ -91,7 +91,7 @@ The namespacing scheme could look as follows:
                         |-- heads
                         `-- rad
                             |-- id
-                            |-- refs
+                            |-- signed_refs
                             |-- self
                             `-- ids
                                 |-- $CERTIFIER[1]

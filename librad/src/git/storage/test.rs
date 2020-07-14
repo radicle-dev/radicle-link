@@ -243,7 +243,7 @@ async fn test_structure_of_refs() -> Result<(), Error> {
         .check_history_status(&user_resolver, &user_resolver)
         .unwrap();
     refs.push(Reference::rad_id(user.urn().id));
-    refs.push(Reference::rad_refs(user.urn().id, None));
+    refs.push(Reference::rad_signed_refs(user.urn().id, None));
     store.create_repo(&user)?;
     store.set_default_rad_self(verified_user)?;
 
@@ -256,7 +256,7 @@ async fn test_structure_of_refs() -> Result<(), Error> {
         project.sign_owned(&key)?;
         let namespace = project.urn().id;
         refs.push(Reference::rad_id(namespace.clone()));
-        refs.push(Reference::rad_refs(namespace, None));
+        refs.push(Reference::rad_signed_refs(namespace, None));
         let _repo = store.create_repo(&project)?;
     }
 
@@ -269,7 +269,7 @@ async fn test_structure_of_refs() -> Result<(), Error> {
         project.sign_owned(&key)?;
         let namespace = project.urn().id;
         refs.push(Reference::rad_id(namespace.clone()));
-        refs.push(Reference::rad_refs(namespace, None));
+        refs.push(Reference::rad_signed_refs(namespace, None));
         let _repo = store.create_repo(&project)?;
     }
 
