@@ -115,7 +115,7 @@ impl<'a> Fetcher<'a> {
     pub fn fetch<F, G, E>(
         &mut self,
         transitively_tracked: HashSet<&PeerId>,
-        rad_refs_of: F,
+        rad_signed_refs_of: F,
         certifiers_of: G,
     ) -> Result<(), E>
     where
@@ -130,7 +130,7 @@ impl<'a> Fetcher<'a> {
 
         // Fetch `rad/refs` first
         {
-            let refspecs = Refspec::rad_refs(
+            let refspecs = Refspec::rad_signed_refs(
                 self.url.repo.clone(),
                 &remote_peer,
                 transitively_tracked.iter().cloned(),
@@ -162,7 +162,7 @@ impl<'a> Fetcher<'a> {
                 remote_heads,
                 transitively_tracked.iter().cloned(),
                 &remote_peer,
-                rad_refs_of,
+                rad_signed_refs_of,
                 certifiers_of,
             )?
             .map(|spec| spec.to_string())

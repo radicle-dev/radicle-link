@@ -335,8 +335,8 @@ impl<S: Clone> Storage<S> {
     }
 
     /// Read the current [`Refs`] from the repo state
-    pub fn rad_refs(&self, urn: &RadUrn) -> Result<Refs, Error> {
-        let span = tracing::debug_span!("Storage::rad_refs", urn = %urn);
+    pub fn rad_signed_refs(&self, urn: &RadUrn) -> Result<Refs, Error> {
+        let span = tracing::debug_span!("Storage::rad_signed_refs", urn = %urn);
         let _guard = span.enter();
 
         // Collect refs/heads (our branches) at their current state
@@ -356,7 +356,7 @@ impl<S: Clone> Storage<S> {
         // verify the signature, and add their [`Remotes`] to ours (minus the 3rd
         // degree)
         for (peer, tracked) in remotes.iter_mut() {
-            match self.rad_refs_of(urn, peer.clone()) {
+            match self.rad_signed_refs_of(urn, peer.clone()) {
                 Ok(refs) => *tracked = refs.remotes.cutoff(),
                 Err(Error::Blob(blob::Error::NotFound(_))) => {},
                 Err(e) => return Err(e),
@@ -371,9 +371,9 @@ impl<S: Clone> Storage<S> {
         })
     }
 
-    pub fn rad_refs_of(&self, urn: &RadUrn, peer: PeerId) -> Result<Refs, Error> {
+    pub fn rad_signed_refs_of(&self, urn: &RadUrn, peer: PeerId) -> Result<Refs, Error> {
         let signed = {
-            let refs = Reference::rad_refs(urn.id.clone(), peer.clone());
+            let refs = Reference::rad_signed_refs(urn.id.clone(), peer.clone());
             let blob = Blob::Tip {
                 branch: refs.borrow().into(),
                 path: Path::new("refs"),
@@ -706,12 +706,15 @@ impl Storage<WithSigner> {
 
         let remote_peer = url.remote_peer.clone();
 
-        let rad_refs = self.rad_refs(&urn)?;
-        let transitively_tracked = rad_refs.remotes.flatten().collect::<HashSet<&PeerId>>();
+        let rad_signed_refs = self.rad_signed_refs(&urn)?;
+        let transitively_tracked = rad_signed_refs
+            .remotes
+            .flatten()
+            .collect::<HashSet<&PeerId>>();
 
         fetcher.fetch(
             transitively_tracked,
-            |peer| self.rad_refs_of(&urn, peer),
+            |peer| self.rad_signed_refs_of(&urn, peer),
             |peer| self.certifiers_of(&urn, peer),
         )?;
 
@@ -759,7 +762,7 @@ impl Storage<WithSigner> {
 
         // At this point, the transitive tracking graph may have changed. Let's
         // update the refs, but don't recurse here for now (we could, if
-        // we reload `self.rad_refs()` and compare to the value we had
+        // we reload `self.rad_signed_refs()` and compare to the value we had
         // before fetching).
         self.update_refs(&urn)
     }
@@ -933,15 +936,15 @@ impl Storage<WithSigner> {
         let _guard = span.enter();
 
         let refsig_canonical = self
-            .rad_refs(urn)?
+            .rad_signed_refs(urn)?
             .sign(&self.signer)
             .and_then(|signed| Cjson(signed).canonical_form())?;
 
-        let rad_refs_ref = Reference::rad_refs(urn.id.clone(), None).to_string();
+        let rad_signed_refs_ref = Reference::rad_signed_refs(urn.id.clone(), None).to_string();
 
         let parent: Option<git2::Commit> = self
             .backend
-            .find_reference(&rad_refs_ref)
+            .find_reference(&rad_signed_refs_ref)
             .and_then(|refs| refs.peel_to_commit().map(Some))
             .or_matches::<Error, _, _>(is_not_found_err, || Ok(None))?;
         let tree = {
@@ -963,7 +966,7 @@ impl Storage<WithSigner> {
 
         let author = self.backend.signature()?;
         self.backend.commit(
-            Some(&rad_refs_ref),
+            Some(&rad_signed_refs_ref),
             &author,
             &author,
             "",

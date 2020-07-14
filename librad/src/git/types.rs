@@ -185,14 +185,15 @@ impl Reference<Single> {
     }
 
     /// Build a reference that points to:
-    ///     * `refs/namespaces/<namespace>/refs/rad/refs`
-    ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/rad/refs`
-    pub fn rad_refs(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
+    ///     * `refs/namespaces/<namespace>/refs/rad/signed_refs`
+    ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/rad/
+    ///       signed_refs`
+    pub fn rad_signed_refs(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
         Self {
             namespace,
             remote: remote.into(),
             category: RefsCategory::Rad,
-            name: "refs".to_owned(),
+            name: "signed_refs".to_owned(),
             marker: PhantomData,
         }
     }
@@ -249,13 +250,13 @@ impl Display for Refspec {
 impl Refspec {
     /// [`Refspec`]s for fetching `rad/refs` in namespace [`Namespace`] from
     /// remote peer [`PeerId`], rejecting non-fast-forwards
-    pub fn rad_refs<'a>(
+    pub fn rad_signed_refs<'a>(
         namespace: Namespace,
         remote_peer: &'a PeerId,
         tracked: impl Iterator<Item = &'a PeerId> + 'a,
     ) -> impl Iterator<Item = Self> + 'a {
         tracked.map(move |peer| {
-            let local = Reference::rad_refs(namespace.clone(), (*peer).clone());
+            let local = Reference::rad_signed_refs(namespace.clone(), (*peer).clone());
             let remote = if peer == remote_peer {
                 local.with_remote(None)
             } else {
@@ -275,7 +276,7 @@ impl Refspec {
         remote_heads: HashMap<String, git2::Oid>,
         tracked_peers: impl Iterator<Item = &'a PeerId> + 'a,
         remote_peer: &'a PeerId,
-        rad_refs_of: impl Fn(PeerId) -> Result<Refs, E>,
+        rad_signed_refs_of: impl Fn(PeerId) -> Result<Refs, E>,
         certifiers_of: impl Fn(&PeerId) -> Result<HashSet<RadUrn>, E>,
     ) -> Result<impl Iterator<Item = Self> + 'a, E> {
         // FIXME: do this in constant memory
@@ -287,8 +288,8 @@ impl Refspec {
             // `+refs/namespaces/<namespace>/refs[/remotes/<peer>]/heads/* \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/refs/heads/*`
             {
-                let their_rad_refs = rad_refs_of(tracked_peer.clone())?;
-                for (name, target) in their_rad_refs.heads {
+                let their_singed_rad_refs = rad_signed_refs_of(tracked_peer.clone())?;
+                for (name, target) in their_singed_rad_refs.heads {
                     let name_namespaced = format!("refs/namespaces/{}/{}", namespace, name);
                     if let Some(name) = name.strip_prefix("refs/heads/") {
                         let targets_match = remote_heads
