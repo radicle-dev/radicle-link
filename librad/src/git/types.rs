@@ -91,7 +91,7 @@ impl<N> Display for Reference<N> {
 
         match &self.remote {
             None => write!(f, "{}/{}", self.category, self.name),
-            Some(remote) => write!(f, "remotes/{}/{}/{}", remote, self.category, self.name),
+            Some(remote) => write!(f, "remotes/{}/refs/{}/{}", remote, self.category, self.name),
         }
     }
 }

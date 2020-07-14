@@ -191,7 +191,7 @@ async fn fetches_on_gossip_notify() {
             .has_commit(
                 &RadUrn {
                     path: uri::Path::parse(format!(
-                        "refs/remotes/{}/heads/master",
+                        "refs/remotes/{}/refs/heads/master",
                         peer1.peer_id()
                     ))
                     .unwrap(),
