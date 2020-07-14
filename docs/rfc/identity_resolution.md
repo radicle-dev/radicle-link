@@ -81,20 +81,21 @@ The namespacing scheme could look as follows:
                 |-- heads # <-- code branches owned by $PEER_ID go here
                 |-- rad
                 |   |-- id # <-- points to the identity document history
+                |   |-- refs # <-- signature document
                 |   |-- self # <-- points to the identity of $PEER_ID
                 |   `-- ids
                 |       |-- $CERTIFIER[1]
                 |       `-- $CERTIFIER[2]
                 `-- remotes
                     `-- $TRACKED_PEER_ID
-                        `-- refs
-                            |-- heads
-                            `-- rad
-                                |-- id
-                                |-- self
-                                `-- ids
-                                    |-- $CERTIFIER[1]
-                                    `-- $CERTIFIER[2]
+                        |-- heads
+                        `-- rad
+                            |-- id
+                            |-- refs
+                            |-- self
+                            `-- ids
+                                |-- $CERTIFIER[1]
+                                `-- $CERTIFIER[2]
 
 Note that the **owned** `$CERTIFIER[n]` refs (ie. not those of remotes) are
 [symbolic refs], pointing to the `rad/id` branch of the respective namespace.
