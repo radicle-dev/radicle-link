@@ -18,3 +18,4 @@
 extern crate radicle_keystore as keystore;
 
 pub mod credential;
+pub mod remote_helper;
