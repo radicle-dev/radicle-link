@@ -24,7 +24,7 @@ use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use sodiumoxide::crypto::sign::ed25519;
 use thiserror::Error;
 
-use keystore::SecretKeyExt;
+use keystore::{sign, SecretKeyExt};
 
 pub use ed25519::PUBLICKEYBYTES;
 
@@ -59,9 +59,21 @@ pub struct SecretKey(ed25519::SecretKey);
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct PublicKey(ed25519::PublicKey);
 
+impl From<sign::PublicKey> for PublicKey {
+    fn from(other: sign::PublicKey) -> PublicKey {
+        PublicKey(ed25519::PublicKey(other.0))
+    }
+}
+
 /// A signature produced by `Key::sign`
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Signature(ed25519::Signature);
+
+impl From<sign::Signature> for Signature {
+    fn from(other: sign::Signature) -> Signature {
+        Signature(ed25519::Signature(other.0))
+    }
+}
 
 // Key
 
