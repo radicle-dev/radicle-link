@@ -15,8 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use radicle_git_helpers::run_rad_remote_helper;
+use radicle_git_helpers::remote_helper;
 
 fn main() -> anyhow::Result<()> {
-    run_rad_remote_helper()
+    remote_helper::run()
 }
