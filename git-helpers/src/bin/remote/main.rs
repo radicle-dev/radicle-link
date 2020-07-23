@@ -15,8 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#![feature(str_strip)]
-
 use std::{
     env,
     io,
@@ -43,7 +41,7 @@ fn main() -> anyhow::Result<()> {
         args[0]
             .parse()
             .or_else(|_| args[1].parse())
-            .or_else(|_| Err(anyhow::anyhow!("invalid args: {:?}", args)))
+            .map_err(|_| anyhow::anyhow!("invalid args: {:?}", args))
     }?;
 
     let git_dir = env::var("GIT_DIR").map(PathBuf::from)?;

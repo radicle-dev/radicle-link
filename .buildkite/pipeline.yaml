@@ -7,7 +7,7 @@ steps:
       production: "true"
       platform: "linux"
     env: &build-docker
-      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-seedling-build@sha256:f8280c841387ea2ced917366b78af9870e3330ca205478a998943f3c8f3c948f"
+      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-seedling-build@sha256:bbf2fa12555886b7f279bb1ba7997090611f3c23a178fd27bb06f70693acd8af"
       DOCKER_FILE: .buildkite/docker/rust/Dockerfile
 
   - label: "Lint and clip"

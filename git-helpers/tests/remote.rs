@@ -15,8 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#![feature(str_strip)]
-
 extern crate radicle_keystore as keystore;
 
 use std::{

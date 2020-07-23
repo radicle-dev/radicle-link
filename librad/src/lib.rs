@@ -17,7 +17,6 @@
 
 #![feature(bool_to_option)]
 #![feature(never_type)]
-#![feature(str_strip)]
 
 #[macro_use]
 extern crate async_trait;
