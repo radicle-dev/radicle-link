@@ -634,7 +634,7 @@ impl<A> Thread<A> {
     /// ```
     pub fn edit<F>(&mut self, f: F)
     where
-        F: FnOnce(&mut A) -> (),
+        F: FnOnce(&mut A),
     {
         match self.finger {
             Finger::Root => f(self.root.get_mut()),
