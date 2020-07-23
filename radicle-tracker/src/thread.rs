@@ -813,7 +813,7 @@ mod tests {
     fn prop_new_followed_by_edit_is_same_as_editing_followed_by_new<A, F>(mut a: A, f: &F) -> bool
     where
         A: Eq + Clone,
-        F: Fn(&mut A) -> (),
+        F: Fn(&mut A),
     {
         let mut lhs = Thread::new(a.clone());
         lhs.edit(f);

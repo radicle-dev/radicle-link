@@ -41,7 +41,7 @@ fn main() -> anyhow::Result<()> {
         args[0]
             .parse()
             .or_else(|_| args[1].parse())
-            .or_else(|_| Err(anyhow::anyhow!("invalid args: {:?}", args)))
+            .map_err(|_| anyhow::anyhow!("invalid args: {:?}", args))
     }?;
 
     let git_dir = env::var("GIT_DIR").map(PathBuf::from)?;
