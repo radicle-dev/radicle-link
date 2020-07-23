@@ -29,9 +29,11 @@ use serde::{
 };
 use thiserror::Error;
 
+use keystore::sign;
+
 use crate::{
     hash::{Hash, ParseError as HashParseError},
-    keys::{PublicKey, SecretKey, Signature},
+    keys::{PublicKey, Signature},
     meta::user::User,
     uri::{Path, Protocol, RadUrn},
 };
@@ -459,8 +461,16 @@ where
     /// FIXME[ENTITY]: we should check the hash instead: it is cheaper and makes
     /// also verification way faster because we would not need to rebuild the
     /// canonical data at every check (we can trust the hash correctness)
-    pub fn compute_signature(&self, key: &SecretKey) -> Result<Signature, Error> {
-        Ok(key.sign(&self.canonical_data()?))
+    pub fn compute_signature<S>(&self, signer: &S) -> Result<Signature, Error>
+    where
+        S: sign::Signer,
+        S::Error: std::fmt::Debug,
+    {
+        Ok(
+            futures::executor::block_on(signer.sign(&self.canonical_data()?))
+                .expect("TODO")
+                .into(),
+        )
     }
 
     /// Given a private key owned by the entity, sign the current entity
@@ -469,8 +479,12 @@ where
     ///
     /// - the entity has not been already signed using this same key
     /// - this key is owned by the current entity
-    pub fn sign_owned(&mut self, key: &SecretKey) -> Result<(), Error> {
-        let public_key = key.public();
+    pub fn sign_owned<S>(&mut self, signer: &S) -> Result<(), Error>
+    where
+        S: sign::Signer,
+        S::Error: std::fmt::Debug,
+    {
+        let public_key = signer.public_key().into();
         if self.signatures().contains_key(&public_key) {
             return Err(Error::SignatureAlreadyPresent(public_key));
         }
@@ -479,7 +493,7 @@ where
         }
         let signature = EntitySignature {
             by: Signatory::OwnedKey,
-            sig: self.compute_signature(key)?,
+            sig: self.compute_signature(signer)?,
         };
         self.signatures.insert(public_key, signature);
         Ok(())
@@ -491,8 +505,12 @@ where
     ///
     /// - the entity has not been already signed using this same key
     /// - this key is owned by the provided user
-    pub fn sign_by_user(&mut self, key: &SecretKey, user: &User<Verified>) -> Result<(), Error> {
-        let public_key = key.public();
+    pub fn sign_by_user<S>(&mut self, signer: &S, user: &User<Verified>) -> Result<(), Error>
+    where
+        S: sign::Signer,
+        S::Error: std::fmt::Debug,
+    {
+        let public_key = signer.public_key().into();
         if self.signatures().contains_key(&public_key) {
             return Err(Error::SignatureAlreadyPresent(public_key));
         }
@@ -501,7 +519,7 @@ where
         }
         let signature = EntitySignature {
             by: Signatory::User(user.urn()),
-            sig: self.compute_signature(key)?,
+            sig: self.compute_signature(signer)?,
         };
         self.signatures.insert(public_key, signature);
         Ok(())
@@ -513,20 +531,24 @@ where
     ///
     /// - the entity has not been already signed using this same key
     /// - this key is allowed to sign the entity (using `check_key`)
-    pub fn sign(
+    pub fn sign<S>(
         &mut self,
-        key: &SecretKey,
+        signer: &S,
         by: &Signatory,
         resolver: &impl Resolver<User<Draft>>,
-    ) -> Result<(), Error> {
-        let public_key = key.public();
+    ) -> Result<(), Error>
+    where
+        S: sign::Signer,
+        S::Error: std::fmt::Debug,
+    {
+        let public_key = signer.public_key().into();
         if self.signatures().contains_key(&public_key) {
             return Err(Error::SignatureAlreadyPresent(public_key));
         }
         self.check_key(&public_key, by, resolver)?;
         let signature = EntitySignature {
             by: by.to_owned(),
-            sig: self.compute_signature(key)?,
+            sig: self.compute_signature(signer)?,
         };
         self.signatures.insert(public_key, signature);
         Ok(())
