@@ -26,6 +26,8 @@ use futures_codec::{Decoder, Encoder, Framed};
 use quinn::{self, NewConnection, VarInt};
 use thiserror::Error;
 
+use keystore::sign;
+
 use crate::{
     keys::AsPKCS8,
     net::{
@@ -54,15 +56,13 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    pub async fn bind<'a, S>(local_key: &S, listen_addr: SocketAddr) -> Result<BoundEndpoint<'a>>
+    pub async fn bind<'a, S>(signer: &S, listen_addr: SocketAddr) -> Result<BoundEndpoint<'a>>
     where
-        S: Clone + Into<PeerId> + AsPKCS8,
+        S: sign::Signer + AsPKCS8,
     {
-        let (endpoint, incoming) = make_endpoint(local_key, listen_addr).await?;
-        let endpoint = Endpoint {
-            peer_id: local_key.clone().into(),
-            endpoint,
-        };
+        let peer_id = PeerId::from_signer(signer);
+        let (endpoint, incoming) = make_endpoint(signer, listen_addr).await?;
+        let endpoint = Endpoint { peer_id, endpoint };
         let incoming = incoming
             .filter_map(|connecting| async move { connecting.await.ok().map(new_connection) })
             .boxed();
@@ -331,7 +331,7 @@ async fn make_endpoint<S>(
     listen_addr: SocketAddr,
 ) -> std::result::Result<(quinn::Endpoint, quinn::Incoming), quinn::EndpointError>
 where
-    S: Clone + Into<PeerId> + AsPKCS8,
+    S: sign::Signer + AsPKCS8,
 {
     let mut builder = quinn::Endpoint::builder();
     builder.default_client_config(make_client_config(signer));
@@ -342,7 +342,7 @@ where
 
 fn make_client_config<S>(signer: &S) -> quinn::ClientConfig
 where
-    S: Clone + Into<PeerId> + AsPKCS8,
+    S: sign::Signer + AsPKCS8,
 {
     let mut quic_config = quinn::ClientConfigBuilder::default().build();
     let tls_config = Arc::new(tls::make_client_config(signer));
@@ -353,7 +353,7 @@ where
 
 fn make_server_config<S>(signer: &S) -> quinn::ServerConfig
 where
-    S: Clone + Into<PeerId> + AsPKCS8,
+    S: sign::Signer + AsPKCS8,
 {
     let mut quic_config = quinn::ServerConfigBuilder::default().build();
     let tls_config = Arc::new(tls::make_server_config(signer));
