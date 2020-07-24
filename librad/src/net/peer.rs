@@ -16,7 +16,6 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    error,
     future::Future,
     io,
     net::SocketAddr,
@@ -33,7 +32,7 @@ use crate::{
         storage::{self, Storage as GitStorage, WithSigner},
     },
     internal::{borrow::TryToOwned, channel::Fanout},
-    keys::AsPKCS8,
+    keys::{self, AsPKCS8},
     net::{
         connection::LocalInfo,
         discovery::Discovery,
@@ -118,8 +117,8 @@ pub struct PeerConfig<Disco, Signer> {
 
 impl<D, S> PeerConfig<D, S>
 where
-    S: WithSigner + Into<PeerId> + AsPKCS8 + Send + Sync + 'static,
-    S::Error: error::Error + Send + Sync + 'static,
+    S: WithSigner + AsPKCS8,
+    S::Error: keys::SignError,
     D: Discovery<Addr = SocketAddr>,
     <D as Discovery>::Stream: 'static,
 {
@@ -215,8 +214,8 @@ pub struct Peer<S> {
 
 impl<S> Peer<S>
 where
-    S: WithSigner + Into<PeerId> + Send + Sync,
-    S::Error: error::Error + Send + Sync + 'static,
+    S: WithSigner,
+    S::Error: keys::SignError,
 {
     pub fn listen_addr(&self) -> SocketAddr {
         self.listen_addr
@@ -238,11 +237,11 @@ where
 
     async fn bootstrap<D>(config: PeerConfig<D, S>) -> Result<Self, BootstrapError>
     where
-        S: Into<PeerId> + AsPKCS8 + 'static,
+        S: AsPKCS8 + 'static,
         D: Discovery<Addr = SocketAddr>,
         <D as Discovery>::Stream: 'static,
     {
-        let peer_id = config.signer.clone().into();
+        let peer_id = PeerId::from_signer(&config.signer);
 
         let git = GitServer::new(&config.paths);
 
@@ -299,7 +298,7 @@ pub struct PeerStorage<S> {
 
 impl<S: WithSigner> PeerStorage<S>
 where
-    S::Error: error::Error + Send + Sync + 'static,
+    S::Error: keys::SignError,
 {
     fn git_fetch<'a>(
         &'a self,
@@ -367,8 +366,8 @@ fn urn_context<'a>(local_peer_id: &PeerId, urn: impl Into<OriginatesRef<'a, RadU
 #[async_trait]
 impl<S> LocalStorage for PeerStorage<S>
 where
-    S: WithSigner + Send + Sync + 'static,
-    S::Error: error::Error + Send + Sync + 'static,
+    S: WithSigner,
+    S::Error: keys::SignError,
 {
     type Update = Gossip;
 
