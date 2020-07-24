@@ -30,31 +30,30 @@ use crate::{
     git::{
         ext::{into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER},
         local::{self, url::LocalUrl},
-        storage::{self, Storage},
+        storage::{self, Storage, WithSigner},
     },
-    keys::SecretKey,
+    keys,
     paths::Paths,
     uri::RadUrn,
 };
 
-lazy_static! {
-    static ref SETTINGS: Arc<RwLock<Option<Settings>>> = Arc::new(RwLock::new(None));
-}
-
 #[derive(Clone)]
-pub struct Settings {
+pub struct Settings<S> {
     pub paths: Paths,
-    pub signer: SecretKey,
+    pub signer: S,
 }
 
-pub fn register(settings: Settings) {
+pub fn register<S>(settings: Settings<S>)
+where
+    S: WithSigner,
+    S::Error: keys::SignError,
+{
     static INIT: Once = Once::new();
 
-    LocalTransportFactory::new().configure(settings);
     unsafe {
         INIT.call_once(move || {
             git2::transport::register(local::URL_SCHEME, move |remote| {
-                Transport::smart(&remote, true, LocalTransportFactory::new())
+                Transport::smart(&remote, true, LocalTransportFactory::new(settings.clone()))
             })
             .unwrap()
         });
@@ -62,23 +61,23 @@ pub fn register(settings: Settings) {
 }
 
 #[derive(Clone)]
-struct LocalTransportFactory {
-    settings: Arc<RwLock<Option<Settings>>>,
+struct LocalTransportFactory<S> {
+    settings: Arc<RwLock<Option<Settings<S>>>>,
 }
 
-impl LocalTransportFactory {
-    fn new() -> Self {
+impl<S> LocalTransportFactory<S> {
+    fn new(settings: Settings<S>) -> Self {
         Self {
-            settings: SETTINGS.clone(),
+            settings: Arc::new(RwLock::new(Some(settings))),
         }
     }
-
-    fn configure(&self, settings: Settings) {
-        *self.settings.write().unwrap() = Some(settings)
-    }
 }
 
-impl SmartSubtransport for LocalTransportFactory {
+impl<S> SmartSubtransport for LocalTransportFactory<S>
+where
+    S: WithSigner,
+    S::Error: keys::SignError,
+{
     fn action(
         &self,
         url: &str,
@@ -230,12 +229,16 @@ impl Localio {
 }
 
 #[derive(Clone)]
-pub struct LocalTransport {
-    storage: Arc<Mutex<Storage<SecretKey>>>,
+pub struct LocalTransport<S> {
+    storage: Arc<Mutex<Storage<S>>>,
 }
 
-impl LocalTransport {
-    pub fn new(settings: Settings) -> Result<Self, Error> {
+impl<S> LocalTransport<S>
+where
+    S: WithSigner,
+    S::Error: keys::SignError,
+{
+    pub fn new(settings: Settings<S>) -> Result<Self, Error> {
         let storage = Storage::open(&settings.paths)?.with_signer(settings.signer)?;
         Ok(LocalTransport {
             storage: Arc::new(Mutex::new(storage)),
