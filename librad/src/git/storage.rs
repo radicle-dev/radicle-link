@@ -151,8 +151,8 @@ pub enum RadSelfSpec {
 
 pub type NoSigner = PhantomData<!>;
 
-pub trait WithSigner: sign::Signer + Send + Sync + Clone + 'static {}
-impl<T: sign::Signer + Send + Sync + Clone + 'static> WithSigner for T {}
+pub trait Signer: sign::Signer + Send + Sync + Clone + 'static {}
+impl<T: sign::Signer + Send + Sync + Clone + 'static> Signer for T {}
 
 pub struct Storage<S> {
     pub(super) backend: git2::Repository,
@@ -477,7 +477,7 @@ impl Storage<NoSigner> {
 
     pub fn with_signer<S>(self, signer: S) -> Result<Storage<S>, Error>
     where
-        S: WithSigner,
+        S: Signer,
     {
         let peer_id = PeerId::from_signer(&signer);
         if self.peer_id != peer_id {
@@ -494,7 +494,7 @@ impl Storage<NoSigner> {
 
 impl<S> Storage<S>
 where
-    S: WithSigner,
+    S: Signer,
     S::Error: keys::SignError,
 {
     /// Open the `Storage` found at the given [`Paths`]'s `git_dir`, or

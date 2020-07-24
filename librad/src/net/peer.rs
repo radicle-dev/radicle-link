@@ -29,7 +29,7 @@ use crate::{
     git::{
         self,
         p2p::server::GitServer,
-        storage::{self, Storage as GitStorage, WithSigner},
+        storage::{self, Signer, Storage as GitStorage},
     },
     internal::{borrow::TryToOwned, channel::Fanout},
     keys::{self, AsPKCS8},
@@ -117,7 +117,7 @@ pub struct PeerConfig<Disco, Signer> {
 
 impl<D, S> PeerConfig<D, S>
 where
-    S: WithSigner + AsPKCS8,
+    S: Signer + AsPKCS8,
     S::Error: keys::SignError,
     D: Discovery<Addr = SocketAddr>,
     <D as Discovery>::Stream: 'static,
@@ -214,7 +214,7 @@ pub struct Peer<S> {
 
 impl<S> Peer<S>
 where
-    S: WithSigner,
+    S: Signer,
     S::Error: keys::SignError,
 {
     pub fn listen_addr(&self) -> SocketAddr {
@@ -296,7 +296,7 @@ pub struct PeerStorage<S> {
     subscribers: Fanout<PeerEvent>,
 }
 
-impl<S: WithSigner> PeerStorage<S>
+impl<S: Signer> PeerStorage<S>
 where
     S::Error: keys::SignError,
 {
@@ -366,7 +366,7 @@ fn urn_context<'a>(local_peer_id: &PeerId, urn: impl Into<OriginatesRef<'a, RadU
 #[async_trait]
 impl<S> LocalStorage for PeerStorage<S>
 where
-    S: WithSigner,
+    S: Signer,
     S::Error: keys::SignError,
 {
     type Update = Gossip;

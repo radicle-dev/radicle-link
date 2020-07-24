@@ -22,7 +22,7 @@ use thiserror::Error;
 use crate::{
     git::{
         refs::Refs,
-        storage::{self, RadSelfSpec, Storage, WithSigner},
+        storage::{self, RadSelfSpec, Signer, Storage},
         types::Namespace,
     },
     internal::borrow::{TryCow, TryToOwned},
@@ -103,7 +103,7 @@ impl<'a, S: Clone> Repo<'a, S> {
     }
 }
 
-impl<'a, S: WithSigner> Repo<'a, S>
+impl<'a, S: Signer> Repo<'a, S>
 where
     S::Error: keys::SignError,
 {
