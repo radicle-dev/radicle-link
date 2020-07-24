@@ -28,6 +28,8 @@ use rustls::{
     TLSError,
 };
 
+use keystore::sign;
+
 use crate::{
     keys::{AsPKCS8, PublicKey},
     peer::PeerId,
@@ -41,10 +43,11 @@ use yasna::{ASN1Error, ASN1ErrorKind, ASN1Result};
 /// the `PeerId::default_encoding` as the subject alt name.
 fn gen_cert<S>(signer: &S) -> rcgen::Certificate
 where
-    S: Clone + Into<PeerId> + AsPKCS8,
+    S: sign::Signer + AsPKCS8,
 {
+    let peer_id = PeerId::from_signer(signer);
     let params = {
-        let mut params = CertificateParams::new(vec![signer.clone().into().default_encoding()]);
+        let mut params = CertificateParams::new(vec![peer_id.default_encoding()]);
 
         params.alg = &PKCS_ED25519;
         params.distinguished_name = {
@@ -76,10 +79,11 @@ where
 
 pub fn make_client_config<S>(signer: &S) -> rustls::ClientConfig
 where
-    S: Clone + Into<PeerId> + AsPKCS8,
+    S: sign::Signer + AsPKCS8,
 {
     let cert = gen_cert(signer);
 
+    let peer_id = PeerId::from_signer(signer);
     let mut cfg = rustls::ClientConfig::new();
     cfg.versions = vec![rustls::ProtocolVersion::TLSv1_3];
     cfg.set_single_client_cert(
@@ -88,19 +92,19 @@ where
     )
     .expect("A valid private key is valid. qed");
     cfg.dangerous()
-        .set_certificate_verifier(Arc::new(RadServerCertVerifier::new(signer.clone().into())));
+        .set_certificate_verifier(Arc::new(RadServerCertVerifier::new(peer_id)));
 
     cfg
 }
 
 pub fn make_server_config<S>(signer: &S) -> rustls::ServerConfig
 where
-    S: Clone + Into<PeerId> + AsPKCS8,
+    S: sign::Signer + AsPKCS8,
 {
     let cert = gen_cert(signer);
 
-    let mut cfg =
-        rustls::ServerConfig::new(Arc::new(RadClientCertVerifier::new(signer.clone().into())));
+    let peer_id = PeerId::from_signer(signer);
+    let mut cfg = rustls::ServerConfig::new(Arc::new(RadClientCertVerifier::new(peer_id)));
     cfg.versions = vec![rustls::ProtocolVersion::TLSv1_3];
     cfg.set_single_cert(
         vec![rustls::Certificate(cert.serialize_der().unwrap())],
