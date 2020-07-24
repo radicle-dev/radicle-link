@@ -56,7 +56,7 @@ pub trait AsPKCS8 {
 }
 
 pub trait SignError: error::Error + Send + Sync + 'static {}
-impl SignError for Infallible {}
+impl<T: error::Error + Send + Sync + 'static> SignError for T {}
 
 /// A device-specific signing key
 #[derive(Clone, Eq, PartialEq)]

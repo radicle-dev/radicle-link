@@ -112,8 +112,6 @@ pub mod signing {
         #[error(transparent)]
         Cjson(#[from] CjsonError),
     }
-
-    impl keys::SignError for Error {}
 }
 
 /// The current `refs/heads` and [`Remotes`] (transitive tracking graph)
