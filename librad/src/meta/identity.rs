@@ -1,3 +1,20 @@
+// This file is part of radicle-link
+// <https://github.com/radicle-dev/radicle-link>
+//
+// Copyright (C) 2019-2020 The Radicle Team <dev@radicle.xyz>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License version 3 or
+// later as published by the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     convert::Into,
@@ -23,6 +40,9 @@ pub enum Error {
 
     #[error("Invalid revision tree entry {0}")]
     InvalidRevisionTreeEntry(Revision),
+
+    #[error("Invalid signature by key {0}")]
+    InvalidSignature(PublicKey),
 
     #[error(transparent)]
     Cjson(#[from] CjsonError),
@@ -156,7 +176,7 @@ impl Delegations {
         }
     }
 
-    pub fn keys<'a>(&'a self) -> DelegationsKeys<'a> {
+    pub fn keys(&self) -> DelegationsKeys {
         match self {
             Delegations::Keys(keys) => DelegationsKeys::Keys(keys.iter()),
             Delegations::Users(users) => DelegationsKeys::Users(users.iter()),
@@ -199,7 +219,7 @@ impl Delegations {
         user_revision: &Revision,
     ) -> Result<(), Error> {
         if let (Delegations::Users(keys), Delegations::Keys(user_keys)) = (self, user_keys) {
-            for k in user_keys.into_iter() {
+            for k in user_keys.iter() {
                 keys.insert(k.clone(), user_revision.clone());
             }
             Ok(())
@@ -369,7 +389,7 @@ impl IdentityBuilder {
 
     pub fn sign(mut self, key: SecretKey) -> Self {
         self.signatures
-            .insert(key.public().clone(), key.sign(self.revision.as_bytes()));
+            .insert(key.public(), key.sign(self.revision.as_bytes()));
         self
     }
 
@@ -426,9 +446,18 @@ impl Identity {
     pub fn signatures(&self) -> &BTreeMap<PublicKey, Signature> {
         &self.signatures
     }
+
+    pub fn check_signatures(&self) -> Result<(), Error> {
+        for (k, s) in &self.signatures {
+            if !s.verify(self.revision.as_bytes(), k) {
+                return Err(Error::InvalidSignature(k.clone()));
+            }
+        }
+        Ok(())
+    }
 }
 
-const RAD_SIGNATURE_TRAILER_NAME: &'static str = "x-rad-signature";
+const RAD_SIGNATURE_TRAILER_NAME: &str = "x-rad-signature";
 
 fn append_signatures(buf: &mut String, sigs: &BTreeMap<PublicKey, Signature>) {
     buf.push_str("\n");
@@ -446,7 +475,7 @@ fn match_signature(line: &str) -> Option<(PublicKey, Signature)> {
     let mut tokens = line
         .strip_prefix(RAD_SIGNATURE_TRAILER_NAME)
         .and_then(|line| line.strip_prefix(": "))?
-        .split(" ");
+        .split(' ');
 
     let key_text = tokens.next()?;
     let sig_text = tokens.next()?;
@@ -463,7 +492,7 @@ fn match_signature(line: &str) -> Option<(PublicKey, Signature)> {
 pub fn parse_signatures(buf: Option<&str>) -> BTreeMap<PublicKey, Signature> {
     let mut sigs = BTreeMap::new();
     if let Some(buf) = buf {
-        for line in buf.split("\n") {
+        for line in buf.split('\n') {
             if let Some((k, s)) = match_signature(line) {
                 sigs.insert(k, s);
             }
@@ -476,7 +505,7 @@ pub struct IdentityStore<'a> {
     repo: &'a git2::Repository,
 }
 
-const ROOT_TREE_ENTRY_NAME: &'static str = "ROOT";
+const ROOT_TREE_ENTRY_NAME: &str = "ROOT";
 
 impl<'a> IdentityStore<'a> {
     pub fn new(repo: &'a git2::Repository) -> Self {
