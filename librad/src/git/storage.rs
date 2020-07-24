@@ -51,7 +51,7 @@ use crate::{
         canonical::{Cjson, CjsonError},
         result::ResultExt,
     },
-    keys::{self, SecretKey},
+    keys,
     meta::{
         entity::{
             self,
@@ -152,7 +152,7 @@ pub enum RadSelfSpec {
 pub type NoSigner = PhantomData<!>;
 
 pub trait WithSigner: sign::Signer + Send + Sync + Clone + 'static {}
-impl WithSigner for SecretKey {}
+impl<T: sign::Signer + Send + Sync + Clone + 'static> WithSigner for T {}
 
 pub struct Storage<S> {
     pub(super) backend: git2::Repository,
