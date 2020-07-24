@@ -80,12 +80,13 @@ impl<'a> TryFrom<&'a git2::Repository> for Config {
 impl Config {
     pub(super) fn init<U>(
         repo: &mut git2::Repository,
-        peer_id: PeerId,
+        signer: &impl sign::Signer,
         user: U,
     ) -> Result<Self, Error>
     where
         U: Into<Option<User<Verified>>>,
     {
+        let peer_id = PeerId::from_signer(signer);
         let mut config = repo.config()?;
         let user = user.into();
 
@@ -223,7 +224,7 @@ mod tests {
     fn setup(key: &SecretKey) -> TmpState {
         WithTmpDir::new::<_, Error>(|path| {
             let mut repo = git2::Repository::init_bare(path)?;
-            let config = Config::init(&mut repo, key.into(), None)?;
+            let config = Config::init(&mut repo, key, None)?;
             Ok(TmpConfig { repo, config })
         })
         .unwrap()

@@ -30,7 +30,7 @@ use keystore::sign;
 
 use crate::{
     internal::canonical::{Cjson, CjsonError},
-    keys::Signature,
+    keys::{self, Signature},
     peer::PeerId,
 };
 
@@ -112,6 +112,8 @@ pub mod signing {
         #[error(transparent)]
         Cjson(#[from] CjsonError),
     }
+
+    impl keys::SignError for Error {}
 }
 
 /// The current `refs/heads` and [`Remotes`] (transitive tracking graph)
@@ -125,7 +127,7 @@ impl Refs {
     pub fn sign<S>(self, signer: &S) -> Result<Signed, signing::Error>
     where
         S: sign::Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
+        S::Error: keys::SignError,
     {
         let signature = futures::executor::block_on(signer.sign(&self.canonical_form()?))
             .map_err(|err| signing::Error::Sign(Box::new(err)))?;

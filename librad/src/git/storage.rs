@@ -19,7 +19,6 @@ use std::{
     borrow::Borrow,
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryFrom,
-    error,
     io,
     iter,
     marker::PhantomData,
@@ -52,7 +51,7 @@ use crate::{
         canonical::{Cjson, CjsonError},
         result::ResultExt,
     },
-    keys::SecretKey,
+    keys::{self, SecretKey},
     meta::{
         entity::{
             self,
@@ -152,7 +151,7 @@ pub enum RadSelfSpec {
 
 pub type NoSigner = PhantomData<!>;
 
-pub trait WithSigner: sign::Signer + Clone {}
+pub trait WithSigner: sign::Signer + Send + Sync + Clone + 'static {}
 impl WithSigner for SecretKey {}
 
 pub struct Storage<S> {
@@ -478,9 +477,9 @@ impl Storage<NoSigner> {
 
     pub fn with_signer<S>(self, signer: S) -> Result<Storage<S>, Error>
     where
-        S: WithSigner + Into<PeerId>,
+        S: WithSigner,
     {
-        let peer_id = signer.clone().into();
+        let peer_id = PeerId::from_signer(&signer);
         if self.peer_id != peer_id {
             return Err(Error::SignerKeyMismatch);
         }
@@ -496,15 +495,12 @@ impl Storage<NoSigner> {
 impl<S> Storage<S>
 where
     S: WithSigner,
-    S::Error: error::Error + Send + Sync + 'static,
+    S::Error: keys::SignError,
 {
     /// Open the `Storage` found at the given [`Paths`]'s `git_dir`, or
     /// initialise it if it isn't yet.
-    pub fn open_or_init(paths: &Paths, signer: S) -> Result<Self, Error>
-    where
-        S: Into<PeerId>,
-    {
-        let peer_id = signer.clone().into();
+    pub fn open_or_init(paths: &Paths, signer: S) -> Result<Self, Error> {
+        let peer_id = PeerId::from_signer(&signer);
         match Storage::open(paths) {
             Ok(this) => {
                 if this.peer_id != peer_id {
@@ -519,10 +515,7 @@ where
     }
 
     /// Initialise the `Storage` at the given [`Paths`]'s `git_dir`.
-    pub fn init(paths: &Paths, signer: S) -> Result<Self, Error>
-    where
-        S: Into<PeerId>,
-    {
+    pub fn init(paths: &Paths, signer: S) -> Result<Self, Error> {
         let mut backend = git2::Repository::init_opts(
             paths.git_dir(),
             git2::RepositoryInitOptions::new()
@@ -530,9 +523,9 @@ where
                 .no_reinit(true)
                 .external_template(false),
         )?;
-        let peer_id = signer.clone().into();
-        Config::init(&mut backend, peer_id.clone(), None)?;
+        Config::init(&mut backend, &signer, None)?;
 
+        let peer_id = PeerId::from_signer(&signer);
         Ok(Self {
             backend,
             peer_id,

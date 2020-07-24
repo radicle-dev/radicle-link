@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{collections::HashSet, error};
+use std::collections::HashSet;
 
 use thiserror::Error;
 
@@ -26,6 +26,7 @@ use crate::{
         types::Namespace,
     },
     internal::borrow::{TryCow, TryToOwned},
+    keys,
     meta::{entity::Draft, user::User},
     peer::PeerId,
     uri::{RadUrl, RadUrn},
@@ -104,7 +105,7 @@ impl<'a, S: Clone> Repo<'a, S> {
 
 impl<'a, S: WithSigner> Repo<'a, S>
 where
-    S::Error: error::Error + Send + Sync + 'static,
+    S::Error: keys::SignError,
 {
     /// Fetch new refs and objects for this repo from [`PeerId`]
     pub fn fetch(&self, from: &PeerId) -> Result<(), Error> {

@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{convert::Infallible, fmt, iter, ops::Deref};
+use std::{convert::Infallible, error, fmt, iter, ops::Deref};
 
 use bit_vec::BitVec;
 use multibase::Base;
@@ -54,6 +54,9 @@ fn ensure_initialised() {
 pub trait AsPKCS8 {
     fn as_pkcs8(&self) -> Vec<u8>;
 }
+
+pub trait SignError: error::Error + Send + Sync + 'static {}
+impl SignError for Infallible {}
 
 /// A device-specific signing key
 #[derive(Clone, Eq, PartialEq)]
