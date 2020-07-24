@@ -20,7 +20,7 @@ use std::{fmt, ops::Deref};
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
 /// Serializable [`git2::Oid`]
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Oid(pub git2::Oid);
 
 impl Serialize for Oid {
@@ -29,6 +29,12 @@ impl Serialize for Oid {
         S: Serializer,
     {
         self.0.to_string().serialize(serializer)
+    }
+}
+
+impl std::fmt::Display for Oid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0.to_string())
     }
 }
 
