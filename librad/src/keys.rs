@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{fmt, iter, ops::Deref};
+use std::{convert::Infallible, fmt, iter, ops::Deref};
 
 use bit_vec::BitVec;
 use multibase::Base;
@@ -49,6 +49,10 @@ fn ensure_initialised() {
     if !SODIUMOXIDE_INITIALISED.deref() {
         panic!("Failed to initialise sodiumoxide")
     }
+}
+
+pub trait AsPKCS8 {
+    fn as_pkcs8(&self) -> Vec<u8>;
 }
 
 /// A device-specific signing key
@@ -166,6 +170,27 @@ impl SecretKeyExt for SecretKey {
     }
 
     fn metadata(&self) -> Self::Metadata {}
+}
+
+#[async_trait]
+impl sign::Signer for SecretKey {
+    type Error = Infallible;
+
+    fn public_key(&self) -> sign::PublicKey {
+        let public_key = self.public().0;
+        sign::PublicKey(public_key.0)
+    }
+
+    async fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
+        let signature = self.sign(data).0;
+        Ok(sign::Signature(signature.0))
+    }
+}
+
+impl AsPKCS8 for SecretKey {
+    fn as_pkcs8(&self) -> Vec<u8> {
+        SecretKey::as_pkcs8(&self)
+    }
 }
 
 // PublicKey

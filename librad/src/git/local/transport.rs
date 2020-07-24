@@ -30,7 +30,7 @@ use crate::{
     git::{
         ext::{into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER},
         local::{self, url::LocalUrl},
-        storage::{self, Storage, WithSigner},
+        storage::{self, Storage},
     },
     keys::SecretKey,
     paths::Paths,
@@ -231,7 +231,7 @@ impl Localio {
 
 #[derive(Clone)]
 pub struct LocalTransport {
-    storage: Arc<Mutex<Storage<WithSigner>>>,
+    storage: Arc<Mutex<Storage<SecretKey>>>,
 }
 
 impl LocalTransport {

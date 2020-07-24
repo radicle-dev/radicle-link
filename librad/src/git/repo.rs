@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, error};
 
 use thiserror::Error;
 
@@ -102,7 +102,10 @@ impl<'a, S: Clone> Repo<'a, S> {
     }
 }
 
-impl<'a> Repo<'a, WithSigner> {
+impl<'a, S: WithSigner> Repo<'a, S>
+where
+    S::Error: error::Error + Send + Sync + 'static,
+{
     /// Fetch new refs and objects for this repo from [`PeerId`]
     pub fn fetch(&self, from: &PeerId) -> Result<(), Error> {
         self.storage
@@ -123,9 +126,9 @@ impl<'a> Repo<'a, WithSigner> {
     /// Set the `rad/self` identity for this repo
     ///
     /// [`None`] removes `rad/self`, if present.
-    pub fn set_rad_self<S>(&self, spec: S) -> Result<(), Error>
+    pub fn set_rad_self<Spec>(&self, spec: Spec) -> Result<(), Error>
     where
-        S: Into<Option<RadSelfSpec>>,
+        Spec: Into<Option<RadSelfSpec>>,
     {
         self.storage
             .set_rad_self(&self.urn, spec)

@@ -27,7 +27,7 @@ use quinn::{self, NewConnection, VarInt};
 use thiserror::Error;
 
 use crate::{
-    keys::SecretKey,
+    keys::AsPKCS8,
     net::{
         connection::{self, CloseReason, LocalInfo, RemoteInfo},
         tls,
@@ -54,13 +54,13 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    pub async fn bind<'a>(
-        local_key: &SecretKey,
-        listen_addr: SocketAddr,
-    ) -> Result<BoundEndpoint<'a>> {
+    pub async fn bind<'a, S>(local_key: &S, listen_addr: SocketAddr) -> Result<BoundEndpoint<'a>>
+    where
+        S: Clone + Into<PeerId> + AsPKCS8,
+    {
         let (endpoint, incoming) = make_endpoint(local_key, listen_addr).await?;
         let endpoint = Endpoint {
-            peer_id: PeerId::from(local_key),
+            peer_id: local_key.clone().into(),
             endpoint,
         };
         let incoming = incoming
@@ -326,28 +326,37 @@ impl AsyncWrite for SendStream {
         AsyncWrite::poll_close(Pin::new(&mut self.get_mut().send), cx)
     }
 }
-async fn make_endpoint(
-    key: &SecretKey,
+async fn make_endpoint<S>(
+    signer: &S,
     listen_addr: SocketAddr,
-) -> std::result::Result<(quinn::Endpoint, quinn::Incoming), quinn::EndpointError> {
+) -> std::result::Result<(quinn::Endpoint, quinn::Incoming), quinn::EndpointError>
+where
+    S: Clone + Into<PeerId> + AsPKCS8,
+{
     let mut builder = quinn::Endpoint::builder();
-    builder.default_client_config(make_client_config(key));
-    builder.listen(make_server_config(key));
+    builder.default_client_config(make_client_config(signer));
+    builder.listen(make_server_config(signer));
 
     builder.bind(&listen_addr)
 }
 
-fn make_client_config(key: &SecretKey) -> quinn::ClientConfig {
+fn make_client_config<S>(signer: &S) -> quinn::ClientConfig
+where
+    S: Clone + Into<PeerId> + AsPKCS8,
+{
     let mut quic_config = quinn::ClientConfigBuilder::default().build();
-    let tls_config = Arc::new(tls::make_client_config(key));
+    let tls_config = Arc::new(tls::make_client_config(signer));
     quic_config.crypto = tls_config;
 
     quic_config
 }
 
-fn make_server_config(key: &SecretKey) -> quinn::ServerConfig {
+fn make_server_config<S>(signer: &S) -> quinn::ServerConfig
+where
+    S: Clone + Into<PeerId> + AsPKCS8,
+{
     let mut quic_config = quinn::ServerConfigBuilder::default().build();
-    let tls_config = Arc::new(tls::make_server_config(key));
+    let tls_config = Arc::new(tls::make_server_config(signer));
     quic_config.crypto = tls_config;
 
     quic_config

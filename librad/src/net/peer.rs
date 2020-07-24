@@ -16,6 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    error,
     future::Future,
     io,
     net::SocketAddr,
@@ -32,7 +33,7 @@ use crate::{
         storage::{self, Storage as GitStorage, WithSigner},
     },
     internal::{borrow::TryToOwned, channel::Fanout},
-    keys::SecretKey,
+    keys::AsPKCS8,
     net::{
         connection::LocalInfo,
         discovery::Discovery,
@@ -107,20 +108,22 @@ pub struct FetchInfo {
 }
 
 #[derive(Clone)]
-pub struct PeerConfig<Disco> {
-    pub key: SecretKey,
+pub struct PeerConfig<Disco, Signer> {
+    pub signer: Signer,
     pub paths: Paths,
     pub listen_addr: SocketAddr,
     pub gossip_params: gossip::MembershipParams,
     pub disco: Disco,
 }
 
-impl<D> PeerConfig<D>
+impl<D, S> PeerConfig<D, S>
 where
+    S: WithSigner + Into<PeerId> + AsPKCS8 + Send + Sync + 'static,
+    S::Error: error::Error + Send + Sync + 'static,
     D: Discovery<Addr = SocketAddr>,
     <D as Discovery>::Stream: 'static,
 {
-    pub async fn try_into_peer(self) -> Result<Peer, BootstrapError> {
+    pub async fn try_into_peer(self) -> Result<Peer<S>, BootstrapError> {
         Peer::bootstrap(self).await
     }
 }
@@ -136,19 +139,19 @@ where
 /// storage may not always be consistent between two instances, and b. that the
 /// `try_to_owned` operation is fallible due to having to perform IO. Also note
 /// that the `TryToOwned` trait is not currently considered a stable API.
-pub struct PeerApi {
-    protocol: Protocol<PeerStorage, Gossip>,
-    storage: GitStorage<WithSigner>,
+pub struct PeerApi<S> {
+    protocol: Protocol<PeerStorage<S>, Gossip>,
+    storage: GitStorage<S>,
     subscribers: Fanout<PeerEvent>,
     paths: Paths,
 }
 
-impl PeerApi {
-    pub fn protocol(&self) -> &Protocol<PeerStorage, Gossip> {
+impl<S: Clone> PeerApi<S> {
+    pub fn protocol(&self) -> &Protocol<PeerStorage<S>, Gossip> {
         &self.protocol
     }
 
-    pub fn storage(&self) -> &GitStorage<WithSigner> {
+    pub fn storage(&self) -> &GitStorage<S> {
         &self.storage
     }
 
@@ -168,7 +171,7 @@ impl PeerApi {
     }
 }
 
-impl TryToOwned for PeerApi {
+impl<S: Clone> TryToOwned for PeerApi<S> {
     type Owned = Self;
     type Error = ApiError;
 
@@ -197,20 +200,24 @@ pub type RunLoop = BoxFuture<'static, ()>;
 /// The intermediate, bound state is mainly useful to query the [`SocketAddr`]
 /// chosen by the operating system when the [`Peer`] was bootstrapped using
 /// `0.0.0.0:0`.
-pub struct Peer {
+pub struct Peer<S> {
     paths: Paths,
 
     listen_addr: SocketAddr,
 
-    storage: GitStorage<WithSigner>,
+    storage: GitStorage<S>,
 
-    protocol: Protocol<PeerStorage, Gossip>,
+    protocol: Protocol<PeerStorage<S>, Gossip>,
     run_loop: RunLoop,
 
     subscribers: Fanout<PeerEvent>,
 }
 
-impl Peer {
+impl<S> Peer<S>
+where
+    S: WithSigner + Into<PeerId> + Send + Sync,
+    S::Error: error::Error + Send + Sync + 'static,
+{
     pub fn listen_addr(&self) -> SocketAddr {
         self.listen_addr
     }
@@ -219,7 +226,7 @@ impl Peer {
         self.storage.peer_id()
     }
 
-    pub fn accept(self) -> Result<(PeerApi, RunLoop), AcceptError> {
+    pub fn accept(self) -> Result<(PeerApi<S>, RunLoop), AcceptError> {
         let api = PeerApi {
             storage: self.storage,
             protocol: self.protocol,
@@ -229,16 +236,17 @@ impl Peer {
         Ok((api, self.run_loop))
     }
 
-    async fn bootstrap<D>(config: PeerConfig<D>) -> Result<Self, BootstrapError>
+    async fn bootstrap<D>(config: PeerConfig<D, S>) -> Result<Self, BootstrapError>
     where
+        S: Into<PeerId> + AsPKCS8 + 'static,
         D: Discovery<Addr = SocketAddr>,
         <D as Discovery>::Stream: 'static,
     {
-        let peer_id = PeerId::from(&config.key);
+        let peer_id = config.signer.clone().into();
 
         let git = GitServer::new(&config.paths);
 
-        let endpoint = Endpoint::bind(&config.key, config.listen_addr)
+        let endpoint = Endpoint::bind(&config.signer, config.listen_addr)
             .await
             .map_err(|e| BootstrapError::Bind {
                 addr: config.listen_addr,
@@ -247,7 +255,7 @@ impl Peer {
         let listen_addr = endpoint.local_addr()?;
 
         let subscribers = Fanout::new();
-        let storage = GitStorage::open_or_init(&config.paths, config.key.clone())?;
+        let storage = GitStorage::open_or_init(&config.paths, config.signer.clone())?;
         let peer_storage = {
             let storage = storage.reopen()?;
             PeerStorage {
@@ -284,12 +292,15 @@ impl Peer {
 }
 
 #[derive(Clone)]
-pub struct PeerStorage {
-    inner: Arc<Mutex<GitStorage<WithSigner>>>,
+pub struct PeerStorage<S> {
+    inner: Arc<Mutex<GitStorage<S>>>,
     subscribers: Fanout<PeerEvent>,
 }
 
-impl PeerStorage {
+impl<S: WithSigner> PeerStorage<S>
+where
+    S::Error: error::Error + Send + Sync + 'static,
+{
     fn git_fetch<'a>(
         &'a self,
         from: &PeerId,
@@ -354,7 +365,11 @@ fn urn_context<'a>(local_peer_id: &PeerId, urn: impl Into<OriginatesRef<'a, RadU
 }
 
 #[async_trait]
-impl LocalStorage for PeerStorage {
+impl<S> LocalStorage for PeerStorage<S>
+where
+    S: WithSigner + Send + Sync + 'static,
+    S::Error: error::Error + Send + Sync + 'static,
+{
     type Update = Gossip;
 
     async fn put(&self, provider: &PeerId, has: Self::Update) -> PutResult {
