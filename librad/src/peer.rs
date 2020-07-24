@@ -21,6 +21,8 @@ use minicbor::{Decode, Encode};
 use multibase::Base::Base32Z;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
+use keystore::sign;
+
 use crate::keys::{self, PublicKey, SecretKey};
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Encode, Decode)]
@@ -69,6 +71,10 @@ impl PeerId {
 
     pub fn as_dns_name(&self) -> webpki::DNSName {
         self.clone().into()
+    }
+
+    pub fn from_signer(signer: &impl sign::Signer) -> Self {
+        PeerId(signer.public_key().into())
     }
 }
 
