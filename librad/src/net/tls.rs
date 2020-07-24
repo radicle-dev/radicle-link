@@ -29,7 +29,7 @@ use rustls::{
 };
 
 use crate::{
-    keys::{PublicKey, SecretKey},
+    keys::{AsPKCS8, PublicKey},
     peer::PeerId,
 };
 
@@ -39,9 +39,12 @@ use yasna::{ASN1Error, ASN1ErrorKind, ASN1Result};
 ///
 /// The certificate is self-signed by the given [`SecretKey`], and advertises
 /// the `PeerId::default_encoding` as the subject alt name.
-fn gen_cert(key: &SecretKey) -> rcgen::Certificate {
+fn gen_cert<S>(signer: &S) -> rcgen::Certificate
+where
+    S: Clone + Into<PeerId> + AsPKCS8,
+{
     let params = {
-        let mut params = CertificateParams::new(vec![PeerId::from(key).default_encoding()]);
+        let mut params = CertificateParams::new(vec![signer.clone().into().default_encoding()]);
 
         params.alg = &PKCS_ED25519;
         params.distinguished_name = {
@@ -56,7 +59,7 @@ fn gen_cert(key: &SecretKey) -> rcgen::Certificate {
         ];
         params.custom_extensions = vec![];
         params.key_pair = {
-            let key_pair = rcgen::KeyPair::try_from(key.as_pkcs8().as_slice())
+            let key_pair = rcgen::KeyPair::try_from(signer.as_pkcs8().as_slice())
                 .expect("A valid PKCS#8 document is valid. qed");
 
             Some(key_pair)
@@ -71,8 +74,11 @@ fn gen_cert(key: &SecretKey) -> rcgen::Certificate {
         .expect("A certificate with valid parameters is valid. qed")
 }
 
-pub fn make_client_config(key: &SecretKey) -> rustls::ClientConfig {
-    let cert = gen_cert(key);
+pub fn make_client_config<S>(signer: &S) -> rustls::ClientConfig
+where
+    S: Clone + Into<PeerId> + AsPKCS8,
+{
+    let cert = gen_cert(signer);
 
     let mut cfg = rustls::ClientConfig::new();
     cfg.versions = vec![rustls::ProtocolVersion::TLSv1_3];
@@ -82,16 +88,19 @@ pub fn make_client_config(key: &SecretKey) -> rustls::ClientConfig {
     )
     .expect("A valid private key is valid. qed");
     cfg.dangerous()
-        .set_certificate_verifier(Arc::new(RadServerCertVerifier::new(key.clone().into())));
+        .set_certificate_verifier(Arc::new(RadServerCertVerifier::new(signer.clone().into())));
 
     cfg
 }
 
-pub fn make_server_config(key: &SecretKey) -> rustls::ServerConfig {
-    let cert = gen_cert(key);
+pub fn make_server_config<S>(signer: &S) -> rustls::ServerConfig
+where
+    S: Clone + Into<PeerId> + AsPKCS8,
+{
+    let cert = gen_cert(signer);
 
     let mut cfg =
-        rustls::ServerConfig::new(Arc::new(RadClientCertVerifier::new(key.clone().into())));
+        rustls::ServerConfig::new(Arc::new(RadClientCertVerifier::new(signer.clone().into())));
     cfg.versions = vec![rustls::ProtocolVersion::TLSv1_3];
     cfg.set_single_cert(
         vec![rustls::Certificate(cert.serialize_der().unwrap())],
@@ -307,6 +316,7 @@ fn try_now() -> Result<webpki::Time, TLSError> {
 mod tests {
     use super::*;
 
+    use crate::keys::SecretKey;
     use rustls::{ClientSession, ServerSession, Session};
 
     #[test]

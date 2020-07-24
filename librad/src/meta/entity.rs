@@ -18,10 +18,12 @@
 use std::{
     collections::{HashMap, HashSet},
     convert::{Into, TryFrom},
+    error,
     marker::PhantomData,
     str::FromStr,
 };
 
+use futures::executor::block_on;
 use serde::{
     de::{DeserializeOwned, Error as SerdeDeserializationError},
     Deserialize,
@@ -42,7 +44,7 @@ pub mod data;
 
 use data::{EntityData, EntityInfo, EntityInfoExt, EntityKind};
 
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum Error {
     #[error("Serialization failed ({0})")]
     SerializationFailed(String),
@@ -100,6 +102,9 @@ pub enum Error {
 
     #[error("Resolution at revision failed ({0}, revision {1})")]
     RevisionResolutionFailed(RadUrn, u64),
+
+    #[error(transparent)]
+    Sign(Box<dyn error::Error + Send + Sync + 'static>),
 }
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -120,7 +125,7 @@ pub enum UpdateVerificationError {
     NoCurrentQuorum,
 }
 
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum HistoryVerificationError {
     #[error("Empty history")]
     EmptyHistory,
@@ -464,13 +469,12 @@ where
     pub fn compute_signature<S>(&self, signer: &S) -> Result<Signature, Error>
     where
         S: sign::Signer,
-        S::Error: std::fmt::Debug,
+        S::Error: error::Error + Send + Sync + 'static,
     {
-        Ok(
-            futures::executor::block_on(signer.sign(&self.canonical_data()?))
-                .expect("TODO")
-                .into(),
-        )
+        let data = self.canonical_data()?;
+        block_on(signer.sign(&data))
+            .map(|signature| signature.into())
+            .map_err(|err| Error::Sign(Box::new(err)))
     }
 
     /// Given a private key owned by the entity, sign the current entity
@@ -482,7 +486,7 @@ where
     pub fn sign_owned<S>(&mut self, signer: &S) -> Result<(), Error>
     where
         S: sign::Signer,
-        S::Error: std::fmt::Debug,
+        S::Error: error::Error + Send + Sync + 'static,
     {
         let public_key = signer.public_key().into();
         if self.signatures().contains_key(&public_key) {
@@ -508,7 +512,7 @@ where
     pub fn sign_by_user<S>(&mut self, signer: &S, user: &User<Verified>) -> Result<(), Error>
     where
         S: sign::Signer,
-        S::Error: std::fmt::Debug,
+        S::Error: error::Error + Send + Sync + 'static,
     {
         let public_key = signer.public_key().into();
         if self.signatures().contains_key(&public_key) {
@@ -539,7 +543,7 @@ where
     ) -> Result<(), Error>
     where
         S: sign::Signer,
-        S::Error: std::fmt::Debug,
+        S::Error: error::Error + Send + Sync + 'static,
     {
         let public_key = signer.public_key().into();
         if self.signatures().contains_key(&public_key) {

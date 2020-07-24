@@ -21,6 +21,8 @@ use std::{convert::TryFrom, io};
 
 use thiserror::Error;
 
+use keystore::sign;
+
 use crate::{
     git::ext::is_not_found_err,
     internal::result::ResultExt,
@@ -78,14 +80,13 @@ impl<'a> TryFrom<&'a git2::Repository> for Config {
 impl Config {
     pub(super) fn init<U>(
         repo: &mut git2::Repository,
-        signer: &SecretKey,
+        peer_id: PeerId,
         user: U,
     ) -> Result<Self, Error>
     where
         U: Into<Option<User<Verified>>>,
     {
         let mut config = repo.config()?;
-        let peer_id = PeerId::from(signer);
         let user = user.into();
 
         let mut this = Config { inner: config };
@@ -222,7 +223,7 @@ mod tests {
     fn setup(key: &SecretKey) -> TmpState {
         WithTmpDir::new::<_, Error>(|path| {
             let mut repo = git2::Repository::init_bare(path)?;
-            let config = Config::init(&mut repo, key, None)?;
+            let config = Config::init(&mut repo, key.into(), None)?;
             Ok(TmpConfig { repo, config })
         })
         .unwrap()

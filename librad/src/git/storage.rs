@@ -19,6 +19,7 @@ use std::{
     borrow::Borrow,
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryFrom,
+    error,
     io,
     iter,
     marker::PhantomData,
@@ -28,6 +29,8 @@ use std::{
 
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
+
+use keystore::sign;
 
 use crate::{
     git::{
@@ -120,6 +123,9 @@ pub enum Error {
     Fetch(#[from] fetch::Error),
 
     #[error(transparent)]
+    Refsigning(#[from] refs::signing::Error),
+
+    #[error(transparent)]
     Refsig(#[from] refs::signed::Error),
 
     #[error(transparent)]
@@ -145,7 +151,9 @@ pub enum RadSelfSpec {
 }
 
 pub type NoSigner = PhantomData<!>;
-pub type WithSigner = SecretKey;
+
+pub trait WithSigner: sign::Signer + Clone {}
+impl WithSigner for SecretKey {}
 
 pub struct Storage<S> {
     pub(super) backend: git2::Repository,
@@ -468,8 +476,12 @@ impl Storage<NoSigner> {
         })
     }
 
-    pub fn with_signer(self, signer: SecretKey) -> Result<Storage<WithSigner>, Error> {
-        if self.peer_id != PeerId::from(&signer) {
+    pub fn with_signer<S>(self, signer: S) -> Result<Storage<S>, Error>
+    where
+        S: WithSigner + Into<PeerId>,
+    {
+        let peer_id = signer.clone().into();
+        if self.peer_id != peer_id {
             return Err(Error::SignerKeyMismatch);
         }
 
@@ -481,13 +493,21 @@ impl Storage<NoSigner> {
     }
 }
 
-impl Storage<WithSigner> {
+impl<S> Storage<S>
+where
+    S: WithSigner,
+    S::Error: error::Error + Send + Sync + 'static,
+{
     /// Open the `Storage` found at the given [`Paths`]'s `git_dir`, or
     /// initialise it if it isn't yet.
-    pub fn open_or_init(paths: &Paths, signer: SecretKey) -> Result<Self, Error> {
+    pub fn open_or_init(paths: &Paths, signer: S) -> Result<Self, Error>
+    where
+        S: Into<PeerId>,
+    {
+        let peer_id = signer.clone().into();
         match Storage::open(paths) {
             Ok(this) => {
-                if this.peer_id != PeerId::from(&signer) {
+                if this.peer_id != peer_id {
                     Err(Error::SignerKeyMismatch)
                 } else {
                     this.with_signer(signer)
@@ -499,7 +519,10 @@ impl Storage<WithSigner> {
     }
 
     /// Initialise the `Storage` at the given [`Paths`]'s `git_dir`.
-    pub fn init(paths: &Paths, signer: SecretKey) -> Result<Self, Error> {
+    pub fn init(paths: &Paths, signer: S) -> Result<Self, Error>
+    where
+        S: Into<PeerId>,
+    {
         let mut backend = git2::Repository::init_opts(
             paths.git_dir(),
             git2::RepositoryInitOptions::new()
@@ -507,11 +530,12 @@ impl Storage<WithSigner> {
                 .no_reinit(true)
                 .external_template(false),
         )?;
-        Config::init(&mut backend, &signer, None)?;
+        let peer_id = signer.clone().into();
+        Config::init(&mut backend, peer_id.clone(), None)?;
 
         Ok(Self {
             backend,
-            peer_id: PeerId::from(&signer),
+            peer_id,
             signer,
         })
     }
@@ -524,7 +548,7 @@ impl Storage<WithSigner> {
         }
     }
 
-    pub fn create_repo<T>(&self, meta: &Entity<T, Draft>) -> Result<Repo<WithSigner>, Error>
+    pub fn create_repo<T>(&self, meta: &Entity<T, Draft>) -> Result<Repo<S>, Error>
     where
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
@@ -545,7 +569,7 @@ impl Storage<WithSigner> {
 
         let self_sig = meta
             .signatures()
-            .get(&self.signer.public())
+            .get(&self.signer.public_key().into())
             .ok_or(Error::NotSignedBySelf)?;
 
         let rad_id = Reference::rad_id(meta.urn().id);
@@ -608,7 +632,7 @@ impl Storage<WithSigner> {
     ///
     /// Note that this method **must** be spawned on a `async` runtime, where
     /// currently the only supported method is [`tokio::task::spawn_blocking`].
-    pub fn clone_repo<T>(&self, url: RadUrl) -> Result<Repo<WithSigner>, Error>
+    pub fn clone_repo<T>(&self, url: RadUrl) -> Result<Repo<S>, Error>
     where
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
@@ -778,9 +802,9 @@ impl Storage<WithSigner> {
     /// Set the `rad/self` identity for `urn`
     ///
     /// [`None`] removes `rad/self`, if present.
-    pub fn set_rad_self<S>(&self, urn: &RadUrn, spec: S) -> Result<(), Error>
+    pub fn set_rad_self<Spec>(&self, urn: &RadUrn, spec: Spec) -> Result<(), Error>
     where
-        S: Into<Option<RadSelfSpec>>,
+        Spec: Into<Option<RadSelfSpec>>,
     {
         match spec.into() {
             None => {
@@ -923,7 +947,7 @@ impl Storage<WithSigner> {
         let refsig_canonical = self
             .rad_signed_refs(urn)?
             .sign(&self.signer)
-            .and_then(|signed| Cjson(signed).canonical_form())?;
+            .and_then(|signed| Ok(Cjson(signed).canonical_form()?))?;
 
         let rad_signed_refs_ref = Reference::rad_signed_refs(urn.id.clone(), None).to_string();
 

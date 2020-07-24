@@ -199,10 +199,9 @@ pub mod tests {
 
     use proptest::prelude::*;
 
-    use crate::meta::{
-        entity::GenericDraftEntity,
-        entity_test::K1,
-        profile::tests::gen_user_profile,
+    use crate::{
+        keys::SecretKey,
+        meta::{entity::GenericDraftEntity, profile::tests::gen_user_profile},
     };
 
     pub fn gen_profile_ref() -> impl Strategy<Value = ProfileRef> {
@@ -227,7 +226,7 @@ pub mod tests {
                 UserData::default()
                     .set_name("foo".to_owned())
                     .set_revision(1)
-                    .add_key(K1.public())
+                    .add_key(SecretKey::new().public())
                     .set_profile_ref(profile)
                     .set_largefiles(largefiles)
                     .build()

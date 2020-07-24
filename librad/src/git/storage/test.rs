@@ -21,13 +21,14 @@ use std::str::FromStr;
 
 use crate::{
     hash::Hash,
+    keys::SecretKey,
     meta::{entity::Draft, Project, User},
     test::ConstResolver,
     uri::{self, RadUrn},
 };
 use librad_test::tempdir::WithTmpDir;
 
-type TmpStorage = WithTmpDir<Storage<WithSigner>>;
+type TmpStorage = WithTmpDir<Storage<SecretKey>>;
 
 fn storage(key: SecretKey) -> TmpStorage {
     WithTmpDir::new(|path| {
@@ -228,8 +229,8 @@ fn set_and_get_rad_self() -> Result<(), Error> {
 /// We want to test that structure of the storage is compliant with the
 /// [RFC](https://github.com/radicle-dev/radicle-link/blob/504fe66dd974eaddb329520264d1cfdeb492b28f/docs/rfc/identity_resolution.md).
 /// So for every namespace there should be a `rad/id` and `rad/refs`.
-#[async_test]
-async fn test_structure_of_refs() -> Result<(), Error> {
+#[test]
+fn test_structure_of_refs() -> Result<(), Error> {
     let key = SecretKey::new();
     let store = storage(key.clone());
     let mut refs = vec![];

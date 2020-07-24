@@ -46,20 +46,20 @@ lazy_static! {
 
 pub struct TestPeer {
     _tmp: TempDir,
-    pub peer: Peer,
+    pub peer: Peer<SecretKey>,
     pub key: SecretKey,
 }
 
 impl Deref for TestPeer {
-    type Target = Peer;
+    type Target = Peer<SecretKey>;
 
     fn deref(&self) -> &Self::Target {
         &self.peer
     }
 }
 
-impl AsRef<Peer> for TestPeer {
-    fn as_ref(&self) -> &Peer {
+impl AsRef<Peer<SecretKey>> for TestPeer {
+    fn as_ref(&self) -> &Peer<SecretKey> {
         self
     }
 }
@@ -75,7 +75,7 @@ async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
     git::storage::Storage::init(&paths, key.clone())?;
 
     let config = PeerConfig {
-        key: key.clone(),
+        signer: key.clone(),
         paths,
         listen_addr,
         gossip_params,
@@ -114,7 +114,7 @@ pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
 
 pub async fn run_on_testnet<F, Fut, A>(peers: Vec<TestPeer>, mut f: F) -> A
 where
-    F: FnMut(Vec<(PeerApi, SecretKey)>) -> Fut,
+    F: FnMut(Vec<(PeerApi<SecretKey>, SecretKey)>) -> Fut,
     Fut: Future<Output = A>,
 {
     let len = peers.len();

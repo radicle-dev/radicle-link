@@ -27,7 +27,6 @@ use super::{
 use crate::{
     hash::Hash,
     keys::{PublicKey, SecretKey},
-    peer::PeerId,
     uri::{Path, Protocol, RadUrn},
 };
 
@@ -46,38 +45,6 @@ fn new_key_from_seed(seed_value: u8) -> SecretKey {
     let mut seed = SEED;
     seed.0[0] = seed_value;
     SecretKey::from_seed(&seed)
-}
-
-fn peer_from_key(key: &SecretKey) -> PeerId {
-    PeerId::from(key.public())
-}
-
-lazy_static! {
-    pub static ref K1: SecretKey = new_key_from_seed(1);
-    pub static ref K2: SecretKey = new_key_from_seed(2);
-    pub static ref K3: SecretKey = new_key_from_seed(3);
-    pub static ref K4: SecretKey = new_key_from_seed(4);
-    pub static ref K5: SecretKey = new_key_from_seed(5);
-}
-
-lazy_static! {
-    pub static ref D1: PeerId = peer_from_key(&K1);
-    pub static ref D2: PeerId = peer_from_key(&K2);
-    pub static ref D3: PeerId = peer_from_key(&K3);
-    pub static ref D4: PeerId = peer_from_key(&K4);
-    pub static ref D5: PeerId = peer_from_key(&K5);
-}
-
-fn peer_key_string(peer: &PeerId) -> PublicKey {
-    peer.as_public_key().clone()
-}
-
-lazy_static! {
-    pub static ref D1K: PublicKey = peer_key_string(&D1);
-    pub static ref D2K: PublicKey = peer_key_string(&D2);
-    pub static ref D3K: PublicKey = peer_key_string(&D3);
-    pub static ref D4K: PublicKey = peer_key_string(&D4);
-    pub static ref D5K: PublicKey = peer_key_string(&D5);
 }
 
 struct EmptyResolver {}
@@ -136,11 +103,7 @@ fn test_valid_uri() {
     assert_eq!(u1, u2);
 }
 
-fn new_user(
-    name: &str,
-    revision: u64,
-    devices: &[&'static PublicKey],
-) -> Result<User<Draft>, Error> {
+fn new_user(name: &str, revision: u64, devices: &[PublicKey]) -> Result<User<Draft>, Error> {
     let mut data = UserData::default()
         .set_name(name.to_owned())
         .set_revision(revision);
@@ -152,61 +115,74 @@ fn new_user(
 
 #[test]
 fn test_user_signatures() {
+    let peer1 = new_key_from_seed(1);
+    let peer2 = new_key_from_seed(2);
+
     // Keep signing the user while adding devices
-    let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
+    let mut user = new_user("foo", 1, &[peer1.public()]).unwrap();
 
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    let sig1 = user.compute_signature(&K1).unwrap();
+    let sig1 = user.compute_signature(&peer1).unwrap();
 
-    let mut user = user.to_builder().add_key((*D2K).clone()).build().unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    let mut user = user.to_builder().add_key(peer2.public()).build().unwrap();
+    user.sign(&peer2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    let sig2 = user.compute_signature(&K1).unwrap();
+    let sig2 = user.compute_signature(&peer1).unwrap();
 
     assert_ne!(&sig1, &sig2);
 }
 
 #[test]
 fn test_self_signatures() {
-    // Keep signing the user while adding keys
-    let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
+    let peer1 = new_key_from_seed(1);
+    let peer2 = new_key_from_seed(2);
 
-    user.sign_owned(&K1).unwrap();
-    let sig1 = user.compute_signature(&K1).unwrap();
+    // Keep signing the user while adding keys
+    let mut user = new_user("foo", 1, &[peer1.public()]).unwrap();
+
+    user.sign_owned(&peer1).unwrap();
+    let sig1 = user.compute_signature(&peer1).unwrap();
 
     // Cannot sign with a not-owned key
-    assert!(matches!(user.sign_owned(&K2), Err(Error::KeyNotPresent(_))));
+    assert!(matches!(
+        user.sign_owned(&peer2),
+        Err(Error::KeyNotPresent(_))
+    ));
 
-    let mut user = user.to_builder().add_key((*D2K).clone()).build().unwrap();
-    user.sign_owned(&K2).unwrap();
-    let sig2 = user.compute_signature(&K1).unwrap();
+    let mut user = user.to_builder().add_key(peer2.public()).build().unwrap();
+    user.sign_owned(&peer2).unwrap();
+    let sig2 = user.compute_signature(&peer1).unwrap();
 
     assert_ne!(&sig1, &sig2);
 }
 
 #[test]
 fn test_adding_user_signatures() {
-    let user = new_user("foo", 1, &[&*D1K]).unwrap();
+    let peer1 = new_key_from_seed(1);
+    let peer2 = new_key_from_seed(2);
+    let peer3 = new_key_from_seed(3);
+
+    let user = new_user("foo", 1, &[peer1.public()]).unwrap();
 
     // Check that canonical data changes while adding devices
     let data1 = user.canonical_data().unwrap();
-    let user = user.to_builder().add_key((*D2K).clone()).build().unwrap();
+    let user = user.to_builder().add_key(peer2.public()).build().unwrap();
     let data2 = user.canonical_data().unwrap();
-    let mut user = user.to_builder().add_key((*D3K).clone()).build().unwrap();
+    let mut user = user.to_builder().add_key(peer3.public()).build().unwrap();
     let data3 = user.canonical_data().unwrap();
     assert_ne!(&data1, &data2);
     assert_ne!(&data1, &data3);
     assert_ne!(&data2, &data3);
 
     // Check that canonical data does not change manipulating signatures
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     let data4 = user.canonical_data().unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     let data5 = user.canonical_data().unwrap();
-    user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     let data6 = user.canonical_data().unwrap();
 
@@ -216,9 +192,9 @@ fn test_adding_user_signatures() {
 
     // Check signatures collection contents
     assert_eq!(3, user.signatures().len());
-    assert!(user.signatures().contains_key(D1.as_public_key()));
-    assert!(user.signatures().contains_key(D2.as_public_key()));
-    assert!(user.signatures().contains_key(D3.as_public_key()));
+    assert!(user.signatures().contains_key(&peer1.public()));
+    assert!(user.signatures().contains_key(&peer2.public()));
+    assert!(user.signatures().contains_key(&peer3.public()));
 
     // Check signature verification
     let data = user.canonical_data().unwrap();
@@ -229,15 +205,19 @@ fn test_adding_user_signatures() {
 
 #[test]
 fn test_user_verification() {
+    let peer1 = new_key_from_seed(1);
+    let peer2 = new_key_from_seed(2);
+    let peer3 = new_key_from_seed(3);
+
     // A new user is structurally valid but it is not signed
-    let mut user = new_user("foo", 1, &[&*D1K]).unwrap();
+    let mut user = new_user("foo", 1, &[peer1.public()]).unwrap();
     assert!(matches!(
         user.clone().check_signatures(&EMPTY_RESOLVER),
         Err(Error::SignatureMissing)
     ));
 
     // Adding the signature fixes it
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     assert!(matches!(
         user.clone().check_signatures(&EMPTY_RESOLVER),
@@ -249,32 +229,32 @@ fn test_user_verification() {
         .to_data()
         .clear_hash()
         .clear_root_hash()
-        .add_key((*D2K).clone())
-        .add_key((*D3K).clone())
+        .add_key(peer2.public())
+        .add_key(peer3.public())
         .build()
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         user.clone().check_signatures(&EMPTY_RESOLVER),
         Err(Error::SignatureVerificationFailed)
-    );
+    ));
 
     // Adding the missing signatures does not fix it: D1 signed a previous
     // revision
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         user.clone().check_signatures(&EMPTY_RESOLVER),
         Err(Error::SignatureVerificationFailed)
-    );
+    ));
 
     // Cannot sign a project twice with the same key
-    assert_eq!(
+    assert!(matches!(
         user.clone()
-            .sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER),
-        Err(Error::SignatureAlreadyPresent(K1.public()))
-    );
+            .sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER),
+        Err(Error::SignatureAlreadyPresent(_))
+    ));
 
     // Removing the signature and re adding it fixes it
     let mut user = user
@@ -282,13 +262,13 @@ fn test_user_verification() {
         .clear_hash()
         .map(|mut u| {
             if let Some(s) = &mut u.signatures {
-                s.remove(&*D1K);
+                s.remove(&peer1.public());
             }
             u
         })
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     assert!(matches!(
         user.clone().check_signatures(&EMPTY_RESOLVER),
@@ -300,7 +280,7 @@ fn test_user_verification() {
         .to_data()
         .clear_hash()
         .clear_root_hash()
-        .remove_key(&*D1K)
+        .remove_key(&peer1.public())
         .build()
         .unwrap();
     // TODO(finto): I tried matching on a specific error. There
@@ -311,6 +291,12 @@ fn test_user_verification() {
 
 #[test]
 fn test_project_update() {
+    let peer1 = new_key_from_seed(1);
+    let peer2 = new_key_from_seed(2);
+    let peer3 = new_key_from_seed(3);
+    let peer4 = new_key_from_seed(4);
+    let peer5 = new_key_from_seed(5);
+
     // Empty history is invalid
     let mut history = UserHistory::new();
     assert!(matches!(
@@ -319,7 +305,7 @@ fn test_project_update() {
     ));
 
     // History with invalid user is invalid
-    let user = new_user("foo", 1, &[&*D1K]).unwrap();
+    let user = new_user("foo", 1, &[peer1.public()]).unwrap();
     history.revisions.push(user);
 
     assert!(matches!(
@@ -334,7 +320,7 @@ fn test_project_update() {
         .revisions
         .last_mut()
         .unwrap()
-        .sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+        .sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
 
     // History with single valid user is valid
@@ -350,7 +336,7 @@ fn test_project_update() {
         .clear_parent_hash()
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     let some_random_hash = user.to_data().hash.unwrap();
     history.revisions.push(user);
@@ -373,7 +359,7 @@ fn test_project_update() {
         .set_parent_hash(some_random_hash)
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
@@ -391,13 +377,13 @@ fn test_project_update() {
         .last()
         .unwrap()
         .to_builder()
-        .add_key((*D2K).clone())
+        .add_key(peer2.public())
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(history.check(), Ok(_)));
@@ -409,16 +395,16 @@ fn test_project_update() {
         .last()
         .unwrap()
         .to_builder()
-        .add_key((*D2K).clone())
-        .add_key((*D3K).clone())
+        .add_key(peer2.public())
+        .add_key(peer3.public())
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
@@ -436,13 +422,13 @@ fn test_project_update() {
         .last()
         .unwrap()
         .to_builder()
-        .add_key((*D2K).clone())
+        .add_key(peer2.public())
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(history.check(), Ok(_)));
@@ -452,23 +438,23 @@ fn test_project_update() {
         .last()
         .unwrap()
         .to_builder()
-        .add_key((*D3K).clone())
+        .add_key(peer3.public())
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    user.sign(&K2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer2, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    user.sign(&K3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer3, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(history.check(), Ok(_)));
 
     // Also check directly signing a user
     let verified_user = history.check().unwrap();
-    let mut user2 = new_user("bar", 1, &[&*D4K]).unwrap();
-    assert!(matches!(user2.sign_by_user(&K1, &verified_user), Ok(_)));
+    let mut user2 = new_user("bar", 1, &[peer4.public()]).unwrap();
+    assert!(matches!(user2.sign_by_user(&peer1, &verified_user), Ok(_)));
 
     // Changing two devices out of three is not ok
     let mut user = history
@@ -476,18 +462,18 @@ fn test_project_update() {
         .last()
         .unwrap()
         .to_builder()
-        .remove_key(&*D2K)
-        .remove_key(&*D3K)
-        .add_key((*D4K).clone())
-        .add_key((*D5K).clone())
+        .remove_key(&peer2.public())
+        .remove_key(&peer3.public())
+        .add_key(peer4.public())
+        .add_key(peer5.public())
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    user.sign(&K4, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer4, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
-    user.sign(&K5, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer5, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(
@@ -505,12 +491,12 @@ fn test_project_update() {
         .last()
         .unwrap()
         .to_builder()
-        .remove_key(&*D2K)
-        .remove_key(&*D3K)
+        .remove_key(&peer2.public())
+        .remove_key(&peer3.public())
         .set_parent(history.revisions.last().unwrap())
         .build()
         .unwrap();
-    user.sign(&K1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
+    user.sign(&peer1, &Signatory::OwnedKey, &EMPTY_RESOLVER)
         .unwrap();
     history.revisions.push(user);
     assert!(matches!(

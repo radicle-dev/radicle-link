@@ -23,7 +23,6 @@ use std::{
     process::Command,
 };
 
-use futures::executor::block_on;
 use keystore::{pinentry::SecUtf8, Keystore};
 use tempfile::tempdir;
 
@@ -49,7 +48,7 @@ fn smoke() {
     let rad_paths = Paths::from_root(rad_dir.path()).unwrap();
     let key = SecretKey::new();
 
-    let urn = block_on(setup_entity(&rad_paths, key.clone())).unwrap();
+    let urn = setup_entity(&rad_paths, key.clone()).unwrap();
     setup_keystore(rad_paths.keys_dir(), key).unwrap();
     let path = setup_path().unwrap();
 
@@ -92,7 +91,7 @@ fn smoke() {
     }
 }
 
-async fn setup_entity(paths: &Paths, key: SecretKey) -> anyhow::Result<RadUrn> {
+fn setup_entity(paths: &Paths, key: SecretKey) -> anyhow::Result<RadUrn> {
     let mut alice = Alice::new(key.public());
     let mut radicle = Radicle::new(&alice);
     {

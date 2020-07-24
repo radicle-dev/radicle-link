@@ -26,9 +26,11 @@ use std::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use keystore::sign;
+
 use crate::{
     internal::canonical::{Cjson, CjsonError},
-    keys::{SecretKey, Signature},
+    keys::Signature,
     peer::PeerId,
 };
 
@@ -99,6 +101,19 @@ where
     }
 }
 
+pub mod signing {
+    use super::*;
+    use std::error;
+
+    #[derive(Debug, Error)]
+    pub enum Error {
+        #[error(transparent)]
+        Sign(#[from] Box<dyn error::Error + Send + Sync + 'static>),
+        #[error(transparent)]
+        Cjson(#[from] CjsonError),
+    }
+}
+
 /// The current `refs/heads` and [`Remotes`] (transitive tracking graph)
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Refs {
@@ -107,11 +122,16 @@ pub struct Refs {
 }
 
 impl Refs {
-    pub fn sign(self, key: &SecretKey) -> Result<Signed, CjsonError> {
-        let signature = key.sign(&self.canonical_form()?);
+    pub fn sign<S>(self, signer: &S) -> Result<Signed, signing::Error>
+    where
+        S: sign::Signer,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let signature = futures::executor::block_on(signer.sign(&self.canonical_form()?))
+            .map_err(|err| signing::Error::Sign(Box::new(err)))?;
         Ok(Signed {
             refs: self,
-            signature,
+            signature: signature.into(),
         })
     }
 
