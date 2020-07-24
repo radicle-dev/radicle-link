@@ -30,7 +30,7 @@ use crate::{
     git::{
         ext::{into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER},
         local::{self, url::LocalUrl},
-        storage::{self, Storage, WithSigner},
+        storage::{self, Signer, Storage},
     },
     keys,
     paths::Paths,
@@ -45,7 +45,7 @@ pub struct Settings<S> {
 
 pub fn register<S>(settings: Settings<S>)
 where
-    S: WithSigner,
+    S: Signer,
     S::Error: keys::SignError,
 {
     static INIT: Once = Once::new();
@@ -75,7 +75,7 @@ impl<S> LocalTransportFactory<S> {
 
 impl<S> SmartSubtransport for LocalTransportFactory<S>
 where
-    S: WithSigner,
+    S: Signer,
     S::Error: keys::SignError,
 {
     fn action(
@@ -235,7 +235,7 @@ pub struct LocalTransport<S> {
 
 impl<S> LocalTransport<S>
 where
-    S: WithSigner,
+    S: Signer,
     S::Error: keys::SignError,
 {
     pub fn new(settings: Settings<S>) -> Result<Self, Error> {
