@@ -105,6 +105,13 @@ pub struct Has<A> {
     val: A,
 }
 
+impl<A> Has<A> {
+    /// Look at the value of the `Has`.
+    pub fn val(&self) -> &A {
+        &self.val
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MembershipParams {
     /// Maximum number of active connections.
