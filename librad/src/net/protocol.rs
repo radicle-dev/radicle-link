@@ -189,14 +189,23 @@ where
     /// Note that responses will also cause [`gossip::LocalStorage::put`] to be
     /// invoked, i.e. the local storage will be converged towards the
     /// requested state.
-    pub async fn query(&self, want: A) -> impl futures::Stream<Item = gossip::Has<A>> {
-        self.gossip.query(want).await;
-        self.gossip.subscribe().await.filter_map(|evt| async move {
-            match evt {
-                gossip::ProtocolEvent::Info(gossip::Info::Has(has)) => Some(has),
-                _ => None,
-            }
-        })
+    pub async fn query(&self, want: A) -> impl futures::Stream<Item = gossip::Has<A>>
+    where
+        A: PartialEq + Clone,
+    {
+        self.gossip.query(want.clone()).await;
+        self.gossip
+            .subscribe()
+            .await
+            .zip(futures::stream::repeat(want))
+            .filter_map(|(evt, wanted)| async move {
+                match evt {
+                    gossip::ProtocolEvent::Info(gossip::Info::Has(has)) if wanted == *has.val() => {
+                        Some(has)
+                    },
+                    _ => None,
+                }
+            })
     }
 
     /// Open a QUIC stream which is upgraded to expect the git protocol
