@@ -160,6 +160,18 @@ impl Reference<Single> {
         repo.find_reference(&self.to_string())
     }
 
+    /// Create a [`SymbolicRef`] of the `self` parameter where the `source`
+    /// parameter will be the newly created reference.
+    ///
+    /// To create the symbolic reference itself, see [`SymbolicRef::create`].
+    pub fn symbolic_ref(&self, source: Self, force: Force) -> SymbolicRef {
+        SymbolicRef {
+            source,
+            target: self.clone(),
+            force,
+        }
+    }
+
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/rad/id`
     pub fn rad_id(namespace: Namespace) -> Self {
@@ -228,6 +240,55 @@ impl Reference<Single> {
 impl<'a> Into<ext::blob::Branch<'a>> for &'a Reference<Single> {
     fn into(self) -> ext::blob::Branch<'a> {
         ext::blob::Branch::from(self.to_string())
+    }
+}
+
+/// Whether we should force the overwriting of a reference or not.
+pub enum Force {
+    /// We should overwrite.
+    True,
+    /// We should not overwrite.
+    False,
+}
+
+/// The data for creating a symbolic reference in a git repository.
+pub struct SymbolicRef {
+    /// The new symbolic reference.
+    pub source: Reference<Single>,
+    /// The reference that already exists and we want to create symbolic
+    /// reference of.
+    pub target: Reference<Single>,
+    /// Whether we should overwrite any pre-existing `source`.
+    pub force: Force,
+}
+
+impl SymbolicRef {
+    /// Create a symbolic reference of `target`, where the `source` is the newly
+    /// created reference.
+    ///
+    /// # Errors
+    ///
+    ///   * If the `target` does not exist we won't create the symbolic
+    ///     reference and we error early.
+    ///   * If we could not create the new symbolic reference since the name
+    ///     already exists. Note that this will not be the case if `Force::True`
+    ///     is passed.
+    pub fn create<'a>(
+        &self,
+        repo: &'a git2::Repository,
+    ) -> Result<git2::Reference<'a>, git2::Error> {
+        let force = match self.force {
+            Force::True => true,
+            Force::False => false,
+        };
+        let source = self.source.to_string();
+        let target = self.target.to_string();
+
+        let sym_log_msg = &format!("creating symbolic ref {} -> {}", source, target);
+        tracing::info!("{}", sym_log_msg);
+
+        repo.find_reference(&target)
+            .and_then(|_| repo.reference_symbolic(&source, &target, force, sym_log_msg))
     }
 }
 

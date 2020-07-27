@@ -41,7 +41,7 @@ use crate::{
         p2p::url::{GitUrl, GitUrlRef},
         refs::{self, Refs},
         repo::Repo,
-        types::{Multiple, Reference, Single},
+        types::{Force, Multiple, Reference, Single},
     },
     hash::Hash,
     internal::{
@@ -583,13 +583,9 @@ impl Storage<WithSigner> {
                     )
                 }))
                 .try_for_each(|(src, target)| {
-                    self.backend
-                        .reference_symbolic(
-                            &src.to_string(),
-                            &target.to_string(),
-                            true,
-                            &format!("{} -> {}", src, target),
-                        )
+                    target
+                        .symbolic_ref(src, Force::True)
+                        .create(&self.backend)
                         .and(Ok(()))
                 });
 
@@ -744,16 +740,9 @@ impl Storage<WithSigner> {
                             ),
                         );
                         let certifier_id = Reference::rad_id(certifier_hash);
-                        self.backend
-                            .reference_symbolic(
-                                &certifier_here.to_string(),
-                                &certifier_id.to_string(),
-                                /* force */ false,
-                                &format!(
-                                    "Symref certifier: `{}` -> `{}`",
-                                    certifier_here, certifier_id
-                                ),
-                            )
+                        certifier_id
+                            .symbolic_ref(certifier_here, Force::False)
+                            .create(&self.backend)
                             .and(Ok(()))
                     },
                 }
@@ -820,13 +809,9 @@ impl Storage<WithSigner> {
                 let sym_log_msg = &format!("{} -> {}", src, target);
                 tracing::info!("creating symbolic link: {}", sym_log_msg);
 
-                self.backend
-                    .reference_symbolic(
-                        &src.to_string(),
-                        &target.to_string(),
-                        /* force */ true,
-                        sym_log_msg,
-                    )
+                target
+                    .symbolic_ref(src, Force::True)
+                    .create(&self.backend)
                     .and(Ok(()))
                     .map_err(Error::from)
             },
