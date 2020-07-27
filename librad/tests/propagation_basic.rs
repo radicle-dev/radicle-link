@@ -120,12 +120,15 @@ async fn fetches_on_gossip_notify() {
             .unwrap();
         }
 
+        let global_settings = librad::git::local::transport::Settings {
+            paths: peer1.paths().clone(),
+            signer: peer1_key,
+        }
+        .global();
+
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = {
-            librad::git::local::transport::register(librad::git::local::transport::Settings {
-                paths: peer1.paths().clone(),
-                signer: peer1_key,
-            });
+            librad::git::local::transport::register(global_settings);
 
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();

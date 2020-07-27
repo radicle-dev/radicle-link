@@ -37,13 +37,29 @@ use crate::{
     uri::RadUrn,
 };
 
+/// The settings for configuring a [`LocalTransportFactory`] and in turn a
+/// [`LocalTransport`].
 #[derive(Clone)]
 pub struct Settings<S> {
     pub paths: Paths,
     pub signer: S,
 }
 
-pub fn register<S>(settings: Settings<S>)
+/// During testing we may want to be able to change settings globally. This type
+/// captures our settings in a [`RwLock`] so it can be accessed safely across
+/// multiple threads.
+pub type GlobalSettings<S> = Arc<RwLock<Option<Settings<S>>>>;
+
+impl<S> Settings<S> {
+    pub fn global(self) -> GlobalSettings<S> {
+        Arc::new(RwLock::new(Some(self)))
+    }
+}
+
+/// Register the local transport method to `git` so we can use our own custom
+/// transport methods. See [`LocalTransportFactory`] and its `SmartSubtransport`
+/// implementation for more details.
+pub fn register<S>(settings: GlobalSettings<S>)
 where
     S: Signer,
     S::Error: keys::SignError,
@@ -66,10 +82,8 @@ struct LocalTransportFactory<S> {
 }
 
 impl<S> LocalTransportFactory<S> {
-    fn new(settings: Settings<S>) -> Self {
-        Self {
-            settings: Arc::new(RwLock::new(Some(settings))),
-        }
+    fn new(settings: GlobalSettings<S>) -> Self {
+        Self { settings }
     }
 }
 
