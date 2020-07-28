@@ -200,7 +200,7 @@ where
             .zip(futures::stream::repeat(want))
             .filter_map(|(evt, wanted)| async move {
                 match evt {
-                    gossip::ProtocolEvent::Info(gossip::Info::Has(has)) if wanted == *has.val() => {
+                    gossip::ProtocolEvent::Info(gossip::Info::Has(has)) if wanted == *has => {
                         Some(has)
                     },
                     _ => None,
