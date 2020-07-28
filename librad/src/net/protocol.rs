@@ -194,18 +194,17 @@ where
         A: PartialEq + Clone,
     {
         self.gossip.query(want.clone()).await;
-        self.gossip
-            .subscribe()
-            .await
-            .zip(futures::stream::repeat(want))
-            .filter_map(|(evt, wanted)| async move {
+        self.gossip.subscribe().await.filter_map(move |evt| {
+            let wanted = want.clone();
+            async move {
                 match evt {
                     gossip::ProtocolEvent::Info(gossip::Info::Has(has)) if wanted == *has => {
                         Some(has)
                     },
                     _ => None,
                 }
-            })
+            }
+        })
     }
 
     /// Open a QUIC stream which is upgraded to expect the git protocol
