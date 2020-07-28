@@ -28,6 +28,7 @@ use std::{
     iter,
     marker::PhantomData,
     num::NonZeroU32,
+    ops::Deref,
     sync::{
         atomic::{self, AtomicBool},
         Arc,
@@ -105,9 +106,10 @@ pub struct Has<A> {
     val: A,
 }
 
-impl<A> Has<A> {
-    /// Look at the value of the `Has`.
-    pub fn val(&self) -> &A {
+impl<A> Deref for Has<A> {
+    type Target = A;
+
+    fn deref(&self) -> &Self::Target {
         &self.val
     }
 }
