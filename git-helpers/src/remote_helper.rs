@@ -29,6 +29,7 @@ use librad::{
     },
     keys::{PublicKey, SecretKey},
     paths::Paths,
+    signer::{BoxedSigner, SomeSigner},
 };
 use radicle_keystore::{crypto::Pwhash, FileStorage, Keystore};
 
@@ -48,8 +49,8 @@ pub fn run() -> anyhow::Result<()> {
 
     let mut transport = {
         let paths = Paths::from_env()?;
-        let key = get_signer(&git_dir, paths.keys_dir(), &url)?;
-        LocalTransport::new(Settings { paths, signer: key })
+        let signer = get_signer(&git_dir, paths.keys_dir(), &url)?;
+        LocalTransport::new(Settings { paths, signer })
     }?;
 
     loop {
@@ -84,12 +85,11 @@ pub fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn get_signer(git_dir: &Path, keys_dir: &Path, url: &LocalUrl) -> anyhow::Result<SecretKey> {
+fn get_signer(git_dir: &Path, keys_dir: &Path, url: &LocalUrl) -> anyhow::Result<BoxedSigner> {
     let pass = credential::Git::new(git_dir).get(url)?;
     let file = keys_dir.join(SECRET_KEY_FILE);
     let keystore = FileStorage::<_, PublicKey, _, _>::new(&file, Pwhash::new(pass));
-    keystore
-        .get_key()
-        .map(|keypair| keypair.secret_key)
-        .map_err(|e| e.into())
+    let key: SecretKey = keystore.get_key().map(|keypair| keypair.secret_key)?;
+
+    Ok(SomeSigner { signer: key }.into())
 }

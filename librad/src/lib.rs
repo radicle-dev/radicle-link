@@ -34,6 +34,7 @@ pub mod meta;
 pub mod net;
 pub mod paths;
 pub mod peer;
+pub mod signer;
 pub mod uri;
 
 #[cfg(test)]

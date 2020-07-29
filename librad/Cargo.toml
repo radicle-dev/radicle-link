@@ -11,6 +11,7 @@ bit-vec = "0.6"
 bs58 = "0.3"
 bytes = "0.5"
 directories = "2.0"
+dyn-clone = "1.0"
 futures-timer = "3.0"
 governor = "0.2"
 hex = "0.4"
@@ -65,7 +66,7 @@ features = ["tls-rustls"]
 
 [dependencies.radicle-keystore]
 git = "https://github.com/radicle-dev/radicle-keystore"
-rev = "27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6"
+rev = "7119282cd5b40a8f13d40a26469589614ad0054f"
 
 [dependencies.rustls]
 version = "0.17"

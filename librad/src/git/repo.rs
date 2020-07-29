@@ -22,13 +22,14 @@ use thiserror::Error;
 use crate::{
     git::{
         refs::Refs,
-        storage::{self, RadSelfSpec, Signer, Storage},
+        storage::{self, RadSelfSpec, Storage},
         types::Namespace,
     },
     internal::borrow::{TryCow, TryToOwned},
     keys,
     meta::{entity::Draft, user::User},
     peer::PeerId,
+    signer::Signer,
     uri::{RadUrl, RadUrn},
 };
 
@@ -103,8 +104,9 @@ impl<'a, S: Clone> Repo<'a, S> {
     }
 }
 
-impl<'a, S: Signer> Repo<'a, S>
+impl<'a, S> Repo<'a, S>
 where
+    S: Signer + Clone,
     S::Error: keys::SignError,
 {
     /// Fetch new refs and objects for this repo from [`PeerId`]

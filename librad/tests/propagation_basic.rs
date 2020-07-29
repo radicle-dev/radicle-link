@@ -26,6 +26,7 @@ use librad::{
     git::local::url::LocalUrl,
     meta::{entity::Signatory, project::ProjectInfo},
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
+    signer::SomeSigner,
     uri::{self, RadUrn},
 };
 
@@ -122,9 +123,8 @@ async fn fetches_on_gossip_notify() {
 
         let global_settings = librad::git::local::transport::Settings {
             paths: peer1.paths().clone(),
-            signer: peer1_key,
-        }
-        .global();
+            signer: SomeSigner { signer: peer1_key }.into(),
+        };
 
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = {
