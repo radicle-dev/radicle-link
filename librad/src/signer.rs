@@ -23,7 +23,7 @@ use keystore::sign;
 
 /// A blanket trait over [`sign::Signer`] that can be shared safely among
 /// threads.
-pub trait Signer: sign::Signer + Send + Sync + 'static {}
+pub trait Signer: sign::Signer + Send + Sync + dyn_clone::DynClone + 'static {}
 
 impl<T: sign::Signer + Send + Sync + Clone + 'static> Signer for T {}
 

@@ -1436,10 +1436,9 @@ dependencies = [
 [[package]]
 name = "radicle-keystore"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-keystore?rev=7119282cd5b40a8f13d40a26469589614ad0054f#7119282cd5b40a8f13d40a26469589614ad0054f"
+source = "git+https://github.com/radicle-dev/radicle-keystore?rev=27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6#27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6"
 dependencies = [
  "async-trait",
- "dyn-clone",
  "futures",
  "lazy_static",
  "rpassword",
