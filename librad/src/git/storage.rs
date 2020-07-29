@@ -29,8 +29,6 @@ use std::{
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
-use keystore::sign;
-
 use crate::{
     git::{
         ext::{
@@ -66,6 +64,7 @@ use crate::{
     },
     paths::Paths,
     peer::{self, PeerId},
+    signer::Signer,
     uri::{self, RadUrl, RadUrn},
 };
 
@@ -150,9 +149,6 @@ pub enum RadSelfSpec {
 }
 
 pub type NoSigner = PhantomData<!>;
-
-pub trait Signer: sign::Signer + Send + Sync + Clone + 'static {}
-impl<T: sign::Signer + Send + Sync + Clone + 'static> Signer for T {}
 
 pub struct Storage<S> {
     pub(super) backend: git2::Repository,
@@ -494,7 +490,7 @@ impl Storage<NoSigner> {
 
 impl<S> Storage<S>
 where
-    S: Signer,
+    S: Signer + Clone,
     S::Error: keys::SignError,
 {
     /// Open the `Storage` found at the given [`Paths`]'s `git_dir`, or

@@ -30,46 +30,36 @@ use crate::{
     git::{
         ext::{into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER},
         local::{self, url::LocalUrl},
-        storage::{self, Signer, Storage},
+        storage::{self, Storage},
     },
-    keys,
     paths::Paths,
+    signer::BoxedSigner,
     uri::RadUrn,
 };
+
+lazy_static! {
+    static ref SETTINGS: Arc<RwLock<Option<Settings>>> = Arc::new(RwLock::new(None));
+}
 
 /// The settings for configuring a [`LocalTransportFactory`] and in turn a
 /// [`LocalTransport`].
 #[derive(Clone)]
-pub struct Settings<S> {
+pub struct Settings {
     pub paths: Paths,
-    pub signer: S,
-}
-
-/// During testing we may want to be able to change settings globally. This type
-/// captures our settings in a [`RwLock`] so it can be accessed safely across
-/// multiple threads.
-pub type GlobalSettings<S> = Arc<RwLock<Option<Settings<S>>>>;
-
-impl<S> Settings<S> {
-    pub fn global(self) -> GlobalSettings<S> {
-        Arc::new(RwLock::new(Some(self)))
-    }
+    pub signer: BoxedSigner,
 }
 
 /// Register the local transport method to `git` so we can use our own custom
 /// transport methods. See [`LocalTransportFactory`] and its `SmartSubtransport`
 /// implementation for more details.
-pub fn register<S>(settings: GlobalSettings<S>)
-where
-    S: Signer,
-    S::Error: keys::SignError,
-{
+pub fn register(settings: Settings) {
     static INIT: Once = Once::new();
 
+    LocalTransportFactory::new().configure(settings);
     unsafe {
         INIT.call_once(move || {
             git2::transport::register(local::URL_SCHEME, move |remote| {
-                Transport::smart(&remote, true, LocalTransportFactory::new(settings.clone()))
+                Transport::smart(&remote, true, LocalTransportFactory::new())
             })
             .unwrap()
         });
@@ -77,21 +67,23 @@ where
 }
 
 #[derive(Clone)]
-struct LocalTransportFactory<S> {
-    settings: Arc<RwLock<Option<Settings<S>>>>,
+struct LocalTransportFactory {
+    settings: Arc<RwLock<Option<Settings>>>,
 }
 
-impl<S> LocalTransportFactory<S> {
-    fn new(settings: GlobalSettings<S>) -> Self {
-        Self { settings }
+impl LocalTransportFactory {
+    fn new() -> Self {
+        Self {
+            settings: SETTINGS.clone(),
+        }
+    }
+
+    fn configure(&self, settings: Settings) {
+        *self.settings.write().unwrap() = Some(settings)
     }
 }
 
-impl<S> SmartSubtransport for LocalTransportFactory<S>
-where
-    S: Signer,
-    S::Error: keys::SignError,
-{
+impl SmartSubtransport for LocalTransportFactory {
     fn action(
         &self,
         url: &str,
@@ -243,16 +235,12 @@ impl Localio {
 }
 
 #[derive(Clone)]
-pub struct LocalTransport<S> {
-    storage: Arc<Mutex<Storage<S>>>,
+pub struct LocalTransport {
+    storage: Arc<Mutex<Storage<BoxedSigner>>>,
 }
 
-impl<S> LocalTransport<S>
-where
-    S: Signer,
-    S::Error: keys::SignError,
-{
-    pub fn new(settings: Settings<S>) -> Result<Self, Error> {
+impl LocalTransport {
+    pub fn new(settings: Settings) -> Result<Self, Error> {
         let storage = Storage::open(&settings.paths)?.with_signer(settings.signer)?;
         Ok(LocalTransport {
             storage: Arc::new(Mutex::new(storage)),
