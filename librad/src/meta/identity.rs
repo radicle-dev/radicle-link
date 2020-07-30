@@ -376,7 +376,7 @@ impl IdentityBuilder {
         }
     }
 
-    pub fn merge(parent: &Identity, other: &Identity) -> Self {
+    pub fn duplicate_other(parent: &Identity, other: &Identity) -> Self {
         IdentityBuilder {
             previous: Some(parent.commit.clone()),
             merged: Some(other.commit.clone()),
@@ -413,7 +413,7 @@ impl IdentityBuilder {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Identity {
     previous: Option<ContentId>,
     merged: Option<ContentId>,
@@ -612,6 +612,12 @@ impl<'a> IdentityStore<'a> {
             doc: builder.doc,
             signatures: builder.signatures,
         })
+    }
+
+    pub fn get_parent_identity(&self, identity: &Identity) -> Option<Identity> {
+        identity
+            .previous()
+            .and_then(|id| self.get_identity(id).ok())
     }
 }
 #[cfg(test)]

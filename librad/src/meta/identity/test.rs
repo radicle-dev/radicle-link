@@ -138,3 +138,114 @@ fn sign_and_store_identity() {
     id2.check_signatures().unwrap();
     assert_eq!(id1, id2);
 }
+
+#[test]
+fn collaborate_on_identity() {
+    let repo = repo();
+    let store = IdentityStore::new(&repo);
+
+    // Create and store doc 1
+    let doc1 = DocBuilder::new_user().build(Payload::new("T1")).unwrap();
+    let rev1 = store.store_doc(&doc1, None).unwrap();
+    let root = rev1.clone();
+
+    // Create and store doc 2
+    let doc2 = DocBuilder::new_user()
+        .replaces(rev1.clone())
+        .build(Payload::new("T2"))
+        .unwrap();
+    let rev2 = store.store_doc(&doc2, Some(&root)).unwrap();
+
+    // Create and store doc 3
+    let doc3 = DocBuilder::new_user()
+        .replaces(rev2.clone())
+        .build(Payload::new("T3"))
+        .unwrap();
+    let rev3 = store.store_doc(&doc3, Some(&root)).unwrap();
+
+    // Desired history:
+    // (id names are id{R}_{B} where R is the doc revision and B is the branch)
+    //
+    // DOC      BR1      BR2
+    //           |        |
+    // doc3     id3_1_    |
+    //           |    \__ |
+    // doc3      |       id3_2
+    //           |        |
+    // doc2      |      _id2_2
+    //           |   __/
+    // doc2     id2_1
+    //           |
+    // doc1     id1
+
+    // Store Doc1 on branch 1
+    let id1 = store
+        .store_identity(IdentityBuilder::new(rev1.clone(), doc1.clone()))
+        .unwrap();
+
+    // Store Doc2 on branch 1 (use `with_parent`)
+    let id2_1 = store
+        .store_identity(IdentityBuilder::with_parent(
+            &id1,
+            rev2.clone(),
+            doc2.clone(),
+        ))
+        .unwrap();
+
+    // Store Doc2 on branch 2 taking it from branch 1 (use `duplicate`)
+    let id2_2 = store
+        .store_identity(IdentityBuilder::duplicate(&id2_1))
+        .unwrap();
+
+    // Store Doc3 on branch 2 (use `with_parent`)
+    let id3_2 = store
+        .store_identity(IdentityBuilder::with_parent(
+            &id2_2,
+            rev3.clone(),
+            doc3.clone(),
+        ))
+        .unwrap();
+
+    // Store Doc3 on branch 1 merging it from branch 2 (use `duplicate_other`)
+    let id3_1 = store
+        .store_identity(IdentityBuilder::duplicate_other(&id2_1, &id3_2))
+        .unwrap();
+
+    assert_eq!(id1.root(), &root);
+    assert_eq!(id1.revision(), &rev1);
+    assert_eq!(id1.previous(), None);
+    assert_eq!(id1.merged(), None);
+
+    assert_eq!(id2_1.root(), &root);
+    assert_eq!(id2_1.revision(), &rev2);
+    assert_eq!(id2_1.previous(), Some(id1.commit()));
+    assert_eq!(id2_1.merged(), None);
+
+    assert_eq!(id2_2.root(), &root);
+    assert_eq!(id2_2.revision(), &rev2);
+    assert_eq!(id2_2.previous(), Some(id2_1.commit()));
+    assert_eq!(id2_2.merged(), None);
+
+    assert_eq!(id3_2.root(), &root);
+    assert_eq!(id3_2.revision(), &rev3);
+    assert_eq!(id3_2.previous(), Some(id2_2.commit()));
+    assert_eq!(id3_2.merged(), None);
+
+    assert_eq!(id3_1.root(), &root);
+    assert_eq!(id3_1.revision(), &rev3);
+    assert_eq!(id3_1.previous(), Some(id2_1.commit()));
+    assert_eq!(id3_1.merged(), Some(id3_2.commit()));
+
+    assert_eq!(store.get_identity(id3_1.commit()).unwrap(), id3_1);
+    assert_eq!(store.get_identity(id3_2.commit()).unwrap(), id3_2);
+    assert_eq!(store.get_identity(id2_1.commit()).unwrap(), id2_1);
+    assert_eq!(store.get_identity(id2_2.commit()).unwrap(), id2_2);
+    assert_eq!(store.get_identity(id1.commit()).unwrap(), id1);
+
+    assert_eq!(store.get_parent_identity(&id3_1).unwrap(), id2_1);
+    assert_eq!(store.get_parent_identity(&id3_2).unwrap(), id2_2);
+    assert_eq!(store.get_parent_identity(&id2_2).unwrap(), id2_1);
+    assert_eq!(store.get_parent_identity(&id2_1).unwrap(), id1);
+
+    assert_eq!(store.get_identity(id3_1.merged().unwrap()).unwrap(), id3_2);
+}
