@@ -496,7 +496,7 @@ impl IdentityBuilder {
         }
     }
 
-    pub fn sign(mut self, key: SecretKey) -> Self {
+    pub fn sign(mut self, key: &SecretKey) -> Self {
         self.signatures
             .insert(key.public(), key.sign(self.revision.as_bytes()));
         self

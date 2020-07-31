@@ -69,35 +69,103 @@ impl Payload {
     }
 }
 
-fn new_user_doc<'a>(
+fn new_user_doc(
     store: &IdentityStore,
     text: &str,
-    keys: impl IntoIterator<Item = &'a PublicKey>,
+    keys: &[&SecretKey],
 ) -> (Doc<Untrusted>, Revision) {
     let mut builder = DocBuilder::new_user();
     for k in keys {
-        builder.add_key(k.clone()).unwrap();
+        builder.add_key(k.public()).unwrap();
     }
     let doc = builder.build(Payload::new(text)).unwrap();
     let rev = store.store_doc(&doc, None).unwrap();
     (doc, rev)
 }
 
-fn replace_user_doc<'a>(
+fn replace_user_doc(
     store: &IdentityStore,
     text: &str,
-    replaces: Revision,
+    replaces: &Revision,
     root: &Revision,
-    keys: impl IntoIterator<Item = &'a PublicKey>,
+    keys: &[&SecretKey],
 ) -> (Doc<Untrusted>, Revision) {
     let mut builder = DocBuilder::new_user();
-    let builder = builder.replaces(replaces);
+    let builder = builder.replaces(replaces.clone());
     for k in keys {
-        builder.add_key(k.clone()).unwrap();
+        builder.add_key(k.public()).unwrap();
     }
     let doc = builder.build(Payload::new(text)).unwrap();
     let rev = store.store_doc(&doc, Some(root)).unwrap();
     (doc, rev)
+}
+
+fn new_identity(
+    store: &IdentityStore,
+    doc: &Doc<Untrusted>,
+    rev: &Revision,
+    keys: &[&SecretKey],
+) -> Identity<Signed> {
+    let mut builder = IdentityBuilder::new(rev.clone(), doc.clone());
+    for k in keys {
+        builder = builder.sign(k);
+    }
+    store
+        .store_identity(builder)
+        .unwrap()
+        .check_signatures()
+        .unwrap()
+}
+
+fn with_parent_identity(
+    store: &IdentityStore,
+    doc: &Doc<Untrusted>,
+    rev: &Revision,
+    parent: &Identity<Signed>,
+    keys: &[&SecretKey],
+) -> Identity<Signed> {
+    let mut builder = IdentityBuilder::with_parent(parent, rev.clone(), doc.clone());
+    for k in keys {
+        builder = builder.sign(k);
+    }
+    store
+        .store_identity(builder)
+        .unwrap()
+        .check_signatures()
+        .unwrap()
+}
+
+fn duplicate_identity(
+    store: &IdentityStore,
+    parent: &Identity<Signed>,
+    keys: &[&SecretKey],
+) -> Identity<Signed> {
+    let mut builder = IdentityBuilder::duplicate(parent);
+    for k in keys {
+        builder = builder.sign(k);
+    }
+    store
+        .store_identity(builder)
+        .unwrap()
+        .check_signatures()
+        .unwrap()
+}
+
+fn duplicate_other_identity(
+    store: &IdentityStore,
+    parent: &Identity<Signed>,
+    other: &Identity<Signed>,
+    keys: &[&SecretKey],
+) -> Identity<Signed> {
+    let mut builder = IdentityBuilder::duplicate_other(parent, other);
+    for k in keys {
+        builder = builder.sign(k);
+    }
+    store
+        .store_identity(builder)
+        .unwrap()
+        .check_signatures()
+        .unwrap()
 }
 
 #[test]
@@ -154,11 +222,7 @@ fn sign_and_store_identity() {
     let (doc, rev) = new_user_doc(&store, "text", &[]);
 
     let id1 = store
-        .store_identity(
-            IdentityBuilder::new(rev, doc)
-                .sign(K1.clone())
-                .sign(K2.clone()),
-        )
+        .store_identity(IdentityBuilder::new(rev, doc).sign(&K1).sign(&K2))
         .unwrap();
     let id2 = store.get_identity(id1.commit()).unwrap();
     assert_eq!(id1.signatures().len(), 2);
@@ -177,10 +241,10 @@ fn collaborate_on_identity() {
     let root = &rev1;
 
     // Create and store doc 2
-    let (doc2, rev2) = replace_user_doc(&store, "T2", rev1.clone(), root, &[]);
+    let (doc2, rev2) = replace_user_doc(&store, "T2", &rev1, root, &[]);
 
     // Create and store doc 3
-    let (doc3, rev3) = replace_user_doc(&store, "T3", rev2.clone(), root, &[]);
+    let (doc3, rev3) = replace_user_doc(&store, "T3", &rev2, root, &[]);
 
     // Desired history:
     // (id names are id{R}_{B} where R is the doc revision and B is the branch)
@@ -266,52 +330,13 @@ fn check_even_quorum() {
     let repo = repo();
     let store = IdentityStore::new(&repo);
 
-    let (doc, rev) = new_user_doc(
-        &store,
-        "text",
-        &[K1.public(), K2.public(), K3.public(), K4.public()],
-    );
+    let (doc, rev) = new_user_doc(&store, "text", &[&K1, &K2, &K3, &K4]);
 
-    let id0 = store
-        .store_identity(IdentityBuilder::new(rev.clone(), doc.clone()))
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id1 = store
-        .store_identity(IdentityBuilder::new(rev.clone(), doc.clone()).sign(K1.clone()))
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id2 = store
-        .store_identity(
-            IdentityBuilder::new(rev.clone(), doc.clone())
-                .sign(K1.clone())
-                .sign(K2.clone()),
-        )
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id3 = store
-        .store_identity(
-            IdentityBuilder::new(rev.clone(), doc.clone())
-                .sign(K1.clone())
-                .sign(K2.clone())
-                .sign(K3.clone()),
-        )
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id4 = store
-        .store_identity(
-            IdentityBuilder::new(rev, doc)
-                .sign(K1.clone())
-                .sign(K2.clone())
-                .sign(K3.clone())
-                .sign(K4.clone()),
-        )
-        .unwrap()
-        .check_signatures()
-        .unwrap();
+    let id0 = new_identity(&store, &doc, &rev, &[]);
+    let id1 = new_identity(&store, &doc, &rev, &[&K1]);
+    let id2 = new_identity(&store, &doc, &rev, &[&K1, &K2]);
+    let id3 = new_identity(&store, &doc, &rev, &[&K1, &K2, &K3]);
+    let id4 = new_identity(&store, &doc, &rev, &[&K1, &K2, &K3, &K4]);
 
     assert!(matches!(id0.check_quorum(), Err(Error::NoCurrentQuorum)));
     assert!(matches!(id1.check_quorum(), Err(Error::NoCurrentQuorum)));
@@ -325,70 +350,14 @@ fn check_odd_quorum() {
     let repo = repo();
     let store = IdentityStore::new(&repo);
 
-    let (doc, rev) = new_user_doc(
-        &store,
-        "text",
-        &[
-            K1.public(),
-            K2.public(),
-            K3.public(),
-            K4.public(),
-            K5.public(),
-        ],
-    );
+    let (doc, rev) = new_user_doc(&store, "text", &[&K1, &K2, &K3, &K4, &K5]);
 
-    let id0 = store
-        .store_identity(IdentityBuilder::new(rev.clone(), doc.clone()))
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id1 = store
-        .store_identity(IdentityBuilder::new(rev.clone(), doc.clone()).sign(K1.clone()))
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id2 = store
-        .store_identity(
-            IdentityBuilder::new(rev.clone(), doc.clone())
-                .sign(K1.clone())
-                .sign(K2.clone()),
-        )
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id3 = store
-        .store_identity(
-            IdentityBuilder::new(rev.clone(), doc.clone())
-                .sign(K1.clone())
-                .sign(K2.clone())
-                .sign(K3.clone()),
-        )
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id4 = store
-        .store_identity(
-            IdentityBuilder::new(rev.clone(), doc.clone())
-                .sign(K1.clone())
-                .sign(K2.clone())
-                .sign(K3.clone())
-                .sign(K4.clone()),
-        )
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id5 = store
-        .store_identity(
-            IdentityBuilder::new(rev, doc)
-                .sign(K1.clone())
-                .sign(K2.clone())
-                .sign(K3.clone())
-                .sign(K4.clone())
-                .sign(K5.clone()),
-        )
-        .unwrap()
-        .check_signatures()
-        .unwrap();
+    let id0 = new_identity(&store, &doc, &rev, &[]);
+    let id1 = new_identity(&store, &doc, &rev, &[&K1]);
+    let id2 = new_identity(&store, &doc, &rev, &[&K1, &K2]);
+    let id3 = new_identity(&store, &doc, &rev, &[&K1, &K2, &K3]);
+    let id4 = new_identity(&store, &doc, &rev, &[&K1, &K2, &K3, &K4]);
+    let id5 = new_identity(&store, &doc, &rev, &[&K1, &K2, &K3, &K4, &K5]);
 
     assert!(matches!(id0.check_quorum(), Err(Error::NoCurrentQuorum)));
     assert!(matches!(id1.check_quorum(), Err(Error::NoCurrentQuorum)));
@@ -403,59 +372,108 @@ fn check_wrong_quorum() {
     let repo = repo();
     let store = IdentityStore::new(&repo);
 
-    let (doc, rev) = new_user_doc(&store, "text", &[K1.public(), K2.public()]);
+    let (doc, rev) = new_user_doc(&store, "text", &[&K1, &K2]);
 
-    let id1 = store
-        .store_identity(IdentityBuilder::new(rev.clone(), doc.clone()).sign(K5.clone()))
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id2 = store
-        .store_identity(
-            IdentityBuilder::new(rev.clone(), doc.clone())
-                .sign(K4.clone())
-                .sign(K5.clone()),
-        )
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id3 = store
-        .store_identity(
-            IdentityBuilder::new(rev.clone(), doc.clone())
-                .sign(K3.clone())
-                .sign(K4.clone())
-                .sign(K5.clone()),
-        )
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id4 = store
-        .store_identity(
-            IdentityBuilder::new(rev.clone(), doc.clone())
-                .sign(K2.clone())
-                .sign(K3.clone())
-                .sign(K4.clone())
-                .sign(K5.clone()),
-        )
-        .unwrap()
-        .check_signatures()
-        .unwrap();
-    let id5 = store
-        .store_identity(
-            IdentityBuilder::new(rev, doc)
-                .sign(K1.clone())
-                .sign(K2.clone())
-                .sign(K3.clone())
-                .sign(K4.clone())
-                .sign(K5.clone()),
-        )
-        .unwrap()
-        .check_signatures()
-        .unwrap();
+    let id1 = new_identity(&store, &doc, &rev, &[&K5]);
+    let id2 = new_identity(&store, &doc, &rev, &[&K4, &K5]);
+    let id3 = new_identity(&store, &doc, &rev, &[&K3, &K4, &K5]);
+    let id4 = new_identity(&store, &doc, &rev, &[&K2, &K3, &K4, &K5]);
+    let id5 = new_identity(&store, &doc, &rev, &[&K1, &K2, &K3, &K4, &K5]);
 
     assert!(matches!(id1.check_quorum(), Err(Error::NoCurrentQuorum)));
     assert!(matches!(id2.check_quorum(), Err(Error::NoCurrentQuorum)));
     assert!(matches!(id3.check_quorum(), Err(Error::NoCurrentQuorum)));
     assert!(matches!(id4.check_quorum(), Err(Error::NoCurrentQuorum)));
     assert!(matches!(id5.check_quorum(), Ok(_)));
+}
+
+#[test]
+fn check_simple_updates() {
+    let repo = repo();
+    let store = IdentityStore::new(&repo);
+
+    let (doc1, rev1) = new_user_doc(&store, "T1", &[&K1, &K2]);
+    let (doc2, rev2) = replace_user_doc(&store, "T2", &rev1, &rev1, &[&K1, &K2, &K3]);
+    let (doc3, rev3) = replace_user_doc(&store, "T3", &rev2, &rev1, &[&K2, &K3]);
+
+    // Desired history:
+    // Id names are id{R}_{B}{r} where:
+    // - R is the doc revision
+    // - B is the branch
+    // - r is a sort of release inside the branch
+    // Each branch only adds one signature with its own key.
+    // Signature sets marked with * are the verifiable ones.
+    //
+    // DOC    SIG      BR1       BR2       BR3
+    //                  |         |         |
+    // doc3  *K23       |         |       _id3_3b
+    //                  |         |    __/  |
+    // doc3  *K23       |        id3_2a_    |
+    //                  |         |     \__ |
+    // doc3   K3        |         |        id3_3a
+    //                  |         |         |
+    // doc2  *K123     id2_1b_    |         |
+    //                  |     \__ |         |
+    // doc2  *K123      |        id2_2b_    |
+    //                  |         |     \__ |
+    // doc2  *K123      |         |       _id2_3a
+    //                  |         |    __/
+    // doc2  *K12       |       _id2_2a
+    //                  |    __/  |
+    // doc2   K1       id2_1a     |
+    //                  |         |
+    // doc1  *K12      id1_1b_    |
+    //                  |     \__ |
+    // doc1  *K12       |       _id1_2a
+    //                  |    __/
+    // doc1   K1       id1_1a
+
+    let id1_1a = new_identity(&store, &doc1, &rev1, &[&K1]);
+    let id1_2a = duplicate_identity(&store, &id1_1a, &[&K2]);
+    let id1_1b = duplicate_other_identity(&store, &id1_1a, &id1_2a, &[]);
+    let id2_1a = with_parent_identity(&store, &doc2, &rev2, &id1_1b, &[&K1]);
+    let id2_2a = duplicate_other_identity(&store, &id1_2a, &id2_1a, &[&K2]);
+    let id2_3a = duplicate_identity(&store, &id2_2a, &[&K3]);
+    let id2_2b = duplicate_other_identity(&store, &id2_2a, &id2_3a, &[]);
+    let id2_1b = duplicate_other_identity(&store, &id2_1a, &id2_2b, &[]);
+    let id3_3a = with_parent_identity(&store, &doc3, &rev3, &id2_3a, &[&K3]);
+    let id3_2a = duplicate_other_identity(&store, &id2_2b, &id3_3a, &[&K2]);
+    let id3_3b = duplicate_other_identity(&store, &id3_3a, &id3_2a, &[]);
+
+    assert!(matches!(id1_1a.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id2_1a.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id3_3a.check_quorum(), Err(Error::NoCurrentQuorum)));
+
+    let id1_2a = id1_2a.check_quorum().unwrap().check_update(None).unwrap();
+    let id1_1b = id1_1b.check_quorum().unwrap().check_update(None).unwrap();
+    let _id2_2a = id2_2a
+        .check_quorum()
+        .unwrap()
+        .check_update(Some(&id1_2a))
+        .unwrap();
+    let id2_3a = id2_3a
+        .check_quorum()
+        .unwrap()
+        .check_update(Some(&id1_2a))
+        .unwrap();
+    let id2_2b = id2_2b
+        .check_quorum()
+        .unwrap()
+        .check_update(Some(&id1_2a))
+        .unwrap();
+    let _id2_1b = id2_1b
+        .check_quorum()
+        .unwrap()
+        .check_update(Some(&id1_1b))
+        .unwrap();
+    let _id3_2a = id3_2a
+        .check_quorum()
+        .unwrap()
+        .check_update(Some(&id2_2b))
+        .unwrap();
+    let _id3_3b = id3_3b
+        .check_quorum()
+        .unwrap()
+        .check_update(Some(&id2_3a))
+        .unwrap();
 }
