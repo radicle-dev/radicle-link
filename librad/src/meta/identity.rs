@@ -45,6 +45,18 @@ pub enum Error {
     #[error("Invalid signature by key {0}")]
     InvalidSignature(PublicKey),
 
+    #[error("No current quorum")]
+    NoCurrentQuorum,
+
+    #[error("No previous quorum")]
+    NoPreviousQuorum,
+
+    #[error("Root mismatch")]
+    RootMismatch,
+
+    #[error("Previous link mismatch")]
+    PreviousLinkMismatch,
+
     #[error(transparent)]
     Cjson(#[from] CjsonError),
 
@@ -234,6 +246,40 @@ impl Delegations {
             self.remove_key(k).ok();
         }
     }
+
+    pub fn quorum(&self) -> usize {
+        match self {
+            Delegations::Keys(keys) => (keys.len() / 2) + 1,
+            Delegations::Users(users) => {
+                let mut unique_users = BTreeSet::new();
+                for u in users.values() {
+                    unique_users.insert(u.as_bytes());
+                }
+                (unique_users.len() / 2) + 1
+            },
+        }
+    }
+
+    pub fn check_quorum(&self, signatures: &BTreeMap<PublicKey, Signature>) -> bool {
+        match self {
+            Delegations::Keys(keys) => {
+                let mut count = 0;
+                for k in signatures.keys() {
+                    if keys.contains(k) {
+                        count += 1;
+                    }
+                }
+                count >= self.quorum()
+            },
+            Delegations::Users(users) => {
+                let mut unique_signers = BTreeSet::new();
+                for k in signatures.keys() {
+                    users.get(k).map(|u| unique_signers.insert(u.as_bytes()));
+                }
+                unique_signers.len() >= self.quorum()
+            },
+        }
+    }
 }
 
 /// Type witness for a fully verified [`Doc`].
@@ -244,7 +290,7 @@ pub struct Verified;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Quorum;
 
-/// Type witness for a [`Doc`] signed by one of its delegations.
+/// Type witness for a [`Doc`] with verified signatures.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signed;
 
@@ -292,6 +338,18 @@ where
             replaces: self.replaces.clone(),
             payload: self.payload.clone(),
             delegations: self.delegations.clone(),
+        }
+    }
+
+    fn with_status<NewStatus>(self) -> Doc<NewStatus>
+    where
+        NewStatus: Clone,
+    {
+        Doc {
+            status_marker: PhantomData,
+            replaces: self.replaces,
+            payload: self.payload,
+            delegations: self.delegations,
         }
     }
 
@@ -506,13 +564,76 @@ where
         &self.signatures
     }
 
-    pub fn check_signatures(&self) -> Result<(), Error> {
+    pub fn verify_signatures(&self) -> Result<(), Error> {
         for (k, s) in &self.signatures {
             if !s.verify(self.revision.as_bytes(), k) {
                 return Err(Error::InvalidSignature(k.clone()));
             }
         }
         Ok(())
+    }
+
+    fn with_status<NewStatus>(self) -> Identity<NewStatus>
+    where
+        NewStatus: Clone,
+    {
+        Identity {
+            status_marker: PhantomData,
+            previous: self.previous,
+            merged: self.merged,
+            commit: self.commit,
+            root: self.root,
+            revision: self.revision,
+            doc: self.doc.with_status(),
+            signatures: self.signatures,
+        }
+    }
+}
+
+impl Identity<Untrusted> {
+    pub fn check_signatures(self) -> Result<Identity<Signed>, Error> {
+        self.verify_signatures().map(|_| self.with_status())
+    }
+}
+
+impl Identity<Signed> {
+    pub fn check_quorum(self) -> Result<Identity<Quorum>, Error> {
+        if self.doc().delegations().check_quorum(self.signatures()) {
+            Ok(self.with_status())
+        } else {
+            Err(Error::NoCurrentQuorum)
+        }
+    }
+}
+
+impl Identity<Quorum> {
+    pub fn check_update(
+        self,
+        previous: Option<&Identity<Verified>>,
+    ) -> Result<Identity<Verified>, Error> {
+        match previous {
+            Some(previous) => match self.doc().replaces() {
+                Some(replaces) => {
+                    if self.root() != previous.root() {
+                        Err(Error::RootMismatch)
+                    } else if replaces != previous.revision() {
+                        Err(Error::PreviousLinkMismatch)
+                    } else if !previous.doc().delegations().check_quorum(self.signatures()) {
+                        Err(Error::NoCurrentQuorum)
+                    } else {
+                        Ok(self.with_status())
+                    }
+                },
+                None => Err(Error::PreviousLinkMismatch),
+            },
+            None => {
+                if self.doc().replaces().is_none() {
+                    Ok(self.with_status())
+                } else {
+                    Err(Error::PreviousLinkMismatch)
+                }
+            },
+        }
     }
 }
 

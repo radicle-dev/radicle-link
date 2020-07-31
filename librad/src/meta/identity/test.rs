@@ -134,8 +134,8 @@ fn sign_and_store_identity() {
         .unwrap();
     let id2 = store.get_identity(id1.commit()).unwrap();
     assert_eq!(id1.signatures().len(), 2);
-    id1.check_signatures().unwrap();
-    id2.check_signatures().unwrap();
+    id1.verify_signatures().unwrap();
+    id2.verify_signatures().unwrap();
     assert_eq!(id1, id2);
 }
 
@@ -240,4 +240,220 @@ fn collaborate_on_identity() {
     assert_eq!(store.get_parent_identity(&id2_1).unwrap(), id1);
 
     assert_eq!(store.get_identity(id3_1.merged().unwrap()).unwrap(), id3_2);
+}
+
+#[test]
+fn check_even_quorum() {
+    let repo = repo();
+    let store = IdentityStore::new(&repo);
+
+    let doc = DocBuilder::new_user()
+        .add_key(K1.public())
+        .unwrap()
+        .add_key(K2.public())
+        .unwrap()
+        .add_key(K3.public())
+        .unwrap()
+        .add_key(K4.public())
+        .unwrap()
+        .build(Payload::new("text"))
+        .unwrap();
+    let rev = store.store_doc(&doc, None).unwrap();
+
+    let id0 = store
+        .store_identity(IdentityBuilder::new(rev.clone(), doc.clone()))
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id1 = store
+        .store_identity(IdentityBuilder::new(rev.clone(), doc.clone()).sign(K1.clone()))
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id2 = store
+        .store_identity(
+            IdentityBuilder::new(rev.clone(), doc.clone())
+                .sign(K1.clone())
+                .sign(K2.clone()),
+        )
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id3 = store
+        .store_identity(
+            IdentityBuilder::new(rev.clone(), doc.clone())
+                .sign(K1.clone())
+                .sign(K2.clone())
+                .sign(K3.clone()),
+        )
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id4 = store
+        .store_identity(
+            IdentityBuilder::new(rev, doc)
+                .sign(K1.clone())
+                .sign(K2.clone())
+                .sign(K3.clone())
+                .sign(K4.clone()),
+        )
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+
+    assert!(matches!(id0.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id1.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id2.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id3.check_quorum(), Ok(_)));
+    assert!(matches!(id4.check_quorum(), Ok(_)));
+}
+
+#[test]
+fn check_odd_quorum() {
+    let repo = repo();
+    let store = IdentityStore::new(&repo);
+
+    let doc = DocBuilder::new_user()
+        .add_key(K1.public())
+        .unwrap()
+        .add_key(K2.public())
+        .unwrap()
+        .add_key(K3.public())
+        .unwrap()
+        .add_key(K4.public())
+        .unwrap()
+        .add_key(K5.public())
+        .unwrap()
+        .build(Payload::new("text"))
+        .unwrap();
+    let rev = store.store_doc(&doc, None).unwrap();
+
+    let id0 = store
+        .store_identity(IdentityBuilder::new(rev.clone(), doc.clone()))
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id1 = store
+        .store_identity(IdentityBuilder::new(rev.clone(), doc.clone()).sign(K1.clone()))
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id2 = store
+        .store_identity(
+            IdentityBuilder::new(rev.clone(), doc.clone())
+                .sign(K1.clone())
+                .sign(K2.clone()),
+        )
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id3 = store
+        .store_identity(
+            IdentityBuilder::new(rev.clone(), doc.clone())
+                .sign(K1.clone())
+                .sign(K2.clone())
+                .sign(K3.clone()),
+        )
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id4 = store
+        .store_identity(
+            IdentityBuilder::new(rev.clone(), doc.clone())
+                .sign(K1.clone())
+                .sign(K2.clone())
+                .sign(K3.clone())
+                .sign(K4.clone()),
+        )
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id5 = store
+        .store_identity(
+            IdentityBuilder::new(rev, doc)
+                .sign(K1.clone())
+                .sign(K2.clone())
+                .sign(K3.clone())
+                .sign(K4.clone())
+                .sign(K5.clone()),
+        )
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+
+    assert!(matches!(id0.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id1.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id2.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id3.check_quorum(), Ok(_)));
+    assert!(matches!(id4.check_quorum(), Ok(_)));
+    assert!(matches!(id5.check_quorum(), Ok(_)));
+}
+
+#[test]
+fn check_wrong_quorum() {
+    let repo = repo();
+    let store = IdentityStore::new(&repo);
+
+    let doc = DocBuilder::new_user()
+        .add_key(K1.public())
+        .unwrap()
+        .add_key(K2.public())
+        .unwrap()
+        .build(Payload::new("text"))
+        .unwrap();
+    let rev = store.store_doc(&doc, None).unwrap();
+
+    let id1 = store
+        .store_identity(IdentityBuilder::new(rev.clone(), doc.clone()).sign(K5.clone()))
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id2 = store
+        .store_identity(
+            IdentityBuilder::new(rev.clone(), doc.clone())
+                .sign(K4.clone())
+                .sign(K5.clone()),
+        )
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id3 = store
+        .store_identity(
+            IdentityBuilder::new(rev.clone(), doc.clone())
+                .sign(K3.clone())
+                .sign(K4.clone())
+                .sign(K5.clone()),
+        )
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id4 = store
+        .store_identity(
+            IdentityBuilder::new(rev.clone(), doc.clone())
+                .sign(K2.clone())
+                .sign(K3.clone())
+                .sign(K4.clone())
+                .sign(K5.clone()),
+        )
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+    let id5 = store
+        .store_identity(
+            IdentityBuilder::new(rev, doc)
+                .sign(K1.clone())
+                .sign(K2.clone())
+                .sign(K3.clone())
+                .sign(K4.clone())
+                .sign(K5.clone()),
+        )
+        .unwrap()
+        .check_signatures()
+        .unwrap();
+
+    assert!(matches!(id1.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id2.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id3.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id4.check_quorum(), Err(Error::NoCurrentQuorum)));
+    assert!(matches!(id5.check_quorum(), Ok(_)));
 }

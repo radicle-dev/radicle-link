@@ -15,11 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use super::{Doc, Error, Revision, Verified};
+use super::{Error, Identity, Revision, Verified};
 
 pub trait VerificationCache {
     fn is_verified(&self, rev: &Revision) -> bool;
-    fn register_verified(&mut self, doc: &Doc<Verified>, rev: &Revision) -> Result<(), Error>;
+    fn register_verified(&mut self, id: &Identity<Verified>) -> Result<(), Error>;
 }
 
 #[cfg(test)]
@@ -32,11 +32,7 @@ pub mod test {
         fn is_verified(&self, _rev: &Revision) -> bool {
             false
         }
-        fn register_verified(
-            &mut self,
-            _doc: &Doc<Verified>,
-            _rev: &Revision,
-        ) -> Result<(), Error> {
+        fn register_verified(&mut self, _id: &Identity<Verified>) -> Result<(), Error> {
             Ok(())
         }
     }
@@ -47,11 +43,7 @@ pub mod test {
         fn is_verified(&self, _rev: &Revision) -> bool {
             true
         }
-        fn register_verified(
-            &mut self,
-            _doc: &Doc<Verified>,
-            _rev: &Revision,
-        ) -> Result<(), Error> {
+        fn register_verified(&mut self, _id: &Identity<Verified>) -> Result<(), Error> {
             Ok(())
         }
     }
