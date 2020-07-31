@@ -18,6 +18,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     convert::Into,
+    marker::PhantomData,
 };
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -235,14 +236,37 @@ impl Delegations {
     }
 }
 
+/// Type witness for a fully verified [`Doc`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Verified;
+
+/// Type witness for a [`Doc`] signed by a quorum of its delegations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Quorum;
+
+/// Type witness for a [`Doc`] signed by one of its delegations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Signed;
+
+/// Type witness for an untrusted [`Doc`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Untrusted;
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct Doc {
+pub struct Doc<Status>
+where
+    Status: Clone,
+{
+    status_marker: PhantomData<Status>,
     replaces: Option<Revision>,
     payload: JsonValue,
     delegations: Delegations,
 }
 
-impl Doc {
+impl<Status> Doc<Status>
+where
+    Status: Clone,
+{
     pub fn replaces(&self) -> Option<&Revision> {
         self.replaces.as_ref()
     }
@@ -260,6 +284,15 @@ impl Doc {
         T: DeserializeOwned,
     {
         serde_json::value::from_value(self.payload.clone()).map_err(Error::SerdeJson)
+    }
+
+    pub fn as_untrusted(&self) -> Doc<Untrusted> {
+        Doc {
+            status_marker: PhantomData,
+            replaces: self.replaces.clone(),
+            payload: self.payload.clone(),
+            delegations: self.delegations.clone(),
+        }
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
@@ -321,11 +354,12 @@ impl DocBuilder {
         self
     }
 
-    pub fn build<T>(&self, payload: T) -> Result<Doc, Error>
+    pub fn build<T>(&self, payload: T) -> Result<Doc<Untrusted>, Error>
     where
         T: Serialize,
     {
         Ok(Doc {
+            status_marker: PhantomData,
             replaces: self.replaces.clone(),
             payload: serde_json::value::to_value(payload)?,
             delegations: self.delegations.clone(),
@@ -338,12 +372,12 @@ pub struct IdentityBuilder {
     merged: Option<ContentId>,
     root: Revision,
     revision: Revision,
-    doc: Doc,
+    doc: Doc<Untrusted>,
     signatures: BTreeMap<PublicKey, Signature>,
 }
 
 impl IdentityBuilder {
-    pub fn new(revision: Revision, doc: Doc) -> Self {
+    pub fn new(revision: Revision, doc: Doc<Untrusted>) -> Self {
         IdentityBuilder {
             previous: None,
             merged: None,
@@ -354,7 +388,14 @@ impl IdentityBuilder {
         }
     }
 
-    pub fn with_parent(parent: &Identity, revision: Revision, doc: Doc) -> Self {
+    pub fn with_parent<Status>(
+        parent: &Identity<Status>,
+        revision: Revision,
+        doc: Doc<Untrusted>,
+    ) -> Self
+    where
+        Status: Clone,
+    {
         IdentityBuilder {
             previous: Some(parent.commit.clone()),
             merged: None,
@@ -365,24 +406,34 @@ impl IdentityBuilder {
         }
     }
 
-    pub fn duplicate(parent: &Identity) -> Self {
+    pub fn duplicate<Status>(parent: &Identity<Status>) -> Self
+    where
+        Status: Clone,
+    {
         IdentityBuilder {
             previous: Some(parent.commit.clone()),
             merged: None,
             root: parent.root.clone(),
             revision: parent.revision.clone(),
-            doc: parent.doc.clone(),
+            doc: parent.doc.as_untrusted(),
             signatures: parent.signatures.clone(),
         }
     }
 
-    pub fn duplicate_other(parent: &Identity, other: &Identity) -> Self {
+    pub fn duplicate_other<Status1, Status2>(
+        parent: &Identity<Status1>,
+        other: &Identity<Status2>,
+    ) -> Self
+    where
+        Status1: Clone,
+        Status2: Clone,
+    {
         IdentityBuilder {
             previous: Some(parent.commit.clone()),
             merged: Some(other.commit.clone()),
             root: parent.root.clone(),
             revision: other.revision.clone(),
-            doc: other.doc.clone(),
+            doc: other.doc.as_untrusted(),
             signatures: other.signatures.clone(),
         }
     }
@@ -405,7 +456,7 @@ impl IdentityBuilder {
     pub fn revision(&self) -> &Revision {
         &self.revision
     }
-    pub fn doc(&self) -> &Doc {
+    pub fn doc(&self) -> &Doc<Untrusted> {
         &self.doc
     }
     pub fn signatures(&self) -> &BTreeMap<PublicKey, Signature> {
@@ -414,17 +465,25 @@ impl IdentityBuilder {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Identity {
+pub struct Identity<Status>
+where
+    Status: Clone,
+{
+    /// Verification status marker type
+    status_marker: PhantomData<Status>,
     previous: Option<ContentId>,
     merged: Option<ContentId>,
     commit: ContentId,
     root: Revision,
     revision: Revision,
-    doc: Doc,
+    doc: Doc<Status>,
     signatures: BTreeMap<PublicKey, Signature>,
 }
 
-impl Identity {
+impl<Status> Identity<Status>
+where
+    Status: Clone,
+{
     pub fn previous(&self) -> Option<&ContentId> {
         self.previous.as_ref()
     }
@@ -440,7 +499,7 @@ impl Identity {
     pub fn revision(&self) -> &Revision {
         &self.revision
     }
-    pub fn doc(&self) -> &Doc {
+    pub fn doc(&self) -> &Doc<Status> {
         &self.doc
     }
     pub fn signatures(&self) -> &BTreeMap<PublicKey, Signature> {
@@ -512,7 +571,7 @@ impl<'a> IdentityStore<'a> {
         Self { repo }
     }
 
-    pub fn get_doc(&self, revision: &Revision) -> Result<(Doc, Revision), Error> {
+    pub fn get_doc(&self, revision: &Revision) -> Result<(Doc<Untrusted>, Revision), Error> {
         let tree = self.repo.find_tree(revision.into())?;
         let root_entry = tree
             .get(0)
@@ -533,11 +592,14 @@ impl<'a> IdentityStore<'a> {
         Ok((doc, root_revision))
     }
 
-    pub fn store_doc(
+    pub fn store_doc<Status>(
         &self,
-        doc: &Doc,
+        doc: &Doc<Status>,
         root_revision: Option<&Revision>,
-    ) -> Result<Revision, Error> {
+    ) -> Result<Revision, Error>
+    where
+        Status: Clone,
+    {
         let doc_bytes = doc.serialize()?;
         let blob_oid = self.repo.blob(&doc_bytes)?;
         let mut tree = self.repo.treebuilder(None)?;
@@ -552,7 +614,7 @@ impl<'a> IdentityStore<'a> {
         Ok(Revision::from(tree.write()?))
     }
 
-    pub fn get_identity(&self, id: &ContentId) -> Result<Identity, Error> {
+    pub fn get_identity(&self, id: &ContentId) -> Result<Identity<Untrusted>, Error> {
         let commit = self.repo.find_commit(id.into())?;
         let mut previous = None;
         let mut merged = None;
@@ -566,6 +628,7 @@ impl<'a> IdentityStore<'a> {
         let revision = Revision::from(commit.tree_id());
         let (doc, root) = self.get_doc(&revision)?;
         Ok(Identity {
+            status_marker: PhantomData,
             previous,
             merged,
             commit: commit.id().into(),
@@ -576,7 +639,7 @@ impl<'a> IdentityStore<'a> {
         })
     }
 
-    pub fn store_identity(&self, builder: IdentityBuilder) -> Result<Identity, Error> {
+    pub fn store_identity(&self, builder: IdentityBuilder) -> Result<Identity<Untrusted>, Error> {
         let mut message = format!("RAD ID {} REV {}\n", builder.root, builder.revision);
         append_signatures(&mut message, &builder.signatures);
 
@@ -604,6 +667,7 @@ impl<'a> IdentityStore<'a> {
             .commit(None, &git_sig, &git_sig, &message, &tree, &parents)?;
 
         Ok(Identity {
+            status_marker: PhantomData,
             previous: builder.previous().cloned(),
             merged: builder.merged().cloned(),
             commit: id.into(),
@@ -614,11 +678,19 @@ impl<'a> IdentityStore<'a> {
         })
     }
 
-    pub fn get_parent_identity(&self, identity: &Identity) -> Option<Identity> {
+    pub fn get_parent_identity<Status>(
+        &self,
+        identity: &Identity<Status>,
+    ) -> Option<Identity<Untrusted>>
+    where
+        Status: Clone,
+    {
         identity
             .previous()
             .and_then(|id| self.get_identity(id).ok())
     }
 }
+
+pub mod cache;
 #[cfg(test)]
 mod test;

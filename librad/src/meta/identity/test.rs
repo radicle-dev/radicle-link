@@ -180,16 +180,12 @@ fn collaborate_on_identity() {
 
     // Store Doc1 on branch 1
     let id1 = store
-        .store_identity(IdentityBuilder::new(rev1.clone(), doc1.clone()))
+        .store_identity(IdentityBuilder::new(rev1.clone(), doc1))
         .unwrap();
 
     // Store Doc2 on branch 1 (use `with_parent`)
     let id2_1 = store
-        .store_identity(IdentityBuilder::with_parent(
-            &id1,
-            rev2.clone(),
-            doc2.clone(),
-        ))
+        .store_identity(IdentityBuilder::with_parent(&id1, rev2.clone(), doc2))
         .unwrap();
 
     // Store Doc2 on branch 2 taking it from branch 1 (use `duplicate`)
@@ -199,11 +195,7 @@ fn collaborate_on_identity() {
 
     // Store Doc3 on branch 2 (use `with_parent`)
     let id3_2 = store
-        .store_identity(IdentityBuilder::with_parent(
-            &id2_2,
-            rev3.clone(),
-            doc3.clone(),
-        ))
+        .store_identity(IdentityBuilder::with_parent(&id2_2, rev3.clone(), doc3))
         .unwrap();
 
     // Store Doc3 on branch 1 merging it from branch 2 (use `duplicate_other`)
