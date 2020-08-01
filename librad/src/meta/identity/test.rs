@@ -16,6 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use super::*;
+use cache::{test::NullVerificationCache, MemoryCache};
 
 use git2::Repository;
 use serde::{Deserialize, Serialize};
@@ -391,6 +392,7 @@ fn check_wrong_quorum() {
 fn check_simple_updates() {
     let repo = repo();
     let store = IdentityStore::new(&repo);
+    let mut cache = NullVerificationCache::default();
 
     let (doc1, rev1) = new_user_doc(&store, "T1", &[&K1, &K2]);
     let (doc2, rev2) = replace_user_doc(&store, "T2", &rev1, &rev1, &[&K1, &K2, &K3]);
@@ -444,36 +446,82 @@ fn check_simple_updates() {
     assert!(matches!(id2_1a.check_quorum(), Err(Error::NoCurrentQuorum)));
     assert!(matches!(id3_3a.check_quorum(), Err(Error::NoCurrentQuorum)));
 
-    let id1_2a = id1_2a.check_quorum().unwrap().check_update(None).unwrap();
-    let id1_1b = id1_1b.check_quorum().unwrap().check_update(None).unwrap();
+    let id1_2a = id1_2a
+        .check_quorum()
+        .unwrap()
+        .check_update(None, &mut cache)
+        .unwrap();
+    let id1_1b = id1_1b
+        .check_quorum()
+        .unwrap()
+        .check_update(None, &mut cache)
+        .unwrap();
     let _id2_2a = id2_2a
         .check_quorum()
         .unwrap()
-        .check_update(Some(&id1_2a))
+        .check_update(Some(&id1_2a), &mut cache)
         .unwrap();
     let id2_3a = id2_3a
         .check_quorum()
         .unwrap()
-        .check_update(Some(&id1_2a))
+        .check_update(Some(&id1_2a), &mut cache)
         .unwrap();
     let id2_2b = id2_2b
         .check_quorum()
         .unwrap()
-        .check_update(Some(&id1_2a))
+        .check_update(Some(&id1_2a), &mut cache)
         .unwrap();
-    let _id2_1b = id2_1b
+    let id2_1b = id2_1b
         .check_quorum()
         .unwrap()
-        .check_update(Some(&id1_1b))
+        .check_update(Some(&id1_1b), &mut cache)
         .unwrap();
-    let _id3_2a = id3_2a
+    let id3_2a = id3_2a
         .check_quorum()
         .unwrap()
-        .check_update(Some(&id2_2b))
+        .check_update(Some(&id2_2b), &mut cache)
         .unwrap();
-    let _id3_3b = id3_3b
+    let id3_3b = id3_3b
         .check_quorum()
         .unwrap()
-        .check_update(Some(&id2_3a))
+        .check_update(Some(&id2_3a), &mut cache)
         .unwrap();
+
+    let (b1_head, b1_verified) = store
+        .get_latest_identity(id2_1b.commit(), &mut cache)
+        .unwrap();
+    assert_eq!(b1_head.commit(), id2_1b.commit());
+    assert_eq!(b1_verified.unwrap().commit(), id2_1b.commit());
+
+    let (b2_head, b2_verified) = store
+        .get_latest_identity(id3_2a.commit(), &mut cache)
+        .unwrap();
+    assert_eq!(b2_head.commit(), id3_2a.commit());
+    assert_eq!(b2_verified.unwrap().commit(), id3_2a.commit());
+
+    let (b3_head, b3_verified) = store
+        .get_latest_identity(id3_3b.commit(), &mut cache)
+        .unwrap();
+    assert_eq!(b3_head.commit(), id3_3b.commit());
+    assert_eq!(b3_verified.unwrap().commit(), id3_3b.commit());
+
+    let mut cache = MemoryCache::default();
+
+    let (b1_head, b1_verified) = store
+        .get_latest_identity(id2_1b.commit(), &mut cache)
+        .unwrap();
+    assert_eq!(b1_head.commit(), id2_1b.commit());
+    assert_eq!(b1_verified.unwrap().commit(), id2_1b.commit());
+
+    let (b2_head, b2_verified) = store
+        .get_latest_identity(id3_2a.commit(), &mut cache)
+        .unwrap();
+    assert_eq!(b2_head.commit(), id3_2a.commit());
+    assert_eq!(b2_verified.unwrap().commit(), id3_2a.commit());
+
+    let (b3_head, b3_verified) = store
+        .get_latest_identity(id3_3b.commit(), &mut cache)
+        .unwrap();
+    assert_eq!(b3_head.commit(), id3_3b.commit());
+    assert_eq!(b3_verified.unwrap().commit(), id3_3b.commit());
 }

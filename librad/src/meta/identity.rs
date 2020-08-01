@@ -31,6 +31,8 @@ use crate::{
     keys::{PublicKey, SecretKey, Signature},
 };
 
+use cache::VerificationCache;
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Wrong delegation type")]
@@ -51,8 +53,13 @@ pub enum Error {
     #[error("No previous quorum")]
     NoPreviousQuorum,
 
+    // TODO: Add info
     #[error("Root mismatch")]
     RootMismatch,
+
+    // TODO: Add info
+    #[error("Fork detected")]
+    ForkDetected,
 
     #[error("Previous link mismatch")]
     PreviousLinkMismatch,
@@ -105,6 +112,18 @@ impl From<git2::Oid> for Revision {
     }
 }
 
+impl std::cmp::PartialOrd for Revision {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.as_bytes().partial_cmp(other.as_bytes())
+    }
+}
+
+impl std::cmp::Ord for Revision {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_bytes().cmp(other.as_bytes())
+    }
+}
+
 impl std::fmt::Display for Revision {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -149,6 +168,18 @@ impl From<git2::Oid> for ContentId {
 impl std::fmt::Display for ContentId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl std::cmp::PartialOrd for ContentId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.as_bytes().partial_cmp(other.as_bytes())
+    }
+}
+
+impl std::cmp::Ord for ContentId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_bytes().cmp(other.as_bytes())
     }
 }
 
@@ -313,6 +344,10 @@ impl<Status> Doc<Status>
 where
     Status: Clone,
 {
+    pub fn is_root(&self) -> bool {
+        self.replaces.is_none()
+    }
+
     pub fn replaces(&self) -> Option<&Revision> {
         self.replaces.as_ref()
     }
@@ -597,8 +632,12 @@ impl Identity<Untrusted> {
 }
 
 impl Identity<Signed> {
+    pub fn has_quorum(&self) -> bool {
+        self.doc().delegations().check_quorum(self.signatures())
+    }
+
     pub fn check_quorum(self) -> Result<Identity<Quorum>, Error> {
-        if self.doc().delegations().check_quorum(self.signatures()) {
+        if self.has_quorum() {
             Ok(self.with_status())
         } else {
             Err(Error::NoCurrentQuorum)
@@ -610,8 +649,13 @@ impl Identity<Quorum> {
     pub fn check_update(
         self,
         previous: Option<&Identity<Verified>>,
+        cache: &mut impl VerificationCache,
     ) -> Result<Identity<Verified>, Error> {
-        match previous {
+        if cache.is_verified(self.revision()) {
+            return Ok(self.with_status());
+        }
+
+        let result = match previous {
             Some(previous) => match self.doc().replaces() {
                 Some(replaces) => {
                     if self.root() != previous.root() {
@@ -627,13 +671,19 @@ impl Identity<Quorum> {
                 None => Err(Error::PreviousLinkMismatch),
             },
             None => {
-                if self.doc().replaces().is_none() {
+                if self.doc().is_root() {
                     Ok(self.with_status())
                 } else {
                     Err(Error::PreviousLinkMismatch)
                 }
             },
+        };
+
+        if let Ok(id) = &result {
+            cache.register_verified(id)?;
         }
+
+        result
     }
 }
 
@@ -809,6 +859,113 @@ impl<'a> IdentityStore<'a> {
         identity
             .previous()
             .and_then(|id| self.get_identity(id).ok())
+    }
+
+    pub fn get_latest_identity(
+        &self,
+        id: &ContentId,
+        cache: &mut impl cache::VerificationCache,
+    ) -> Result<(Identity<Signed>, Option<Identity<Verified>>), Error> {
+        // Head of this branch, signed
+        let head = self.get_identity(id)?.check_signatures()?;
+        // Root document revision (the actual ID we are dealing with)
+        let root = head.root();
+
+        // Latest verified commit and its index
+        // (head is 0, index grows while following parents)
+        let mut latest_verified: Option<(Identity<Verified>, i32)> = None;
+        // Collection of commits pending verification and their index
+        // (the key is the revision they are waiting for)
+        let mut pending_verification = BTreeMap::<Revision, (Identity<Quorum>, i32)>::new();
+
+        // Current commit being processed
+        let mut current = Some(head.clone());
+        // Index of current commit
+        let mut current_index = 0;
+        // Did we verify a document?
+        let mut identity_verified = false;
+
+        // Traverse the commit chain following direct parents
+        while let Some(cur) = current {
+            // Wrong root, exit
+            if cur.root() != root {
+                return Err(Error::RootMismatch);
+            }
+
+            // We had a proper verification, we are done
+            if identity_verified {
+                break;
+            }
+
+            // Prepare next commit to process
+            let next = self
+                .get_parent_identity(&cur)
+                .map(|id| id.check_signatures())
+                .transpose()?;
+
+            // If the current commit does not have a quorum, skip it
+            if cur.has_quorum() {
+                let cur = cur.check_quorum().unwrap();
+
+                // Attempt to verify current commit
+                let mut verified = if cache.is_verified(cur.revision()) {
+                    // The cache states it is verified
+                    identity_verified = true;
+                    Some((cur.check_update(None, cache)?, current_index))
+                } else {
+                    // Detect if it is a root
+                    match cur.doc().replaces() {
+                        Some(previous) => {
+                            // It needs a parent verified document, add to pending set
+                            if !pending_verification.contains_key(previous) {
+                                // Keep minimal indexes pending
+                                pending_verification.insert(previous.clone(), (cur, current_index));
+                            }
+                            None
+                        },
+                        None => {
+                            // It is a root, attempt verification
+                            cur.check_update(None, cache).ok().map(|verified_root| {
+                                identity_verified = true;
+                                (verified_root, current_index)
+                            })
+                        },
+                    }
+                };
+
+                // Process verified commit
+                while let Some((verified_id, verified_index)) = verified {
+                    // Update latest verified
+                    latest_verified = match latest_verified {
+                        Some((latest_id, latest_index)) => {
+                            if verified_index < latest_index {
+                                Some((verified_id.clone(), verified_index))
+                            } else {
+                                Some((latest_id, latest_index))
+                            }
+                        },
+                        None => Some((verified_id.clone(), verified_index)),
+                    };
+
+                    // Handle pending
+                    verified = pending_verification.get(verified_id.revision()).and_then(
+                        |(pending_id, pending_index)| {
+                            pending_id
+                                .clone()
+                                .check_update(Some(&verified_id), cache)
+                                .ok()
+                                .map(|id| (id, *pending_index))
+                        },
+                    );
+                }
+            }
+
+            // Prepare next commit
+            current = next;
+            current_index += 1;
+        }
+
+        Ok((head, latest_verified.map(|(id, _)| id)))
     }
 }
 
