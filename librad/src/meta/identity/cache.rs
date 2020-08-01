@@ -66,6 +66,19 @@ impl MemoryCache {
     pub fn clear(&mut self) {
         self.revisions.clear()
     }
+
+    fn set_forked(&mut self, start: &Revision) {
+        let mut pending = Vec::new();
+        pending.push(start.clone());
+        while let Some(current) = pending.pop() {
+            if let Some(entry) = self.revisions.get_mut(&current) {
+                entry.is_forked = true;
+                for child in entry.children.iter() {
+                    pending.push(child.clone());
+                }
+            }
+        }
+    }
 }
 
 impl VerificationCache for MemoryCache {
@@ -87,6 +100,11 @@ impl VerificationCache for MemoryCache {
                 |parent_entry| parent_entry.add_child(id.revision().clone()),
             )
         });
+        if forked {
+            if let Some(parent) = id.doc().replaces() {
+                self.set_forked(parent)
+            }
+        }
 
         if let Some(missing_parent) = missing_parent {
             self.revisions.insert(
@@ -95,7 +113,11 @@ impl VerificationCache for MemoryCache {
             );
         }
 
-        if !self.revisions.contains_key(id.revision()) {
+        if self.revisions.contains_key(id.revision()) {
+            if forked {
+                self.set_forked(id.revision());
+            }
+        } else {
             self.revisions
                 .insert(id.revision().clone(), CachedRevision::new(forked));
         }

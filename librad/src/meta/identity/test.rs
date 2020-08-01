@@ -388,6 +388,24 @@ fn check_wrong_quorum() {
     assert!(matches!(id5.check_quorum(), Ok(_)));
 }
 
+fn check_latest_identity_verified(
+    store: &IdentityStore,
+    cache: &mut impl VerificationCache,
+    id: &ContentId,
+) {
+    let (head, verified) = store.get_latest_identity(id, cache).unwrap();
+    assert_eq!(head.commit(), id);
+    assert_eq!(verified.unwrap().commit(), id);
+}
+
+fn get_latest_identity_error(
+    store: &IdentityStore,
+    cache: &mut impl VerificationCache,
+    id: &ContentId,
+) -> Error {
+    store.get_latest_identity(id, cache).err().unwrap()
+}
+
 #[test]
 fn check_simple_updates() {
     let repo = repo();
@@ -487,41 +505,92 @@ fn check_simple_updates() {
         .check_update(Some(&id2_3a), &mut cache)
         .unwrap();
 
-    let (b1_head, b1_verified) = store
-        .get_latest_identity(id2_1b.commit(), &mut cache)
-        .unwrap();
-    assert_eq!(b1_head.commit(), id2_1b.commit());
-    assert_eq!(b1_verified.unwrap().commit(), id2_1b.commit());
-
-    let (b2_head, b2_verified) = store
-        .get_latest_identity(id3_2a.commit(), &mut cache)
-        .unwrap();
-    assert_eq!(b2_head.commit(), id3_2a.commit());
-    assert_eq!(b2_verified.unwrap().commit(), id3_2a.commit());
-
-    let (b3_head, b3_verified) = store
-        .get_latest_identity(id3_3b.commit(), &mut cache)
-        .unwrap();
-    assert_eq!(b3_head.commit(), id3_3b.commit());
-    assert_eq!(b3_verified.unwrap().commit(), id3_3b.commit());
+    check_latest_identity_verified(&store, &mut cache, id2_1b.commit());
+    check_latest_identity_verified(&store, &mut cache, id3_2a.commit());
+    check_latest_identity_verified(&store, &mut cache, id3_3b.commit());
 
     let mut cache = MemoryCache::default();
 
-    let (b1_head, b1_verified) = store
-        .get_latest_identity(id2_1b.commit(), &mut cache)
-        .unwrap();
-    assert_eq!(b1_head.commit(), id2_1b.commit());
-    assert_eq!(b1_verified.unwrap().commit(), id2_1b.commit());
+    check_latest_identity_verified(&store, &mut cache, id2_1b.commit());
+    check_latest_identity_verified(&store, &mut cache, id3_2a.commit());
+    check_latest_identity_verified(&store, &mut cache, id3_3b.commit());
+}
 
-    let (b2_head, b2_verified) = store
-        .get_latest_identity(id3_2a.commit(), &mut cache)
-        .unwrap();
-    assert_eq!(b2_head.commit(), id3_2a.commit());
-    assert_eq!(b2_verified.unwrap().commit(), id3_2a.commit());
+#[test]
+fn identity_fork_detection() {
+    let repo = repo();
+    let store = IdentityStore::new(&repo);
 
-    let (b3_head, b3_verified) = store
-        .get_latest_identity(id3_3b.commit(), &mut cache)
-        .unwrap();
-    assert_eq!(b3_head.commit(), id3_3b.commit());
-    assert_eq!(b3_verified.unwrap().commit(), id3_3b.commit());
+    // Doc and identity structure:
+    //
+    // doc4    doc6
+    //  |       |
+    // doc3   _doc5
+    //  |  __/
+    // doc2
+    //  |
+    // doc1
+
+    let (doc1, rev1) = new_user_doc(&store, "T1", &[&K1]);
+    let (doc2, rev2) = replace_user_doc(&store, "T2", &rev1, &rev1, &[&K1]);
+    let (doc3, rev3) = replace_user_doc(&store, "T3", &rev2, &rev1, &[&K1]);
+    let (doc4, rev4) = replace_user_doc(&store, "T4", &rev3, &rev1, &[&K1]);
+    let (doc5, rev5) = replace_user_doc(&store, "T5", &rev2, &rev1, &[&K1]);
+    let (doc6, rev6) = replace_user_doc(&store, "T6", &rev5, &rev1, &[&K1]);
+
+    let id1 = new_identity(&store, &doc1, &rev1, &[&K1]);
+    let id2 = with_parent_identity(&store, &doc2, &rev2, &id1, &[&K1]);
+    let id3 = with_parent_identity(&store, &doc3, &rev3, &id2, &[&K1]);
+    let id4 = with_parent_identity(&store, &doc4, &rev4, &id3, &[&K1]);
+    let id5 = with_parent_identity(&store, &doc5, &rev5, &id2, &[&K1]);
+    let id6 = with_parent_identity(&store, &doc6, &rev6, &id5, &[&K1]);
+
+    println!("id1 {} {}", id1.commit(), id1.revision());
+    println!("id2 {} {}", id2.commit(), id2.revision());
+    println!("id3 {} {}", id3.commit(), id3.revision());
+    println!("id4 {} {}", id4.commit(), id4.revision());
+    println!("id5 {} {}", id5.commit(), id5.revision());
+    println!("id6 {} {}", id6.commit(), id6.revision());
+
+    let mut cache = NullVerificationCache::default();
+    check_latest_identity_verified(&store, &mut cache, id4.commit());
+    check_latest_identity_verified(&store, &mut cache, id6.commit());
+
+    let mut cache = MemoryCache::default();
+    check_latest_identity_verified(&store, &mut cache, id4.commit());
+    assert!(matches!(
+        get_latest_identity_error(&store, &mut cache, id6.commit()),
+        Error::ForkDetected
+    ));
+    assert!(matches!(
+        get_latest_identity_error(&store, &mut cache, id5.commit()),
+        Error::ForkDetected
+    ));
+    assert!(matches!(
+        get_latest_identity_error(&store, &mut cache, id4.commit()),
+        Error::ForkDetected
+    ));
+    assert!(matches!(
+        get_latest_identity_error(&store, &mut cache, id3.commit()),
+        Error::ForkDetected
+    ));
+
+    cache.clear();
+    check_latest_identity_verified(&store, &mut cache, id6.commit());
+    assert!(matches!(
+        get_latest_identity_error(&store, &mut cache, id4.commit()),
+        Error::ForkDetected
+    ));
+    assert!(matches!(
+        get_latest_identity_error(&store, &mut cache, id3.commit()),
+        Error::ForkDetected
+    ));
+    assert!(matches!(
+        get_latest_identity_error(&store, &mut cache, id6.commit()),
+        Error::ForkDetected
+    ));
+    assert!(matches!(
+        get_latest_identity_error(&store, &mut cache, id5.commit()),
+        Error::ForkDetected
+    ));
 }

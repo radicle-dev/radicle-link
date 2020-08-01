@@ -948,15 +948,25 @@ impl<'a> IdentityStore<'a> {
                     };
 
                     // Handle pending
-                    verified = pending_verification.get(verified_id.revision()).and_then(
-                        |(pending_id, pending_index)| {
+                    verified = pending_verification
+                        .get(verified_id.revision())
+                        .and_then(|(pending_id, pending_index)| {
                             pending_id
                                 .clone()
                                 .check_update(Some(&verified_id), cache)
-                                .ok()
-                                .map(|id| (id, *pending_index))
-                        },
-                    );
+                                .map_or_else(
+                                    |err| {
+                                        if let Error::ForkDetected = err {
+                                            Err(Error::ForkDetected)
+                                        } else {
+                                            Ok(None)
+                                        }
+                                    },
+                                    |id| Ok(Some((id, *pending_index))),
+                                )
+                                .transpose()
+                        })
+                        .transpose()?
                 }
             }
 
