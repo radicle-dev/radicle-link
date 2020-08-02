@@ -19,17 +19,26 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{Error, Identity, Revision, Verified};
 
+/// API for a cache or identity revision verification status
 pub trait VerificationCache {
+    /// Check if the given revision is verified
     fn is_verified(&self, rev: &Revision) -> bool;
+
+    /// Register a newly verified revision
+    /// (it errors if the revision happens to be a fork)
     fn register_verified(&mut self, id: &Identity<Verified>) -> Result<(), Error>;
 }
 
+/// Cache entry
 struct CachedRevision {
+    /// The children of this revision
     pub children: BTreeSet<Revision>,
+    /// Flag for forked revisions
     pub is_forked: bool,
 }
 
 impl CachedRevision {
+    /// New cache entry
     pub fn new(is_forked: bool) -> Self {
         Self {
             children: BTreeSet::new(),
@@ -37,6 +46,7 @@ impl CachedRevision {
         }
     }
 
+    /// New cache entry with a given child
     pub fn new_with_child(child: Revision) -> Self {
         let mut result = Self {
             children: BTreeSet::new(),
@@ -46,7 +56,8 @@ impl CachedRevision {
         result
     }
 
-    // Returns true if the insertion causes a fork
+    /// adds a child to this entry
+    /// (returns true if the insertion causes a fork)
     pub fn add_child(&mut self, child: Revision) -> bool {
         self.children.insert(child);
         let forked = self.children.len() > 1;
@@ -58,15 +69,18 @@ impl CachedRevision {
 }
 
 #[derive(Default)]
+/// In memory cache for revision verification status
 pub struct MemoryCache {
     revisions: BTreeMap<Revision, CachedRevision>,
 }
 
 impl MemoryCache {
+    /// Clear the cache
     pub fn clear(&mut self) {
         self.revisions.clear()
     }
 
+    /// Flag a revision as forked and propagate the flag to its children
     fn set_forked(&mut self, start: &Revision) {
         let mut pending = Vec::new();
         pending.push(start.clone());

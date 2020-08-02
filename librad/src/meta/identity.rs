@@ -77,6 +77,7 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
+/// Identity document ID
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Revision(Oid);
 
@@ -130,6 +131,7 @@ impl std::fmt::Display for Revision {
     }
 }
 
+/// Identity commit ID
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ContentId(Oid);
 
@@ -183,12 +185,17 @@ impl std::cmp::Ord for ContentId {
     }
 }
 
+/// Delegations required to sign an identity document
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Delegations {
+    /// Keys for the _user_ case
     Keys(BTreeSet<PublicKey>),
+    /// Keys belonging to a user (identified by their `Revision`)
+    /// for the _project_ case
     Users(BTreeMap<PublicKey, Revision>),
 }
 
+/// Iterator over the keys contained in a delegation
 pub enum DelegationsKeys<'a> {
     Keys(std::collections::btree_set::Iter<'a, PublicKey>),
     Users(std::collections::btree_map::Iter<'a, PublicKey, Revision>),
@@ -205,14 +212,17 @@ impl<'a> Iterator for DelegationsKeys<'a> {
 }
 
 impl Delegations {
+    /// Create a new empty `Delegations` for a _user_
     pub fn empty_keys() -> Self {
         Delegations::Keys(BTreeSet::new())
     }
 
+    /// Create a new empty `Delegations` for a _project_
     pub fn empty_users() -> Self {
         Delegations::Users(BTreeMap::new())
     }
 
+    /// Check that a key belongs to this `Delegations` instance
     pub fn has_key(&self, key: &PublicKey) -> bool {
         match self {
             Delegations::Keys(keys) => keys.contains(key),
@@ -220,6 +230,7 @@ impl Delegations {
         }
     }
 
+    /// Get the keys iterator
     pub fn keys(&self) -> DelegationsKeys {
         match self {
             Delegations::Keys(keys) => DelegationsKeys::Keys(keys.iter()),
@@ -227,6 +238,7 @@ impl Delegations {
         }
     }
 
+    /// Add one key
     pub fn add_key(&mut self, key: PublicKey) -> Result<(), Error> {
         if let Delegations::Keys(keys) = self {
             keys.insert(key);
@@ -236,6 +248,7 @@ impl Delegations {
         }
     }
 
+    /// Add one key referring to a user
     pub fn add_user_key(&mut self, key: PublicKey, user: Revision) -> Result<(), Error> {
         if let Delegations::Users(keys) = self {
             keys.insert(key, user);
@@ -245,6 +258,7 @@ impl Delegations {
         }
     }
 
+    /// Remove the given key
     pub fn remove_key(&mut self, key: &PublicKey) -> Result<(), Error> {
         let removed = match self {
             Delegations::Keys(keys) => keys.remove(key),
@@ -257,6 +271,7 @@ impl Delegations {
         }
     }
 
+    /// Add all keys from another `Delegation` as belonging to the given user
     pub fn add_user_keys(
         &mut self,
         user_keys: &Self,
@@ -272,12 +287,14 @@ impl Delegations {
         }
     }
 
+    /// Remove the given keys
     pub fn remove_keys(&mut self, delegations: &Self) {
         for k in delegations.keys() {
             self.remove_key(k).ok();
         }
     }
 
+    /// Compute the required quorum
     pub fn quorum(&self) -> usize {
         match self {
             Delegations::Keys(keys) => (keys.len() / 2) + 1,
@@ -291,6 +308,7 @@ impl Delegations {
         }
     }
 
+    /// Check that the given signatures match the required quorum
     pub fn check_quorum(&self, signatures: &BTreeMap<PublicKey, Signature>) -> bool {
         match self {
             Delegations::Keys(keys) => {
@@ -329,14 +347,19 @@ pub struct Signed;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Untrusted;
 
+/// Identity document
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Doc<Status>
 where
     Status: Clone,
 {
+    /// Verification status
     status_marker: PhantomData<Status>,
+    /// Previous document in the identity history
     replaces: Option<Revision>,
+    /// Document payload (application defined)
     payload: JsonValue,
+    /// Required delegations
     delegations: Delegations,
 }
 
@@ -344,22 +367,27 @@ impl<Status> Doc<Status>
 where
     Status: Clone,
 {
+    /// Check if this document is a root document (with no parents)
     pub fn is_root(&self) -> bool {
         self.replaces.is_none()
     }
 
+    /// Get the parent document
     pub fn replaces(&self) -> Option<&Revision> {
         self.replaces.as_ref()
     }
 
+    /// Get the application specific payload
     pub fn json_payload(&self) -> &JsonValue {
         &self.payload
     }
 
+    /// Get the document delegations
     pub fn delegations(&self) -> &Delegations {
         &self.delegations
     }
 
+    /// Deserialize the document payload
     pub fn payload<T>(&self) -> Result<T, Error>
     where
         T: DeserializeOwned,
@@ -367,6 +395,7 @@ where
         serde_json::value::from_value(self.payload.clone()).map_err(Error::SerdeJson)
     }
 
+    /// Convert a [partially] verified document back to untrusted status
     pub fn as_untrusted(&self) -> Doc<Untrusted> {
         Doc {
             status_marker: PhantomData,
@@ -376,6 +405,7 @@ where
         }
     }
 
+    /// Internal utility to change verification status
     fn with_status<NewStatus>(self) -> Doc<NewStatus>
     where
         NewStatus: Clone,
@@ -388,17 +418,20 @@ where
         }
     }
 
+    /// Serialize to byte vector
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
         Ok(Cjson(self).canonical_form()?)
     }
 }
 
+/// Builder for new identity documents
 pub struct DocBuilder {
     replaces: Option<Revision>,
     delegations: Delegations,
 }
 
 impl DocBuilder {
+    /// New document with delegations for a _user_
     pub fn new_user() -> Self {
         Self {
             replaces: None,
@@ -406,6 +439,7 @@ impl DocBuilder {
         }
     }
 
+    /// New document with delegations for a _project_
     pub fn new_project() -> Self {
         Self {
             replaces: None,
@@ -413,26 +447,31 @@ impl DocBuilder {
         }
     }
 
+    /// Set the parent document
     pub fn replaces(&mut self, revision: Revision) -> &mut Self {
         self.replaces = Some(revision);
         self
     }
 
+    /// Add a key to the delegations
     pub fn add_key(&mut self, key: PublicKey) -> Result<&mut Self, Error> {
         self.delegations.add_key(key)?;
         Ok(self)
     }
 
+    /// Add a user key to the delegations
     pub fn add_user_key(&mut self, key: PublicKey, user: Revision) -> Result<&mut Self, Error> {
         self.delegations.add_user_key(key, user)?;
         Ok(self)
     }
 
+    /// Remove a key from the delegations
     pub fn remove_key(&mut self, key: &PublicKey) -> Result<&mut Self, Error> {
         self.delegations.remove_key(key)?;
         Ok(self)
     }
 
+    /// Add all keys from another `Delegation` as belonging to the given user
     pub fn add_user_keys(
         &mut self,
         user_keys: &Delegations,
@@ -442,11 +481,13 @@ impl DocBuilder {
         Ok(self)
     }
 
+    /// Remove all keys from another `Delegation`
     pub fn remove_keys(&mut self, delegations: &Delegations) -> &mut Self {
         self.delegations.remove_keys(delegations);
         self
     }
 
+    /// Build the document with the given payload
     pub fn build<T>(&self, payload: T) -> Result<Doc<Untrusted>, Error>
     where
         T: Serialize,
@@ -460,6 +501,7 @@ impl DocBuilder {
     }
 }
 
+/// Builder for new identities
 pub struct IdentityBuilder {
     previous: Option<ContentId>,
     merged: Option<ContentId>,
@@ -470,6 +512,7 @@ pub struct IdentityBuilder {
 }
 
 impl IdentityBuilder {
+    /// Create a new identity with the given `Doc` and `Revision`
     pub fn new(revision: Revision, doc: Doc<Untrusted>) -> Self {
         IdentityBuilder {
             previous: None,
@@ -481,6 +524,8 @@ impl IdentityBuilder {
         }
     }
 
+    /// Create a new identity with the given `Doc` and `Revision`
+    /// using the given `Identity` as parent
     pub fn with_parent<Status>(
         parent: &Identity<Status>,
         revision: Revision,
@@ -499,6 +544,8 @@ impl IdentityBuilder {
         }
     }
 
+    /// Duplicate the given identity
+    /// (useful for starting a new branch from another one)
     pub fn duplicate<Status>(parent: &Identity<Status>) -> Self
     where
         Status: Clone,
@@ -513,6 +560,8 @@ impl IdentityBuilder {
         }
     }
 
+    /// Duplicate an identity from another branch
+    /// into the current branch
     pub fn duplicate_other<Status1, Status2>(
         parent: &Identity<Status1>,
         other: &Identity<Status2>,
@@ -531,32 +580,45 @@ impl IdentityBuilder {
         }
     }
 
+    /// Sign this identity
     pub fn sign(mut self, key: &SecretKey) -> Self {
         self.signatures
             .insert(key.public(), key.sign(self.revision.as_bytes()));
         self
     }
 
+    /// Previous identity getter (first parent in the commit)
     pub fn previous(&self) -> Option<&ContentId> {
         self.previous.as_ref()
     }
+
+    /// Merged identity getter (second parent in the commit)
     pub fn merged(&self) -> Option<&ContentId> {
         self.merged.as_ref()
     }
+
+    /// Root identity revision
     pub fn root(&self) -> &Revision {
         &self.root
     }
+
+    /// Identity revision
     pub fn revision(&self) -> &Revision {
         &self.revision
     }
+
+    /// Included document
     pub fn doc(&self) -> &Doc<Untrusted> {
         &self.doc
     }
+
+    /// Identity signatures
     pub fn signatures(&self) -> &BTreeMap<PublicKey, Signature> {
         &self.signatures
     }
 }
 
+/// Identity (a commit in the identity history)
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Identity<Status>
 where
@@ -564,12 +626,19 @@ where
 {
     /// Verification status marker type
     status_marker: PhantomData<Status>,
+    /// Parent commit
     previous: Option<ContentId>,
+    /// Merged commit
     merged: Option<ContentId>,
+    /// Id
     commit: ContentId,
+    /// Identity document root revision
     root: Revision,
+    /// Current identity document revision
     revision: Revision,
+    /// Included document
     doc: Doc<Status>,
+    /// Identity signatures
     signatures: BTreeMap<PublicKey, Signature>,
 }
 
@@ -577,28 +646,42 @@ impl<Status> Identity<Status>
 where
     Status: Clone,
 {
+    /// Previous identity getter (first parent in the commit)
     pub fn previous(&self) -> Option<&ContentId> {
         self.previous.as_ref()
     }
+
+    /// Merged identity getter (second parent in the commit)
     pub fn merged(&self) -> Option<&ContentId> {
         self.merged.as_ref()
     }
+
+    /// Id
     pub fn commit(&self) -> &ContentId {
         &self.commit
     }
+
+    /// Identity document root revision
     pub fn root(&self) -> &Revision {
         &self.root
     }
+
+    /// Current identity document revision
     pub fn revision(&self) -> &Revision {
         &self.revision
     }
+
+    /// Included document
     pub fn doc(&self) -> &Doc<Status> {
         &self.doc
     }
+
+    /// Identity signatures
     pub fn signatures(&self) -> &BTreeMap<PublicKey, Signature> {
         &self.signatures
     }
 
+    /// Cryptographically verify signatures
     pub fn verify_signatures(&self) -> Result<(), Error> {
         for (k, s) in &self.signatures {
             if !s.verify(self.revision.as_bytes(), k) {
@@ -608,6 +691,7 @@ where
         Ok(())
     }
 
+    /// Internal utility to change verification status
     fn with_status<NewStatus>(self) -> Identity<NewStatus>
     where
         NewStatus: Clone,
@@ -626,16 +710,19 @@ where
 }
 
 impl Identity<Untrusted> {
+    /// Cryptographically check signatures
     pub fn check_signatures(self) -> Result<Identity<Signed>, Error> {
         self.verify_signatures().map(|_| self.with_status())
     }
 }
 
 impl Identity<Signed> {
+    /// Test if signatures meet the required quorum
     pub fn has_quorum(&self) -> bool {
         self.doc().delegations().check_quorum(self.signatures())
     }
 
+    /// Check signatures quorum
     pub fn check_quorum(self) -> Result<Identity<Quorum>, Error> {
         if self.has_quorum() {
             Ok(self.with_status())
@@ -646,6 +733,8 @@ impl Identity<Signed> {
 }
 
 impl Identity<Quorum> {
+    /// Check that a document update is legal
+    /// (the cache is updated accordingly)
     pub fn check_update(
         self,
         previous: Option<&Identity<Verified>>,
@@ -687,8 +776,10 @@ impl Identity<Quorum> {
     }
 }
 
+/// Signature commit trailer name
 const RAD_SIGNATURE_TRAILER_NAME: &str = "x-rad-signature";
 
+/// Append a signature as a commit trailer
 fn append_signatures(buf: &mut String, sigs: &BTreeMap<PublicKey, Signature>) {
     buf.push_str("\n");
     for (k, s) in sigs {
@@ -701,6 +792,7 @@ fn append_signatures(buf: &mut String, sigs: &BTreeMap<PublicKey, Signature>) {
     }
 }
 
+/// Matches a signature as a commit trailer in a text line
 fn match_signature(line: &str) -> Option<(PublicKey, Signature)> {
     let mut tokens = line
         .strip_prefix(RAD_SIGNATURE_TRAILER_NAME)
@@ -719,6 +811,7 @@ fn match_signature(line: &str) -> Option<(PublicKey, Signature)> {
     ))
 }
 
+/// Extract all signatures from a commit message
 pub fn parse_signatures(buf: Option<&str>) -> BTreeMap<PublicKey, Signature> {
     let mut sigs = BTreeMap::new();
     if let Some(buf) = buf {
@@ -731,17 +824,21 @@ pub fn parse_signatures(buf: Option<&str>) -> BTreeMap<PublicKey, Signature> {
     sigs
 }
 
+/// Identity API on top of a git repository
 pub struct IdentityStore<'a> {
     repo: &'a git2::Repository,
 }
 
+/// When building a root document tree we still do not know the root OID...
 const ROOT_TREE_ENTRY_NAME: &str = "ROOT";
 
 impl<'a> IdentityStore<'a> {
+    /// Create a store from a git repo
     pub fn new(repo: &'a git2::Repository) -> Self {
         Self { repo }
     }
 
+    /// Retrieve an identity document from the store
     pub fn get_doc(&self, revision: &Revision) -> Result<(Doc<Untrusted>, Revision), Error> {
         let tree = self.repo.find_tree(revision.into())?;
         let root_entry = tree
@@ -763,6 +860,7 @@ impl<'a> IdentityStore<'a> {
         Ok((doc, root_revision))
     }
 
+    /// Store an identity document
     pub fn store_doc<Status>(
         &self,
         doc: &Doc<Status>,
@@ -785,6 +883,7 @@ impl<'a> IdentityStore<'a> {
         Ok(Revision::from(tree.write()?))
     }
 
+    /// Retrieve an identity (commit) from the store
     pub fn get_identity(&self, id: &ContentId) -> Result<Identity<Untrusted>, Error> {
         let commit = self.repo.find_commit(id.into())?;
         let mut previous = None;
@@ -810,6 +909,7 @@ impl<'a> IdentityStore<'a> {
         })
     }
 
+    /// Commit an identity to the store
     pub fn store_identity(&self, builder: IdentityBuilder) -> Result<Identity<Untrusted>, Error> {
         let mut message = format!("RAD ID {} REV {}\n", builder.root, builder.revision);
         append_signatures(&mut message, &builder.signatures);
@@ -849,6 +949,7 @@ impl<'a> IdentityStore<'a> {
         })
     }
 
+    /// Get the previous `Identity` in a commit history
     pub fn get_parent_identity<Status>(
         &self,
         identity: &Identity<Status>,
@@ -861,6 +962,12 @@ impl<'a> IdentityStore<'a> {
             .and_then(|id| self.get_identity(id).ok())
     }
 
+    /// Traverse a commit chain verifying identities.
+    /// Two identities are returned:
+    ///
+    /// * the branch head, regardless of the verification status (if it is not
+    ///   yet verified it could be used as a base to sign it)
+    /// * the latest verified identity (could be `None`)
     pub fn get_latest_identity(
         &self,
         id: &ContentId,
