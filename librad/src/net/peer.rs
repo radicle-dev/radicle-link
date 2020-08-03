@@ -18,11 +18,15 @@
 use std::{
     future::Future,
     io,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::{Arc, Mutex},
 };
 
-use futures::future::{BoxFuture, FutureExt};
+use either::Either;
+use futures::{
+    future::{self, BoxFuture, FutureExt},
+    stream::StreamExt,
+};
 use thiserror::Error;
 
 use crate::{
@@ -36,12 +40,12 @@ use crate::{
     net::{
         connection::LocalInfo,
         discovery::Discovery,
-        gossip::{self, LocalStorage, PutResult},
-        protocol::Protocol,
+        gossip::{self, LocalStorage, PeerInfo, PutResult},
+        protocol::{Protocol, ProtocolEvent},
         quic::{self, Endpoint},
     },
     paths::Paths,
-    peer::{Originates, OriginatesRef, PeerId},
+    peer::{Originates, PeerId},
     signer::Signer,
     uri::{self, RadUrl, RadUrn},
 };
@@ -146,7 +150,11 @@ pub struct PeerApi<S> {
     paths: Paths,
 }
 
-impl<S: Clone> PeerApi<S> {
+impl<S> PeerApi<S>
+where
+    S: Signer + Clone,
+    S::Error: keys::SignError,
+{
     pub fn protocol(&self) -> &Protocol<PeerStorage<S>, Gossip> {
         &self.protocol
     }
@@ -164,6 +172,46 @@ impl<S: Clone> PeerApi<S> {
         // define on it can never be `await`ed.
         let subscribers = self.subscribers.clone();
         async move { subscribers.subscribe().await }
+    }
+
+    /// Query the network for providers of the given [`RadUrn`].
+    ///
+    /// This is a convenience for the special case of issuing a gossip `Want`
+    /// message where we don't know a specific revision, nor an origin peer.
+    /// Consequently, any `Have` message with a matching `urn` should do for
+    /// attempting a clone, even if it isn't a direct response to our query.
+    ///
+    /// Note that there is no guarantee that a peer who claims to provide the
+    /// [`RadUrn`] actually has it, nor that it is reachable using any of
+    /// the addresses contained in [`PeerInfo`]. The implementation may
+    /// change in the future to answer the query from a local cache first.
+    pub fn providers(
+        &self,
+        urn: RadUrn,
+    ) -> impl Future<Output = impl futures::Stream<Item = PeerInfo<IpAddr>>> {
+        let protocol = self.protocol.clone();
+        let urn2 = urn.clone();
+        async move {
+            let events = protocol.subscribe().await.filter_map(move |evt| {
+                future::ready(match evt {
+                    ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val }))
+                        if val.urn == urn =>
+                    {
+                        Some(provider)
+                    },
+                    _ => None,
+                })
+            });
+            protocol
+                .query(Gossip {
+                    urn: urn2,
+                    rev: None,
+                    origin: None,
+                })
+                .await;
+
+            events
+        }
     }
 
     pub fn paths(&self) -> &Paths {
@@ -305,7 +353,7 @@ where
     fn git_fetch<'a>(
         &'a self,
         from: &PeerId,
-        urn: impl Into<OriginatesRef<'a, RadUrn>>,
+        urn: Either<RadUrn, Originates<RadUrn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> Result<(), GitFetchError> {
         let git = self.inner.lock().unwrap();
@@ -325,9 +373,9 @@ where
     }
 
     /// Determine if we have the given object locally
-    fn git_has<'a>(
-        &'a self,
-        urn: impl Into<OriginatesRef<'a, RadUrn>>,
+    fn git_has(
+        &self,
+        urn: Either<RadUrn, Originates<RadUrn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
         let git = self.inner.lock().unwrap();
@@ -341,28 +389,34 @@ where
 
 /// If applicable, map the [`uri::Path`] of the given [`RadUrn`] to
 /// `refs/remotes/<origin>/<path>`
-fn urn_context<'a>(local_peer_id: &PeerId, urn: impl Into<OriginatesRef<'a, RadUrn>>) -> RadUrn {
-    let OriginatesRef { from, value } = urn.into();
-    let urn = value.clone();
+fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
+    match urn {
+        Either::Left(urn) => urn,
+        Either::Right(Originates { from, value }) => {
+            let urn = value;
 
-    if from == local_peer_id {
-        return urn;
-    }
+            if &from == local_peer_id {
+                return urn;
+            }
 
-    let path = urn
-        .path
-        .strip_prefix("refs/")
-        .map(|tail| {
-            uri::Path::parse(tail).expect("`Path` is still valid after stripping a valid prefix")
-        })
-        .unwrap_or(urn.path);
+            let path = urn
+                .path
+                .strip_prefix("refs/")
+                .map(|tail| {
+                    uri::Path::parse(tail)
+                        .expect("`Path` is still valid after stripping a valid prefix")
+                })
+                .unwrap_or(urn.path);
 
-    let mut remote = uri::Path::parse(format!("refs/remotes/{}", from)).expect("Known valid path");
-    remote.push(path);
+            let mut remote =
+                uri::Path::parse(format!("refs/remotes/{}", from)).expect("Known valid path");
+            remote.push(path);
 
-    RadUrn {
-        path: remote,
-        ..urn
+            RadUrn {
+                path: remote,
+                ..urn
+            }
+        },
     }
 }
 
@@ -391,9 +445,12 @@ where
                             tokio::task::spawn_blocking(move || {
                                 this.git_fetch(
                                     &provider,
-                                    OriginatesRef {
-                                        from: &has.origin,
-                                        value: &has.urn,
+                                    match has.origin {
+                                        Some(origin) => Either::Right(Originates {
+                                            from: origin,
+                                            value: has.urn,
+                                        }),
+                                        None => Either::Left(has.urn),
                                     },
                                     head,
                                 )
@@ -407,7 +464,7 @@ where
                                 if !self.ask(has.clone()).await {
                                     tracing::warn!(
                                         provider = %provider,
-                                        has.origin = %has.origin,
+                                        has.origin = ?has.origin,
                                         has.urn = %has.urn,
                                         "Provider announced non-existent rev"
                                     );
@@ -449,9 +506,12 @@ where
 
         match want.urn.proto {
             uri::Protocol::Git => self.git_has(
-                &Originates {
-                    from: want.origin,
-                    value: want.urn,
+                match want.origin {
+                    Some(origin) => Either::Right(Originates {
+                        from: origin,
+                        value: want.urn,
+                    }),
+                    None => Either::Left(want.urn),
                 },
                 want.rev.map(|Rev::Git(head)| head),
             ),

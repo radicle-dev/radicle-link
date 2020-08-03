@@ -28,7 +28,6 @@ use std::{
     iter,
     marker::PhantomData,
     num::NonZeroU32,
-    ops::Deref,
     sync::{
         atomic::{self, AtomicBool},
         Arc,
@@ -76,7 +75,7 @@ where
     Addr: Clone + PartialEq + Eq + Hash,
 {
     Control(Control<Addr, Payload>),
-    Info(Info<Payload>),
+    Info(Info<Addr, Payload>),
 }
 
 #[derive(Clone)]
@@ -95,23 +94,21 @@ where
     Disconnect(PeerId),
 }
 
-#[derive(Clone)]
-pub enum Info<A> {
-    Has(Has<A>),
+#[derive(Clone, Debug)]
+pub enum Info<Addr, A>
+where
+    Addr: Clone + PartialEq + Eq + Hash,
+{
+    Has(Has<Addr, A>),
 }
 
-#[derive(Clone)]
-pub struct Has<A> {
-    provider: PeerId,
-    val: A,
-}
-
-impl<A> Deref for Has<A> {
-    type Target = A;
-
-    fn deref(&self) -> &Self::Target {
-        &self.val
-    }
+#[derive(Clone, Debug)]
+pub struct Has<Addr, A>
+where
+    Addr: Clone + PartialEq + Eq + Hash,
+{
+    pub provider: PeerInfo<Addr>,
+    pub val: A,
 }
 
 #[derive(Debug, Clone)]
@@ -601,7 +598,7 @@ where
 
                 self.subscribers
                     .emit(ProtocolEvent::Info(Info::Has(Has {
-                        provider: origin.peer_id.clone(),
+                        provider: origin.clone(),
                         val: val.clone(),
                     })))
                     .await;

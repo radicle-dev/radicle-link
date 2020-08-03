@@ -32,7 +32,7 @@ use librad::{
     keys::SecretKey,
     net::{
         discovery,
-        peer::{Peer, PeerApi, PeerConfig},
+        peer::{Gossip, Peer, PeerApi, PeerConfig},
         protocol::ProtocolEvent,
     },
     paths::Paths,
@@ -159,7 +159,7 @@ where
 
 pub async fn wait_connected<S>(events: Vec<S>, min_connected: usize)
 where
-    S: futures::Stream<Item = ProtocolEvent> + Unpin,
+    S: futures::Stream<Item = ProtocolEvent<Gossip>> + Unpin,
 {
     stream::select_all(events)
         .scan(0, |connected, event| {

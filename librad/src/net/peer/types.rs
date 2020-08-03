@@ -101,15 +101,23 @@ pub struct Gossip {
     pub rev: Option<Rev>,
 
     /// The origin of the update.
+    ///
+    /// If `Some`, this refers to the `PeerId`'s view of `urn` and `rev`. That
+    /// is, it may map to `remotes/<PeerId>/<urn>`.
     #[n(2)]
-    pub origin: PeerId,
+    pub origin: Option<PeerId>,
 }
 
 impl Gossip {
-    pub fn new(id: Hash, path: uri::Path, rev: impl Into<Option<Rev>>, origin: PeerId) -> Self {
-        let rev = rev.into();
-        // FIXME: we really need the uri protocol on the type level
+    pub fn new(
+        id: Hash,
+        path: uri::Path,
+        rev: impl Into<Option<Rev>>,
+        origin: impl Into<Option<PeerId>>,
+    ) -> Self {
         let urn = RadUrn::new(id, uri::Protocol::Git, path);
+        let rev = rev.into();
+        let origin = origin.into();
 
         Self { urn, rev, origin }
     }

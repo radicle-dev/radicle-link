@@ -52,10 +52,11 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub enum ProtocolEvent {
+pub enum ProtocolEvent<A> {
     Connected(PeerId),
     Disconnected(PeerId),
     Listening(SocketAddr),
+    Gossip(gossip::Info<IpAddr, A>),
 }
 
 /// Unification of the different inputs the run loop processes.
@@ -109,7 +110,7 @@ pub struct Protocol<S, A> {
     git: GitServer,
 
     connections: Arc<Mutex<HashMap<PeerId, quic::Connection>>>,
-    subscribers: Fanout<ProtocolEvent>,
+    subscribers: Fanout<ProtocolEvent<A>>,
 }
 
 impl<S, A> Protocol<S, A>
@@ -171,7 +172,7 @@ where
     ///
     /// The consumer must keep polling the stream, or drop it to cancel the
     /// subscription.
-    pub async fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent> {
+    pub async fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent<A>> {
         self.subscribers.subscribe().await
     }
 
@@ -182,29 +183,14 @@ where
 
     /// Query the network for an update
     ///
-    /// The returned stream will yield an infinite sequence of reponses from
-    /// peers claiming to provide the requested value. The stream can safely
-    /// be dropped at any point.
+    /// Answers from the network will be available as `ProtocolEvent::Gossip`
+    /// when `subscribe`d.
     ///
     /// Note that responses will also cause [`gossip::LocalStorage::put`] to be
     /// invoked, i.e. the local storage will be converged towards the
     /// requested state.
-    pub async fn query(&self, want: A) -> impl futures::Stream<Item = gossip::Has<A>>
-    where
-        A: PartialEq + Clone,
-    {
-        self.gossip.query(want.clone()).await;
-        self.gossip.subscribe().await.filter_map(move |evt| {
-            let wanted = want.clone();
-            async move {
-                match evt {
-                    gossip::ProtocolEvent::Info(gossip::Info::Has(has)) if wanted == *has => {
-                        Some(has)
-                    },
-                    _ => None,
-                }
-            }
-        })
+    pub async fn query(&self, want: A) {
+        self.gossip.query(want).await
     }
 
     /// Open a QUIC stream which is upgraded to expect the git protocol
@@ -289,7 +275,10 @@ where
                     },
                 },
 
-                gossip::ProtocolEvent::Info(_) => Ok(()),
+                gossip::ProtocolEvent::Info(info) => {
+                    self.subscribers.emit(ProtocolEvent::Gossip(info)).await;
+                    Ok(())
+                },
             },
         }
     }

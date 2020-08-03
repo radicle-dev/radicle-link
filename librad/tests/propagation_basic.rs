@@ -164,7 +164,7 @@ async fn fetches_on_gossip_notify() {
             peer1
                 .protocol()
                 .announce(Gossip {
-                    origin: peer1.peer_id().clone(),
+                    origin: Some(peer1.peer_id().clone()),
                     urn: RadUrn {
                         path: uri::Path::parse("refs/heads/master").unwrap(),
                         ..radicle.urn()

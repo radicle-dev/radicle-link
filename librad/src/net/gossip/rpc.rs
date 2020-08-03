@@ -91,6 +91,9 @@ where
     },
 }
 
+/// Gossip messages are either announcements (`Have`), or queries (`Want`). The
+/// `origin` is the sender of the message -- this field is not modified if a
+/// message is relayed.
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub enum Gossip<Addr, Payload>
 where
