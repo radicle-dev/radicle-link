@@ -23,7 +23,7 @@ use crate::{
     git::{
         p2p::url::GitUrl,
         refs::Refs,
-        types::{Reference, Refspec, SomeReference},
+        types::{Force, Reference, Refspec},
     },
     peer::PeerId,
     uri::RadUrn,
@@ -75,21 +75,15 @@ impl<'a> Fetcher<'a> {
         // `refs/namespaces/<namespace>/refs/rad/ids/* \
         // :refs/namespaces/<namespace>/refs/remotes/<remote_peer>/rad/ids/*`
         let refspecs = [
-            Refspec {
-                remote: SomeReference::Single(remote_id.clone()),
-                local: SomeReference::Single(remote_id.with_remote(remote_peer.clone())),
-                force: false,
-            },
-            Refspec {
-                remote: SomeReference::Single(remote_self.clone()),
-                local: SomeReference::Single(remote_self.with_remote(remote_peer.clone())),
-                force: false,
-            },
-            Refspec {
-                remote: SomeReference::Multiple(remote_certifiers.clone()),
-                local: SomeReference::Multiple(remote_certifiers.with_remote(remote_peer.clone())),
-                force: false,
-            },
+            remote_id
+                .with_remote(remote_peer.clone())
+                .refspec(remote_id, Force::False),
+            remote_self
+                .with_remote(remote_peer.clone())
+                .refspec(remote_self, Force::False),
+            remote_certifiers
+                .with_remote(remote_peer.clone())
+                .refspec(remote_certifiers, Force::False),
         ]
         .iter()
         .map(|spec| spec.to_string())
