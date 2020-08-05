@@ -130,6 +130,16 @@ impl Reference<Multiple> {
         ext::References::from_globs(repo, &[self.to_string()])
     }
 
+    /// Create the [`Refspec`] using the LHS of this call as the `local`, and
+    /// the RHS as the `remote`.
+    pub fn refspec(self, remote: Self, force: Force) -> Refspec {
+        Refspec {
+            local: SomeReference::Multiple(self),
+            remote: SomeReference::Multiple(remote),
+            force,
+        }
+    }
+
     /// Build a reference that points to
     /// `refs/namespaces/<namespace>/refs/rad/ids/*`
     pub fn rad_ids_glob(namespace: Namespace) -> Self {
@@ -168,6 +178,16 @@ impl Reference<Single> {
         SymbolicRef {
             source,
             target: self.clone(),
+            force,
+        }
+    }
+
+    /// Create the [`Refspec`] using the LHS of this call as the `local`, and
+    /// the RHS as the `remote`.
+    pub fn refspec(self, remote: Self, force: Force) -> Refspec {
+        Refspec {
+            local: SomeReference::Single(self),
+            remote: SomeReference::Single(remote),
             force,
         }
     }
@@ -244,11 +264,22 @@ impl<'a> Into<ext::blob::Branch<'a>> for &'a Reference<Single> {
 }
 
 /// Whether we should force the overwriting of a reference or not.
+#[derive(Debug, Clone)]
 pub enum Force {
     /// We should overwrite.
     True,
     /// We should not overwrite.
     False,
+}
+
+impl Force {
+    /// Convert the Force to its `bool` equivalent.
+    fn as_bool(&self) -> bool {
+        match self {
+            Force::True => true,
+            Force::False => false,
+        }
+    }
 }
 
 /// The data for creating a symbolic reference in a git repository.
@@ -277,18 +308,15 @@ impl SymbolicRef {
         &self,
         repo: &'a git2::Repository,
     ) -> Result<git2::Reference<'a>, git2::Error> {
-        let force = match self.force {
-            Force::True => true,
-            Force::False => false,
-        };
         let source = self.source.to_string();
         let target = self.target.to_string();
 
         let sym_log_msg = &format!("creating symbolic ref {} -> {}", source, target);
         tracing::info!("{}", sym_log_msg);
 
-        repo.find_reference(&target)
-            .and_then(|_| repo.reference_symbolic(&source, &target, force, sym_log_msg))
+        repo.find_reference(&target).and_then(|_| {
+            repo.reference_symbolic(&source, &target, self.force.as_bool(), sym_log_msg)
+        })
     }
 }
 
@@ -296,12 +324,12 @@ impl SymbolicRef {
 pub struct Refspec {
     pub(crate) remote: SomeReference,
     pub(crate) local: SomeReference,
-    pub force: bool,
+    pub force: Force,
 }
 
 impl Display for Refspec {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.force {
+        if self.force.as_bool() {
             f.write_str("+")?;
         }
         write!(f, "{}:{}", self.remote, self.local)
@@ -324,11 +352,7 @@ impl Refspec {
                 local.clone()
             };
 
-            Self {
-                local: SomeReference::Single(local),
-                remote: SomeReference::Single(remote),
-                force: false,
-            }
+            local.refspec(remote, Force::False)
         })
     }
 
@@ -367,11 +391,7 @@ impl Refspec {
                                 local.clone()
                             };
 
-                            refspecs.push(Self {
-                                local: SomeReference::Single(local),
-                                remote: SomeReference::Single(remote),
-                                force: true,
-                            })
+                            refspecs.push(local.refspec(remote, Force::True))
                         }
                     }
                 }
@@ -389,11 +409,7 @@ impl Refspec {
                     local.clone()
                 };
 
-                refspecs.push(Self {
-                    local: SomeReference::Single(local),
-                    remote: SomeReference::Single(remote),
-                    force: false,
-                });
+                refspecs.push(local.refspec(remote, Force::False));
             }
 
             // Self
@@ -408,11 +424,7 @@ impl Refspec {
                     local.clone()
                 };
 
-                refspecs.push(Self {
-                    local: SomeReference::Single(local),
-                    remote: SomeReference::Single(remote),
-                    force: false,
-                })
+                refspecs.push(local.refspec(remote, Force::False));
             }
 
             // Certifiers
@@ -428,11 +440,7 @@ impl Refspec {
                     local.clone()
                 };
 
-                refspecs.push(Self {
-                    local: SomeReference::Multiple(local),
-                    remote: SomeReference::Multiple(remote),
-                    force: false,
-                });
+                refspecs.push(local.refspec(remote, Force::False));
             }
 
             // Certifier top-level identities
@@ -457,11 +465,7 @@ impl Refspec {
                             local.clone()
                         };
 
-                        refspecs.push(Self {
-                            local: SomeReference::Single(local),
-                            remote: SomeReference::Single(remote),
-                            force: false,
-                        });
+                        refspecs.push(local.refspec(remote, Force::False));
                     }
 
                     // rad/ids/* of id
@@ -474,11 +478,7 @@ impl Refspec {
                             local.clone()
                         };
 
-                        refspecs.push(Self {
-                            local: SomeReference::Multiple(local),
-                            remote: SomeReference::Multiple(remote),
-                            force: false,
-                        });
+                        refspecs.push(local.refspec(remote, Force::False));
                     }
                 }
             }
