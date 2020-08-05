@@ -272,8 +272,7 @@ impl<S: Clone> Storage<S> {
     }
 
     pub fn has_commit(&self, urn: &RadUrn, oid: git2::Oid) -> Result<bool, Error> {
-        let span = tracing::warn_span!("Storage::has_commit", urn = %urn, oid = %oid);
-        let _guard = span.enter();
+        tracing::debug!(urn = %urn, oid = %oid, "Storage::has_commit");
 
         if oid.is_zero() {
             return Ok(false);
@@ -339,8 +338,7 @@ impl<S: Clone> Storage<S> {
 
     /// Read the current [`Refs`] from the repo state
     pub fn rad_signed_refs(&self, urn: &RadUrn) -> Result<Refs, Error> {
-        let span = tracing::debug_span!("Storage::rad_signed_refs", urn = %urn);
-        let _guard = span.enter();
+        tracing::debug!(urn = %urn, "Storage::rad_signed_refs");
 
         // Collect refs/heads (our branches) at their current state
         let heads = self.references_glob(urn, Some("refs/heads/*"))?;
@@ -353,7 +351,7 @@ impl<S: Clone> Storage<S> {
         let mut remotes: HashMap<PeerId, HashMap<PeerId, HashSet<PeerId>>> =
             tracked.map(|peer| (peer, HashMap::new())).collect();
 
-        tracing::debug!(remotes.bare = ?remotes);
+        tracing::debug!(urn = %urn, remotes.bare = ?remotes);
 
         // For each of the 1st degree tracked peers, lookup their rad/refs (if any),
         // verify the signature, and add their [`Remotes`] to ours (minus the 3rd
@@ -366,7 +364,7 @@ impl<S: Clone> Storage<S> {
             }
         }
 
-        tracing::debug!(remotes.verified = ?remotes);
+        tracing::debug!(urn = %urn, remotes.verified = ?remotes);
 
         Ok(Refs {
             heads,
@@ -541,7 +539,7 @@ where
     where
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
-        let span = tracing::info_span!("Storage::create_repo");
+        let span = tracing::info_span!("Storage::create_repo", local.id = %self.peer_id);
         let _guard = span.enter();
 
         // FIXME: properly verify meta
@@ -625,7 +623,7 @@ where
     where
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
-        let span = tracing::info_span!("Storage::clone_repo", url = %url);
+        let span = tracing::info_span!("Storage::clone_repo", local.id = %self.peer_id, url = %url);
         let _guard = span.enter();
 
         let remote_peer = url.authority.clone();
@@ -701,7 +699,7 @@ where
     }
 
     pub fn fetch_repo(&self, url: RadUrl) -> Result<(), Error> {
-        let span = tracing::info_span!("Storage::fetch", fetch.url = %url);
+        let span = tracing::info_span!("Storage::fetch", local.id = %self.peer_id, url = %url);
         let _guard = span.enter();
 
         let git_url = GitUrl::from_rad_url(url, self.peer_id.clone(), None);
@@ -894,10 +892,14 @@ where
     where
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
-        let span = tracing::debug_span!("Storage::track_signers", meta.urn = %meta.urn());
-        let _guard = span.enter();
-
         let meta_urn = meta.urn();
+
+        tracing::debug!(
+            local.id = %self.peer_id,
+            meta.urn = %meta_urn,
+            "Storage::track_signers",
+        );
+
         meta.signatures()
             .iter()
             .map(|(pk, sig)| {
@@ -930,8 +932,7 @@ where
     }
 
     pub(crate) fn update_refs(&self, urn: &RadUrn) -> Result<(), Error> {
-        let span = tracing::debug_span!("Storage::update_refs");
-        let _guard = span.enter();
+        tracing::debug!("Storage::update_refs");
 
         let refsig_canonical = self
             .rad_signed_refs(urn)?

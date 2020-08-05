@@ -48,6 +48,7 @@ use governor::{Quota, RateLimiter};
 use minicbor::{Decode, Encode};
 use rand::{seq::IteratorRandom, Rng};
 use rand_pcg::Pcg64Mcg;
+use tracing_futures::Instrument;
 
 use crate::{
     internal::channel::Fanout,
@@ -375,9 +376,12 @@ where
         this
     }
 
+    pub fn peer_id(&self) -> &PeerId {
+        &self.local_id
+    }
+
     pub async fn announce(&self, have: Broadcast) {
         let span = tracing::trace_span!("Protocol::announce", local.id = %self.local_id);
-        let _guard = span.enter();
 
         self.broadcast(
             Gossip::Have {
@@ -386,12 +390,12 @@ where
             },
             None,
         )
+        .instrument(span)
         .await
     }
 
     pub async fn query(&self, want: Broadcast) {
         let span = tracing::trace_span!("Protocol::query", local.id = %self.local_id);
-        let _guard = span.enter();
 
         self.broadcast(
             Gossip::Want {
@@ -400,6 +404,7 @@ where
             },
             None,
         )
+        .instrument(span)
         .await
     }
 
@@ -434,58 +439,61 @@ where
         Stream: connection::Stream<Read = R, Write = W>,
     {
         let span = tracing::trace_span!("Protocol::incoming", local.id = %self.local_id);
-        let _guard = span.enter();
 
-        let (recv, send) = s.into_stream().split();
-        let mut recv = FramedRead::new(recv, Codec::new());
-        let send = FramedWrite::new(send, Codec::new());
+        async move {
+            let (recv, send) = s.into_stream().split();
+            let mut recv = FramedRead::new(recv, Codec::new());
+            let send = FramedWrite::new(send, Codec::new());
 
-        let remote_id = recv.remote_peer_id().clone();
-        // This should not be possible, as we prevent it in the TLS handshake.
-        // Leaving it here regardless as a sanity check.
-        if remote_id == self.local_id {
-            return Err(Error::SelfConnection);
-        }
+            let remote_id = recv.remote_peer_id().clone();
+            // This should not be possible, as we prevent it in the TLS handshake.
+            // Leaving it here regardless as a sanity check.
+            if remote_id == self.local_id {
+                return Err(Error::SelfConnection);
+            }
 
-        if let Some((ejected_peer, mut ejected_send)) =
-            self.add_connected(remote_id.clone(), send).await
-        {
-            tracing::trace!(
-                msg = "Ejecting connected peer",
-                peer = %ejected_peer,
-            );
-            let _ = ejected_send.close().await;
-            // Note: if the ejected peer never sent us a `Join` or
-            // `Neighbour`, it isn't behaving well, so we can forget about
-            // it here. Otherwise, we should already have it in
-            // `known_peers`.
-            self.subscribers
-                .emit(ProtocolEvent::Control(Control::Disconnect(ejected_peer)))
-                .await
-        }
+            if let Some((ejected_peer, mut ejected_send)) =
+                self.add_connected(remote_id.clone(), send).await
+            {
+                tracing::trace!(
+                    msg = "Ejecting connected peer",
+                    peer = %ejected_peer,
+                );
+                let _ = ejected_send.close().await;
+                // Note: if the ejected peer never sent us a `Join` or
+                // `Neighbour`, it isn't behaving well, so we can forget about
+                // it here. Otherwise, we should already have it in
+                // `known_peers`.
+                self.subscribers
+                    .emit(ProtocolEvent::Control(Control::Disconnect(ejected_peer)))
+                    .await
+            }
 
-        while let Some(recvd) = recv.next().await {
-            match recvd {
-                Ok(rpc) => match rpc {
-                    Rpc::Membership(msg) => {
-                        self.handle_membership(&remote_id, recv.remote_addr().as_addr(), msg)
-                            .await?
+            while let Some(recvd) = recv.next().await {
+                match recvd {
+                    Ok(rpc) => match rpc {
+                        Rpc::Membership(msg) => {
+                            self.handle_membership(&remote_id, recv.remote_addr().as_addr(), msg)
+                                .await?
+                        },
+
+                        Rpc::Gossip(msg) => self.handle_gossip(&remote_id, msg).await?,
                     },
 
-                    Rpc::Gossip(msg) => self.handle_gossip(&remote_id, msg).await?,
-                },
-
-                Err(e) => {
-                    tracing::warn!("Recv error: {:?}", e);
-                    break;
-                },
+                    Err(e) => {
+                        tracing::warn!("Recv error: {:?}", e);
+                        break;
+                    },
+                }
             }
+
+            tracing::trace!(msg = "Recv stream is done, disconnecting");
+            self.remove_connected(&remote_id).await;
+
+            Ok(())
         }
-
-        tracing::trace!(msg = "Recv stream is done, disconnecting",);
-        self.remove_connected(&remote_id).await;
-
-        Ok(())
+        .instrument(span)
+        .await
     }
 
     async fn handle_membership(
@@ -590,108 +598,103 @@ where
         use Gossip::*;
 
         let span = tracing::trace_span!("Protocol::handle_gossip");
-        let _guard = span.enter();
 
-        match msg {
-            Have { origin, val } => {
-                tracing::trace!(msg = "Have", origin.peer.id = %origin.peer_id, origin.value=?val);
+        async move {
+            match msg {
+                Have { origin, val } => {
+                    tracing::trace!(origin.peer.id = %origin.peer_id, origin.value=?val, "Have");
 
-                self.subscribers
-                    .emit(ProtocolEvent::Info(Info::Has(Has {
-                        provider: origin.clone(),
-                        val: val.clone(),
-                    })))
-                    .await;
-
-                match self.storage.put(&remote_id, val.clone()).await {
-                    // `val` was new, and is now fetched to local storage. Let
-                    // connected peers know they can now fetch it from us.
-                    PutResult::Applied => {
-                        tracing::info!(
-                            msg = "Announcing applied value",
-                            value = ?val,
-                        );
-                        self.broadcast(
-                            Have {
-                                origin: self.local_peer_info(),
-                                val,
-                            },
-                            remote_id,
-                        )
-                        .await
-                    },
-
-                    // Meh. Request retransmission.
-                    PutResult::Error => {
-                        tracing::info!(
-                            msg = "Error applying value",
-                            value = ?val,
-                        );
-                        // Forward in any case
-                        self.broadcast(
-                            Have {
-                                origin,
-                                val: val.clone(),
-                            },
-                            remote_id,
-                        )
+                    self.subscribers
+                        .emit(ProtocolEvent::Info(Info::Has(Has {
+                            provider: origin.clone(),
+                            val: val.clone(),
+                        })))
                         .await;
-                        // Exit if we're getting too many errors
-                        self.storage_error_lim
-                            .check()
-                            .map_err(|_| Error::StorageErrorRateLimitExceeded)?;
-                        // Request retransmission
-                        // This could be optimised be enqueuing `val`s and
-                        // sending them in batch later (deduplicating)
-                        self.broadcast(
-                            Want {
+
+                    match self.storage.put(&remote_id, val.clone()).await {
+                        // `val` was new, and is now fetched to local storage.
+                        // Let connected peers know they can now fetch it from
+                        // us.
+                        PutResult::Applied => {
+                            tracing::info!(value = ?val, "Announcing applied value");
+
+                            self.broadcast(
+                                Have {
+                                    origin: self.local_peer_info(),
+                                    val,
+                                },
+                                remote_id,
+                            )
+                            .await
+                        },
+
+                        // Meh. Request retransmission.
+                        PutResult::Error => {
+                            tracing::info!(value = ?val, "Error applying value");
+
+                            // Forward in any case
+                            self.broadcast(
+                                Have {
+                                    origin,
+                                    val: val.clone(),
+                                },
+                                remote_id,
+                            )
+                            .await;
+                            // Exit if we're getting too many errors
+                            self.storage_error_lim
+                                .check()
+                                .map_err(|_| Error::StorageErrorRateLimitExceeded)?;
+                            // Request retransmission
+                            // This could be optimised be enqueuing `val`s and
+                            // sending them in batch later (deduplicating)
+                            self.broadcast(
+                                Want {
+                                    origin: self.local_peer_info(),
+                                    val,
+                                },
+                                None,
+                            )
+                            .await
+                        },
+
+                        // Not interesting, forward to others
+                        PutResult::Uninteresting => {
+                            tracing::info!(value = ?val, "Value is uninteresting");
+
+                            self.broadcast(Have { origin, val }, remote_id).await
+                        },
+
+                        // We are up-to-date, don't do anything
+                        PutResult::Stale => {
+                            tracing::info!(value = ?val, "Value is up to date");
+                        },
+                    }
+                },
+
+                Want { origin, val } => {
+                    tracing::trace!(origin.peer.id = %origin.peer_id, origin.value = ?val, "Want");
+
+                    let have = self.storage.ask(val.clone()).await;
+                    if have {
+                        self.reply(
+                            &remote_id.clone(),
+                            Have {
                                 origin: self.local_peer_info(),
                                 val,
                             },
-                            None,
                         )
                         .await
-                    },
+                    } else {
+                        self.broadcast(Want { origin, val }, remote_id).await
+                    }
+                },
+            }
 
-                    // Not interesting, forward to others
-                    PutResult::Uninteresting => {
-                        tracing::info!(
-                            msg = "Value is uninteresting",
-                            value = ?val,
-                        );
-                        self.broadcast(Have { origin, val }, remote_id).await
-                    },
-
-                    // We are up-to-date, don't do anything
-                    PutResult::Stale => {
-                        tracing::info!(
-                            msg = "Value is up to date",
-                            value = ?val,
-                        );
-                    },
-                }
-            },
-
-            Want { origin, val } => {
-                tracing::trace!(msg = "Want", origin.peer.id = %origin.peer_id, origin.value = ?val);
-                let have = self.storage.ask(val.clone()).await;
-
-                if have {
-                    self.reply(
-                        &remote_id.clone(),
-                        Have {
-                            origin: self.local_peer_info(),
-                            val,
-                        },
-                    )
-                    .await
-                } else {
-                    self.broadcast(Want { origin, val }, remote_id).await
-                }
-            },
+            Ok(())
         }
-
-        Ok(())
+        .instrument(span)
+        .await
     }
 
     async fn add_connected(

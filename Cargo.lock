@@ -950,6 +950,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-futures",
  "url 2.1.1",
  "urltemplate",
  "webpki",
@@ -2224,6 +2225,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d593f98af59ebc017c0648f0117525db358745a8894a8d684e185ba3f45954f9"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "tracing-futures"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab7bb6f14721aa00656086e9335d363c5c8747bae02ebe32ea2c7dece5689b4c"
+dependencies = [
+ "pin-project",
+ "tracing",
 ]
 
 [[package]]

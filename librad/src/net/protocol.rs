@@ -34,6 +34,7 @@ use futures::{
 };
 use minicbor::{Decode, Encode};
 use thiserror::Error;
+use tracing_futures::Instrument;
 
 use crate::{
     git::p2p::{
@@ -130,6 +131,10 @@ where
         }
     }
 
+    pub fn peer_id(&self) -> &PeerId {
+        self.gossip.peer_id()
+    }
+
     /// Start the protocol run loop.
     pub async fn run<Disco>(
         self,
@@ -141,30 +146,37 @@ where
         let local_addr = endpoint
             .local_addr()
             .expect("unable to get local endpoint addr");
-        let span = tracing::trace_span!("Protocol::run", local_addr = %local_addr);
-        let _guard = span.enter();
 
-        let incoming = incoming.map(|(conn, i)| Run::Incoming { conn, incoming: i });
-        let bootstrap = disco.map(|(peer, addrs)| Run::Discovered { peer, addrs });
-        let gossip_events = self
-            .gossip
-            .subscribe()
-            .await
-            .map(|event| Run::Gossip { event });
+        let span = tracing::info_span!(
+            "Protocol::run",
+            local.id = %self.peer_id(),
+            local.addr = %local_addr
+        );
 
-        tracing::info!(msg = "Listening");
+        async move {
+            let incoming = incoming.map(|(conn, i)| Run::Incoming { conn, incoming: i });
+            let bootstrap = disco.map(|(peer, addrs)| Run::Discovered { peer, addrs });
+            let gossip_events = self
+                .gossip
+                .subscribe()
+                .await
+                .map(|event| Run::Gossip { event });
 
-        self.subscribers
-            .emit(ProtocolEvent::Listening(local_addr))
-            .await;
+            tracing::info!("Listening");
+            self.subscribers
+                .emit(ProtocolEvent::Listening(local_addr))
+                .await;
 
-        futures::stream::select(incoming, futures::stream::select(bootstrap, gossip_events))
-            .for_each_concurrent(None, |run| {
-                let mut this = self.clone();
-                let endpoint = endpoint.clone();
-                async move { this.eval_run(endpoint, run).await }
-            })
-            .await
+            futures::stream::select(incoming, futures::stream::select(bootstrap, gossip_events))
+                .for_each_concurrent(None, |run| {
+                    let mut this = self.clone();
+                    let endpoint = endpoint.clone();
+                    async move { this.eval_run(endpoint, run).await }
+                })
+                .await
+        }
+        .instrument(span)
+        .await
     }
 
     /// Subscribe to an infinite stream of [`ProtocolEvent`]s.
@@ -203,12 +215,11 @@ where
     async fn eval_run(&mut self, endpoint: quic::Endpoint, run: Run<'_, A>) {
         match run {
             Run::Discovered { peer, addrs } => {
-                let span = tracing::trace_span!(
+                tracing::trace!(
+                    remote.id = %peer,
+                    remote.addrs = ?addrs,
                     "Run::Discovered",
-                    peer.id = %peer,
-                    peer.addrs = ?addrs
                 );
-                let _guard = span.enter();
 
                 if !self.connections.lock().await.contains_key(&peer) {
                     if let Some((conn, incoming)) = connect(&endpoint, &peer, addrs).await {
@@ -218,8 +229,11 @@ where
             },
 
             Run::Incoming { conn, incoming } => {
-                let span = tracing::trace_span!("Run::Incoming", peer.id = %conn.remote_peer_id(), peer.addrs = %conn.remote_addr());
-                let _guard = span.enter();
+                tracing::trace!(
+                    remote.id = %conn.remote_peer_id(),
+                    remote.addrs = %conn.remote_addr(),
+                    "Run::Incoming",
+                );
 
                 if let Err(e) = self.handle_incoming(conn, incoming).await {
                     tracing::warn!("Error processing incoming connections: {}", e)
@@ -229,7 +243,8 @@ where
             Run::Gossip { event } => match event {
                 gossip::ProtocolEvent::Control(ctrl) => match ctrl {
                     gossip::Control::SendAdhoc { to, rpc } => {
-                        tracing::trace!("Run::Rad(SendAdhoc)");
+                        tracing::trace!(remote.id = %to.peer_id, "Run::Rad(SendAdhoc)");
+
                         let conn = match self.connections.lock().await.get(&to.peer_id) {
                             Some(conn) => Some(conn.clone()),
                             None => connect_peer_info(&endpoint, to).await.map(|(conn, _)| conn),
@@ -252,7 +267,8 @@ where
                     },
 
                     gossip::Control::Connect { to, hello } => {
-                        tracing::trace!("Run::Rad(Connect)");
+                        tracing::trace!(remote.id = %to.peer_id, "Run::Rad(Connect)");
+
                         if !self.connections.lock().await.contains_key(&to.peer_id) {
                             let conn = connect_peer_info(&endpoint, to).await;
                             if let Some((conn, incoming)) = conn {
@@ -263,7 +279,8 @@ where
                     },
 
                     gossip::Control::Disconnect(peer) => {
-                        tracing::trace!("Run::Rad(Disconnect)");
+                        tracing::trace!(peer.id = %peer, "Run::Rad(Disconnect)");
+
                         self.handle_disconnect(peer).await;
                     },
                 },
@@ -282,7 +299,7 @@ where
         hello: impl Into<Option<gossip::Rpc<IpAddr, A>>>,
     ) {
         let remote_id = conn.remote_peer_id().clone();
-        tracing::info!(remote_id = %remote_id, "New outgoing connection");
+        tracing::info!(remote.id = %remote_id, "New outgoing connection");
 
         {
             self.connections
@@ -465,7 +482,7 @@ where
     futures::stream::iter(addrs)
         .filter_map(|addr| {
             let mut endpoint = endpoint.clone();
-            tracing::info!(peer.id = %peer_id, "Establishing connection");
+            tracing::info!(remote.id = %peer_id, "Establishing connection");
             Box::pin(async move {
                 match endpoint.connect(peer_id, &addr).await {
                     Ok(conn) => Some(conn),
