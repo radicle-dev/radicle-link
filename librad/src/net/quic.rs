@@ -34,15 +34,26 @@ use crate::{
         connection::{self, CloseReason, LocalInfo, RemoteInfo},
         tls,
     },
-    peer::PeerId,
+    peer::{self, PeerId},
 };
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("Remote PeerId could not be determined")]
+    RemoteIdUnavailable,
+
+    #[error(transparent)]
+    PeerId(#[from] peer::conversion::Error),
+
+    #[error(transparent)]
+    Cert(#[from] yasna::ASN1Error),
+
     #[error(transparent)]
     Endpoint(#[from] quinn::EndpointError),
+
     #[error(transparent)]
     Connect(#[from] quinn::ConnectError),
+
     #[error(transparent)]
     Connection(#[from] quinn::ConnectionError),
 }
@@ -64,7 +75,15 @@ impl Endpoint {
         let (endpoint, incoming) = make_endpoint(signer, listen_addr).await?;
         let endpoint = Endpoint { peer_id, endpoint };
         let incoming = incoming
-            .filter_map(|connecting| async move { connecting.await.ok().map(new_connection) })
+            .filter_map(|connecting| async move {
+                handle_incoming(connecting).await.map_or_else(
+                    |e| {
+                        tracing::warn!("Error handling incoming connection: {}", e);
+                        None
+                    },
+                    Some,
+                )
+            })
             .boxed();
 
         Ok(BoundEndpoint { endpoint, incoming })
@@ -79,8 +98,10 @@ impl Endpoint {
             .endpoint
             .connect(addr, peer.as_dns_name().as_ref().into())?
             .await?;
-
-        Ok(new_connection(conn))
+        match remote_peer(&conn)? {
+            Some(peer) => Ok(mk_connection(&peer, conn)),
+            None => Ok(mk_connection(peer, conn)),
+        }
     }
 }
 
@@ -94,6 +115,72 @@ impl LocalInfo for Endpoint {
     fn local_addr(&self) -> io::Result<SocketAddr> {
         self.endpoint.local_addr()
     }
+}
+
+async fn handle_incoming<'a>(connecting: quinn::Connecting) -> Result<(Connection, Incoming<'a>)> {
+    let conn = connecting.await?;
+    remote_peer(&conn)?
+        .ok_or_else(|| Error::RemoteIdUnavailable)
+        .map(|peer| mk_connection(&peer, conn))
+}
+
+/// Try to extract the remote identity from a newly established connection
+///
+/// Our source of truth is the peer certificate presented during the TLS
+/// handshake. However, if TLS session resumption is used, this may not be
+/// available -- in this case, we try to fall back on the SNI for incoming
+/// connections. If both are not available, outgoing connections can still be
+/// made, as the remote [`PeerId`] is known and guaranteed to match the remote
+/// end.
+///
+/// If this returns [`Err`], the connection attempt should be aborted. If it
+/// returns `Ok(None)`, the remote identity could not be determined.
+fn remote_peer(conn: &NewConnection) -> Result<Option<PeerId>> {
+    let auth = conn.connection.authentication_data();
+    match auth.peer_certificates {
+        Some(certs) => {
+            let first = certs
+                .iter()
+                .next()
+                .expect("One certificate must have been presented")
+                .as_ref();
+            tls::extract_peer_id(first).map(Some).map_err(Error::from)
+        },
+
+        None => auth
+            .server_name
+            .map(|sni| sni.parse().map_err(Error::from))
+            .transpose(),
+    }
+}
+
+fn mk_connection<'a>(
+    remote_peer: &PeerId,
+    NewConnection {
+        connection,
+        bi_streams,
+        ..
+    }: NewConnection,
+) -> (Connection, Incoming<'a>) {
+    let conn = Connection::new(remote_peer, connection);
+    (
+        conn.clone(),
+        Box::pin(
+            bi_streams
+                .map_ok(move |(send, recv)| Stream {
+                    conn: conn.clone(),
+                    send: SendStream {
+                        conn: conn.clone(),
+                        send,
+                    },
+                    recv: RecvStream {
+                        conn: conn.clone(),
+                        recv,
+                    },
+                })
+                .map_err(|e| e.into()),
+        ),
+    )
 }
 
 pub type Incoming<'a> = BoxStream<'a, Result<Stream>>;
@@ -113,47 +200,6 @@ impl<'a> LocalInfo for BoundEndpoint<'a> {
     fn local_addr(&self) -> io::Result<SocketAddr> {
         self.endpoint.local_addr()
     }
-}
-
-fn new_connection<'a>(
-    NewConnection {
-        connection,
-        bi_streams,
-        ..
-    }: NewConnection,
-) -> (Connection, Incoming<'a>) {
-    let peer_id = tls::extract_peer_id(
-        connection
-            .authentication_data()
-            .peer_certificates
-            .expect("Certificates must be presented. qed")
-            .iter()
-            .next()
-            .expect("One certificate must have been presented. qed")
-            .as_ref(),
-    )
-    .expect("TLS layer ensures the cert contains a PeerId. qed");
-
-    let conn = Connection::new(&peer_id, connection);
-
-    (
-        conn.clone(),
-        Box::pin(
-            bi_streams
-                .map_ok(move |(send, recv)| Stream {
-                    conn: conn.clone(),
-                    send: SendStream {
-                        conn: conn.clone(),
-                        send,
-                    },
-                    recv: RecvStream {
-                        conn: conn.clone(),
-                        recv,
-                    },
-                })
-                .map_err(|e| e.into()),
-        ),
-    )
 }
 
 #[derive(Debug, Error)]
