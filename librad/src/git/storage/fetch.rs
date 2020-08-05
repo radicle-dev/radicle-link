@@ -178,18 +178,18 @@ impl<'a> Fetcher<'a> {
     // TODO: allow users to supply callbacks
     fn fetch_options(&self) -> git2::FetchOptions<'a> {
         let mut cbs = git2::RemoteCallbacks::new();
-        cbs.sideband_progress(|prog| {
-            tracing::trace!("{}", unsafe { std::str::from_utf8_unchecked(prog) });
+        cbs.transfer_progress(|prog| {
+            tracing::trace!("Fetch: received {} bytes", prog.received_bytes());
             true
         })
         .update_tips(|name, old, new| {
-            tracing::debug!("{}: {} -> {}", name, old, new);
+            tracing::debug!("Fetch: updating tip {}: {} -> {}", name, old, new);
             true
         });
 
         let mut fos = git2::FetchOptions::new();
         fos.prune(git2::FetchPrune::Off)
-            .update_fetchhead(true)
+            .update_fetchhead(false)
             .download_tags(git2::AutotagOption::None)
             .remote_callbacks(cbs);
 
