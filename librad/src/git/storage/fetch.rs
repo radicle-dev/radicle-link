@@ -189,7 +189,7 @@ impl<'a> Fetcher<'a> {
 
         let mut fos = git2::FetchOptions::new();
         fos.prune(git2::FetchPrune::Off)
-            .update_fetchhead(true)
+            .update_fetchhead(false)
             .download_tags(git2::AutotagOption::None)
             .remote_callbacks(cbs);
 
