@@ -144,13 +144,13 @@ where
         let span = tracing::trace_span!("Protocol::run", local_addr = %local_addr);
         let _guard = span.enter();
 
-        let incoming = incoming.map(|(conn, i)| Ok(Run::Incoming { conn, incoming: i }));
-        let bootstrap = disco.map(|(peer, addrs)| Ok(Run::Discovered { peer, addrs }));
+        let incoming = incoming.map(|(conn, i)| Run::Incoming { conn, incoming: i });
+        let bootstrap = disco.map(|(peer, addrs)| Run::Discovered { peer, addrs });
         let gossip_events = self
             .gossip
             .subscribe()
             .await
-            .map(|event| Ok(Run::Gossip { event }));
+            .map(|event| Run::Gossip { event });
 
         tracing::info!(msg = "Listening");
 
@@ -159,13 +159,12 @@ where
             .await;
 
         futures::stream::select(incoming, futures::stream::select(bootstrap, gossip_events))
-            .try_for_each_concurrent(None, |run| {
+            .for_each_concurrent(None, |run| {
                 let mut this = self.clone();
                 let endpoint = endpoint.clone();
                 async move { this.eval_run(endpoint, run).await }
             })
             .await
-            .unwrap_or_else(|()| tracing::warn!("Shutting down"))
     }
 
     /// Subscribe to an infinite stream of [`ProtocolEvent`]s.
@@ -201,7 +200,7 @@ where
         self.open_stream(to, upgrade::Git).await
     }
 
-    async fn eval_run(&mut self, endpoint: quic::Endpoint, run: Run<'_, A>) -> Result<(), ()> {
+    async fn eval_run(&mut self, endpoint: quic::Endpoint, run: Run<'_, A>) {
         match run {
             Run::Discovered { peer, addrs } => {
                 let span = tracing::trace_span!(
@@ -216,17 +215,15 @@ where
                         self.handle_connect(conn, incoming.boxed(), None).await;
                     }
                 }
-
-                Ok(())
             },
 
             Run::Incoming { conn, incoming } => {
                 let span = tracing::trace_span!("Run::Incoming", peer.id = %conn.remote_peer_id(), peer.addrs = %conn.remote_addr());
                 let _guard = span.enter();
 
-                self.handle_incoming(conn, incoming)
-                    .await
-                    .map_err(|e| tracing::warn!("Error processing incoming connection: {}", e))
+                if let Err(e) = self.handle_incoming(conn, incoming).await {
+                    tracing::warn!("Error processing incoming connections: {}", e)
+                }
             },
 
             Run::Gossip { event } => match event {
@@ -239,20 +236,19 @@ where
                         };
 
                         if let Some(conn) = conn {
-                            let stream = conn.open_stream().await.map_err(|e| {
+                            if let Err(e) = conn
+                                .open_stream()
+                                .map_err(Error::from)
+                                .and_then(|stream| self.outgoing(stream, rpc))
+                                .await
+                            {
                                 tracing::warn!(
-                                    "Could not open stream on connection to {}: {}",
+                                    "Error handling ad-hoc outgoing stream to {}: {}",
                                     conn.remote_addr(),
                                     e
                                 )
-                            })?;
-
-                            return self.outgoing(stream, rpc).await.map_err(|e| {
-                                tracing::warn!("Error processing outgoing stream: {}", e)
-                            });
+                            }
                         }
-
-                        Ok(())
                     },
 
                     gossip::Control::Connect { to, hello } => {
@@ -264,20 +260,16 @@ where
                                     .await
                             }
                         }
-
-                        Ok(())
                     },
 
                     gossip::Control::Disconnect(peer) => {
                         tracing::trace!("Run::Rad(Disconnect)");
                         self.handle_disconnect(peer).await;
-                        Ok(())
                     },
                 },
 
                 gossip::ProtocolEvent::Info(info) => {
-                    self.subscribers.emit(ProtocolEvent::Gossip(info)).await;
-                    Ok(())
+                    self.subscribers.emit(ProtocolEvent::Gossip(info)).await
                 },
             },
         }
