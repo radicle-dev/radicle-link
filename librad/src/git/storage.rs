@@ -640,7 +640,7 @@ where
         }
 
         // Fetch the identity first
-        let git_url = GitUrl::from_rad_url(url, self.peer_id.clone());
+        let git_url = GitUrl::from_rad_url(url, self.peer_id.clone(), None);
         let mut fetcher = Fetcher::new(&self.backend, git_url)?;
         fetcher.prefetch()?;
 
@@ -704,7 +704,7 @@ where
         let span = tracing::info_span!("Storage::fetch", fetch.url = %url);
         let _guard = span.enter();
 
-        let git_url = GitUrl::from_rad_url(url, self.peer_id.clone());
+        let git_url = GitUrl::from_rad_url(url, self.peer_id.clone(), None);
         let fetcher = Fetcher::new(&self.backend, git_url)?;
         self.fetch_internal(fetcher)
     }
@@ -837,7 +837,7 @@ where
         }
 
         let remote_name = tracking_remote_name(urn, peer);
-        let url = GitUrlRef::from_rad_urn(&urn, &self.peer_id, peer).to_string();
+        let url = GitUrlRef::from_rad_urn(&urn, &self.peer_id, peer, &[]).to_string();
 
         tracing::debug!(
             urn = %urn,

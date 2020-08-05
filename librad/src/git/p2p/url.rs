@@ -17,6 +17,7 @@
 
 use std::{
     fmt::{self, Display},
+    net::{AddrParseError, SocketAddr},
     str::FromStr,
 };
 
@@ -29,22 +30,35 @@ use crate::{
     uri::{self, RadUrl, RadUrlRef, RadUrn},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GitUrl {
     pub local_peer: PeerId,
     pub remote_peer: PeerId,
+    pub addr_hints: Vec<SocketAddr>,
     pub repo: Hash,
 }
 
 impl GitUrl {
-    pub fn from_rad_url(url: RadUrl, local_peer: PeerId) -> Self {
-        Self::from_rad_urn(url.urn, local_peer, url.authority)
+    pub fn from_rad_url<Addrs>(url: RadUrl, local_peer: PeerId, addrs: Addrs) -> Self
+    where
+        Addrs: IntoIterator<Item = SocketAddr>,
+    {
+        Self::from_rad_urn(url.urn, local_peer, url.authority, addrs)
     }
 
-    pub fn from_rad_urn(urn: RadUrn, local_peer: PeerId, remote_peer: PeerId) -> Self {
+    pub fn from_rad_urn<Addrs>(
+        urn: RadUrn,
+        local_peer: PeerId,
+        remote_peer: PeerId,
+        addrs: Addrs,
+    ) -> Self
+    where
+        Addrs: IntoIterator<Item = SocketAddr>,
+    {
         Self {
             local_peer,
             remote_peer,
+            addr_hints: addrs.into_iter().collect(),
             repo: urn.id,
         }
     }
@@ -53,6 +67,7 @@ impl GitUrl {
         GitUrlRef {
             local_peer: &self.local_peer,
             remote_peer: &self.remote_peer,
+            addr_hints: &self.addr_hints,
             repo: &self.repo,
         }
     }
@@ -88,6 +103,9 @@ pub enum ParseError {
 
     #[error(transparent)]
     Hash(#[from] hash::ParseError),
+
+    #[error(transparent)]
+    Addr(#[from] AddrParseError),
 }
 
 impl FromStr for GitUrl {
@@ -103,10 +121,11 @@ impl FromStr for GitUrl {
         }
 
         let local_peer = url.username().parse()?;
-        let remote_peer = url
+        let host = url
             .host_str()
-            .expect("we checked for cannot-be-a-base. qed")
-            .parse()?;
+            .expect("we checked for cannot-be-a-base. qed");
+
+        let remote_peer = host.parse()?;
         let repo = url
             .path_segments()
             .expect("we checked for cannot-be-a-base. qed")
@@ -117,10 +136,15 @@ impl FromStr for GitUrl {
                     .parse()
                     .map_err(Self::Err::Hash)
             })?;
+        let addr_hints = url
+            .query_pairs()
+            .filter_map(|(k, v)| if k == "addr" { v.parse().ok() } else { None })
+            .collect();
 
         Ok(Self {
             local_peer,
             remote_peer,
+            addr_hints,
             repo,
         })
     }
@@ -139,25 +163,50 @@ impl Into<RadUrl> for GitUrl {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct GitUrlRef<'a> {
     pub local_peer: &'a PeerId,
     pub remote_peer: &'a PeerId,
+    pub addr_hints: &'a [SocketAddr],
     pub repo: &'a Hash,
 }
 
 impl<'a> GitUrlRef<'a> {
-    pub fn from_rad_url(url: &'a RadUrl, local_peer: &'a PeerId) -> Self {
-        Self::from_rad_urn(&url.urn, local_peer, &url.authority)
+    pub fn from_rad_url<Addrs>(
+        url: &'a RadUrl,
+        local_peer: &'a PeerId,
+        addr_hints: &'a Addrs,
+    ) -> Self
+    where
+        Addrs: AsRef<[SocketAddr]>,
+    {
+        Self::from_rad_urn(&url.urn, local_peer, &url.authority, addr_hints)
     }
 
-    pub fn from_rad_url_ref(url: RadUrlRef<'a>, local_peer: &'a PeerId) -> Self {
-        Self::from_rad_urn(url.urn, local_peer, url.authority)
+    pub fn from_rad_url_ref<Addrs>(
+        url: RadUrlRef<'a>,
+        local_peer: &'a PeerId,
+        addr_hints: &'a Addrs,
+    ) -> Self
+    where
+        Addrs: AsRef<[SocketAddr]>,
+    {
+        Self::from_rad_urn(url.urn, local_peer, url.authority, addr_hints)
     }
 
-    pub fn from_rad_urn(urn: &'a RadUrn, local_peer: &'a PeerId, remote_peer: &'a PeerId) -> Self {
+    pub fn from_rad_urn<Addrs>(
+        urn: &'a RadUrn,
+        local_peer: &'a PeerId,
+        remote_peer: &'a PeerId,
+        addr_hints: &'a Addrs,
+    ) -> Self
+    where
+        Addrs: AsRef<[SocketAddr]>,
+    {
         Self {
             local_peer,
             remote_peer,
+            addr_hints: addr_hints.as_ref(),
             repo: &urn.id,
         }
     }
@@ -166,6 +215,7 @@ impl<'a> GitUrlRef<'a> {
         GitUrl {
             local_peer: self.local_peer.clone(),
             remote_peer: self.remote_peer.clone(),
+            addr_hints: self.addr_hints.to_vec(),
             repo: self.repo.clone(),
         }
     }
@@ -173,13 +223,51 @@ impl<'a> GitUrlRef<'a> {
 
 impl<'a> Display for GitUrlRef<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}://{}@{}/{}.git",
+        let mut url = Url::parse(&format!(
+            "{}://{}@{}",
             super::URL_SCHEME,
             self.local_peer,
-            self.remote_peer,
-            self.repo
-        )
+            self.remote_peer
+        ))
+        .unwrap();
+
+        url.query_pairs_mut().extend_pairs(
+            self.addr_hints
+                .iter()
+                .map(|addr| ("addr", addr.to_string())),
+        );
+        url.set_path(&format!("/{}.git", self.repo));
+
+        f.write_str(url.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
+
+    use crate::keys::SecretKey;
+    use librad_test::roundtrip::str_roundtrip;
+
+    #[test]
+    fn test_str_roundtrip() {
+        let url = GitUrl {
+            local_peer: PeerId::from(SecretKey::new()),
+            remote_peer: PeerId::from(SecretKey::new()),
+            addr_hints: vec![
+                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 42)),
+                SocketAddr::V6(SocketAddrV6::new(
+                    Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1),
+                    69,
+                    0,
+                    0,
+                )),
+            ],
+            repo: Hash::hash(b"leboeuf"),
+        };
+
+        str_roundtrip(url)
     }
 }
