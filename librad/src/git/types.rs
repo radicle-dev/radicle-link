@@ -57,6 +57,8 @@ pub struct Multiple;
 pub enum SomeReference {
     Single(Reference<Single>),
     Multiple(Reference<Multiple>),
+    BranchMultiple(BranchRef<Multiple>),
+    BranchSingle(BranchRef<Single>),
 }
 
 impl Display for SomeReference {
@@ -64,6 +66,199 @@ impl Display for SomeReference {
         match self {
             Self::Single(reference) => write!(f, "{}", reference),
             Self::Multiple(reference) => write!(f, "{}", reference),
+            Self::BranchMultiple(reference) => write!(f, "{}", reference),
+            Self::BranchSingle(reference) => write!(f, "{}", reference),
+        }
+    }
+}
+
+/// A representation of git branch that is either under:
+///   * `refs/heads`
+///   * `refs/remotes/<origin>`
+#[derive(Debug, Clone, PartialEq)]
+pub struct BranchRef<N> {
+    pub remote: Option<String>,
+    pub name: String,
+    marker: PhantomData<N>,
+}
+
+impl<N> Display for BranchRef<N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.remote {
+            None => write!(f, "refs/heads/"),
+            Some(remote) => write!(f, "refs/remotes/{}/", remote),
+        }?;
+
+        write!(f, "{}", self.name)
+    }
+}
+
+impl<N> BranchRef<N> {
+    /// Set the git reference's remote.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use librad::git::types::BranchRef;
+    ///
+    /// let heads = BranchRef::heads().set_remote("origin".to_string());
+    /// assert_eq!(&heads.to_string(), "refs/remotes/origin/*");
+    /// ```
+    pub fn set_remote(mut self, remote: impl Into<Option<String>>) -> Self {
+        self.remote = remote.into();
+        self
+    }
+
+    /// Set the git reference's remote, while not consuming the original
+    /// reference.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use librad::git::types::BranchRef;
+    ///
+    /// let heads = BranchRef::heads();
+    /// let origin_heads = heads.with_remote("origin".to_string());
+    ///
+    /// assert_eq!(&origin_heads.to_string(), "refs/remotes/origin/*");
+    /// assert_eq!(&heads.to_string(), "refs/heads/*");
+    /// ```
+    pub fn with_remote(&self, remote: impl Into<Option<String>>) -> Self
+    where
+        N: Clone,
+    {
+        Self {
+            remote: remote.into(),
+            ..self.clone()
+        }
+    }
+
+    pub fn set_name(mut self, name: &str) -> Self {
+        self.name = name.to_owned();
+        self
+    }
+
+    pub fn with_name(&self, name: &str) -> Self
+    where
+        N: Clone,
+    {
+        Self {
+            name: name.to_owned(),
+            ..self.clone()
+        }
+    }
+}
+
+impl BranchRef<Multiple> {
+    /// A git reference that corresponds to a wildcard match in `heads`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use librad::git::types::BranchRef;
+    ///
+    /// let heads = BranchRef::heads();
+    /// assert_eq!(&heads.to_string(), "refs/heads/*")
+    /// ```
+    pub fn heads() -> Self {
+        Self {
+            remote: None,
+            name: "*".to_string(),
+            marker: PhantomData,
+        }
+    }
+
+    /// Create a `Refspec` where the `BranchRef` is the RHS and the `Reference`
+    /// is the LHS.
+    ///
+    /// This allows us to create a *fetch spec* that links a working copy to the
+    /// monorepo.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use librad::{
+    ///     hash::Hash,
+    ///     git::types::{BranchRef, Reference, Force},
+    /// };
+    ///
+    /// let namespace = Hash::hash(b"heelflip");
+    /// let spec = BranchRef::heads().local_spec(Reference::heads(namespace, None), Force::True);
+    /// assert_eq!(
+    ///     &spec.to_string(),
+    ///     "+refs/namespaces/hwd1yref3ituqkp7ndjnzjzbb8b1taxq54e14y5nzswsg9kuwtb6nbccr3a/refs/heads/*:refs/heads/*"
+    /// );
+    /// ```
+    pub fn local_spec(self, remote: Reference<Multiple>, force: Force) -> Refspec {
+        Refspec {
+            local: SomeReference::BranchMultiple(self),
+            remote: SomeReference::Multiple(remote),
+            force,
+        }
+    }
+
+    /// Create a `Refspec` where the `BranchRef` is the RHS and the `Reference`
+    /// is the LHS.
+    ///
+    /// This allows us to create a *push spec* that links a working copy to the
+    /// monorepo.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use librad::{
+    ///     hash::Hash,
+    ///     git::types::{BranchRef, Reference, Force},
+    /// };
+    ///
+    /// let namespace = Hash::hash(b"heelflip");
+    /// let spec = BranchRef::heads().remote_spec(Reference::heads(namespace, None), Force::True);
+    /// assert_eq!(
+    ///     &spec.to_string(),
+    ///     "+refs/heads/*:refs/namespaces/hwd1yref3ituqkp7ndjnzjzbb8b1taxq54e14y5nzswsg9kuwtb6nbccr3a/refs/heads/*"
+    /// );
+    /// ```
+    pub fn remote_spec(self, local: Reference<Multiple>, force: Force) -> Refspec {
+        Refspec {
+            local: SomeReference::Multiple(local),
+            remote: SomeReference::BranchMultiple(self),
+            force,
+        }
+    }
+}
+
+impl BranchRef<Single> {
+    /// A git reference that corresponds to a single path in `heads`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use librad::git::types::BranchRef;
+    ///
+    /// let heads = BranchRef::head("kickflip");
+    /// assert_eq!(&heads.to_string(), "refs/heads/kickflip")
+    /// ```
+    pub fn head(name: &str) -> Self {
+        Self {
+            remote: None,
+            name: name.to_string(),
+            marker: PhantomData,
+        }
+    }
+
+    pub fn local_spec(self, remote: Reference<Single>, force: Force) -> Refspec {
+        Refspec {
+            local: SomeReference::BranchSingle(self),
+            remote: SomeReference::Single(remote),
+            force,
+        }
+    }
+
+    pub fn remote_spec(self, local: Reference<Single>, force: Force) -> Refspec {
+        Refspec {
+            local: SomeReference::Single(local),
+            remote: SomeReference::BranchSingle(self),
+            force,
         }
     }
 }
