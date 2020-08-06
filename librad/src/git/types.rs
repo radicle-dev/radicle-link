@@ -142,7 +142,7 @@ impl Refspec<PeerId> {
         tracked.map(move |peer| {
             let local = Reference::rad_signed_refs(namespace.clone(), (*peer).clone());
             let remote = if peer == remote_peer {
-                local.with_remote(None)
+                local.set_remote(None)
             } else {
                 local.clone()
             };
@@ -181,7 +181,7 @@ impl Refspec<PeerId> {
                             let local =
                                 Reference::head(namespace.clone(), tracked_peer.clone(), &name);
                             let remote = if tracked_peer == remote_peer {
-                                local.with_remote(None)
+                                local.set_remote(None)
                             } else {
                                 local.clone()
                             };
@@ -197,9 +197,9 @@ impl Refspec<PeerId> {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/id \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/id`
             {
-                let local = Reference::rad_id(namespace.clone()).set_remote(tracked_peer.clone());
+                let local = Reference::rad_id(namespace.clone()).with_remote(tracked_peer.clone());
                 let remote = if tracked_peer == remote_peer {
-                    local.with_remote(None)
+                    local.set_remote(None)
                 } else {
                     local.clone()
                 };
@@ -214,7 +214,7 @@ impl Refspec<PeerId> {
             {
                 let local = Reference::rad_self(namespace.clone(), tracked_peer.clone());
                 let remote = if tracked_peer == remote_peer {
-                    local.with_remote(None)
+                    local.set_remote(None)
                 } else {
                     local.clone()
                 };
@@ -228,9 +228,9 @@ impl Refspec<PeerId> {
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/ids/*`
             {
                 let local =
-                    Reference::rad_ids_glob(namespace.clone()).set_remote(tracked_peer.clone());
+                    Reference::rad_ids_glob(namespace.clone()).with_remote(tracked_peer.clone());
                 let remote = if tracked_peer == remote_peer {
-                    local.with_remote(None)
+                    local.set_remote(None)
                 } else {
                     local.clone()
                 };
@@ -253,9 +253,9 @@ impl Refspec<PeerId> {
                     // id
                     {
                         let local =
-                            Reference::rad_id(urn.id.clone()).set_remote(tracked_peer.clone());
+                            Reference::rad_id(urn.id.clone()).with_remote(tracked_peer.clone());
                         let remote = if tracked_peer == remote_peer {
-                            local.with_remote(None)
+                            local.set_remote(None)
                         } else {
                             local.clone()
                         };
@@ -266,9 +266,9 @@ impl Refspec<PeerId> {
                     // rad/ids/* of id
                     {
                         let local = Reference::rad_ids_glob(urn.id.clone())
-                            .set_remote(tracked_peer.clone());
+                            .with_remote(tracked_peer.clone());
                         let remote = if tracked_peer == remote_peer {
-                            local.with_remote(None)
+                            local.set_remote(None)
                         } else {
                             local.clone()
                         };

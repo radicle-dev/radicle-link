@@ -670,7 +670,7 @@ where
         // `remote_peer` said)
         {
             let local_id = NamespacedRef::rad_id(urn.id.clone());
-            let remote_id = local_id.with_remote(remote_peer);
+            let remote_id = local_id.set_remote(remote_peer);
             let remote_id_head = self.reference(&remote_id).and_then(|reference| {
                 reference
                     .target()

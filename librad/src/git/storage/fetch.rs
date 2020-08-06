@@ -76,13 +76,13 @@ impl<'a> Fetcher<'a> {
         // :refs/namespaces/<namespace>/refs/remotes/<remote_peer>/rad/ids/*`
         let refspecs = [
             remote_id
-                .with_remote(remote_peer.clone())
+                .set_remote(remote_peer.clone())
                 .refspec(remote_id, Force::False),
             remote_self
-                .with_remote(remote_peer.clone())
+                .set_remote(remote_peer.clone())
                 .refspec(remote_self, Force::False),
             remote_certifiers
-                .with_remote(remote_peer.clone())
+                .set_remote(remote_peer.clone())
                 .refspec(remote_certifiers, Force::False),
         ]
         .iter()

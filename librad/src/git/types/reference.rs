@@ -67,7 +67,7 @@ impl<Namespaced: Clone, R: Clone, N: Clone> Reference<Namespaced, R, N> {
     /// Set the remote portion of thise reference.
     ///
     /// Note: This is consuming.
-    pub fn set_remote(mut self, remote: impl Into<Option<R>>) -> Self {
+    pub fn with_remote(mut self, remote: impl Into<Option<R>>) -> Self {
         self.remote = remote.into();
         self
     }
@@ -75,7 +75,7 @@ impl<Namespaced: Clone, R: Clone, N: Clone> Reference<Namespaced, R, N> {
     /// Set the remote portion of thise reference.
     ///
     /// Note: This is not consuming.
-    pub fn with_remote(&self, remote: impl Into<Option<R>>) -> Self {
+    pub fn set_remote(&self, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
             ..self.clone()
@@ -97,7 +97,7 @@ impl<Namespaced: Clone, R: Clone, N: Clone> Reference<Namespaced, R, N> {
     /// Set the named portion of this path.
     ///
     /// Note: This is consuming.
-    pub fn set_name(mut self, name: &str) -> Self {
+    pub fn with_name(mut self, name: &str) -> Self {
         self.name = name.to_owned();
         self
     }
@@ -105,7 +105,7 @@ impl<Namespaced: Clone, R: Clone, N: Clone> Reference<Namespaced, R, N> {
     /// Set the named portion of this path.
     ///
     /// Note: This is not consuming.
-    pub fn with_name(&self, name: &str) -> Self {
+    pub fn set_name(&self, name: &str) -> Self {
         Self {
             name: name.to_owned(),
             ..self.clone()
