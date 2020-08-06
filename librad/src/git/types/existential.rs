@@ -39,28 +39,28 @@ impl From<Namespace> for SomeNamespace {
     }
 }
 
-impl<Namespaced: Clone> From<Reference<Namespaced, Single>> for SomeReference
+impl<N: Clone, R: Clone> From<Reference<N, R, Single>> for SomeReference<R>
 where
-    Namespaced: Into<SomeNamespace>,
+    N: Into<SomeNamespace>,
 {
-    fn from(other: Reference<Namespaced, Single>) -> Self {
+    fn from(other: Reference<N, R, Single>) -> Self {
         let namespace = other._namespace.clone().into();
         Self::Single(other.with_namespace(namespace))
     }
 }
 
-impl<Namespaced: Clone> From<Reference<Namespaced, Multiple>> for SomeReference
+impl<N: Clone, R: Clone> From<Reference<N, R, Multiple>> for SomeReference<R>
 where
-    Namespaced: Into<SomeNamespace>,
+    N: Into<SomeNamespace>,
 {
-    fn from(other: Reference<Namespaced, Multiple>) -> Self {
+    fn from(other: Reference<N, R, Multiple>) -> Self {
         let namespace = other._namespace.clone().into();
         Self::Multiple(other.with_namespace(namespace))
     }
 }
 
-impl<N: Clone> Reference<SomeNamespace, N> {
-    fn sequence(&self) -> Either<Reference<PhantomData<!>, N>, Reference<Namespace, N>> {
+impl<N: Clone, R: Clone> Reference<SomeNamespace, R, N> {
+    fn sequence(&self) -> Either<Reference<PhantomData<!>, R, N>, Reference<Namespace, R, N>> {
         match &self._namespace.0 {
             Either::Left(_) => Either::Left(self.clone().with_namespace(PhantomData)),
 
@@ -72,12 +72,12 @@ impl<N: Clone> Reference<SomeNamespace, N> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SomeReference {
-    Single(Reference<SomeNamespace, Single>),
-    Multiple(Reference<SomeNamespace, Multiple>),
+pub enum SomeReference<R> {
+    Single(Reference<SomeNamespace, R, Single>),
+    Multiple(Reference<SomeNamespace, R, Multiple>),
 }
 
-impl<N: Clone> Display for Reference<SomeNamespace, N> {
+impl<N: Clone, R: Clone + Display> Display for Reference<SomeNamespace, R, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.sequence() {
             Either::Left(reference) => write!(f, "{}", reference),
@@ -86,7 +86,7 @@ impl<N: Clone> Display for Reference<SomeNamespace, N> {
     }
 }
 
-impl Display for SomeReference {
+impl<R: Clone + Display> Display for SomeReference<R> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Single(reference) => write!(f, "{}", reference),

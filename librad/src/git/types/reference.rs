@@ -20,7 +20,7 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::{git::ext, hash::Hash, peer::PeerId, uri::RadUrn};
+use crate::{git::ext, hash::Hash, uri::RadUrn};
 
 use super::{existential::SomeNamespace, Force, Refspec, SymbolicRef};
 
@@ -50,9 +50,9 @@ impl Display for RefsCategory {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Reference<Namespaced, Cardinality> {
+pub struct Reference<Namespaced, Remote, Cardinality> {
     /// The remote portion of this reference.
-    pub remote: Option<PeerId>,
+    pub remote: Option<Remote>,
     /// Where this reference falls under, i.e. `rad` or `heads`.
     pub category: RefsCategory,
     /// The path of the reference, e.g. `feature/123`, `dev`.
@@ -63,11 +63,11 @@ pub struct Reference<Namespaced, Cardinality> {
 }
 
 // Polymorphic definitions
-impl<Namespaced: Clone, N: Clone> Reference<Namespaced, N> {
+impl<Namespaced: Clone, R: Clone, N: Clone> Reference<Namespaced, R, N> {
     /// Set the remote portion of thise reference.
     ///
     /// Note: This is consuming.
-    pub fn set_remote(mut self, remote: impl Into<Option<PeerId>>) -> Self {
+    pub fn set_remote(mut self, remote: impl Into<Option<R>>) -> Self {
         self.remote = remote.into();
         self
     }
@@ -75,7 +75,7 @@ impl<Namespaced: Clone, N: Clone> Reference<Namespaced, N> {
     /// Set the remote portion of thise reference.
     ///
     /// Note: This is not consuming.
-    pub fn with_remote(&self, remote: impl Into<Option<PeerId>>) -> Self {
+    pub fn with_remote(&self, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
             ..self.clone()
@@ -84,7 +84,7 @@ impl<Namespaced: Clone, N: Clone> Reference<Namespaced, N> {
 
     /// Set the namespace of this reference to another one. Note that the
     /// namespace does not have to be of the original namespace's type.
-    pub fn with_namespace<Other>(self, namespace: Other) -> Reference<Other, N> {
+    pub fn with_namespace<Other>(self, namespace: Other) -> Reference<Other, R, N> {
         Reference {
             name: self.name,
             remote: self.remote,
@@ -114,7 +114,7 @@ impl<Namespaced: Clone, N: Clone> Reference<Namespaced, N> {
 }
 
 // References with a Single cardinality
-impl<Namespaced> Reference<Namespaced, Single> {
+impl<N, R> Reference<N, R, Single> {
     /// Find this particular reference.
     pub fn find<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error>
     where
@@ -127,9 +127,10 @@ impl<Namespaced> Reference<Namespaced, Single> {
     /// parameter will be the newly created reference.
     ///
     /// To create the symbolic reference itself, see [`SymbolicRef::create`].
-    pub fn symbolic_ref(&self, source: Self, force: Force) -> SymbolicRef
+    pub fn symbolic_ref(&self, source: Self, force: Force) -> SymbolicRef<R>
     where
-        Namespaced: Into<SomeNamespace> + Clone,
+        R: Clone,
+        N: Into<SomeNamespace> + Clone,
     {
         SymbolicRef {
             source: source.clone().with_namespace(source._namespace.into()),
@@ -140,9 +141,10 @@ impl<Namespaced> Reference<Namespaced, Single> {
 
     /// Create the [`Refspec`] using the LHS of this call as the `local`, and
     /// the RHS as the `remote`.
-    pub fn refspec(self, remote: Self, force: Force) -> Refspec
+    pub fn refspec(self, remote: Self, force: Force) -> Refspec<R>
     where
-        Namespaced: Into<SomeNamespace> + Clone,
+        R: Clone,
+        N: Into<SomeNamespace> + Clone,
     {
         Refspec {
             local: self.into(),
@@ -153,7 +155,7 @@ impl<Namespaced> Reference<Namespaced, Single> {
 
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/rad/id`
-    pub fn rad_id(namespace: Namespaced) -> Self {
+    pub fn rad_id(namespace: N) -> Self {
         Self {
             remote: None,
             category: RefsCategory::Rad,
@@ -165,7 +167,7 @@ impl<Namespaced> Reference<Namespaced, Single> {
 
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/rad/ids/<id>`
-    pub fn rad_certifier(namespace: Namespaced, urn: &RadUrn) -> Self {
+    pub fn rad_certifier(namespace: N, urn: &RadUrn) -> Self {
         Self {
             remote: None,
             category: RefsCategory::Rad,
@@ -179,7 +181,7 @@ impl<Namespaced> Reference<Namespaced, Single> {
     ///     * `refs/namespaces/<namespace>/refs/rad/signed_refs`
     ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/rad/
     ///       signed_refs`
-    pub fn rad_signed_refs(namespace: Namespaced, remote: impl Into<Option<PeerId>>) -> Self {
+    pub fn rad_signed_refs(namespace: N, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
             category: RefsCategory::Rad,
@@ -192,7 +194,7 @@ impl<Namespaced> Reference<Namespaced, Single> {
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/rad/self`
     ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/rad/self`
-    pub fn rad_self(namespace: Namespaced, remote: impl Into<Option<PeerId>>) -> Self {
+    pub fn rad_self(namespace: N, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
             category: RefsCategory::Rad,
@@ -205,7 +207,7 @@ impl<Namespaced> Reference<Namespaced, Single> {
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/heads/<name>`
     ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/heads/<name>
-    pub fn head(namespace: Namespaced, remote: impl Into<Option<PeerId>>, name: &str) -> Self {
+    pub fn head(namespace: N, remote: impl Into<Option<R>>, name: &str) -> Self {
         Self {
             remote: remote.into(),
             category: RefsCategory::Heads,
@@ -217,7 +219,7 @@ impl<Namespaced> Reference<Namespaced, Single> {
 }
 
 // References with a Multiple cardinality
-impl<Namespaced> Reference<Namespaced, Multiple> {
+impl<N, R> Reference<N, R, Multiple> {
     /// Get the iterator for these references.
     pub fn references<'a>(
         &self,
@@ -231,9 +233,10 @@ impl<Namespaced> Reference<Namespaced, Multiple> {
 
     /// Create the [`Refspec`] using the LHS of this call as the `local`, and
     /// the RHS as the `remote`.
-    pub fn refspec(self, remote: Self, force: Force) -> Refspec
+    pub fn refspec(self, remote: Self, force: Force) -> Refspec<R>
     where
-        Namespaced: Into<SomeNamespace> + Clone,
+        R: Clone,
+        N: Into<SomeNamespace> + Clone,
     {
         Refspec {
             local: self.into(),
@@ -244,7 +247,7 @@ impl<Namespaced> Reference<Namespaced, Multiple> {
 
     /// Build a reference that points to
     /// `refs/namespaces/<namespace>/refs/rad/ids/*`
-    pub fn rad_ids_glob(namespace: Namespaced) -> Self {
+    pub fn rad_ids_glob(namespace: N) -> Self {
         Self {
             remote: None,
             category: RefsCategory::Rad,
@@ -256,7 +259,7 @@ impl<Namespaced> Reference<Namespaced, Multiple> {
 
     /// Build a reference that points to
     /// `refs/namespaces/<namespace>/refs/rad/[peer_id]/heads/*`
-    pub fn heads(namespace: Namespaced, remote: impl Into<Option<PeerId>>) -> Self {
+    pub fn heads(namespace: N, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
             category: RefsCategory::Heads,
@@ -267,7 +270,7 @@ impl<Namespaced> Reference<Namespaced, Multiple> {
     }
 }
 
-impl<'a, Namespaced> Into<ext::blob::Branch<'a>> for &'a Reference<Namespaced, Single>
+impl<'a, N, R> Into<ext::blob::Branch<'a>> for &'a Reference<N, R, Single>
 where
     Self: ToString,
 {

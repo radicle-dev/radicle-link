@@ -20,6 +20,7 @@ use super::*;
 use std::str::FromStr;
 
 use crate::{
+    git::types::NamespaceRef,
     hash::Hash,
     keys::SecretKey,
     meta::{entity::Draft, Project, User},
@@ -151,7 +152,7 @@ fn test_all_metadata_heads() {
         assert!(ids.contains(id));
 
         // Check that we can use the URN to find the same commit
-        let commit_from_urn = Reference::rad_id(urn.id.clone())
+        let commit_from_urn = NamespaceRef::rad_id(urn.id.clone())
             .find(&store.backend)
             .unwrap()
             .target()
@@ -180,7 +181,7 @@ fn test_all_metadata_heads() {
 
     // Check user commit history length
     let user_history = {
-        let rad_id = Reference::rad_id(user.urn().id);
+        let rad_id = NamespaceRef::rad_id(user.urn().id);
 
         let mut revwalk = store.backend.revwalk().unwrap();
         revwalk.set_sorting(git2::Sort::TOPOLOGICAL).unwrap();
@@ -243,8 +244,8 @@ fn test_structure_of_refs() -> Result<(), Error> {
         .clone()
         .check_history_status(&user_resolver, &user_resolver)
         .unwrap();
-    refs.push(Reference::rad_id(user.urn().id));
-    refs.push(Reference::rad_signed_refs(user.urn().id, None));
+    refs.push(NamespaceRef::rad_id(user.urn().id));
+    refs.push(NamespaceRef::rad_signed_refs(user.urn().id, None));
     store.create_repo(&user)?;
     store.set_default_rad_self(verified_user)?;
 
@@ -256,8 +257,8 @@ fn test_structure_of_refs() -> Result<(), Error> {
             .build()?;
         project.sign_owned(&key)?;
         let namespace = project.urn().id;
-        refs.push(Reference::rad_id(namespace.clone()));
-        refs.push(Reference::rad_signed_refs(namespace, None));
+        refs.push(NamespaceRef::rad_id(namespace.clone()));
+        refs.push(NamespaceRef::rad_signed_refs(namespace, None));
         let _repo = store.create_repo(&project)?;
     }
 
@@ -269,8 +270,8 @@ fn test_structure_of_refs() -> Result<(), Error> {
             .build()?;
         project.sign_owned(&key)?;
         let namespace = project.urn().id;
-        refs.push(Reference::rad_id(namespace.clone()));
-        refs.push(Reference::rad_signed_refs(namespace, None));
+        refs.push(NamespaceRef::rad_id(namespace.clone()));
+        refs.push(NamespaceRef::rad_signed_refs(namespace, None));
         let _repo = store.create_repo(&project)?;
     }
 
