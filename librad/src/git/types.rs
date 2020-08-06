@@ -21,440 +21,39 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::{
-    git::{ext, refs::Refs},
-    hash::Hash,
-    peer::PeerId,
-    uri::RadUrn,
-};
+use crate::{git::refs::Refs, peer::PeerId, uri::RadUrn};
 
-pub type Namespace = Hash;
+pub mod existential;
+pub mod reference;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum RefsCategory {
-    Heads,
-    Rad,
-}
+pub use existential::{SomeNamespace, SomeReference};
+pub use reference::{Multiple, Namespace, Reference, RefsCategory, Single};
 
-impl Display for RefsCategory {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Heads => f.write_str("heads"),
-            Self::Rad => f.write_str("rad"),
-        }
-    }
-}
-
-/// Type witness for a [`Reference`] that should point to a single reference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Single;
-
-/// Type witness for a [`Reference`] that should point to multiple references.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Multiple;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SomeReference {
-    Single(Reference<Single>),
-    Multiple(Reference<Multiple>),
-    BranchMultiple(BranchRef<Multiple>),
-    BranchSingle(BranchRef<Single>),
-}
-
-impl Display for SomeReference {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Single(reference) => write!(f, "{}", reference),
-            Self::Multiple(reference) => write!(f, "{}", reference),
-            Self::BranchMultiple(reference) => write!(f, "{}", reference),
-            Self::BranchSingle(reference) => write!(f, "{}", reference),
-        }
-    }
-}
-
-/// A representation of git branch that is either under:
+/// A representation of git reference that is either under:
 ///   * `refs/heads`
 ///   * `refs/remotes/<origin>`
-#[derive(Debug, Clone, PartialEq)]
-pub struct BranchRef<N> {
-    pub remote: Option<String>,
-    pub name: String,
-    marker: PhantomData<N>,
-}
+pub type FlatRef<N> = Reference<PhantomData<!>, N>;
 
-impl<N> Display for BranchRef<N> {
+impl<N> Display for FlatRef<N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.remote {
-            None => write!(f, "refs/heads/"),
-            Some(remote) => write!(f, "refs/remotes/{}/", remote),
-        }?;
-
-        write!(f, "{}", self.name)
-    }
-}
-
-impl<N> BranchRef<N> {
-    /// Set the git reference's remote.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use librad::git::types::BranchRef;
-    ///
-    /// let heads = BranchRef::heads().set_remote("origin".to_string());
-    /// assert_eq!(&heads.to_string(), "refs/remotes/origin/*");
-    /// ```
-    pub fn set_remote(mut self, remote: impl Into<Option<String>>) -> Self {
-        self.remote = remote.into();
-        self
-    }
-
-    /// Set the git reference's remote, while not consuming the original
-    /// reference.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use librad::git::types::BranchRef;
-    ///
-    /// let heads = BranchRef::heads();
-    /// let origin_heads = heads.with_remote("origin".to_string());
-    ///
-    /// assert_eq!(&origin_heads.to_string(), "refs/remotes/origin/*");
-    /// assert_eq!(&heads.to_string(), "refs/heads/*");
-    /// ```
-    pub fn with_remote(&self, remote: impl Into<Option<String>>) -> Self
-    where
-        N: Clone,
-    {
-        Self {
-            remote: remote.into(),
-            ..self.clone()
-        }
-    }
-
-    pub fn set_name(mut self, name: &str) -> Self {
-        self.name = name.to_owned();
-        self
-    }
-
-    pub fn with_name(&self, name: &str) -> Self
-    where
-        N: Clone,
-    {
-        Self {
-            name: name.to_owned(),
-            ..self.clone()
+            None => write!(f, "refs/heads/{}", self.name),
+            Some(remote) => write!(f, "refs/remotes/{}/{}", remote, self.name),
         }
     }
 }
 
-impl BranchRef<Multiple> {
-    /// A git reference that corresponds to a wildcard match in `heads`
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use librad::git::types::BranchRef;
-    ///
-    /// let heads = BranchRef::heads();
-    /// assert_eq!(&heads.to_string(), "refs/heads/*")
-    /// ```
-    pub fn heads() -> Self {
-        Self {
-            remote: None,
-            name: "*".to_string(),
-            marker: PhantomData,
-        }
-    }
+/// A representation of git reference that is under `refs/namespace/<namespace>`
+pub type NamespaceRef<N> = Reference<Namespace, N>;
 
-    /// Create a `Refspec` where the `BranchRef` is the RHS and the `Reference`
-    /// is the LHS.
-    ///
-    /// This allows us to create a *fetch spec* that links a working copy to the
-    /// monorepo.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use librad::{
-    ///     hash::Hash,
-    ///     git::types::{BranchRef, Reference, Force},
-    /// };
-    ///
-    /// let namespace = Hash::hash(b"heelflip");
-    /// let spec = BranchRef::heads().local_spec(Reference::heads(namespace, None), Force::True);
-    /// assert_eq!(
-    ///     &spec.to_string(),
-    ///     "+refs/namespaces/hwd1yref3ituqkp7ndjnzjzbb8b1taxq54e14y5nzswsg9kuwtb6nbccr3a/refs/heads/*:refs/heads/*"
-    /// );
-    /// ```
-    pub fn local_spec(self, remote: Reference<Multiple>, force: Force) -> Refspec {
-        Refspec {
-            local: SomeReference::BranchMultiple(self),
-            remote: SomeReference::Multiple(remote),
-            force,
-        }
-    }
-
-    /// Create a `Refspec` where the `BranchRef` is the RHS and the `Reference`
-    /// is the LHS.
-    ///
-    /// This allows us to create a *push spec* that links a working copy to the
-    /// monorepo.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use librad::{
-    ///     hash::Hash,
-    ///     git::types::{BranchRef, Reference, Force},
-    /// };
-    ///
-    /// let namespace = Hash::hash(b"heelflip");
-    /// let spec = BranchRef::heads().remote_spec(Reference::heads(namespace, None), Force::True);
-    /// assert_eq!(
-    ///     &spec.to_string(),
-    ///     "+refs/heads/*:refs/namespaces/hwd1yref3ituqkp7ndjnzjzbb8b1taxq54e14y5nzswsg9kuwtb6nbccr3a/refs/heads/*"
-    /// );
-    /// ```
-    pub fn remote_spec(self, local: Reference<Multiple>, force: Force) -> Refspec {
-        Refspec {
-            local: SomeReference::Multiple(local),
-            remote: SomeReference::BranchMultiple(self),
-            force,
-        }
-    }
-}
-
-impl BranchRef<Single> {
-    /// A git reference that corresponds to a single path in `heads`
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use librad::git::types::BranchRef;
-    ///
-    /// let heads = BranchRef::head("kickflip");
-    /// assert_eq!(&heads.to_string(), "refs/heads/kickflip")
-    /// ```
-    pub fn head(name: &str) -> Self {
-        Self {
-            remote: None,
-            name: name.to_string(),
-            marker: PhantomData,
-        }
-    }
-
-    pub fn local_spec(self, remote: Reference<Single>, force: Force) -> Refspec {
-        Refspec {
-            local: SomeReference::BranchSingle(self),
-            remote: SomeReference::Single(remote),
-            force,
-        }
-    }
-
-    pub fn remote_spec(self, local: Reference<Single>, force: Force) -> Refspec {
-        Refspec {
-            local: SomeReference::Single(local),
-            remote: SomeReference::BranchSingle(self),
-            force,
-        }
-    }
-}
-
-/// A structure for building a git reference.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Reference<N> {
-    /// The namespace the reference lives under.
-    pub namespace: Namespace,
-    /// The remote peer the reference might live under.
-    pub remote: Option<PeerId>,
-    /// The category of the reference.
-    pub category: RefsCategory,
-    /// The suffix path of the reference, e.g. `self`, `id`, `banana/pineapple`.
-    pub name: String, // TODO: apply validation like `uri::Path`
-
-    /// Type witness for the cardinality this reference could point to, i.e. if
-    /// we are pointing to exactly one, zero or more, or both.
-    marker: PhantomData<N>,
-}
-
-impl<N> Display for Reference<N> {
+impl<N> Display for NamespaceRef<N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "refs/namespaces/{}/refs/", self.namespace)?;
+        write!(f, "refs/namespaces/{}/refs/", self._namespace)?;
 
         match &self.remote {
             None => write!(f, "{}/{}", self.category, self.name),
             Some(remote) => write!(f, "remotes/{}/{}/{}", remote, self.category, self.name),
         }
-    }
-}
-
-impl<N: Clone> Reference<N> {
-    pub fn set_remote(mut self, remote: impl Into<Option<PeerId>>) -> Self {
-        self.remote = remote.into();
-        self
-    }
-
-    pub fn with_remote(&self, remote: impl Into<Option<PeerId>>) -> Self {
-        Self {
-            remote: remote.into(),
-            ..self.clone()
-        }
-    }
-
-    pub fn set_name(mut self, name: &str) -> Self {
-        self.name = name.to_owned();
-        self
-    }
-
-    pub fn with_name(&self, name: &str) -> Self {
-        Self {
-            name: name.to_owned(),
-            ..self.clone()
-        }
-    }
-}
-
-impl Reference<Multiple> {
-    pub fn references<'a>(
-        &self,
-        repo: &'a git2::Repository,
-    ) -> Result<ext::References<'a>, git2::Error> {
-        ext::References::from_globs(repo, &[self.to_string()])
-    }
-
-    /// Create the [`Refspec`] using the LHS of this call as the `local`, and
-    /// the RHS as the `remote`.
-    pub fn refspec(self, remote: Self, force: Force) -> Refspec {
-        Refspec {
-            local: SomeReference::Multiple(self),
-            remote: SomeReference::Multiple(remote),
-            force,
-        }
-    }
-
-    /// Build a reference that points to
-    /// `refs/namespaces/<namespace>/refs/rad/ids/*`
-    pub fn rad_ids_glob(namespace: Namespace) -> Self {
-        Self {
-            namespace,
-            remote: None,
-            category: RefsCategory::Rad,
-            name: "ids/*".to_owned(),
-            marker: PhantomData,
-        }
-    }
-
-    /// Build a reference that points to
-    /// `refs/namespaces/<namespace>/refs/rad/[peer_id]/heads/*`
-    pub fn heads(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
-        Self {
-            namespace,
-            remote: remote.into(),
-            category: RefsCategory::Heads,
-            name: "*".to_owned(),
-            marker: PhantomData,
-        }
-    }
-}
-
-impl Reference<Single> {
-    pub fn find<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error> {
-        repo.find_reference(&self.to_string())
-    }
-
-    /// Create a [`SymbolicRef`] of the `self` parameter where the `source`
-    /// parameter will be the newly created reference.
-    ///
-    /// To create the symbolic reference itself, see [`SymbolicRef::create`].
-    pub fn symbolic_ref(&self, source: Self, force: Force) -> SymbolicRef {
-        SymbolicRef {
-            source,
-            target: self.clone(),
-            force,
-        }
-    }
-
-    /// Create the [`Refspec`] using the LHS of this call as the `local`, and
-    /// the RHS as the `remote`.
-    pub fn refspec(self, remote: Self, force: Force) -> Refspec {
-        Refspec {
-            local: SomeReference::Single(self),
-            remote: SomeReference::Single(remote),
-            force,
-        }
-    }
-
-    /// Build a reference that points to:
-    ///     * `refs/namespaces/<namespace>/refs/rad/id`
-    pub fn rad_id(namespace: Namespace) -> Self {
-        Self {
-            namespace,
-            remote: None,
-            category: RefsCategory::Rad,
-            name: "id".to_owned(),
-            marker: PhantomData,
-        }
-    }
-
-    /// Build a reference that points to:
-    ///     * `refs/namespaces/<namespace>/refs/rad/ids/<id>`
-    pub fn rad_certifier(namespace: Namespace, urn: &RadUrn) -> Self {
-        Self {
-            namespace,
-            remote: None,
-            category: RefsCategory::Rad,
-            name: format!("ids/{}", urn.id),
-            marker: PhantomData,
-        }
-    }
-
-    /// Build a reference that points to:
-    ///     * `refs/namespaces/<namespace>/refs/rad/signed_refs`
-    ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/rad/
-    ///       signed_refs`
-    pub fn rad_signed_refs(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
-        Self {
-            namespace,
-            remote: remote.into(),
-            category: RefsCategory::Rad,
-            name: "signed_refs".to_owned(),
-            marker: PhantomData,
-        }
-    }
-
-    /// Build a reference that points to:
-    ///     * `refs/namespaces/<namespace>/refs/rad/self`
-    ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/rad/self`
-    pub fn rad_self(namespace: Namespace, remote: impl Into<Option<PeerId>>) -> Self {
-        Self {
-            namespace,
-            remote: remote.into(),
-            category: RefsCategory::Rad,
-            name: "self".to_owned(),
-            marker: PhantomData,
-        }
-    }
-
-    /// Build a reference that points to:
-    ///     * `refs/namespaces/<namespace>/refs/heads/<name>`
-    ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/heads/<name>
-    pub fn head(namespace: Namespace, remote: impl Into<Option<PeerId>>, name: &str) -> Self {
-        Self {
-            namespace,
-            remote: remote.into(),
-            category: RefsCategory::Heads,
-            name: name.to_owned(),
-            marker: PhantomData,
-        }
-    }
-}
-
-impl<'a> Into<ext::blob::Branch<'a>> for &'a Reference<Single> {
-    fn into(self) -> ext::blob::Branch<'a> {
-        ext::blob::Branch::from(self.to_string())
     }
 }
 
@@ -480,10 +79,10 @@ impl Force {
 /// The data for creating a symbolic reference in a git repository.
 pub struct SymbolicRef {
     /// The new symbolic reference.
-    pub source: Reference<Single>,
+    pub source: Reference<SomeNamespace, Single>,
     /// The reference that already exists and we want to create symbolic
     /// reference of.
-    pub target: Reference<Single>,
+    pub target: Reference<SomeNamespace, Single>,
     /// Whether we should overwrite any pre-existing `source`.
     pub force: Force,
 }
@@ -519,6 +118,7 @@ impl SymbolicRef {
 pub struct Refspec {
     pub(crate) remote: SomeReference,
     pub(crate) local: SomeReference,
+    /// Indicate whether the spec should include the force flag `+`.
     pub force: Force,
 }
 
