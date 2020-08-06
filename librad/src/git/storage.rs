@@ -41,7 +41,7 @@ use crate::{
         p2p::url::{GitUrl, GitUrlRef},
         refs::{self, Refs},
         repo::Repo,
-        types::{Force, Multiple, Reference, Single},
+        types::{Force, Multiple, NamespaceRef, Reference, Single},
     },
     hash::Hash,
     internal::{
@@ -103,7 +103,7 @@ pub enum Error {
     NotSignedBySelf,
 
     #[error("Local key certifier not found: {0}")]
-    NoSelf(Reference<Single>),
+    NoSelf(NamespaceRef<Single>),
 
     #[error("Missing certifier {certifier} of {urn}")]
     MissingCertifier { certifier: RadUrn, urn: RadUrn },
@@ -307,7 +307,7 @@ impl<S: Clone> Storage<S> {
         }
     }
 
-    pub fn has_ref(&self, reference: &Reference<Single>) -> Result<bool, Error> {
+    pub fn has_ref(&self, reference: &NamespaceRef<Single>) -> Result<bool, Error> {
         self.backend
             .find_reference(&reference.to_string())
             .map(|_| true)
@@ -388,18 +388,18 @@ impl<S: Clone> Storage<S> {
         Ok(Refs::from(signed))
     }
 
-    /// Get the [`Reference`] provided, if it exists.
+    /// Get the [`NamespaceRef`] provided, if it exists.
     pub fn reference<'a>(
         &'a self,
-        reference: &Reference<Single>,
+        reference: &NamespaceRef<Single>,
     ) -> Result<git2::Reference<'a>, Error> {
         reference.find(&self.backend).map_err(Error::from)
     }
 
-    /// Get the [`Reference`]s provided, if they exist.
+    /// Get the [`NamespaceRef`]s provided, if they exist.
     pub fn references<'a>(
         &'a self,
-        reference: &Reference<Multiple>,
+        reference: &NamespaceRef<Multiple>,
     ) -> Result<References<'a>, Error> {
         reference.references(&self.backend).map_err(Error::from)
     }
