@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, net::SocketAddr};
 
 use thiserror::Error;
 
@@ -110,12 +110,22 @@ where
     S::Error: keys::SignError,
 {
     /// Fetch new refs and objects for this repo from [`PeerId`]
-    pub fn fetch(&self, from: &PeerId) -> Result<(), Error> {
+    ///
+    /// `addr_hints` may be supplied for the networking layer to establish a new
+    /// connection to the peer specified in the `url` if none is currently
+    /// active.
+    pub fn fetch<Addrs>(&self, from: &PeerId, addr_hints: Addrs) -> Result<(), Error>
+    where
+        Addrs: IntoIterator<Item = SocketAddr>,
+    {
         self.storage
-            .fetch_repo(RadUrl {
-                authority: from.clone(),
-                urn: self.urn.clone(),
-            })
+            .fetch_repo(
+                RadUrl {
+                    authority: from.clone(),
+                    urn: self.urn.clone(),
+                },
+                addr_hints,
+            )
             .map_err(Error::from)
     }
 

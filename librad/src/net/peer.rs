@@ -24,7 +24,7 @@ use std::{
 
 use either::Either;
 use futures::{
-    future::{self, BoxFuture, FutureExt},
+    future::{self, BoxFuture},
     stream::StreamExt,
 };
 use thiserror::Error;
@@ -144,6 +144,7 @@ where
 /// `try_to_owned` operation is fallible due to having to perform IO. Also note
 /// that the `TryToOwned` trait is not currently considered a stable API.
 pub struct PeerApi<S> {
+    listen_addr: SocketAddr,
     protocol: Protocol<PeerStorage<S>, Gossip>,
     storage: GitStorage<S>,
     subscribers: Fanout<PeerEvent>,
@@ -155,6 +156,10 @@ where
     S: Signer + Clone,
     S::Error: keys::SignError,
 {
+    pub fn listen_addr(&self) -> SocketAddr {
+        self.listen_addr
+    }
+
     pub fn protocol(&self) -> &Protocol<PeerStorage<S>, Gossip> {
         &self.protocol
     }
@@ -226,6 +231,7 @@ impl<S: Clone> TryToOwned for PeerApi<S> {
     fn try_to_owned(&self) -> Result<Self::Owned, Self::Error> {
         let storage = self.storage.try_to_owned()?;
         Ok(Self {
+            listen_addr: self.listen_addr,
             protocol: self.protocol.clone(),
             storage,
             subscribers: self.subscribers.clone(),
@@ -276,6 +282,7 @@ where
 
     pub fn accept(self) -> Result<(PeerApi<S>, RunLoop), AcceptError> {
         let api = PeerApi {
+            listen_addr: self.listen_addr,
             storage: self.storage,
             protocol: self.protocol,
             subscribers: self.subscribers,
@@ -319,14 +326,9 @@ where
             peer_storage,
         );
 
-        let protocol = Protocol::new(gossip, git);
+        let (protocol, run_loop) = Protocol::new(gossip, git, endpoint, config.disco.discover());
         git::p2p::transport::register()
             .register_stream_factory(&peer_id, Box::new(protocol.clone()));
-
-        let run_loop = protocol
-            .clone()
-            .run(endpoint, config.disco.discover())
-            .boxed();
 
         Ok(Self {
             paths: config.paths,
@@ -369,7 +371,7 @@ where
             authority: from.clone(),
             urn,
         };
-        git.fetch_repo(url).map_err(|e| e.into())
+        git.fetch_repo(url, None).map_err(|e| e.into())
     }
 
     /// Determine if we have the given object locally

@@ -50,6 +50,7 @@ use std::{
     collections::HashMap,
     fmt::Display,
     io::{self, Read, Write},
+    net::SocketAddr,
     sync::{Arc, Once, RwLock},
 };
 
@@ -81,7 +82,11 @@ pub trait GitStream: AsyncRead + AsyncWrite + Unpin + Send {}
 /// / receive bytes to / from the specified peer.
 #[async_trait]
 pub trait GitStreamFactory: Sync + Send {
-    async fn open_stream(&self, to: &PeerId) -> Option<Box<dyn GitStream>>;
+    async fn open_stream(
+        &self,
+        to: &PeerId,
+        addr_hints: &[SocketAddr],
+    ) -> Option<Box<dyn GitStream>>;
 }
 
 /// Register the `rad-p2p://` transport with `libgit`.
@@ -129,12 +134,17 @@ impl RadTransport {
         self.fac.write().unwrap().insert(peer_id.clone(), fac);
     }
 
-    fn open_stream(&self, from: &PeerId, to: &PeerId) -> Option<Box<dyn GitStream>> {
+    fn open_stream(
+        &self,
+        from: &PeerId,
+        to: &PeerId,
+        addr_hints: &[SocketAddr],
+    ) -> Option<Box<dyn GitStream>> {
         self.fac
             .read()
             .unwrap()
             .get(from)
-            .and_then(|fac| block_on(fac.open_stream(to)))
+            .and_then(|fac| block_on(fac.open_stream(to, addr_hints)))
     }
 }
 
@@ -146,7 +156,7 @@ impl SmartSubtransport for RadTransport {
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
         let url: GitUrl = url.parse().map_err(into_git_err)?;
         let stream = self
-            .open_stream(&url.local_peer, &url.remote_peer)
+            .open_stream(&url.local_peer, &url.remote_peer, &url.addr_hints)
             .ok_or_else(|| into_git_err(format!("No connection to {}", url.remote_peer)))?;
 
         Ok(Box::new(RadSubTransport {

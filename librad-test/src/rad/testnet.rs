@@ -98,26 +98,37 @@ pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
         return Ok(vec![]);
     }
 
-    let seed = boot(vec![]).await?;
-    let seed_addrs = vec![(seed.peer_id().clone(), seed.listen_addr())];
-
     let mut peers = Vec::with_capacity(num_peers);
-    peers.push(seed);
-
-    for _ in 1..num_peers {
-        let peer = boot(seed_addrs.clone()).await?;
+    let mut seed_addrs = None;
+    for _ in 0..num_peers {
+        let peer = boot(seed_addrs.take().into_iter().collect()).await?;
+        seed_addrs = Some((peer.peer_id().clone(), peer.listen_addr()));
         peers.push(peer)
     }
 
     Ok(peers)
 }
 
-pub async fn run_on_testnet<F, Fut, A>(peers: Vec<TestPeer>, mut f: F) -> A
+pub async fn setup_disconnected(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
+    if num_peers < 1 {
+        return Ok(vec![]);
+    }
+
+    let mut peers = Vec::with_capacity(num_peers);
+    for _ in 0..num_peers {
+        let peer = boot(vec![]).await?;
+        peers.push(peer)
+    }
+
+    Ok(peers)
+}
+
+pub async fn run_on_testnet<F, Fut, A>(peers: Vec<TestPeer>, min_connected: usize, mut f: F) -> A
 where
     F: FnMut(Vec<(PeerApi<SecretKey>, SecretKey)>) -> Fut,
     Fut: Future<Output = A>,
 {
-    let len = peers.len();
+    let num_peers = peers.len();
 
     // move out tempdirs, so they don't get dropped
     let (_tmps, peers_and_keys) = peers
@@ -134,13 +145,13 @@ where
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
     let events = {
-        let mut events = Vec::with_capacity(len);
+        let mut events = Vec::with_capacity(num_peers);
         for api in &apis {
             events.push(api.protocol().subscribe().await);
         }
         events
     };
-    let connected = wait_connected(events, len);
+    let connected = wait_connected(events, min_connected);
 
     let res = future::select(
         future::select_all(runners).boxed(),

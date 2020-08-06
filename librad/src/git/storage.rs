@@ -22,6 +22,7 @@ use std::{
     io,
     iter,
     marker::PhantomData,
+    net::SocketAddr,
     ops::Range,
     path::Path,
 };
@@ -617,11 +618,16 @@ where
 
     /// Attempt to clone the designated repo from the network.
     ///
+    /// `addr_hints` may be supplied for the networking layer to establish a new
+    /// connection to the peer specified in the `url` if none is currently
+    /// active.
+    ///
     /// Note that this method **must** be spawned on a `async` runtime, where
     /// currently the only supported method is [`tokio::task::spawn_blocking`].
-    pub fn clone_repo<T>(&self, url: RadUrl) -> Result<Repo<S>, Error>
+    pub fn clone_repo<T, Addrs>(&self, url: RadUrl, addr_hints: Addrs) -> Result<Repo<S>, Error>
     where
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
+        Addrs: IntoIterator<Item = SocketAddr>,
     {
         let span = tracing::info_span!("Storage::clone_repo", local.id = %self.peer_id, url = %url);
         let _guard = span.enter();
@@ -638,7 +644,7 @@ where
         }
 
         // Fetch the identity first
-        let git_url = GitUrl::from_rad_url(url, self.peer_id.clone(), None);
+        let git_url = GitUrl::from_rad_url(url, self.peer_id.clone(), addr_hints);
         let mut fetcher = Fetcher::new(&self.backend, git_url)?;
         fetcher.prefetch()?;
 
@@ -698,11 +704,22 @@ where
         })
     }
 
-    pub fn fetch_repo(&self, url: RadUrl) -> Result<(), Error> {
+    /// Attempt to fetch updates for the designated repo from the network.
+    ///
+    /// `addr_hints` may be supplied for the networking layer to establish a new
+    /// connection to the peer specified in the `url` if none is currently
+    /// active.
+    ///
+    /// Note that this method **must** be spawned on a `async` runtime, where
+    /// currently the only supported method is [`tokio::task::spawn_blocking`].
+    pub fn fetch_repo<Addrs>(&self, url: RadUrl, addr_hints: Addrs) -> Result<(), Error>
+    where
+        Addrs: IntoIterator<Item = SocketAddr>,
+    {
         let span = tracing::info_span!("Storage::fetch", local.id = %self.peer_id, url = %url);
         let _guard = span.enter();
 
-        let git_url = GitUrl::from_rad_url(url, self.peer_id.clone(), None);
+        let git_url = GitUrl::from_rad_url(url, self.peer_id.clone(), addr_hints);
         let fetcher = Fetcher::new(&self.backend, git_url)?;
         self.fetch_internal(fetcher)
     }

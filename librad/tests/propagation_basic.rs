@@ -42,8 +42,10 @@ use librad_test::{
 async fn can_clone() {
     logging::init();
 
-    let peers = testnet::setup(2).await.unwrap();
-    testnet::run_on_testnet(peers, async move |mut apis| {
+    const NUM_PEERS: usize = 2;
+
+    let peers = testnet::setup(NUM_PEERS).await.unwrap();
+    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
         let (peer1, peer1_key) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
 
@@ -68,8 +70,58 @@ async fn can_clone() {
             peer1.storage().create_repo(&radicle).unwrap();
             {
                 let git2 = peer2.storage();
-                git2.clone_repo::<ProjectInfo>(radicle.urn().into_rad_url(peer1.peer_id().clone()))
-                    .unwrap();
+                git2.clone_repo::<ProjectInfo, _>(
+                    radicle.urn().into_rad_url(peer1.peer_id().clone()),
+                    None,
+                )
+                .unwrap();
+                // sanity check
+                git2.open_repo(radicle.urn()).unwrap();
+            }
+        })
+        .await
+        .unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn can_clone_disconnected() {
+    logging::init();
+
+    const NUM_PEERS: usize = 2;
+
+    let peers = testnet::setup_disconnected(NUM_PEERS).await.unwrap();
+    testnet::run_on_testnet(peers, 0, async move |mut apis| {
+        let (peer1, peer1_key) = apis.pop().unwrap();
+        let (peer2, _) = apis.pop().unwrap();
+
+        let mut alice = Alice::new(peer1_key.public());
+        let mut radicle = Radicle::new(&alice);
+        {
+            let resolves_to_alice = alice.clone();
+            alice
+                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
+                .unwrap();
+            radicle
+                .sign(
+                    &peer1_key,
+                    &Signatory::User(alice.urn()),
+                    &resolves_to_alice,
+                )
+                .unwrap();
+        }
+
+        tokio::task::spawn_blocking(move || {
+            peer1.storage().create_repo(&alice).unwrap();
+            peer1.storage().create_repo(&radicle).unwrap();
+            {
+                let git2 = peer2.storage();
+                git2.clone_repo::<ProjectInfo, _>(
+                    radicle.urn().into_rad_url(peer1.peer_id().clone()),
+                    Some(peer1.listen_addr()),
+                )
+                .unwrap();
                 // sanity check
                 git2.open_repo(radicle.urn()).unwrap();
             }
@@ -84,8 +136,10 @@ async fn can_clone() {
 async fn fetches_on_gossip_notify() {
     logging::init();
 
-    let peers = testnet::setup(2).await.unwrap();
-    testnet::run_on_testnet(peers, async move |mut apis| {
+    const NUM_PEERS: usize = 2;
+
+    let peers = testnet::setup(NUM_PEERS).await.unwrap();
+    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
         let (peer1, peer1_key) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
 
@@ -115,7 +169,9 @@ async fn fetches_on_gossip_notify() {
             let peer2_storage = peer2_storage.reopen().unwrap();
             let url = radicle.urn().into_rad_url(peer1.peer_id().clone());
             tokio::task::spawn_blocking(move || {
-                peer2_storage.clone_repo::<ProjectInfo>(url).unwrap();
+                peer2_storage
+                    .clone_repo::<ProjectInfo, _>(url, None)
+                    .unwrap();
             })
             .await
             .unwrap();
