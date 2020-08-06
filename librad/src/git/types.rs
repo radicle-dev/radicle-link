@@ -32,9 +32,9 @@ pub use reference::{Multiple, Namespace, Reference, RefsCategory, Single};
 /// A representation of git reference that is either under:
 ///   * `refs/heads`
 ///   * `refs/remotes/<origin>`
-pub type FlatRef<N> = Reference<PhantomData<!>, N>;
+pub type FlatRef<R, N> = Reference<PhantomData<!>, R, N>;
 
-impl<N> Display for FlatRef<N> {
+impl<R: Display, N> Display for FlatRef<R, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.remote {
             None => write!(f, "refs/heads/{}", self.name),
@@ -44,9 +44,9 @@ impl<N> Display for FlatRef<N> {
 }
 
 /// A representation of git reference that is under `refs/namespace/<namespace>`
-pub type NamespaceRef<N> = Reference<Namespace, N>;
+pub type NamespaceRef<N> = Reference<Namespace, PeerId, N>;
 
-impl<N> Display for NamespaceRef<N> {
+impl<N, R: Display> Display for Reference<Namespace, R, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "refs/namespaces/{}/refs/", self._namespace)?;
 
@@ -77,17 +77,17 @@ impl Force {
 }
 
 /// The data for creating a symbolic reference in a git repository.
-pub struct SymbolicRef {
+pub struct SymbolicRef<R> {
     /// The new symbolic reference.
-    pub source: Reference<SomeNamespace, Single>,
+    pub source: Reference<SomeNamespace, R, Single>,
     /// The reference that already exists and we want to create symbolic
     /// reference of.
-    pub target: Reference<SomeNamespace, Single>,
+    pub target: Reference<SomeNamespace, R, Single>,
     /// Whether we should overwrite any pre-existing `source`.
     pub force: Force,
 }
 
-impl SymbolicRef {
+impl<R> SymbolicRef<R> {
     /// Create a symbolic reference of `target`, where the `source` is the newly
     /// created reference.
     ///
@@ -98,10 +98,10 @@ impl SymbolicRef {
     ///   * If we could not create the new symbolic reference since the name
     ///     already exists. Note that this will not be the case if `Force::True`
     ///     is passed.
-    pub fn create<'a>(
-        &self,
-        repo: &'a git2::Repository,
-    ) -> Result<git2::Reference<'a>, git2::Error> {
+    pub fn create<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error>
+    where
+        R: Display + Clone,
+    {
         let source = self.source.to_string();
         let target = self.target.to_string();
 
@@ -115,14 +115,14 @@ impl SymbolicRef {
 }
 
 #[derive(Clone)]
-pub struct Refspec {
-    pub(crate) remote: SomeReference,
-    pub(crate) local: SomeReference,
+pub struct Refspec<R> {
+    pub(crate) remote: SomeReference<R>,
+    pub(crate) local: SomeReference<R>,
     /// Indicate whether the spec should include the force flag `+`.
     pub force: Force,
 }
 
-impl Display for Refspec {
+impl<R: Display + Clone> Display for Refspec<R> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.force.as_bool() {
             f.write_str("+")?;
@@ -131,7 +131,7 @@ impl Display for Refspec {
     }
 }
 
-impl Refspec {
+impl Refspec<PeerId> {
     /// [`Refspec`]s for fetching `rad/refs` in namespace [`Namespace`] from
     /// remote peer [`PeerId`], rejecting non-fast-forwards
     pub fn rad_signed_refs<'a>(
