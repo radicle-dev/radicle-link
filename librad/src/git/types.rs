@@ -44,7 +44,7 @@ impl<R: Display, N> Display for FlatRef<R, N> {
 }
 
 /// A representation of git reference that is under `refs/namespace/<namespace>`
-pub type NamespaceRef<N> = Reference<Namespace, PeerId, N>;
+pub type NamespacedRef<N> = Reference<Namespace, PeerId, N>;
 
 impl<N, R: Display> Display for Reference<Namespace, R, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

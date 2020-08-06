@@ -41,7 +41,7 @@ use crate::{
         p2p::url::{GitUrl, GitUrlRef},
         refs::{self, Refs},
         repo::Repo,
-        types::{Force, Multiple, NamespaceRef, Single},
+        types::{Force, Multiple, NamespacedRef, Single},
     },
     hash::Hash,
     internal::{
@@ -103,7 +103,7 @@ pub enum Error {
     NotSignedBySelf,
 
     #[error("Local key certifier not found: {0}")]
-    NoSelf(NamespaceRef<Single>),
+    NoSelf(NamespacedRef<Single>),
 
     #[error("Missing certifier {certifier} of {urn}")]
     MissingCertifier { certifier: RadUrn, urn: RadUrn },
@@ -202,7 +202,7 @@ impl<S: Clone> Storage<S> {
         P: Into<Option<PeerId>>,
     {
         self.metadata_from_reference(
-            NamespaceRef::rad_id(urn.id.clone())
+            NamespacedRef::rad_id(urn.id.clone())
                 .set_remote(peer.into())
                 .borrow(),
         )
@@ -221,7 +221,7 @@ impl<S: Clone> Storage<S> {
         P: Into<Option<PeerId>>,
     {
         self.metadata_from_reference(
-            NamespaceRef::rad_id(urn.id.clone())
+            NamespacedRef::rad_id(urn.id.clone())
                 .set_remote(peer.into())
                 .borrow(),
         )
@@ -256,7 +256,7 @@ impl<S: Clone> Storage<S> {
     where
         P: Into<Option<PeerId>>,
     {
-        self.metadata_from_reference(NamespaceRef::rad_self(urn.id.clone(), peer).borrow())
+        self.metadata_from_reference(NamespacedRef::rad_self(urn.id.clone(), peer).borrow())
     }
 
     pub fn certifiers_of(&self, urn: &RadUrn, peer: &PeerId) -> Result<HashSet<RadUrn>, Error> {
@@ -307,7 +307,7 @@ impl<S: Clone> Storage<S> {
         }
     }
 
-    pub fn has_ref(&self, reference: &NamespaceRef<Single>) -> Result<bool, Error> {
+    pub fn has_ref(&self, reference: &NamespacedRef<Single>) -> Result<bool, Error> {
         self.backend
             .find_reference(&reference.to_string())
             .map(|_| true)
@@ -376,7 +376,7 @@ impl<S: Clone> Storage<S> {
 
     pub fn rad_signed_refs_of(&self, urn: &RadUrn, peer: PeerId) -> Result<Refs, Error> {
         let signed = {
-            let refs = NamespaceRef::rad_signed_refs(urn.id.clone(), peer.clone());
+            let refs = NamespacedRef::rad_signed_refs(urn.id.clone(), peer.clone());
             let blob = Blob::Tip {
                 branch: refs.borrow().into(),
                 path: Path::new("refs"),
@@ -388,18 +388,18 @@ impl<S: Clone> Storage<S> {
         Ok(Refs::from(signed))
     }
 
-    /// Get the [`NamespaceRef`] provided, if it exists.
+    /// Get the [`NamespacedRef`] provided, if it exists.
     pub fn reference<'a>(
         &'a self,
-        reference: &NamespaceRef<Single>,
+        reference: &NamespacedRef<Single>,
     ) -> Result<git2::Reference<'a>, Error> {
         reference.find(&self.backend).map_err(Error::from)
     }
 
-    /// Get the [`NamespaceRef`]s provided, if they exist.
+    /// Get the [`NamespacedRef`]s provided, if they exist.
     pub fn references<'a>(
         &'a self,
-        reference: &NamespaceRef<Multiple>,
+        reference: &NamespacedRef<Multiple>,
     ) -> Result<References<'a>, Error> {
         reference.references(&self.backend).map_err(Error::from)
     }
@@ -561,11 +561,11 @@ where
             .get(&self.signer.public_key().into())
             .ok_or(Error::NotSignedBySelf)?;
 
-        let rad_id = NamespaceRef::rad_id(meta.urn().id);
-        let rad_self = NamespaceRef::rad_self(meta.urn().id, None);
+        let rad_id = NamespacedRef::rad_id(meta.urn().id);
+        let rad_self = NamespacedRef::rad_self(meta.urn().id, None);
         let rad_self_target = match &self_sig.by {
             Signatory::OwnedKey => rad_id.clone(),
-            Signatory::User(urn) => NamespaceRef::rad_id(urn.id.clone()),
+            Signatory::User(urn) => NamespacedRef::rad_id(urn.id.clone()),
         };
 
         // Invariants
@@ -591,8 +591,8 @@ where
             let res = iter::once((rad_self, rad_self_target))
                 .chain(meta.certifiers().iter().map(|certifier| {
                     (
-                        NamespaceRef::rad_certifier(meta.urn().id, certifier),
-                        NamespaceRef::rad_id(certifier.id.clone()),
+                        NamespacedRef::rad_certifier(meta.urn().id, certifier),
+                        NamespacedRef::rad_id(certifier.id.clone()),
                     )
                 }))
                 .try_for_each(|(src, target)| {
@@ -669,7 +669,7 @@ where
         // we can adopt it as our own (ie. make `refs/rad/id` point to what
         // `remote_peer` said)
         {
-            let local_id = NamespaceRef::rad_id(urn.id.clone());
+            let local_id = NamespacedRef::rad_id(urn.id.clone());
             let remote_id = local_id.with_remote(remote_peer);
             let remote_id_head = self.reference(&remote_id).and_then(|reference| {
                 reference
@@ -744,7 +744,7 @@ where
                 match certifier_ref.parse::<Hash>() {
                     Err(_) => Ok(()),
                     Ok(certifier_hash) => {
-                        let certifier_here = NamespaceRef::rad_certifier(
+                        let certifier_here = NamespacedRef::rad_certifier(
                             urn.id.clone(),
                             &RadUrn::new(
                                 certifier_hash.clone(),
@@ -752,7 +752,7 @@ where
                                 uri::Path::empty(),
                             ),
                         );
-                        let certifier_id = NamespaceRef::rad_id(certifier_hash);
+                        let certifier_id = NamespacedRef::rad_id(certifier_hash);
                         certifier_id
                             .symbolic_ref(certifier_here, Force::False)
                             .create(&self.backend)
@@ -797,7 +797,7 @@ where
     {
         match spec.into() {
             None => {
-                let have = self.reference(&NamespaceRef::rad_self(urn.id.clone(), None));
+                let have = self.reference(&NamespacedRef::rad_self(urn.id.clone(), None));
                 match have {
                     Err(_) => Ok(()),
                     Ok(mut reference) => reference.delete().map_err(Error::from),
@@ -805,17 +805,17 @@ where
             },
 
             Some(spec) => {
-                let src = NamespaceRef::rad_self(urn.id.clone(), None);
+                let src = NamespacedRef::rad_self(urn.id.clone(), None);
                 let target = match spec {
                     RadSelfSpec::Default => {
                         let id = self.default_rad_self()?;
-                        Ok::<_, Error>(NamespaceRef::rad_id(id.urn().id))
+                        Ok::<_, Error>(NamespacedRef::rad_id(id.urn().id))
                     },
 
                     RadSelfSpec::Urn(self_urn) => {
                         let meta: User<Draft> = self.metadata(&self_urn)?;
                         Config::try_from(&self.backend)?.guard_user_valid(&meta)?;
-                        Ok(NamespaceRef::rad_id(self_urn.id))
+                        Ok(NamespacedRef::rad_id(self_urn.id))
                     },
                 }?;
 
@@ -867,7 +867,7 @@ where
         }?;
         let author = self.backend.signature()?;
 
-        let branch_name = NamespaceRef::rad_id(meta.urn().id);
+        let branch_name = NamespacedRef::rad_id(meta.urn().id);
 
         let oid = self.backend.commit(
             Some(&branch_name.to_string()),
@@ -938,7 +938,7 @@ where
             .sign(&self.signer)
             .and_then(|signed| Ok(Cjson(signed).canonical_form()?))?;
 
-        let rad_signed_refs_ref = NamespaceRef::rad_signed_refs(urn.id.clone(), None).to_string();
+        let rad_signed_refs_ref = NamespacedRef::rad_signed_refs(urn.id.clone(), None).to_string();
 
         let parent: Option<git2::Commit> = self
             .backend
