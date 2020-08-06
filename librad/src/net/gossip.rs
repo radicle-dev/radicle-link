@@ -90,7 +90,6 @@ where
     },
     Connect {
         to: PeerInfo<Addr>,
-        hello: Rpc<Addr, Payload>,
     },
     Disconnect(PeerId),
 }
@@ -205,6 +204,10 @@ where
 
     fn iter_mut(&mut self) -> impl Iterator<Item = (&PeerId, &mut S)> {
         self.peers.iter_mut()
+    }
+
+    fn len(&self) -> usize {
+        self.peers.len()
     }
 }
 
@@ -380,6 +383,10 @@ where
         &self.local_id
     }
 
+    pub async fn is_connected(&self) -> bool {
+        self.connected_peers.lock().await.len() > 0
+    }
+
     pub async fn announce(&self, have: Broadcast) {
         let span = tracing::trace_span!("Protocol::announce", local.id = %self.local_id);
 
@@ -422,9 +429,16 @@ where
     where
         Stream: connection::Stream<Read = R, Write = W>,
     {
-        let hello = hello
-            .into()
-            .unwrap_or_else(|| Membership::Join(self.local_ad.clone()).into());
+        let hello = match hello.into() {
+            Some(rpc) => rpc,
+            None => if self.is_connected().await {
+                Membership::Neighbour(self.local_ad.clone())
+            } else {
+                Membership::Join(self.local_ad.clone())
+            }
+            .into(),
+        };
+
         let mut s = Framed::new(s, Codec::new());
         s.send(hello).await?;
 
@@ -533,8 +547,7 @@ where
             ForwardJoin { joined, ttl } => {
                 tracing::trace!(msg = "ForwardJoin", joined = ?joined, ttl = ?ttl);
                 if ttl == 0 {
-                    self.connect(&joined, Neighbour(self.local_ad.clone()))
-                        .await
+                    self.connect(&joined).await
                 } else {
                     self.broadcast(
                         ForwardJoin {
@@ -794,8 +807,7 @@ where
                 .contains(&candidate.peer_id)
             {
                 tracing::trace!(msg = "Promoting candidate", candidate.id = %candidate.peer_id);
-                self.connect(&candidate, Membership::Neighbour(self.local_ad.clone()))
-                    .await
+                self.connect(&candidate).await
             }
         }
     }
@@ -861,12 +873,11 @@ where
             .await
     }
 
-    /// Try to establish a persistent to `peer` with initial `rpc`
-    async fn connect<M: Into<Rpc<Addr, Broadcast>>>(&self, peer: &PeerInfo<Addr>, rpc: M) {
+    /// Try to establish a persistent to `peer`
+    async fn connect(&self, peer: &PeerInfo<Addr>) {
         self.subscribers
             .emit(ProtocolEvent::Control(Control::Connect {
                 to: peer.clone(),
-                hello: rpc.into(),
             }))
             .await
     }

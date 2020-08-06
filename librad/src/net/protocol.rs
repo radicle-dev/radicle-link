@@ -306,14 +306,13 @@ where
                         }
                     },
 
-                    gossip::Control::Connect { to, hello } => {
+                    gossip::Control::Connect { to } => {
                         tracing::trace!(remote.id = %to.peer_id, "Run::Rad(Connect)");
 
                         if !self.connections.lock().await.contains_key(&to.peer_id) {
                             let conn = connect_peer_info(&self.endpoint, to).await;
                             if let Some((conn, incoming)) = conn {
-                                self.handle_connect(conn, incoming.boxed(), Some(hello))
-                                    .await
+                                self.handle_connect(conn, incoming.boxed(), None).await
                             }
                         }
                     },
