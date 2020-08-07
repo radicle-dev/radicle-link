@@ -25,6 +25,7 @@ use crate::{git::refs::Refs, peer::PeerId, uri::RadUrn};
 
 pub mod existential;
 pub mod reference;
+pub mod remote;
 
 pub use existential::{SomeNamespace, SomeReference};
 pub use reference::{Multiple, Namespace, Reference, RefsCategory, Single};
@@ -114,6 +115,14 @@ impl<R> SymbolicRef<R> {
     }
 }
 
+/// A `Display`-like trait but only meant for `Refspec`s.
+///
+/// This allows us to treat them as opaque in collections, such a `Vec<Box<dyn
+/// AsRefspec>>`.
+pub trait AsRefspec {
+    fn as_refspec(&self) -> String;
+}
+
 #[derive(Clone)]
 pub struct Refspec<RemoteR, LocalR> {
     pub(crate) remote: SomeReference<RemoteR>,
@@ -122,12 +131,28 @@ pub struct Refspec<RemoteR, LocalR> {
     pub force: Force,
 }
 
+impl<R, L> Refspec<R, L> {
+    pub fn into_dyn(self) -> Box<dyn AsRefspec>
+    where
+        R: Display + Clone + 'static,
+        L: Display + Clone + 'static,
+    {
+        Box::new(self)
+    }
+}
+
 impl<R: Display + Clone, L: Display + Clone> Display for Refspec<R, L> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.force.as_bool() {
             f.write_str("+")?;
         }
         write!(f, "{}:{}", self.remote, self.local)
+    }
+}
+
+impl<R: Display + Clone, L: Display + Clone> AsRefspec for Refspec<R, L> {
+    fn as_refspec(&self) -> String {
+        self.to_string()
     }
 }
 
