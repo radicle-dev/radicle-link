@@ -115,14 +115,14 @@ impl<R> SymbolicRef<R> {
 }
 
 #[derive(Clone)]
-pub struct Refspec<R> {
-    pub(crate) remote: SomeReference<R>,
-    pub(crate) local: SomeReference<R>,
+pub struct Refspec<RemoteR, LocalR> {
+    pub(crate) remote: SomeReference<RemoteR>,
+    pub(crate) local: SomeReference<LocalR>,
     /// Indicate whether the spec should include the force flag `+`.
     pub force: Force,
 }
 
-impl<R: Display + Clone> Display for Refspec<R> {
+impl<R: Display + Clone, L: Display + Clone> Display for Refspec<R, L> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.force.as_bool() {
             f.write_str("+")?;
@@ -131,7 +131,7 @@ impl<R: Display + Clone> Display for Refspec<R> {
     }
 }
 
-impl Refspec<PeerId> {
+impl Refspec<PeerId, PeerId> {
     /// [`Refspec`]s for fetching `rad/refs` in namespace [`Namespace`] from
     /// remote peer [`PeerId`], rejecting non-fast-forwards
     pub fn rad_signed_refs<'a>(
