@@ -22,7 +22,12 @@ use std::{
 
 use crate::{git::ext, hash::Hash, uri::RadUrn};
 
-use super::{existential::SomeNamespace, Force, Refspec, SymbolicRef};
+use super::{
+    existential::{SomeNamespace, SomeReference},
+    Force,
+    Refspec,
+    SymbolicRef,
+};
 
 /// Type witness for a [`Reference`] that should point to a single reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +54,12 @@ impl Display for RefsCategory {
     }
 }
 
+pub trait ReferenceInfo {
+    type Remote;
+    type Namespace;
+    type Cardinality;
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reference<Namespaced, Remote, Cardinality> {
     /// The remote portion of this reference.
@@ -60,6 +71,12 @@ pub struct Reference<Namespaced, Remote, Cardinality> {
 
     pub(super) _namespace: Namespaced,
     pub(super) _cardinality: PhantomData<Cardinality>,
+}
+
+impl<Namespaced, Remote, Cardinality> ReferenceInfo for Reference<Namespaced, Remote, Cardinality> {
+    type Remote = Remote;
+    type Namespace = Namespaced;
+    type Cardinality = Cardinality;
 }
 
 // Polymorphic definitions
@@ -94,6 +111,15 @@ impl<Namespaced: Clone, R: Clone, N: Clone> Reference<Namespaced, R, N> {
         }
     }
 
+    /// Existentialise the namespace of the reference.
+    pub fn some_namespace(self) -> Reference<SomeNamespace, R, N>
+    where
+        Namespaced: Into<SomeNamespace>,
+    {
+        let namespace = self._namespace.clone().into();
+        self.with_namespace(namespace)
+    }
+
     /// Set the named portion of this path.
     ///
     /// Note: This is consuming.
@@ -109,6 +135,68 @@ impl<Namespaced: Clone, R: Clone, N: Clone> Reference<Namespaced, R, N> {
         Self {
             name: name.to_owned(),
             ..self.clone()
+        }
+    }
+
+    /// Create the [`Refspec`] using the LHS of this call as the `local`, and
+    /// the RHS as the `remote`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::marker::PhantomData;
+    /// use librad::{git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
+    ///
+    /// let id = Hash::hash(b"geez");
+    /// let peer: PeerId = SecretKey::new().into();
+    ///
+    /// // Set up a ref to `refs/heads/*`
+    /// let flat_heads: FlatRef<String, _> = FlatRef::heads(PhantomData, None);
+    ///
+    /// // Set up a ref t `refs/namespaces/<geez>/refs/remotes/<peer>/heads/*`
+    /// let namespace_heads = NamespacedRef::heads(id, peer.clone());
+    ///
+    /// // Create a refspec between these two refs
+    /// let spec = flat_heads.refspec(namespace_heads, Force::True);
+    ///
+    /// let expected = format!(
+    ///     "+refs/namespaces/hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/refs/remotes/{}/heads/*:refs/heads/*",
+    ///     peer
+    /// );
+    ///
+    /// assert_eq!(
+    ///     &spec.to_string(),
+    ///     &expected,
+    /// );
+    /// ```
+    ///
+    /// ```
+    /// use std::marker::PhantomData;
+    /// use librad::{git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
+    ///
+    /// let id = Hash::hash(b"geez");
+    /// let peer: PeerId = SecretKey::new().into();
+    ///
+    /// // Set up a ref to `refs/heads/*`
+    /// let flat_heads: FlatRef<String, _> = FlatRef::heads(PhantomData, None);
+    ///
+    /// // Set up a ref t `refs/namespaces/<geez>/refs/remotes/<peer>/heads/banana`
+    /// let namespace_head = NamespacedRef::head(id, peer.clone(), "banana");
+    ///
+    /// // The below would fail to compile because `namespace_head` is a `Single`
+    /// // reference while `flat_heads` is `Multiple`.
+    /// // let spec = flat_heads.refspec(namespace_head, Force::True);
+    /// ```
+    pub fn refspec<Other>(self, remote: Other, force: Force) -> Refspec<Other::Remote, R>
+    where
+        Self: Into<SomeReference<R>>,
+        Other:
+            Into<SomeReference<<Other as ReferenceInfo>::Remote>> + ReferenceInfo<Cardinality = N>,
+    {
+        Refspec {
+            remote: remote.into(),
+            local: self.into(),
+            force,
         }
     }
 }
@@ -135,20 +223,6 @@ impl<N, R> Reference<N, R, Single> {
         SymbolicRef {
             source: source.clone().with_namespace(source._namespace.into()),
             target: self.clone().with_namespace(self._namespace.clone().into()),
-            force,
-        }
-    }
-
-    /// Create the [`Refspec`] using the LHS of this call as the `local`, and
-    /// the RHS as the `remote`.
-    pub fn refspec(self, remote: Self, force: Force) -> Refspec<R>
-    where
-        R: Clone,
-        N: Into<SomeNamespace> + Clone,
-    {
-        Refspec {
-            local: self.into(),
-            remote: remote.into(),
             force,
         }
     }
@@ -229,20 +303,6 @@ impl<N, R> Reference<N, R, Multiple> {
         Self: ToString,
     {
         ext::References::from_globs(repo, &[self.to_string()])
-    }
-
-    /// Create the [`Refspec`] using the LHS of this call as the `local`, and
-    /// the RHS as the `remote`.
-    pub fn refspec(self, remote: Self, force: Force) -> Refspec<R>
-    where
-        R: Clone,
-        N: Into<SomeNamespace> + Clone,
-    {
-        Refspec {
-            local: self.into(),
-            remote: remote.into(),
-            force,
-        }
     }
 
     /// Build a reference that points to

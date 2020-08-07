@@ -44,8 +44,7 @@ where
     N: Into<SomeNamespace>,
 {
     fn from(other: Reference<N, R, Single>) -> Self {
-        let namespace = other._namespace.clone().into();
-        Self::Single(other.with_namespace(namespace))
+        Self::Single(other.some_namespace())
     }
 }
 
@@ -54,8 +53,7 @@ where
     N: Into<SomeNamespace>,
 {
     fn from(other: Reference<N, R, Multiple>) -> Self {
-        let namespace = other._namespace.clone().into();
-        Self::Multiple(other.with_namespace(namespace))
+        Self::Multiple(other.some_namespace())
     }
 }
 
