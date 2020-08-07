@@ -37,7 +37,6 @@ tracing-futures = "0.2"
 urltemplate = "0.1"
 webpki = "0.21"
 
-
 [dependencies.futures]
 version = "0.3"
 features = ["thread-pool"]

@@ -21,6 +21,7 @@ pub mod p2p;
 pub mod refs;
 pub mod repo;
 pub mod storage;
+pub mod trailer;
 pub mod types;
 
 pub(crate) mod header;
