@@ -137,6 +137,13 @@ pub struct Refspec<RemoteR, LocalR> {
 }
 
 impl<R, L> Refspec<R, L> {
+    /// Allows to existentialise the `Refspec` into a dynamic `AsRefspec`. This
+    /// means we forget about the type parameters on `Refspec` and we can
+    /// then have a collection of `Refspec`s with differeing remotes.
+    ///
+    /// This function, while trivially, is useful for type-inference, since Rust
+    /// will get confused about what you're trying to do when you have a
+    /// `vec![]` of `Refspec`s with different remotes.
     pub fn into_dyn(self) -> Box<dyn AsRefspec>
     where
         R: Display + Clone + 'static,
