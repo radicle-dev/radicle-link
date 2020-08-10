@@ -15,7 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-
 use super::AsRefspec;
 
 pub struct Remote<Url> {
@@ -94,7 +93,10 @@ impl<Url> Remote<Url> {
     }
 
     /// Create the [`git2::Remote`] and add the specs.
-    pub fn create<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Remote<'a>, git2::Error> where Url: ToString {
+    pub fn create<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Remote<'a>, git2::Error>
+    where
+        Url: ToString,
+    {
         let _ = repo.remote_with_fetch(
             &self.name,
             &self.url.to_string(),
