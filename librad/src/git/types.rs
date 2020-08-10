@@ -115,10 +115,15 @@ impl<R> SymbolicRef<R> {
     }
 }
 
-/// A `Display`-like trait but only meant for `Refspec`s.
+/// If we want to be able to use a collection of [`Refspec`]s, where the remote
+/// portions don't line up, then we need to be able to talk about them using
+/// dynamically. In Rust this cab be done via `Box<dyn MyTrait>`.
 ///
-/// This allows us to treat them as opaque in collections, such a `Vec<Box<dyn
-/// AsRefspec>>`.
+/// In this case, we want to be able to turn [`Refspec`]s into `String`s. To
+/// avoid allowing anything that is `ToString` or `Display`, we opt for adding a
+/// `ToString`-like trait called `AsRefspec`.
+///
+/// **N.B.**: The only implementor of this trait should `Refspec`.
 pub trait AsRefspec {
     fn as_refspec(&self) -> String;
 }
