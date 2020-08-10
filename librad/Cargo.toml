@@ -59,7 +59,8 @@ version = "0.4"
 features = ["std", "derive"]
 
 [dependencies.quinn]
-version = "0.6"
+git = "https://github.com/djc/quinn"
+rev = "babb07b079e7e3ac4ff2fa7ef25b0dac5e934377"
 default-features = false
 features = ["tls-rustls"]
 
@@ -67,8 +68,9 @@ features = ["tls-rustls"]
 git = "https://github.com/radicle-dev/radicle-keystore"
 rev = "27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6"
 
+# Note: this MUST always match the exact patch version `quinn` uses
 [dependencies.rustls]
-version = "0.17"
+version = "0.18.0"
 features = ["logging", "dangerous_configuration"]
 
 [dependencies.serde]

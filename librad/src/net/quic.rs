@@ -136,8 +136,7 @@ async fn handle_incoming<'a>(connecting: quinn::Connecting) -> Result<(Connectio
 /// If this returns [`Err`], the connection attempt should be aborted. If it
 /// returns `Ok(None)`, the remote identity could not be determined.
 fn remote_peer(conn: &NewConnection) -> Result<Option<PeerId>> {
-    let auth = conn.connection.authentication_data();
-    match auth.peer_certificates {
+    match conn.connection.peer_identity() {
         Some(certs) => {
             let first = certs
                 .iter()
@@ -147,8 +146,10 @@ fn remote_peer(conn: &NewConnection) -> Result<Option<PeerId>> {
             tls::extract_peer_id(first).map(Some).map_err(Error::from)
         },
 
-        None => auth
-            .server_name
+        None => conn
+            .connection
+            .handshake_data()
+            .and_then(|hsd| hsd.server_name)
             .map(|sni| sni.parse().map_err(Error::from))
             .transpose(),
     }

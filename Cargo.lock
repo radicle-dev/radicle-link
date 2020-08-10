@@ -1251,8 +1251,7 @@ checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 [[package]]
 name = "quinn"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88de58d76d8f82fb28e5c89302119c102bb5b9ce57b034186b559b63ba147a0f"
+source = "git+https://github.com/djc/quinn?rev=babb07b079e7e3ac4ff2fa7ef25b0dac5e934377#babb07b079e7e3ac4ff2fa7ef25b0dac5e934377"
 dependencies = [
  "bytes",
  "err-derive",
@@ -1269,8 +1268,7 @@ dependencies = [
 [[package]]
 name = "quinn-proto"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0ea0a358c179c6b7af34805c675d1664a9c6a234a7acd7efdbb32d2f39d3d2a"
+source = "git+https://github.com/djc/quinn?rev=babb07b079e7e3ac4ff2fa7ef25b0dac5e934377#babb07b079e7e3ac4ff2fa7ef25b0dac5e934377"
 dependencies = [
  "bytes",
  "err-derive",
@@ -1510,10 +1508,11 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.17.0"
-source = "git+https://github.com/kim/rustls?rev=558405ac3c229947ca17b9285d60368ce67835ce#558405ac3c229947ca17b9285d60368ce67835ce"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cac94b333ee2aac3284c5b8a1b7fb4dd11cba88c244e3fe33cdbd047af0eb693"
 dependencies = [
- "base64 0.11.0",
+ "base64 0.12.3",
  "log",
  "ring",
  "sct",
