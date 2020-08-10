@@ -144,7 +144,7 @@ mod tests {
 
             assert_eq!(
                 git_remote
-                    .fetch_refspecs().expect("failed to get fetchspecs")
+                    .fetch_refspecs().expect("failed to get the push refspecs")
                     .iter()
                     .collect::<Vec<Option<&str>>>(),
                 vec![Some("+refs/namespaces/hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/refs/heads/*:refs/heads/*")],
@@ -152,7 +152,7 @@ mod tests {
 
             assert_eq!(
                 git_remote
-                    .push_refspecs().expect("failed to get fetchspecs")
+                    .push_refspecs().expect("failed to get the push refspecs")
                     .iter()
                     .collect::<Vec<Option<&str>>>(),
                 vec![Some("refs/heads/*:refs/namespaces/hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/refs/heads/*")],
