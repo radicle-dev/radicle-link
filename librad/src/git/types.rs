@@ -123,9 +123,19 @@ impl<R> SymbolicRef<R> {
 /// avoid allowing anything that is `ToString` or `Display`, we opt for adding a
 /// `ToString`-like trait called `AsRefspec`.
 ///
-/// **N.B.**: The only implementor of this trait should `Refspec`.
-pub trait AsRefspec {
+/// **N.B.**: The only implementor of this trait should be `Refspec`. We enforce
+/// this by making `AsRefspec` a [sealed
+/// trait](https://rust-lang.github.io/api-guidelines/future-proofing.html#sealed-traits-protect-against-downstream-implementations-c-sealed).
+pub trait AsRefspec: sealed::Sealed {
     fn as_refspec(&self) -> String;
+}
+
+/// A private module to protect `AsRefspec` as a sealed trait.
+mod sealed {
+    use super::Refspec;
+
+    pub trait Sealed {}
+    impl<R, L> Sealed for Refspec<R, L> {}
 }
 
 #[derive(Clone)]
