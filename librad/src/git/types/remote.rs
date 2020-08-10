@@ -15,13 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::{Path, PathBuf};
 
 use super::AsRefspec;
 
-pub struct Remote {
+pub struct Remote<Url> {
     /// The file path to the git monorepo.
-    pub monorepo: PathBuf,
+    pub url: Url,
     /// Name of the remote, e.g. `"rad"`, `"origin"`.
     pub name: String,
     /// The set of fetch specs to add upon creation.
@@ -30,11 +29,54 @@ pub struct Remote {
     pub push_specs: Vec<Box<dyn AsRefspec>>,
 }
 
-impl Remote {
-    /// Create a `"rad"` remote with no specs.
-    pub fn rad_remote(monorepo: impl AsRef<Path>, fetch_spec: Box<dyn AsRefspec>) -> Self {
+impl<Url> Remote<Url> {
+    /// Create a `"rad"` remote with a single fetch spec.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::marker::PhantomData;
+    /// use librad::{
+    ///     git::{
+    ///         local::url::LocalUrl,
+    ///         types::{remote::Remote, FlatRef, Force, NamespacedRef},
+    ///     },
+    ///     hash::Hash,
+    ///     uri::{Path, Protocol, RadUrn},
+    /// };
+    ///
+    /// let id = Hash::hash(b"geez");
+    ///
+    /// // The RadUrn pointing some project
+    /// let urn = RadUrn::new(
+    ///     id.clone(),
+    ///     Protocol::Git,
+    ///     Path::parse("").unwrap(),
+    /// );
+    ///
+    /// // The working copy heads, i.e. `refs/heads/*`.
+    /// let working_copy_heads: FlatRef<String, _> = FlatRef::heads(PhantomData, None);
+    ///
+    /// // The monorepo heads, i.e. `refs/namespaces/<id>/refs/heads/*`.
+    /// let monorepo_heads = NamespacedRef::heads(id, None);
+    ///
+    /// // Setup the fetch and push refspecs.
+    /// let fetch = working_copy_heads
+    ///         .clone()
+    ///         .refspec(monorepo_heads.clone(), Force::True)
+    ///         .into_dyn();
+    /// let push = monorepo_heads.refspec(working_copy_heads, Force::False).into_dyn();
+    ///
+    /// // We point the remote to `LocalUrl` which will be of the form `rad://<id>.git`.
+    /// let url: LocalUrl = urn.into();
+    ///
+    /// // Setup the `Remote`.
+    /// let mut remote = Remote::rad_remote(url, fetch);
+    /// remote.add_pushes(vec![push].into_iter());
+    /// ```
+    pub fn rad_remote(url: Url, fetch_spec: Box<dyn AsRefspec>) -> Self {
         Self {
-            monorepo: monorepo.as_ref().to_path_buf(),
+            url,
             name: "rad".to_string(),
             fetch_spec,
             push_specs: vec![],
@@ -52,10 +94,10 @@ impl Remote {
     }
 
     /// Create the [`git2::Remote`] and add the specs.
-    pub fn create<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Remote<'a>, git2::Error> {
+    pub fn create<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Remote<'a>, git2::Error> where Url: ToString {
         let _ = repo.remote_with_fetch(
             &self.name,
-            &format!("file://{}", self.monorepo.display()),
+            &self.url.to_string(),
             &self.fetch_spec.as_refspec(),
         )?;
 
@@ -93,7 +135,7 @@ mod tests {
             let push = namespaced_heads.refspec(heads, Force::False).into_dyn();
 
 
-            let mut remote = Remote::rad_remote(path, fetch);
+            let mut remote = Remote::rad_remote(path.display(), fetch);
             remote.add_pushes(vec![push].into_iter());
             let git_remote = remote.create(&repo).expect("failed to create the remote");
 
