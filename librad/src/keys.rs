@@ -19,7 +19,6 @@ use std::{convert::Infallible, error, fmt, iter, ops::Deref};
 
 use bit_vec::BitVec;
 use multibase::Base;
-use secstr::SecStr;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use sodiumoxide::crypto::sign::ed25519;
 use thiserror::Error;
@@ -27,6 +26,7 @@ use thiserror::Error;
 use keystore::{sign, SecretKeyExt};
 
 pub use ed25519::PUBLICKEYBYTES;
+pub use keystore::SecStr;
 
 /// Version of the signature scheme in use
 ///

@@ -10,29 +10,26 @@ async-trait = "0.1"
 bit-vec = "0.6"
 bs58 = "0.3"
 bytes = "0.5"
-directories = "2.0"
+directories = "3.0"
 dyn-clone = "1.0"
 either = "1"
 futures-timer = "3.0"
-governor = "0.2"
+governor = "0.3"
 hex = "0.4"
 lazy_static = "1.4"
 libc = "0.2"
 log = "0.4"
 multibase = "0.8"
-multihash = "0.10"
-nonempty = "0.2"
+multihash = "0.11"
+nonempty = "0.5"
 olpc-cjson = "0.1"
 percent-encoding = "2.1"
 rand = "0.7"
 rand_pcg = "0.2"
-rcgen = "0.7"
+rcgen = "0.8"
 regex = "1.3"
-secstr = "0.3"
 serde_json = "1.0"
-sha2 = "0.8"
 sodiumoxide = "0.2"
-tempfile = "3.1"
 thiserror = "1.0"
 tracing = "0.1"
 tracing-futures = "0.2"
@@ -45,15 +42,15 @@ features = ["thread-pool"]
 
 [dependencies.futures_codec]
 version = "0.4"
-features = ["cbor"]
+features = []
 
 [dependencies.git2]
-version = "0.12"
+version = "0.13"
 default-features = false
 features = []
 
 [dependencies.libgit2-sys]
-version = "0.11"
+version = "0.12.9"
 default-features = false
 features = []
 
@@ -95,12 +92,12 @@ version = "0.3"
 features = ["bit-vec"]
 
 [dev-dependencies]
-anyhow = "1.0"
-fnv = "1.0"
-futures-await-test = "0.3"
-futures_ringbuf = "0.2"
-matches = "0.1"
-proptest = "0.9"
+anyhow = "1"
+fnv = "1"
+futures-await-test = "0"
+futures_ringbuf = "0"
+proptest = "0"
+tempfile = "3.1"
 
 [dev-dependencies.librad-test]
 path = "../librad-test"
