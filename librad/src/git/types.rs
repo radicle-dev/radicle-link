@@ -117,7 +117,7 @@ impl<R> SymbolicRef<R> {
 
 /// If we want to be able to use a collection of [`Refspec`]s, where the remote
 /// portions don't line up, then we need to be able to talk about them using
-/// dynamically. In Rust this cab be done via `Box<dyn MyTrait>`.
+/// dynamically. In Rust this can be done via `Box<dyn MyTrait>`.
 ///
 /// In this case, we want to be able to turn [`Refspec`]s into `String`s. To
 /// avoid allowing anything that is `ToString` or `Display`, we opt for adding a
