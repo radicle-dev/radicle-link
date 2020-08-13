@@ -142,12 +142,49 @@ impl Display for Cstring {
     }
 }
 
+pub mod string {
+    use super::Cstring;
+
+    use serde::Deserialize;
+
+    /// A deserialise function suitable for use with `#[serde(deserialize_with =
+    /// "..")]`
+    ///
+    /// This is useful when it is not desirable or possible to use the
+    /// [`Cstring`] wrapper. Note, however, that the resulting [`String`] is
+    /// in normal form, and may thus not be equivalent (compare as equal) to
+    /// the "same" string create from a Rust literal.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let Cstring(s) = Cstring::deserialize(deserializer)?;
+        Ok(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use librad_test::roundtrip::*;
     use proptest::prelude::*;
+    use proptest_derive::Arbitrary;
+
+    #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize, Arbitrary)]
+    struct T {
+        #[serde(deserialize_with = "string::deserialize")]
+        #[proptest(regex = "\\P{Cc}*")]
+        field: String,
+    }
+
+    impl T {
+        fn normalised(&self) -> Self {
+            Self {
+                field: self.field.nfc().collect(),
+            }
+        }
+    }
 
     proptest! {
         #[test]
@@ -162,10 +199,24 @@ mod tests {
 
         #[test]
         fn cstring_roundtrip_cjson(cstring in any::<Cstring>()) {
-            let cjson = Cjson(cstring);
-            let canonical = cjson.canonical_form().unwrap();
+            let canonical = Cjson(&cstring).canonical_form().unwrap();
 
-            assert_eq!(cjson.0, serde_json::from_slice(&canonical).unwrap())
+            assert_eq!(cstring, serde_json::from_slice(&canonical).unwrap())
+        }
+
+        #[test]
+        fn any_string_roundtrip_json(t in any::<T>()) {
+            let ser = serde_json::to_string(&t).unwrap();
+            let de = serde_json::from_str(&ser).unwrap();
+
+            assert_eq!(t.normalised(), de)
+        }
+
+        #[test]
+        fn any_string_roundtrip_cjson(t in any::<T>()) {
+            let canonical = Cjson(&t).canonical_form().unwrap();
+
+            assert_eq!(t.normalised(), serde_json::from_slice(&canonical).unwrap())
         }
     }
 }
