@@ -38,30 +38,27 @@ pub enum Error {
 }
 
 #[derive(Clone)]
-pub struct Signer {}
+pub struct Signer {
+    key: keys::SecretKey,
+}
 
 impl Signer {
     fn new() -> Self {
-        Self {}
+        let key = keys::SecretKey::new();
+        Self { key }
     }
-}
-
-#[derive(Error, Debug)]
-pub enum SignerError {
-    #[error("error")]
-    Error(()),
 }
 
 #[async_trait]
 impl ed25519::Signer for Signer {
-    type Error = SignerError;
+    type Error = std::convert::Infallible;
 
     fn public_key(&self) -> ed25519::PublicKey {
-        todo!()
+        self.key.public_key()
     }
 
-    async fn sign(&self, _data: &[u8]) -> Result<ed25519::Signature, Self::Error> {
-        todo!()
+    async fn sign(&self, data: &[u8]) -> Result<ed25519::Signature, Self::Error> {
+        <keys::SecretKey as ed25519::Signer>::sign(&self.key, data).await
     }
 }
 
