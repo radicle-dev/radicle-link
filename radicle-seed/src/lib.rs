@@ -91,11 +91,12 @@ impl Mode {
     }
 }
 
+#[derive(Debug)]
 pub struct NodeConfig {
     /// Address to listen to for new connections.
-    listen_addr: SocketAddr,
+    pub listen_addr: SocketAddr,
     /// Operational mode. Determines the tracking rules for this seed node.
-    mode: Mode,
+    pub mode: Mode,
 }
 
 impl Default for NodeConfig {
