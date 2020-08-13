@@ -138,6 +138,9 @@ impl Node {
         let mut events = api.protocol().subscribe().await;
         let mode = self.config.mode;
 
+        // Spawn the background peer thread.
+        tokio::spawn(future);
+
         // Start by tracking specified projects if we need to.
         if let Mode::TrackUrns(urns) = &mode {
             for urn in urns {
@@ -147,9 +150,6 @@ impl Node {
                 }
             }
         }
-
-        // Spawn the background peer thread.
-        tokio::spawn(future);
 
         // Listen on gossip events. As soon as a peer announces something of interest,
         // we check if we should track it.
