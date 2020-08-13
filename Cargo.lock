@@ -1320,6 +1320,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "radicle-seed"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "librad",
+ "radicle-keystore",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "radicle-tracker"
 version = "0.1.0"
 dependencies = [
