@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate async_trait;
 
-use std::{net::SocketAddr, vec};
+use std::{net::SocketAddr, path::PathBuf, vec};
 use thiserror::Error;
 
 use radicle_keystore::sign::ed25519;
@@ -94,6 +94,8 @@ pub struct NodeConfig {
     pub listen_addr: SocketAddr,
     /// Operational mode. Determines the tracking rules for this seed node.
     pub mode: Mode,
+    /// Radicle root path.
+    pub root: Option<PathBuf>,
 }
 
 impl Default for NodeConfig {
@@ -101,6 +103,7 @@ impl Default for NodeConfig {
         Self {
             listen_addr: ([0, 0, 0, 0], 0).into(),
             mode: Mode::TrackEverything,
+            root: None,
         }
     }
 }
@@ -117,7 +120,11 @@ impl Node {
     pub async fn run(self) -> Result<(), Error> {
         use futures::stream::StreamExt;
 
-        let paths = paths::Paths::new()?;
+        let paths = if let Some(root) = self.config.root {
+            paths::Paths::from_root(root)?
+        } else {
+            paths::Paths::new()?
+        };
         let gossip_params = Default::default();
         let seeds: Vec<(PeerId, SocketAddr)> = vec![];
         let disco = discovery::Static::new(seeds);
