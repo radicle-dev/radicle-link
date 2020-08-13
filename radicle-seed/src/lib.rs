@@ -9,6 +9,7 @@ use radicle_keystore::sign::ed25519;
 use librad::{
     git,
     keys,
+    meta::project,
     net::{
         discovery,
         gossip,
@@ -69,9 +70,6 @@ impl keys::AsPKCS8 for Signer {
     }
 }
 
-/// Short-hand type for the peer discovery subsystem.
-type Disco = discovery::Static<vec::IntoIter<(PeerId, SocketAddr)>, SocketAddr>;
-
 #[derive(Debug)]
 pub enum Mode {
     /// Track everything we see, no matter where it comes from.
@@ -109,42 +107,35 @@ impl Default for NodeConfig {
 }
 
 pub struct Node {
-    config: PeerConfig<Disco, Signer>,
-    mode: Mode,
+    config: NodeConfig,
 }
 
 impl Node {
-    pub fn new(cfg: NodeConfig) -> Result<Self, Error> {
-        let paths = paths::Paths::new()?;
-        let gossip_params = Default::default();
-        let seeds: Vec<(PeerId, SocketAddr)> = vec![];
-        let disco = discovery::Static::new(seeds);
-
-        let signer = Signer::new();
-        let config = PeerConfig {
-            signer,
-            paths,
-            listen_addr: cfg.listen_addr,
-            gossip_params,
-            disco,
-        };
-
-        Ok(Node {
-            config,
-            mode: cfg.mode,
-        })
+    pub fn new(config: NodeConfig) -> Result<Self, Error> {
+        Ok(Node { config })
     }
 
     pub async fn run(self) -> Result<(), Error> {
         use futures::stream::StreamExt;
 
-        let peer = self.config.try_into_peer().await?;
+        let paths = paths::Paths::new()?;
+        let gossip_params = Default::default();
+        let seeds: Vec<(PeerId, SocketAddr)> = vec![];
+        let disco = discovery::Static::new(seeds);
+        let signer = Signer::new();
+        let config = PeerConfig {
+            signer,
+            paths,
+            listen_addr: self.config.listen_addr,
+            gossip_params,
+            disco,
+        };
+
+        let peer = config.try_into_peer().await?;
 
         let (api, future) = peer.accept()?;
         let mut events = api.protocol().subscribe().await;
-        let mode = self.mode;
-
-        // TODO: Query for URNs.
+        let mode = self.config.mode;
 
         // Spawn the background peer thread.
         tokio::spawn(future);
@@ -152,8 +143,20 @@ impl Node {
         while let Some(event) = events.next().await {
             match event {
                 ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val })) => {
-                    if mode.is_trackable(&provider.peer_id, &val.urn) {
-                        // TODO: Track URN.
+                    let urn = &val.urn;
+                    let peer_id = &provider.peer_id;
+
+                    if mode.is_trackable(peer_id, urn) {
+                        let url = urn.clone().into_rad_url(peer_id.clone());
+                        let port = provider.advertised_info.listen_port;
+                        let addr_hints = provider
+                            .seen_addrs
+                            .iter()
+                            .map(|a: &std::net::IpAddr| (*a, port).into());
+
+                        api.storage()
+                            .clone_repo::<project::ProjectInfo, _>(url, addr_hints)?;
+                        api.storage().track(urn, peer_id)?;
                     }
                 },
                 _ => {},
