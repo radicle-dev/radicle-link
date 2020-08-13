@@ -15,8 +15,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::{
+    convert::Infallible,
+    fmt::{self, Display},
+    ops::Deref,
+    str::FromStr,
+};
+
 use serde::Serialize;
+use serde_bytes::ByteBuf;
 use thiserror::Error;
+use unicode_normalization::UnicodeNormalization;
 
 /// Types which have a canonical representation
 pub trait Canonical {
@@ -53,5 +62,110 @@ where
 
     fn canonical_form(&self) -> Result<Vec<u8>, Self::Error> {
         self.canonical_form()
+    }
+}
+
+/// A string type suitable for [Canonical JSON]
+///
+/// Canonical JSON is not a proper subset of [RFC 7159] JSON, in that it only
+/// escapes quotation marks and the backslash ("reverse solidus") in string
+/// values. The string is stored in Unicode Normalization Form C (NFC) as per
+/// the [Unicode Standard Annex #15].
+///
+/// In order to make [`serde_json`] parse JSON containing such canonical
+/// strings, we need to go through [`serde_bytes::ByteBuf`]. To ensure
+/// correctness of the [`PartialEq`] impl, we store the string in NFC
+/// internally.
+///
+/// Note, however, that [`serde_json`] is not able to handle control characters
+/// in strings (which Canonical JSON allows). Accordingly, the [`Arbitrary`]
+/// instance doesn't generate those.
+///
+/// [Canonical JSON]: http://wiki.laptop.org/go/Canonical_JSON
+/// [RFC 7159]: https://tools.ietf.org/html/rfc7159
+/// [Unicode Standard Annex #15]: http://www.unicode.org/reports/tr15/
+/// [`Arbitrary`]: https://docs.rs/proptest/0.10.0/proptest/arbitrary/trait.Arbitrary.html
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(transparent)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct Cstring(#[cfg_attr(test, proptest(strategy(gen_string_nfc)))] String);
+
+#[cfg(test)]
+pub fn gen_string_nfc() -> impl proptest::strategy::Strategy<Value = String> {
+    use proptest::prelude::*;
+
+    "\\P{Cc}*".prop_map(|s| s.nfc().collect())
+}
+
+impl<'de> serde::Deserialize<'de> for Cstring {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let buf = ByteBuf::deserialize(deserializer)?;
+        let s = unsafe { std::str::from_utf8_unchecked(&buf) };
+        Ok(Self::from(s))
+    }
+}
+
+impl Deref for Cstring {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<String> for Cstring {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}
+
+impl From<&str> for Cstring {
+    fn from(s: &str) -> Self {
+        Self(s.nfc().collect())
+    }
+}
+
+impl FromStr for Cstring {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from(s))
+    }
+}
+
+impl Display for Cstring {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use librad_test::roundtrip::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn cstring_roundtrip_str(cstring in any::<Cstring>()) {
+            str_roundtrip(cstring)
+        }
+
+        #[test]
+        fn cstring_roundtrip_json(cstring in any::<Cstring>()) {
+            json_roundtrip(cstring)
+        }
+
+        #[test]
+        fn cstring_roundtrip_cjson(cstring in any::<Cstring>()) {
+            let cjson = Cjson(cstring);
+            let canonical = cjson.canonical_form().unwrap();
+
+            assert_eq!(cjson.0, serde_json::from_slice(&canonical).unwrap())
+        }
     }
 }
