@@ -29,7 +29,8 @@ impl Options {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let opts = Options::from_env();
     let default = NodeConfig::default();
     let config = NodeConfig {
