@@ -64,7 +64,7 @@ impl ed25519::Signer for Signer {
 
 impl keys::AsPKCS8 for Signer {
     fn as_pkcs8(&self) -> Vec<u8> {
-        todo!()
+        self.key.as_pkcs8()
     }
 }
 
