@@ -13,7 +13,8 @@ use librad::{
     net::{
         discovery,
         gossip,
-        peer::{self, PeerConfig},
+        gossip::types::PeerInfo,
+        peer::{self, PeerApi, PeerConfig},
         protocol::ProtocolEvent,
     },
     paths,
@@ -137,9 +138,21 @@ impl Node {
         let mut events = api.protocol().subscribe().await;
         let mode = self.config.mode;
 
+        // Start by tracking specified projects if we need to.
+        if let Mode::TrackUrns(urns) = &mode {
+            for urn in urns {
+                let mut peers = api.providers(urn.clone()).await;
+                while let Some(peer) = peers.next().await {
+                    Node::track_project(&api, urn, &peer)?;
+                }
+            }
+        }
+
         // Spawn the background peer thread.
         tokio::spawn(future);
 
+        // Listen on gossip events. As soon as a peer announces something of interest,
+        // we check if we should track it.
         while let Some(event) = events.next().await {
             match event {
                 ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val })) => {
@@ -147,21 +160,32 @@ impl Node {
                     let peer_id = &provider.peer_id;
 
                     if mode.is_trackable(peer_id, urn) {
-                        let url = urn.clone().into_rad_url(peer_id.clone());
-                        let port = provider.advertised_info.listen_port;
-                        let addr_hints = provider
-                            .seen_addrs
-                            .iter()
-                            .map(|a: &std::net::IpAddr| (*a, port).into());
-
-                        api.storage()
-                            .clone_repo::<project::ProjectInfo, _>(url, addr_hints)?;
-                        api.storage().track(urn, peer_id)?;
+                        Node::track_project(&api, urn, &provider)?;
                     }
                 },
                 _ => {},
             }
         }
+        Ok(())
+    }
+
+    fn track_project(
+        api: &PeerApi<Signer>,
+        urn: &RadUrn,
+        peer_info: &PeerInfo<std::net::IpAddr>,
+    ) -> Result<(), Error> {
+        let peer_id = &peer_info.peer_id;
+        let url = urn.clone().into_rad_url(peer_id.clone());
+        let port = peer_info.advertised_info.listen_port;
+        let addr_hints = peer_info
+            .seen_addrs
+            .iter()
+            .map(|a: &std::net::IpAddr| (*a, port).into());
+
+        api.storage()
+            .clone_repo::<project::ProjectInfo, _>(url, addr_hints)?;
+        api.storage().track(urn, &peer_id)?;
+
         Ok(())
     }
 }
