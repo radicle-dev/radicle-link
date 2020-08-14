@@ -70,6 +70,7 @@ impl keys::AsPKCS8 for Signer {
     }
 }
 
+/// Seed operational mode.
 #[derive(Debug)]
 pub enum Mode {
     /// Track everything we see, no matter where it comes from.
@@ -81,6 +82,7 @@ pub enum Mode {
 }
 
 impl Mode {
+    /// Returns whether or not a given peer/URN pair should be tracked or not.
     fn is_trackable(&self, peer: &PeerId, urn: &RadUrn) -> bool {
         match self {
             Mode::TrackEverything => true,
@@ -90,6 +92,7 @@ impl Mode {
     }
 }
 
+/// Node configuration.
 #[derive(Debug)]
 pub struct NodeConfig {
     /// Address to listen to for new connections.
@@ -110,15 +113,19 @@ impl Default for NodeConfig {
     }
 }
 
+/// Seed node instance.
 pub struct Node {
     config: NodeConfig,
 }
 
 impl Node {
+    /// Create a new seed node.
     pub fn new(config: NodeConfig) -> Result<Self, Error> {
         Ok(Node { config })
     }
 
+    /// Run the seed node. This function runs indefinitely until a fatal error
+    /// occurs.
     pub async fn run(self) -> Result<(), Error> {
         use futures::stream::StreamExt;
 
@@ -194,6 +201,7 @@ impl Node {
         Ok(())
     }
 
+    /// Attempt to track a project.
     fn track_project(
         api: &PeerApi<Signer>,
         urn: &RadUrn,
