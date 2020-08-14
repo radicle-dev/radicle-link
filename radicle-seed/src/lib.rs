@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate async_trait;
 
-use std::{net::SocketAddr, path::PathBuf, vec};
+use std::{collections::HashSet, net::SocketAddr, path::PathBuf, vec};
 use thiserror::Error;
 
 use radicle_keystore::sign::ed25519;
@@ -73,9 +73,9 @@ pub enum Mode {
     /// Track everything we see, no matter where it comes from.
     TrackEverything,
     /// Track everything from these peers, and nothing else.
-    TrackPeers(Vec<PeerId>),
+    TrackPeers(HashSet<PeerId>),
     /// Track the specified URNs.
-    TrackUrns(Vec<RadUrn>),
+    TrackUrns(HashSet<RadUrn>),
 }
 
 impl Mode {

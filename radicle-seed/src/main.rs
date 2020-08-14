@@ -43,7 +43,7 @@ async fn main() {
         mode: if opts.track_peers.is_empty() {
             Mode::TrackEverything
         } else {
-            Mode::TrackPeers(opts.track_peers)
+            Mode::TrackPeers(opts.track_peers.into_iter().collect())
         },
     };
     let node = Node::new(config).unwrap();
