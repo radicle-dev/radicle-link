@@ -150,8 +150,11 @@ impl Node {
         if let Mode::TrackUrns(urns) = &mode {
             for urn in urns {
                 let mut peers = api.providers(urn.clone()).await;
+                // Attempt to track until we succeed.
                 while let Some(peer) = peers.next().await {
-                    Node::track_project(&api, urn, &peer)?;
+                    if Node::track_project(&api, urn, &peer).is_ok() {
+                        break;
+                    }
                 }
             }
         }
@@ -164,8 +167,11 @@ impl Node {
                     let urn = &val.urn;
                     let peer_id = &provider.peer_id;
 
+                    log::info!("Discovered new URN {} from peer {}", urn, peer_id);
+
                     if mode.is_trackable(peer_id, urn) {
-                        Node::track_project(&api, urn, &provider)?;
+                        // Attempt to track, but keep going if it fails.
+                        Node::track_project(&api, urn, &provider).ok();
                     }
                 },
                 _ => {},
@@ -187,10 +193,24 @@ impl Node {
             .iter()
             .map(|a: &std::net::IpAddr| (*a, port).into());
 
-        api.storage()
-            .clone_repo::<project::ProjectInfo, _>(url, addr_hints)?;
-        api.storage().track(urn, &peer_id)?;
+        let result = api
+            .storage()
+            .clone_repo::<project::ProjectInfo, _>(url, addr_hints)
+            .and_then(|_| api.storage().track(urn, &peer_id));
 
-        Ok(())
+        match &result {
+            Ok(()) => {
+                log::info!("Successfully tracked project {} from peer {}", urn, peer_id,);
+            },
+            Err(err) => {
+                log::debug!(
+                    "Error tracking project {} from peer {}: {}",
+                    urn,
+                    peer_id,
+                    err
+                );
+            },
+        }
+        result.map_err(Error::from)
     }
 }
