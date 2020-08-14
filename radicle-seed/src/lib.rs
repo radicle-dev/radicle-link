@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate async_trait;
 
+pub mod logger;
+
 use std::{collections::HashSet, net::SocketAddr, path::PathBuf, vec};
 use thiserror::Error;
 
@@ -147,16 +149,28 @@ impl Node {
         tokio::spawn(future);
 
         // Start by tracking specified projects if we need to.
-        if let Mode::TrackUrns(urns) = &mode {
-            for urn in urns {
-                let mut peers = api.providers(urn.clone()).await;
-                // Attempt to track until we succeed.
-                while let Some(peer) = peers.next().await {
-                    if Node::track_project(&api, urn, &peer).is_ok() {
-                        break;
+        match &mode {
+            Mode::TrackUrns(urns) => {
+                log::info!("Initializing tracker with {} URNs..", urns.len());
+
+                for urn in urns {
+                    let mut peers = api.providers(urn.clone()).await;
+                    // Attempt to track until we succeed.
+                    while let Some(peer) = peers.next().await {
+                        if Node::track_project(&api, urn, &peer).is_ok() {
+                            break;
+                        }
                     }
                 }
-            }
+            },
+            Mode::TrackPeers(peers) => {
+                // Nb. We don't proactively track peers in this mode, we wait for them
+                // to announce URNs instead.
+                log::info!("Initializing tracker with {} peers..", peers.len());
+            },
+            Mode::TrackEverything => {
+                log::info!("Initializing tracker to track everything..");
+            },
         }
 
         // Listen on gossip events. As soon as a peer announces something of interest,

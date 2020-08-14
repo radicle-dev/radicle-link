@@ -1,7 +1,7 @@
 use std::{net, path::PathBuf};
 
 use librad::{peer::PeerId, uri::RadUrn};
-use radicle_seed::{Mode, Node, NodeConfig};
+use radicle_seed::{logger, Mode, Node, NodeConfig};
 
 use argh::FromArgs;
 use log;
@@ -39,6 +39,9 @@ impl Options {
 #[tokio::main]
 async fn main() {
     let opts = Options::from_env();
+
+    logger::init(opts.log);
+
     let default = NodeConfig::default();
     let config = NodeConfig {
         listen_addr: opts.listen.unwrap_or(default.listen_addr),
