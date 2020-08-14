@@ -4,7 +4,6 @@ use librad::{peer::PeerId, uri::RadUrn};
 use radicle_seed::{Mode, Node, NodeConfig};
 
 use argh::FromArgs;
-use futures::executor;
 use log;
 
 #[derive(FromArgs)]
@@ -54,5 +53,5 @@ async fn main() {
     };
     let node = Node::new(config).unwrap();
 
-    executor::block_on(node.run()).unwrap();
+    node.run().await.unwrap();
 }
