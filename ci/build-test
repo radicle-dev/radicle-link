@@ -2,4 +2,4 @@
 set -eou pipefail
 
 echo '--- Build & Test'
-cargo test --all
+cargo test fetches_on_gossip_notify
