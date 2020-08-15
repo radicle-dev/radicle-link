@@ -184,7 +184,6 @@ async fn fetches_on_gossip_notify() {
 
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = {
-            librad::git::local::transport::register(global_settings);
 
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
@@ -208,7 +207,10 @@ async fn fetches_on_gossip_notify() {
             let mut origin = repo
                 .remote("origin", &LocalUrl::from(radicle.urn()).to_string())
                 .unwrap();
-            origin.push(&["refs/heads/master"], None).unwrap();
+
+            librad::git::local::transport::with_local_transport(global_settings, || {
+                origin.push(&["refs/heads/master"], None)
+            }).unwrap();
 
             commit_id
         };
@@ -315,7 +317,6 @@ async fn fetches_on_gossip_notify_foo() {
 
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = {
-            librad::git::local::transport::register(global_settings);
 
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
@@ -339,7 +340,10 @@ async fn fetches_on_gossip_notify_foo() {
             let mut origin = repo
                 .remote("origin", &LocalUrl::from(radicle.urn()).to_string())
                 .unwrap();
-            origin.push(&["refs/heads/master"], None).unwrap();
+
+            librad::git::local::transport::with_local_transport(global_settings, || {
+                origin.push(&["refs/heads/master"], None)
+            }).unwrap();
 
             commit_id
         };
@@ -446,7 +450,6 @@ async fn fetches_on_gossip_notify_bar() {
 
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = {
-            librad::git::local::transport::register(global_settings);
 
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
@@ -470,7 +473,10 @@ async fn fetches_on_gossip_notify_bar() {
             let mut origin = repo
                 .remote("origin", &LocalUrl::from(radicle.urn()).to_string())
                 .unwrap();
-            origin.push(&["refs/heads/master"], None).unwrap();
+
+            librad::git::local::transport::with_local_transport(global_settings, || {
+                origin.push(&["refs/heads/master"], None)
+            }).unwrap();
 
             commit_id
         };
@@ -577,7 +583,6 @@ async fn fetches_on_gossip_notify_baz() {
 
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = {
-            librad::git::local::transport::register(global_settings);
 
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
@@ -601,7 +606,10 @@ async fn fetches_on_gossip_notify_baz() {
             let mut origin = repo
                 .remote("origin", &LocalUrl::from(radicle.urn()).to_string())
                 .unwrap();
-            origin.push(&["refs/heads/master"], None).unwrap();
+
+            librad::git::local::transport::with_local_transport(global_settings, || {
+                origin.push(&["refs/heads/master"], None)
+            }).unwrap();
 
             commit_id
         };
@@ -708,7 +716,6 @@ async fn fetches_on_gossip_notify_quux() {
 
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = {
-            librad::git::local::transport::register(global_settings);
 
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
@@ -732,7 +739,10 @@ async fn fetches_on_gossip_notify_quux() {
             let mut origin = repo
                 .remote("origin", &LocalUrl::from(radicle.urn()).to_string())
                 .unwrap();
-            origin.push(&["refs/heads/master"], None).unwrap();
+
+            librad::git::local::transport::with_local_transport(global_settings, || {
+                origin.push(&["refs/heads/master"], None)
+            }).unwrap();
 
             commit_id
         };

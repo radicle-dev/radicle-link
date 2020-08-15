@@ -19,7 +19,9 @@
 
 use std::error::Error;
 
-use keystore::sign;
+use keystore::sign::{self, Signer as _};
+
+use crate::{keys, peer::PeerId};
 
 /// A blanket trait over [`sign::Signer`] that can be shared safely among
 /// threads.
@@ -85,6 +87,10 @@ impl BoxedSigner {
         BoxedSigner {
             signer: Box::new(signer),
         }
+    }
+
+    pub fn peer_id(&self) -> PeerId {
+        keys::PublicKey::from(self.signer.public_key()).into()
     }
 }
 

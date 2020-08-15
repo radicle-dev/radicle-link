@@ -16,6 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    collections::HashMap,
     io::{self, Cursor, Read, Write},
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio},
@@ -33,12 +34,15 @@ use crate::{
         storage::{self, Storage},
     },
     paths::Paths,
+    peer::PeerId,
     signer::BoxedSigner,
     uri::RadUrn,
 };
 
 lazy_static! {
-    static ref SETTINGS: Arc<RwLock<Option<Settings>>> = Arc::new(RwLock::new(None));
+    static ref SETTINGS: Arc<RwLock<HashMap<PeerId, Settings>>> = Arc::new(RwLock::new(HashMap::with_capacity(1)));
+    static ref PEER: Mutex<Option<PeerId>> = Mutex::new(None);
+    static ref LOCK: Mutex<()> = Mutex::new(());
 }
 
 /// The settings for configuring a [`LocalTransportFactory`] and in turn a
@@ -52,7 +56,7 @@ pub struct Settings {
 /// Register the local transport method to `git` so we can use our own custom
 /// transport methods. See [`LocalTransportFactory`] and its `SmartSubtransport`
 /// implementation for more details.
-pub fn register(settings: Settings) {
+fn register(settings: Settings) {
     static INIT: Once = Once::new();
 
     LocalTransportFactory::new().configure(settings);
@@ -66,9 +70,19 @@ pub fn register(settings: Settings) {
     }
 }
 
+pub fn with_local_transport<T, E, F>(settings: Settings, f: F) -> Result<T, E> where F: FnOnce() -> Result<T, E>{
+    let _lock = LOCK.lock().unwrap();
+    register(settings.clone());
+    {
+        let peer_id = settings.signer.peer_id();
+        *PEER.lock().unwrap() = Some(peer_id);
+    }
+    f()
+}
+
 #[derive(Clone)]
 struct LocalTransportFactory {
-    settings: Arc<RwLock<Option<Settings>>>,
+    settings: Arc<RwLock<HashMap<PeerId, Settings>>>,
 }
 
 impl LocalTransportFactory {
@@ -79,7 +93,9 @@ impl LocalTransportFactory {
     }
 
     fn configure(&self, settings: Settings) {
-        *self.settings.write().unwrap() = Some(settings)
+        let peer_id = settings.signer.peer_id();
+        let mut shared = self.settings.write().unwrap();
+        shared.insert(peer_id, settings);
     }
 }
 
@@ -89,10 +105,15 @@ impl SmartSubtransport for LocalTransportFactory {
         url: &str,
         service: Service,
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
+        let peer_id = &*PEER.lock().unwrap();
         let settings = self.settings.read().unwrap();
-        match *settings {
+        let settings = match peer_id {
+            None => return Err(git2::Error::from_str("local transport unconfigured")),
+            Some(peer_id) => settings.get(&peer_id),
+        };
+        match settings {
             None => Err(git2::Error::from_str("local transport unconfigured")),
-            Some(ref settings) => {
+            Some(settings) => {
                 let url = url.parse::<LocalUrl>().map_err(into_git_err)?;
 
                 let mut transport = LocalTransport::new(settings.clone()).map_err(into_git_err)?;
