@@ -40,7 +40,7 @@ use crate::{
 };
 
 lazy_static! {
-    static ref SETTINGS: Arc<RwLock<Option<Settings>>> = Arc::new(RwLock::new(None));
+    static ref SETTINGS: Arc<RwLock<HashMap<PeerId, Settings>>> = Arc::new(RwLock::new(HashMap::with_capacity(1)));
     static ref LOCK: Mutex<()> = Mutex::new(());
 }
 
@@ -70,14 +70,13 @@ fn register(settings: Settings) {
 }
 
 pub fn with_local_transport<T, E, F>(settings: Settings, f: F) -> Result<T, E> where F: FnOnce() -> Result<T, E>{
-    let _lock = LOCK.lock().unwrap();
     register(settings.clone());
     f()
 }
 
 #[derive(Clone)]
 struct LocalTransportFactory {
-    settings: Arc<RwLock<Option<Settings>>>,
+    settings: Arc<RwLock<HashMap<PeerId, Settings>>>,
 }
 
 impl LocalTransportFactory {
@@ -88,7 +87,8 @@ impl LocalTransportFactory {
     }
 
     fn configure(&self, settings: Settings) {
-        *self.settings.write().unwrap() = Some(settings);
+        let peer_id = settings.signer.peer_id();
+        self.settings.write().unwrap().insert(peer_id, settings);
     }
 }
 
@@ -98,12 +98,12 @@ impl SmartSubtransport for LocalTransportFactory {
         url: &str,
         service: Service,
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        let settings = self.settings.read().unwrap();
+        let settings = &*self.settings.read().unwrap();
+        let url = url.parse::<LocalUrl>().map_err(into_git_err)?;
 
-        match *settings {
+        match settings.get(url.peer_id()) {
             None => Err(git2::Error::from_str("local transport unconfigured")),
-            Some(ref settings) => {
-                let url = url.parse::<LocalUrl>().map_err(into_git_err)?;
+            Some(settings) => {
 
                 let mut transport = LocalTransport::new(settings.clone()).map_err(into_git_err)?;
                 let stream = transport

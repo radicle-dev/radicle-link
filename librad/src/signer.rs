@@ -19,7 +19,7 @@
 
 use std::error::Error;
 
-use keystore::sign::{self, Signer as _};
+use keystore::sign;
 
 use crate::{keys, peer::PeerId};
 
