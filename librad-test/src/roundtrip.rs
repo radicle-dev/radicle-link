@@ -20,6 +20,9 @@ use std::{
     str::FromStr,
 };
 
+use librad::internal::canonical::Cjson;
+use pretty_assertions::assert_eq;
+
 pub fn json_roundtrip<A>(a: A)
 where
     for<'de> A: Debug + PartialEq + serde::Serialize + serde::Deserialize<'de>,
@@ -27,6 +30,16 @@ where
     assert_eq!(
         a,
         serde_json::from_str(&serde_json::to_string(&a).unwrap()).unwrap()
+    )
+}
+
+pub fn cjson_roundtrip<A>(a: A)
+where
+    for<'de> A: Debug + PartialEq + serde::Serialize + serde::Deserialize<'de>,
+{
+    assert_eq!(
+        a,
+        serde_json::from_slice(&Cjson(&a).canonical_form().unwrap()).unwrap()
     )
 }
 

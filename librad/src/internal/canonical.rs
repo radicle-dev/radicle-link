@@ -16,16 +16,17 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    convert::Infallible,
+    convert::{Infallible, TryFrom},
     fmt::{self, Display},
-    ops::Deref,
+    ops::{Deref, DerefMut},
     str::FromStr,
 };
 
-use serde::Serialize;
 use serde_bytes::ByteBuf;
 use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
+
+pub mod formatter;
 
 /// Types which have a canonical representation
 pub trait Canonical {
@@ -38,30 +39,88 @@ pub trait Canonical {
 #[error(transparent)]
 pub struct CjsonError(#[from] serde_json::error::Error);
 
-/// The canonical JSON representation of type `T`
+/// The [Canonical JSON] representation of type `T`
+///
+/// [Canonical JSON]: http://wiki.laptop.org/go/Canonical_JSON
 pub struct Cjson<T>(pub T);
 
-impl<T> Cjson<T>
-where
-    T: Serialize,
-{
-    pub fn canonical_form(&self) -> Result<Vec<u8>, CjsonError> {
+impl<T> Cjson<T> {
+    pub fn canonical_form(&self) -> Result<Vec<u8>, CjsonError>
+    where
+        T: serde::Serialize,
+    {
         let mut buf = vec![];
         let mut ser =
-            serde_json::Serializer::with_formatter(&mut buf, olpc_cjson::CanonicalFormatter::new());
+            serde_json::Serializer::with_formatter(&mut buf, formatter::CanonicalFormatter::new());
         self.0.serialize(&mut ser)?;
         Ok(buf)
+    }
+
+    pub fn from_slice(s: &[u8]) -> Result<Self, CjsonError>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        Self::try_from(s)
+    }
+}
+
+impl<T> Deref for Cjson<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for Cjson<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
 impl<T> Canonical for Cjson<T>
 where
-    T: Serialize,
+    T: serde::Serialize,
 {
     type Error = CjsonError;
 
     fn canonical_form(&self) -> Result<Vec<u8>, Self::Error> {
         self.canonical_form()
+    }
+}
+
+impl<T> TryFrom<&str> for Cjson<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    type Error = CjsonError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::try_from(s.as_bytes())
+    }
+}
+
+impl<T> TryFrom<&[u8]> for Cjson<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    type Error = CjsonError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        serde_json::from_slice(bytes)
+            .map(Self)
+            .map_err(Self::Error::from)
+    }
+}
+
+impl<T> FromStr for Cjson<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    type Err = CjsonError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s)
     }
 }
 
@@ -72,29 +131,31 @@ where
 /// values. The string is stored in Unicode Normalization Form C (NFC) as per
 /// the [Unicode Standard Annex #15].
 ///
-/// In order to make [`serde_json`] parse JSON containing such canonical
-/// strings, we need to go through [`serde_bytes::ByteBuf`]. To ensure
-/// correctness of the [`PartialEq`] impl, we store the string in NFC
-/// internally.
+/// This newtype wrapper stores the [`String`] in NFC internally, in order to
+/// preserve equivalence: NFC is not reversible, and may result in a different
+/// lexicographic ordering. So, wrapping any Rust [`String`] in a [`Cstring`]
+/// will make sure it compares equal to a string obtained from a
+/// source in canonical form. Note, however, that this means that converting
+/// back from a [`Cstring`] may not yield the same input [`String`] (although it
+/// will _render_ the same).
 ///
-/// Note, however, that [`serde_json`] is not able to handle control characters
-/// in strings (which Canonical JSON allows). Accordingly, the [`Arbitrary`]
-/// instance doesn't generate those.
+/// The [`serde::Deserialize`] impl interprets the input as raw bytes, and then
+/// performs the conversion. It is thus possible to parse compliant [Canonical
+/// JSON], ie. string values containing unescaped control characters.
 ///
 /// [Canonical JSON]: http://wiki.laptop.org/go/Canonical_JSON
 /// [RFC 7159]: https://tools.ietf.org/html/rfc7159
 /// [Unicode Standard Annex #15]: http://www.unicode.org/reports/tr15/
-/// [`Arbitrary`]: https://docs.rs/proptest/0.10.0/proptest/arbitrary/trait.Arbitrary.html
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize)]
 #[serde(transparent)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub struct Cstring(#[cfg_attr(test, proptest(strategy(gen_string_nfc)))] String);
+pub struct Cstring(#[cfg_attr(test, proptest(strategy(gen_cstring)))] String);
 
 #[cfg(test)]
-pub fn gen_string_nfc() -> impl proptest::strategy::Strategy<Value = String> {
+fn gen_cstring() -> impl proptest::strategy::Strategy<Value = String> {
     use proptest::prelude::*;
 
-    "\\P{Cc}*".prop_map(|s| s.nfc().collect())
+    ".*".prop_map(|s| s.nfc().collect())
 }
 
 impl<'de> serde::Deserialize<'de> for Cstring {
@@ -116,12 +177,14 @@ impl Deref for Cstring {
     }
 }
 
+/// **Note**: due to unicode normalization, `Cstring::from(s).into() != s`
 impl From<String> for Cstring {
     fn from(s: String) -> Self {
         Self::from(s.as_str())
     }
 }
 
+/// **Note**: due to unicode normalization, `Cstring::from(s).deref() != s`
 impl From<&str> for Cstring {
     fn from(s: &str) -> Self {
         Self(s.nfc().collect())
@@ -139,6 +202,13 @@ impl FromStr for Cstring {
 impl Display for Cstring {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+/// **Note**: due to unicode normalization, `Cstring::from(s).into() != s`
+impl From<Cstring> for String {
+    fn from(Cstring(s): Cstring) -> Self {
+        s
     }
 }
 
@@ -168,13 +238,13 @@ mod tests {
     use super::*;
 
     use librad_test::roundtrip::*;
+    use pretty_assertions::assert_eq;
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
 
     #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize, Arbitrary)]
     struct T {
         #[serde(deserialize_with = "string::deserialize")]
-        #[proptest(regex = "\\P{Cc}*")]
         field: String,
     }
 
@@ -199,9 +269,7 @@ mod tests {
 
         #[test]
         fn cstring_roundtrip_cjson(cstring in any::<Cstring>()) {
-            let canonical = Cjson(&cstring).canonical_form().unwrap();
-
-            assert_eq!(cstring, serde_json::from_slice(&canonical).unwrap())
+            cjson_roundtrip(cstring)
         }
 
         #[test]

@@ -15,12 +15,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{fmt, ops::Deref};
+use std::{convert::TryFrom, fmt, ops::Deref, str::FromStr};
 
+use multihash::Multihash;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
+use thiserror::Error;
 
 /// Serializable [`git2::Oid`]
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Oid(pub git2::Oid);
 
 impl Serialize for Oid {
@@ -50,7 +52,7 @@ impl<'de> Deserialize<'de> for Oid {
             where
                 E: serde::de::Error,
             {
-                s.parse().map(Oid).map_err(serde::de::Error::custom)
+                s.parse().map_err(serde::de::Error::custom)
             }
         }
 
@@ -69,5 +71,88 @@ impl Deref for Oid {
 impl AsRef<git2::Oid> for Oid {
     fn as_ref(&self) -> &git2::Oid {
         self
+    }
+}
+
+impl AsRef<[u8]> for Oid {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl From<git2::Oid> for Oid {
+    fn from(oid: git2::Oid) -> Self {
+        Self(oid)
+    }
+}
+
+impl TryFrom<&str> for Oid {
+    type Error = git2::Error;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        s.parse().map(Self)
+    }
+}
+
+impl FromStr for Oid {
+    type Err = git2::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum FromMultihashError {
+    #[error("Invalid hash algorithm: expected Sha1, got {actual:?}")]
+    AlgorithmMismatch { actual: multihash::Code },
+
+    #[error(transparent)]
+    Git(#[from] git2::Error),
+}
+
+impl TryFrom<Multihash> for Oid {
+    type Error = FromMultihashError;
+
+    fn try_from(mhash: Multihash) -> Result<Self, Self::Error> {
+        if mhash.algorithm() != multihash::Code::Sha1 {
+            return Err(Self::Error::AlgorithmMismatch {
+                actual: mhash.algorithm(),
+            });
+        }
+
+        Self::try_from(mhash.digest()).map_err(Self::Error::from)
+    }
+}
+
+impl TryFrom<&[u8]> for Oid {
+    type Error = git2::Error;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        git2::Oid::from_bytes(bytes).map(Self)
+    }
+}
+
+impl From<Oid> for Multihash {
+    fn from(oid: Oid) -> Self {
+        Self::from(&oid)
+    }
+}
+
+impl From<&Oid> for Multihash {
+    fn from(oid: &Oid) -> Self {
+        multihash::wrap(multihash::Code::Sha1, oid.as_ref())
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+
+    use proptest::prelude::*;
+
+    pub fn gen_oid(kind: git2::ObjectType) -> impl Strategy<Value = Oid> {
+        any::<Vec<u8>>()
+            .prop_map(move |bytes| git2::Oid::hash_object(kind, &bytes).map(Oid::from).unwrap())
     }
 }

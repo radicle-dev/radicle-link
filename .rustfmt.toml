@@ -29,3 +29,5 @@ use_field_init_shorthand = false
 force_explicit_abi = true
 
 license_template_path = ".license-header"
+
+ignore = ["librad/src/internal/canonical/formatter.rs"]

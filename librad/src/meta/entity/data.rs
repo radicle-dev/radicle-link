@@ -26,9 +26,10 @@ use crate::{
     },
     uri::RadUrn,
 };
-use olpc_cjson::CanonicalFormatter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap, HashSet};
+
+use crate::internal::canonical::formatter::CanonicalFormatter;
 
 /// Raw data for an entity signature
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]

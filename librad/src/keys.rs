@@ -60,6 +60,7 @@ impl<T: error::Error + Send + Sync + 'static> SignError for T {}
 
 /// A device-specific signing key
 #[derive(Clone, Eq, PartialEq)]
+#[cfg_attr(test, derive(Debug))]
 pub struct SecretKey(ed25519::SecretKey);
 
 /// The public part of a `Key``
@@ -477,8 +478,18 @@ pub mod tests {
     use super::*;
 
     use librad_test::roundtrip::*;
+    use proptest::prelude::*;
 
     const DATA_TO_SIGN: &[u8] = b"alors monsieur";
+
+    pub fn gen_secret_key() -> impl Strategy<Value = SecretKey> {
+        any::<[u8; 32]>()
+            .prop_map(|seed| SecretKey::from_seed(&ed25519::Seed::from_slice(&seed).unwrap()))
+    }
+
+    pub fn gen_public_key() -> impl Strategy<Value = PublicKey> {
+        gen_secret_key().prop_map(|sk| sk.public())
+    }
 
     #[test]
     fn test_sign_verify_via_signature() {
