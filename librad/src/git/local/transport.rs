@@ -96,7 +96,7 @@ impl SmartSubtransport for LocalTransportFactory {
         let settings = &*self.settings.read().unwrap();
         let url = url.parse::<LocalUrl>().map_err(into_git_err)?;
 
-        match settings.get(url.peer_id()) {
+        match settings.get(&url.local_peer_id) {
             None => Err(git2::Error::from_str("local transport unconfigured")),
             Some(settings) => {
                 let mut transport = LocalTransport::new(settings.clone()).map_err(into_git_err)?;
