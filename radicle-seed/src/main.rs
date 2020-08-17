@@ -1,10 +1,11 @@
 use std::{net, path::PathBuf};
 
+use tracing_subscriber::FmtSubscriber;
+
 use librad::{peer::PeerId, uri::RadUrn};
-use radicle_seed::{logger, Mode, Node, NodeConfig};
+use radicle_seed::{Mode, Node, NodeConfig};
 
 use argh::FromArgs;
-use log;
 
 #[derive(FromArgs)]
 /// Radicle Seed.
@@ -22,8 +23,8 @@ pub struct Options {
     pub listen: Option<net::SocketAddr>,
 
     /// log level (default: info)
-    #[argh(option, default = "log::Level::Info")]
-    pub log: log::Level,
+    #[argh(option, default = "tracing::Level::INFO")]
+    pub log: tracing::Level,
 
     /// radicle root path, for key and git storage
     #[argh(option)]
@@ -39,8 +40,10 @@ impl Options {
 #[tokio::main]
 async fn main() {
     let opts = Options::from_env();
+    let subscriber = FmtSubscriber::builder().with_max_level(opts.log).finish();
 
-    logger::init(opts.log);
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("setting tracing subscriber should succeed");
 
     let default = NodeConfig::default();
     let config = NodeConfig {

@@ -1370,6 +1370,8 @@ dependencies = [
  "radicle-keystore",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

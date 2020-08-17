@@ -1,8 +1,6 @@
 #[macro_use]
 extern crate async_trait;
 
-pub mod logger;
-
 use std::{collections::HashSet, net::SocketAddr, path::PathBuf, vec};
 use thiserror::Error;
 
@@ -158,7 +156,7 @@ impl Node {
         // Start by tracking specified projects if we need to.
         match &mode {
             Mode::TrackUrns(urns) => {
-                log::info!("Initializing tracker with {} URNs..", urns.len());
+                tracing::info!("Initializing tracker with {} URNs..", urns.len());
 
                 for urn in urns {
                     let mut peers = api.providers(urn.clone()).await;
@@ -173,10 +171,10 @@ impl Node {
             Mode::TrackPeers(peers) => {
                 // Nb. We don't proactively track peers in this mode, we wait for them
                 // to announce URNs instead.
-                log::info!("Initializing tracker with {} peers..", peers.len());
+                tracing::info!("Initializing tracker with {} peers..", peers.len());
             },
             Mode::TrackEverything => {
-                log::info!("Initializing tracker to track everything..");
+                tracing::info!("Initializing tracker to track everything..");
             },
         }
 
@@ -188,7 +186,7 @@ impl Node {
                     let urn = &val.urn;
                     let peer_id = &provider.peer_id;
 
-                    log::info!("Discovered new URN {} from peer {}", urn, peer_id);
+                    tracing::info!("Discovered new URN {} from peer {}", urn, peer_id);
 
                     if mode.is_trackable(peer_id, urn) {
                         // Attempt to track, but keep going if it fails.
@@ -222,10 +220,10 @@ impl Node {
 
         match &result {
             Ok(()) => {
-                log::info!("Successfully tracked project {} from peer {}", urn, peer_id,);
+                tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id,);
             },
             Err(err) => {
-                log::debug!(
+                tracing::debug!(
                     "Error tracking project {} from peer {}: {}",
                     urn,
                     peer_id,
