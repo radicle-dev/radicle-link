@@ -30,23 +30,15 @@ use crate::{
 
 #[derive(Clone)]
 pub struct LocalUrl {
-    repo: Hash,
-    peer_id: PeerId,
+    pub repo: Hash,
+    pub local_peer_id: PeerId,
 }
 
 impl LocalUrl {
-    pub fn repo(&self) -> &Hash {
-        &self.repo
-    }
-
-    pub fn peer_id(&self) -> &PeerId {
-        &self.peer_id
-    }
-
-    pub fn from_urn(urn: RadUrn, peer_id: PeerId) -> Self {
+    pub fn from_urn(urn: RadUrn, local_peer_id: PeerId) -> Self {
         Self {
             repo: urn.id,
-            peer_id,
+            local_peer_id,
         }
     }
 }
@@ -57,7 +49,7 @@ impl Display for LocalUrl {
             f,
             "{}://{}@{}.git",
             super::URL_SCHEME,
-            self.peer_id,
+            self.local_peer_id,
             self.repo
         )
     }
@@ -100,27 +92,14 @@ impl FromStr for LocalUrl {
             .trim_end_matches(".git")
             .parse()?;
 
-        let peer_id = url.username().parse()?;
+        let local_peer_id = url.username().parse()?;
 
-        Ok(Self { repo, peer_id })
+        Ok(Self {
+            repo,
+            local_peer_id,
+        })
     }
 }
-
-/*
-impl From<RadUrn> for LocalUrl {
-    fn from(urn: RadUrn) -> Self {
-        Self { repo: urn.id }
-    }
-}
-
-impl From<&RadUrn> for LocalUrl {
-    fn from(urn: &RadUrn) -> Self {
-        Self {
-            repo: urn.id.clone(),
-        }
-    }
-}
-*/
 
 impl Into<RadUrn> for LocalUrl {
     fn into(self) -> RadUrn {
