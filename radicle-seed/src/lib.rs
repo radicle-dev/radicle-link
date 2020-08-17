@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate async_trait;
 
+use futures::stream::StreamExt;
 use std::{collections::HashSet, net::SocketAddr, path::PathBuf, vec};
 use thiserror::Error;
 
@@ -125,8 +126,6 @@ impl Node {
     /// Run the seed node. This function runs indefinitely until a fatal error
     /// occurs.
     pub async fn run(self) -> Result<(), Error> {
-        use futures::stream::StreamExt;
-
         let paths = if let Some(root) = self.config.root {
             paths::Paths::from_root(root)?
         } else {
@@ -153,30 +152,8 @@ impl Node {
         // Spawn the background peer thread.
         tokio::spawn(future);
 
-        // Start by tracking specified projects if we need to.
-        match &mode {
-            Mode::TrackUrns(urns) => {
-                tracing::info!("Initializing tracker with {} URNs..", urns.len());
-
-                for urn in urns {
-                    let mut peers = api.providers(urn.clone()).await;
-                    // Attempt to track until we succeed.
-                    while let Some(peer) = peers.next().await {
-                        if Node::track_project(&api, urn, &peer).is_ok() {
-                            break;
-                        }
-                    }
-                }
-            },
-            Mode::TrackPeers(peers) => {
-                // Nb. We don't proactively track peers in this mode, we wait for them
-                // to announce URNs instead.
-                tracing::info!("Initializing tracker with {} peers..", peers.len());
-            },
-            Mode::TrackEverything => {
-                tracing::info!("Initializing tracker to track everything..");
-            },
-        }
+        // Track already-known URNs.
+        Node::initialize_tracker(&mode, &api).await?;
 
         // Listen on gossip events. As soon as a peer announces something of interest,
         // we check if we should track it.
@@ -232,5 +209,34 @@ impl Node {
             },
         }
         result.map_err(Error::from)
+    }
+
+    /// Attempt to track initial URN list, if any.
+    async fn initialize_tracker(mode: &Mode, api: &PeerApi<Signer>) -> Result<(), Error> {
+        // Start by tracking specified projects if we need to.
+        match &mode {
+            Mode::TrackUrns(urns) => {
+                tracing::info!("Initializing tracker with {} URNs..", urns.len());
+
+                for urn in urns {
+                    let mut peers = api.providers(urn.clone()).await;
+                    // Attempt to track until we succeed.
+                    while let Some(peer) = peers.next().await {
+                        if Node::track_project(&api, urn, &peer).is_ok() {
+                            break;
+                        }
+                    }
+                }
+            },
+            Mode::TrackPeers(peers) => {
+                // Nb. We don't proactively track peers in this mode, we wait for them
+                // to announce URNs instead.
+                tracing::info!("Initializing tracker with {} peers..", peers.len());
+            },
+            Mode::TrackEverything => {
+                tracing::info!("Initializing tracker to track everything..");
+            },
+        }
+        Ok(())
     }
 }
