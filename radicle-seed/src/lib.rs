@@ -2,7 +2,7 @@
 extern crate async_trait;
 
 use futures::stream::StreamExt;
-use std::{collections::HashSet, net::SocketAddr, path::PathBuf, vec};
+use std::{collections::HashSet, io, net::SocketAddr, path::PathBuf, vec};
 use thiserror::Error;
 
 use radicle_keystore::sign::ed25519;
@@ -44,9 +44,17 @@ pub struct Signer {
 }
 
 impl Signer {
-    fn new() -> Self {
-        let key = keys::SecretKey::new();
-        Self { key }
+    pub fn new<R: io::Read>(mut r: R) -> Result<Self, io::Error> {
+        use radicle_keystore::SecretKeyExt;
+
+        let mut bytes = Vec::new();
+        r.read_to_end(&mut bytes)?;
+
+        let sbytes: keys::SecStr = bytes.into();
+        match keys::SecretKey::from_bytes_and_meta(sbytes, &()) {
+            Ok(key) => Ok(Self { key }),
+            Err(err) => Err(io::Error::new(io::ErrorKind::InvalidData, err)),
+        }
     }
 }
 
@@ -92,7 +100,6 @@ impl Mode {
 }
 
 /// Node configuration.
-#[derive(Debug)]
 pub struct NodeConfig {
     /// Address to listen to for new connections.
     pub listen_addr: SocketAddr,
@@ -100,6 +107,8 @@ pub struct NodeConfig {
     pub mode: Mode,
     /// Radicle root path.
     pub root: Option<PathBuf>,
+    /// Signer.
+    pub signer: Signer,
 }
 
 impl Default for NodeConfig {
@@ -108,6 +117,9 @@ impl Default for NodeConfig {
             listen_addr: ([0, 0, 0, 0], 0).into(),
             mode: Mode::TrackEverything,
             root: None,
+            signer: Signer {
+                key: keys::SecretKey::new(),
+            },
         }
     }
 }
@@ -134,9 +146,8 @@ impl Node {
         let gossip_params = Default::default();
         let seeds: Vec<(PeerId, SocketAddr)> = vec![];
         let disco = discovery::Static::new(seeds);
-        let signer = Signer::new();
         let config = PeerConfig {
-            signer,
+            signer: self.config.signer,
             paths,
             listen_addr: self.config.listen_addr,
             gossip_params,

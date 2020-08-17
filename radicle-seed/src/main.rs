@@ -3,7 +3,7 @@ use std::{net, path::PathBuf};
 use tracing_subscriber::FmtSubscriber;
 
 use librad::{peer::PeerId, uri::RadUrn};
-use radicle_seed::{Mode, Node, NodeConfig};
+use radicle_seed::{Mode, Node, NodeConfig, Signer};
 
 use argh::FromArgs;
 
@@ -45,9 +45,13 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("setting tracing subscriber should succeed");
 
-    let default = NodeConfig::default();
+    let signer = match Signer::new(std::io::stdin()) {
+        Ok(signer) => signer,
+        Err(err) => panic!("invalid key was supplied to stdin: {}", err),
+    };
+
     let config = NodeConfig {
-        listen_addr: opts.listen.unwrap_or(default.listen_addr),
+        listen_addr: opts.listen.unwrap_or(NodeConfig::default().listen_addr),
         root: opts.root,
         mode: if !opts.track_peers.is_empty() {
             Mode::TrackPeers(opts.track_peers.into_iter().collect())
@@ -56,6 +60,7 @@ async fn main() {
         } else {
             Mode::TrackEverything
         },
+        signer,
     };
     let node = Node::new(config).unwrap();
 
