@@ -41,9 +41,11 @@ impl<Url> Remote<Url> {
     ///         types::{remote::Remote, FlatRef, Force, NamespacedRef},
     ///     },
     ///     hash::Hash,
+    ///     keys::SecretKey,
     ///     uri::{Path, Protocol, RadUrn},
     /// };
     ///
+    /// let peer_id = SecretKey::new().into();
     /// let id = Hash::hash(b"geez");
     ///
     /// // The RadUrn pointing some project
@@ -66,8 +68,8 @@ impl<Url> Remote<Url> {
     ///         .into_dyn();
     /// let push = monorepo_heads.refspec(working_copy_heads, Force::False).into_dyn();
     ///
-    /// // We point the remote to `LocalUrl` which will be of the form `rad://<id>.git`.
-    /// let url: LocalUrl = urn.into();
+    /// // We point the remote to `LocalUrl` which will be of the form `rad://<peer id>@<id>.git`.
+    /// let url = LocalUrl::from_urn(urn, peer_id);
     ///
     /// // Setup the `Remote`.
     /// let mut remote = Remote::rad_remote(url, fetch);

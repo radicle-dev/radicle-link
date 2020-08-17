@@ -16,6 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    collections::HashMap,
     io::{self, Cursor, Read, Write},
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio},
@@ -33,12 +34,14 @@ use crate::{
         storage::{self, Storage},
     },
     paths::Paths,
+    peer::PeerId,
     signer::BoxedSigner,
     uri::RadUrn,
 };
 
 lazy_static! {
-    static ref SETTINGS: Arc<RwLock<Option<Settings>>> = Arc::new(RwLock::new(None));
+    static ref SETTINGS: Arc<RwLock<HashMap<PeerId, Settings>>> =
+        Arc::new(RwLock::new(HashMap::with_capacity(1)));
 }
 
 /// The settings for configuring a [`LocalTransportFactory`] and in turn a
@@ -68,7 +71,7 @@ pub fn register(settings: Settings) {
 
 #[derive(Clone)]
 struct LocalTransportFactory {
-    settings: Arc<RwLock<Option<Settings>>>,
+    settings: Arc<RwLock<HashMap<PeerId, Settings>>>,
 }
 
 impl LocalTransportFactory {
@@ -79,7 +82,8 @@ impl LocalTransportFactory {
     }
 
     fn configure(&self, settings: Settings) {
-        *self.settings.write().unwrap() = Some(settings)
+        let peer_id = settings.signer.peer_id();
+        self.settings.write().unwrap().insert(peer_id, settings);
     }
 }
 
@@ -89,12 +93,12 @@ impl SmartSubtransport for LocalTransportFactory {
         url: &str,
         service: Service,
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        let settings = self.settings.read().unwrap();
-        match *settings {
-            None => Err(git2::Error::from_str("local transport unconfigured")),
-            Some(ref settings) => {
-                let url = url.parse::<LocalUrl>().map_err(into_git_err)?;
+        let settings = &*self.settings.read().unwrap();
+        let url = url.parse::<LocalUrl>().map_err(into_git_err)?;
 
+        match settings.get(url.peer_id()) {
+            None => Err(git2::Error::from_str("local transport unconfigured")),
+            Some(settings) => {
                 let mut transport = LocalTransport::new(settings.clone()).map_err(into_git_err)?;
                 let stream = transport
                     .stream(url, service, Localio::piped())

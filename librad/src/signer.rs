@@ -21,6 +21,8 @@ use std::error::Error;
 
 use keystore::sign;
 
+use crate::{keys, peer::PeerId};
+
 /// A blanket trait over [`sign::Signer`] that can be shared safely among
 /// threads.
 pub trait Signer: sign::Signer + Send + Sync + dyn_clone::DynClone + 'static {}
@@ -85,6 +87,10 @@ impl BoxedSigner {
         BoxedSigner {
             signer: Box::new(signer),
         }
+    }
+
+    pub fn peer_id(&self) -> PeerId {
+        keys::PublicKey::from(self.signer.public_key()).into()
     }
 }
 

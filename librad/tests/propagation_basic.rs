@@ -206,7 +206,10 @@ async fn fetches_on_gossip_notify() {
                 .unwrap()
             };
             let mut origin = repo
-                .remote("origin", &LocalUrl::from(radicle.urn()).to_string())
+                .remote(
+                    "origin",
+                    &LocalUrl::from_urn(radicle.urn(), peer1.peer_id().clone()).to_string(),
+                )
                 .unwrap();
             origin.push(&["refs/heads/master"], None).unwrap();
 

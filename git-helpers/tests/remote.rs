@@ -31,6 +31,7 @@ use librad::{
     keys::{PublicKey, SecretKey},
     meta::entity::Signatory,
     paths::Paths,
+    peer::PeerId,
     uri::RadUrn,
 };
 use librad_test::{
@@ -47,6 +48,7 @@ fn smoke() {
     let rad_dir = tempdir().unwrap();
     let rad_paths = Paths::from_root(rad_dir.path()).unwrap();
     let key = SecretKey::new();
+    let peer_id = PeerId::from(key.clone());
 
     let urn = setup_entity(&rad_paths, key.clone()).unwrap();
     setup_keystore(rad_paths.keys_dir(), key).unwrap();
@@ -55,7 +57,7 @@ fn smoke() {
     // Push something to `urn`
     {
         let repo_dir = tempdir().unwrap();
-        setup_repo(repo_dir.path(), &urn).unwrap();
+        setup_repo(repo_dir.path(), &urn, peer_id.clone()).unwrap();
 
         let mut child = Command::new("git")
             .args(&["push", "origin", "master"])
@@ -78,7 +80,7 @@ fn smoke() {
             .arg("-c")
             .arg(format!("credential.helper={}", credential_helper()))
             .arg("clone")
-            .arg(LocalUrl::from(urn).to_string())
+            .arg(LocalUrl::from_urn(urn, peer_id).to_string())
             .arg(repo_dir.path())
             .env("PATH", &path)
             .env("RAD_HOME", rad_dir.path())
@@ -117,7 +119,7 @@ fn setup_keystore(dir: &Path, key: SecretKey) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn setup_repo(path: &Path, origin: &RadUrn) -> anyhow::Result<()> {
+fn setup_repo(path: &Path, origin: &RadUrn, peer_id: PeerId) -> anyhow::Result<()> {
     let repo = git2::Repository::init(path)?;
     let blob = repo.blob(b"do you know who I am?")?;
     let tree = {
@@ -137,7 +139,10 @@ fn setup_repo(path: &Path, origin: &RadUrn) -> anyhow::Result<()> {
     )?;
 
     repo.set_head("refs/heads/master")?;
-    repo.remote("origin", &LocalUrl::from(origin).to_string())?;
+    repo.remote(
+        "origin",
+        &LocalUrl::from_urn(origin.clone(), peer_id).to_string(),
+    )?;
 
     let mut config = repo.config()?;
     config

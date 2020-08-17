@@ -24,23 +24,42 @@ use thiserror::Error;
 
 use crate::{
     hash::{self, Hash},
+    peer::{self, PeerId},
     uri::{self, RadUrn},
 };
 
 #[derive(Clone)]
 pub struct LocalUrl {
     repo: Hash,
+    peer_id: PeerId,
 }
 
 impl LocalUrl {
     pub fn repo(&self) -> &Hash {
         &self.repo
     }
+
+    pub fn peer_id(&self) -> &PeerId {
+        &self.peer_id
+    }
+
+    pub fn from_urn(urn: RadUrn, peer_id: PeerId) -> Self {
+        Self {
+            repo: urn.id,
+            peer_id,
+        }
+    }
 }
 
 impl Display for LocalUrl {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}://{}.git", super::URL_SCHEME, self.repo)
+        write!(
+            f,
+            "{}://{}@{}.git",
+            super::URL_SCHEME,
+            self.peer_id,
+            self.repo
+        )
     }
 }
 
@@ -58,6 +77,9 @@ pub enum ParseError {
 
     #[error(transparent)]
     Hash(#[from] hash::ParseError),
+
+    #[error(transparent)]
+    Peer(#[from] peer::conversion::Error),
 }
 
 impl FromStr for LocalUrl {
@@ -78,10 +100,13 @@ impl FromStr for LocalUrl {
             .trim_end_matches(".git")
             .parse()?;
 
-        Ok(Self { repo })
+        let peer_id = url.username().parse()?;
+
+        Ok(Self { repo, peer_id })
     }
 }
 
+/*
 impl From<RadUrn> for LocalUrl {
     fn from(urn: RadUrn) -> Self {
         Self { repo: urn.id }
@@ -95,6 +120,7 @@ impl From<&RadUrn> for LocalUrl {
         }
     }
 }
+*/
 
 impl Into<RadUrn> for LocalUrl {
     fn into(self) -> RadUrn {
