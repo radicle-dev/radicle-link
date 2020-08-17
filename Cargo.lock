@@ -1366,7 +1366,6 @@ dependencies = [
  "chrono",
  "futures",
  "librad",
- "log",
  "radicle-keystore",
  "thiserror",
  "tokio",
