@@ -1306,7 +1306,7 @@ dependencies = [
 [[package]]
 name = "radicle-keystore"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-keystore?rev=27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6#27c9a7b8ce5b87d2be3703f7a3290fa7a0552fc6"
+source = "git+https://github.com/radicle-dev/radicle-keystore?rev=3377e666bde3130a06dd19343e7df2eaa774176a#3377e666bde3130a06dd19343e7df2eaa774176a"
 dependencies = [
  "async-trait",
  "futures",
