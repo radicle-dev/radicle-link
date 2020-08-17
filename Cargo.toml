@@ -1,2 +1,8 @@
 [workspace]
-members = [ "librad", "librad-test", "git-helpers", "radicle-tracker" ]
+members = [
+  "librad",
+  "librad-test",
+  "git-helpers",
+  "radicle-tracker",
+  "radicle-seed",
+]
