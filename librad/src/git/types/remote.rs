@@ -22,8 +22,9 @@ pub struct Remote<Url> {
     pub url: Url,
     /// Name of the remote, e.g. `"rad"`, `"origin"`.
     pub name: String,
-    /// The set of fetch specs to add upon creation.
-    pub fetch_spec: Box<dyn AsRefspec>,
+    /// If the fetch spec is provided then the remote is created with an initial
+    /// fetchspec, otherwise it is just a plain remote.
+    pub fetch_spec: Option<Box<dyn AsRefspec>>,
     /// The set of push specs to add upon creation.
     pub push_specs: Vec<Box<dyn AsRefspec>>,
 }
@@ -75,11 +76,14 @@ impl<Url> Remote<Url> {
     /// let mut remote = Remote::rad_remote(url, fetch);
     /// remote.add_pushes(vec![push].into_iter());
     /// ```
-    pub fn rad_remote(url: Url, fetch_spec: Box<dyn AsRefspec>) -> Self {
+    pub fn rad_remote<Ref>(url: Url, fetch_spec: Ref) -> Self
+    where
+        Ref: Into<Option<Box<dyn AsRefspec>>>,
+    {
         Self {
             url,
             name: "rad".to_string(),
-            fetch_spec,
+            fetch_spec: fetch_spec.into(),
             push_specs: vec![],
         }
     }
@@ -99,11 +103,12 @@ impl<Url> Remote<Url> {
     where
         Url: ToString,
     {
-        let _ = repo.remote_with_fetch(
-            &self.name,
-            &self.url.to_string(),
-            &self.fetch_spec.as_refspec(),
-        )?;
+        let _ = match &self.fetch_spec {
+            Some(fetch_spec) => {
+                repo.remote_with_fetch(&self.name, &self.url.to_string(), &fetch_spec.as_refspec())
+            },
+            None => repo.remote(&self.name, &self.url.to_string()),
+        }?;
 
         for spec in self.push_specs.iter() {
             repo.remote_add_push(&self.name, &spec.as_refspec())?;
