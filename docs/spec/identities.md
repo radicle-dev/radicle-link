@@ -52,7 +52,7 @@ where:
   the first revision
 * `payload` is an extensible, forwards- and backwards-compatible datatype
   containing application-defined metadata about the repository. The protocol
-  interprets _some_ of the properties, as described in [TODO].
+  interprets _some_ of the properties, as described in [Doc Payload].
 * `delegations` contains the public keys of key owners who are authorised to
   issue and approve new revisions of the document. The delegation format depends
   on the type of identity being established, as detailed below.
@@ -89,6 +89,37 @@ sections.
 The `root` of a verified `Identity` is the stable identifier of the repository.
 
 > **TODO** Insert specification of URNs here
+
+### Doc Payload
+
+The `Doc` payload MUST include the following structures for interpretation by
+the protocol:
+
+```rust
+struct User {
+    /// A short name (nickname, handle), without any prefix such as the `@`
+    /// character
+    name: String,
+}
+
+struct Project {
+    /// A short name
+    name: String,
+
+    /// A slightly longer description (should fit in a headline)
+    description: Option<String>,
+
+    /// The default branch. "master" is assumed for git repositories if
+    /// unspecified.
+    default_branch: Option<String>,
+}
+```
+
+There are currently no restrictions on the length (in bytes) of the fields.
+
+Applications MAY add additional payload data, but MUST do so in a way which
+unambiguously preserves the shape of the above definitions (see also:
+[Serialisation]).
 
 ## Verification
 
@@ -334,6 +365,107 @@ The commit chain is stored in a branch at `refs/rad/id`.
 
 > **TODO** Insert repository layout spec as per
 > [RFC](../rfc/identity_resolution.md) here
+
+### Serialisation
+
+The `Doc` is serialised in [Canonical JSON] format. However, all ASCII plane
+control characters (`U+0000 - U+007F`) MUST be escaped according to [@rfc8259,
+Section 7]. Hexadecimal escape sequences MUST be in lower-case. This contradicts
+[Canonical JSON], but permits their claim that "Canonical JSON is parsable with
+any full JSON parser".
+
+In addition to the shape defined above, a field `version` MUST be included with
+a value of `0` (zero) as of this version of the specification.
+
+`Revision` values are serialised as JSON strings, encoded as a [@multihash]
+value wrapped in a [@multibase] encoding using the [@z-base32] alphabet.
+
+`PublicKey` values are serialised as JSON strings, which are obtained by
+concatenating the `0` byte (as a version identifier) with the Ed25519 scalar
+(the public key) encoded as per [@rfc8032], and then wrapping in a [@multibase]
+encoding using the [@z-base32] alphabet.
+
+User delegations are serialised as a JSON array of `PublicKey` values. Duplicate
+elements MUST be a deserialisation error.
+
+Project delegations are serialised as a JSON array of either `PublicKey` or URN
+values without tagging. Duplicate elements MUST be a deserialisation error.
+
+The `payload` is encoded as a JSON object using [@whatwg-url] URLs as the keys,
+and JSON objects of the `radicle-link`- or user-specified payload objects as the
+values. Implementations MUST validate that a valid `radicle-link` payload is
+present in the object, and SHOULD preserve user extensions typed as the JSON
+object model. Duplicate URL keys are a deserialisation error.
+
+The URL keys serve as namespaces, as well as version identifiers. Versioning
+simplifies schema evolution. However, implementations MUST ensure that they can
+interpret both unknown (future) and outdated (past) versions. This specifically
+means that the URL keys for `radicle-link` payloads MUST be considered equal iff
+their prefix sans the version identifier is equal, and duplicates rejected
+accordingly. It is RECOMMENDED that extension namespaces are also constructed
+such that the version identifier is the suffix, and `radicle-link`
+implementations SHOULD provide prefix-queries on the extension namespaces in a
+payload object.
+
+Additionally, empty optional fields SHOULD be included with a value of `null`,
+rather than omitting them from the output.
+
+This specification does not devise a schema resolution mechanism based on the
+payload URLs, nor does it mandate schema validation, although applications are
+free to implement both.
+
+Pending self-hosting, which will allow precise versioning by content-address,
+the URLs for `radicle-link` payloads are:
+
+User
+
+: https://radicle.xyz/link/identities/user/v1
+
+Project
+
+: https://radicle.xyz/link/identities/project/v1
+
+
+The `radicle.xyz` domain is reserved for application payloads defined by the
+Radicle Core Team.
+
+#### Examples
+
+A simple example if an initial `Doc`, embedding a Decentralized Identifier (DID)
+document [@did-core] in a `User` payload:
+
+```json
+{
+    "version": 0,
+    "replaces": null,
+    "payload: {
+        "https://radicle.xyz/link/identities/user/v1": {
+            "name": "cloudhead"
+        },
+        "https://www.w3.org/ns/did/v1": {
+            "@context": "https://www.w3.org/ns/did/v1",
+            "id": "did:example:123456789abcdefghi",
+            "authentication": [{
+                "id": "did:example:123456789abcdefghi#keys-1",
+                "type": "Ed25519VerificationKey2018",
+                "controller": "did:example:123456789abcdefghi",
+                "publicKeyBase58": "H3C2AVvLMv6gmMNam3uVAjZpfkcJCwDwnZn6z3wXmqPV"
+            }],
+            "service": [{
+                "id":"did:example:123456789abcdefghi#vcs",
+                "type": "VerifiableCredentialService",
+                "serviceEndpoint": "https://example.com/vc/"
+            }]
+        }
+    },
+    "delegations": [
+        "hyn4hnppkiu61kpx91o9n5jtj37brujcgj7yp8d1derwz4fbk3tqjw",
+        "hyb8kud543qkfdxkge6ecj6zziuam6w6fqhujgebbfuufmpdxt5uok"
+    ]
+}
+```
+
+Note that the example is **not** in canonical form.
 
 ### Workflow
 
