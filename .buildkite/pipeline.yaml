@@ -4,8 +4,7 @@ steps:
       - "ci/build-test"
       - "ci/docs"
     agents: &build-agent
-      production: "true"
-      platform: "linux"
+      queue: agent-preview
     env: &build-docker
       DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-seedling-build@sha256:bbf2fa12555886b7f279bb1ba7997090611f3c23a178fd27bb06f70693acd8af"
       DOCKER_FILE: .buildkite/docker/rust/Dockerfile
