@@ -235,7 +235,7 @@ impl<S: Clone> Storage<S> {
     pub fn all_metadata<'a>(
         &'a self,
     ) -> Result<impl Iterator<Item = Result<GenericDraftEntity, Error>> + 'a, Error> {
-        let iter = References::from_globs(&self.backend, &["refs/namespaces/*/rad/id"])?;
+        let iter = References::from_globs(&self.backend, &["refs/namespaces/*/refs/rad/id"])?;
 
         Ok(iter.map(move |reference| self.metadata_from_reference(reference?)))
     }
