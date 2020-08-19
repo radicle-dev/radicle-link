@@ -281,3 +281,53 @@ async fn fetches_on_gossip_notify() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn all_metadata_returns_only_local_projects() {
+    logging::init();
+
+    const NUM_PEERS: usize = 3;
+
+    let peers = testnet::setup(NUM_PEERS).await.unwrap();
+    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
+        let (peer1, peer1_key) = apis.pop().unwrap();
+        let (peer2, _) = apis.pop().unwrap();
+        let (peer3, _) = apis.pop().unwrap();
+
+        let mut alice = Alice::new(peer1_key.public());
+        let mut radicle = Radicle::new(&alice);
+        let resolves_to_alice = alice.clone();
+        alice
+            .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
+            .unwrap();
+        radicle
+            .sign(
+                &peer1_key,
+                &Signatory::User(alice.urn()),
+                &resolves_to_alice,
+            )
+            .unwrap();
+
+        tokio::task::spawn_blocking(move || {
+            peer1.storage().create_repo(&alice).unwrap();
+            peer1.storage().create_repo(&radicle).unwrap();
+            let git2 = peer2.storage();
+            git2.clone_repo::<ProjectInfo, _>(
+                radicle.urn().into_rad_url(peer1.peer_id().clone()),
+                None,
+            )
+            .unwrap();
+            let git3 = peer3.storage();
+            git3.clone_repo::<ProjectInfo, _>(
+                radicle.urn().into_rad_url(peer2.peer_id().clone()),
+                None,
+            )
+            .unwrap();
+            let metadata_vec: Vec<_> = git3.all_metadata().unwrap().collect();
+            assert_eq!(1, metadata_vec.len());
+        })
+        .await
+        .unwrap();
+    })
+    .await;
+}
