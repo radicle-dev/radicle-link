@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::convert::TryFrom;
+
 use thiserror::Error;
 
 #[derive(Debug, Clone, Eq, PartialEq, Error)]
@@ -37,6 +39,27 @@ pub struct Trailer<'a> {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Token<'a>(&'a str);
+
+#[derive(Debug, Error)]
+pub enum InvalidToken {
+    #[error("trailing characters: '{0}'")]
+    Trailing(String),
+
+    #[error(transparent)]
+    Parse(#[from] nom::Err<(String, nom::error::ErrorKind)>),
+}
+
+impl<'a> TryFrom<&'a str> for Token<'a> {
+    type Error = InvalidToken;
+
+    fn try_from(s: &'a str) -> Result<Self, Self::Error> {
+        match parser::token(s) {
+            Ok((rest, token)) if rest.is_empty() => Ok(token),
+            Ok((trailing, _)) => Err(InvalidToken::Trailing(trailing.to_owned())),
+            Err(e) => Err(e.to_owned().into()),
+        }
+    }
+}
 
 /// Parse the trailers of the given message. It looks up the last paragraph
 /// of the message and attempts to parse each of its lines as a [Trailer].
@@ -92,7 +115,7 @@ pub mod parser {
     }
 
     /// Parse a trailer token.
-    fn token(s: &str) -> IResult<&str, Token> {
+    pub(super) fn token(s: &str) -> IResult<&str, Token> {
         take_while1(|c: char| c.is_alphanumeric() || c == '-')(s)
             .map(|(i, token_str)| (i, Token(token_str)))
     }
