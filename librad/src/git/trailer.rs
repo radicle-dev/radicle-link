@@ -15,15 +15,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
-pub enum Error<'a> {
+use thiserror::Error;
+
+#[derive(Debug, Clone, Eq, PartialEq, Error)]
+pub enum Error {
     #[error("the trailers paragraph is missing in the given message")]
     MissingParagraph,
 
-    #[error(
-        "one or more trailers are not in the parseable format <token><separator><value>: '{0}'"
-    )]
-    Unparsable(&'a str),
+    #[error("trailing data after trailers section: '{0}")]
+    Trailing(String),
+
+    #[error(transparent)]
+    Parse(#[from] nom::Err<(String, nom::error::ErrorKind)>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -39,7 +42,7 @@ pub struct Token<'a>(&'a str);
 /// of the message and attempts to parse each of its lines as a [Trailer].
 /// Fails if no trailers paragraph is found or if at least one trailer
 /// fails to be parsed.
-pub fn parse<'a>(message: &'a str, separators: &'a str) -> Result<Vec<Trailer<'a>>, Error<'a>> {
+pub fn parse<'a>(message: &'a str, separators: &'a str) -> Result<Vec<Trailer<'a>>, Error> {
     let trailers_paragraph =
         match parser::paragraphs(message.trim_end()).map(|(_, ps)| ps.last().cloned()) {
             Ok(None) | Err(_) => return Err(Error::MissingParagraph),
@@ -48,8 +51,8 @@ pub fn parse<'a>(message: &'a str, separators: &'a str) -> Result<Vec<Trailer<'a
 
     match parser::trailers(trailers_paragraph, separators) {
         Ok((rest, trailers)) if rest.is_empty() => Ok(trailers),
-        Ok((unparseable, _)) => Err(Error::Unparsable(unparseable)),
-        Err(_) => Err(Error::Unparsable(trailers_paragraph)),
+        Ok((unparseable, _)) => Err(Error::Trailing(unparseable.to_owned())),
+        Err(e) => Err(e.to_owned().into()),
     }
 }
 
@@ -205,8 +208,8 @@ Good-trailer: true
 John Doe <john.doe@test.com> # Unparsable token due to missing token"#;
         assert_eq!(
             parse(msg, ":"),
-            Err(Error::Unparsable(
-                "John Doe <john.doe@test.com> # Unparsable token due to missing token"
+            Err(Error::Trailing(
+                "John Doe <john.doe@test.com> # Unparsable token due to missing token".to_owned()
             ))
         )
     }
@@ -219,8 +222,9 @@ Good-trailer: true
 &!#: John Doe <john.doe@test.com> # Unparsable token due to invalid token"#;
         assert_eq!(
             parse(msg, ":"),
-            Err(Error::Unparsable(
+            Err(Error::Trailing(
                 "&!#: John Doe <john.doe@test.com> # Unparsable token due to invalid token"
+                    .to_owned()
             ))
         )
     }
