@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::convert::TryFrom;
+use std::{borrow::Cow, convert::TryFrom};
 
 use thiserror::Error;
 
@@ -34,7 +34,7 @@ pub enum Error {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Trailer<'a> {
     pub token: Token<'a>,
-    pub values: Vec<&'a str>,
+    pub values: Vec<Cow<'a, str>>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -80,12 +80,14 @@ pub fn parse<'a>(message: &'a str, separators: &'a str) -> Result<Vec<Trailer<'a
 }
 
 pub mod parser {
+    use std::borrow::Cow;
+
     use super::{Token, Trailer};
     use nom::{
         branch::alt,
         bytes::complete::{tag, take_until, take_while1},
         character::complete::{line_ending, not_line_ending, one_of, space0, space1},
-        combinator::rest,
+        combinator::{map, rest},
         multi::{many0, separated_list},
         sequence::{delimited, preceded, separated_pair, terminated},
         IResult,
@@ -128,17 +130,17 @@ pub mod parser {
     /// Parse the trailer values, which gathers the value after the separator
     /// (if any) and possible following multilined values, indented by a
     /// space.
-    fn values(s: &str) -> IResult<&str, Vec<&str>> {
+    fn values<'a>(s: &'a str) -> IResult<&'a str, Vec<Cow<'a, str>>> {
         let (r, opt_inline_value) = until_eol_or_eof(s)?;
         let (r, mut values) = multiline_values(r)?;
         if !opt_inline_value.is_empty() {
-            values.insert(0, opt_inline_value)
+            values.insert(0, opt_inline_value.into())
         }
         Ok((r, values))
     }
 
-    fn multiline_values(s: &str) -> IResult<&str, Vec<&str>> {
-        many0(indented_line_contents)(s)
+    fn multiline_values<'a>(s: &'a str) -> IResult<&'a str, Vec<Cow<'a, str>>> {
+        many0(map(indented_line_contents, Cow::from))(s)
     }
 
     fn until_eol_or_eof(s: &str) -> IResult<&str, &str> {
@@ -181,13 +183,13 @@ Just-a-token:
         assert_eq!(
             parse(msg, ":"),
             Ok(vec![
-                new_trailer("Co-authored-by", vec!["John Doe <john.doe@test.com>"]),
-                new_trailer("Ticket", vec!["#42"]),
+                new_trailer("Co-authored-by", &["John Doe <john.doe@test.com>"]),
+                new_trailer("Ticket", &["#42"]),
                 new_trailer(
                     "Tested-by",
-                    vec!["John <john@test.com>", "Jane <jane@test.com>"]
+                    &["John <john@test.com>", "Jane <jane@test.com>"]
                 ),
-                new_trailer("Just-a-token", vec![]),
+                new_trailer("Just-a-token", &[]),
             ])
         )
     }
@@ -209,11 +211,11 @@ Tested-by $User <user@test.com>
         assert_eq!(
             parse(msg, separators),
             Ok(vec![
-                new_trailer("Co-authored-by", vec!["John Doe <john.doe@test.com>"]),
-                new_trailer("Ticket", vec!["#42"]),
+                new_trailer("Co-authored-by", &["John Doe <john.doe@test.com>"]),
+                new_trailer("Ticket", &["#42"]),
                 new_trailer(
                     "Tested-by",
-                    vec![
+                    &[
                         "User <user@test.com>",
                         "John <john@test.com>",
                         "Jane <jane@test.com>"
@@ -261,9 +263,9 @@ Tested-by: Tester <tester@test.com>
         assert_eq!(
             parse(msg, ":"),
             Ok(vec![
-                new_trailer("Co-authored-by", vec!["John Doe <john.doe@test.com>"]),
-                new_trailer("Ticket", vec!["#42"]),
-                new_trailer("Tested-by", vec!["Tester <tester@test.com>"]),
+                new_trailer("Co-authored-by", &["John Doe <john.doe@test.com>"]),
+                new_trailer("Ticket", &["#42"]),
+                new_trailer("Tested-by", &["Tester <tester@test.com>"]),
             ])
         )
     }
@@ -274,10 +276,10 @@ Tested-by: Tester <tester@test.com>
         assert_eq!(parse(msg, ":"), Err(Error::MissingParagraph))
     }
 
-    fn new_trailer<'a>(token: &'a str, values: Vec<&'a str>) -> Trailer<'a> {
+    fn new_trailer<'a>(token: &'a str, values: &[&'a str]) -> Trailer<'a> {
         Trailer {
             token: Token(token),
-            values,
+            values: values.iter().map(|s| Cow::from(*s)).collect(),
         }
     }
 }
