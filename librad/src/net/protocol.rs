@@ -83,7 +83,7 @@ enum Run<'a, A> {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("No connection to {0}")]
+    #[error("no connection to {0}")]
     NoConnection(PeerId),
 
     #[error(transparent)]
@@ -92,10 +92,10 @@ pub enum Error {
     #[error(transparent)]
     Cbor(#[from] CborCodecError),
 
-    #[error("Error handling gossip upgrade")]
+    #[error("error handling gossip upgrade")]
     Gossip(#[from] gossip::error::Error),
 
-    #[error("Error handling git upgrade")]
+    #[error("error handling git upgrade")]
     Git(#[source] io::Error),
 
     #[error(transparent)]

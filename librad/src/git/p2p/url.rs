@@ -86,19 +86,19 @@ impl Display for GitUrl {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ParseError {
-    #[error("Invalid scheme: {0}")]
+    #[error("invalid scheme: {0}")]
     InvalidScheme(String),
 
-    #[error("Missing repo path")]
+    #[error("missing repo path")]
     MissingRepo,
 
-    #[error("Cannot-be-a-base URL")]
+    #[error("cannot-be-a-base URL")]
     CannotBeABase,
 
     #[error(transparent)]
     PeerId(#[from] peer::conversion::Error),
 
-    #[error("Malformed URL")]
+    #[error("malformed URL")]
     Url(#[from] url::ParseError),
 
     #[error(transparent)]

@@ -86,35 +86,35 @@ impl Protocol {
 pub mod path {
     use super::*;
     #[derive(Debug, Error, PartialEq)]
-    #[error("Malformed path: {reasons:?}")]
+    #[error("malformed path: {reasons:?}")]
     pub struct ParseError {
         pub reasons: Vec<&'static ViolatesRefFormat>,
     }
 
     #[derive(Debug, Error, PartialEq)]
     pub enum ViolatesRefFormat {
-        #[error("Ends with `.lock`")]
+        #[error("ends with `.lock`")]
         EndsWithDotLock,
 
-        #[error("Starts with a dot (`.`)")]
+        #[error("starts with a dot (`.`)")]
         StartsWithDot,
 
-        #[error("Contains consecutive dots (`..`)")]
+        #[error("contains consecutive dots (`..`)")]
         ConsecutiveDots,
 
-        #[error("Contains control characters")]
+        #[error("contains control characters")]
         ControlCharacters,
 
-        #[error("Contains reserved characters (`~`, `^`, `:`, `?`, `*`, `[`, `\\`)")]
+        #[error("contains reserved characters (`~`, `^`, `:`, `?`, `*`, `[`, `\\`)")]
         ReservedCharacters,
 
-        #[error("Contains `@{{`")] // nb. double-brace is to escape format string
+        #[error("contains `@{{`")] // nb. double-brace is to escape format string
         AtOpenBrace,
 
-        #[error("Contains consecutive slashes (`//`)")]
+        #[error("contains consecutive slashes (`//`)")]
         ConsecutiveSlashes,
 
-        #[error("Consists of only the `@` character")]
+        #[error("consists of only the `@` character")]
         OnlyAt,
     }
 }
@@ -334,25 +334,25 @@ pub mod rad_urn {
     #[derive(Debug, Error)]
     #[non_exhaustive]
     pub enum ParseError {
-        #[error("Missing {0}")]
+        #[error("missing {0}")]
         Missing(&'static str),
 
-        #[error("Invalid namespace identifier: {0}")]
+        #[error("invalid namespace identifier: {0}")]
         InvalidNID(String),
 
-        #[error("Invalid protocol: {0}")]
+        #[error("invalid protocol: {0}")]
         InvalidProto(String),
 
-        #[error("Malformed path")]
+        #[error("malformed path")]
         Path(#[from] path::ParseError),
 
-        #[error("Must be UTF8")]
+        #[error("must be UTF8")]
         Utf8(#[from] Utf8Error),
 
-        #[error("Invalid encoding")]
+        #[error("invalid encoding")]
         Encoding(#[from] multibase::Error),
 
-        #[error("Invalid hash")]
+        #[error("invalid hash")]
         Hash(#[from] hash::ParseError),
     }
 }
@@ -465,31 +465,31 @@ pub mod rad_url {
     #[derive(Debug, Error)]
     #[non_exhaustive]
     pub enum ParseError {
-        #[error("Missing {0}")]
+        #[error("missing {0}")]
         Missing(&'static str),
 
-        #[error("Invalid scheme: {0}")]
+        #[error("invalid scheme: {0}")]
         InvalidScheme(String),
 
-        #[error("Invalid protocol: {0}")]
+        #[error("invalid protocol: {0}")]
         InvalidProto(String),
 
-        #[error("Invalid PeerId")]
+        #[error("invalid PeerId")]
         PeerId(#[from] peer::conversion::Error),
 
-        #[error("Malformed path")]
+        #[error("malformed path")]
         Path(#[from] path::ParseError),
 
-        #[error("Must be UTF8")]
+        #[error("must be UTF8")]
         Utf8(#[from] Utf8Error),
 
-        #[error("Invalid encoding")]
+        #[error("invalid encoding")]
         Encoding(#[from] multibase::Error),
 
-        #[error("Invalid hash")]
+        #[error("invalid hash")]
         Hash(#[from] hash::ParseError),
 
-        #[error("Malformed URL")]
+        #[error("malformed URL")]
         MalformedUrl(#[from] url::ParseError),
     }
 }

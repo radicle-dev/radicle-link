@@ -151,7 +151,7 @@ pub mod signed {
 
     #[derive(Debug, Error)]
     pub enum Error {
-        #[error("Invalid signature")]
+        #[error("invalid signature")]
         InvalidSignature(Refs),
 
         #[error(transparent)]

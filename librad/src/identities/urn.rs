@@ -71,16 +71,16 @@ where
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ParseError<E: std::error::Error + 'static> {
-    #[error("Missing {0}")]
+    #[error("missing {0}")]
     Missing(&'static str),
 
-    #[error("Invalid namespace identifier: {0}")]
+    #[error("invalid namespace identifier: {0}")]
     InvalidNID(String),
 
-    #[error("Invalid protocol: {0}")]
+    #[error("invalid protocol: {0}")]
     InvalidProto(String),
 
-    #[error("Invalid Id")]
+    #[error("invalid Id")]
     InvalidId(#[source] E),
 
     #[error(transparent)]

@@ -39,7 +39,7 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Remote PeerId could not be determined")]
+    #[error("remote PeerId could not be determined")]
     RemoteIdUnavailable,
 
     #[error(transparent)]

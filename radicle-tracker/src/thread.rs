@@ -77,14 +77,14 @@ impl<A> DataState<A> {
 pub enum Error {
     /// An attempt was made to delete the root of a thread, but the root is
     /// immutable.
-    #[error("Cannot delete the main item of the thread")]
+    #[error("cannot delete the main item of the thread")]
     DeleteRoot,
     /// An attempt was made to move to the previous item in the main thread, but
     /// the pointer is already at the root item.
-    #[error("Tried to move to previous item in the main thread, but we are at the first")]
+    #[error("tried to move to previous item in the main thread, but we are at the first")]
     PreviousOnRoot,
     ///
-    #[error("An attempt was made to move to {attempt}, but this is out of bounds where the bounds are {main:?}, {reply:?}.")]
+    #[error("an attempt was made to move to {attempt}, but this is out of bounds where the bounds are {main:?}, {reply:?}.")]
     OutOfBounds {
         ///
         attempt: Finger,

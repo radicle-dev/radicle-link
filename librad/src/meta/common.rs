@@ -85,13 +85,13 @@ pub mod email {
 
     #[derive(Debug, Error)]
     pub enum Error {
-        #[error("Email address exceeds 254 character limit")]
+        #[error("email address exceeds 254 character limit")]
         AddrTooLong,
 
-        #[error("Invalid local-part of email address")]
+        #[error("invalid local-part of email address")]
         InvalidLocalPart,
 
-        #[error("Invalid domain of email address")]
+        #[error("invalid domain of email address")]
         InvalidDomain,
     }
 }
@@ -171,7 +171,7 @@ pub mod url {
     use thiserror::Error;
 
     #[derive(Debug, Error)]
-    #[error("Error parsing Url: {0}")]
+    #[error("error parsing Url: {0}")]
     pub struct ParseError(#[source] the_url::ParseError);
 
     impl ParseError {

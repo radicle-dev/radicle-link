@@ -57,7 +57,7 @@ pub use types::*;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum GitFetchError {
-    #[error("Already have {0}")]
+    #[error("already have {0}")]
     KnownObject(git2::Oid),
 
     #[error(transparent)]
@@ -67,7 +67,7 @@ pub enum GitFetchError {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum BootstrapError {
-    #[error("Failed to bind to {addr}")]
+    #[error("failed to bind to {addr}")]
     Bind {
         addr: SocketAddr,
         source: quic::Error,

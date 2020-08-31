@@ -35,13 +35,13 @@ pub enum Error {
 
 #[derive(Debug, Error)]
 pub enum NotFound {
-    #[error("Blob with path {0} not found")]
+    #[error("blob with path {0} not found")]
     NoSuchBlob(String),
 
-    #[error("Branch {0} not found")]
+    #[error("branch {0} not found")]
     NoSuchBranch(String),
 
-    #[error("The supplied git2::Reference does not have a target")]
+    #[error("the supplied git2::Reference does not have a target")]
     NoRefTarget,
 }
 

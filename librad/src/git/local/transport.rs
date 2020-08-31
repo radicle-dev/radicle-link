@@ -122,13 +122,13 @@ pub enum Mode {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("No such URN: {0}")]
+    #[error("no such URN: {0}")]
     NoSuchUrn(RadUrn),
 
     #[error(transparent)]
     Storage(#[from] storage::Error),
 
-    #[error("Child exited unsuccessfully")]
+    #[error("child exited unsuccessfully")]
     Child(ExitStatus),
 
     #[error(transparent)]

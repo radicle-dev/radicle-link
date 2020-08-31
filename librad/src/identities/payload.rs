@@ -176,7 +176,7 @@ pub struct Payload<T> {
 
 #[derive(Debug, Error)]
 pub enum ExtError {
-    #[error("Extension namespace can not be the subject namespace")]
+    #[error("extension namespace can not be the subject namespace")]
     ExtensionIsSubject,
 
     #[error(transparent)]
