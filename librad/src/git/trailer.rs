@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{borrow::Cow, convert::TryFrom};
+use std::{borrow::Cow, convert::TryFrom, fmt, ops::Deref};
 
 use thiserror::Error;
 
@@ -35,6 +35,15 @@ pub enum Error {
 pub struct Trailer<'a> {
     pub token: Token<'a>,
     pub values: Vec<Cow<'a, str>>,
+}
+
+impl<'a> Trailer<'a> {
+    pub fn display(&'a self, separator: &'a str) -> Display<'a> {
+        Display {
+            trailer: self,
+            separator,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -61,6 +70,76 @@ impl<'a> TryFrom<&'a str> for Token<'a> {
     }
 }
 
+impl Deref for Token<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct Display<'a> {
+    trailer: &'a Trailer<'a>,
+    separator: &'a str,
+}
+
+impl<'a> fmt::Display for Display<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}{}{}",
+            self.trailer.token.deref(),
+            self.separator,
+            self.trailer.values.join("\n  ")
+        )
+    }
+}
+
+pub trait Separator<'a> {
+    fn sep_for(&self, token: &Token) -> &'a str;
+}
+
+impl<'a> Separator<'a> for &'a str {
+    fn sep_for(&self, _: &Token) -> &'a str {
+        self
+    }
+}
+
+impl<'a, F> Separator<'a> for F
+where
+    F: Fn(&Token) -> &'a str,
+{
+    fn sep_for(&self, token: &Token) -> &'a str {
+        self(token)
+    }
+}
+
+pub struct DisplayMany<'a, S> {
+    separator: S,
+    trailers: &'a [Trailer<'a>],
+}
+
+impl<'a, S> fmt::Display for DisplayMany<'a, S>
+where
+    S: Separator<'a>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for (i, trailer) in self.trailers.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?
+            }
+
+            write!(
+                f,
+                "{}",
+                trailer.display(self.separator.sep_for(&trailer.token))
+            )?
+        }
+
+        Ok(())
+    }
+}
+
 /// Parse the trailers of the given message. It looks up the last paragraph
 /// of the message and attempts to parse each of its lines as a [Trailer].
 /// Fails if no trailers paragraph is found or if at least one trailer
@@ -76,6 +155,22 @@ pub fn parse<'a>(message: &'a str, separators: &'a str) -> Result<Vec<Trailer<'a
         Ok((rest, trailers)) if rest.is_empty() => Ok(trailers),
         Ok((unparseable, _)) => Err(Error::Trailing(unparseable.to_owned())),
         Err(e) => Err(e.to_owned().into()),
+    }
+}
+
+/// Render a slice of trailers.
+///
+/// The `separator` can be either a string slice, or a closure which may choose
+/// a different separator for each [`Token`] encountered. Note that multiline
+/// trailers are rendered with a fixed indent, so the result is not
+/// layout-preserving.
+pub fn display<'a, S>(separator: S, trailers: &'a [Trailer<'a>]) -> DisplayMany<'a, S>
+where
+    S: Separator<'a>,
+{
+    DisplayMany {
+        separator,
+        trailers,
     }
 }
 
@@ -164,6 +259,8 @@ pub mod parser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn parse_message_with_valid_trailers() {
@@ -274,6 +371,36 @@ Tested-by: Tester <tester@test.com>
     fn parse_empty_message() {
         let msg = "";
         assert_eq!(parse(msg, ":"), Err(Error::MissingParagraph))
+    }
+
+    #[test]
+    fn display_static() {
+        let msg = r#"Tested-by: Alice
+  Bob
+  Carol
+  Dylan
+Acked-by: Eve"#;
+
+        let parsed = parse(msg, ":").unwrap();
+        let rendered = format!("{}", display(": ", &parsed));
+        assert_eq!(&rendered, msg);
+    }
+
+    #[test]
+    fn display_dynamic() {
+        let msg = r#"Co-authored-by: John Doe <john.doe@test.com>
+Tested-by: Tester <tester@test.com>
+Fixes #42"#;
+
+        let parsed = parse(msg, ":#").unwrap();
+        let rendered = format!(
+            "{}",
+            display(
+                |t: &Token| if t.deref() == "Fixes" { " #" } else { ": " },
+                &parsed
+            )
+        );
+        assert_eq!(rendered, msg)
     }
 
     fn new_trailer<'a>(token: &'a str, values: &[&'a str]) -> Trailer<'a> {
