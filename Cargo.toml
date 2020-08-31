@@ -3,6 +3,6 @@ members = [
   "librad",
   "librad-test",
   "git-helpers",
-  "radicle-tracker",
-  "radicle-seed",
+  "tracker",
+  "seed",
 ]
