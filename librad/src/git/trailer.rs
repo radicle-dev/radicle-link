@@ -15,31 +15,136 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
-pub enum Error<'a> {
+use std::{borrow::Cow, convert::TryFrom, fmt, ops::Deref};
+
+use thiserror::Error;
+
+#[derive(Debug, Clone, Eq, PartialEq, Error)]
+pub enum Error {
     #[error("the trailers paragraph is missing in the given message")]
     MissingParagraph,
 
-    #[error(
-        "one or more trailers are not in the parseable format <token><separator><value>: '{0}'"
-    )]
-    Unparsable(&'a str),
+    #[error("trailing data after trailers section: '{0}")]
+    Trailing(String),
+
+    #[error(transparent)]
+    Parse(#[from] nom::Err<(String, nom::error::ErrorKind)>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Trailer<'a> {
     pub token: Token<'a>,
-    pub values: Vec<&'a str>,
+    pub values: Vec<Cow<'a, str>>,
+}
+
+impl<'a> Trailer<'a> {
+    pub fn display(&'a self, separator: &'a str) -> Display<'a> {
+        Display {
+            trailer: self,
+            separator,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Token<'a>(&'a str);
 
+#[derive(Debug, Error)]
+pub enum InvalidToken {
+    #[error("trailing characters: '{0}'")]
+    Trailing(String),
+
+    #[error(transparent)]
+    Parse(#[from] nom::Err<(String, nom::error::ErrorKind)>),
+}
+
+impl<'a> TryFrom<&'a str> for Token<'a> {
+    type Error = InvalidToken;
+
+    fn try_from(s: &'a str) -> Result<Self, Self::Error> {
+        match parser::token(s) {
+            Ok((rest, token)) if rest.is_empty() => Ok(token),
+            Ok((trailing, _)) => Err(InvalidToken::Trailing(trailing.to_owned())),
+            Err(e) => Err(e.to_owned().into()),
+        }
+    }
+}
+
+impl Deref for Token<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct Display<'a> {
+    trailer: &'a Trailer<'a>,
+    separator: &'a str,
+}
+
+impl<'a> fmt::Display for Display<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}{}{}",
+            self.trailer.token.deref(),
+            self.separator,
+            self.trailer.values.join("\n  ")
+        )
+    }
+}
+
+pub trait Separator<'a> {
+    fn sep_for(&self, token: &Token) -> &'a str;
+}
+
+impl<'a> Separator<'a> for &'a str {
+    fn sep_for(&self, _: &Token) -> &'a str {
+        self
+    }
+}
+
+impl<'a, F> Separator<'a> for F
+where
+    F: Fn(&Token) -> &'a str,
+{
+    fn sep_for(&self, token: &Token) -> &'a str {
+        self(token)
+    }
+}
+
+pub struct DisplayMany<'a, S> {
+    separator: S,
+    trailers: &'a [Trailer<'a>],
+}
+
+impl<'a, S> fmt::Display for DisplayMany<'a, S>
+where
+    S: Separator<'a>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for (i, trailer) in self.trailers.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?
+            }
+
+            write!(
+                f,
+                "{}",
+                trailer.display(self.separator.sep_for(&trailer.token))
+            )?
+        }
+
+        Ok(())
+    }
+}
+
 /// Parse the trailers of the given message. It looks up the last paragraph
 /// of the message and attempts to parse each of its lines as a [Trailer].
 /// Fails if no trailers paragraph is found or if at least one trailer
 /// fails to be parsed.
-pub fn parse<'a>(message: &'a str, separators: &'a str) -> Result<Vec<Trailer<'a>>, Error<'a>> {
+pub fn parse<'a>(message: &'a str, separators: &'a str) -> Result<Vec<Trailer<'a>>, Error> {
     let trailers_paragraph =
         match parser::paragraphs(message.trim_end()).map(|(_, ps)| ps.last().cloned()) {
             Ok(None) | Err(_) => return Err(Error::MissingParagraph),
@@ -48,18 +153,36 @@ pub fn parse<'a>(message: &'a str, separators: &'a str) -> Result<Vec<Trailer<'a
 
     match parser::trailers(trailers_paragraph, separators) {
         Ok((rest, trailers)) if rest.is_empty() => Ok(trailers),
-        Ok((unparseable, _)) => Err(Error::Unparsable(unparseable)),
-        Err(_) => Err(Error::Unparsable(trailers_paragraph)),
+        Ok((unparseable, _)) => Err(Error::Trailing(unparseable.to_owned())),
+        Err(e) => Err(e.to_owned().into()),
+    }
+}
+
+/// Render a slice of trailers.
+///
+/// The `separator` can be either a string slice, or a closure which may choose
+/// a different separator for each [`Token`] encountered. Note that multiline
+/// trailers are rendered with a fixed indent, so the result is not
+/// layout-preserving.
+pub fn display<'a, S>(separator: S, trailers: &'a [Trailer<'a>]) -> DisplayMany<'a, S>
+where
+    S: Separator<'a>,
+{
+    DisplayMany {
+        separator,
+        trailers,
     }
 }
 
 pub mod parser {
+    use std::borrow::Cow;
+
     use super::{Token, Trailer};
     use nom::{
         branch::alt,
         bytes::complete::{tag, take_until, take_while1},
         character::complete::{line_ending, not_line_ending, one_of, space0, space1},
-        combinator::rest,
+        combinator::{map, rest},
         multi::{many0, separated_list},
         sequence::{delimited, preceded, separated_pair, terminated},
         IResult,
@@ -89,7 +212,7 @@ pub mod parser {
     }
 
     /// Parse a trailer token.
-    fn token(s: &str) -> IResult<&str, Token> {
+    pub(super) fn token(s: &str) -> IResult<&str, Token> {
         take_while1(|c: char| c.is_alphanumeric() || c == '-')(s)
             .map(|(i, token_str)| (i, Token(token_str)))
     }
@@ -102,17 +225,17 @@ pub mod parser {
     /// Parse the trailer values, which gathers the value after the separator
     /// (if any) and possible following multilined values, indented by a
     /// space.
-    fn values(s: &str) -> IResult<&str, Vec<&str>> {
+    fn values<'a>(s: &'a str) -> IResult<&'a str, Vec<Cow<'a, str>>> {
         let (r, opt_inline_value) = until_eol_or_eof(s)?;
         let (r, mut values) = multiline_values(r)?;
         if !opt_inline_value.is_empty() {
-            values.insert(0, opt_inline_value)
+            values.insert(0, opt_inline_value.into())
         }
         Ok((r, values))
     }
 
-    fn multiline_values(s: &str) -> IResult<&str, Vec<&str>> {
-        many0(indented_line_contents)(s)
+    fn multiline_values<'a>(s: &'a str) -> IResult<&'a str, Vec<Cow<'a, str>>> {
+        many0(map(indented_line_contents, Cow::from))(s)
     }
 
     fn until_eol_or_eof(s: &str) -> IResult<&str, &str> {
@@ -137,6 +260,8 @@ pub mod parser {
 mod tests {
     use super::*;
 
+    use pretty_assertions::assert_eq;
+
     #[test]
     fn parse_message_with_valid_trailers() {
         let msg = r#"Subject
@@ -155,13 +280,13 @@ Just-a-token:
         assert_eq!(
             parse(msg, ":"),
             Ok(vec![
-                new_trailer("Co-authored-by", vec!["John Doe <john.doe@test.com>"]),
-                new_trailer("Ticket", vec!["#42"]),
+                new_trailer("Co-authored-by", &["John Doe <john.doe@test.com>"]),
+                new_trailer("Ticket", &["#42"]),
                 new_trailer(
                     "Tested-by",
-                    vec!["John <john@test.com>", "Jane <jane@test.com>"]
+                    &["John <john@test.com>", "Jane <jane@test.com>"]
                 ),
-                new_trailer("Just-a-token", vec![]),
+                new_trailer("Just-a-token", &[]),
             ])
         )
     }
@@ -183,11 +308,11 @@ Tested-by $User <user@test.com>
         assert_eq!(
             parse(msg, separators),
             Ok(vec![
-                new_trailer("Co-authored-by", vec!["John Doe <john.doe@test.com>"]),
-                new_trailer("Ticket", vec!["#42"]),
+                new_trailer("Co-authored-by", &["John Doe <john.doe@test.com>"]),
+                new_trailer("Ticket", &["#42"]),
                 new_trailer(
                     "Tested-by",
-                    vec![
+                    &[
                         "User <user@test.com>",
                         "John <john@test.com>",
                         "Jane <jane@test.com>"
@@ -205,8 +330,8 @@ Good-trailer: true
 John Doe <john.doe@test.com> # Unparsable token due to missing token"#;
         assert_eq!(
             parse(msg, ":"),
-            Err(Error::Unparsable(
-                "John Doe <john.doe@test.com> # Unparsable token due to missing token"
+            Err(Error::Trailing(
+                "John Doe <john.doe@test.com> # Unparsable token due to missing token".to_owned()
             ))
         )
     }
@@ -219,8 +344,9 @@ Good-trailer: true
 &!#: John Doe <john.doe@test.com> # Unparsable token due to invalid token"#;
         assert_eq!(
             parse(msg, ":"),
-            Err(Error::Unparsable(
+            Err(Error::Trailing(
                 "&!#: John Doe <john.doe@test.com> # Unparsable token due to invalid token"
+                    .to_owned()
             ))
         )
     }
@@ -234,9 +360,9 @@ Tested-by: Tester <tester@test.com>
         assert_eq!(
             parse(msg, ":"),
             Ok(vec![
-                new_trailer("Co-authored-by", vec!["John Doe <john.doe@test.com>"]),
-                new_trailer("Ticket", vec!["#42"]),
-                new_trailer("Tested-by", vec!["Tester <tester@test.com>"]),
+                new_trailer("Co-authored-by", &["John Doe <john.doe@test.com>"]),
+                new_trailer("Ticket", &["#42"]),
+                new_trailer("Tested-by", &["Tester <tester@test.com>"]),
             ])
         )
     }
@@ -247,10 +373,40 @@ Tested-by: Tester <tester@test.com>
         assert_eq!(parse(msg, ":"), Err(Error::MissingParagraph))
     }
 
-    fn new_trailer<'a>(token: &'a str, values: Vec<&'a str>) -> Trailer<'a> {
+    #[test]
+    fn display_static() {
+        let msg = r#"Tested-by: Alice
+  Bob
+  Carol
+  Dylan
+Acked-by: Eve"#;
+
+        let parsed = parse(msg, ":").unwrap();
+        let rendered = format!("{}", display(": ", &parsed));
+        assert_eq!(&rendered, msg);
+    }
+
+    #[test]
+    fn display_dynamic() {
+        let msg = r#"Co-authored-by: John Doe <john.doe@test.com>
+Tested-by: Tester <tester@test.com>
+Fixes #42"#;
+
+        let parsed = parse(msg, ":#").unwrap();
+        let rendered = format!(
+            "{}",
+            display(
+                |t: &Token| if t.deref() == "Fixes" { " #" } else { ": " },
+                &parsed
+            )
+        );
+        assert_eq!(rendered, msg)
+    }
+
+    fn new_trailer<'a>(token: &'a str, values: &[&'a str]) -> Trailer<'a> {
         Trailer {
             token: Token(token),
-            values,
+            values: values.iter().map(|s| Cow::from(*s)).collect(),
         }
     }
 }

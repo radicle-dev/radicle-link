@@ -243,7 +243,7 @@ impl From<SecretKey> for PublicKey {
 
 impl fmt::Display for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&hex::encode(self.as_ref()))
+        self.serialize(f)
     }
 }
 
@@ -370,6 +370,12 @@ impl Signature {
         bs58::encode(self.0)
             .with_alphabet(bs58::alphabet::BITCOIN)
             .into_string()
+    }
+}
+
+impl fmt::Display for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.serialize(f)
     }
 }
 
