@@ -15,33 +15,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#![feature(bool_to_option)]
-#![feature(btree_drain_filter)]
-#![feature(never_type)]
+use thiserror::Error;
 
-#[macro_use]
-extern crate async_trait;
-#[macro_use]
-extern crate lazy_static;
+use crate::git::trailer;
 
-extern crate radicle_keystore as keystore;
-extern crate sodiumoxide;
+#[derive(Debug, Error)]
+pub enum Signature {
+    #[error("missing {0}")]
+    Missing(&'static str),
 
-pub mod git;
-pub mod hash;
-pub mod identities;
-pub mod internal;
-pub mod keys;
-pub mod meta;
-pub mod net;
-pub mod paths;
-pub mod peer;
-pub mod signer;
-pub mod uri;
+    #[error(transparent)]
+    Serde(#[from] serde::de::value::Error),
+}
 
-#[cfg(test)]
-mod test;
+#[derive(Debug, Error)]
+pub enum Signatures {
+    #[error(transparent)]
+    Trailer(#[from] trailer::Error),
 
-#[cfg(test)]
-#[macro_use]
-extern crate futures_await_test;
+    #[error(transparent)]
+    Signature(#[from] Signature),
+}

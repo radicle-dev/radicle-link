@@ -337,6 +337,12 @@ impl DerefMut for UserDelegations {
     }
 }
 
+impl From<UserDelegations> for BTreeSet<PublicKey> {
+    fn from(UserDelegations(set): UserDelegations) -> Self {
+        set
+    }
+}
+
 impl<'de> serde::Deserialize<'de> for UserDelegations {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
