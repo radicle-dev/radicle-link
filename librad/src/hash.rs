@@ -33,7 +33,7 @@ pub trait Hasher: PartialEq + Eq {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
-#[error("Invalid hash algorithm, expected {expected:?}, actual {actual:?}")]
+#[error("invalid hash algorithm, expected {expected:?}, actual {actual:?}")]
 pub struct AlgorithmMismatch {
     expected: multihash::Code,
     actual: multihash::Code,
@@ -339,7 +339,7 @@ mod tests {
         // Sorry, future maintainer!
         let expect_err = de.unwrap_err().to_string();
         assert!(
-            expect_err.starts_with("Invalid hash algorithm, expected Blake2b256, actual Sha3_256")
+            expect_err.starts_with("invalid hash algorithm, expected Blake2b256, actual Sha3_256")
         )
     }
 

@@ -136,16 +136,16 @@ pub mod conversion {
 
     #[derive(Debug, Error)]
     pub enum Error {
-        #[error("Unexpected input length: {0}")]
+        #[error("unexpected input length: {0}")]
         UnexpectedInputLength(usize),
 
-        #[error("Unknown version: {0}")]
+        #[error("unknown version: {0}")]
         UnknownVersion(u8),
 
-        #[error("Invalid public key")]
+        #[error("invalid public key")]
         InvalidPublicKey,
 
-        #[error("Decode error: {0}")]
+        #[error("decode error: {0}")]
         DecodeError(#[from] multibase::Error),
     }
 }

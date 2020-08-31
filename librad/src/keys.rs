@@ -158,7 +158,7 @@ impl AsRef<[u8]> for SecretKey {
 
 #[derive(Debug, Error)]
 pub enum IntoSecretKeyError {
-    #[error("Invalid length")]
+    #[error("invalid length")]
     InvalidSliceLength,
 }
 

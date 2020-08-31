@@ -58,13 +58,13 @@ impl Display for LocalUrl {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ParseError {
-    #[error("Invalid scheme: {0}")]
+    #[error("invalid scheme: {0}")]
     InvalidScheme(String),
 
-    #[error("Cannot-be-a-base URL")]
+    #[error("cannot-be-a-base URL")]
     CannotBeABase,
 
-    #[error("Malformed URL")]
+    #[error("malformed URL")]
     Url(#[from] url::ParseError),
 
     #[error(transparent)]

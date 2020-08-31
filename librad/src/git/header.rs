@@ -69,25 +69,25 @@ impl Display for Header {
 
 #[derive(Debug, Error)]
 pub enum ParseError {
-    #[error("Missing service")]
+    #[error("missing service")]
     MissingService,
 
-    #[error("Invalid service: {0}. Must be one of `git-upload-pack` or `git-receive-pack`")]
+    #[error("invalid service: {0}. Must be one of `git-upload-pack` or `git-receive-pack`")]
     InvalidService(String),
 
-    #[error("Missing repo")]
+    #[error("missing repo")]
     MissingRepo,
 
-    #[error("Invalid repo")]
+    #[error("invalid repo")]
     InvalidRepo(#[from] uri::rad_urn::ParseError),
 
-    #[error("Missing host")]
+    #[error("missing host")]
     MissingHost,
 
-    #[error("Malformed host. Must be a PeerId")]
+    #[error("malformed host. Must be a PeerId")]
     MalformedHost(#[from] peer::conversion::Error),
 
-    #[error("Invalid mode: `{0}`. Must be `ls`, or absent")]
+    #[error("invalid mode: `{0}`. Must be `ls`, or absent")]
     InvalidMode(String),
 }
 

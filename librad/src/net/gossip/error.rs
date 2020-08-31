@@ -23,10 +23,10 @@ use crate::net::codec::CborCodecError;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Connection to self")]
+    #[error("connection to self")]
     SelfConnection,
 
-    #[error("Too many storage errors")]
+    #[error("too many storage errors")]
     StorageErrorRateLimitExceeded,
 
     #[error(transparent)]

@@ -42,13 +42,13 @@ const CONFIG_RAD_PEER_ID: &str = "rad.peerid";
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Supplied user entity is not signed by the local key")]
+    #[error("supplied user entity is not signed by the local key")]
     NotSignedBySelf,
 
-    #[error("Entity must be  signed with an owned key")]
+    #[error("entity must be  signed with an owned key")]
     OwnedKeyRequired,
 
-    #[error("Configuration key {config_key} is not set")]
+    #[error("configuration key {config_key} is not set")]
     Unset { config_key: &'static str },
 
     #[error(transparent)]

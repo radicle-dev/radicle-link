@@ -17,11 +17,11 @@
 
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum Error<'a> {
-    #[error("The trailers paragraph is missing in the given message")]
+    #[error("the trailers paragraph is missing in the given message")]
     MissingParagraph,
 
     #[error(
-        "One or more trailers are not in the parseable format <token><separator><value>: '{0}'"
+        "one or more trailers are not in the parseable format <token><separator><value>: '{0}'"
     )]
     Unparsable(&'a str),
 }

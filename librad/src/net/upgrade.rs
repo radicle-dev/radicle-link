@@ -85,19 +85,19 @@ pub enum UpgradeError {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Protocol mismatch: expected {expected:?}, got {actual:?}")]
+    #[error("protocol mismatch: expected {expected:?}, got {actual:?}")]
     ProtocolMismatch {
         expected: UpgradeRequest,
         actual: UpgradeRequest,
     },
 
-    #[error("Remote peer denied upgrade: {0:?}")]
+    #[error("remote peer denied upgrade: {0:?}")]
     ErrorResponse(UpgradeError),
 
-    #[error("Local peer denied upgrade: {0:?}")]
+    #[error("local peer denied upgrade: {0:?}")]
     Denied(UpgradeRequest),
 
-    #[error("No response from remote peer")]
+    #[error("no response from remote peer")]
     NoResponse,
 
     #[error(transparent)]

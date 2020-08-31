@@ -104,7 +104,7 @@ impl FromStr for Oid {
 
 #[derive(Debug, Error)]
 pub enum FromMultihashError {
-    #[error("Invalid hash algorithm: expected Sha1, got {actual:?}")]
+    #[error("invalid hash algorithm: expected Sha1, got {actual:?}")]
     AlgorithmMismatch { actual: multihash::Code },
 
     #[error(transparent)]

@@ -46,61 +46,61 @@ use data::{EntityData, EntityInfo, EntityInfoExt, EntityKind};
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Serialization failed ({0})")]
+    #[error("serialization failed ({0})")]
     SerializationFailed(String),
 
-    #[error("Invalid UTF8 ({0})")]
+    #[error("invalid UTF8 ({0})")]
     InvalidUtf8(String),
 
-    #[error("Invalid buffer encoding ({0})")]
+    #[error("invalid buffer encoding ({0})")]
     InvalidBufferEncoding(String),
 
-    #[error("Invalid hash ({0})")]
+    #[error("invalid hash ({0})")]
     InvalidHash(String),
 
-    #[error("Wrong hash (claimed {claimed:?}, actual {actual:?})")]
+    #[error("wrong hash (claimed {claimed:?}, actual {actual:?})")]
     WrongHash { claimed: String, actual: String },
 
-    #[error("Hash parse error ({0})")]
+    #[error("hash parse error ({0})")]
     HashParseError(#[from] HashParseError),
 
-    #[error("Invalid root hash")]
+    #[error("invalid root hash")]
     InvalidRootHash,
 
-    #[error("Missing root hash")]
+    #[error("missing root hash")]
     MissingRootHash,
 
-    #[error("Invalid URI ({0})")]
+    #[error("invalid URI ({0})")]
     InvalidUri(String),
 
-    #[error("Signature already present ({0})")]
+    #[error("signature already present ({0})")]
     SignatureAlreadyPresent(PublicKey),
 
-    #[error("Invalid data ({0})")]
+    #[error("invalid data ({0})")]
     InvalidData(String),
 
-    #[error("Builder error ({0})")]
+    #[error("builder error ({0})")]
     BuilderError(&'static str),
 
-    #[error("Key not present ({0})")]
+    #[error("key not present ({0})")]
     KeyNotPresent(PublicKey),
 
-    #[error("User key not present (uri {0}, key {1})")]
+    #[error("user key not present (uri {0}, key {1})")]
     UserKeyNotPresent(RadUrn, PublicKey),
 
-    #[error("Signature missing")]
+    #[error("signature missing")]
     SignatureMissing,
 
-    #[error("Signature decoding failed")]
+    #[error("signature decoding failed")]
     SignatureDecodingFailed,
 
-    #[error("Signature verification failed")]
+    #[error("signature verification failed")]
     SignatureVerificationFailed,
 
-    #[error("Resolution failed ({0})")]
+    #[error("resolution failed ({0})")]
     ResolutionFailed(RadUrn),
 
-    #[error("Resolution at revision failed ({0}, revision {1})")]
+    #[error("resolution at revision failed ({0}, revision {1})")]
     RevisionResolutionFailed(RadUrn, u64),
 
     #[error(transparent)]
@@ -109,31 +109,31 @@ pub enum Error {
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum UpdateVerificationError {
-    #[error("Non monotonic revision")]
+    #[error("non monotonic revision")]
     NonMonotonicRevision,
 
-    #[error("Wrong parent hash")]
+    #[error("wrong parent hash")]
     WrongParentHash,
 
-    #[error("Wrong root hash")]
+    #[error("wrong root hash")]
     WrongRootHash,
 
-    #[error("Update without previous quorum")]
+    #[error("update without previous quorum")]
     NoPreviousQuorum,
 
-    #[error("Update without current quorum")]
+    #[error("update without current quorum")]
     NoCurrentQuorum,
 }
 
 #[derive(Debug, Error)]
 pub enum HistoryVerificationError {
-    #[error("Empty history")]
+    #[error("empty history")]
     EmptyHistory,
 
-    #[error("Error at revsion (rev {revision:?}, err {error:?})")]
+    #[error("error at revsion (rev {revision:?}, err {error:?})")]
     ErrorAtRevision { revision: u64, error: Error },
 
-    #[error("Update error (rev {revision:?}, err {error:?})")]
+    #[error("update error (rev {revision:?}, err {error:?})")]
     UpdateError {
         revision: u64,
         error: UpdateVerificationError,

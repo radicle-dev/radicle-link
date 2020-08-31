@@ -80,33 +80,33 @@ use fetch::Fetcher;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Already exists: {0}")]
+    #[error("already exists: {0}")]
     AlreadyExists(RadUrn),
 
-    #[error("Not found: {0}")]
+    #[error("not found: {0}")]
     NoSuchUrn(RadUrn),
 
     #[error(
-        "Identity root hash doesn't match resolved URL. Expected {expected}, actual: {actual}"
+        "identity root hash doesn't match resolved URL. Expected {expected}, actual: {actual}"
     )]
     RootHashMismatch { expected: Hash, actual: Hash },
 
-    #[error("Metadata is not signed")]
+    #[error("metadata is not signed")]
     UnsignedMetadata,
 
-    #[error("Signer key does not match key used at initialisation")]
+    #[error("signer key does not match key used at initialisation")]
     SignerKeyMismatch,
 
-    #[error("Can't refer to the local key for this operation")]
+    #[error("can't refer to the local key for this operation")]
     SelfReferential,
 
-    #[error("Metadata must be signed by local key")]
+    #[error("metadata must be signed by local key")]
     NotSignedBySelf,
 
-    #[error("Local key certifier not found: {0}")]
+    #[error("local key certifier not found: {0}")]
     NoSelf(NamespacedRef<Single>),
 
-    #[error("Missing certifier {certifier} of {urn}")]
+    #[error("missing certifier {certifier} of {urn}")]
     MissingCertifier { certifier: RadUrn, urn: RadUrn },
 
     #[error(transparent)]
