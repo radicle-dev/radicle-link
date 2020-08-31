@@ -159,7 +159,15 @@ pub struct Identity<T, Revision, ContentId> {
 
 impl<T, R, C> Identity<T, R, C> {
     /// The stable identifier of this identity.
-    pub fn urn(&self) -> Urn<&R> {
+    pub fn urn(&self) -> Urn<R>
+    where
+        R: Clone,
+    {
+        Urn::new(self.root.clone())
+    }
+
+    /// Non-allocating variant of [`Self::urn`].
+    pub fn urn_ref(&self) -> Urn<&R> {
         Urn::new(&self.root)
     }
 
@@ -291,79 +299,38 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Untrusted> {
     /// Attempt to transition an [`Untrusted`] [`Identity`] to the [`Signed`]
     /// state.
     ///
-    /// Will retain only the valid and [`Delegations::eligible`] signatures in
-    /// `T`.
-    ///
     /// # Errors
     ///
-    /// If the set of valid and eligible signatures is empty.
-    pub fn signed<E>(
-        self,
-    ) -> Result<Verifying<Identity<T, R, C>, Signed>, error::Verify<R, C, T::Error, E>>
+    /// If the set of signatures is empty, or one or more signatures are invlid.
+    pub fn signed(self) -> Result<Verifying<Identity<T, R, C>, Signed>, error::Verify<R, C>>
     where
         T: Delegations,
-        T::Error: std::error::Error + 'static,
+        T::Error: std::error::Error + Send + Sync + 'static,
 
-        E: std::error::Error + 'static,
         R: Debug + Display + AsRef<[u8]>,
         C: Debug + Display,
     {
-        let Identity {
-            content_id,
-            root,
-            revision,
-            doc,
-            mut signatures,
-            ..
-        } = self.inner;
-
-        let eligible = doc
-            .eligible(signatures.keys().collect())
-            .map_err(error::Verify::Delegation)?;
-        // `drain_filter` is such a strange API:
-        //
-        // "If the closure returns true, the element is removed from the map and
-        // yielded. If the closure returns false, or panics, the element remains
-        // in the map and will not be yielded.
-        //
-        // [...]
-        //
-        // If the iterator is only partially consumed or not consumed at all,
-        // each of the remaining elements will still be subjected to the closure
-        // and removed and dropped if it returns true."
-        //
-        // So, if we drop the iterator, it behaves like `HashMap::retain`, only
-        // with the predicate reversed.
-        signatures
-            .drain_filter(|pk, sig| !(eligible.contains(&pk) && sig.verify(revision.as_ref(), pk)));
-
-        if !signatures.is_empty() {
-            Ok(Verifying {
-                inner: Identity {
-                    content_id,
-                    root,
-                    revision,
-                    doc,
-                    signatures,
-                },
-                state: PhantomData,
-            })
+        if self.signatures.is_empty() {
+            Err(error::Verify::NoSignatures)
+        } else if !self
+            .signatures
+            .iter()
+            .all(|(pk, sig)| sig.verify(self.revision.as_ref(), pk))
+        {
+            Err(error::Verify::SignatureVerification)
         } else {
-            Err(error::Verify::NoValidSignatures(revision, content_id))
+            Ok(self.coerce())
         }
     }
 
     /// Attempt to transition from [`Untrusted`] to [`Quorum`]
     ///
     /// Convenience for when [`Signed`] is not interesting.
-    pub fn quorum<E>(
-        self,
-    ) -> Result<Verifying<Identity<T, R, C>, Quorum>, error::Verify<R, C, T::Error, E>>
+    pub fn quorum(self) -> Result<Verifying<Identity<T, R, C>, Quorum>, error::Verify<R, C>>
     where
         T: Delegations,
-        T::Error: std::error::Error + 'static,
+        T::Error: std::error::Error + Send + Sync + 'static,
 
-        E: std::error::Error + 'static,
         R: Debug + Display + AsRef<[u8]>,
         C: Debug + Display,
     {
@@ -373,15 +340,14 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Untrusted> {
     /// Attempt to transition from [`Untrusted`] straight to [`Verified`].
     ///
     /// Convenience for when the intermediate states are not interesting.
-    pub fn verified<E>(
+    pub fn verified(
         self,
         parent: Option<&Verifying<Identity<T, R, C>, Verified>>,
-    ) -> Result<Verifying<Identity<T, R, C>, Verified>, error::Verify<R, C, T::Error, E>>
+    ) -> Result<Verifying<Identity<T, R, C>, Verified>, error::Verify<R, C>>
     where
         T: Delegations + Replaces<Revision = R>,
-        T::Error: std::error::Error + 'static,
+        T::Error: std::error::Error + Send + Sync + 'static,
 
-        E: std::error::Error + 'static,
         R: Clone + Debug + Display + PartialEq + AsRef<[u8]>,
         C: Clone + Debug + Display,
     {
@@ -396,18 +362,21 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Signed> {
     ///
     /// If the number of signatures does not reach the
     /// [`Delegations::quorum_threshold`].
-    pub fn quorum<E>(
-        self,
-    ) -> Result<Verifying<Identity<T, R, C>, Quorum>, error::Verify<R, C, T::Error, E>>
+    pub fn quorum(self) -> Result<Verifying<Identity<T, R, C>, Quorum>, error::Verify<R, C>>
     where
         T: Delegations,
-        T::Error: std::error::Error + 'static,
+        T::Error: std::error::Error + Send + Sync + 'static,
 
-        E: std::error::Error + 'static,
         R: Debug + Display,
         C: Debug + Display,
     {
-        if self.signatures.len() > self.doc.quorum_threshold() {
+        let eligible = self
+            .doc
+            .eligible(self.signatures.keys().collect())
+            .map_err(error::Verify::eligibility)?
+            .len();
+
+        if eligible > self.doc.quorum_threshold() {
             Ok(self.coerce())
         } else {
             Err(error::Verify::Quorum)
@@ -435,15 +404,14 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Quorum> {
     ///   `parent.eligible(self.signatures.keys()).len() >
     ///   parent.doc.quorum_threshold()`
     /// * `parent.eligible(self.signatures.keys())` returns an error
-    pub fn verified<E>(
+    pub fn verified(
         self,
         parent: Option<&Verifying<Identity<T, R, C>, Verified>>,
-    ) -> Result<Verifying<Identity<T, R, C>, Verified>, error::Verify<R, C, T::Error, E>>
+    ) -> Result<Verifying<Identity<T, R, C>, Verified>, error::Verify<R, C>>
     where
         T: Delegations + Replaces<Revision = R>,
-        T::Error: std::error::Error + 'static,
+        T::Error: std::error::Error + Send + Sync + 'static,
 
-        E: std::error::Error + 'static,
         R: Clone + Debug + Display + PartialEq + AsRef<[u8]>,
         C: Clone + Debug + Display,
     {
@@ -471,13 +439,13 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Quorum> {
                     let votes = parent
                         .doc
                         .eligible(self.signatures.keys().collect())
-                        .map_err(error::Verify::Delegation)?
+                        .map_err(error::Verify::eligibility)?
                         .len();
 
                     if votes > parent.doc.quorum_threshold() {
                         Ok(self.coerce())
                     } else {
-                        Err(error::Verify::Quorum)
+                        Err(error::Verify::ParentQuorum)
                     }
                 }
             },
@@ -512,14 +480,15 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Verified> {
     pub fn verify<E>(
         self,
         mut progeny: impl Iterator<Item = Result<Verifying<Identity<T, R, C>, Untrusted>, E>>,
-    ) -> Result<Folded<T, R, C>, error::Verify<R, C, T::Error, E>>
+    ) -> Result<Folded<T, R, C>, error::Verify<R, C>>
     where
         T: Delegations + Replaces<Revision = R>,
-        <T as Delegations>::Error: std::error::Error + 'static,
+        T::Error: std::error::Error + Send + Sync + 'static,
 
-        E: std::error::Error + 'static,
         R: Clone + Debug + Display + PartialEq + AsRef<[u8]>,
         C: Clone + Debug + Display,
+
+        E: std::error::Error + Send + Sync + 'static,
     {
         progeny.try_fold(
             Folded {
@@ -528,14 +497,34 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Verified> {
             },
             |acc, cur| {
                 // Not signed is an error
-                let signed = cur.map_err(error::Verify::Iter)?.signed()?;
-                match signed.quorum::<E>() {
+                let signed = cur.map_err(error::Verify::history)?.signed()?;
+                match signed.quorum() {
                     // Not reaching quorum is ok, skip
                     Err(_) => Ok(acc),
-                    Ok(quorum) => quorum.verified(Some(&acc.head)).map(|verified| Folded {
-                        head: verified,
-                        parent: Some(acc.head),
-                    }),
+                    Ok(quorum) => {
+                        // A confirmation of `self` is ok, but `parent` stays
+                        // the same then. We need to be careful to not let a
+                        // current quorum invalidate our already-confirmed state
+                        // -- so skip if this doesn't pass `verified`, instead
+                        // of returning an error (which would render this
+                        // history invalid).
+                        if quorum.revision == acc.head.revision
+                            && quorum.doc.replaces() == acc.head.doc.replaces()
+                        {
+                            match quorum.verified(acc.parent.as_ref()) {
+                                Err(_) => Ok(acc),
+                                Ok(verified) => Ok(Folded {
+                                    head: verified,
+                                    parent: acc.parent,
+                                }),
+                            }
+                        } else {
+                            quorum.verified(Some(&acc.head)).map(|verified| Folded {
+                                head: verified,
+                                parent: Some(acc.head),
+                            })
+                        }
+                    },
                 }
             },
         )

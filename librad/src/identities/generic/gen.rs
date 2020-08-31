@@ -108,12 +108,12 @@ impl Display for Revision {
 
 /// "Existentialised" delegations.
 #[derive(Clone, Debug, PartialEq)]
-pub enum SomeDelegations<T, R, C> {
+pub enum SomeDelegations<T, R: Ord, C: Ord> {
     Direct(delegation::Direct),
     Indirect(delegation::Indirect<T, R, C>),
 }
 
-impl<T, R, C> Delegations for SomeDelegations<T, R, C> {
+impl<T, R: Ord, C: Ord> Delegations for SomeDelegations<T, R, C> {
     type Error = Either<
         <delegation::Direct as Delegations>::Error,
         <delegation::Indirect<T, R, C> as Delegations>::Error,
@@ -134,7 +134,7 @@ impl<T, R, C> Delegations for SomeDelegations<T, R, C> {
     }
 }
 
-impl<T, R, C> sealed::Sealed for SomeDelegations<T, R, C> {}
+impl<T, R: Ord, C: Ord> sealed::Sealed for SomeDelegations<T, R, C> {}
 
 /// Official radicle presence of [The Most Interesting Man In The World].
 ///

@@ -21,18 +21,22 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum Verify<Revision, ContentId, Delegation, Iter>
+pub enum Verify<Revision, ContentId>
 where
     Revision: Display + Debug + 'static,
     ContentId: Display + Debug + 'static,
-    Delegation: std::error::Error + 'static,
-    Iter: std::error::Error + 'static,
 {
-    #[error("no valid signatures over {0} in {1}")]
-    NoValidSignatures(Revision, ContentId),
+    #[error("one or more invalid signatures")]
+    SignatureVerification,
+
+    #[error("empty signatures")]
+    NoSignatures,
 
     #[error("quorum not reached")]
     Quorum,
+
+    #[error("quorum on parent not reached")]
+    ParentQuorum,
 
     #[error("expected parent {expected}, found {actual}")]
     ParentMismatch {
@@ -56,8 +60,28 @@ where
     EmptyHistory,
 
     #[error("non-eligible delegation")]
-    Delegation(#[source] Delegation),
+    Eligibility(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error("error traversing the identity history")]
-    Iter(#[source] Iter),
+    History(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+impl<R, C> Verify<R, C>
+where
+    R: Display + Debug + 'static,
+    C: Display + Debug + 'static,
+{
+    pub fn eligibility<E>(e: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::Eligibility(Box::new(e))
+    }
+
+    pub fn history<E>(e: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::History(Box::new(e))
+    }
 }

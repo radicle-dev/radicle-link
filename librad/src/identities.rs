@@ -17,8 +17,11 @@
 
 pub mod delegation;
 pub mod generic;
+pub mod git;
 pub mod payload;
 pub mod sign;
 pub mod urn;
 
 mod sealed;
+
+pub use git::*;

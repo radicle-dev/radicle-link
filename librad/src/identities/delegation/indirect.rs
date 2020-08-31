@@ -22,13 +22,15 @@ use std::{
         BTreeSet,
     },
     fmt::{Debug, Display},
+    slice,
+    vec,
 };
 
-use either::Either;
+use either::*;
 
 use crate::keys::PublicKey;
 
-use super::{generic, sealed, Delegations, Direct};
+use super::{generic, payload, sealed, Delegations, Direct};
 
 pub mod error {
     use std::fmt::{Debug, Display};
@@ -55,10 +57,43 @@ pub type IndirectlyDelegating<T, R, C> = generic::Identity<generic::Doc<T, Direc
 
 /// [`Delegations`] to either a [`PublicKey`]s directly, or another identity
 /// (which itself must only contain [`Direct`] delegations).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Indirect<T, R, C> {
     identities: Vec<IndirectlyDelegating<T, R, C>>,
     delegations: BTreeMap<PublicKey, Option<usize>>,
+}
+
+// `self.identities` is stored in insertion order, so we can't just derive
+// `PartialEq`. It turns out that making `Identity` `Ord` (or `Hash`) is quite
+// invasive, plus that we would need to store an extra unordered set. There is
+// also not a hard guarantee the `Identity` invariants are maintained (namely
+// the content hashes). So, let's keep this impl to tests, and assume `root` and
+// `revision` identify the stored `IndirectlyDelegating`.
+#[cfg(test)]
+impl<T, R, C> PartialEq for Indirect<T, R, C>
+where
+    R: Ord,
+    C: Ord,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.delegations.len() == other.delegations.len()
+            && self.identities.len() == other.identities.len()
+            && self
+                .delegations
+                .keys()
+                .zip(other.delegations.keys())
+                .all(|(a, b)| a == b)
+            && self
+                .identities
+                .iter()
+                .map(|id| (&id.root, &id.revision))
+                .collect::<BTreeSet<_>>()
+                == other
+                    .identities
+                    .iter()
+                    .map(|id| (&id.root, &id.revision))
+                    .collect::<BTreeSet<_>>()
+    }
 }
 
 impl<T, R, C> Indirect<T, R, C> {
@@ -146,21 +181,48 @@ impl<T, R, C> Indirect<T, R, C> {
                 Ok(acc)
             })
     }
+
+    pub fn iter(&self) -> Iter<'_, T, R, C> {
+        self.into_iter()
+    }
 }
 
+impl<T, R, C> From<Indirect<T, R, C>> for payload::ProjectDelegations<R>
+where
+    R: Clone + Ord,
+{
+    fn from(this: Indirect<T, R, C>) -> Self {
+        this.into_iter()
+            .map(|x| x.map_right(|id| id.urn()))
+            .collect()
+    }
+}
+
+/// Yields direct delegations as `Left(&PublicKey)`, and indirect ones as
+/// `Right(&IndirectlyDelegating)`, with no duplicates. I.e. it holds that:
+///
+/// ```text
+/// let x = Indirect::try_from_iter(y)?;
+/// assert_eq!(Indirect::try_from_iter(x.iter().cloned())?, x)
+/// ```
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct Iter<'a, T, R, C> {
-    inner: btree_map::Iter<'a, PublicKey, Option<usize>>,
-    identities: &'a [IndirectlyDelegating<T, R, C>],
+    identities: slice::Iter<'a, IndirectlyDelegating<T, R, C>>,
+    delegations: btree_map::Iter<'a, PublicKey, Option<usize>>,
 }
 
 impl<'a, T, R, C> Iterator for Iter<'a, T, R, C> {
     type Item = Either<&'a PublicKey, &'a IndirectlyDelegating<T, R, C>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(|(key, pos)| match pos {
-            None => Either::Left(key),
-            Some(pos) => Either::Right(&self.identities[*pos]),
+        self.identities.next().map(Right).or_else(|| {
+            while let Some((pk, pos)) = self.delegations.next() {
+                if pos.is_none() {
+                    return Some(Left(pk));
+                }
+            }
+
+            None
         })
     }
 }
@@ -171,37 +233,49 @@ impl<'a, T, R, C> IntoIterator for &'a Indirect<T, R, C> {
 
     fn into_iter(self) -> Self::IntoIter {
         Iter {
-            inner: self.delegations.iter(),
-            identities: &self.identities,
+            identities: self.identities.iter(),
+            delegations: self.delegations.iter(),
         }
     }
 }
 
+/// Yields direct delegations as `Left(PublicKey)`, and indirect ones as
+/// `Right(IndirectlyDelegating)`, with no duplicates. I.e. it holds that:
+///
+/// ```text
+/// let x = Indirect::try_from_iter(y)?;
+/// assert_eq!(Indirect::try_from_iter(x.into_iter())?, x)
+/// ```
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct IntoIter<T, R, C> {
-    inner: btree_map::IntoIter<PublicKey, Option<usize>>,
-    identities: Vec<IndirectlyDelegating<T, R, C>>,
+    identities: vec::IntoIter<IndirectlyDelegating<T, R, C>>,
+    delegations: btree_map::IntoIter<PublicKey, Option<usize>>,
 }
 
-impl<T: Clone, R: Clone, C: Clone> Iterator for IntoIter<T, R, C> {
+impl<T, R, C> Iterator for IntoIter<T, R, C> {
     type Item = Either<PublicKey, IndirectlyDelegating<T, R, C>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(|(key, pos)| match pos {
-            None => Either::Left(key),
-            Some(pos) => Either::Right(self.identities[pos].clone()),
+        self.identities.next().map(Right).or_else(|| {
+            while let Some((pk, pos)) = self.delegations.next() {
+                if pos.is_none() {
+                    return Some(Left(pk));
+                }
+            }
+
+            None
         })
     }
 }
 
-impl<T: Clone, R: Clone, C: Clone> IntoIterator for Indirect<T, R, C> {
+impl<T, R, C> IntoIterator for Indirect<T, R, C> {
     type Item = Either<PublicKey, IndirectlyDelegating<T, R, C>>;
     type IntoIter = IntoIter<T, R, C>;
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            inner: self.delegations.into_iter(),
-            identities: self.identities,
+            identities: self.identities.into_iter(),
+            delegations: self.delegations.into_iter(),
         }
     }
 }

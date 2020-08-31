@@ -65,6 +65,10 @@ impl<T> Cjson<T> {
     {
         Self::try_from(s)
     }
+
+    pub fn into_inner(self) -> T {
+        self.0
+    }
 }
 
 impl<T> Deref for Cjson<T> {

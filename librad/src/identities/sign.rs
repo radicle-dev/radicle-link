@@ -120,7 +120,7 @@ impl<'a> From<SignatureRef<'a>> for Trailer<'_> {
 
 // FIXME(kim): This should really be a HashMap with a no-op Hasher -- PublicKey
 // collisions are catastrophic
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Signatures(BTreeMap<PublicKey, keys::Signature>);
 
 impl Signatures {
@@ -140,6 +140,14 @@ impl Deref for Signatures {
 impl DerefMut for Signatures {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl From<Signature> for Signatures {
+    fn from(Signature { key, sig }: Signature) -> Self {
+        let mut map = BTreeMap::new();
+        map.insert(key, sig);
+        map.into()
     }
 }
 
@@ -177,6 +185,37 @@ impl FromIterator<(PublicKey, keys::Signature)> for Signatures {
         T: IntoIterator<Item = (PublicKey, keys::Signature)>,
     {
         Self(BTreeMap::from_iter(iter))
+    }
+}
+
+impl IntoIterator for Signatures {
+    type Item = (PublicKey, keys::Signature);
+    type IntoIter = <BTreeMap<PublicKey, keys::Signature> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl Extend<Signature> for Signatures {
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = Signature>,
+    {
+        for Signature { key, sig } in iter {
+            self.insert(key, sig);
+        }
+    }
+}
+
+impl Extend<(PublicKey, keys::Signature)> for Signatures {
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = (PublicKey, keys::Signature)>,
+    {
+        for (key, sig) in iter {
+            self.insert(key, sig);
+        }
     }
 }
 

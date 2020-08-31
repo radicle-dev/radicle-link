@@ -15,7 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{convert::TryFrom, fmt, ops::Deref, str::FromStr};
+use std::{
+    convert::TryFrom,
+    fmt::{self, Display},
+    ops::Deref,
+    str::FromStr,
+};
 
 use multihash::Multihash;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
@@ -24,6 +29,12 @@ use thiserror::Error;
 /// Serializable [`git2::Oid`]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Oid(pub git2::Oid);
+
+impl Oid {
+    pub fn into_multihash(self) -> Multihash {
+        self.into()
+    }
+}
 
 impl Serialize for Oid {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -83,6 +94,18 @@ impl AsRef<[u8]> for Oid {
 impl From<git2::Oid> for Oid {
     fn from(oid: git2::Oid) -> Self {
         Self(oid)
+    }
+}
+
+impl From<Oid> for git2::Oid {
+    fn from(oid: Oid) -> Self {
+        oid.0
+    }
+}
+
+impl Display for Oid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 

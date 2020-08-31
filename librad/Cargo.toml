@@ -63,7 +63,7 @@ default-features = false
 features = []
 
 [dependencies.minicbor]
-version = "0.4"
+version = "0.5"
 features = ["std", "derive"]
 
 [dependencies.quinn]
@@ -103,6 +103,7 @@ features = ["bit-vec"]
 
 [dev-dependencies]
 anyhow = "1"
+assert_matches = "1"
 fnv = "1"
 futures-await-test = "0"
 futures_ringbuf = "0"

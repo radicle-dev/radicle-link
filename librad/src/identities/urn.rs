@@ -30,8 +30,7 @@ pub trait HasProtocol: protocol::Sealed {
     const PROTOCOL: &'static str;
 }
 
-// TODO(kim): change to super::git::Revision
-impl HasProtocol for ext::Oid {
+impl HasProtocol for super::git::Revision {
     const PROTOCOL: &'static str = "git";
 }
 
@@ -45,11 +44,20 @@ mod protocol {
 
 // TODO(kim): shall replace RadUrn, need to add path component
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Urn<R>(R);
+pub struct Urn<R> {
+    pub id: R,
+}
 
 impl<R> Urn<R> {
-    pub fn new(id: R) -> Self {
-        Self(id)
+    pub const fn new(id: R) -> Self {
+        Self { id }
+    }
+
+    pub fn map<F, T>(self, f: F) -> Urn<T>
+    where
+        F: FnOnce(R) -> T,
+    {
+        Urn { id: f(self.id) }
     }
 }
 
@@ -63,7 +71,7 @@ where
             f,
             "rad:{}:{}",
             R::PROTOCOL,
-            multibase::encode(multibase::Base::Base32Z, (&self.0).into())
+            multibase::encode(multibase::Base::Base32Z, (&self.id).into())
         )
     }
 }
@@ -128,7 +136,7 @@ where
             })
             .and_then(|bytes| Multihash::from_bytes(bytes).map_err(Self::Err::from))
             .and_then(|mhash| R::try_from(mhash).map_err(Self::Err::InvalidId))
-            .map(Self)
+            .map(Self::new)
     }
 }
 
