@@ -123,7 +123,7 @@ pub mod path {
 ///
 /// A [`Path`] is also a valid git branch name (as specified in
 /// `git-check-ref-format(1)`).
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct Path(String);
 
 impl Path {
@@ -240,6 +240,16 @@ impl<'de> Decode<'de> for Path {
         s.parse().or(Err(minicbor::decode::Error::Message(
             "path violates format rules",
         )))
+    }
+}
+
+impl<'de> Deserialize<'de> for Path {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        s.parse().map_err(serde::de::Error::custom)
     }
 }
 
