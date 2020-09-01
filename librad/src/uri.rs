@@ -123,7 +123,7 @@ pub mod path {
 ///
 /// A [`Path`] is also a valid git branch name (as specified in
 /// `git-check-ref-format(1)`).
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 pub struct Path(String);
 
 impl Path {
