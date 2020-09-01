@@ -993,10 +993,11 @@ where
         Ok(())
     }
 
-    pub fn is_tracked(&self, urn: RadUrn, peer: PeerId) -> bool {
-        self.tracked(&urn)
-            .map(|mut t| t.next() == Some(peer))
-            .unwrap_or(false)
+    pub fn is_tracked(&self, urn: &RadUrn, peer: &PeerId) -> bool {
+        match self.backend.find_remote(&tracking_remote_name(urn, peer)) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
     }
 }
 

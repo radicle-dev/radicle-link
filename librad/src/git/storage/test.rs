@@ -62,7 +62,7 @@ fn test_tracking_read_after_write() {
     let peer = PeerId::from(SecretKey::new());
 
     store.track(&urn, &peer).unwrap();
-    assert!(store.is_tracked(urn, peer));
+    assert!(store.is_tracked(&urn, &peer));
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn test_idempotent_tracking() {
 
     // Attempting to track again does not fail
     store.track(&urn, &peer).unwrap();
-    assert!(store.is_tracked(urn, peer));
+    assert!(store.is_tracked(&urn, &peer));
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn test_untrack() {
     store.track(&urn, &peer).unwrap();
     store.untrack(&urn, &peer).unwrap();
 
-    assert!(!store.is_tracked(urn, peer))
+    assert!(!store.is_tracked(&urn, &peer))
 }
 
 #[test]
