@@ -992,6 +992,12 @@ where
 
         Ok(())
     }
+
+    pub fn is_tracked(&self, urn: RadUrn, peer: PeerId) -> bool {
+        self.tracked(&urn)
+            .map(|mut t| t.next() == Some(peer))
+            .unwrap_or(false)
+    }
 }
 
 impl<S: Clone> TryToOwned for Storage<S> {
