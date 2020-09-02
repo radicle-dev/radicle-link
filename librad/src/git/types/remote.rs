@@ -88,6 +88,17 @@ impl<Url> Remote<Url> {
         }
     }
 
+    /// Create a new `Remote` with the given `url` and `name`, while making the
+    /// `fetch_spec` and `push_specs` empty.
+    pub fn new(url: Url, name: String) -> Self {
+        Self {
+            url,
+            name,
+            fetch_spec: None,
+            push_specs: vec![],
+        }
+    }
+
     /// Add a series of push specs to the remote.
     pub fn add_pushes<I>(&mut self, specs: I)
     where
