@@ -194,8 +194,13 @@ where
     }
 
     /// Returns `true` if there is at least one active connection.
-    pub async fn is_connected(&self) -> bool {
+    pub async fn has_connections(&self) -> bool {
         !self.connections.lock().await.is_empty()
+    }
+
+    /// Returns the number of currently active connections.
+    pub async fn num_connections(&self) -> usize {
+        self.connections.lock().await.len()
     }
 
     /// Query the network for an update
