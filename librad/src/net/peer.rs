@@ -444,18 +444,15 @@ where
                             let this = self.clone();
                             let provider = provider.clone();
                             let has = has.clone();
+                            let urn = match has.origin {
+                                Some(origin) => Either::Right(Originates {
+                                    from: origin,
+                                    value: has.urn,
+                                }),
+                                None => Either::Left(has.urn),
+                            };
                             tokio::task::spawn_blocking(move || {
-                                this.git_fetch(
-                                    &provider,
-                                    match has.origin {
-                                        Some(origin) => Either::Right(Originates {
-                                            from: origin,
-                                            value: has.urn,
-                                        }),
-                                        None => Either::Left(has.urn),
-                                    },
-                                    head,
-                                )
+                                this.git_fetch(&provider, urn, head)
                             })
                             .await
                             .unwrap()
@@ -463,7 +460,9 @@ where
 
                         match res {
                             Ok(()) => {
-                                if !self.ask(has.clone()).await {
+                                if self.ask(has.clone()).await {
+                                    PutResult::Applied
+                                } else {
                                     tracing::warn!(
                                         provider = %provider,
                                         has.origin = ?has.origin,
@@ -471,8 +470,6 @@ where
                                         "Provider announced non-existent rev"
                                     );
                                     PutResult::Stale
-                                } else {
-                                    PutResult::Applied
                                 }
                             },
                             Err(e) => match e {
