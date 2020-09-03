@@ -993,14 +993,12 @@ where
         Ok(())
     }
 
-    // TODO(nuno): quoting Kim: [this] is a bit too optimistic I think
-    // -- git2 unifies everything into a single Error enum, but we only
-    // want to return false if the ErrorCode is NotFound, and otherwise
-    // bubble up the error.
-    pub fn is_tracked(&self, urn: &RadUrn, peer: &PeerId) -> bool {
-        self.backend
-            .find_remote(&tracking_remote_name(urn, peer))
-            .is_ok()
+    pub fn is_tracked(&self, urn: &RadUrn, peer: &PeerId) -> Result<bool, Error> {
+        match self.backend.find_remote(&tracking_remote_name(urn, peer)) {
+            Ok(_) => Ok(true),
+            Err(e) if is_not_found_err(&e) => Ok(false),
+            Err(e) => Err(Error::from(e)),
+        }
     }
 }
 

@@ -437,11 +437,16 @@ where
         match has.urn.proto {
             uri::Protocol::Git => {
                 let peer_id = has.origin.clone().unwrap_or_else(|| provider.clone());
+                let is_tracked = match self.inner.lock().unwrap().is_tracked(&has.urn, &peer_id) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        tracing::error!(err = %e, "Git::Storage::is_tracked error");
+                        return PutResult::Error;
+                    },
+                };
                 let res = match has.rev {
                     // TODO: may need to fetch eagerly if we tracked while offline (#141)
-                    Some(Rev::Git(head))
-                        if self.inner.lock().unwrap().is_tracked(&has.urn, &peer_id) =>
-                    {
+                    Some(Rev::Git(head)) if is_tracked => {
                         let res = {
                             let this = self.clone();
                             let provider = provider.clone();
@@ -485,7 +490,7 @@ where
                                 },
                             },
                         }
-                    }
+                    },
                     // The update is uninteresting if it refers to no revision
                     // or if its originated by a peer we are not tracking.
                     _ => PutResult::Uninteresting,
