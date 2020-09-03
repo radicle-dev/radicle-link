@@ -193,7 +193,7 @@ where
         self.gossip.announce(have).await
     }
 
-    /// Returns `true` if there is at lest one active connection.
+    /// Returns `true` if there is at least one active connection.
     pub async fn is_connected(&self) -> bool {
         !self.connections.lock().await.is_empty()
     }
