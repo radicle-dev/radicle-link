@@ -487,8 +487,8 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Quorum> {
 
 /// The result of running [`Verifying::verify`].
 ///
-/// In addition to the most verified [`Identity`], the parent used to call
-/// [`Verifying::verified`] is retained.
+/// In addition to the most recent verified [`Identity`], the parent used to
+/// call [`Verifying::verified`] is retained.
 #[derive(Clone, Debug)]
 pub struct Folded<T, R, C> {
     pub head: Verifying<Identity<T, R, C>, Verified>,
