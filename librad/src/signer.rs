@@ -115,6 +115,12 @@ impl sign::Signer for BoxedSigner {
     }
 }
 
+impl From<keys::SecretKey> for BoxedSigner {
+    fn from(key: keys::SecretKey) -> Self {
+        Self::from(SomeSigner { signer: key })
+    }
+}
+
 /// An implementation of `sign::Signer` will have a concrete associated `Error`.
 /// If we would like to use it as a `BoxedSigner` then we need to create an
 /// implementation of `sign::Signer` which uses `BoxedSignError`.
