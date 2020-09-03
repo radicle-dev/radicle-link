@@ -436,26 +436,30 @@ where
 
         match has.urn.proto {
             uri::Protocol::Git => {
+                let peer_id = has.origin.clone().unwrap_or_else(|| provider.clone());
+                let is_tracked = match self.inner.lock().unwrap().is_tracked(&has.urn, &peer_id) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        tracing::error!(err = %e, "Git::Storage::is_tracked error");
+                        return PutResult::Error;
+                    },
+                };
                 let res = match has.rev {
                     // TODO: may need to fetch eagerly if we tracked while offline (#141)
-                    None => PutResult::Uninteresting,
-                    Some(Rev::Git(head)) => {
+                    Some(Rev::Git(head)) if is_tracked => {
                         let res = {
                             let this = self.clone();
                             let provider = provider.clone();
                             let has = has.clone();
+                            let urn = match has.origin {
+                                Some(origin) => Either::Right(Originates {
+                                    from: origin,
+                                    value: has.urn,
+                                }),
+                                None => Either::Left(has.urn),
+                            };
                             tokio::task::spawn_blocking(move || {
-                                this.git_fetch(
-                                    &provider,
-                                    match has.origin {
-                                        Some(origin) => Either::Right(Originates {
-                                            from: origin,
-                                            value: has.urn,
-                                        }),
-                                        None => Either::Left(has.urn),
-                                    },
-                                    head,
-                                )
+                                this.git_fetch(&provider, urn, head)
                             })
                             .await
                             .unwrap()
@@ -463,7 +467,9 @@ where
 
                         match res {
                             Ok(()) => {
-                                if !self.ask(has.clone()).await {
+                                if self.ask(has.clone()).await {
+                                    PutResult::Applied
+                                } else {
                                     tracing::warn!(
                                         provider = %provider,
                                         has.origin = ?has.origin,
@@ -471,8 +477,6 @@ where
                                         "Provider announced non-existent rev"
                                     );
                                     PutResult::Stale
-                                } else {
-                                    PutResult::Applied
                                 }
                             },
                             Err(e) => match e {
@@ -487,6 +491,9 @@ where
                             },
                         }
                     },
+                    // The update is uninteresting if it refers to no revision
+                    // or if its originated by a peer we are not tracking.
+                    _ => PutResult::Uninteresting,
                 };
 
                 self.subscribers
