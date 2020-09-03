@@ -56,12 +56,16 @@ proptest! {
     }
 
     #[test]
-    fn quorum_below_threshold(id in gen_identity::<Boring>()) {
-        // Hitting the threshold exactly is one too few
-        let threshold = id.quorum_threshold();
+    fn quorum_below_threshold(
+        (id, num_sigs) in
+            gen_identity::<Boring>().prop_flat_map(|id| {
+                let threshold = id.quorum_threshold();
+                (Just(id), 1..=threshold)
+            })
+    ) {
         let signatures: Signatures = BTreeMap::from(id.signatures)
             .into_iter()
-            .take(threshold)
+            .take(num_sigs)
             .collect::<BTreeMap<_, _>>()
             .into();
 
@@ -159,7 +163,11 @@ proptest! {
 
     #[test]
     fn verified_parent_quorum_below_threshold(
-        NonEmpty { head, tail } in gen_history(1)
+        (NonEmpty { head, tail }, num_sigs) in
+            gen_history(1).prop_flat_map(|hist| {
+                let threshold = hist.tail[0].quorum_threshold();
+                (Just(hist), 1..=threshold)
+            })
     ) {
         match tail.as_slice() {
             [next] => {
@@ -167,7 +175,7 @@ proptest! {
                 let next = Identity {
                     signatures: BTreeMap::from(next.signatures.clone())
                         .into_iter()
-                        .take(next.quorum_threshold())
+                        .take(num_sigs)
                         .collect::<BTreeMap<_, _>>()
                         .into(),
                     ..next.clone()
