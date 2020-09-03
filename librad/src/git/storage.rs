@@ -993,6 +993,11 @@ where
         Ok(())
     }
 
+    /// Check whether the given `urn` and `peer` pair is tracked.
+    /// Returns `Ok(true)` when the pair is found locally.
+    /// Fails when attempting to find the pair fails, except when the
+    /// encountered error checks [`is_not_found_err`], in which case
+    /// `Ok(false)` is returned.
     pub fn is_tracked(&self, urn: &RadUrn, peer: &PeerId) -> Result<bool, Error> {
         match self.backend.find_remote(&tracking_remote_name(urn, peer)) {
             Ok(_) => Ok(true),
