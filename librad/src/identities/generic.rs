@@ -432,7 +432,7 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Quorum> {
     /// * the `parent` revision doesn't match `replaces`
     /// * `self`'s signatures do not reach a quorum of the `parent`'s
     ///   delegations. In other words,
-    ///   `parent.eligible(self.signatures.keys()).len() >=
+    ///   `parent.eligible(self.signatures.keys()).len() >
     ///   parent.doc.quorum_threshold()`
     /// * `parent.eligible(self.signatures.keys())` returns an error
     pub fn verified<E>(
