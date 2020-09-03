@@ -64,7 +64,7 @@ impl<T: error::Error + Send + Sync + 'static> SignError for T {}
 pub struct SecretKey(ed25519::SecretKey);
 
 /// The public part of a `Key``
-#[derive(Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct PublicKey(ed25519::PublicKey);
 
 impl From<sign::PublicKey> for PublicKey {
@@ -74,7 +74,7 @@ impl From<sign::PublicKey> for PublicKey {
 }
 
 /// A signature produced by `Key::sign`
-#[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Signature(ed25519::Signature);
 
 impl From<sign::Signature> for Signature {
@@ -247,12 +247,6 @@ impl fmt::Display for PublicKey {
     }
 }
 
-impl fmt::Debug for PublicKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(self, f)
-    }
-}
-
 impl AsRef<[u8]> for PublicKey {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
@@ -382,12 +376,6 @@ impl Signature {
 impl fmt::Display for Signature {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.serialize(f)
-    }
-}
-
-impl fmt::Debug for Signature {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(self, f)
     }
 }
 
