@@ -193,6 +193,11 @@ where
         self.gossip.announce(have).await
     }
 
+    /// Returns `true` if there is at lest one active connection.
+    pub async fn is_connected(&self) -> bool {
+        !self.connections.lock().await.is_empty()
+    }
+
     /// Query the network for an update
     ///
     /// Answers from the network will be available as `ProtocolEvent::Gossip`
