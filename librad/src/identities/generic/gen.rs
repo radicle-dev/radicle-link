@@ -306,7 +306,7 @@ where
 
     let (indirect_signatures, indirect_delegations): (
         (PublicKey, Signature),
-        delegation::indirect::DirectlyDelegating<Boring, R, Boring>,
+        delegation::indirect::IndirectlyDelegating<Boring, R, Boring>,
     ) = {
         let (signatures, delegations) = mk_direct(inner_keys, revision_to_sign.clone());
 

@@ -51,29 +51,29 @@ pub mod error {
     pub struct DoubleVote;
 }
 
-pub type DirectlyDelegating<T, R, C> = generic::Identity<generic::Doc<T, Direct, R>, R, C>;
+pub type IndirectlyDelegating<T, R, C> = generic::Identity<generic::Doc<T, Direct, R>, R, C>;
 
 /// [`Delegations`] to either a [`PublicKey`]s directly, or another identity
 /// (which itself must only contain [`Direct`] delegations).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Indirect<T, R, C> {
-    identities: Vec<DirectlyDelegating<T, R, C>>,
+    identities: Vec<IndirectlyDelegating<T, R, C>>,
     delegations: BTreeMap<PublicKey, Option<usize>>,
 }
 
 impl<T, R, C> Indirect<T, R, C> {
     /// Build `Self` from an iterator of either [`PublicKey`]s or
-    /// [`DirectlyDelegating`] identities.
+    /// [`IndirectlyDelegating`] identities.
     ///
     /// # Errors
     ///
     /// * If a duplicate [`PublicKey`] is encountered (regardless of whether it
     ///   is a direct or indirect delegation ).
-    /// * If a [`DirectlyDelegating`] is encountered which refers to the same
+    /// * If a [`IndirectlyDelegating`] is encountered which refers to the same
     ///   root revision as a previous one.
     pub fn try_from_iter<I>(iter: I) -> Result<Self, error::FromIter<R>>
     where
-        I: IntoIterator<Item = Either<PublicKey, DirectlyDelegating<T, R, C>>>,
+        I: IntoIterator<Item = Either<PublicKey, IndirectlyDelegating<T, R, C>>>,
         R: Clone + Display + Debug + Ord,
     {
         use error::FromIter::*;
@@ -115,7 +115,7 @@ impl<T, R, C> Indirect<T, R, C> {
     }
 
     /// Get the owning [`generic::Identity`] of the given key, if any.
-    pub fn owner(&self, key: &PublicKey) -> Option<&DirectlyDelegating<T, R, C>> {
+    pub fn owner(&self, key: &PublicKey) -> Option<&IndirectlyDelegating<T, R, C>> {
         self.delegations
             .get(key)
             .and_then(|idx| idx.map(|idx| &self.identities[idx]))
@@ -151,11 +151,11 @@ impl<T, R, C> Indirect<T, R, C> {
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct Iter<'a, T, R, C> {
     inner: btree_map::Iter<'a, PublicKey, Option<usize>>,
-    identities: &'a [DirectlyDelegating<T, R, C>],
+    identities: &'a [IndirectlyDelegating<T, R, C>],
 }
 
 impl<'a, T, R, C> Iterator for Iter<'a, T, R, C> {
-    type Item = Either<&'a PublicKey, &'a DirectlyDelegating<T, R, C>>;
+    type Item = Either<&'a PublicKey, &'a IndirectlyDelegating<T, R, C>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|(key, pos)| match pos {
@@ -166,7 +166,7 @@ impl<'a, T, R, C> Iterator for Iter<'a, T, R, C> {
 }
 
 impl<'a, T, R, C> IntoIterator for &'a Indirect<T, R, C> {
-    type Item = Either<&'a PublicKey, &'a DirectlyDelegating<T, R, C>>;
+    type Item = Either<&'a PublicKey, &'a IndirectlyDelegating<T, R, C>>;
     type IntoIter = Iter<'a, T, R, C>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -180,11 +180,11 @@ impl<'a, T, R, C> IntoIterator for &'a Indirect<T, R, C> {
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct IntoIter<T, R, C> {
     inner: btree_map::IntoIter<PublicKey, Option<usize>>,
-    identities: Vec<DirectlyDelegating<T, R, C>>,
+    identities: Vec<IndirectlyDelegating<T, R, C>>,
 }
 
 impl<T: Clone, R: Clone, C: Clone> Iterator for IntoIter<T, R, C> {
-    type Item = Either<PublicKey, DirectlyDelegating<T, R, C>>;
+    type Item = Either<PublicKey, IndirectlyDelegating<T, R, C>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|(key, pos)| match pos {
@@ -195,7 +195,7 @@ impl<T: Clone, R: Clone, C: Clone> Iterator for IntoIter<T, R, C> {
 }
 
 impl<T: Clone, R: Clone, C: Clone> IntoIterator for Indirect<T, R, C> {
-    type Item = Either<PublicKey, DirectlyDelegating<T, R, C>>;
+    type Item = Either<PublicKey, IndirectlyDelegating<T, R, C>>;
     type IntoIter = IntoIter<T, R, C>;
 
     fn into_iter(self) -> Self::IntoIter {
