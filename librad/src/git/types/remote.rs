@@ -127,7 +127,7 @@ impl<Url> Remote<Url> {
 
         // To ensure that the push spec is persisted we need to call `find_remote` here.
         // Otherwise, `remote_add_push` doesn't affect the "loaded remotes".
-        repo.find_remote("rad")
+        repo.find_remote(&self.name)
     }
 }
 
@@ -136,7 +136,12 @@ mod tests {
     use std::{io, marker::PhantomData};
 
     use super::*;
-    use crate::{git::types::*, hash::Hash};
+    use crate::{
+        git::{local::url::LocalUrl, types::*},
+        hash::Hash,
+        keys::SecretKey,
+        peer::PeerId,
+    };
     use librad_test::tempdir::WithTmpDir;
 
     #[test]
@@ -178,5 +183,40 @@ mod tests {
 
             Ok(())
         }).unwrap();
+    }
+
+    #[test]
+    fn check_remote_fetch_spec() -> Result<(), git2::Error> {
+        let key = SecretKey::new();
+        let peer_id = PeerId::from(key);
+        let namespace = Hash::hash(b"meow-meow");
+        let url = LocalUrl {
+            repo: namespace,
+            local_peer_id: peer_id.clone(),
+        };
+        let name = format!("lyla@{}", peer_id);
+        let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, Some(peer_id.clone()));
+        let heads = heads.with_name("heads/*");
+        let remotes: FlatRef<String, _> = FlatRef::heads(PhantomData, Some(name.clone()));
+        let remote = Remote {
+            url,
+            name: name.clone(),
+            fetch_spec: Some(remotes.refspec(heads, Force::True).into_dyn()),
+            push_specs: vec![],
+        };
+
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(tmp.path())?;
+        let remote = remote.create(&repo)?;
+        let fetch_refspecs = remote.fetch_refspecs()?;
+
+        assert_eq!(
+            fetch_refspecs.iter().collect::<Vec<_>>(),
+            vec![Some(
+                format!("+refs/remotes/{}/heads/*:refs/remotes/{}/*", peer_id, name).as_str()
+            )]
+        );
+
+        Ok(())
     }
 }
