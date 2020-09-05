@@ -28,7 +28,7 @@ you may need to install the following packages on a Debian system:
 * `zlib1g-dev`
 
 For an up-to-date specification of the build and development toolchain, see the
-[Dockerfile used for CI](./.buildkite/docker/rust-nightly/Dockerfile).
+[Dockerfile used for CI](./.buildkite/docker/rust/Dockerfile).
 
 To compile, run `cargo build`.
 
