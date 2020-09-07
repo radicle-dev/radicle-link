@@ -319,7 +319,7 @@ impl LocalTransport {
                 // Fetching remotes is ok, pushing is not
                 self.visible_remotes(&urn)?.for_each(|remote_ref| {
                     git.arg("-c")
-                        .arg(format!("uploadpack.hiderefs=!^{}", remote_ref));
+                        .arg(format!("uploadpack.hiderefs=!{}", remote_ref));
                 });
                 git.args(&["upload-pack", "--strict", "--timeout=5"]);
             },
@@ -375,7 +375,7 @@ impl LocalTransport {
     }
 
     fn visible_remotes(&self, urn: &RadUrn) -> Result<impl Iterator<Item = String>, Error> {
-        const GLOBS: &[&str] = &["remotes/**/heads/*", "remotes/**/tags/*"];
+        const GLOBS: &[&str] = &["refs/remotes/*/heads/*", "refs/remotes/*/tags/*"];
 
         self.storage
             .lock()
