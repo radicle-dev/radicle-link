@@ -199,12 +199,19 @@ where
         async move {
             let events = protocol.subscribe().await.filter_map(move |evt| {
                 future::ready(match evt {
-                    ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val }))
-                        if val.urn == urn =>
-                    {
-                        Some(provider)
+                    ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val })) => {
+                        if val.urn == urn {
+                            println!("Found it for urn {}", urn);
+                            Some(provider)
+                        } else {
+                            println!("val.urn ({}) differs from urn ({})", val.urn, urn);
+                            None
+                        }
                     },
-                    _ => None,
+                    x => {
+                        println!("Other case for {}: {:?}", urn, x);
+                        None
+                    },
                 })
             });
             protocol
