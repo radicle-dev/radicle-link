@@ -818,6 +818,8 @@ where
         M: Into<Rpc<Addr, Broadcast>>,
         X: Into<Option<&'a PeerId>>,
     {
+        tracing::trace!("Gossip::broadcast");
+
         let rpc = rpc.into();
         let excluding = excluding.into();
 
