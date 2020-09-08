@@ -818,12 +818,11 @@ where
         M: Into<Rpc<Addr, Broadcast>>,
         X: Into<Option<&'a PeerId>>,
     {
-        tracing::trace!("Gossip::broadcast");
-
         let rpc = rpc.into();
         let excluding = excluding.into();
 
         let mut connected_peers = self.connected_peers.lock().await;
+
         futures::stream::iter(
             connected_peers
                 .iter_mut()

@@ -28,6 +28,7 @@ use futures::{
     stream::StreamExt,
 };
 use thiserror::Error;
+use tracing_futures::Instrument as _;
 
 use crate::{
     git::{
@@ -190,36 +191,42 @@ where
     /// [`RadUrn`] actually has it, nor that it is reachable using any of
     /// the addresses contained in [`PeerInfo`]. The implementation may
     /// change in the future to answer the query from a local cache first.
-    pub fn providers(&self, urn: RadUrn) -> impl Future<Output = ()> {
-        tracing::trace!(urn = %urn, "Providers");
+    pub fn providers(
+        &self,
+        urn: RadUrn,
+    ) -> impl Future<Output = impl futures::Stream<Item = PeerInfo<IpAddr>>> {
+        let span = tracing::trace_span!("Peer::providers");
 
         let protocol = self.protocol.clone();
         let urn2 = urn.clone();
         async move {
-            // let events = protocol.subscribe().await.filter_map(move |evt| {
-            //     future::ready(match evt {
-            //         ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val
-            // })) => {             if val.urn == urn {
-            //                 println!("Found it for urn {}", urn);
-            //                 Some(provider)
-            //             } else {
-            //                 println!("val.urn ({}) differs from urn ({})", val.urn, urn);
-            //                 None
-            //             }
-            //         },
-            //         x => {
-            //             println!("Other case for {}: {:?}", urn, x);
-            //             None
-            //         },
-            //     })
-            // });
+            let events = protocol.subscribe().await.filter_map(move |evt| {
+                future::ready(match evt {
+                    ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val })) => {
+                        if val.urn == urn {
+                            println!("Found it for urn {}", urn);
+                            Some(provider)
+                        } else {
+                            println!("val.urn ({}) differs from urn ({})", val.urn, urn);
+                            None
+                        }
+                    },
+                    x => {
+                        println!("Other case for {}: {:?}", urn, x);
+                        None
+                    },
+                })
+            });
             protocol
                 .query(Gossip {
                     urn: urn2,
                     rev: None,
                     origin: None,
                 })
-                .await
+                .instrument(span)
+                .await;
+
+            events
         }
     }
 

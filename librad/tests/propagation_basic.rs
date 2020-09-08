@@ -361,37 +361,37 @@ async fn providers_works() {
             )
             .unwrap();
 
-        let git_peer1 = peer1.storage();
-        git_peer1.create_repo(&alice).unwrap();
-        let radicle_repo = git_peer1.create_repo(&radicle).unwrap();
-        println!("Repo radicle repo urn is {}", radicle_repo.urn);
+        let peer1_id = peer1.peer_id().clone();
 
         let (peer2, _) = apis.pop().unwrap();
 
-        // let res = timeout(
-        //     Duration::from_millis(15000),
-        //     peer2.providers(radicle_repo.urn).await.next(),
-        // )
-        // .await;
+        let repo_urn = tokio::task::spawn_blocking(move || {
+            let git_peer1 = peer1.storage();
+            git_peer1.create_repo(&alice).unwrap();
+            git_peer1.create_repo(&radicle).unwrap().urn
+        })
+        .await
+        .unwrap();
 
-        peer2.providers(radicle_repo.urn).await;
+        let res = timeout(
+            Duration::from_millis(5000),
+            peer2.providers(repo_urn).await.next(),
+        )
+        .await;
 
-        // match res {
-        //     Ok(Some(peer_info)) => assert_eq!(
-        //         peer_info.peer_id,
-        //         peer1.peer_id().clone(),
-        //         "Expected it to be {} but got {} instead",
-        //         peer1.peer_id(),
-        //         peer_info.peer_id
-        //     ),
-        //     Ok(None) => {
-        //         panic!("Expected to have obtained the peer1 as a provider");
-        //     },
-        //     Err(e) => {
-        //         panic!("Didn't find any peer before the timeout: {}", e);
-        //     },
-        // }
-        tokio::time::delay_for(Duration::from_secs(30)).await;
+        match res {
+            Ok(Some(peer_info)) => assert_eq!(
+                peer_info.peer_id, peer1_id,
+                "Expected it to be {} but got {} instead",
+                peer1_id, peer_info.peer_id
+            ),
+            Ok(None) => {
+                panic!("Expected to have obtained the peer1 as a provider");
+            },
+            Err(e) => {
+                panic!("Didn't find any peer before the timeout: {}", e);
+            },
+        }
     })
     .await;
 }
