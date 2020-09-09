@@ -195,9 +195,9 @@ where
         &self,
         urn: RadUrn,
     ) -> impl Future<Output = impl futures::Stream<Item = PeerInfo<IpAddr>>> {
+        let span = tracing::trace_span!("PeerApi::providers", urn = %urn);
         let protocol = self.protocol.clone();
         let target_urn = urn.clone();
-        let span = tracing::trace_span!("Peer::providers");
 
         async move {
             // Listen for `Has` gossip events where a provider
