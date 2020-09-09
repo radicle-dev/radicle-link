@@ -200,7 +200,7 @@ where
         let target_urn = urn.clone();
 
         async move {
-            let providers_stream = protocol.subscribe().await.filter_map(move |evt| {
+            let providers = protocol.subscribe().await.filter_map(move |evt| {
                 future::ready(match evt {
                     ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val }))
                         if val.urn == urn =>
@@ -219,7 +219,7 @@ where
                 .instrument(span)
                 .await;
 
-            providers_stream
+            providers
         }
     }
 
