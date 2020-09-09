@@ -15,9 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-// clippy complains about the `Arbitrary` derive macro
-#![allow(clippy::unit_arg)]
-
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     convert::TryFrom,
@@ -37,7 +34,7 @@ use crate::{internal::canonical::Cstring, keys::PublicKey};
 use super::urn::{HasProtocol, Urn};
 
 #[cfg(test)]
-use proptest_derive::Arbitrary;
+use proptest::prelude::*;
 
 lazy_static! {
     /// Base [`Url`] for [`User`]
@@ -66,19 +63,57 @@ lazy_static! {
 /// Structure `radicle-link` expects to be part of a [`Payload`] describing a
 /// personal identity.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(test, derive(Arbitrary))]
 pub struct User {
     pub name: Cstring,
+}
+
+#[cfg(test)]
+impl Arbitrary for User {
+    type Parameters = ();
+    type Strategy = prop::strategy::Map<<Cstring as Arbitrary>::Strategy, fn(Cstring) -> Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        any::<Cstring>().prop_map(|name| User { name })
+    }
 }
 
 /// Structure `radicle-link` expects to be part of a [`Payload`] describing a
 /// project identity.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(test, derive(Arbitrary))]
 pub struct Project {
     pub name: Cstring,
     pub description: Option<Cstring>,
     pub default_branch: Option<Cstring>,
+}
+
+#[cfg(test)]
+impl Arbitrary for Project {
+    type Parameters = ();
+    // Silly clippy: this _is_ a type definition
+    #[allow(clippy::type_complexity)]
+    type Strategy = prop::strategy::Map<
+        (
+            <Cstring as Arbitrary>::Strategy,
+            <Option<Cstring> as Arbitrary>::Strategy,
+            <Option<Cstring> as Arbitrary>::Strategy,
+        ),
+        fn((Cstring, Option<Cstring>, Option<Cstring>)) -> Self,
+    >;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        Strategy::prop_map(
+            (
+                any::<Cstring>(),
+                any::<Option<Cstring>>(),
+                any::<Option<Cstring>>(),
+            ),
+            |(name, description, default_branch)| Project {
+                name,
+                description,
+                default_branch,
+            },
+        )
+    }
 }
 
 /// Namespace attached to a member type of the [`Payload`] "open" coproduct.
@@ -503,8 +538,6 @@ mod tests {
 
     use librad_test::roundtrip::*;
     use pretty_assertions::assert_eq;
-    use proptest::prelude::*;
-    use proptest_derive::Arbitrary;
 
     use crate::{
         git::ext::oid::{tests::gen_oid, Oid},
@@ -518,10 +551,19 @@ mod tests {
             Url::parse("https://radicle.xyz/upstream/project/v1").unwrap();
     }
 
-    #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, Arbitrary)]
+    #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
     struct UpstreamUser {
         #[serde(rename = "radicle-registry-name")]
         registered_as: Cstring,
+    }
+
+    impl Arbitrary for UpstreamUser {
+        type Parameters = ();
+        type Strategy = prop::strategy::Map<<Cstring as Arbitrary>::Strategy, fn(Cstring) -> Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            any::<Cstring>().prop_map(|registered_as| Self { registered_as })
+        }
     }
 
     impl HasNamespace for UpstreamUser {
@@ -530,10 +572,19 @@ mod tests {
         }
     }
 
-    #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, Arbitrary)]
+    #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
     struct UpstreamProject {
         #[serde(rename = "radicle-registry-name")]
         registered_as: Cstring,
+    }
+
+    impl Arbitrary for UpstreamProject {
+        type Parameters = ();
+        type Strategy = prop::strategy::Map<<Cstring as Arbitrary>::Strategy, fn(Cstring) -> Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            any::<Cstring>().prop_map(|registered_as| Self { registered_as })
+        }
     }
 
     impl HasNamespace for UpstreamProject {
