@@ -195,7 +195,7 @@ where
     /// change in the future to answer the query from a local cache first.
     ///
     /// The returned [`futures::Stream`] will be complete after the supplied
-    /// `timeout` has elapsed, whether or not any reponses have been yielded
+    /// `timeout` has elapsed, whether or not any responses have been yielded
     /// thus far. This is to prevent callers from polling the stream
     /// indefinitely, even though no more responses can be expected. A realistic
     /// timeout value is in the order of 10s of seconds.
