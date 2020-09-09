@@ -200,8 +200,6 @@ where
         let target_urn = urn.clone();
 
         async move {
-            // Listen for `Has` gossip events where a provider
-            // claims to have the target urn.
             let providers_stream = protocol.subscribe().await.filter_map(move |evt| {
                 future::ready(match evt {
                     ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val }))
@@ -212,7 +210,6 @@ where
                     _ => None,
                 })
             });
-            // Query the network for providers for the given target urn.
             protocol
                 .query(Gossip {
                     urn: target_urn,
