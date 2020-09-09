@@ -20,13 +20,15 @@ use std::{
     io,
     net::{IpAddr, SocketAddr},
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use either::Either;
 use futures::{
-    future::{self, BoxFuture},
+    future::{self, BoxFuture, FutureExt},
     stream::StreamExt,
 };
+use futures_timer::Delay;
 use thiserror::Error;
 use tracing_futures::Instrument as _;
 
@@ -191,25 +193,47 @@ where
     /// [`RadUrn`] actually has it, nor that it is reachable using any of
     /// the addresses contained in [`PeerInfo`]. The implementation may
     /// change in the future to answer the query from a local cache first.
+    ///
+    /// The returned [`futures::Stream`] will be complete after the supplied
+    /// `timeout` has elapsed, whether or not any reponses have been yielded
+    /// thus far. This is to prevent callers from polling the stream
+    /// indefinitely, even though no more responses can be expected. A realistic
+    /// timeout value is in the order of 10s of seconds.
     pub fn providers(
         &self,
         urn: RadUrn,
+        timeout: Duration,
     ) -> impl Future<Output = impl futures::Stream<Item = PeerInfo<IpAddr>>> {
         let span = tracing::trace_span!("PeerApi::providers", urn = %urn);
         let protocol = self.protocol.clone();
         let target_urn = urn.clone();
 
         async move {
-            let providers = protocol.subscribe().await.filter_map(move |evt| {
-                future::ready(match evt {
-                    ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val }))
-                        if val.urn == urn =>
-                    {
-                        Some(provider)
-                    },
-                    _ => None,
-                })
-            });
+            let providers = futures::stream::select(
+                futures::stream::once(
+                    async move {
+                        Delay::new(timeout).await;
+                        Err("timed out")
+                    }
+                    .boxed(),
+                ),
+                protocol
+                    .subscribe()
+                    .await
+                    .filter_map(move |evt| {
+                        future::ready(match evt {
+                            ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has {
+                                provider,
+                                val,
+                            })) if val.urn == urn => Some(provider),
+                            _ => None,
+                        })
+                    })
+                    .map(Ok),
+            )
+            .take_while(|x| future::ready(x.is_ok()))
+            .map(Result::unwrap);
+
             protocol
                 .query(Gossip {
                     urn: target_urn,

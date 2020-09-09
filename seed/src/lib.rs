@@ -19,8 +19,9 @@
 #[macro_use]
 extern crate async_trait;
 
+use std::{collections::HashSet, io, net::SocketAddr, path::PathBuf, time::Duration, vec};
+
 use futures::stream::StreamExt;
-use std::{collections::HashSet, io, net::SocketAddr, path::PathBuf, vec};
 use thiserror::Error;
 
 use radicle_keystore::sign::ed25519;
@@ -248,7 +249,7 @@ impl Node {
                 tracing::info!("Initializing tracker with {} URNs..", urns.len());
 
                 for urn in urns {
-                    let mut peers = api.providers(urn.clone()).await;
+                    let mut peers = api.providers(urn.clone(), Duration::from_secs(30)).await;
                     // Attempt to track until we succeed.
                     while let Some(peer) = peers.next().await {
                         if Node::track_project(&api, urn, &peer).is_ok() {

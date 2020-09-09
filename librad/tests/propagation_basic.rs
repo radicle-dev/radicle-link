@@ -337,9 +337,6 @@ async fn all_metadata_returns_only_local_projects() {
 /// peer 1.
 #[tokio::test]
 async fn providers_works() {
-    use std::time::Duration;
-    use tokio::time::timeout;
-
     logging::init();
     const NUM_PEERS: usize = 2;
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
@@ -370,24 +367,19 @@ async fn providers_works() {
         .unwrap();
 
         let (peer2, _) = apis.pop().unwrap();
-        let res = timeout(
-            Duration::from_secs(5),
-            peer2.providers(repo_urn).await.next(),
-        )
-        .await;
+        let res = peer2
+            .providers(repo_urn, Duration::from_secs(5))
+            .await
+            .next()
+            .await;
 
         match res {
-            Ok(Some(peer_info)) => assert_eq!(
+            Some(peer_info) => assert_eq!(
                 peer_info.peer_id, peer1_id,
                 "Expected peer id {} but got {} instead",
                 peer1_id, peer_info.peer_id
             ),
-            Ok(None) => {
-                panic!("Expected to have obtained the peer1 but got None instead");
-            },
-            Err(e) => {
-                panic!("Didn't find any peer before the timeout: {}", e);
-            },
+            None => panic!("Expected to have obtained the peer1 but got None instead"),
         }
     })
     .await;
