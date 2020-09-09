@@ -332,19 +332,18 @@ async fn all_metadata_returns_only_local_projects() {
     .await;
 }
 
-/// Given that 1) a peer A holds a given URN and 2) peer A is a seed peer of a
-/// peer B, verify that requesting peer B for provider for said URN resolves
-/// peer A.
+/// Given that a) a peer 1 holds a given URN and b) that same peer is a seed of
+/// a peer 2, verify that requesting peer 2 for providers for said URN returns
+/// peer 1.
 #[tokio::test]
 async fn providers_works() {
     use std::time::Duration;
     use tokio::time::timeout;
 
     logging::init();
-
     const NUM_PEERS: usize = 2;
-
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
+
     testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
         let (peer1, peer1_key) = apis.pop().unwrap();
         let mut alice = Alice::new(peer1_key.public());
@@ -362,19 +361,17 @@ async fn providers_works() {
             .unwrap();
 
         let peer1_id = peer1.peer_id().clone();
-
-        let (peer2, _) = apis.pop().unwrap();
-
         let repo_urn = tokio::task::spawn_blocking(move || {
-            let git_peer1 = peer1.storage();
-            git_peer1.create_repo(&alice).unwrap();
-            git_peer1.create_repo(&radicle).unwrap().urn
+            let git = peer1.storage();
+            git.create_repo(&alice).unwrap();
+            git.create_repo(&radicle).unwrap().urn
         })
         .await
         .unwrap();
 
+        let (peer2, _) = apis.pop().unwrap();
         let res = timeout(
-            Duration::from_millis(5000),
+            Duration::from_secs(5),
             peer2.providers(repo_urn).await.next(),
         )
         .await;
@@ -386,7 +383,7 @@ async fn providers_works() {
                 peer1_id, peer_info.peer_id
             ),
             Ok(None) => {
-                panic!("Expected to have obtained the peer1 as a provider");
+                panic!("Expected to have obtained the peer1 but got None instead");
             },
             Err(e) => {
                 panic!("Didn't find any peer before the timeout: {}", e);

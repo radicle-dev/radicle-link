@@ -195,38 +195,34 @@ where
         &self,
         urn: RadUrn,
     ) -> impl Future<Output = impl futures::Stream<Item = PeerInfo<IpAddr>>> {
+        let protocol = self.protocol.clone();
+        let target_urn = urn.clone();
         let span = tracing::trace_span!("Peer::providers");
 
-        let protocol = self.protocol.clone();
-        let urn2 = urn.clone();
         async move {
-            let events = protocol.subscribe().await.filter_map(move |evt| {
+            // Listen for `Has` gossip events where a provider
+            // claims to have the target urn.
+            let providers_stream = protocol.subscribe().await.filter_map(move |evt| {
                 future::ready(match evt {
-                    ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val })) => {
-                        if val.urn == urn {
-                            println!("Found it for urn {}", urn);
-                            Some(provider)
-                        } else {
-                            println!("val.urn ({}) differs from urn ({})", val.urn, urn);
-                            None
-                        }
+                    ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val }))
+                        if val.urn == urn =>
+                    {
+                        Some(provider)
                     },
-                    x => {
-                        println!("Other case for {}: {:?}", urn, x);
-                        None
-                    },
+                    _ => None,
                 })
             });
+            // Query the network for providers for the given target urn.
             protocol
                 .query(Gossip {
-                    urn: urn2,
+                    urn: target_urn,
                     rev: None,
                     origin: None,
                 })
                 .instrument(span)
                 .await;
 
-            events
+            providers_stream
         }
     }
 
