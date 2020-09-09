@@ -822,7 +822,6 @@ where
         let excluding = excluding.into();
 
         let mut connected_peers = self.connected_peers.lock().await;
-
         futures::stream::iter(
             connected_peers
                 .iter_mut()
