@@ -379,7 +379,7 @@ async fn providers_works() {
         match res {
             Ok(Some(peer_info)) => assert_eq!(
                 peer_info.peer_id, peer1_id,
-                "Expected it to be {} but got {} instead",
+                "Expected peer id {} but got {} instead",
                 peer1_id, peer_info.peer_id
             ),
             Ok(None) => {
