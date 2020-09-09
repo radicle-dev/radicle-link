@@ -24,7 +24,6 @@ use std::{
 use either::Either::{self, *};
 use nonempty::NonEmpty;
 use proptest::prelude::*;
-use proptest_derive::Arbitrary;
 
 use super::*;
 use crate::{
@@ -33,8 +32,17 @@ use crate::{
 };
 
 /// A completely irrelevant value.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Arbitrary)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Boring;
+
+impl Arbitrary for Boring {
+    type Parameters = ();
+    type Strategy = fn() -> Self;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        || Boring
+    }
+}
 
 impl Display for Boring {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -74,8 +82,17 @@ where
 }
 
 /// A revision that looks a bit like a git SHA1, but is faster to generate.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Arbitrary)]
-pub struct Revision(#[proptest(regex = "[a-z0-9]{40}")] String);
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Revision(String);
+
+impl Arbitrary for Revision {
+    type Parameters = ();
+    type Strategy = prop::strategy::Map<&'static str, fn(String) -> Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        "[a-z0-9]{40}".prop_map(Self)
+    }
+}
 
 impl AsRef<[u8]> for Revision {
     fn as_ref(&self) -> &[u8] {
