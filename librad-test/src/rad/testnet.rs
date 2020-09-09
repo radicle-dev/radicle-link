@@ -93,6 +93,8 @@ async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
         .map_err(|e| e.into())
 }
 
+/// Setup a testnet with the given number of peers.
+/// Peer X+1 has peer X as a seed peer.
 pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
     if num_peers < 1 {
         return Ok(vec![]);

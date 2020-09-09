@@ -331,3 +331,64 @@ async fn all_metadata_returns_only_local_projects() {
     })
     .await;
 }
+
+/// Given that a) a peer 1 holds a given URN and b) that same peer is a seed of
+/// a peer 2, verify that requesting peer 2 for providers for said URN returns
+/// peer 1.
+#[tokio::test]
+async fn providers_works() {
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    logging::init();
+    const NUM_PEERS: usize = 2;
+    let peers = testnet::setup(NUM_PEERS).await.unwrap();
+
+    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
+        let (peer1, peer1_key) = apis.pop().unwrap();
+        let mut alice = Alice::new(peer1_key.public());
+        let mut radicle = Radicle::new(&alice);
+        let resolves_to_alice = alice.clone();
+        alice
+            .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
+            .unwrap();
+        radicle
+            .sign(
+                &peer1_key,
+                &Signatory::User(alice.urn()),
+                &resolves_to_alice,
+            )
+            .unwrap();
+
+        let peer1_id = peer1.peer_id().clone();
+        let repo_urn = tokio::task::spawn_blocking(move || {
+            let git = peer1.storage();
+            git.create_repo(&alice).unwrap();
+            git.create_repo(&radicle).unwrap().urn
+        })
+        .await
+        .unwrap();
+
+        let (peer2, _) = apis.pop().unwrap();
+        let res = timeout(
+            Duration::from_secs(5),
+            peer2.providers(repo_urn).await.next(),
+        )
+        .await;
+
+        match res {
+            Ok(Some(peer_info)) => assert_eq!(
+                peer_info.peer_id, peer1_id,
+                "Expected peer id {} but got {} instead",
+                peer1_id, peer_info.peer_id
+            ),
+            Ok(None) => {
+                panic!("Expected to have obtained the peer1 but got None instead");
+            },
+            Err(e) => {
+                panic!("Didn't find any peer before the timeout: {}", e);
+            },
+        }
+    })
+    .await;
+}

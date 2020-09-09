@@ -28,6 +28,7 @@ use futures::{
     stream::StreamExt,
 };
 use thiserror::Error;
+use tracing_futures::Instrument as _;
 
 use crate::{
     git::{
@@ -194,10 +195,12 @@ where
         &self,
         urn: RadUrn,
     ) -> impl Future<Output = impl futures::Stream<Item = PeerInfo<IpAddr>>> {
+        let span = tracing::trace_span!("PeerApi::providers", urn = %urn);
         let protocol = self.protocol.clone();
-        let urn2 = urn.clone();
+        let target_urn = urn.clone();
+
         async move {
-            let events = protocol.subscribe().await.filter_map(move |evt| {
+            let providers = protocol.subscribe().await.filter_map(move |evt| {
                 future::ready(match evt {
                     ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val }))
                         if val.urn == urn =>
@@ -209,13 +212,14 @@ where
             });
             protocol
                 .query(Gossip {
-                    urn: urn2,
+                    urn: target_urn,
                     rev: None,
                     origin: None,
                 })
+                .instrument(span)
                 .await;
 
-            events
+            providers
         }
     }
 
