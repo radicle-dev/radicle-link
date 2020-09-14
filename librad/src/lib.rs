@@ -25,7 +25,6 @@ extern crate async_trait;
 extern crate lazy_static;
 
 extern crate radicle_keystore as keystore;
-extern crate sodiumoxide;
 
 pub mod git;
 pub mod hash;
