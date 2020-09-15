@@ -104,7 +104,6 @@ futures-await-test = "0"
 futures_ringbuf = "0"
 pretty_assertions = "0"
 proptest = "0"
-rand_chacha = "0.2"
 tempfile = "3.1"
 
 [dev-dependencies.librad-test]

@@ -84,11 +84,7 @@ impl SecretKey {
 
     #[cfg(test)]
     pub fn from_seed(seed: [u8; 32]) -> Self {
-        use rand::SeedableRng;
-
-        let rng = rand_chacha::ChaCha8Rng::from_seed(seed);
-        let sk = ed25519::SigningKey::new(rng);
-        Self(sk)
+        Self(ed25519::SigningKey::from(seed))
     }
 
     pub(crate) fn from_secret(sk: ed25519::SigningKey) -> Self {

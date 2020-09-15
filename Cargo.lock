@@ -909,7 +909,6 @@ dependencies = [
  "quinn",
  "radicle-keystore",
  "rand",
- "rand_chacha",
  "rand_pcg",
  "rcgen",
  "regex",
