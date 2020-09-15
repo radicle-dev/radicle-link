@@ -170,7 +170,7 @@ impl sign::Signer for SecretKey {
     type Error = Infallible;
 
     fn public_key(&self) -> sign::PublicKey {
-        sign::PublicKey(self.0.into())
+        sign::PublicKey(ed25519::VerificationKey::from(&self.0).into())
     }
 
     async fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
