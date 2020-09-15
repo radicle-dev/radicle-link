@@ -119,13 +119,14 @@ impl SecretKey {
                             Self::PKCS_ED25519_OID,
                         ));
                 });
-                let seed =
-                    yasna::construct_der(|writer| writer.write_bytes(&self.0.as_ref()[..32]));
+                let seed = yasna::construct_der(|writer| writer.write_bytes(&self.0.as_ref()));
+                let vkey = ed25519::VerificationKey::from(&self.0);
+                let public = vkey.as_ref();
+
                 writer.next().write_bytes(&seed);
                 writer
                     .next()
                     .write_tagged(yasna::Tag::context(1), |writer| {
-                        let public = &self.0.as_ref()[32..];
                         writer.write_bitvec(&BitVec::from_bytes(&public))
                     })
             })
