@@ -17,6 +17,7 @@ in
       openssl
       gmp
       m4
+      libiconv
     ];
     # why do we need to set the library path manually?
     shellHook = ''
