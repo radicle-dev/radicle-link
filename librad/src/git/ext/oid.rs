@@ -22,7 +22,7 @@ use std::{
     str::FromStr,
 };
 
-use multihash::Multihash;
+use multihash::{Multihash, MultihashRef};
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
@@ -138,6 +138,14 @@ impl TryFrom<Multihash> for Oid {
     type Error = FromMultihashError;
 
     fn try_from(mhash: Multihash) -> Result<Self, Self::Error> {
+        Self::try_from(mhash.as_ref())
+    }
+}
+
+impl TryFrom<MultihashRef<'_>> for Oid {
+    type Error = FromMultihashError;
+
+    fn try_from(mhash: MultihashRef) -> Result<Self, Self::Error> {
         if mhash.algorithm() != multihash::Code::Sha1 {
             return Err(Self::Error::AlgorithmMismatch {
                 actual: mhash.algorithm(),

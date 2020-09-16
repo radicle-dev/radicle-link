@@ -21,12 +21,15 @@ use std::{
     str::FromStr,
 };
 
-use multihash::Multihash;
+use multihash::{Multihash, MultihashRef};
+use percent_encoding::percent_decode_str;
 use thiserror::Error;
 
 use crate::git::ext;
 
-pub trait HasProtocol: protocol::Sealed {
+use super::sealed;
+
+pub trait HasProtocol: sealed::Sealed {
     const PROTOCOL: &'static str;
 }
 
@@ -34,30 +37,69 @@ impl HasProtocol for super::git::Revision {
     const PROTOCOL: &'static str = "git";
 }
 
-mod protocol {
-    use super::ext;
-
-    pub trait Sealed {}
-
-    impl Sealed for ext::Oid {}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SomeProtocol {
+    Git,
 }
 
-// TODO(kim): shall replace RadUrn, need to add path component
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+impl minicbor::Encode for SomeProtocol {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut minicbor::Encoder<W>,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        match self {
+            Self::Git => e.u8(0),
+        }?;
+
+        Ok(())
+    }
+}
+
+impl<'de> minicbor::Decode<'de> for SomeProtocol {
+    fn decode(d: &mut minicbor::Decoder) -> Result<Self, minicbor::decode::Error> {
+        match d.u8()? {
+            0 => Ok(Self::Git),
+            _ => Err(minicbor::decode::Error::Message("unknown protocol")),
+        }
+    }
+}
+
+impl TryFrom<&str> for SomeProtocol {
+    type Error = &'static str;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s {
+            "git" => Ok(SomeProtocol::Git),
+            _ => Err("unknown protocol"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Urn<R> {
     pub id: R,
+    pub path: Option<ext::RefLike>,
 }
 
 impl<R> Urn<R> {
     pub const fn new(id: R) -> Self {
-        Self { id }
+        Self { id, path: None }
     }
 
-    pub fn map<F, T>(self, f: F) -> Urn<T>
+    pub fn map<F, S>(self, f: F) -> Urn<S>
     where
-        F: FnOnce(R) -> T,
+        F: FnOnce(R) -> S,
     {
-        Urn { id: f(self.id) }
+        Urn {
+            id: f(self.id),
+            path: self.path,
+        }
+    }
+}
+
+impl<R> From<R> for Urn<R> {
+    fn from(r: R) -> Self {
+        Self::new(r)
     }
 }
 
@@ -72,7 +114,13 @@ where
             "rad:{}:{}",
             R::PROTOCOL,
             multibase::encode(multibase::Base::Base32Z, (&self.id).into())
-        )
+        )?;
+
+        if let Some(path) = &self.path {
+            write!(f, "/{}", path.percent_encode())?;
+        }
+
+        Ok(())
     }
 }
 
@@ -92,10 +140,16 @@ pub enum ParseError<E: std::error::Error + 'static> {
     InvalidId(#[source] E),
 
     #[error(transparent)]
+    InvalidPath(#[from] ext::InvalidRefLike),
+
+    #[error(transparent)]
     Encoding(#[from] multibase::Error),
 
     #[error(transparent)]
     Multihash(#[from] multihash::DecodeOwnedError),
+
+    #[error(transparent)]
+    Utf8(#[from] std::str::Utf8Error),
 }
 
 impl<R, E> FromStr for Urn<R>
@@ -128,15 +182,21 @@ where
 
         components
             .next()
-            .ok_or(Self::Err::Missing("id"))
+            .ok_or(Self::Err::Missing("id[/path]"))
             .and_then(|s| {
-                multibase::decode(s)
-                    .map(|(_base, bytes)| bytes)
-                    .map_err(Self::Err::from)
+                let decoded = percent_decode_str(s).decode_utf8()?;
+                let mut iter = decoded.splitn(2, '/');
+
+                let id = iter.next().ok_or(Self::Err::Missing("id")).and_then(|id| {
+                    let bytes = multibase::decode(id).map(|(_base, bytes)| bytes)?;
+                    let mhash = Multihash::from_bytes(bytes)?;
+                    R::try_from(mhash).map_err(Self::Err::InvalidId)
+                })?;
+
+                let path = iter.next().map(ext::RefLike::try_from).transpose()?;
+
+                Ok(Self { id, path })
             })
-            .and_then(|bytes| Multihash::from_bytes(bytes).map_err(Self::Err::from))
-            .and_then(|mhash| R::try_from(mhash).map_err(Self::Err::InvalidId))
-            .map(Self::new)
     }
 }
 
@@ -167,28 +227,111 @@ where
     }
 }
 
+#[derive(Debug, PartialEq, minicbor::Encode, minicbor::Decode)]
+#[cbor(array)]
+struct AsCbor<'a> {
+    #[b(0)]
+    #[cbor(with = "bytes")]
+    id: &'a [u8],
+
+    #[n(1)]
+    proto: SomeProtocol,
+
+    #[b(2)]
+    path: Option<&'a str>,
+}
+
+// Need to force minicbor to treat our slice as bytes, not array (the `Encode` /
+// `Decode` impls disagree).
+mod bytes {
+    use minicbor::*;
+
+    pub(super) fn encode<W: encode::Write>(
+        x: &[u8],
+        e: &mut Encoder<W>,
+    ) -> Result<(), encode::Error<W::Error>> {
+        e.bytes(x)?;
+        Ok(())
+    }
+
+    pub(super) fn decode<'a>(d: &mut Decoder<'a>) -> Result<&'a [u8], decode::Error> {
+        d.bytes()
+    }
+}
+
+impl<R> minicbor::Encode for Urn<R>
+where
+    R: HasProtocol,
+    for<'a> &'a R: Into<Multihash>,
+{
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut minicbor::Encoder<W>,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        let id: Multihash = (&self.id).into();
+        e.encode(AsCbor {
+            id: id.as_bytes(),
+            proto: SomeProtocol::try_from(R::PROTOCOL).unwrap(),
+            path: self.path.as_ref().map(|path| path.as_str()),
+        })?;
+
+        Ok(())
+    }
+}
+
+impl<'de, R> minicbor::Decode<'de> for Urn<R>
+where
+    for<'a> R: HasProtocol + TryFrom<MultihashRef<'a>>,
+{
+    fn decode(d: &mut minicbor::Decoder) -> Result<Self, minicbor::decode::Error> {
+        use minicbor::decode::Error::Message as Error;
+
+        let AsCbor { id, path, .. } = d.decode()?;
+
+        let id = {
+            let mhash = MultihashRef::from_slice(id).or(Err(Error("invalid multihash")))?;
+            R::try_from(mhash).or(Err(Error("invalid id")))
+        }?;
+        let path = path
+            .map(ext::RefLike::try_from)
+            .transpose()
+            .or(Err(Error("invalid path")))?;
+
+        Ok(Self { id, path })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use librad_test::roundtrip::{json_roundtrip, str_roundtrip};
+    use librad_test::roundtrip::*;
     use proptest::prelude::*;
 
     use crate::git::ext::oid::{tests::gen_oid, Oid};
 
     fn gen_urn() -> impl Strategy<Value = Urn<Oid>> {
-        gen_oid(git2::ObjectType::Tree).prop_map(Urn::new)
+        (
+            gen_oid(git2::ObjectType::Tree),
+            prop::option::of(prop::collection::vec("[a-zA-Z0-9]+", 1..3)),
+        )
+            .prop_map(|(id, path)| {
+                let path = path.map(|elems| ext::RefLike::try_from(elems.join("/")).unwrap());
+                Urn { id, path }
+            })
     }
 
     /// All serialisation roundtrips [`Urn`] must pass
     fn trippin<R, E>(urn: Urn<R>)
     where
         R: Clone + Debug + PartialEq + TryFrom<Multihash, Error = E> + HasProtocol,
+        for<'a> R: TryFrom<MultihashRef<'a>>,
         for<'a> &'a R: Into<Multihash>,
         E: std::error::Error + 'static,
     {
         str_roundtrip(urn.clone());
-        json_roundtrip(urn);
+        json_roundtrip(urn.clone());
+        cbor_roundtrip(urn);
     }
 
     proptest! {
