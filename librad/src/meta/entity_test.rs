@@ -17,8 +17,6 @@
 
 use std::str::FromStr;
 
-use sodiumoxide::crypto::sign::ed25519::Seed;
-
 use super::{
     entity::*,
     user::{User, UserData},
@@ -36,15 +34,15 @@ lazy_static! {
         RadUrn::new(EMPTY_HASH.to_owned(), Protocol::Git, Path::new());
 }
 
-const SEED: Seed = Seed([
+const SEED: [u8; 32] = [
     20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81, 181,
     134, 74, 88, 174, 254, 78, 69, 84, 149, 84, 167,
-]);
+];
 
 fn new_key_from_seed(seed_value: u8) -> SecretKey {
     let mut seed = SEED;
-    seed.0[0] = seed_value;
-    SecretKey::from_seed(&seed)
+    seed[0] = seed_value;
+    SecretKey::from_seed(seed)
 }
 
 struct EmptyResolver {}

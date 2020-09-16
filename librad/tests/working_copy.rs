@@ -73,10 +73,7 @@ async fn can_fetch() {
 
         let global_settings = transport::Settings {
             paths: peer1.paths().clone(),
-            signer: SomeSigner {
-                signer: peer1_key.clone(),
-            }
-            .into(),
+            signer: SomeSigner { signer: peer1_key }.into(),
         };
         librad::git::local::transport::register(global_settings);
 

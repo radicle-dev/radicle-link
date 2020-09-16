@@ -615,16 +615,14 @@ impl<'a> Display for RadUrlRef<'a> {
 mod tests {
     use super::*;
 
-    use sodiumoxide::crypto::sign::Seed;
-
     use crate::{keys::SecretKey, peer::PeerId};
 
     use librad_test::roundtrip::*;
 
-    const SEED: Seed = Seed([
+    const SEED: [u8; 32] = [
         20, 21, 6, 102, 102, 57, 20, 67, 219, 198, 236, 108, 148, 15, 182, 52, 167, 27, 29, 81,
         181, 134, 74, 88, 174, 254, 78, 69, 84, 149, 84, 167,
-    ]);
+    ];
 
     lazy_static! {
         static ref URN: RadUrn = RadUrn {
@@ -634,7 +632,7 @@ mod tests {
         };
         static ref URL: RadUrl = URN
             .clone()
-            .into_rad_url(PeerId::from(SecretKey::from_seed(&SEED)));
+            .into_rad_url(PeerId::from(SecretKey::from_seed(SEED)));
     }
 
     #[test]

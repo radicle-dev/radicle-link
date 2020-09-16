@@ -15,17 +15,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{convert::Infallible, error, fmt, iter, ops::Deref};
+use std::{
+    convert::{Infallible, TryFrom},
+    error,
+    fmt,
+    iter,
+    ops::Deref,
+};
 
 use bit_vec::BitVec;
+use ed25519_zebra as ed25519;
 use multibase::Base;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
-use sodiumoxide::crypto::sign::ed25519;
 use thiserror::Error;
 
 use keystore::{sign, SecretKeyExt};
 
-pub use ed25519::PUBLICKEYBYTES;
+pub const PUBLICKEYBYTES: usize = std::mem::size_of::<ed25519::VerificationKeyBytes>();
 pub use keystore::SecStr;
 
 /// Version of the signature scheme in use
@@ -35,22 +41,6 @@ pub use keystore::SecStr;
 /// version tag alongside the data.
 const VERSION: u8 = 0;
 
-lazy_static! {
-    static ref SODIUMOXIDE_INITIALISED: bool = sodiumoxide::init().map(|()| true).unwrap_or(false);
-}
-
-/// Lazily trigger sodiumoxide initialisation.
-///
-/// Panics if `sodiumoxide::init()` fails.
-///
-/// **This function must be called from all places within this module which
-/// could be called with an unitialized `sodiumoxide`.**
-fn ensure_initialised() {
-    if !SODIUMOXIDE_INITIALISED.deref() {
-        panic!("Failed to initialise sodiumoxide")
-    }
-}
-
 pub trait AsPKCS8 {
     fn as_pkcs8(&self) -> Vec<u8>;
 }
@@ -59,27 +49,27 @@ pub trait SignError: error::Error + Send + Sync + 'static {}
 impl<T: error::Error + Send + Sync + 'static> SignError for T {}
 
 /// A device-specific signing key
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Copy, Clone)]
 #[cfg_attr(test, derive(Debug))]
-pub struct SecretKey(ed25519::SecretKey);
+pub struct SecretKey(ed25519::SigningKey);
 
 /// The public part of a `Key``
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
-pub struct PublicKey(ed25519::PublicKey);
+pub struct PublicKey(ed25519::VerificationKeyBytes);
 
 impl From<sign::PublicKey> for PublicKey {
     fn from(other: sign::PublicKey) -> PublicKey {
-        PublicKey(ed25519::PublicKey(other.0))
+        PublicKey(ed25519::VerificationKeyBytes::from(other.0))
     }
 }
 
 /// A signature produced by `Key::sign`
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Signature(ed25519::Signature);
 
 impl From<sign::Signature> for Signature {
     fn from(other: sign::Signature) -> Signature {
-        Signature(ed25519::Signature(other.0))
+        Signature(ed25519::Signature::from(other.0))
     }
 }
 
@@ -88,29 +78,27 @@ impl From<sign::Signature> for Signature {
 #[allow(clippy::new_without_default)]
 impl SecretKey {
     pub fn new() -> Self {
-        ensure_initialised();
-        let (_, sk) = ed25519::gen_keypair();
+        let sk = ed25519::SigningKey::new(rand::thread_rng());
         Self(sk)
     }
 
     #[cfg(test)]
-    pub fn from_seed(seed: &ed25519::Seed) -> Self {
-        ensure_initialised();
-        let (_, sk) = ed25519::keypair_from_seed(seed);
-        Self(sk)
+    pub fn from_seed(seed: [u8; 32]) -> Self {
+        Self(ed25519::SigningKey::from(seed))
     }
 
-    pub(crate) fn from_secret(sk: ed25519::SecretKey) -> Self {
-        ensure_initialised(); // just to be sure
+    pub(crate) fn from_secret(sk: ed25519::SigningKey) -> Self {
         Self(sk)
     }
 
     pub fn public(&self) -> PublicKey {
-        PublicKey(self.0.public_key())
+        PublicKey(ed25519::VerificationKeyBytes::from(
+            ed25519::VerificationKey::from(&self.0),
+        ))
     }
 
     pub fn sign(&self, data: &[u8]) -> Signature {
-        Signature(ed25519::sign_detached(data, &self.0))
+        Signature(self.0.sign(data))
     }
 
     const PKCS_ED25519_OID: &'static [u64] = &[1, 3, 101, 112];
@@ -131,12 +119,14 @@ impl SecretKey {
                             Self::PKCS_ED25519_OID,
                         ));
                 });
-                let seed = yasna::construct_der(|writer| writer.write_bytes(&self.0[..32]));
+                let seed = yasna::construct_der(|writer| writer.write_bytes(&self.0.as_ref()));
+                let vkey = ed25519::VerificationKey::from(&self.0);
+                let public = vkey.as_ref();
+
                 writer.next().write_bytes(&seed);
                 writer
                     .next()
                     .write_tagged(yasna::Tag::context(1), |writer| {
-                        let public = &self.0[32..];
                         writer.write_bitvec(&BitVec::from_bytes(&public))
                     })
             })
@@ -167,9 +157,8 @@ impl SecretKeyExt for SecretKey {
     type Error = IntoSecretKeyError;
 
     fn from_bytes_and_meta(bytes: SecStr, _metadata: &Self::Metadata) -> Result<Self, Self::Error> {
-        ensure_initialised();
-        let sk = ed25519::SecretKey::from_slice(bytes.unsecure())
-            .ok_or(IntoSecretKeyError::InvalidSliceLength)?;
+        let sk = ed25519::SigningKey::try_from(bytes.unsecure())
+            .map_err(|_| IntoSecretKeyError::InvalidSliceLength)?;
         Ok(Self::from_secret(sk))
     }
 
@@ -181,13 +170,12 @@ impl sign::Signer for SecretKey {
     type Error = Infallible;
 
     fn public_key(&self) -> sign::PublicKey {
-        let public_key = self.public().0;
-        sign::PublicKey(public_key.0)
+        sign::PublicKey(ed25519::VerificationKey::from(&self.0).into())
     }
 
     async fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
         let signature = self.sign(data).0;
-        Ok(sign::Signature(signature.0))
+        Ok(sign::Signature(signature.into()))
     }
 }
 
@@ -201,16 +189,18 @@ impl AsPKCS8 for SecretKey {
 
 impl PublicKey {
     pub fn verify(&self, sig: &Signature, data: &[u8]) -> bool {
-        ed25519::verify_detached(sig, &data, self)
+        ed25519::VerificationKey::try_from(self.0)
+            .and_then(|vk| vk.verify(&sig.0, &data))
+            .is_ok()
     }
 
     pub fn from_slice(bs: &[u8]) -> Option<PublicKey> {
-        ensure_initialised();
-        ed25519::PublicKey::from_slice(&bs).map(PublicKey)
+        ed25519::VerificationKeyBytes::try_from(bs)
+            .map(PublicKey)
+            .ok()
     }
 
     pub fn from_bs58(s: &str) -> Option<Self> {
-        ensure_initialised();
         let bytes = match bs58::decode(s.as_bytes())
             .with_alphabet(bs58::alphabet::BITCOIN)
             .into_vec()
@@ -218,7 +208,9 @@ impl PublicKey {
             Ok(v) => v,
             Err(_) => return None,
         };
-        ed25519::PublicKey::from_slice(&bytes).map(PublicKey)
+        ed25519::VerificationKeyBytes::try_from(bytes.as_slice())
+            .map(PublicKey)
+            .ok()
     }
 
     pub fn to_bs58(&self) -> String {
@@ -228,10 +220,9 @@ impl PublicKey {
     }
 }
 
-impl From<ed25519::PublicKey> for PublicKey {
-    fn from(pk: ed25519::PublicKey) -> Self {
-        ensure_initialised();
-        Self(pk)
+impl From<ed25519::VerificationKey> for PublicKey {
+    fn from(pk: ed25519::VerificationKey) -> Self {
+        Self(pk.into())
     }
 }
 
@@ -254,7 +245,7 @@ impl AsRef<[u8]> for PublicKey {
 }
 
 impl Deref for PublicKey {
-    type Target = ed25519::PublicKey;
+    type Target = ed25519::VerificationKeyBytes;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -307,9 +298,9 @@ impl<'de> Deserialize<'de> for PublicKey {
                             )));
                         }
 
-                        ed25519::PublicKey::from_slice(data).map(PublicKey).ok_or({
-                            serde::de::Error::custom("Invalid length for ed25519 public key")
-                        })
+                        ed25519::VerificationKeyBytes::try_from(data)
+                            .map(PublicKey)
+                            .map_err(serde::de::Error::custom)
                     },
                 }
             }
@@ -339,11 +330,9 @@ impl<'b> minicbor::Decode<'b> for PublicKey {
         }
 
         let data = d.bytes()?;
-        ed25519::PublicKey::from_slice(data)
+        ed25519::VerificationKeyBytes::try_from(data)
             .map(PublicKey)
-            .ok_or(minicbor::decode::Error::Message(
-                "Invalid length for ed25519 public key",
-            ))
+            .map_err(|_| minicbor::decode::Error::Message("Invalid length for ed25519 public key"))
     }
 }
 
@@ -351,11 +340,10 @@ impl<'b> minicbor::Decode<'b> for PublicKey {
 
 impl Signature {
     pub fn verify(&self, data: &[u8], pk: &PublicKey) -> bool {
-        ed25519::verify_detached(self, &data, pk)
+        pk.verify(self, data)
     }
 
     pub fn from_bs58(s: &str) -> Option<Self> {
-        ensure_initialised();
         let bytes = match bs58::decode(s.as_bytes())
             .with_alphabet(bs58::alphabet::BITCOIN)
             .into_vec()
@@ -363,11 +351,14 @@ impl Signature {
             Ok(v) => v,
             Err(_) => return None,
         };
-        sodiumoxide::crypto::sign::Signature::from_slice(&bytes).map(Self)
+        ed25519::Signature::try_from(bytes.as_slice())
+            .map(Self)
+            .ok()
     }
 
     pub fn to_bs58(&self) -> String {
-        bs58::encode(self.0)
+        let bytes: [u8; 64] = self.0.into();
+        bs58::encode(&bytes[..])
             .with_alphabet(bs58::alphabet::BITCOIN)
             .into_string()
     }
@@ -379,9 +370,9 @@ impl fmt::Display for Signature {
     }
 }
 
-impl AsRef<[u8]> for Signature {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
+impl From<Signature> for [u8; 64] {
+    fn from(sig: Signature) -> [u8; 64] {
+        sig.0.into()
     }
 }
 
@@ -398,14 +389,11 @@ impl Serialize for Signature {
     where
         S: Serializer,
     {
-        multibase::encode(
-            Base::Base32Z,
-            iter::once(&VERSION)
-                .chain(self.as_ref())
-                .cloned()
-                .collect::<Vec<u8>>(),
-        )
-        .serialize(serializer)
+        let bytes: [u8; 64] = self.0.into();
+        let mut input = vec![VERSION];
+        input.extend(&bytes[..]);
+
+        multibase::encode(Base::Base32Z, input).serialize(serializer)
     }
 }
 
@@ -439,9 +427,9 @@ impl<'de> Deserialize<'de> for Signature {
                             )));
                         }
 
-                        ed25519::Signature::from_slice(data).map(Signature).ok_or({
-                            serde::de::Error::custom("Invalid length for ed25519 signature")
-                        })
+                        ed25519::Signature::try_from(data)
+                            .map(Signature)
+                            .map_err(serde::de::Error::custom)
                     },
                 }
             }
@@ -456,7 +444,8 @@ impl minicbor::Encode for Signature {
         &self,
         e: &mut minicbor::Encoder<W>,
     ) -> Result<(), minicbor::encode::Error<W::Error>> {
-        e.array(2)?.u8(VERSION)?.bytes(self.0.as_ref())?;
+        let bytes: [u8; 64] = self.0.into();
+        e.array(2)?.u8(VERSION)?.bytes(&bytes)?;
         Ok(())
     }
 }
@@ -471,11 +460,9 @@ impl<'b> minicbor::Decode<'b> for Signature {
         }
 
         let data = d.bytes()?;
-        ed25519::Signature::from_slice(data)
+        ed25519::Signature::try_from(data)
             .map(Signature)
-            .ok_or(minicbor::decode::Error::Message(
-                "Invalid length for ed25519 signature",
-            ))
+            .map_err(|_| minicbor::decode::Error::Message("Invalid length for ed25519 signature"))
     }
 }
 
@@ -489,8 +476,7 @@ pub mod tests {
     const DATA_TO_SIGN: &[u8] = b"alors monsieur";
 
     pub fn gen_secret_key() -> impl Strategy<Value = SecretKey> {
-        any::<[u8; 32]>()
-            .prop_map(|seed| SecretKey::from_seed(&ed25519::Seed::from_slice(&seed).unwrap()))
+        any::<[u8; 32]>().prop_map(SecretKey::from_seed)
     }
 
     pub fn gen_public_key() -> impl Strategy<Value = PublicKey> {
@@ -550,7 +536,7 @@ pub mod tests {
         let ser = multibase::encode(
             Base::Base32Z,
             iter::once(&1)
-                .chain(sig.as_ref())
+                .chain(&<[u8; 64]>::from(sig)[..])
                 .cloned()
                 .collect::<Vec<u8>>(),
         );
