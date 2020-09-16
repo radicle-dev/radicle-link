@@ -846,6 +846,19 @@ where
         }
     }
 
+    /// Add a remote entry to the `config` of the storage. If the remote already
+    /// exists then this operation does not do anything.
+    ///
+    /// This remote entry is of the form:
+    ///
+    /// ```text
+    /// [remote "<urn.namespace>/<remote_peer_id>"]
+    ///     url = rad-p2p://<local_peer_id>@<remote_peer_id>/<urn.namespace>.git?
+    ///     fetch = +refs/heads/*:refs/remotes/<remote_peer_id>/<urn.namespace>/*
+    /// ```
+    ///
+    /// Note that the fetch refspec is not used in the implementation and when
+    /// we fetch the refspecs are specified.
     pub fn track(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
         if peer == &self.peer_id {
             return Err(Error::SelfReferential);
