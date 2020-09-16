@@ -300,7 +300,7 @@ impl<'de> Deserialize<'de> for PublicKey {
 
                         ed25519::VerificationKeyBytes::try_from(data)
                             .map(PublicKey)
-                            .map_err(|err| serde::de::Error::custom(err))
+                            .map_err(serde::de::Error::custom)
                     },
                 }
             }
@@ -429,7 +429,7 @@ impl<'de> Deserialize<'de> for Signature {
 
                         ed25519::Signature::try_from(data)
                             .map(Signature)
-                            .map_err(|err| serde::de::Error::custom(err))
+                            .map_err(serde::de::Error::custom)
                     },
                 }
             }
