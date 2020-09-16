@@ -476,7 +476,7 @@ pub mod tests {
     const DATA_TO_SIGN: &[u8] = b"alors monsieur";
 
     pub fn gen_secret_key() -> impl Strategy<Value = SecretKey> {
-        any::<[u8; 32]>().prop_map(|seed| SecretKey::from_seed(seed))
+        any::<[u8; 32]>().prop_map(SecretKey::from_seed)
     }
 
     pub fn gen_public_key() -> impl Strategy<Value = PublicKey> {

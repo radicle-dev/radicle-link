@@ -101,7 +101,7 @@ fn test_untrack() {
 #[test]
 fn test_all_metadata_heads() {
     let key = SecretKey::new();
-    let store = storage(key.clone());
+    let store = storage(key);
 
     // Create signed and verified user
     let mut user = User::<Draft>::create("user".to_owned(), key.public()).unwrap();
@@ -193,7 +193,7 @@ fn test_all_metadata_heads() {
 #[test]
 fn set_and_get_rad_self() -> Result<(), Error> {
     let key = SecretKey::new();
-    let store = storage(key.clone());
+    let store = storage(key);
 
     // Create signed and verified user
     let mut user = User::<Draft>::create("user".to_owned(), key.public())?;
@@ -230,7 +230,7 @@ fn set_and_get_rad_self() -> Result<(), Error> {
 #[test]
 fn test_structure_of_refs() -> Result<(), Error> {
     let key = SecretKey::new();
-    let store = storage(key.clone());
+    let store = storage(key);
     let mut refs = vec![];
 
     // Create signed and verified user

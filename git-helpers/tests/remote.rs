@@ -48,9 +48,9 @@ fn smoke() {
     let rad_dir = tempdir().unwrap();
     let rad_paths = Paths::from_root(rad_dir.path()).unwrap();
     let key = SecretKey::new();
-    let peer_id = PeerId::from(key.clone());
+    let peer_id = PeerId::from(key);
 
-    let urn = setup_entity(&rad_paths, key.clone()).unwrap();
+    let urn = setup_entity(&rad_paths, key).unwrap();
     setup_keystore(rad_paths.keys_dir(), key).unwrap();
     let path = setup_path().unwrap();
 
