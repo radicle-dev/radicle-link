@@ -555,6 +555,10 @@ where
             uri::Path::empty(),
         );
 
+        if self.has_urn(&urn)? {
+            return Err(Error::AlreadyExists(urn));
+        }
+
         let self_sig = meta
             .signatures()
             .get(&self.signer.public_key().into())
