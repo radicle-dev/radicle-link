@@ -14,12 +14,12 @@ radicle-keystore = "0"
 path = "../librad"
 
 [dependencies.git2]
-version = "0"
+version = "0.13"
 default-features = false
 features = []
 
 [dependencies.libgit2-sys]
-version = "0"
+version = "0.12"
 default-features = false
 features = []
 
