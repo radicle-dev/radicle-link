@@ -224,6 +224,54 @@ fn set_and_get_rad_self() -> Result<(), Error> {
     Ok(())
 }
 
+#[test]
+fn project_has_rad_self() -> Result<(), Error> {
+    let key = SecretKey::new();
+    let store = storage(key);
+
+    // Create signed and verified user
+    let mut user = User::<Draft>::create("user".to_owned(), key.public())?;
+    user.sign_owned(&key)?;
+    let user_resolver = ConstResolver::new(user.clone());
+    let verified_user = user
+        .clone()
+        .check_history_status(&user_resolver, &user_resolver)
+        .unwrap();
+    store.create_repo(&user)?;
+    store.set_default_rad_self(verified_user.clone())?;
+
+    let mut project = Project::<Draft>::create("banana".to_owned(), user.urn())?;
+    project.sign_by_user(&key, &verified_user)?;
+
+    let repo = store.create_repo(&project)?;
+
+    assert_eq!(
+        repo.get_rad_self().expect("repo error:"),
+        store.default_rad_self()?
+    );
+    assert_eq!(
+        store.get_rad_self(&project.urn())?,
+        store.default_rad_self()?
+    );
+    Ok(())
+}
+
+#[test]
+fn cannot_create_twice() -> Result<(), Error> {
+    let key = SecretKey::new();
+    let store = storage(key);
+
+    // Create signed and verified user
+    let mut user = User::<Draft>::create("user".to_owned(), key.public())?;
+    user.sign_owned(&key)?;
+    store.create_repo(&user)?;
+    let repo = store.create_repo(&user);
+
+    assert_matches!(repo.err(), Some(Error::AlreadyExists(_)));
+
+    Ok(())
+}
+
 /// We want to test that structure of the storage is compliant with the
 /// [RFC](https://github.com/radicle-dev/radicle-link/blob/504fe66dd974eaddb329520264d1cfdeb492b28f/docs/rfc/identity_resolution.md).
 /// So for every namespace there should be a `rad/id` and `rad/refs`.
