@@ -46,7 +46,6 @@ use crate::{
     },
     hash::Hash,
     internal::{
-        borrow::TryToOwned,
         canonical::{Cjson, CjsonError},
         result::ResultExt,
     },
@@ -68,6 +67,9 @@ use crate::{
     signer::Signer,
     uri::{self, RadUrl, RadUrn},
 };
+
+pub mod pool;
+pub use pool::{Pool, Pooled};
 
 mod config;
 mod fetch;
@@ -152,17 +154,12 @@ pub enum RadSelfSpec {
 pub type NoSigner = PhantomData<!>;
 
 pub struct Storage<S> {
-    pub(super) backend: git2::Repository,
+    backend: git2::Repository,
     peer_id: PeerId,
     signer: S,
 }
 
 impl<S: Clone> Storage<S> {
-    /// Obtain a new, owned handle to the backing store.
-    pub fn reopen(&self) -> Result<Self, Error> {
-        self.try_to_owned()
-    }
-
     pub fn peer_id(&self) -> &PeerId {
         &self.peer_id
     }
@@ -179,7 +176,7 @@ impl<S: Clone> Storage<S> {
 
         Ok(Repo {
             urn,
-            storage: self.into(),
+            storage: &self,
         })
     }
 
@@ -436,7 +433,7 @@ impl<S: Clone> Storage<S> {
         }))
     }
 
-    fn metadata_from_reference<'a, R, T>(&self, reference: R) -> Result<Entity<T, Draft>, Error>
+    fn metadata_from_reference<'a, R, T>(&'a self, reference: R) -> Result<Entity<T, Draft>, Error>
     where
         R: Into<blob::Branch<'a>>,
         T: Clone + Serialize + DeserializeOwned + EntityInfoExt,
@@ -456,7 +453,7 @@ impl<S: Clone> Storage<S> {
 }
 
 impl Storage<NoSigner> {
-    /// Open the `Storage` found at the given [`Path`]'s `git_dir.
+    /// Open the `Storage` found at the given [`Paths::git_dir`].
     ///
     /// The `Storage` must have been initialised with [`Storage::init`] prior to
     /// calling this method.
@@ -492,8 +489,16 @@ where
     S: Signer + Clone,
     S::Error: keys::SignError,
 {
-    /// Open the `Storage` found at the given [`Paths`]'s `git_dir`, or
-    /// initialise it if it isn't yet.
+    /// Open the `Storage` found at the given [`Paths::git_dir`], or initialise
+    /// it if it isn't already.
+    ///
+    /// # Note
+    ///
+    /// Must be externally synchronised.
+    ///
+    /// # Errors
+    ///
+    /// If the storage was previously initialised with a different `signer` key.
     pub fn open_or_init(paths: &Paths, signer: S) -> Result<Self, Error> {
         let peer_id = PeerId::from_signer(&signer);
         match Storage::open(paths) {
@@ -509,7 +514,11 @@ where
         }
     }
 
-    /// Initialise the `Storage` at the given [`Paths`]'s `git_dir`.
+    /// Initialise the `Storage` at the given [`Paths::git_dir`].
+    ///
+    /// # Note
+    ///
+    /// Must be externally synchronised.
     pub fn init(paths: &Paths, signer: S) -> Result<Self, Error> {
         let mut backend = git2::Repository::init_opts(
             paths.git_dir(),
@@ -536,7 +545,7 @@ where
         }
     }
 
-    pub fn create_repo<T>(&self, meta: &Entity<T, Draft>) -> Result<Repo<S>, Error>
+    pub fn create_repo<'a, T>(&'a self, meta: &Entity<T, Draft>) -> Result<Repo<'a, S>, Error>
     where
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
     {
@@ -614,10 +623,7 @@ where
         self.track_signers(&meta)?;
         self.update_refs(&urn)?;
 
-        Ok(Repo {
-            urn,
-            storage: self.into(),
-        })
+        Ok(Repo { urn, storage: self })
     }
 
     /// Attempt to clone the designated repo from the network.
@@ -704,7 +710,7 @@ where
 
         Ok(Repo {
             urn,
-            storage: self.into(),
+            storage: &self,
         })
     }
 
@@ -1008,22 +1014,6 @@ where
             Err(e) if is_not_found_err(&e) => Ok(false),
             Err(e) => Err(Error::from(e)),
         }
-    }
-}
-
-impl<S: Clone> TryToOwned for Storage<S> {
-    type Owned = Self;
-    type Error = Error;
-
-    fn try_to_owned(&self) -> Result<Self::Owned, Self::Error> {
-        let backend = self.backend.try_to_owned()?;
-        let peer_id = self.peer_id.clone();
-        let signer = self.signer.clone();
-        Ok(Self {
-            backend,
-            peer_id,
-            signer,
-        })
     }
 }
 

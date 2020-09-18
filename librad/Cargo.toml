@@ -21,6 +21,7 @@ multibase = "0.8"
 multihash = "0.11"
 nom = "5"
 nonempty = "0.5"
+num_cpus = "1"
 percent-encoding = "2.1"
 rand = "0.7"
 rand_pcg = "0.2"
@@ -35,6 +36,11 @@ tracing-futures = "0.2"
 unicode-normalization = "0.1"
 urltemplate = "0.1"
 webpki = "0.21"
+
+[dependencies.deadpool]
+version = "0.5"
+default-features = false
+features = ["managed"]
 
 [dependencies.ed25519-zebra]
 version = "2.1.2"
@@ -75,7 +81,7 @@ features = ["tls-rustls"]
 
 [dependencies.radicle-keystore]
 git = "https://github.com/radicle-dev/radicle-keystore"
-rev = "3377e666bde3130a06dd19343e7df2eaa774176a"
+rev = "865b63483c8781e6f305f8cb29ca7ab1cbdfce09"
 
 # Note: this MUST always match the exact patch version `quinn` uses
 [dependencies.rustls]

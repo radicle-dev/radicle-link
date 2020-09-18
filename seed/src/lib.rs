@@ -45,6 +45,9 @@ use librad::{
 #[derive(Error, Debug)]
 pub enum Error {
     #[error(transparent)]
+    Api(#[from] peer::ApiError),
+
+    #[error(transparent)]
     Storage(#[from] git::storage::Error),
 
     #[error(transparent)]
@@ -165,12 +168,14 @@ impl Node {
         let gossip_params = Default::default();
         let seeds: Vec<(PeerId, SocketAddr)> = vec![];
         let disco = discovery::Static::new(seeds);
+        let storage_config = Default::default();
         let config = PeerConfig {
             signer: self.config.signer,
             paths,
             listen_addr: self.config.listen_addr,
             gossip_params,
             disco,
+            storage_config,
         };
 
         let peer = config.try_into_peer().await?;
@@ -197,7 +202,7 @@ impl Node {
 
                     if mode.is_trackable(peer_id, urn) {
                         // Attempt to track, but keep going if it fails.
-                        Node::track_project(&api, urn, &provider).ok();
+                        Node::track_project(&api, urn, &provider).await.ok();
                     }
                 },
                 _ => {},
@@ -207,7 +212,7 @@ impl Node {
     }
 
     /// Attempt to track a project.
-    fn track_project(
+    async fn track_project(
         api: &PeerApi<Signer>,
         urn: &RadUrn,
         peer_info: &PeerInfo<std::net::IpAddr>,
@@ -218,12 +223,20 @@ impl Node {
         let addr_hints = peer_info
             .seen_addrs
             .iter()
-            .map(|a: &std::net::IpAddr| (*a, port).into());
+            .map(|a: &std::net::IpAddr| (*a, port).into())
+            .collect::<Vec<_>>();
 
-        let result = api
-            .storage()
-            .clone_repo::<project::ProjectInfo, _>(url, addr_hints)
-            .and_then(|_| api.storage().track(urn, &peer_id));
+        let result = {
+            let peer_id = peer_id.clone();
+            let urn = urn.clone();
+            api.with_storage(move |storage| {
+                storage
+                    .clone_repo::<project::ProjectInfo, _>(url, addr_hints)
+                    .and_then(|_| storage.track(&urn, &peer_id))
+            })
+        }
+        .await
+        .expect("`clone_repo` panicked");
 
         match &result {
             Ok(()) => {
@@ -252,7 +265,7 @@ impl Node {
                     let mut peers = api.providers(urn.clone(), Duration::from_secs(30)).await;
                     // Attempt to track until we succeed.
                     while let Some(peer) = peers.next().await {
-                        if Node::track_project(&api, urn, &peer).is_ok() {
+                        if Node::track_project(&api, urn, &peer).await.is_ok() {
                             break;
                         }
                     }

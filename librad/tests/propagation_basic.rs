@@ -21,9 +21,10 @@ use std::time::Duration;
 
 use futures::{future, stream::StreamExt};
 use tempfile::tempdir;
+use tokio::task::block_in_place;
 
 use librad::{
-    git::local::url::LocalUrl,
+    git::{local::url::LocalUrl, storage},
     meta::{entity::Signatory, project::ProjectInfo},
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     signer::SomeSigner,
@@ -38,7 +39,7 @@ use librad_test::{
     },
 };
 
-#[tokio::test]
+#[tokio::test(core_threads = 2)]
 async fn can_clone() {
     logging::init();
 
@@ -65,27 +66,33 @@ async fn can_clone() {
                 .unwrap();
         }
 
-        tokio::task::spawn_blocking(move || {
-            peer1.storage().create_repo(&alice).unwrap();
-            peer1.storage().create_repo(&radicle).unwrap();
-            {
-                let git2 = peer2.storage();
-                git2.clone_repo::<ProjectInfo, _>(
-                    radicle.urn().into_rad_url(peer1.peer_id().clone()),
-                    None,
-                )
-                .unwrap();
+        let radicle_urn = radicle.urn();
+
+        peer1
+            .with_storage(move |storage| {
+                storage.create_repo(&alice).unwrap();
+                storage.create_repo(&radicle).unwrap();
+            })
+            .await
+            .unwrap();
+        peer2
+            .with_storage(move |storage| {
+                storage
+                    .clone_repo::<ProjectInfo, _>(
+                        radicle_urn.clone().into_rad_url(peer1.peer_id().clone()),
+                        None,
+                    )
+                    .unwrap();
                 // sanity check
-                git2.open_repo(radicle.urn()).unwrap();
-            }
-        })
-        .await
-        .unwrap();
+                storage.open_repo(radicle_urn).unwrap();
+            })
+            .await
+            .unwrap();
     })
     .await;
 }
 
-#[tokio::test]
+#[tokio::test(core_threads = 2)]
 async fn can_clone_disconnected() {
     logging::init();
 
@@ -112,27 +119,33 @@ async fn can_clone_disconnected() {
                 .unwrap();
         }
 
-        tokio::task::spawn_blocking(move || {
-            peer1.storage().create_repo(&alice).unwrap();
-            peer1.storage().create_repo(&radicle).unwrap();
-            {
-                let git2 = peer2.storage();
-                git2.clone_repo::<ProjectInfo, _>(
-                    radicle.urn().into_rad_url(peer1.peer_id().clone()),
-                    Some(peer1.listen_addr()),
-                )
-                .unwrap();
+        let radicle_urn = radicle.urn();
+
+        peer1
+            .with_storage(move |storage| {
+                storage.create_repo(&alice).unwrap();
+                storage.create_repo(&radicle).unwrap();
+            })
+            .await
+            .unwrap();
+        peer2
+            .with_storage(move |storage| {
+                storage
+                    .clone_repo::<ProjectInfo, _>(
+                        radicle_urn.clone().into_rad_url(peer1.peer_id().clone()),
+                        Some(peer1.listen_addr()),
+                    )
+                    .unwrap();
                 // sanity check
-                git2.open_repo(radicle.urn()).unwrap();
-            }
-        })
-        .await
-        .unwrap();
+                storage.open_repo(radicle_urn).unwrap();
+            })
+            .await
+            .unwrap();
     })
     .await;
 }
 
-#[tokio::test]
+#[tokio::test(core_threads = 2)]
 async fn fetches_on_gossip_notify() {
     logging::init();
 
@@ -159,23 +172,31 @@ async fn fetches_on_gossip_notify() {
                 .unwrap();
         }
 
-        let peer1_storage = peer1.storage();
-        let peer2_storage = peer2.storage();
         let peer2_events = peer2.subscribe().await;
 
         // Create project on peer1, and clone from peer2
         {
-            peer1_storage.create_repo(&alice).unwrap();
-            peer1_storage.create_repo(&radicle).unwrap();
-            let peer2_storage = peer2_storage.reopen().unwrap();
-            let url = radicle.urn().into_rad_url(peer1.peer_id().clone());
-            tokio::task::spawn_blocking(move || {
-                peer2_storage
-                    .clone_repo::<ProjectInfo, _>(url, None)
-                    .unwrap();
-            })
-            .await
-            .unwrap();
+            let alice = alice.clone();
+            let radicle = radicle.clone();
+            peer1
+                .with_storage(move |storage| {
+                    storage.create_repo(&alice).unwrap();
+                    storage.create_repo(&radicle).unwrap();
+                })
+                .await
+                .unwrap();
+        }
+
+        {
+            let radicle_at_peer1 = radicle.urn().into_rad_url(peer1.peer_id().clone());
+            peer2
+                .with_storage(move |storage| {
+                    storage
+                        .clone_repo::<ProjectInfo, _>(radicle_at_peer1, None)
+                        .unwrap();
+                })
+                .await
+                .unwrap();
         }
 
         let global_settings = librad::git::local::transport::Settings {
@@ -184,7 +205,7 @@ async fn fetches_on_gossip_notify() {
         };
 
         // Check out a working copy on peer1, add a commit, and push it
-        let commit_id = {
+        let commit_id = block_in_place(|| {
             librad::git::local::transport::register(global_settings);
 
             let tmp = tempdir().unwrap();
@@ -244,7 +265,7 @@ async fn fetches_on_gossip_notify() {
                 .unwrap();
 
             commit_id
-        };
+        });
 
         // Wait for peer2 to receive the gossip announcement
         {
@@ -265,24 +286,29 @@ async fn fetches_on_gossip_notify() {
         }
 
         // Check that peer2 has fetched the update
-        assert!(peer2_storage
-            .has_commit(
-                &RadUrn {
-                    path: uri::Path::parse(format!(
-                        "refs/remotes/{}/heads/master",
-                        peer1.peer_id()
-                    ))
-                    .unwrap(),
-                    ..radicle.urn()
-                },
-                commit_id
-            )
-            .unwrap());
+        let peer2_has_commit = peer2
+            .with_storage(move |storage| {
+                storage.has_commit(
+                    &RadUrn {
+                        path: uri::Path::parse(format!(
+                            "refs/remotes/{}/heads/master",
+                            peer1.peer_id()
+                        ))
+                        .unwrap(),
+                        ..radicle.urn()
+                    },
+                    commit_id,
+                )
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(peer2_has_commit);
     })
     .await;
 }
 
-#[tokio::test]
+#[tokio::test(core_threads = 3)]
 async fn all_metadata_returns_only_local_projects() {
     logging::init();
 
@@ -296,38 +322,47 @@ async fn all_metadata_returns_only_local_projects() {
 
         let mut alice = Alice::new(peer1_key.public());
         let mut radicle = Radicle::new(&alice);
-        let resolves_to_alice = alice.clone();
-        alice
-            .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-            .unwrap();
-        radicle
-            .sign(
-                &peer1_key,
-                &Signatory::User(alice.urn()),
-                &resolves_to_alice,
-            )
-            .unwrap();
+        {
+            let resolves_to_alice = alice.clone();
+            alice
+                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
+                .unwrap();
+            radicle
+                .sign(
+                    &peer1_key,
+                    &Signatory::User(alice.urn()),
+                    &resolves_to_alice,
+                )
+                .unwrap();
+        }
 
-        tokio::task::spawn_blocking(move || {
-            peer1.storage().create_repo(&alice).unwrap();
-            peer1.storage().create_repo(&radicle).unwrap();
-            let git2 = peer2.storage();
-            git2.clone_repo::<ProjectInfo, _>(
-                radicle.urn().into_rad_url(peer1.peer_id().clone()),
-                None,
-            )
+        let radicle_at_peer1 = radicle.urn().into_rad_url(peer1.peer_id().clone());
+        let radicle_at_peer2 = radicle.urn().into_rad_url(peer2.peer_id().clone());
+
+        peer1
+            .with_storage(move |storage| {
+                storage.create_repo(&alice).unwrap();
+                storage.create_repo(&radicle).unwrap();
+            })
+            .await
             .unwrap();
-            let git3 = peer3.storage();
-            git3.clone_repo::<ProjectInfo, _>(
-                radicle.urn().into_rad_url(peer2.peer_id().clone()),
-                None,
-            )
+        peer2
+            .with_storage(move |storage| {
+                storage
+                    .clone_repo::<ProjectInfo, _>(radicle_at_peer1, None)
+                    .unwrap();
+            })
+            .await
             .unwrap();
-            let metadata_vec: Vec<_> = git3.all_metadata().unwrap().collect();
-            assert_eq!(1, metadata_vec.len());
-        })
-        .await
-        .unwrap();
+        let all_metadata_acc_to_peer3 = peer3
+            .with_storage(move |storage| {
+                storage.clone_repo::<ProjectInfo, _>(radicle_at_peer2, None)?;
+                Ok::<_, storage::Error>(storage.all_metadata()?.collect::<Vec<_>>())
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(1, all_metadata_acc_to_peer3.len());
     })
     .await;
 }
@@ -338,7 +373,7 @@ async fn all_metadata_returns_only_local_projects() {
 ///
 /// Following that, verify that cloning from the returned PeerId means we have
 /// the URN in our monorepo.
-#[tokio::test]
+#[tokio::test(core_threads = 4)]
 async fn ask_and_clone() {
     logging::init();
     const NUM_PEERS: usize = 2;
@@ -348,25 +383,28 @@ async fn ask_and_clone() {
         let (peer1, peer1_key) = apis.pop().unwrap();
         let mut alice = Alice::new(peer1_key.public());
         let mut radicle = Radicle::new(&alice);
-        let resolves_to_alice = alice.clone();
-        alice
-            .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-            .unwrap();
-        radicle
-            .sign(
-                &peer1_key,
-                &Signatory::User(alice.urn()),
-                &resolves_to_alice,
-            )
-            .unwrap();
 
-        let repo_urn = tokio::task::spawn_blocking(move || {
-            let git = peer1.storage();
-            git.create_repo(&alice).unwrap();
-            git.create_repo(&radicle).unwrap().urn
-        })
-        .await
-        .unwrap();
+        {
+            let resolves_to_alice = alice.clone();
+            alice
+                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
+                .unwrap();
+            radicle
+                .sign(
+                    &peer1_key,
+                    &Signatory::User(alice.urn()),
+                    &resolves_to_alice,
+                )
+                .unwrap();
+        }
+
+        let repo_urn = peer1
+            .with_storage(move |storage| {
+                storage.create_repo(&alice).unwrap();
+                storage.create_repo(&radicle).unwrap().urn
+            })
+            .await
+            .unwrap();
 
         let (peer2, _) = apis.pop().unwrap();
         let res = peer2
@@ -380,19 +418,43 @@ async fn ask_and_clone() {
             None => panic!("Expected to have obtained peer1 but got None instead"),
         };
 
-        assert!(!peer2.storage().has_urn(&repo_urn).unwrap());
+        let peer2_has_urn = {
+            let repo_urn = repo_urn.clone();
+            peer2
+                .with_storage(move |storage| storage.has_urn(&repo_urn))
+                .await
+                .unwrap()
+                .unwrap()
+        };
+        assert_eq!(
+            false, peer2_has_urn,
+            "expected peer2 to not have URN {} yet",
+            repo_urn
+        );
 
         {
             let url = repo_urn.clone().into_rad_url(peer_id);
-            let git = peer2.storage().reopen().unwrap();
-            tokio::task::spawn_blocking(move || {
-                git.clone_repo::<ProjectInfo, _>(url, None).unwrap();
-            })
-            .await
-            .unwrap();
+            peer2
+                .with_storage(move |storage| {
+                    storage.clone_repo::<ProjectInfo, _>(url, None).unwrap();
+                })
+                .await
+                .unwrap();
         }
 
-        assert!(peer2.storage().has_urn(&repo_urn).unwrap())
+        let peer2_has_urn = {
+            let repo_urn = repo_urn.clone();
+            peer2
+                .with_storage(move |storage| storage.has_urn(&repo_urn))
+                .await
+                .unwrap()
+                .unwrap()
+        };
+        assert_eq!(
+            true, peer2_has_urn,
+            "expected peer2 to have URN {}",
+            repo_urn
+        )
     })
     .await;
 }

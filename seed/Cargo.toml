@@ -18,4 +18,4 @@ chrono = "0.4"
 
 [dependencies.radicle-keystore]
 git = "https://github.com/radicle-dev/radicle-keystore.git"
-rev = "3377e666bde3130a06dd19343e7df2eaa774176a"
+rev = "865b63483c8781e6f305f8cb29ca7ab1cbdfce09"

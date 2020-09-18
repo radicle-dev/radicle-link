@@ -71,6 +71,7 @@ async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
     let listen_addr = *LOCALHOST_ANY;
     let gossip_params = Default::default();
     let disco = discovery::Static::new(seeds);
+    let storage_config = Default::default();
 
     git::storage::Storage::init(&paths, key)?;
 
@@ -80,6 +81,7 @@ async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
         listen_addr,
         gossip_params,
         disco,
+        storage_config,
     };
 
     config

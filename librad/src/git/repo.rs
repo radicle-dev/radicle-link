@@ -25,7 +25,6 @@ use crate::{
         storage::{self, RadSelfSpec, Storage},
         types::Namespace,
     },
-    internal::borrow::{TryCow, TryToOwned},
     keys,
     meta::{entity::Draft, user::User},
     peer::PeerId,
@@ -50,10 +49,10 @@ pub enum Error {
 /// doesn't need to be passed around.
 pub struct Repo<'a, S: Clone> {
     pub urn: RadUrn,
-    pub(super) storage: TryCow<'a, Storage<S>>,
+    pub(super) storage: &'a Storage<S>,
 }
 
-impl<'a, S: Clone> Repo<'a, S> {
+impl<S: Clone> Repo<'_, S> {
     pub fn namespace(&self) -> Namespace {
         self.urn.id.clone()
     }
@@ -146,16 +145,5 @@ where
         self.storage
             .set_rad_self(&self.urn, spec)
             .map_err(Error::from)
-    }
-}
-
-impl<S: Clone> TryToOwned for Repo<'_, S> {
-    type Owned = Self;
-    type Error = Error;
-
-    fn try_to_owned(&self) -> Result<Self::Owned, Self::Error> {
-        let storage = self.storage.try_to_owned().map(TryCow::Owned)?;
-        let urn = self.urn.clone();
-        Ok(Self { storage, urn })
     }
 }
