@@ -29,6 +29,7 @@ use directories::ProjectDirs;
 pub struct Paths {
     keys_dir: PathBuf,
     git_dir: PathBuf,
+    git_includes_dir: PathBuf,
 }
 
 impl Paths {
@@ -46,6 +47,7 @@ impl Paths {
         Self {
             keys_dir: config_dir.join("keys"),
             git_dir: data_dir.join("git"),
+            git_includes_dir: config_dir.join("git-includes"),
         }
         .init()
     }
@@ -58,6 +60,7 @@ impl Paths {
         Self {
             keys_dir: root.join("keys"),
             git_dir: root.join("git"),
+            git_includes_dir: root.join("git-includes"),
         }
         .init()
     }
@@ -80,11 +83,16 @@ impl Paths {
     pub fn all_dirs(&self) -> HashMap<&str, &Path> {
         // Nb. this pattern match is here to keep the map consistent with the
         // struct fields
-        let Self { keys_dir, git_dir } = self;
+        let Self {
+            keys_dir,
+            git_dir,
+            git_includes_dir,
+        } = self;
 
         [
             ("keys_dir", keys_dir.as_path()),
             ("git_dir", git_dir.as_path()),
+            ("git_includes_dir", git_includes_dir.as_path()),
         ]
         .iter()
         .cloned()
