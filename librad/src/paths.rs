@@ -80,6 +80,10 @@ impl Paths {
         &self.git_dir
     }
 
+    pub fn git_include_dir(&self) -> &Path {
+        &self.git_includes_dir
+    }
+
     pub fn all_dirs(&self) -> HashMap<&str, &Path> {
         // Nb. this pattern match is here to keep the map consistent with the
         // struct fields
