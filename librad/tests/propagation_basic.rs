@@ -384,3 +384,62 @@ async fn providers_works() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn ask_and_clone() {
+    logging::init();
+    const NUM_PEERS: usize = 2;
+    let peers = testnet::setup(NUM_PEERS).await.unwrap();
+
+    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
+        let (peer1, peer1_key) = apis.pop().unwrap();
+        let mut alice = Alice::new(peer1_key.public());
+        let mut radicle = Radicle::new(&alice);
+        let resolves_to_alice = alice.clone();
+        alice
+            .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
+            .unwrap();
+        radicle
+            .sign(
+                &peer1_key,
+                &Signatory::User(alice.urn()),
+                &resolves_to_alice,
+            )
+            .unwrap();
+
+        let repo_urn = tokio::task::spawn_blocking(move || {
+            let git = peer1.storage();
+            git.create_repo(&alice).unwrap();
+            git.create_repo(&radicle).unwrap().urn
+        })
+        .await
+        .unwrap();
+
+        let (peer2, _) = apis.pop().unwrap();
+        let res = peer2
+            .providers(repo_urn.clone(), Duration::from_secs(5))
+            .await
+            .next()
+            .await;
+
+        let peer_id = match res {
+            Some(peer_info) => peer_info.peer_id,
+            None => panic!("Expected to have obtained peer1 but got None instead"),
+        };
+
+        assert!(!peer2.storage().has_urn(&repo_urn).unwrap());
+
+        {
+            let url = repo_urn.clone().into_rad_url(peer_id);
+            let git = peer2.storage().reopen().unwrap();
+            tokio::task::spawn_blocking(move || {
+                git.clone_repo::<ProjectInfo, _>(url, None).unwrap();
+            })
+            .await
+            .unwrap();
+        }
+
+        assert!(peer2.storage().has_urn(&repo_urn).unwrap())
+    })
+    .await;
+}
