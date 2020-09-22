@@ -8,13 +8,10 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 anyhow = "1"
+radicle-keystore = "0"
 
 [dependencies.librad]
 path = "../librad"
-
-[dependencies.radicle-keystore]
-git = "https://github.com/radicle-dev/radicle-keystore"
-rev = "865b63483c8781e6f305f8cb29ca7ab1cbdfce09"
 
 [dependencies.git2]
 version = "0"

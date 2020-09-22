@@ -23,6 +23,7 @@ nom = "5"
 nonempty = "0.5"
 num_cpus = "1"
 percent-encoding = "2.1"
+radicle-keystore = "0"
 rand = "0.7"
 rand_pcg = "0.2"
 rcgen = "0.8"
@@ -78,10 +79,6 @@ git = "https://github.com/djc/quinn"
 rev = "babb07b079e7e3ac4ff2fa7ef25b0dac5e934377"
 default-features = false
 features = ["tls-rustls"]
-
-[dependencies.radicle-keystore]
-git = "https://github.com/radicle-dev/radicle-keystore"
-rev = "865b63483c8781e6f305f8cb29ca7ab1cbdfce09"
 
 # Note: this MUST always match the exact patch version `quinn` uses
 [dependencies.rustls]
