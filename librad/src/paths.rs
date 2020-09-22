@@ -80,7 +80,7 @@ impl Paths {
         &self.git_dir
     }
 
-    pub fn git_include_dir(&self) -> &Path {
+    pub fn git_includes_dir(&self) -> &Path {
         &self.git_includes_dir
     }
 
