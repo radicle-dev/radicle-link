@@ -17,7 +17,7 @@
 
 #![feature(async_closure)]
 
-use std::{convert::TryFrom, marker::PhantomData, time::Duration};
+use std::{marker::PhantomData, time::Duration};
 
 use futures::{
     future,
@@ -171,7 +171,7 @@ async fn can_fetch() {
         };
         let include = Include::from_tracked_users(tmp.path(), url, tracked_users.into_iter());
         let include_file = include.file_path();
-        let _config = git2::Config::try_from(include).unwrap();
+        include.save().unwrap();
 
         // Add the include above to include.path of the repo config
         let mut config = repo.config().unwrap();
