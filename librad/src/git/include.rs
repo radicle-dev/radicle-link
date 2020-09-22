@@ -31,6 +31,7 @@ use crate::{
 };
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error(transparent)]
     Io(#[from] io::Error),
