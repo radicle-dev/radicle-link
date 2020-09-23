@@ -168,22 +168,39 @@ mod test {
 
     use super::*;
 
+    const LOCAL_SEED: [u8; 32] = [
+        0, 10, 109, 178, 52, 203, 96, 195, 109, 177, 87, 178, 159, 70, 238, 41, 20, 168, 163, 180,
+        197, 235, 118, 84, 216, 231, 56, 80, 83, 31, 227, 102,
+    ];
+    const LYLA_SEED: [u8; 32] = [
+        216, 242, 247, 226, 55, 82, 13, 180, 197, 249, 205, 34, 152, 15, 64, 254, 37, 87, 34, 209,
+        247, 76, 44, 13, 101, 182, 52, 156, 229, 148, 45, 72,
+    ];
+    const ROVER_SEED: [u8; 32] = [
+        200, 50, 199, 97, 117, 178, 51, 186, 246, 43, 94, 103, 111, 252, 210, 133, 119, 110, 115,
+        123, 236, 191, 154, 79, 82, 74, 126, 133, 221, 216, 193, 65,
+    ];
+    const LINGLING_SEED: [u8; 32] = [
+        224, 125, 219, 106, 75, 189, 95, 155, 89, 134, 54, 202, 255, 41, 239, 234, 220, 90, 200,
+        19, 199, 63, 69, 225, 97, 15, 124, 168, 168, 238, 124, 83,
+    ];
+
+    lazy_static! {
+        static ref LOCAL_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(LOCAL_SEED));
+        static ref LYLA_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(LYLA_SEED));
+        static ref ROVER_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(ROVER_SEED));
+        static ref LINGLING_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(LINGLING_SEED));
+    }
+
     #[test]
     fn can_create_and_update() -> Result<(), Error> {
         let tmp_dir = tempfile::tempdir()?;
-
-        let key = SecretKey::new();
-        let peer_id = PeerId::from(key);
         let repo = Hash::hash(b"meow-meow");
         let url = LocalUrl {
             repo,
-            local_peer_id: peer_id,
+            local_peer_id: (*LOCAL_PEER_ID).clone(),
         };
-        let remote_lyla = {
-            let key = SecretKey::new();
-            let peer_id = PeerId::from(key);
-            format!("lyla@{}", peer_id)
-        };
+        let remote_lyla = format!("lyla@{}", *LYLA_PEER_ID);
 
         let config = {
             let include = Include {
@@ -205,12 +222,7 @@ mod test {
             Some(_)
         );
 
-        let remote_rover = {
-            let key = SecretKey::new();
-            let peer_id = PeerId::from(key);
-            format!("rover@{}", peer_id)
-        };
-
+        let remote_rover = format!("rover@{}", *ROVER_PEER_ID);
         {
             let include = Include {
                 path: tmp_dir.path().to_path_buf(),
@@ -237,11 +249,7 @@ mod test {
         );
 
         // The tracking graph changed entirely.
-        let remote_lingling = {
-            let key = SecretKey::new();
-            let peer_id = PeerId::from(key);
-            format!("lingling@{}", peer_id)
-        };
+        let remote_lingling = format!("lingling@{}", *LINGLING_PEER_ID);
 
         {
             let include = Include {
