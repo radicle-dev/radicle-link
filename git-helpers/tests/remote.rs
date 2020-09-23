@@ -112,7 +112,10 @@ fn setup_entity(paths: &Paths, key: SecretKey) -> anyhow::Result<RadUrn> {
 fn setup_keystore(dir: &Path, key: SecretKey) -> anyhow::Result<()> {
     let mut keystore = keystore::FileStorage::<_, PublicKey, _, _>::new(
         &dir.join("librad.key"),
-        keystore::crypto::Pwhash::new(SecUtf8::from(PASSPHRASE)),
+        keystore::crypto::Pwhash::new(
+            SecUtf8::from(PASSPHRASE),
+            *keystore::crypto::KDF_PARAMS_PROD,
+        ),
     );
     keystore.put_key(key)?;
 
