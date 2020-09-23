@@ -16,12 +16,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    convert::TryFrom,
+    io,
     marker::PhantomData,
     path::{self, PathBuf},
 };
-
-use git2::{Config, ConfigLevel};
 
 use crate::{
     git::{
@@ -31,6 +29,15 @@ use crate::{
     meta::user::User,
     peer::PeerId,
 };
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Error {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Git(#[from] git2::Error),
+}
 
 /// An `Include` is a representation of an include file which we want to
 /// generate for working copies.
@@ -71,12 +78,27 @@ impl<Path> Include<Path> {
         }
     }
 
-    /// Create the include file by creating a [`Config`].
-    pub fn create(self) -> Result<Config, git2::Error>
+    /// Writes the contents of the [`git2::Config`] of the include file to disk.
+    pub fn save(self) -> Result<(), Error>
     where
         Path: AsRef<path::Path>,
     {
-        git2::Config::try_from(self)
+        let tmp_dir = tempfile::tempdir()?;
+        let tmp_path = tmp_dir.path().join(self.local_url.repo.to_string());
+
+        let mut config = git2::Config::open(&tmp_path)?;
+
+        for remote in &self.remotes {
+            let (key, url) = url_entry(&remote);
+            config.set_str(&key, &url.to_string())?;
+
+            let (key, fetch) = fetch_entry(&remote);
+            config.set_str(&key, &fetch)?;
+        }
+
+        std::fs::rename(tmp_path, self.file_path())?;
+
+        Ok(())
     }
 
     /// The full file path where this include file will be created.
@@ -140,88 +162,116 @@ fn fetch_entry(remote: &Remote<LocalUrl>) -> (String, String) {
     )
 }
 
-impl<Path> TryFrom<Include<Path>> for Config
-where
-    Path: AsRef<path::Path>,
-{
-    type Error = git2::Error;
-
-    fn try_from(include: Include<Path>) -> Result<Self, Self::Error> {
-        let mut config = Self::new()?;
-        let file = include.file_path();
-        config.add_file(&file, ConfigLevel::Local, false)?;
-
-        for remote in include.remotes {
-            let (key, url) = url_entry(&remote);
-            config.set_str(&key, &url.to_string())?;
-
-            let (key, fetch) = fetch_entry(&remote);
-            config.set_str(&key, &fetch)?;
-        }
-
-        Ok(config)
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use std::{io, path};
-
-    use git2::Config;
-
-    use super::*;
     use crate::{git::local::url::LocalUrl, hash::Hash, keys::SecretKey, peer::PeerId};
 
-    use librad_test::tempdir::WithTmpDir;
+    use super::*;
 
-    type TempInclude = WithTmpDir<Config>;
+    const LOCAL_SEED: [u8; 32] = [
+        0, 10, 109, 178, 52, 203, 96, 195, 109, 177, 87, 178, 159, 70, 238, 41, 20, 168, 163, 180,
+        197, 235, 118, 84, 216, 231, 56, 80, 83, 31, 227, 102,
+    ];
+    const LYLA_SEED: [u8; 32] = [
+        216, 242, 247, 226, 55, 82, 13, 180, 197, 249, 205, 34, 152, 15, 64, 254, 37, 87, 34, 209,
+        247, 76, 44, 13, 101, 182, 52, 156, 229, 148, 45, 72,
+    ];
+    const ROVER_SEED: [u8; 32] = [
+        200, 50, 199, 97, 117, 178, 51, 186, 246, 43, 94, 103, 111, 252, 210, 133, 119, 110, 115,
+        123, 236, 191, 154, 79, 82, 74, 126, 133, 221, 216, 193, 65,
+    ];
+    const LINGLING_SEED: [u8; 32] = [
+        224, 125, 219, 106, 75, 189, 95, 155, 89, 134, 54, 202, 255, 41, 239, 234, 220, 90, 200,
+        19, 199, 63, 69, 225, 97, 15, 124, 168, 168, 238, 124, 83,
+    ];
 
-    #[derive(Debug, thiserror::Error)]
-    enum Error {
-        #[error(transparent)]
-        Io(#[from] io::Error),
-        #[error(transparent)]
-        Git(#[from] git2::Error),
-    }
-
-    fn include<F>(constructor: F) -> Result<TempInclude, Error>
-    where
-        F: FnOnce(&path::Path) -> Include<&path::Path>,
-    {
-        WithTmpDir::new::<_, Error>(|path| {
-            let include = constructor(path);
-            let config = Config::try_from(include)?;
-            Ok(config)
-        })
+    lazy_static! {
+        static ref LOCAL_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(LOCAL_SEED));
+        static ref LYLA_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(LYLA_SEED));
+        static ref ROVER_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(ROVER_SEED));
+        static ref LINGLING_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(LINGLING_SEED));
     }
 
     #[test]
-    fn can_create_trivial_include() -> Result<(), Error> {
-        let key = SecretKey::new();
-        let peer_id = PeerId::from(key);
+    fn can_create_and_update() -> Result<(), Error> {
+        let tmp_dir = tempfile::tempdir()?;
         let repo = Hash::hash(b"meow-meow");
         let url = LocalUrl {
             repo,
-            local_peer_id: peer_id.clone(),
+            local_peer_id: (*LOCAL_PEER_ID).clone(),
         };
-        let name = format!("lyla@{}", peer_id);
-        let remote = Remote::new(url.clone(), name.clone());
+        let remote_lyla = format!("lyla@{}", *LYLA_PEER_ID);
 
-        let config = include(|path| Include {
-            path,
-            remotes: vec![remote],
-            local_url: url.clone(),
-        })?;
+        let config = {
+            let include = Include {
+                path: tmp_dir.path().to_path_buf(),
+                remotes: vec![Remote::new(url.clone(), remote_lyla.clone())],
+                local_url: url.clone(),
+            };
+            let path = include.file_path();
+            let config = git2::Config::open(&path)?;
+            include.save()?;
 
-        let remote = Remote::new(url, name);
-        let (key, url) = url_entry(&remote);
-        assert_eq!(
-            config.get_entry(&key)?.value(),
-            Some(url.to_string().as_str())
+            config
+        };
+
+        assert_matches!(
+            config
+                .get_entry(&format!("remote.{}.url", remote_lyla))?
+                .value(),
+            Some(_)
         );
 
-        let (key, fetch) = fetch_entry(&remote);
-        assert_eq!(config.get_entry(&key)?.value(), Some(fetch.as_str()));
+        let remote_rover = format!("rover@{}", *ROVER_PEER_ID);
+        {
+            let include = Include {
+                path: tmp_dir.path().to_path_buf(),
+                remotes: vec![
+                    Remote::new(url.clone(), remote_lyla.clone()),
+                    Remote::new(url.clone(), remote_rover.clone()),
+                ],
+                local_url: url.clone(),
+            };
+            include.save()?;
+        };
+
+        assert_matches!(
+            config
+                .get_entry(&format!("remote.{}.url", remote_lyla))?
+                .value(),
+            Some(_)
+        );
+        assert_matches!(
+            config
+                .get_entry(&format!("remote.{}.url", remote_rover))?
+                .value(),
+            Some(_)
+        );
+
+        // The tracking graph changed entirely.
+        let remote_lingling = format!("lingling@{}", *LINGLING_PEER_ID);
+
+        {
+            let include = Include {
+                path: tmp_dir.path().to_path_buf(),
+                remotes: vec![Remote::new(url.clone(), remote_lingling.clone())],
+                local_url: url,
+            };
+            include.save()?;
+        };
+
+        assert_matches!(
+            config
+                .get_entry(&format!("remote.{}.url", remote_lingling))?
+                .value(),
+            Some(_)
+        );
+        assert!(config
+            .get_entry(&format!("remote.{}.url", remote_lyla))
+            .is_err());
+        assert!(config
+            .get_entry(&format!("remote.{}.url", remote_rover))
+            .is_err());
 
         Ok(())
     }
