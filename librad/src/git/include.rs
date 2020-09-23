@@ -185,27 +185,25 @@ mod test {
             format!("lyla@{}", peer_id)
         };
 
-        let include_path = {
+        let config = {
             let include = Include {
                 path: tmp_dir.path().to_path_buf(),
                 remotes: vec![Remote::new(url.clone(), remote_lyla.clone())],
                 local_url: url.clone(),
             };
             let path = include.file_path();
+            let config = git2::Config::open(&path)?;
             include.save()?;
 
-            path
+            config
         };
 
-        {
-            let config = git2::Config::open(&include_path)?;
-            assert_matches!(
-                config
-                    .get_entry(&format!("remote.{}.url", remote_lyla))?
-                    .value(),
-                Some(_)
-            );
-        }
+        assert_matches!(
+            config
+                .get_entry(&format!("remote.{}.url", remote_lyla))?
+                .value(),
+            Some(_)
+        );
 
         let remote_rover = {
             let key = SecretKey::new();
@@ -225,21 +223,18 @@ mod test {
             include.save()?;
         };
 
-        {
-            let config = git2::Config::open(&include_path)?;
-            assert_matches!(
-                config
-                    .get_entry(&format!("remote.{}.url", remote_lyla))?
-                    .value(),
-                Some(_)
-            );
-            assert_matches!(
-                config
-                    .get_entry(&format!("remote.{}.url", remote_rover))?
-                    .value(),
-                Some(_)
-            );
-        };
+        assert_matches!(
+            config
+                .get_entry(&format!("remote.{}.url", remote_lyla))?
+                .value(),
+            Some(_)
+        );
+        assert_matches!(
+            config
+                .get_entry(&format!("remote.{}.url", remote_rover))?
+                .value(),
+            Some(_)
+        );
 
         // The tracking graph changed entirely.
         let remote_lingling = {
@@ -257,7 +252,6 @@ mod test {
             include.save()?;
         };
 
-        let config = git2::Config::open(&include_path)?;
         assert_matches!(
             config
                 .get_entry(&format!("remote.{}.url", remote_lingling))?
