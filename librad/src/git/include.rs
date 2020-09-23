@@ -31,7 +31,7 @@ use crate::{
 };
 
 /// Config key to reference generated include files in working copies.
-const GIT_CONFIG_PATH_KEY: &str = "include.path";
+pub const GIT_CONFIG_PATH_KEY: &str = "include.path";
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
