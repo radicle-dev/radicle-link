@@ -86,6 +86,13 @@ impl<Path> Include<Path> {
         let tmp_dir = tempfile::tempdir()?;
         let tmp_path = tmp_dir.path().join(self.local_url.repo.to_string());
 
+        // We emulate the glorious `touch` to ensure the file exists, as git2::Config
+        // doesn't seem to create on open.
+        std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(tmp_path.clone())?;
+
         let mut config = git2::Config::open(&tmp_path)?;
 
         for remote in &self.remotes {
@@ -200,12 +207,13 @@ mod test {
             repo,
             local_peer_id: (*LOCAL_PEER_ID).clone(),
         };
-        let remote_lyla = format!("lyla@{}", *LYLA_PEER_ID);
 
+        // Start with an empty config to catch corner-cases where git2::Config does not
+        // create a file yet.
         let config = {
             let include = Include {
                 path: tmp_dir.path().to_path_buf(),
-                remotes: vec![Remote::new(url.clone(), remote_lyla.clone())],
+                remotes: vec![],
                 local_url: url.clone(),
             };
             let path = include.file_path();
@@ -213,6 +221,16 @@ mod test {
             include.save()?;
 
             config
+        };
+
+        let remote_lyla = format!("lyla@{}", *LYLA_PEER_ID);
+        {
+            let include = Include {
+                path: tmp_dir.path().to_path_buf(),
+                remotes: vec![Remote::new(url.clone(), remote_lyla.clone())],
+                local_url: url.clone(),
+            };
+            include.save()?;
         };
 
         assert_matches!(
