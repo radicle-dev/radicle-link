@@ -30,6 +30,9 @@ use crate::{
     peer::PeerId,
 };
 
+/// Config key to reference generated include files in working copies.
+const GIT_CONFIG_PATH_KEY: &str = "include.path";
+
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -139,6 +142,14 @@ impl<Path> Include<Path> {
             local_url,
         }
     }
+}
+
+/// Adds an include directive to the `repo`.
+pub fn set_include_path(repo: &git2::Repository, include_path: PathBuf) -> Result<(), Error> {
+    let mut config = repo.config().unwrap();
+    config
+        .set_str(GIT_CONFIG_PATH_KEY, &format!("{}", include_path.display()))
+        .map_err(Error::from)
 }
 
 fn remote_prefix(remote: &Remote<LocalUrl>) -> String {
