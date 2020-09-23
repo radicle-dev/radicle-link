@@ -14,7 +14,7 @@ path = "../librad"
 
 [dependencies.radicle-keystore]
 git = "https://github.com/radicle-dev/radicle-keystore"
-rev = "3377e666bde3130a06dd19343e7df2eaa774176a"
+rev = "c48dcf1c7856b4103a9d5a4e46b76acf29cd68b8"
 
 [dependencies.git2]
 version = "0"

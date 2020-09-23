@@ -17,5 +17,5 @@ tracing-subscriber = "0.2"
 chrono = "0.4"
 
 [dependencies.radicle-keystore]
-git = "https://github.com/radicle-dev/radicle-keystore.git"
-rev = "3377e666bde3130a06dd19343e7df2eaa774176a"
+git = "https://github.com/radicle-dev/radicle-keystore"
+rev = "c48dcf1c7856b4103a9d5a4e46b76acf29cd68b8"
