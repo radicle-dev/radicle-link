@@ -18,6 +18,7 @@
 #[macro_use]
 extern crate lazy_static;
 
+pub mod git;
 pub mod logging;
 pub mod rad;
 pub mod roundtrip;
