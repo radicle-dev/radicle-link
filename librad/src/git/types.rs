@@ -213,14 +213,19 @@ impl Refspec<PeerId, PeerId> {
             // Heads
             //
             // `+refs/namespaces/<namespace>/refs[/remotes/<peer>]/heads/* \
-            // :refs/namespaces/<namespace>/refs/remotes/<peer>/refs/heads/*`
+            // :refs/namespaces/<namespace>/refs/remotes/<peer>/heads/*`
             {
                 let their_singed_rad_refs = rad_signed_refs_of(tracked_peer.clone())?;
                 for (name, target) in their_singed_rad_refs.heads {
                     let name_namespaced = format!("refs/namespaces/{}/{}", namespace, name);
                     if let Some(name) = name.strip_prefix("refs/heads/") {
+                        let name_namespaced_remote = format!(
+                            "refs/namespaces/{}/refs/remotes/{}/heads/{}",
+                            namespace, tracked_peer, name
+                        );
                         let targets_match = remote_heads
                             .get(name_namespaced.as_str())
+                            .or_else(|| remote_heads.get(name_namespaced_remote.as_str()))
                             .map(|remote_target| remote_target == &*target)
                             .unwrap_or(false);
 

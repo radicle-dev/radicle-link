@@ -99,11 +99,12 @@ impl<'a> Fetcher<'a> {
         Ok(())
     }
 
-    /// Fetch remote heads according to the remote's signed `rad/refs` branch.
+    /// Fetch remote heads according to the remote's signed `rad/signed_refs`
+    /// branch.
     ///
     /// Proceeds in three stages:
     ///
-    /// 1. fetch the remote's view of `rad/refs`
+    /// 1. fetch the remote's view of `rad/signed_refs`
     /// 2. compare the signed refs against the advertised ones
     /// 3. fetch advertised refs ⋂ signed refs
     pub fn fetch<F, G, E>(
@@ -122,7 +123,7 @@ impl<'a> Fetcher<'a> {
 
         let mut fetch_opts = self.fetch_options();
 
-        // Fetch `rad/refs` first
+        // Fetch `rad/signed_refs` first
         {
             let refspecs = Refspec::rad_signed_refs(
                 self.url.repo.clone(),
