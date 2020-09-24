@@ -28,7 +28,7 @@ use tempfile::tempdir;
 
 use librad::{
     git::{
-        include::Include,
+        include,
         local::{transport, url::LocalUrl},
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
     },
@@ -169,15 +169,12 @@ async fn can_fetch() {
             repo: radicle.urn().id,
             local_peer_id: peer2.peer_id().clone(),
         };
-        let include = Include::from_tracked_users(tmp.path(), url, tracked_users.into_iter());
-        let include_file = include.file_path();
-        include.save().unwrap();
+        let inc = include::Include::from_tracked_users(tmp.path(), url, tracked_users.into_iter());
+        let inc_path = inc.file_path();
+        inc.save().unwrap();
 
         // Add the include above to include.path of the repo config
-        let mut config = repo.config().unwrap();
-        config
-            .set_str("include.path", &format!("{}", include_file.display()))
-            .unwrap();
+        include::set_include_path(&repo, inc_path).unwrap();
 
         // Fetch from the working copy and check we have the commit in the working copy
         for remote in repo.remotes().unwrap().iter() {
