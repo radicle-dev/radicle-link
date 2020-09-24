@@ -58,6 +58,10 @@ pub enum ProtocolEvent<A> {
     Disconnecting(PeerId),
     Listening(SocketAddr),
     Gossip(gossip::Info<IpAddr, A>),
+    Joined {
+        advertised_info: gossip::PeerAdvertisement<IpAddr>,
+        remote_id: PeerId,
+    },
 }
 
 /// Unification of the different inputs the run loop processes.
@@ -336,6 +340,20 @@ where
 
                 gossip::ProtocolEvent::Info(info) => {
                     self.subscribers.emit(ProtocolEvent::Gossip(info)).await
+                },
+
+                gossip::ProtocolEvent::Membership(info) => match info {
+                    gossip::MembershipInfo::Join {
+                        advertised_info,
+                        remote_id,
+                    } => {
+                        self.subscribers
+                            .emit(ProtocolEvent::Joined {
+                                advertised_info,
+                                remote_id,
+                            })
+                            .await
+                    },
                 },
             },
         }

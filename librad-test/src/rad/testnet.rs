@@ -131,6 +131,7 @@ where
     Fut: Future<Output = A>,
 {
     let num_peers = peers.len();
+    let should_connect = min_connected > 0;
 
     // move out tempdirs, so they don't get dropped
     let (_tmps, peers_and_keys) = peers
@@ -153,12 +154,16 @@ where
         }
         events
     };
-    let connected = wait_connected(events, min_connected);
+    let converged = async move {
+        if should_connect {
+            wait_converged(events, min_connected).await
+        }
+    };
 
     let res = future::select(
         future::select_all(runners).boxed(),
         Box::pin(async {
-            connected.await;
+            converged.await;
             f(apis.into_iter().zip(keys).collect()).await
         }),
     )
@@ -181,6 +186,30 @@ where
             }
 
             future::ready(if *connected < min_connected {
+                Some(event)
+            } else {
+                None
+            })
+        })
+        .collect::<Vec<_>>()
+        .await;
+}
+
+pub async fn wait_converged<S>(events: Vec<S>, min_connected: usize)
+where
+    S: futures::Stream<Item = ProtocolEvent<Gossip>> + Unpin,
+{
+    let min_joined = min_connected - 1;
+
+    stream::select_all(events)
+        .scan((0, 0), |(connected, joined), event| {
+            match event {
+                ProtocolEvent::Connected(_) => *connected += 1,
+                ProtocolEvent::Joined { .. } => *joined += 1,
+                _ => (),
+            };
+
+            future::ready(if *connected < min_connected && *joined < min_joined {
                 Some(event)
             } else {
                 None

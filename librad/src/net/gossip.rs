@@ -77,6 +77,7 @@ where
 {
     Control(Control<Addr, Payload>),
     Info(Info<Addr, Payload>),
+    Membership(MembershipInfo<Addr>),
 }
 
 #[derive(Clone)]
@@ -109,6 +110,17 @@ where
 {
     pub provider: PeerInfo<Addr>,
     pub val: A,
+}
+
+#[derive(Clone)]
+pub enum MembershipInfo<Addr>
+where
+    Addr: Clone + Eq + Hash,
+{
+    Join {
+        advertised_info: PeerAdvertisement<Addr>,
+        remote_id: PeerId,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -526,7 +538,7 @@ where
 
         match msg {
             Join(ad) => {
-                let peer_info = make_peer_info(ad);
+                let peer_info = make_peer_info(ad.clone());
                 tracing::trace!(
                     msg = "Join with peer information",
                     peer.info.advertised = ?peer_info.advertised_info,
@@ -541,7 +553,14 @@ where
                     },
                     remote_id,
                 )
-                .await
+                .await;
+
+                self.subscribers
+                    .emit(ProtocolEvent::Membership(MembershipInfo::Join {
+                        advertised_info: ad,
+                        remote_id: remote_id.clone(),
+                    }))
+                    .await;
             },
 
             ForwardJoin { joined, ttl } => {
