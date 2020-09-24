@@ -39,6 +39,7 @@ use librad::{
 };
 
 use librad_test::{
+    git::initial_commit,
     logging,
     rad::{
         entity::{Alice, Radicle},
@@ -206,42 +207,6 @@ async fn can_fetch() {
         assert!(repo.find_commit(commit_id).is_ok());
     })
     .await;
-}
-
-// Check out a working copy on peer1, add a commit, and push it
-fn initial_commit(
-    repo: &git2::Repository,
-    remote: Remote<LocalUrl>,
-    reference: &str,
-    remote_callbacks: Option<git2::RemoteCallbacks>,
-) -> Result<git2::Oid, git2::Error> {
-    let mut remote = remote.create(&repo)?;
-
-    let commit_id = {
-        let empty_tree = {
-            let mut index = repo.index()?;
-            let oid = index.write_tree()?;
-            repo.find_tree(oid).unwrap()
-        };
-        let author = git2::Signature::now("The Animal", "animal@muppets.com").unwrap();
-        repo.commit(
-            Some(reference),
-            &author,
-            &author,
-            "Initial commit",
-            &empty_tree,
-            &[],
-        )?
-    };
-
-    let mut opts = git2::PushOptions::new();
-    let opts = match remote_callbacks {
-        Some(cb) => opts.remote_callbacks(cb),
-        None => &mut opts,
-    };
-    remote.push(&[reference], Some(opts))?;
-
-    Ok(commit_id)
 }
 
 // Wait for peer2 to receive the gossip announcement
