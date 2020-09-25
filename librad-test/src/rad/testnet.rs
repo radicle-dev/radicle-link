@@ -22,7 +22,7 @@ use std::{
 };
 
 use futures::{
-    future::{self, Either, FutureExt},
+    future,
     stream::{self, StreamExt},
 };
 use tempfile::{tempdir, TempDir};
@@ -157,19 +157,17 @@ where
     };
     let connected = wait_connected(events, min_connected);
 
-    let res = future::select(
-        future::select_all(runners).boxed(),
-        Box::pin(async {
-            connected.await;
-            f(apis.into_iter().zip(keys).collect()).await
-        }),
-    )
-    .await;
+    let (abort_handle, abort_reg) = future::AbortHandle::new_pair();
+    tokio::task::spawn(future::Abortable::new(
+        future::select_all(runners),
+        abort_reg,
+    ));
+    connected.await;
 
-    match res {
-        Either::Left(_) => unreachable!(),
-        Either::Right((output, _)) => output,
-    }
+    let res = f(apis.into_iter().zip(keys).collect()).await;
+    abort_handle.abort();
+
+    res
 }
 
 pub async fn wait_connected<S>(events: Vec<S>, min_connected: usize)

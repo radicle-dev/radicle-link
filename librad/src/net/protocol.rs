@@ -21,14 +21,20 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     fmt::Debug,
+    future::Future,
     io,
     iter,
     net::{IpAddr, SocketAddr},
-    sync::Arc,
+    pin::Pin,
+    sync::{
+        atomic::{self, AtomicUsize},
+        Arc,
+    },
+    task::{Context, Poll},
 };
 
 use futures::{
-    future::{BoxFuture, TryFutureExt},
+    future::{self, BoxFuture, FutureExt, TryFutureExt},
     lock::Mutex,
     stream::{BoxStream, StreamExt, TryStreamExt},
 };
@@ -107,7 +113,6 @@ pub enum Error {
 
 pub type RunLoop = BoxFuture<'static, ()>;
 
-#[derive(Clone)]
 pub struct Protocol<S, A> {
     gossip: gossip::Protocol<S, A, IpAddr, quic::RecvStream, quic::SendStream>,
     git: GitServer,
@@ -116,6 +121,53 @@ pub struct Protocol<S, A> {
 
     connections: Arc<Mutex<HashMap<PeerId, quic::Connection>>>,
     subscribers: Fanout<ProtocolEvent<A>>,
+
+    ref_count: Arc<AtomicUsize>,
+}
+
+impl<S, A> Clone for Protocol<S, A>
+where
+    S: Clone,
+    A: Clone,
+{
+    fn clone(&self) -> Self {
+        const MAX_REFCOUNT: usize = (isize::MAX) as usize;
+
+        let old_count = self.ref_count.fetch_add(1, atomic::Ordering::Relaxed);
+        // See source docs of `std::sync::Arc`
+        if old_count > MAX_REFCOUNT {
+            eprintln!("Fatal: max refcount on gossip::Protocol exceeded");
+            core::intrinsics::abort()
+        }
+
+        Self {
+            gossip: self.gossip.clone(),
+            git: self.git.clone(),
+            endpoint: self.endpoint.clone(),
+            connections: self.connections.clone(),
+            subscribers: self.subscribers.clone(),
+            ref_count: self.ref_count.clone(),
+        }
+    }
+}
+
+impl<S, A> Drop for Protocol<S, A> {
+    fn drop(&mut self) {
+        // `Relaxed` is presumably ok here, because all we want is to not wrap
+        // around, which `saturating_sub` guarantees
+        let r = self.ref_count.fetch_update(
+            atomic::Ordering::Relaxed,
+            atomic::Ordering::Relaxed,
+            |x| Some(x.saturating_sub(1)),
+        );
+        match r {
+            Ok(x) | Err(x) if x == 0 => {
+                tracing::trace!("`net::Protocol` refcount is zero");
+                self.endpoint.shutdown()
+            },
+            _ => {},
+        }
+    }
 }
 
 impl<S, A> Protocol<S, A>
@@ -138,6 +190,7 @@ where
             endpoint: endpoint.clone(),
             connections: Arc::new(Mutex::new(HashMap::default())),
             subscribers: Fanout::new(),
+            ref_count: Arc::new(AtomicUsize::new(0)),
         };
 
         let run_loop = {
@@ -151,6 +204,27 @@ where
                 local.id = %that.peer_id(),
                 local.addr = %local_addr
             );
+
+            // Future which resolves once our refcount reaches zero.
+            //
+            // This ensures spawned tasks handling ingress/egress streams
+            // terminate when the last reference to `this` is dropped.
+            struct Bomb {
+                /// `ref_count` of `this`
+                ref_count: Arc<AtomicUsize>,
+            };
+
+            impl Future for Bomb {
+                type Output = ();
+
+                fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
+                    if self.ref_count.load(atomic::Ordering::Relaxed) < 1 {
+                        Poll::Ready(())
+                    } else {
+                        Poll::Pending
+                    }
+                }
+            }
 
             async move {
                 let incoming = incoming.map(|(conn, i)| Run::Incoming { conn, incoming: i });
@@ -166,9 +240,20 @@ where
                     .emit(ProtocolEvent::Listening(local_addr))
                     .await;
 
-                futures::stream::select(incoming, futures::stream::select(bootstrap, gossip_events))
-                    .for_each_concurrent(None, |run| that.eval_run(run))
-                    .await
+                let eval = futures::stream::select(
+                    incoming,
+                    futures::stream::select(bootstrap, gossip_events),
+                )
+                .for_each_concurrent(None, |run| that.eval_run(run));
+
+                future::select(
+                    eval.boxed(),
+                    Bomb {
+                        ref_count: that.ref_count.clone(),
+                    },
+                )
+                .map(|_| ())
+                .await;
             }
             .instrument(span)
         };

@@ -19,6 +19,7 @@ use std::{
     future::Future,
     io,
     net::{IpAddr, SocketAddr},
+    sync::Arc,
     time::Duration,
 };
 
@@ -29,11 +30,15 @@ use futures::{
 };
 use futures_timer::Delay;
 use thiserror::Error;
-use tokio::task::{block_in_place, spawn_blocking};
+use tokio::task::spawn_blocking;
 use tracing_futures::Instrument as _;
 
 use crate::{
-    git::{self, p2p::server::GitServer, storage},
+    git::{
+        self,
+        p2p::{server::GitServer, transport::GitStreamFactory},
+        storage,
+    },
     internal::channel::Fanout,
     keys::{self, AsPKCS8},
     net::{
@@ -170,6 +175,8 @@ pub struct PeerApi<S> {
     storage: storage::Pool<S>,
     subscribers: Fanout<PeerEvent>,
     paths: Paths,
+
+    _git_transport_protocol_ref: Arc<Box<dyn GitStreamFactory>>,
 }
 
 impl<S> PeerApi<S>
@@ -300,6 +307,12 @@ pub struct Peer<S> {
     protocol: Protocol<PeerStorage<S>, Gossip>,
     run_loop: RunLoop,
     subscribers: Fanout<PeerEvent>,
+
+    // We cannot cast `Arc<Box<Protocol<A, B>>>` to `Arc<Box<dyn GitStreamFactory>>`
+    // apparenty, so need to keep an `Arc` of the trait object here in order to
+    // hand out `Weak` pointers to
+    // `git::p2p::transport::RadTransport::register_stream_factory`
+    _git_transport_protocol_ref: Arc<Box<dyn GitStreamFactory>>,
 }
 
 impl<S> Peer<S>
@@ -323,6 +336,8 @@ where
             protocol: self.protocol,
             subscribers: self.subscribers,
             paths: self.paths,
+
+            _git_transport_protocol_ref: self._git_transport_protocol_ref,
         };
         Ok((api, self.run_loop))
     }
@@ -366,8 +381,10 @@ where
         );
 
         let (protocol, run_loop) = Protocol::new(gossip, git, endpoint, config.disco.discover());
+        let _git_transport_protocol_ref =
+            Arc::new(Box::new(protocol.clone()) as Box<dyn GitStreamFactory>);
         git::p2p::transport::register()
-            .register_stream_factory(&peer_id, Box::new(protocol.clone()));
+            .register_stream_factory(&peer_id, Arc::downgrade(&_git_transport_protocol_ref));
 
         Ok(Self {
             paths: config.paths,
@@ -377,6 +394,7 @@ where
             protocol,
             run_loop,
             subscribers,
+            _git_transport_protocol_ref,
         })
     }
 }
@@ -428,15 +446,20 @@ where
     ) -> bool {
         let git = self.inner.get().await.unwrap();
         let urn = urn_context(git.peer_id(), urn);
-        block_in_place(|| match head.into() {
+        let head = head.into();
+        spawn_blocking(move || match head {
             None => git.has_urn(&urn).unwrap_or(false),
             Some(head) => git.has_commit(&urn, head).unwrap_or(false),
         })
+        .await
+        .expect("`PeerStorage::git_has` panicked")
     }
 
-    async fn is_tracked(&self, urn: &RadUrn, peer: &PeerId) -> Result<bool, PeerStorageError> {
+    async fn is_tracked(&self, urn: RadUrn, peer: PeerId) -> Result<bool, PeerStorageError> {
         let git = self.inner.get().await?;
-        Ok(block_in_place(|| git.is_tracked(urn, peer))?)
+        Ok(spawn_blocking(move || git.is_tracked(&urn, &peer))
+            .await
+            .expect("`PeerStorage::is_tracked` panicked")?)
     }
 }
 
@@ -488,7 +511,7 @@ where
         match has.urn.proto {
             uri::Protocol::Git => {
                 let peer_id = has.origin.clone().unwrap_or_else(|| provider.clone());
-                let is_tracked = match self.is_tracked(&has.urn, &peer_id).await {
+                let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
                     Ok(b) => b,
                     Err(e) => {
                         tracing::error!(err = %e, "Git::Storage::is_tracked error");

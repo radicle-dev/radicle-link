@@ -103,6 +103,19 @@ impl Endpoint {
             None => Ok(mk_connection(peer, conn)),
         }
     }
+
+    /// Close all of this endpoint's connections immediately and cease accepting
+    /// new connections.
+    ///
+    /// Should only ever by called when the protocol stack is shut down.
+    ///
+    /// Morally, this method should consume `self`, but we shut down from a
+    /// `Drop` impl, so all we got is `&mut self`.
+    pub(crate) fn shutdown(&mut self) {
+        const CODE: VarInt = VarInt::from_u32(CloseReason::ServerShutdown as u32);
+        self.endpoint
+            .close(CODE, CloseReason::ServerShutdown.reason_phrase())
+    }
 }
 
 impl LocalInfo for Endpoint {
@@ -239,8 +252,8 @@ impl Connection {
     }
 
     pub fn close(self, reason: CloseReason) {
-        let code = VarInt::from_u32(reason.clone() as u32);
-        self.conn.close(code, reason.as_str().as_bytes())
+        let code = VarInt::from_u32(reason as u32);
+        self.conn.close(code, reason.reason_phrase())
     }
 }
 

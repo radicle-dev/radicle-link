@@ -29,7 +29,7 @@ use std::{
     marker::PhantomData,
     num::NonZeroU32,
     sync::{
-        atomic::{self, AtomicBool},
+        atomic::{self, AtomicUsize},
         Arc,
     },
     time::Duration,
@@ -279,8 +279,6 @@ where
 
     mparams: MembershipParams,
 
-    prng: Pcg64Mcg,
-
     storage: Storage,
     storage_error_lim: Arc<StorageErrorLimiter>,
 
@@ -289,7 +287,7 @@ where
     connected_peers: Arc<Mutex<ConnectedPeersImpl<W, Addr, Broadcast, Pcg64Mcg>>>,
     known_peers: Arc<Mutex<KnownPeers<Addr, Pcg64Mcg>>>,
 
-    dropped: Arc<AtomicBool>,
+    ref_count: Arc<AtomicUsize>,
 
     _marker: PhantomData<R>,
 }
@@ -304,17 +302,25 @@ where
     Addr: Clone + PartialEq + Eq + Hash,
 {
     fn clone(&self) -> Self {
+        const MAX_REFCOUNT: usize = (isize::MAX) as usize;
+
+        let old_count = self.ref_count.fetch_add(1, atomic::Ordering::Relaxed);
+        // See source docs of `std::sync::Arc`
+        if old_count > MAX_REFCOUNT {
+            eprintln!("Fatal: max refcount on gossip::Protocol exceeded");
+            core::intrinsics::abort()
+        }
+
         Self {
             local_id: self.local_id.clone(),
             local_ad: self.local_ad.clone(),
             mparams: self.mparams.clone(),
-            prng: self.prng.clone(),
             storage: self.storage.clone(),
             storage_error_lim: self.storage_error_lim.clone(),
             subscribers: self.subscribers.clone(),
             connected_peers: self.connected_peers.clone(),
             known_peers: self.known_peers.clone(),
-            dropped: self.dropped.clone(),
+            ref_count: self.ref_count.clone(),
             _marker: self._marker,
         }
     }
@@ -348,7 +354,7 @@ where
             mparams.max_active,
             prng.clone(),
         )));
-        let known_peers = Arc::new(Mutex::new(KnownPeers::new(prng.clone())));
+        let known_peers = Arc::new(Mutex::new(KnownPeers::new(prng)));
 
         let storage_error_lim = Arc::new(RateLimiter::direct(Quota::per_second(unsafe {
             NonZeroU32::new_unchecked(5)
@@ -359,7 +365,6 @@ where
             local_ad,
 
             mparams,
-            prng,
 
             storage,
             storage_error_lim,
@@ -369,12 +374,40 @@ where
             connected_peers,
             known_peers,
 
-            dropped: Arc::new(AtomicBool::new(false)),
+            ref_count: Arc::new(AtomicUsize::new(0)),
 
             _marker: PhantomData,
         };
 
-        this.clone().run_periodic_tasks();
+        // Spawn periodic tasks, ensuring they complete when the last reference
+        // to `this` is dropped.
+        {
+            let shuffle = this.clone();
+            let promotion = this.clone();
+            // We got two clones, so if the ref_count goes below that, we're the
+            // only ones holding on to a reference of `this`.
+            let ref_count = 2;
+            tokio::spawn(async move {
+                loop {
+                    if shuffle.ref_count.load(atomic::Ordering::Relaxed) < ref_count {
+                        tracing::trace!("Stopping periodic shuffle task");
+                        break;
+                    }
+                    Delay::new(shuffle.mparams.shuffle_interval).await;
+                    shuffle.shuffle().await;
+                }
+            });
+            tokio::spawn(async move {
+                loop {
+                    if promotion.ref_count.load(atomic::Ordering::Relaxed) < ref_count {
+                        tracing::trace!("Stopping periodic promotion task");
+                        break;
+                    }
+                    Delay::new(promotion.mparams.promote_interval).await;
+                    promotion.promote_random().await;
+                }
+            });
+        }
 
         this
     }
@@ -735,29 +768,6 @@ where
             .sample(self.mparams.shuffle_sample_size)
     }
 
-    fn run_periodic_tasks(self) {
-        let this = self.clone();
-        tokio::spawn(async move {
-            loop {
-                if this.dropped.load(atomic::Ordering::Relaxed) {
-                    break;
-                }
-                Delay::new(this.mparams.shuffle_interval).await;
-                this.shuffle().await;
-            }
-        });
-
-        tokio::spawn(async move {
-            loop {
-                if self.dropped.load(atomic::Ordering::Relaxed) {
-                    break;
-                }
-                Delay::new(self.mparams.promote_interval).await;
-                self.promote_random().await;
-            }
-        });
-    }
-
     async fn shuffle(&self) {
         tracing::trace!("Initiating shuffle");
         let mut connected = self.connected_peers.lock().await;
@@ -896,6 +906,16 @@ where
     Addr: Clone + PartialEq + Eq + Hash,
 {
     fn drop(&mut self) {
-        self.dropped.store(true, atomic::Ordering::Relaxed)
+        // `Relaxed` is presumably ok here, because all we want is to not wrap
+        // around, which `saturating_sub` guarantees
+        let r = self.ref_count.fetch_update(
+            atomic::Ordering::Relaxed,
+            atomic::Ordering::Relaxed,
+            |x| Some(x.saturating_sub(1)),
+        );
+        match r {
+            Ok(x) | Err(x) if x == 0 => tracing::trace!("`gossip::Protocol` refcount is zero"),
+            _ => {},
+        }
     }
 }

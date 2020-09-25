@@ -54,21 +54,24 @@ pub trait Stream: RemoteInfo + AsyncRead + AsyncWrite + Unpin + Send + Sync + Si
     fn split(self) -> (Self::Read, Self::Write);
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
+#[repr(u8)]
 pub enum CloseReason {
     DuplicateConnection = 1,
     ProtocolDisconnect = 2,
     ConnectionError = 3,
     InternalError = 4,
+    ServerShutdown = 5,
 }
 
 impl CloseReason {
-    pub fn as_str(&self) -> &str {
+    pub fn reason_phrase(&self) -> &[u8] {
         match self {
-            Self::DuplicateConnection => "duplicate connection",
-            Self::ProtocolDisconnect => "bye!",
-            Self::ConnectionError => "connection error",
-            Self::InternalError => "internal server error",
+            Self::DuplicateConnection => b"duplicate connection",
+            Self::ProtocolDisconnect => b"bye!",
+            Self::ConnectionError => b"connection error",
+            Self::InternalError => b"internal server error",
+            Self::ServerShutdown => b"server shutdown",
         }
     }
 }

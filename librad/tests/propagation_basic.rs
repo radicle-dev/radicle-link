@@ -39,7 +39,7 @@ use librad_test::{
     },
 };
 
-#[tokio::test(core_threads = 2)]
+#[tokio::test]
 async fn can_clone() {
     logging::init();
 
@@ -92,7 +92,7 @@ async fn can_clone() {
     .await;
 }
 
-#[tokio::test(core_threads = 2)]
+#[tokio::test]
 async fn can_clone_disconnected() {
     logging::init();
 
@@ -308,7 +308,7 @@ async fn fetches_on_gossip_notify() {
     .await;
 }
 
-#[tokio::test(core_threads = 3)]
+#[tokio::test]
 async fn all_metadata_returns_only_local_projects() {
     logging::init();
 
@@ -373,7 +373,7 @@ async fn all_metadata_returns_only_local_projects() {
 ///
 /// Following that, verify that cloning from the returned PeerId means we have
 /// the URN in our monorepo.
-#[tokio::test(core_threads = 4)]
+#[tokio::test]
 async fn ask_and_clone() {
     logging::init();
     const NUM_PEERS: usize = 2;
