@@ -209,7 +209,7 @@ where
                 _ => (),
             };
 
-            future::ready(if *connected < min_connected && *joined < min_joined {
+            future::ready(if *connected < min_connected || *joined < min_joined {
                 Some(event)
             } else {
                 None
