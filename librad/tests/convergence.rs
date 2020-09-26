@@ -28,7 +28,7 @@ async fn converge() -> Result<(), Box<dyn std::error::Error>> {
     for num_peers in 1..10 {
         let peers = testnet::setup(num_peers).await?;
         timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(1),
             testnet::run_on_testnet(peers, num_peers, |mut _apis| async move {
                 Ok::<(), Box<dyn std::error::Error>>(())
             }),
