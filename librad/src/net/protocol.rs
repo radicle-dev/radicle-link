@@ -62,6 +62,7 @@ pub enum ProtocolEvent<A> {
         advertised_info: gossip::PeerAdvertisement<IpAddr>,
         remote_id: PeerId,
     },
+    Neighbour(gossip::PeerAdvertisement<IpAddr>),
 }
 
 /// Unification of the different inputs the run loop processes.
@@ -352,6 +353,11 @@ where
                                 advertised_info,
                                 remote_id,
                             })
+                            .await
+                    },
+                    gossip::MembershipInfo::Neighbour(advertised_info) => {
+                        self.subscribers
+                            .emit(ProtocolEvent::Neighbour(advertised_info))
                             .await
                     },
                 },

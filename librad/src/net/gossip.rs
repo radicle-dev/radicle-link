@@ -121,6 +121,7 @@ where
         advertised_info: PeerAdvertisement<Addr>,
         remote_id: PeerId,
     },
+    Neighbour(PeerAdvertisement<Addr>),
 }
 
 #[derive(Debug, Clone)]
@@ -581,7 +582,11 @@ where
 
             Neighbour(ad) => {
                 tracing::trace!(msg = "Neighbour advertisement", peer.info.advertised = ?ad);
-                self.add_known(iter::once(make_peer_info(ad))).await
+                self.add_known(iter::once(make_peer_info(ad.clone()))).await;
+
+                self.subscribers
+                    .emit(ProtocolEvent::Membership(MembershipInfo::Neighbour(ad)))
+                    .await;
             },
 
             Shuffle { origin, peers, ttl } => {
