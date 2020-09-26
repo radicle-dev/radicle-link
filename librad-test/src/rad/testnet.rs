@@ -171,26 +171,6 @@ where
     }
 }
 
-pub async fn wait_connected<S>(events: Vec<S>, min_connected: usize)
-where
-    S: futures::Stream<Item = ProtocolEvent<Gossip>> + Unpin,
-{
-    stream::select_all(events)
-        .scan(0, |connected, event| {
-            if let ProtocolEvent::Connected(_) = event {
-                *connected += 1;
-            }
-
-            future::ready(if *connected < min_connected {
-                Some(event)
-            } else {
-                None
-            })
-        })
-        .collect::<Vec<_>>()
-        .await;
-}
-
 pub async fn wait_converged<S>(events: Vec<S>, min_connected: usize)
 where
     S: futures::Stream<Item = ProtocolEvent<Gossip>> + Unpin,
