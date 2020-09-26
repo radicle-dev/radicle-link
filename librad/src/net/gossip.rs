@@ -112,7 +112,7 @@ where
     pub val: A,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum MembershipInfo<Addr>
 where
     Addr: Clone + Eq + Hash,

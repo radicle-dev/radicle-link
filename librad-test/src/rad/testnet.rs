@@ -32,6 +32,7 @@ use librad::{
     keys::SecretKey,
     net::{
         discovery,
+        gossip,
         peer::{Gossip, Peer, PeerApi, PeerConfig},
         protocol::ProtocolEvent,
     },
@@ -204,8 +205,10 @@ where
         .scan((0, 0), |(connected, joined), event| {
             match event {
                 ProtocolEvent::Connected(_) => *connected += 1,
-                ProtocolEvent::Joined { .. } => *joined += 1,
-                ProtocolEvent::Neighbour(_) => *joined += 1,
+                ProtocolEvent::Membership(ref info) => match info {
+                    gossip::MembershipInfo::Join { .. } => *joined += 1,
+                    gossip::MembershipInfo::Neighbour(_) => *joined += 1,
+                },
                 _ => (),
             };
 
