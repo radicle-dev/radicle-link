@@ -99,6 +99,12 @@ impl keys::AsPKCS8 for Signer {
     }
 }
 
+impl From<keys::SecretKey> for Signer {
+    fn from(key: keys::SecretKey) -> Self {
+        Self { key }
+    }
+}
+
 /// Seed operational mode.
 #[derive(Debug)]
 pub enum Mode {
@@ -180,15 +186,20 @@ impl Node {
 
         let peer = config.try_into_peer().await?;
 
-        let (api, future) = peer.accept()?;
-        let mut events = api.protocol().subscribe().await;
+        let (api, run_loop) = peer.accept()?;
         let mode = self.config.mode;
 
         // Spawn the background peer thread.
-        tokio::spawn(future);
+        tokio::spawn(run_loop);
 
         // Track already-known URNs.
         Node::initialize_tracker(&mode, &api).await?;
+
+        Ok(Node::event_loop(api, &mode).await?)
+    }
+
+    pub async fn event_loop(api: PeerApi<Signer>, mode: &Mode) -> Result<(), Error> {
+        let mut events = api.protocol().subscribe().await;
 
         // Listen on gossip events. As soon as a peer announces something of interest,
         // we check if we should track it.
@@ -208,6 +219,7 @@ impl Node {
                 _ => {},
             }
         }
+
         Ok(())
     }
 
