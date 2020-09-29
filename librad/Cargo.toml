@@ -71,7 +71,7 @@ default-features = false
 features = []
 
 [dependencies.minicbor]
-version = "0.5"
+version = ">= 0.5, 0"
 features = ["std", "derive"]
 
 [dependencies.quinn]
