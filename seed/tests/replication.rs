@@ -11,7 +11,7 @@ use librad::{
 };
 use librad_test::rad::testnet;
 
-use radicle_seed::Signer;
+use seed::{Mode, Node, Signer};
 
 lazy_static! {
     static ref LOCALHOST_ANY: SocketAddr =
@@ -48,10 +48,7 @@ async fn replicates_between_async() -> Result<(), Box<dyn std::error::Error>> {
         let events = events.peekable();
 
         tokio::spawn(run_loop);
-        tokio::spawn(radicle_seed::Node::event_loop(
-            api,
-            &radicle_seed::Mode::TrackEverything,
-        ));
+        tokio::spawn(Node::event_loop(api, &Mode::TrackEverything));
 
         (peer_id, events)
     };
