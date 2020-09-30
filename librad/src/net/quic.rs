@@ -38,7 +38,7 @@ use crate::{
 };
 
 /// Timeout duration before sending a keep alive message to a connected peer.
-const DEFAULT_PING_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_PING_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Timeout duration before a peer is considered disconnected.
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -413,6 +413,7 @@ where
     let mut quic_config = quinn::ClientConfigBuilder::default().build();
     let tls_config = Arc::new(tls::make_client_config(signer));
     quic_config.crypto = tls_config;
+    quic_config.transport = Arc::new(make_transport_config());
 
     quic_config
 }
@@ -421,16 +422,20 @@ fn make_server_config<S>(signer: &S) -> quinn::ServerConfig
 where
     S: sign::Signer + AsPKCS8,
 {
+    let mut quic_config = quinn::ServerConfigBuilder::default().build();
+    let tls_config = Arc::new(tls::make_server_config(signer));
+    quic_config.crypto = tls_config;
+    quic_config.transport = Arc::new(make_transport_config());
+
+    quic_config
+}
+
+fn make_transport_config() -> quinn::TransportConfig {
     let mut transport_config = TransportConfig::default();
     transport_config.keep_alive_interval(Some(DEFAULT_PING_TIMEOUT));
     transport_config
         .max_idle_timeout(Some(DEFAULT_IDLE_TIMEOUT))
         .unwrap();
 
-    let mut quic_config = quinn::ServerConfigBuilder::default().build();
-    let tls_config = Arc::new(tls::make_server_config(signer));
-    quic_config.crypto = tls_config;
-    quic_config.transport = Arc::new(transport_config);
-
-    quic_config
+    transport_config
 }
