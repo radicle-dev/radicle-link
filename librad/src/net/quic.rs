@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{io, net::SocketAddr, pin::Pin, sync::Arc};
+use std::{io, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
 
 use futures::{
     io::{AsyncRead, AsyncWrite},
@@ -23,7 +23,7 @@ use futures::{
     task::{Context, Poll},
 };
 use futures_codec::{Decoder, Encoder, Framed};
-use quinn::{self, NewConnection, VarInt};
+use quinn::{self, NewConnection, TransportConfig, VarInt};
 use thiserror::Error;
 
 use keystore::sign;
@@ -36,6 +36,12 @@ use crate::{
     },
     peer::{self, PeerId},
 };
+
+/// Timeout duration before sending a keep alive message to a connected peer.
+const DEFAULT_PING_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Timeout duration before a peer is considered disconnected.
+const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -415,9 +421,16 @@ fn make_server_config<S>(signer: &S) -> quinn::ServerConfig
 where
     S: sign::Signer + AsPKCS8,
 {
+    let mut transport_config = TransportConfig::default();
+    transport_config.keep_alive_interval(Some(DEFAULT_PING_TIMEOUT));
+    transport_config
+        .max_idle_timeout(Some(DEFAULT_IDLE_TIMEOUT))
+        .unwrap();
+
     let mut quic_config = quinn::ServerConfigBuilder::default().build();
     let tls_config = Arc::new(tls::make_server_config(signer));
     quic_config.crypto = tls_config;
+    quic_config.transport = Arc::new(transport_config);
 
     quic_config
 }
