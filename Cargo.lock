@@ -468,19 +468,6 @@ checksum = "4c53dc3a653e0f64081026e4bf048d48fec9fce90c66e8326ca7292df0ff2d82"
 
 [[package]]
 name = "ed25519-zebra"
-version = "2.1.2"
-source = "git+https://github.com/radicle-dev/ed25519-zebra?branch=main#cec6956c8f6c73431140fb78c7e06364c14d3057"
-dependencies = [
- "curve25519-dalek",
- "hex",
- "rand_core",
- "serde",
- "sha2",
- "thiserror",
-]
-
-[[package]]
-name = "ed25519-zebra"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0a128b76af6dd4b427e34a6fd43dc78dbfe73672ec41ff615a2414c1a0ad0409"
@@ -937,7 +924,7 @@ dependencies = [
  "deadpool",
  "directories",
  "dyn-clone",
- "ed25519-zebra 2.1.2",
+ "ed25519-zebra",
  "either",
  "fnv",
  "futures",
@@ -1543,7 +1530,7 @@ checksum = "9fa36917fe27443896929d7f56486924db2f2c5ad82f64bb207ff69e33f3b456"
 dependencies = [
  "async-trait",
  "chacha20poly1305",
- "ed25519-zebra 2.2.0",
+ "ed25519-zebra",
  "futures",
  "generic-array",
  "lazy_static",
