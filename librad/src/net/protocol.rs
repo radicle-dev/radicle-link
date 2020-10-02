@@ -58,12 +58,13 @@ use crate::{
     peer::PeerId,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum ProtocolEvent<A> {
     Connected(PeerId),
     Disconnecting(PeerId),
     Listening(SocketAddr),
     Gossip(gossip::Info<IpAddr, A>),
+    Membership(gossip::MembershipInfo<IpAddr>),
 }
 
 /// Unification of the different inputs the run loop processes.
@@ -421,6 +422,10 @@ where
 
                 gossip::ProtocolEvent::Info(info) => {
                     self.subscribers.emit(ProtocolEvent::Gossip(info)).await
+                },
+
+                gossip::ProtocolEvent::Membership(info) => {
+                    self.subscribers.emit(ProtocolEvent::Membership(info)).await
                 },
             },
         }
