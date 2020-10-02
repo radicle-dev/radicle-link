@@ -173,6 +173,8 @@ deny = [
     # Each entry the name of a crate and a version range. If version is
     # not specified, all versions will be matched.
     #{ name = "ansi_term", version = "=0.11.0" },
+    { name = "openssl-probe" },
+    { name = "openssl-sys" },
 ]
 # Certain crates/versions that will be skipped when doing duplicate detection.
 skip = [
