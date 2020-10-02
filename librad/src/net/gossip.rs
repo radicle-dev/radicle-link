@@ -117,10 +117,7 @@ pub enum MembershipInfo<Addr>
 where
     Addr: Clone + Eq + Hash,
 {
-    Join {
-        advertised_info: PeerAdvertisement<Addr>,
-        remote_id: PeerId,
-    },
+    Join(PeerAdvertisement<Addr>),
     Neighbour(PeerAdvertisement<Addr>),
 }
 
@@ -590,10 +587,7 @@ where
                 .await;
 
                 self.subscribers
-                    .emit(ProtocolEvent::Membership(MembershipInfo::Join {
-                        advertised_info: ad,
-                        remote_id: remote_id.clone(),
-                    }))
+                    .emit(ProtocolEvent::Membership(MembershipInfo::Join(ad)))
                     .await;
             },
 
