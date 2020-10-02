@@ -18,6 +18,7 @@
 #![feature(backtrace)]
 #![feature(bool_to_option)]
 #![feature(btree_drain_filter)]
+#![feature(core_intrinsics)]
 #![feature(never_type)]
 
 #[macro_use]

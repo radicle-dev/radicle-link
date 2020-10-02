@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{io, net::SocketAddr, pin::Pin, sync::Arc};
+use std::{io, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
 
 use futures::{
     io::{AsyncRead, AsyncWrite},
@@ -23,7 +23,7 @@ use futures::{
     task::{Context, Poll},
 };
 use futures_codec::{Decoder, Encoder, Framed};
-use quinn::{self, NewConnection, VarInt};
+use quinn::{self, NewConnection, TransportConfig, VarInt};
 use thiserror::Error;
 
 use keystore::sign;
@@ -36,6 +36,12 @@ use crate::{
     },
     peer::{self, PeerId},
 };
+
+/// Timeout duration before sending a keep alive message to a connected peer.
+const DEFAULT_PING_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// Timeout duration before a peer is considered disconnected.
+const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -102,6 +108,19 @@ impl Endpoint {
             Some(peer) => Ok(mk_connection(&peer, conn)),
             None => Ok(mk_connection(peer, conn)),
         }
+    }
+
+    /// Close all of this endpoint's connections immediately and cease accepting
+    /// new connections.
+    ///
+    /// Should only ever by called when the protocol stack is shut down.
+    ///
+    /// Morally, this method should consume `self`, but we shut down from a
+    /// `Drop` impl, so all we got is `&mut self`.
+    pub(crate) fn shutdown(&mut self) {
+        const CODE: VarInt = VarInt::from_u32(CloseReason::ServerShutdown as u32);
+        self.endpoint
+            .close(CODE, CloseReason::ServerShutdown.reason_phrase())
     }
 }
 
@@ -239,8 +258,8 @@ impl Connection {
     }
 
     pub fn close(self, reason: CloseReason) {
-        let code = VarInt::from_u32(reason.clone() as u32);
-        self.conn.close(code, reason.as_str().as_bytes())
+        let code = VarInt::from_u32(reason as u32);
+        self.conn.close(code, reason.reason_phrase())
     }
 }
 
@@ -394,6 +413,7 @@ where
     let mut quic_config = quinn::ClientConfigBuilder::default().build();
     let tls_config = Arc::new(tls::make_client_config(signer));
     quic_config.crypto = tls_config;
+    quic_config.transport = Arc::new(make_transport_config());
 
     quic_config
 }
@@ -405,6 +425,17 @@ where
     let mut quic_config = quinn::ServerConfigBuilder::default().build();
     let tls_config = Arc::new(tls::make_server_config(signer));
     quic_config.crypto = tls_config;
+    quic_config.transport = Arc::new(make_transport_config());
 
     quic_config
+}
+
+fn make_transport_config() -> quinn::TransportConfig {
+    let mut transport_config = TransportConfig::default();
+    transport_config.keep_alive_interval(Some(DEFAULT_PING_TIMEOUT));
+    transport_config
+        .max_idle_timeout(Some(DEFAULT_IDLE_TIMEOUT))
+        .unwrap();
+
+    transport_config
 }

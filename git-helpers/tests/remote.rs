@@ -23,7 +23,7 @@ use std::{
     process::Command,
 };
 
-use keystore::{pinentry::SecUtf8, Keystore};
+use keystore::{crypto, pinentry::SecUtf8, Keystore};
 use tempfile::tempdir;
 
 use librad::{
@@ -110,10 +110,12 @@ fn setup_entity(paths: &Paths, key: SecretKey) -> anyhow::Result<RadUrn> {
 }
 
 fn setup_keystore(dir: &Path, key: SecretKey) -> anyhow::Result<()> {
-    let mut keystore = keystore::FileStorage::<_, PublicKey, _, _>::new(
-        &dir.join("librad.key"),
-        keystore::crypto::Pwhash::new(SecUtf8::from(PASSPHRASE)),
-    );
+    // Nb. We need to use the prod KDF params here, because the only way to test
+    // the remote helper executable is via an integration test, and we don't
+    // have any way to cfg(test) the library under test.
+    let crypto = crypto::Pwhash::new(SecUtf8::from(PASSPHRASE), *crypto::KDF_PARAMS_PROD);
+    let mut keystore =
+        keystore::FileStorage::<_, PublicKey, _, _>::new(&dir.join("librad.key"), crypto);
     keystore.put_key(key)?;
 
     Ok(())

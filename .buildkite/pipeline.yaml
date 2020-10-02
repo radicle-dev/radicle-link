@@ -3,6 +3,8 @@ steps:
     commands:
       - "ci/build-test"
       - "ci/docs"
+    artifact_paths:
+      - "Cargo.lock"
     agents: &build-agent
       production: "true"
       platform: "linux"
@@ -13,17 +15,22 @@ steps:
   - label: "Lint and clip"
     commands:
       - "ci/clippy"
+    artifact_paths:
+      - "Cargo.lock"
     agents: *build-agent
     env: *build-docker
 
   - label: "Deny"
     commands:
       - "ci/advisory"
+    artifact_paths:
+      - "Cargo.lock"
     agents: *build-agent
     env: *build-docker
 
 
   - label: "Render Spec"
+    skip: "This spec is outdated. Should render new spec once complete-ish."
     commands:
       - "cd spec"
       - "make clean all"

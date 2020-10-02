@@ -22,7 +22,7 @@ use std::{
 };
 
 use futures::{
-    future::{self, Either, FutureExt},
+    future,
     stream::{self, StreamExt},
 };
 use tempfile::{tempdir, TempDir};
@@ -72,6 +72,7 @@ async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
     let listen_addr = *LOCALHOST_ANY;
     let gossip_params = Default::default();
     let disco = discovery::Static::new(seeds);
+    let storage_config = Default::default();
 
     git::storage::Storage::init(&paths, key)?;
 
@@ -81,6 +82,7 @@ async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
         listen_addr,
         gossip_params,
         disco,
+        storage_config,
     };
 
     config
@@ -156,19 +158,17 @@ where
     };
     let converged = wait_converged(events, min_connected);
 
-    let res = future::select(
-        future::select_all(runners).boxed(),
-        Box::pin(async {
-            converged.await;
-            f(apis.into_iter().zip(keys).collect()).await
-        }),
-    )
-    .await;
+    let (abort_handle, abort_reg) = future::AbortHandle::new_pair();
+    tokio::task::spawn(future::Abortable::new(
+        future::select_all(runners),
+        abort_reg,
+    ));
+    converged.await;
 
-    match res {
-        Either::Left(_) => unreachable!(),
-        Either::Right((output, _)) => output,
-    }
+    let res = f(apis.into_iter().zip(keys).collect()).await;
+    abort_handle.abort();
+
+    res
 }
 
 pub async fn wait_converged<S>(events: Vec<S>, min_connected: usize)

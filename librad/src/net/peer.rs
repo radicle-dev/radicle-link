@@ -19,7 +19,7 @@ use std::{
     future::Future,
     io,
     net::{IpAddr, SocketAddr},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 
@@ -30,15 +30,16 @@ use futures::{
 };
 use futures_timer::Delay;
 use thiserror::Error;
+use tokio::task::spawn_blocking;
 use tracing_futures::Instrument as _;
 
 use crate::{
     git::{
         self,
-        p2p::server::GitServer,
-        storage::{self, Storage as GitStorage},
+        p2p::{server::GitServer, transport::GitStreamFactory},
+        storage,
     },
-    internal::{borrow::TryToOwned, channel::Fanout},
+    internal::channel::Fanout,
     keys::{self, AsPKCS8},
     net::{
         connection::LocalInfo,
@@ -59,12 +60,15 @@ pub use types::*;
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum GitFetchError {
+pub enum PeerStorageError {
     #[error("already have {0}")]
     KnownObject(git2::Oid),
 
     #[error(transparent)]
     Store(#[from] git::storage::Error),
+
+    #[error(transparent)]
+    Pool(#[from] deadpool::managed::PoolError<git::storage::Error>),
 }
 
 #[derive(Debug, Error)]
@@ -95,6 +99,9 @@ pub enum AcceptError {
 pub enum ApiError {
     #[error(transparent)]
     Storage(#[from] git::storage::Error),
+
+    #[error(transparent)]
+    Pool(#[from] deadpool::managed::PoolError<git::storage::Error>),
 }
 
 /// Upstream events.
@@ -121,6 +128,7 @@ pub struct PeerConfig<Disco, Signer> {
     pub listen_addr: SocketAddr,
     pub gossip_params: gossip::MembershipParams,
     pub disco: Disco,
+    pub storage_config: StorageConfig,
 }
 
 impl<D, S> PeerConfig<D, S>
@@ -135,23 +143,40 @@ where
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct StorageConfig {
+    /// Number of [`Storage`] instances to pool for [`PeerApi`] consumers.
+    ///
+    /// Default: the number of physical cores available
+    pub user_pool_size: usize,
+
+    /// Number of [`Storage`] instances to reserve for protocol use.
+    ///
+    /// Default: the number of physical cores available
+    pub protocol_pool_size: usize,
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            user_pool_size: num_cpus::get_physical(),
+            protocol_pool_size: num_cpus::get_physical(),
+        }
+    }
+}
+
 /// Main entry point for `radicle-link` applications on top of a connected
 /// [`Peer`]
-///
-/// Note that a [`PeerApi`] is neither [`Clone`] nor [`Sync`], because it owns
-/// an open handle to the backend git storage (which requires external
-/// synchronisation and refcounting if applicable). It is nevertheless possible
-/// to obtain an owned copy by calling `try_to_owned`, which will re-open the
-/// git storage. The tradeoffs are that a. concurrent modifications of the
-/// storage may not always be consistent between two instances, and b. that the
-/// `try_to_owned` operation is fallible due to having to perform IO. Also note
-/// that the `TryToOwned` trait is not currently considered a stable API.
+#[derive(Clone)]
 pub struct PeerApi<S> {
     listen_addr: SocketAddr,
+    peer_id: PeerId,
     protocol: Protocol<PeerStorage<S>, Gossip>,
-    storage: GitStorage<S>,
+    storage: storage::Pool<S>,
     subscribers: Fanout<PeerEvent>,
     paths: Paths,
+
+    _git_transport_protocol_ref: Arc<Box<dyn GitStreamFactory>>,
 }
 
 impl<S> PeerApi<S>
@@ -167,12 +192,19 @@ where
         &self.protocol
     }
 
-    pub fn storage(&self) -> &GitStorage<S> {
-        &self.storage
+    pub async fn with_storage<F, A>(&self, blocking: F) -> Result<A, ApiError>
+    where
+        F: FnOnce(&storage::Storage<S>) -> A + Send + 'static,
+        A: Send + 'static,
+    {
+        let storage = self.storage.get().await?;
+        Ok(spawn_blocking(move || blocking(&storage))
+            .await
+            .expect("blocking operation on storage panicked"))
     }
 
     pub fn peer_id(&self) -> &PeerId {
-        self.storage.peer_id()
+        &self.peer_id
     }
 
     pub fn subscribe(&self) -> impl Future<Output = impl futures::Stream<Item = PeerEvent>> {
@@ -252,22 +284,6 @@ where
     }
 }
 
-impl<S: Clone> TryToOwned for PeerApi<S> {
-    type Owned = Self;
-    type Error = ApiError;
-
-    fn try_to_owned(&self) -> Result<Self::Owned, Self::Error> {
-        let storage = self.storage.try_to_owned()?;
-        Ok(Self {
-            listen_addr: self.listen_addr,
-            protocol: self.protocol.clone(),
-            storage,
-            subscribers: self.subscribers.clone(),
-            paths: self.paths.clone(),
-        })
-    }
-}
-
 /// Future driving the networking stack
 pub type RunLoop = BoxFuture<'static, ()>;
 
@@ -284,15 +300,19 @@ pub type RunLoop = BoxFuture<'static, ()>;
 /// `0.0.0.0:0`.
 pub struct Peer<S> {
     paths: Paths,
-
     listen_addr: SocketAddr,
+    peer_id: PeerId,
 
-    storage: GitStorage<S>,
-
+    storage: storage::Pool<S>,
     protocol: Protocol<PeerStorage<S>, Gossip>,
     run_loop: RunLoop,
-
     subscribers: Fanout<PeerEvent>,
+
+    // We cannot cast `Arc<Box<Protocol<A, B>>>` to `Arc<Box<dyn GitStreamFactory>>`
+    // apparenty, so need to keep an `Arc` of the trait object here in order to
+    // hand out `Weak` pointers to
+    // `git::p2p::transport::RadTransport::register_stream_factory`
+    _git_transport_protocol_ref: Arc<Box<dyn GitStreamFactory>>,
 }
 
 impl<S> Peer<S>
@@ -305,16 +325,19 @@ where
     }
 
     pub fn peer_id(&self) -> &PeerId {
-        self.storage.peer_id()
+        &self.peer_id
     }
 
     pub fn accept(self) -> Result<(PeerApi<S>, RunLoop), AcceptError> {
         let api = PeerApi {
             listen_addr: self.listen_addr,
+            peer_id: self.peer_id,
             storage: self.storage,
             protocol: self.protocol,
             subscribers: self.subscribers,
             paths: self.paths,
+
+            _git_transport_protocol_ref: self._git_transport_protocol_ref,
         };
         Ok((api, self.run_loop))
     }
@@ -338,13 +361,16 @@ where
         let listen_addr = endpoint.local_addr()?;
 
         let subscribers = Fanout::new();
-        let storage = GitStorage::open_or_init(&config.paths, config.signer.clone())?;
-        let peer_storage = {
-            let storage = storage.reopen()?;
-            PeerStorage {
-                inner: Arc::new(Mutex::new(storage)),
-                subscribers: subscribers.clone(),
-            }
+        let user_storage = storage::Pool::new(
+            storage::pool::Config::new(config.paths.clone(), config.signer.clone()),
+            config.storage_config.user_pool_size,
+        );
+        let peer_storage = PeerStorage {
+            inner: storage::Pool::new(
+                storage::pool::Config::new(config.paths.clone(), config.signer),
+                config.storage_config.protocol_pool_size,
+            ),
+            subscribers: subscribers.clone(),
         };
 
         let gossip = gossip::Protocol::new(
@@ -355,23 +381,27 @@ where
         );
 
         let (protocol, run_loop) = Protocol::new(gossip, git, endpoint, config.disco.discover());
+        let _git_transport_protocol_ref =
+            Arc::new(Box::new(protocol.clone()) as Box<dyn GitStreamFactory>);
         git::p2p::transport::register()
-            .register_stream_factory(&peer_id, Box::new(protocol.clone()));
+            .register_stream_factory(&peer_id, Arc::downgrade(&_git_transport_protocol_ref));
 
         Ok(Self {
             paths: config.paths,
             listen_addr,
-            storage,
+            peer_id,
+            storage: user_storage,
             protocol,
             run_loop,
             subscribers,
+            _git_transport_protocol_ref,
         })
     }
 }
 
 #[derive(Clone)]
 pub struct PeerStorage<S> {
-    inner: Arc<Mutex<GitStorage<S>>>,
+    inner: storage::Pool<S>,
     subscribers: Fanout<PeerEvent>,
 }
 
@@ -380,40 +410,56 @@ where
     S: Signer + Clone,
     S::Error: keys::SignError,
 {
-    fn git_fetch<'a>(
+    async fn git_fetch<'a>(
         &'a self,
         from: &PeerId,
         urn: Either<RadUrn, Originates<RadUrn>>,
         head: impl Into<Option<git2::Oid>>,
-    ) -> Result<(), GitFetchError> {
-        let git = self.inner.lock().unwrap();
+    ) -> Result<(), PeerStorageError> {
+        let git = self.inner.get().await?;
         let urn = urn_context(git.peer_id(), urn);
+        let head = head.into();
+        let from = from.clone();
 
-        if let Some(head) = head.into() {
-            if git.has_commit(&urn, head)? {
-                return Err(GitFetchError::KnownObject(head));
+        spawn_blocking(move || {
+            if let Some(head) = head {
+                if git.has_commit(&urn, head)? {
+                    return Err(PeerStorageError::KnownObject(head));
+                }
             }
-        }
 
-        let url = RadUrl {
-            authority: from.clone(),
-            urn,
-        };
-        git.fetch_repo(url, None).map_err(|e| e.into())
+            let url = RadUrl {
+                authority: from,
+                urn,
+            };
+            git.fetch_repo(url, None).map_err(|e| e.into())
+        })
+        .await
+        .expect("`PeerStorage::git_fetch` panicked")
     }
 
     /// Determine if we have the given object locally
-    fn git_has(
+    async fn git_has(
         &self,
         urn: Either<RadUrn, Originates<RadUrn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
-        let git = self.inner.lock().unwrap();
+        let git = self.inner.get().await.unwrap();
         let urn = urn_context(git.peer_id(), urn);
-        match head.into() {
+        let head = head.into();
+        spawn_blocking(move || match head {
             None => git.has_urn(&urn).unwrap_or(false),
             Some(head) => git.has_commit(&urn, head).unwrap_or(false),
-        }
+        })
+        .await
+        .expect("`PeerStorage::git_has` panicked")
+    }
+
+    async fn is_tracked(&self, urn: RadUrn, peer: PeerId) -> Result<bool, PeerStorageError> {
+        let git = self.inner.get().await?;
+        Ok(spawn_blocking(move || git.is_tracked(&urn, &peer))
+            .await
+            .expect("`PeerStorage::is_tracked` panicked")?)
     }
 }
 
@@ -465,7 +511,7 @@ where
         match has.urn.proto {
             uri::Protocol::Git => {
                 let peer_id = has.origin.clone().unwrap_or_else(|| provider.clone());
-                let is_tracked = match self.inner.lock().unwrap().is_tracked(&has.urn, &peer_id) {
+                let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
                     Ok(b) => b,
                     Err(e) => {
                         tracing::error!(err = %e, "Git::Storage::is_tracked error");
@@ -486,11 +532,7 @@ where
                                 }),
                                 None => Either::Left(has.urn),
                             };
-                            tokio::task::spawn_blocking(move || {
-                                this.git_fetch(&provider, urn, head)
-                            })
-                            .await
-                            .unwrap()
+                            this.git_fetch(&provider, urn, head).await
                         };
 
                         match res {
@@ -508,8 +550,8 @@ where
                                 }
                             },
                             Err(e) => match e {
-                                GitFetchError::KnownObject(_) => PutResult::Stale,
-                                GitFetchError::Store(storage::Error::NoSuchUrn(_)) => {
+                                PeerStorageError::KnownObject(_) => PutResult::Stale,
+                                PeerStorageError::Store(storage::Error::NoSuchUrn(_)) => {
                                     PutResult::Uninteresting
                                 },
                                 e => {
@@ -542,16 +584,19 @@ where
         let _guard = span.enter();
 
         match want.urn.proto {
-            uri::Protocol::Git => self.git_has(
-                match want.origin {
-                    Some(origin) => Either::Right(Originates {
-                        from: origin,
-                        value: want.urn,
-                    }),
-                    None => Either::Left(want.urn),
-                },
-                want.rev.map(|Rev::Git(head)| head),
-            ),
+            uri::Protocol::Git => {
+                self.git_has(
+                    match want.origin {
+                        Some(origin) => Either::Right(Originates {
+                            from: origin,
+                            value: want.urn,
+                        }),
+                        None => Either::Left(want.urn),
+                    },
+                    want.rev.map(|Rev::Git(head)| head),
+                )
+                .await
+            },
         }
     }
 }

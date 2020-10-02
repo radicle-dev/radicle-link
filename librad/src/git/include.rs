@@ -21,6 +21,8 @@ use std::{
     path::{self, PathBuf},
 };
 
+use tempfile::NamedTempFile;
+
 use crate::{
     git::{
         local::url::LocalUrl,
@@ -38,8 +40,12 @@ pub const GIT_CONFIG_PATH_KEY: &str = "include.path";
 pub enum Error {
     #[error(transparent)]
     Io(#[from] io::Error),
+
     #[error(transparent)]
     Git(#[from] git2::Error),
+
+    #[error(transparent)]
+    Persist(#[from] tempfile::PersistError),
 }
 
 /// An `Include` is a representation of an include file which we want to
@@ -86,27 +92,18 @@ impl<Path> Include<Path> {
     where
         Path: AsRef<path::Path>,
     {
-        let tmp_dir = tempfile::tempdir()?;
-        let tmp_path = tmp_dir.path().join(self.local_url.repo.to_string());
+        let tmp = NamedTempFile::new_in(&self.path)?;
+        {
+            let mut config = git2::Config::open(tmp.path())?;
+            for remote in &self.remotes {
+                let (key, url) = url_entry(&remote);
+                config.set_str(&key, &url.to_string())?;
 
-        // We emulate the glorious `touch` to ensure the file exists, as git2::Config
-        // doesn't seem to create on open.
-        std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(tmp_path.clone())?;
-
-        let mut config = git2::Config::open(&tmp_path)?;
-
-        for remote in &self.remotes {
-            let (key, url) = url_entry(&remote);
-            config.set_str(&key, &url.to_string())?;
-
-            let (key, fetch) = fetch_entry(&remote);
-            config.set_str(&key, &fetch)?;
+                let (key, fetch) = fetch_entry(&remote);
+                config.set_str(&key, &fetch)?;
+            }
         }
-
-        std::fs::rename(tmp_path, self.file_path())?;
+        tmp.persist(self.file_path())?;
 
         Ok(())
     }

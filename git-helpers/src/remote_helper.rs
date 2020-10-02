@@ -31,7 +31,11 @@ use librad::{
     paths::Paths,
     signer::{BoxedSigner, SomeSigner},
 };
-use radicle_keystore::{crypto::Pwhash, FileStorage, Keystore};
+use radicle_keystore::{
+    crypto::{self, Pwhash},
+    FileStorage,
+    Keystore,
+};
 
 // FIXME: this should be defined elsewhere to be consistent between applications
 const SECRET_KEY_FILE: &str = "librad.key";
@@ -88,7 +92,8 @@ pub fn run() -> anyhow::Result<()> {
 fn get_signer(git_dir: &Path, keys_dir: &Path, url: &LocalUrl) -> anyhow::Result<BoxedSigner> {
     let pass = credential::Git::new(git_dir).get(url)?;
     let file = keys_dir.join(SECRET_KEY_FILE);
-    let keystore = FileStorage::<_, PublicKey, _, _>::new(&file, Pwhash::new(pass));
+    let keystore =
+        FileStorage::<_, PublicKey, _, _>::new(&file, Pwhash::new(pass, *crypto::KDF_PARAMS_PROD));
     let key: SecretKey = keystore.get_key().map(|keypair| keypair.secret_key)?;
 
     Ok(SomeSigner { signer: key }.into())

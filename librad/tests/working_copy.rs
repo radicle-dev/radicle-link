@@ -23,7 +23,6 @@ use futures::{
     future,
     stream::{Stream, StreamExt},
 };
-
 use tempfile::tempdir;
 
 use librad::{
@@ -59,7 +58,7 @@ use librad_test::{
 /// 7. peer2 creates an include file, based of the tracked users of the project
 /// i.e. peer1 8. peer2 includes this file in their working copy's config
 /// 9. peer2 fetches in the working copy and sees the commit
-#[tokio::test]
+#[tokio::test(core_threads = 2)]
 async fn can_fetch() {
     logging::init();
 
@@ -97,27 +96,41 @@ async fn can_fetch() {
                     &resolves_to_alice,
                 )
                 .unwrap();
-            peer1.storage().create_repo(&alice).unwrap();
-            peer1.storage().create_repo(&radicle).unwrap();
         }
 
-        let git2 = peer2.storage().reopen().unwrap();
-        let url = radicle.urn().into_rad_url(peer1.peer_id().clone());
-        let urn = radicle.urn();
-        let tracked_users = tokio::task::spawn_blocking(move || {
-            git2.clone_repo::<ProjectInfo, _>(url, None).unwrap();
+        let radicle_urn = radicle.urn();
 
-            git2.tracked(&urn)
-                .unwrap()
-                .map(|peer| {
-                    git2.get_rad_self_of(&urn, Some(peer.clone()))
-                        .map(|user| (user, peer))
+        {
+            let alice = alice.clone();
+            let radicle = radicle.clone();
+            peer1
+                .with_storage(move |storage| {
+                    storage.create_repo(&alice).unwrap();
+                    storage.create_repo(&radicle).unwrap();
                 })
-                .collect::<Result<Vec<_>, _>>()
+                .await
+                .unwrap();
+        }
+
+        let tracked_users = {
+            let url = radicle_urn.clone().into_rad_url(peer1.peer_id().clone());
+            peer2
+                .with_storage(move |storage| {
+                    storage.clone_repo::<ProjectInfo, _>(url, None).unwrap();
+                    storage
+                        .tracked(&radicle_urn)
+                        .unwrap()
+                        .map(|peer| {
+                            storage
+                                .get_rad_self_of(&radicle_urn, Some(peer.clone()))
+                                .map(|user| (user, peer))
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                        .unwrap()
+                })
+                .await
                 .unwrap()
-        })
-        .await
-        .unwrap();
+        };
 
         let tmp = tempdir().unwrap();
 

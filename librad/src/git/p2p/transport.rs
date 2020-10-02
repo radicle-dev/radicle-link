@@ -51,7 +51,7 @@ use std::{
     fmt::Display,
     io::{self, Read, Write},
     net::SocketAddr,
-    sync::{Arc, Once, RwLock},
+    sync::{Arc, Once, RwLock, Weak},
 };
 
 use futures::{
@@ -66,7 +66,7 @@ use crate::{
     uri::{self, RadUrn},
 };
 
-type Factories = Arc<RwLock<HashMap<PeerId, Box<dyn GitStreamFactory>>>>;
+type Factories = Arc<RwLock<HashMap<PeerId, Weak<Box<dyn GitStreamFactory>>>>>;
 
 lazy_static! {
     static ref FACTORIES: Factories = Arc::new(RwLock::new(HashMap::with_capacity(1)));
@@ -130,7 +130,7 @@ impl RadTransport {
     /// on behalf of `peer_id`.
     ///
     /// See the module documentation for why we key stream factories by sender.
-    pub fn register_stream_factory(&self, peer_id: &PeerId, fac: Box<dyn GitStreamFactory>) {
+    pub fn register_stream_factory(&self, peer_id: &PeerId, fac: Weak<Box<dyn GitStreamFactory>>) {
         self.fac.write().unwrap().insert(peer_id.clone(), fac);
     }
 
@@ -140,11 +140,23 @@ impl RadTransport {
         to: &PeerId,
         addr_hints: &[SocketAddr],
     ) -> Option<Box<dyn GitStream>> {
-        self.fac
-            .read()
-            .unwrap()
-            .get(from)
-            .and_then(|fac| block_on(fac.open_stream(to, addr_hints)))
+        let fac = self.fac.read().unwrap();
+        match fac.get(from) {
+            None => None,
+            Some(weak) => match weak.upgrade() {
+                None => {
+                    tracing::warn!(
+                        "Attempt to open stream on dropped `GitStreamFactory` owned by {}",
+                        from
+                    );
+                    drop(fac);
+                    let mut fac = self.fac.write().unwrap();
+                    fac.remove(from);
+                    None
+                },
+                Some(fac) => block_on(fac.open_stream(to, addr_hints)),
+            },
+        }
     }
 }
 

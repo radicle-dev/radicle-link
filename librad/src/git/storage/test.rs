@@ -24,6 +24,7 @@ use crate::{
     hash::Hash,
     keys::SecretKey,
     meta::{entity::Draft, Project, User},
+    paths::Paths,
     test::ConstResolver,
     uri::{self, RadUrn},
 };
