@@ -37,6 +37,12 @@ use crate::{
     peer::{self, PeerId},
 };
 
+/// The ALPN protocol(s) for the radicle-link protocol stack.
+///
+/// Not currently of significance, but established in order to allow future
+/// major protocol upgrades.
+const ALPN: &[&[u8]] = &[b"rad/1"];
+
 /// Timeout duration before sending a keep alive message to a connected peer.
 const DEFAULT_PING_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -410,9 +416,11 @@ fn make_client_config<S>(signer: &S) -> quinn::ClientConfig
 where
     S: sign::Signer + AsPKCS8,
 {
+    let mut tls_config = tls::make_client_config(signer);
+    tls_config.alpn_protocols = ALPN.iter().map(|x| x.to_vec()).collect();
+
     let mut quic_config = quinn::ClientConfigBuilder::default().build();
-    let tls_config = Arc::new(tls::make_client_config(signer));
-    quic_config.crypto = tls_config;
+    quic_config.crypto = Arc::new(tls_config);
     quic_config.transport = Arc::new(make_transport_config());
 
     quic_config
@@ -422,9 +430,11 @@ fn make_server_config<S>(signer: &S) -> quinn::ServerConfig
 where
     S: sign::Signer + AsPKCS8,
 {
+    let mut tls_config = tls::make_server_config(signer);
+    tls_config.alpn_protocols = ALPN.iter().map(|x| x.to_vec()).collect();
+
     let mut quic_config = quinn::ServerConfigBuilder::default().build();
-    let tls_config = Arc::new(tls::make_server_config(signer));
-    quic_config.crypto = tls_config;
+    quic_config.crypto = Arc::new(tls_config);
     quic_config.transport = Arc::new(make_transport_config());
 
     quic_config
