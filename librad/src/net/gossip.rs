@@ -466,7 +466,7 @@ where
 
     pub(super) async fn outgoing<Stream>(
         &self,
-        s: Upgraded<Stream, upgrade::Gossip>,
+        s: Upgraded<upgrade::Gossip, Stream>,
         hello: impl Into<Option<Rpc<Addr, Broadcast>>>,
     ) -> Result<(), Error>
     where
@@ -490,7 +490,7 @@ where
 
     pub(super) async fn incoming<Stream>(
         &self,
-        s: Upgraded<Stream, upgrade::Gossip>,
+        s: Upgraded<upgrade::Gossip, Stream>,
     ) -> Result<(), Error>
     where
         Stream: connection::Stream<Read = R, Write = W>,
