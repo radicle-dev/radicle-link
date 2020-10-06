@@ -173,6 +173,8 @@ async fn fetches_on_gossip_notify() {
         }
 
         let peer2_events = peer2.subscribe().await;
+        let urn = radicle.urn();
+        let alice_name = alice.name();
 
         // Create project on peer1, and clone from peer2
         {
@@ -210,29 +212,6 @@ async fn fetches_on_gossip_notify() {
 
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
-            let commit_id = {
-                let empty_tree = {
-                    let mut index = repo.index().unwrap();
-                    let oid = index.write_tree().unwrap();
-                    repo.find_tree(oid).unwrap()
-                };
-                let author = git2::Signature::now("The Animal", "animal@muppets.com").unwrap();
-                repo.commit(
-                    Some("refs/heads/master"),
-                    &author,
-                    &author,
-                    "Initial commit",
-                    &empty_tree,
-                    &[],
-                )
-                .unwrap()
-            };
-            let mut origin = repo
-                .remote(
-                    "origin",
-                    &LocalUrl::from_urn(radicle.urn(), peer1.peer_id().clone()).to_string(),
-                )
-                .unwrap();
 
             let mut remote_callbacks = git2::RemoteCallbacks::new();
             remote_callbacks.push_update_reference(|refname, maybe_error| match maybe_error {
@@ -257,14 +236,18 @@ async fn fetches_on_gossip_notify() {
                 ))),
             });
 
-            origin
-                .push(
-                    &["refs/heads/master"],
-                    Some(git2::PushOptions::new().remote_callbacks(remote_callbacks)),
-                )
-                .unwrap();
+            let url = LocalUrl::from_urn(urn.clone(), peer1.peer_id().clone());
 
-            commit_id
+            let heads = NamespacedRef::heads(urn.clone().id, Some(peer1.peer_id().clone()));
+            let remotes: FlatRef<String, _> = FlatRef::heads(
+                PhantomData,
+                Some(format!("{}@{}", alice_name, peer1.peer_id())),
+            );
+
+            let remote =
+                Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).into_dyn()));
+
+            initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks)).unwrap()
         });
 
         // Wait for peer2 to receive the gossip announcement
