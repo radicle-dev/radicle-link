@@ -53,7 +53,7 @@ use crate::{
         connection::{CloseReason, LocalInfo, RemoteInfo, Stream},
         gossip,
         quic,
-        upgrade::{self, upgrade, with_upgrade, UpgradeRequest, Upgraded, WithUpgrade},
+        upgrade::{self, upgrade, with_upgraded, SomeUpgraded, UpgradeRequest, Upgraded},
     },
     peer::PeerId,
 };
@@ -94,7 +94,7 @@ pub enum Error {
     NoConnection(PeerId),
 
     #[error(transparent)]
-    Upgrade(#[from] upgrade::Error),
+    Upgrade(#[from] upgrade::ErrorSource),
 
     #[error(transparent)]
     Cbor(#[from] CborCodecError),
@@ -311,7 +311,7 @@ where
         &self,
         to: &PeerId,
         addr_hints: Addrs,
-    ) -> Result<Upgraded<quic::Stream, upgrade::Git>, Error>
+    ) -> Result<Upgraded<upgrade::Git, quic::Stream>, Error>
     where
         Addrs: IntoIterator<Item = SocketAddr>,
     {
@@ -325,20 +325,20 @@ where
                             .await
                             .ok_or_else(|| Error::NoConnection(to.clone()))?;
 
-                        let git_stream = conn
-                            .open_stream()
-                            .map_err(Error::from)
-                            .and_then(|stream| upgrade(stream, upgrade::Git).map_err(Error::from))
-                            .await?;
-
-                        {
-                            let this = self.clone();
-                            tokio::spawn(async move {
-                                this.handle_connect(conn, incoming.boxed(), None).await
-                            });
-                        }
-
-                        Ok(git_stream)
+                        let stream = conn.open_stream().await?;
+                        upgrade(stream, upgrade::Git)
+                            .await
+                            .map_err(|upgrade::Error { stream, source }| {
+                                stream.close(CloseReason::InvalidUpgrade);
+                                Error::from(source)
+                            })
+                            .map(|upgraded| {
+                                let this = self.clone();
+                                tokio::spawn(async move {
+                                    this.handle_connect(conn, incoming.boxed(), None).await
+                                });
+                                upgraded
+                            })
                     },
                     _ => Err(e),
                 }
@@ -518,43 +518,56 @@ where
         stream: quic::Stream,
         hello: impl Into<Option<gossip::Rpc<IpAddr, A>>>,
     ) -> Result<(), Error> {
-        let upgraded = upgrade(stream, upgrade::Gossip).await?;
-        self.gossip
-            .outgoing(upgraded, hello)
-            .await
-            .map_err(|e| e.into())
+        match upgrade(stream, upgrade::Gossip).await {
+            Err(upgrade::Error { stream, source }) => {
+                stream.close(CloseReason::InvalidUpgrade);
+                Err(Error::from(source))
+            },
+
+            Ok(upgraded) => self
+                .gossip
+                .outgoing(upgraded, hello)
+                .await
+                .map_err(|e| e.into()),
+        }
     }
 
     async fn incoming(&self, stream: quic::Stream) -> Result<(), Error> {
-        match with_upgrade(stream).await? {
-            WithUpgrade::Gossip(upgraded) => self
-                .gossip
-                .incoming(upgraded.await?)
-                .await
-                .map_err(Error::Gossip),
+        match with_upgraded(stream).await {
+            Err(upgrade::Error { stream, source }) => {
+                stream.close(CloseReason::InvalidUpgrade);
+                Err(Error::from(source))
+            },
 
-            WithUpgrade::Git(upgraded) => self
-                .git
-                .invoke_service(upgraded.await?.into_stream().split())
-                .await
-                .map_err(Error::Git),
+            Ok(upgraded) => match upgraded {
+                SomeUpgraded::Gossip(upgraded) => {
+                    self.gossip.incoming(upgraded).await.map_err(Error::Gossip)
+                },
+
+                SomeUpgraded::Git(upgraded) => self
+                    .git
+                    .invoke_service(upgraded.into_stream().split())
+                    .await
+                    .map_err(Error::Git),
+            },
         }
     }
 
-    async fn open_stream<U>(&self, to: &PeerId, up: U) -> Result<Upgraded<quic::Stream, U>, Error>
+    async fn open_stream<U>(&self, to: &PeerId, up: U) -> Result<Upgraded<U, quic::Stream>, Error>
     where
         U: Into<UpgradeRequest>,
     {
-        match self.connections.lock().await.get(to) {
-            Some(conn) => {
-                conn.open_stream()
-                    .map_err(|e| e.into())
-                    .and_then(|stream| upgrade(stream, up))
-                    .map_err(|e| e.into())
-                    .await
-            },
+        let stream = match self.connections.lock().await.get(to) {
+            Some(conn) => conn.open_stream().await.map_err(Error::from),
             None => Err(Error::NoConnection(to.clone())),
-        }
+        }?;
+
+        upgrade(stream, up)
+            .await
+            .map_err(|upgrade::Error { stream, source }| {
+                stream.close(CloseReason::InvalidUpgrade);
+                Error::from(source)
+            })
     }
 }
 

@@ -288,6 +288,11 @@ impl Stream {
     {
         Framed::new(self, codec)
     }
+
+    pub fn close(self, reason: CloseReason) {
+        self.send.close(reason);
+        self.recv.close(reason);
+    }
 }
 
 impl RemoteInfo for Stream {
@@ -340,6 +345,12 @@ pub struct RecvStream {
     recv: quinn::RecvStream,
 }
 
+impl RecvStream {
+    pub fn close(mut self, reason: CloseReason) {
+        let _ = self.recv.stop(VarInt::from_u32(reason as u32));
+    }
+}
+
 impl RemoteInfo for RecvStream {
     type Addr = SocketAddr;
 
@@ -365,6 +376,12 @@ impl AsyncRead for RecvStream {
 pub struct SendStream {
     conn: Connection,
     send: quinn::SendStream,
+}
+
+impl SendStream {
+    pub fn close(mut self, reason: CloseReason) {
+        let _ = self.send.reset(VarInt::from_u32(reason as u32));
+    }
 }
 
 impl RemoteInfo for SendStream {
