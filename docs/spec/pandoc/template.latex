@@ -191,7 +191,7 @@ $endfor$
 $if(csl-refs)$
 \newlength{\cslhangindent}
 \setlength{\cslhangindent}{1.5em}
-\newenvironment{cslreferences}%
+\newenvironment{CSLReferences}%
   {$if(csl-hanging-indent)$\setlength{\parindent}{0pt}%
   \everypar{\setlength{\hangindent}{\cslhangindent}}\ignorespaces$endif$}%
   {\par}
@@ -210,7 +210,7 @@ $endif$
 $if(institute)$
 \institute{$for(institute)$$institute$$sep$ \and $endfor$}
 $endif$
-\date{Revision $revision$, $date$, $status$}
+\date{Revision $revision$, $if(date)$ $date$, $endif$ $status$}
 
 \begin{document}
 $if(title)$

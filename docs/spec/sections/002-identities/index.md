@@ -1,17 +1,3 @@
----
-title: "Radicle Link -- Section: Identities"
-author:
-- Kim Altintop[^0]
-status: draft
-date: 2020-07-15
-
-numbersections: true
-link-citations: true
-bibliography: references.bib
-reference-links: true
-...
-[^0]: [kim@monadic.xyz](mailto:kim@monadic.xyz)
-
 # Identities
 
 In order to collaborate on repositories within a consensus-free network, we must

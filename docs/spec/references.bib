@@ -1,1 +1,273 @@
-../../spec/references.bib
+@misc{noise,
+  author="{Trevor Perrin}",
+  title="{The Noise Protocol Framework}",
+  year={2017},
+  url="https://noiseprotocol.org/noise.html",
+}
+
+@misc{tuf,
+  author="{J. Cappos et.al.}",
+  title="{The Update Framework Specification}",
+  year={2019},
+  url="https://github.com/theupdateframework/specification/blob/0cddec0a60f95f06d2e23ebadbd876eeb62c1df3/tuf-spec.md"
+}
+
+#
+# IETF RFCs.
+#
+# Keep in order of RFC no.
+#
+@misc{rfc1738,
+  series={Request for Comments},
+  number=1738,
+  howpublished={RFC 1738},
+  publisher={RFC Editor},
+  doi={10.17487/RFC1738},
+  url={https://rfc-editor.org/rfc/rfc1738.txt},
+  author={Tim Berners-Lee and Larry M Masinter and Mark P. McCahill},
+  title={{Uniform Resource Locators (URL)}},
+  pagetotal=25,
+  year=1994,
+  month=dec,
+  abstract={This document specifies a Uniform Resource Locator (URL), the syntax and semantics of formalized information for location and access of resources via the Internet. {[}STANDARDS-TRACK{]}},
+}
+
+@misc{rfc2119,
+  author="S. Bradner",
+  title="{Key words for use in RFCs to Indicate Requirement Levels}",
+  howpublished="RFC 2119 (Best Current Practice)",
+  series="Internet Request for Comments",
+  type="RFC",
+  number="2119",
+  year=1997,
+  month=mar,
+  issn="2070-1721",
+  publisher="RFC Editor",
+  organization="RFC Editor",
+  address="Fremont, CA, USA",
+  note="Updated by RFC 8174",
+  url="https://www.rfc-editor.org/rfc/rfc2119.txt",
+  key="RFC 2119",
+  abstract={In many standards track documents several words are used to signify the requirements in the specification.  These words are often capitalized.  This document defines these words as they should be interpreted in IETF documents.  This document specifies an Internet Best Current Practices for the Internet Community, and requests discussion and suggestions for improvements.},
+  keywords="Standards, Track, Documents",
+  doi="10.17487/RFC2119",
+}
+
+@misc{rfc3986,
+  series={Request for Comments},
+  number=3986,
+  howpublished={RFC 3986},
+  publisher={RFC Editor},
+  doi={10.17487/RFC3986},
+  url={https://rfc-editor.org/rfc/rfc3986.txt},
+  author={Tim Berners-Lee and Roy T. Fielding and Larry M Masinter},
+  title={{Uniform Resource Identifier (URI): Generic Syntax}},
+  pagetotal=61,
+  year=2005,
+  month=jan,
+  abstract={A Uniform Resource Identifier (URI) is a compact sequence of characters that identifies an abstract or physical resource. This specification defines the generic URI syntax and a process for resolving URI references that might be in relative form, along with guidelines and security considerations for the use of URIs on the Internet. The URI syntax defines a grammar that is a superset of all valid URIs, allowing an implementation to parse the common components of a URI reference without knowing the scheme-specific requirements of every possible identifier. This specification does not define a generative grammar for URIs; that task is performed by the individual specifications of each URI scheme. {[}STANDARDS-TRACK{]}},
+}
+
+@misc{rfc6570,
+  series={Request for Comments},
+  number=6570,
+  howpublished={RFC 6570},
+  publisher={RFC Editor},
+  doi={10.17487/RFC6570},
+  url={https://rfc-editor.org/rfc/rfc6570.txt},
+  author={Roy T. Fielding and Mark Nottingham and David Orchard and Joe Gregorio and Marc Hadley},
+  title={{URI Template}},
+  pagetotal=34,
+  year=2012,
+  month=mar,
+  abstract={A URI Template is a compact sequence of characters for describing a range of Uniform Resource Identifiers through variable expansion. This specification defines the URI Template syntax and the process for expanding a URI Template into a URI reference, along with guidelines for the use of URI Templates on the Internet. {[}STANDARDS-TRACK{]}},
+}
+
+@misc{rfc6763,
+  author="S. Cheshire and M. Krochmal",
+  title="{DNS-Based Service Discovery}",
+  howpublished="RFC 6763 (Proposed Standard)",
+  series="Internet Request for Comments",
+  type="RFC",
+  number="6763",
+  year=2013,
+  month=feb,
+  issn="2070-1721",
+  publisher="RFC Editor",
+  organization="RFC Editor",
+  address="Fremont, CA, USA",
+  url="https://www.rfc-editor.org/rfc/rfc6763.txt",
+  key="RFC 6763",
+  abstract={This document specifies how DNS resource records are named and structured to facilitate service discovery.  Given a type of service that a client is looking for, and a domain in which the client is looking for that service, this mechanism allows clients to discover a list of named instances of that desired service, using standard DNS queries.  This mechanism is referred to as DNS-based Service Discovery, or DNS-SD.},
+  doi="10.17487/RFC6763",
+}
+
+@misc{rfc7049,
+  author="C. Bormann and P. Hoffman",
+  title="{Concise Binary Object Representation (CBOR)}",
+  howpublished="RFC 7049 (Proposed Standard)",
+  series="Internet Request for Comments",
+  type="RFC",
+  number="7049",
+  year=2013,
+  month=oct,
+  issn="2070-1721",
+  publisher="RFC Editor",
+  organization="RFC Editor",
+  address="Fremont, CA, USA",
+  url="https://www.rfc-editor.org/rfc/rfc7049.txt",
+  key="RFC 7049",
+  abstract={The Concise Binary Object Representation (CBOR) is a data format whose design goals include the possibility of extremely small code size, fairly small message size, and extensibility without the need for version negotiation.  These design goals make it different from earlier binary serializations such as ASN.1 and MessagePack.},
+  keywords="parser, encoder, binary format, data interchange format, JSON",
+  doi="10.17487/RFC7049",
+}
+
+@misc{rfc8610,
+  series={Request for Comments},
+  number=8610,
+  howpublished={RFC 8610},
+  publisher={RFC Editor},
+  doi={10.17487/RFC8610},
+  url={https://rfc-editor.org/rfc/rfc8610.txt},
+  author={Henk Birkholz and Christoph Vigano and Carsten Bormann},
+  title={{Concise Data Definition Language (CDDL): A Notational Convention to Express Concise Binary Object Representation (CBOR) and JSON Data Structures}},
+  pagetotal=64,
+  year=2019,
+  month=jun,
+  abstract={This document proposes a notational convention to express Concise Binary Object Representation (CBOR) data structures (RFC 7049). Its main goal is to provide an easy and unambiguous way to express structures for protocol messages and data formats that use CBOR or JSON.},
+}
+
+@misc{rfc8174,
+  author="B. Leiba",
+  title="{Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words}",
+  howpublished="RFC 8174 (Best Current Practice)",
+  series="Internet Request for Comments",
+  type="RFC",
+  number="8174",
+  year=2017,
+  month=may,
+  issn="2070-1721",
+  publisher="RFC Editor",
+  organization="RFC Editor",
+  address="Fremont, CA, USA",
+  url="https://www.rfc-editor.org/rfc/rfc8174.txt",
+  key="RFC 8174",
+  abstract={RFC 2119 specifies common key words that may be used in protocol specifications.  This document aims to reduce the ambiguity by clarifying that only UPPERCASE usage of the key words have the defined special meanings.},
+  doi="10.17487/RFC8174",
+}
+
+@misc{rfc8032,
+  series={Request for Comments},
+  number=8032,
+  howpublished={RFC 8032},
+  publisher={RFC Editor},
+  doi={10.17487/RFC8032},
+  url={https://rfc-editor.org/rfc/rfc8032.txt},
+  author={Simon Josefsson and Ilari Liusvaara},
+  title={{Edwards-Curve Digital Signature Algorithm (EdDSA)}},
+  pagetotal=60,
+  year=2017,
+  month=jan,
+  abstract={This document describes elliptic curve signature scheme Edwards-curve Digital Signature Algorithm (EdDSA). The algorithm is instantiated with recommended parameters for the edwards25519 and edwards448 curves. An example implementation and test vectors are provided.},
+}
+
+@misc{rfc8259,
+  series={Request for Comments},
+  number=8259,
+  howpublished={RFC 8259},
+  publisher={RFC Editor},
+  doi={10.17487/RFC8259},
+  url={https://rfc-editor.org/rfc/rfc8259.txt},
+  author={Tim Bray},
+  title={{The JavaScript Object Notation (JSON) Data Interchange Format}},
+  pagetotal=16,
+  year=2017,
+  month=dec,
+  abstract={JavaScript Object Notation (JSON) is a lightweight, text-based, language-independent data interchange format. It was derived from the ECMAScript Programming Language Standard. JSON defines a small set of formatting rules for the portable representation of structured data. This document removes inconsistencies with other specifications of JSON, repairs specification errors, and offers experience-based interoperability guidance.},
+}
+
+@misc{rfc8141,
+  series={Request for Comments},
+  number=8141,
+  howpublished={RFC 8141},
+  publisher={RFC Editor},
+  doi={10.17487/RFC8141},
+  url={https://rfc-editor.org/rfc/rfc8141.txt},
+  author={Peter Saint-Andre and Dr. John C. Klensin},
+  title={{Uniform Resource Names (URNs)}},
+  pagetotal=40,
+  year=2017,
+  month=apr,
+  abstract={A Uniform Resource Name (URN) is a Uniform Resource Identifier (URI) that is assigned under the "urn" URI scheme and a particular URN namespace, with the intent that the URN will be a persistent, location-independent resource identifier. With regard to URN syntax, this document defines the canonical syntax for URNs (in a way that is consistent with URI syntax), specifies methods for determining URN-equivalence, and discusses URI conformance. With regard to URN namespaces, this document specifies a method for defining a URN namespace and associating it with a namespace identifier, and it describes procedures for registering namespace identifiers with the Internet Assigned Numbers Authority (IANA). This document obsoletes both RFCs 2141 and 3406.},
+}
+
+#
+# Websites
+#
+@online{git,
+  url="https://git-scm.com",
+  urldate={2019-10-30}
+}
+
+@online{hg,
+  url="https://www.mercurial-scm.org",
+  urldate={2019-10-30}
+}
+
+@online{darcs,
+  url="http://darcs.net",
+  urldate={2019-10-30}
+}
+
+@online{gittorrent,
+  url="https://github.com/cjb/GitTorrent",
+  urldate={2019-10-30}
+}
+
+@online{ssb,
+  url="https://www.scuttlebutt.nz",
+  urldate={2019-10-30}
+}
+
+@online{canonicaljson,
+  title="JSON Canonical Form",
+  author="R. Gibson",
+  year=2019,
+  month=apr,
+  url="https://github.com/gibson042/canonicaljson-spec/blob/2d2228fef917a61b382c439fbf0d79e61dd3fdf9/README.md"
+}
+
+@online{multihash,
+  url="https://github.com/multiformats/multihash/blob/cde1aef8158d193d73012b7d730013f05c2f7063/README.md",
+  urldate={2019-07-26}
+}
+
+@online{multibase,
+  url="https://github.com/multiformats/multibase/blob/f2d3c43f9d30d7dca178dc3220c5bf50963a1e70/README.md",
+  urldate={2019-07-29}
+}
+
+@online{git-lfs,
+  url="https://git-lfs.github.com",
+  urldate={2019-11-11}
+}
+
+@online{hg-largefiles,
+  url="https://www.mercurial-scm.org/wiki/LargefilesExtension",
+  urldate={2019-11-11}
+}
+
+@online{z-base32,
+    url="http://philzimmermann.com/docs/human-oriented-base-32-encoding.txt",
+    urldate={2020-08-18}
+}
+
+@online{whatwg-url,
+    url="https://url.spec.whatwg.org/commit-snapshots/1979119c2082b1e0f7f77aead4651700841a4abe/",
+    urldate={2020-08-20}
+}
+
+@online{did-core,
+    url="https://www.w3.org/TR/did-core/",
+    urldate={2020-07-21}
+}

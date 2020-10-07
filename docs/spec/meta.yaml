@@ -1,0 +1,11 @@
+---
+title: "Radicle Link"
+author:
+- Kim Altintop (kim@monadic.xyz)
+- The Radicle Team (dev@radicle.xyz)
+revision: rev2-draft
+status: "official/experimental"
+
+numbersections: true
+link-citations: true
+bibliography: references.bib
