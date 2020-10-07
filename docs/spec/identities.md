@@ -110,7 +110,7 @@ The NSS part for our `rad` NID can be further broken down into:
 ```
 <PROTOCOL>:<ID>/<PATH>
 ```
-Where `<PROTOCOL>` can be either `git` or `pijul`, <ID> is a 59 character long
+Where `<PROTOCOL>` can be either `git` or `pijul`, `<ID>` is a 59 character long
 base64 encoded hash which uniquely identifies the resource and the `<PATH>`
 semantics depend on whether the Radicle URN represents a user or a project.
 
