@@ -88,7 +88,47 @@ sections.
 
 The `root` of a verified `Identity` is the stable identifier of the repository.
 
-> **TODO** Insert specification of URNs here
+### Radicle URNs
+
+Entities within the Radicle network are uniquely identified by a Radicle URN
+which fits the functional definition of a URN as defined in [rfc8141].
+
+Note: Radicle URNs are not prefixed by `urn:`, because they are not officially
+registered.
+
+This is what a typical Radicle URN looks like:
+```
+rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try
+```
+
+If we'd map it onto a [rfc8141] URN, then the Namespace Identifier (NID) part
+would be `rad` and the Namespace Specific String (NSS):
+`git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try`.
+
+The NSS part for our `rad` NID can be further broken down into:
+
+```
+<PROTOCOL>:<ID>/<PATH>
+```
+Where `<PROTOCOL>` can be either `git` or `pijul`, <ID> is a 59 character long
+base64 encoded hash which uniquely identifies the resource and the `<PATH>`
+semantics depend on whether the Radicle URN represents a user or a project.
+
+#### Examples of valid project URNs:
+```
+rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try
+rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/heads/master
+rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/tags/v0.0.1
+rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/remotes/hwd1yreb5ugudg6xewxiwotj97iaj31phjdphdiej44x1acer3i45uqnwxw
+rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/rad/issues/42
+```
+
+#### Examples of valid user URNs:
+```
+rad:git:hwd1yre8ttugonm77udfkti4ou89p4e37gdebmj3o544hzrg3r8dupn8hmr
+rad:git:hwd1yre8ttugonm77udfkti4ou89p4e37gdebmj3o544hzrg3r8dupn8hmr/rad/activity-feed
+rad:git:hwd1yre8ttugonm77udfkti4ou89p4e37gdebmj3o544hzrg3r8dupn8hmr/rad/readme
+```
 
 ### Doc Payload
 
@@ -557,3 +597,4 @@ tree notes to reflect the new state.
 [radicle-registry]: https://github.com/radicle-dev/radicle-registry
 [subtree]: https://git-scm.com/docs/git-merge#Documentation/git-merge.txt-subtree
 [canonical JSON]: http://wiki.laptop.org/go/Canonical_JSON
+[rfc8141]: https://tools.ietf.org/html/rfc8141
