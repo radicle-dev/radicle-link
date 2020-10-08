@@ -115,8 +115,8 @@ as per [@rfc8141] apply.
 
 Within the "git" `protocol` context, the `path` component is interpreted as a
 `git` reference (ref), and MUST thus conform to the refname rules as described
-in [git-check-ref-format], as if no arguments where given. The prefix "refs/"
-MAY be omitted, but not the refs category (i.e. "heads/master" is permitted, but
+in [git-check-ref-format], as if no arguments were given. The prefix "refs/" MAY
+be omitted, but not the refs category (i.e. "heads/master" is permitted, but
 "master" is not). Valid ref categories are:
 
     * heads
