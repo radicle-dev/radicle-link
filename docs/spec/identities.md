@@ -90,45 +90,56 @@ The `root` of a verified `Identity` is the stable identifier of the repository.
 
 ### Radicle URNs
 
-Entities within the Radicle network are uniquely identified by a Radicle URN
-which fits the functional definition of a URN as defined in [rfc8141].
+Identities are addressable within the Radicle Network by their stable identifier,
+encoded as a URN. Radicle URNs are syntactically and functionally equivalent to
+URNs as per [@rfc8141], although we have no intention of registering our
+namespace with the IANA. r-, q-, and f-components are not currently honoured by
+the protocol, and MAY be discarded by recipients.
 
-Note: Radicle URNs are not prefixed by `urn:`, because they are not officially
-registered.
+The syntax of a Radicle URN is defined as follows:
 
-This is what a typical Radicle URN looks like:
-```
-rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try
-```
+    "rad" ":" protocol ":" root [ "/" path ]
 
-If we'd map it onto a [rfc8141] URN, then the Namespace Identifier (NID) part
-would be `rad` and the Namespace Specific String (NSS):
-`git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try`.
+where:
 
-The NSS part for our `rad` NID can be further broken down into:
+    protocol = "git"
+    root     = MULTIBASE(MULTIHASH(id))
+    path     = pct-encoded
+    id       = BYTES
 
-```
-<PROTOCOL>:<ID>/<PATH>
-```
-Where `<PROTOCOL>` can be either `git` or `pijul`, `<ID>` is a 59 character long
-base64 encoded hash which uniquely identifies the resource and the `<PATH>`
-semantics depend on whether the Radicle URN represents a user or a project.
+The `id` is the `root` field of a verified `Identity`, as specified previously.
+The `MULTIBASE` and `MULTIHASH` encodings are specified in [@multibase] and
+[@multihash], respectively. The preferred alphabet for the multibase encoding is
+[@z-base32]. `pct-encoded` is defined in [@rfc3986], and the equivalence rules
+as per [@rfc8141] apply.
 
-#### Examples of valid project URNs:
-```
-rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try
-rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/heads/master
-rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/tags/v0.0.1
-rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/remotes/hwd1yreb5ugudg6xewxiwotj97iaj31phjdphdiej44x1acer3i45uqnwxw
-rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/rad/issues/42
-```
+Within the "git" `protocol` context, the `path` component is interpreted as a
+`git` reference (ref), and MUST thus conform to the refname rules as described
+in [git-check-ref-format], as if no arguments where given. The prefix "refs/"
+MAY be omitted, but not the refs category (i.e. "heads/master" is permitted, but
+"master" is not). Valid ref categories are:
 
-#### Examples of valid user URNs:
-```
-rad:git:hwd1yre8ttugonm77udfkti4ou89p4e37gdebmj3o544hzrg3r8dupn8hmr
-rad:git:hwd1yre8ttugonm77udfkti4ou89p4e37gdebmj3o544hzrg3r8dupn8hmr/rad/activity-feed
-rad:git:hwd1yre8ttugonm77udfkti4ou89p4e37gdebmj3o544hzrg3r8dupn8hmr/rad/readme
-```
+    * heads
+    * tags
+    * remotes
+    * rad
+
+An invalid ref category is treated as non-existent.
+
+Without a `path`, a URN is to be treated as if the default value "rad/id" was
+given.
+
+Before resolving a `path` to a ref in local storage, the percent-encoding SHALL
+be removed.
+
+#### Examples
+
+    rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try
+    rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/refs/heads/next
+    rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/heads/next
+    rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/tags/v0.0.1
+    rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/remotes/hwd1yreb5ugudg6xewxiwotj97iaj31phjdphdiej44x1acer3i45uqnwxw/heads/pu
+    rad:git:hwd1yreb5ugudg6xewxiwotj97iaj31phjdphdiej44x1acer3i45uqnwxw/rad/id
 
 ### Doc Payload
 
@@ -594,7 +605,7 @@ tree notes to reflect the new state.
 
 [git-interpret-trailers]: https://git-scm.com/docs/git-interpret-trailers
 [git-notes]: https://git-scm.com/docs/git-notes
+[git-check-ref-format]: https://git-scm.com/docs/git-check-ref-format
 [radicle-registry]: https://github.com/radicle-dev/radicle-registry
 [subtree]: https://git-scm.com/docs/git-merge#Documentation/git-merge.txt-subtree
 [canonical JSON]: http://wiki.laptop.org/go/Canonical_JSON
-[rfc8141]: https://tools.ietf.org/html/rfc8141
