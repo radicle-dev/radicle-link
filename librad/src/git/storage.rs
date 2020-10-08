@@ -71,7 +71,7 @@ use crate::{
 pub mod pool;
 pub use pool::{Pool, Pooled};
 
-mod config;
+pub mod config;
 mod fetch;
 
 #[cfg(test)]

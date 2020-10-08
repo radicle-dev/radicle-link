@@ -25,4 +25,6 @@ pub mod storage;
 pub mod trailer;
 pub mod types;
 
+pub mod storage2;
+
 pub(crate) mod header;

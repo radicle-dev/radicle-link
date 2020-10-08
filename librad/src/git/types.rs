@@ -28,7 +28,7 @@ pub mod reference;
 pub mod remote;
 
 pub use existential::{SomeNamespace, SomeReference};
-pub use reference::{Multiple, Namespace, Reference, RefsCategory, Single};
+pub use reference::{Multiple, Namespace, Namespace2, Reference, RefsCategory, Single};
 
 /// A representation of git reference that is either under:
 ///   * `refs/heads`
@@ -48,6 +48,17 @@ impl<R: Display, N> Display for FlatRef<R, N> {
 pub type NamespacedRef<N> = Reference<Namespace, PeerId, N>;
 
 impl<N, R: Display> Display for Reference<Namespace, R, N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "refs/namespaces/{}/refs/", self._namespace)?;
+
+        match &self.remote {
+            None => write!(f, "{}/{}", self.category, self.name),
+            Some(remote) => write!(f, "remotes/{}/{}/{}", remote, self.category, self.name),
+        }
+    }
+}
+
+impl<N, R: Display> Display for Reference<Namespace2, R, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "refs/namespaces/{}/refs/", self._namespace)?;
 

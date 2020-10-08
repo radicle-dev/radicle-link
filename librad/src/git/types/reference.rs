@@ -20,7 +20,9 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::{git::ext, hash::Hash, uri::RadUrn};
+use multihash::Multihash;
+
+use crate::{git::ext, hash::Hash, identities, uri::RadUrn};
 
 use super::{
     existential::{SomeNamespace, SomeReference},
@@ -38,6 +40,41 @@ pub struct Single;
 pub struct Multiple;
 
 pub type Namespace = Hash;
+
+pub struct Namespace2(ext::Oid);
+
+impl From<ext::Oid> for Namespace2 {
+    fn from(oid: ext::Oid) -> Self {
+        Self(oid)
+    }
+}
+
+impl From<git2::Oid> for Namespace2 {
+    fn from(oid: git2::Oid) -> Self {
+        Self::from(ext::Oid::from(oid))
+    }
+}
+
+impl From<identities::git::Urn> for Namespace2 {
+    fn from(urn: identities::git::Urn) -> Self {
+        Self::from(urn.id)
+    }
+}
+
+impl From<&identities::git::Urn> for Namespace2 {
+    fn from(urn: &identities::git::Urn) -> Self {
+        Self::from(urn.id)
+    }
+}
+
+impl Display for Namespace2 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&multibase::encode(
+            multibase::Base::Base32Z,
+            Multihash::from(&self.0),
+        ))
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RefsCategory {
