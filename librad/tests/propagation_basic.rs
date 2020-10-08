@@ -447,7 +447,7 @@ async fn ask_and_clone() {
     .await;
 }
 
-#[tokio::test(core_threads = 3)]
+#[tokio::test(core_threads = 2)]
 async fn menage_a_troi() {
     logging::init();
 
