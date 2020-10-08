@@ -776,7 +776,11 @@ where
     }
 
     async fn add_known<I: IntoIterator<Item = PeerInfo<Addr>>>(&self, peers: I) {
-        self.known_peers.lock().await.insert(peers)
+        self.known_peers.lock().await.insert(
+            peers
+                .into_iter()
+                .filter(|info| &info.peer_id != self.peer_id()),
+        )
     }
 
     async fn sample_known(&self) -> Vec<PeerInfo<Addr>> {
