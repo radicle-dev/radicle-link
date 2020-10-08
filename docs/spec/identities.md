@@ -143,8 +143,8 @@ be removed.
 
 ### Doc Payload
 
-The `Doc` payload MUST include the following structures for interpretation by
-the protocol:
+The `Doc` payload MUST include one of the following structures (but not both)
+for interpretation by the protocol:
 
 ```rust
 struct User {
