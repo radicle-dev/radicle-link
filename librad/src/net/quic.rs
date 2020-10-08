@@ -37,6 +37,12 @@ use crate::{
     peer::{self, PeerId},
 };
 
+/// The ALPN protocol(s) for the radicle-link protocol stack.
+///
+/// Not currently of significance, but established in order to allow future
+/// major protocol upgrades.
+const ALPN: &[&[u8]] = &[b"rad/1"];
+
 /// Timeout duration before sending a keep alive message to a connected peer.
 const DEFAULT_PING_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -288,6 +294,11 @@ impl Stream {
     {
         Framed::new(self, codec)
     }
+
+    pub fn close(self, reason: CloseReason) {
+        self.send.close(reason);
+        self.recv.close(reason);
+    }
 }
 
 impl RemoteInfo for Stream {
@@ -340,6 +351,12 @@ pub struct RecvStream {
     recv: quinn::RecvStream,
 }
 
+impl RecvStream {
+    pub fn close(mut self, reason: CloseReason) {
+        let _ = self.recv.stop(VarInt::from_u32(reason as u32));
+    }
+}
+
 impl RemoteInfo for RecvStream {
     type Addr = SocketAddr;
 
@@ -365,6 +382,12 @@ impl AsyncRead for RecvStream {
 pub struct SendStream {
     conn: Connection,
     send: quinn::SendStream,
+}
+
+impl SendStream {
+    pub fn close(mut self, reason: CloseReason) {
+        let _ = self.send.reset(VarInt::from_u32(reason as u32));
+    }
 }
 
 impl RemoteInfo for SendStream {
@@ -410,9 +433,11 @@ fn make_client_config<S>(signer: &S) -> quinn::ClientConfig
 where
     S: sign::Signer + AsPKCS8,
 {
+    let mut tls_config = tls::make_client_config(signer);
+    tls_config.alpn_protocols = ALPN.iter().map(|x| x.to_vec()).collect();
+
     let mut quic_config = quinn::ClientConfigBuilder::default().build();
-    let tls_config = Arc::new(tls::make_client_config(signer));
-    quic_config.crypto = tls_config;
+    quic_config.crypto = Arc::new(tls_config);
     quic_config.transport = Arc::new(make_transport_config());
 
     quic_config
@@ -422,9 +447,11 @@ fn make_server_config<S>(signer: &S) -> quinn::ServerConfig
 where
     S: sign::Signer + AsPKCS8,
 {
+    let mut tls_config = tls::make_server_config(signer);
+    tls_config.alpn_protocols = ALPN.iter().map(|x| x.to_vec()).collect();
+
     let mut quic_config = quinn::ServerConfigBuilder::default().build();
-    let tls_config = Arc::new(tls::make_server_config(signer));
-    quic_config.crypto = tls_config;
+    quic_config.crypto = Arc::new(tls_config);
     quic_config.transport = Arc::new(make_transport_config());
 
     quic_config

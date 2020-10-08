@@ -62,6 +62,7 @@ pub enum CloseReason {
     ConnectionError = 3,
     InternalError = 4,
     ServerShutdown = 5,
+    InvalidUpgrade = 6,
 }
 
 impl CloseReason {
@@ -72,6 +73,7 @@ impl CloseReason {
             Self::ConnectionError => b"connection error",
             Self::InternalError => b"internal server error",
             Self::ServerShutdown => b"server shutdown",
+            Self::InvalidUpgrade => b"invalid or unsupported protocol upgrade",
         }
     }
 }
