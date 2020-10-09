@@ -622,7 +622,7 @@ where
                 // the end of the random walk. Do it anyway for now.
                 self.add_known(peers.clone()).await;
 
-                if ttl > 0 {
+                if ttl == 0 {
                     let sample = self.sample_known().await;
                     self.send_adhoc(&origin, ShuffleReply { peers: sample })
                         .await
