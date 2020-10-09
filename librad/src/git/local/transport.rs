@@ -21,7 +21,6 @@ use std::{
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio},
     sync::{Arc, Mutex, Once, RwLock},
-    thread,
 };
 
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
@@ -143,6 +142,18 @@ pub enum Error {
 ///
 /// [`Connected::wait`] MUST be called, in order to `wait(2)` on the child
 /// process, and run post-service hooks.
+///
+/// When [`LocalTransport`] is used programmatically (i.e. as a custom `git2`
+/// transport), it is guaranteed that [`Connected::wait`] is called when the
+/// [`LocalStream`] is dropped. However, when used in this way there is no way
+/// to know whether the post-service hooks where invoked, nor what their result
+/// was, except by examining log output.
+///
+/// Note that it is assumed that the child process already exited, and its
+/// `stdin` / `stdout` have been closed (as per the destructor ordering of
+/// [`LocalStream`]). If it is unexpectedly still running, the child will be
+/// terminated by sending it the `TERM` signal (on UNIX), followed by
+/// `KILL` / `TerminateProcess`.
 #[must_use = "`wait` must be called"]
 pub struct Connected {
     process: Child,
@@ -163,18 +174,16 @@ impl Connected {
     }
 }
 
-// Belts + suspenders: we MUST ensure the child is a-`wait`-ed, to not leak
-// zombies. However, `must_use` is only a warning lint by default, which the
-// library user may choose to ignore. Hence, when `Connected` is dropped, we
-// attempt to terminate the child iff it hasn't already, and then delegate to
-// `Connected::wait` again.
-//
 // Note that we assume that `git` handles `SIGTERM` properly on unix platforms,
 // however on Windows we are out of luck: there only really seems to exist
 // `TerminateProcess`, which is equivalent to `SIGKILL`. Let's just hope for
 // those poor Windows folks that `git-receive-pack` is fully `SIGKILL`-safe.
 impl Drop for Connected {
     fn drop(&mut self) {
+        let span = tracing::trace_span!("Connected::drop");
+        let _guard = span.enter();
+
+        tracing::trace!("waiting on child process...");
         #[cfg(unix)]
         if let Ok(None) = self.process.try_wait() {
             unsafe {
@@ -187,14 +196,15 @@ impl Drop for Connected {
         // We can ignore the result -- it is either `InvalidInput` if the child
         // already exited, or there's nothing we can do anyway.
         if let Ok(None) = self.process.try_wait() {
+            tracing::warn!("child process still running, sending SIGKILL");
             let _ = self.process.kill();
         }
 
-        let _ = self.wait().map_err(|e| {
+        if let Err(e) = self.wait() {
             // Make an effort to output an error in a disciplined way if we're
             // running with tracing enabled, or roguely if we're not (eg. the
             // remote helper won't).
-            let msg = format!("Error waiting on child process: {}", e);
+            let msg = format!("error waiting on child process: {}", e);
             let mut tracing_enabled = false;
             tracing::error!(
                 traced = {
@@ -205,9 +215,11 @@ impl Drop for Connected {
                 msg
             );
             if !tracing_enabled {
-                eprintln!("{}", msg)
+                eprintln!("Local Transport: {}", msg)
             }
-        });
+        };
+
+        tracing::trace!("child exited successfully")
     }
 }
 
@@ -262,20 +274,6 @@ impl LocalTransport {
         let stdin = child.process.stdin.take().unwrap();
         let stdout = child.process.stdout.take().unwrap();
 
-        // Spawn a thread to `wait(2)` on the child process.
-        //
-        // Note that we have no straightforward and portable way to forward
-        // signals to the child process in Rust. When `LocalStream` is dropped,
-        // `ChildStdin` and `ChildStdin` will close the underlying file
-        // descriptors, which should cause `SIGPIPE` to be delivered to the
-        // child. Unless `git` is somehow misbehaving, this should guarantee
-        // that this thread is not leaked.
-        thread::spawn(move || {
-            child
-                .wait()
-                .map_err(|e| tracing::error!("Error waiting on child process: {}", e))
-        });
-
         let header = match service {
             Service::UploadPackLs => Some(UPLOAD_PACK_HEADER.to_vec()),
             Service::ReceivePackLs => Some(RECEIVE_PACK_HEADER.to_vec()),
@@ -288,6 +286,8 @@ impl LocalTransport {
                 inner: stdout,
             },
             write: stdin,
+
+            _connected_to: child,
         })
     }
 
@@ -402,6 +402,16 @@ impl LocalTransport {
 pub struct LocalStream {
     read: LocalRead,
     write: ChildStdin,
+
+    /// The child process we're connected to.
+    ///
+    /// Tied to the lifetime of this stream, such that the process is
+    /// a-`wait(2)`-ed when it gets dropped (see [`Connected`]).
+    //
+    // NOTE: that we're implicitly relying on the drop order of struct fields
+    // being in declaration order: stdio of the child _should_ already be
+    // closed, so we have a guarantee that it's not waiting for `stdin`.
+    _connected_to: Connected,
 }
 
 impl Read for LocalStream {
