@@ -21,6 +21,7 @@ use std::{
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio},
     sync::{Arc, Mutex, Once, RwLock},
+    thread,
 };
 
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
@@ -184,8 +185,19 @@ impl Drop for Connected {
         let _guard = span.enter();
 
         tracing::trace!("waiting on child process...");
+
+        // Spin for a bit in case we haven't received SIGCHLD yet
+        for _ in 0..42 {
+            if let Ok(None) = self.process.try_wait() {
+                thread::yield_now();
+                continue;
+            }
+            break;
+        }
+
         #[cfg(unix)]
         if let Ok(None) = self.process.try_wait() {
+            tracing::warn!("child process still running, sending SIGTERM");
             unsafe {
                 libc::kill(self.process.id() as i32, libc::SIGTERM);
             }
@@ -200,26 +212,28 @@ impl Drop for Connected {
             let _ = self.process.kill();
         }
 
-        if let Err(e) = self.wait() {
-            // Make an effort to output an error in a disciplined way if we're
-            // running with tracing enabled, or roguely if we're not (eg. the
-            // remote helper won't).
-            let msg = format!("error waiting on child process: {}", e);
-            let mut tracing_enabled = false;
-            tracing::error!(
-                traced = {
-                    tracing_enabled = true;
-                    tracing_enabled
-                },
-                "{}",
-                msg
-            );
-            if !tracing_enabled {
-                eprintln!("Local Transport: {}", msg)
-            }
-        };
+        match self.wait() {
+            Err(e) => {
+                // Make an effort to output an error in a disciplined way if we're
+                // running with tracing enabled, or roguely if we're not (eg. the
+                // remote helper won't).
+                let msg = format!("error waiting on child process: {}", e);
+                let mut tracing_enabled = false;
+                tracing::error!(
+                    traced = {
+                        tracing_enabled = true;
+                        tracing_enabled
+                    },
+                    "{}",
+                    msg
+                );
+                if !tracing_enabled {
+                    eprintln!("Local Transport: {}", msg)
+                }
+            },
 
-        tracing::trace!("child exited successfully")
+            Ok(()) => tracing::trace!("child exited successfully"),
+        };
     }
 }
 
