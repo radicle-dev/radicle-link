@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -eou pipefail
 
-echo '--- Build & Test'
-cargo test --all
+echo '--- Build'
+cargo build --verbose --workspace
+
+echo '--- Test'
+GIT_TRACE2=1 RUST_LOG=librad=trace cargo test --workspace
