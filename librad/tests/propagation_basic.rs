@@ -84,7 +84,7 @@ async fn can_clone() {
             .with_storage(move |storage| {
                 storage
                     .clone_repo::<ProjectInfo, _>(
-                        radicle_urn.clone().into_rad_url(peer1.peer_id().clone()),
+                        radicle_urn.clone().into_rad_url(peer1.peer_id()),
                         None,
                     )
                     .unwrap();
@@ -137,7 +137,7 @@ async fn can_clone_disconnected() {
             .with_storage(move |storage| {
                 storage
                     .clone_repo::<ProjectInfo, _>(
-                        radicle_urn.clone().into_rad_url(peer1.peer_id().clone()),
+                        radicle_urn.clone().into_rad_url(peer1.peer_id()),
                         Some(peer1.listen_addr()),
                     )
                     .unwrap();
@@ -195,7 +195,7 @@ async fn fetches_on_gossip_notify() {
         }
 
         {
-            let radicle_at_peer1 = radicle.urn().into_rad_url(peer1.peer_id().clone());
+            let radicle_at_peer1 = radicle.urn().into_rad_url(peer1.peer_id());
             peer2
                 .with_storage(move |storage| {
                     storage
@@ -224,7 +224,7 @@ async fn fetches_on_gossip_notify() {
                     let rev = repo.find_reference(refname)?.target().unwrap();
 
                     futures::executor::block_on(peer1.protocol().announce(Gossip {
-                        origin: Some(peer1.peer_id().clone()),
+                        origin: Some(peer1.peer_id()),
                         urn: RadUrn {
                             path: uri::Path::parse(refname).unwrap(),
                             ..radicle.urn()
@@ -241,9 +241,9 @@ async fn fetches_on_gossip_notify() {
                 ))),
             });
 
-            let url = LocalUrl::from_urn(urn.clone(), peer1.peer_id().clone());
+            let url = LocalUrl::from_urn(urn.clone(), peer1.peer_id());
 
-            let heads = NamespacedRef::heads(urn.clone().id, Some(peer1.peer_id().clone()));
+            let heads = NamespacedRef::heads(urn.clone().id, Some(peer1.peer_id()));
             let remotes: FlatRef<String, _> = FlatRef::heads(
                 PhantomData,
                 Some(format!("{}@{}", alice_name, peer1.peer_id())),
@@ -263,7 +263,7 @@ async fn fetches_on_gossip_notify() {
                 peer2_events
                     .filter(|event| match event {
                         PeerEvent::GossipFetch(FetchInfo { provider, .. }) => {
-                            future::ready(provider == peer1_id)
+                            future::ready(*provider == peer1_id)
                         },
                     })
                     .map(|_| ())
@@ -324,8 +324,8 @@ async fn all_metadata_returns_only_local_projects() {
                 .unwrap();
         }
 
-        let radicle_at_peer1 = radicle.urn().into_rad_url(peer1.peer_id().clone());
-        let radicle_at_peer2 = radicle.urn().into_rad_url(peer2.peer_id().clone());
+        let radicle_at_peer1 = radicle.urn().into_rad_url(peer1.peer_id());
+        let radicle_at_peer2 = radicle.urn().into_rad_url(peer2.peer_id());
 
         peer1
             .with_storage(move |storage| {
@@ -456,11 +456,11 @@ async fn menage_a_troi() {
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
     testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
         let (peer1, peer1_key) = apis.pop().unwrap();
-        let peer1_id = peer1.peer_id().clone();
+        let peer1_id = peer1.peer_id();
         let peer1_addr = peer1.listen_addr();
 
         let (peer2, _) = apis.pop().unwrap();
-        let peer2_id = peer2.peer_id().clone();
+        let peer2_id = peer2.peer_id();
         let peer2_addr = peer2.listen_addr();
 
         let (peer3, _) = apis.pop().unwrap();
@@ -503,9 +503,9 @@ async fn menage_a_troi() {
             librad::git::local::transport::register(settings);
             // Perform commit and push to working copy on peer1
             let repo = git2::Repository::init(tmp.path().join("peer1")).unwrap();
-            let url = LocalUrl::from_urn(urn.clone(), peer1_id.clone());
+            let url = LocalUrl::from_urn(urn.clone(), peer1_id);
 
-            let heads = NamespacedRef::heads(urn.clone().id, Some(peer1_id.clone()));
+            let heads = NamespacedRef::heads(urn.clone().id, Some(peer1_id));
             let remotes: FlatRef<String, _> =
                 FlatRef::heads(PhantomData, Some(format!("{}@{}", alice_name, peer1_id)));
 
@@ -521,10 +521,10 @@ async fn menage_a_troi() {
             .unwrap();
         });
 
-        let head = NamespacedRef::head(urn.clone().id, peer1_id.clone(), &default_branch);
+        let head = NamespacedRef::head(urn.clone().id, peer1_id, &default_branch);
         let peer2_has_ref = {
             let head = head.clone();
-            let url = urn.clone().into_rad_url(peer1_id.clone());
+            let url = urn.clone().into_rad_url(peer1_id);
             peer2
                 .with_storage(move |storage| {
                     storage

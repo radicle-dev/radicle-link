@@ -217,8 +217,8 @@ impl Node {
         urn: &RadUrn,
         peer_info: &PeerInfo<std::net::IpAddr>,
     ) -> Result<(), Error> {
-        let peer_id = &peer_info.peer_id;
-        let url = urn.clone().into_rad_url(peer_id.clone());
+        let peer_id = peer_info.peer_id;
+        let url = urn.clone().into_rad_url(peer_id);
         let port = peer_info.advertised_info.listen_port;
         let addr_hints = peer_info
             .seen_addrs
@@ -227,12 +227,11 @@ impl Node {
             .collect::<Vec<_>>();
 
         let result = {
-            let peer_id = peer_id.clone();
             let urn = urn.clone();
             api.with_storage(move |storage| {
                 storage
                     .clone_repo::<project::ProjectInfo, _>(url, addr_hints)
-                    .and_then(|_| storage.track(&urn, &peer_id))
+                    .and_then(|_| storage.track(&urn, peer_id))
             })
         }
         .await

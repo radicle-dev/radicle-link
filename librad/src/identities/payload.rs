@@ -769,7 +769,7 @@ nom is a parser combinators library written in Rust.";
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
         let k = SecretKey::new().public();
-        let d = vec![k.clone(), k];
+        let d = vec![k, k];
 
         let ser = serde_json::to_string(&d).unwrap();
         assert!(matches!(

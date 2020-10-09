@@ -25,7 +25,7 @@ use keystore::sign;
 
 use crate::keys::{self, PublicKey, SecretKey};
 
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Encode, Decode)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Encode, Decode)]
 #[cbor(array)]
 pub struct PeerId(#[n(0)] PublicKey);
 

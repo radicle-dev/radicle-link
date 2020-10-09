@@ -60,7 +60,7 @@ impl<S: Clone> Repo<'_, S> {
     /// Stop tracking [`PeerId`]s view of this repo
     ///
     /// Equivalent to `git remote rm`.
-    pub fn untrack(&self, peer: &PeerId) -> Result<(), Error> {
+    pub fn untrack(&self, peer: PeerId) -> Result<(), Error> {
         self.storage.untrack(&self.urn, peer).map_err(Error::from)
     }
 
@@ -113,14 +113,14 @@ where
     /// `addr_hints` may be supplied for the networking layer to establish a new
     /// connection to the peer specified in the `url` if none is currently
     /// active.
-    pub fn fetch<Addrs>(&self, from: &PeerId, addr_hints: Addrs) -> Result<(), Error>
+    pub fn fetch<Addrs>(&self, from: PeerId, addr_hints: Addrs) -> Result<(), Error>
     where
         Addrs: IntoIterator<Item = SocketAddr>,
     {
         self.storage
             .fetch_repo(
                 RadUrl {
-                    authority: from.clone(),
+                    authority: from,
                     urn: self.urn.clone(),
                 },
                 addr_hints,
@@ -131,7 +131,7 @@ where
     /// Track [`PeerId`]s view of this repo
     ///
     /// Equivalent to `git remote add`.
-    pub fn track(&self, peer: &PeerId) -> Result<(), Error> {
+    pub fn track(&self, peer: PeerId) -> Result<(), Error> {
         self.storage.track(&self.urn, peer).map_err(Error::from)
     }
 

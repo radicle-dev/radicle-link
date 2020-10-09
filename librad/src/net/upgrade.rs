@@ -315,7 +315,7 @@ mod tests {
     async fn test_upgrade(
         req: impl Into<UpgradeRequest>,
     ) -> Result<SomeUpgraded<()>, Error<MockStream>> {
-        let (initiator, receiver) = MockStream::pair(INITIATOR.clone(), RECEIVER.clone(), 512);
+        let (initiator, receiver) = MockStream::pair(*INITIATOR, *RECEIVER, 512);
         try_join!(
             async { upgrade(initiator, req).await.map_err(Error::from) },
             async {

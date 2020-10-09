@@ -84,7 +84,7 @@ pub trait GitStream: AsyncRead + AsyncWrite + Unpin + Send {}
 pub trait GitStreamFactory: Sync + Send {
     async fn open_stream(
         &self,
-        to: &PeerId,
+        to: PeerId,
         addr_hints: &[SocketAddr],
     ) -> Option<Box<dyn GitStream>>;
 }
@@ -130,18 +130,18 @@ impl RadTransport {
     /// on behalf of `peer_id`.
     ///
     /// See the module documentation for why we key stream factories by sender.
-    pub fn register_stream_factory(&self, peer_id: &PeerId, fac: Weak<Box<dyn GitStreamFactory>>) {
-        self.fac.write().unwrap().insert(peer_id.clone(), fac);
+    pub fn register_stream_factory(&self, peer_id: PeerId, fac: Weak<Box<dyn GitStreamFactory>>) {
+        self.fac.write().unwrap().insert(peer_id, fac);
     }
 
     fn open_stream(
         &self,
-        from: &PeerId,
-        to: &PeerId,
+        from: PeerId,
+        to: PeerId,
         addr_hints: &[SocketAddr],
     ) -> Option<Box<dyn GitStream>> {
         let fac = self.fac.read().unwrap();
-        match fac.get(from) {
+        match fac.get(&from) {
             None => None,
             Some(weak) => match weak.upgrade() {
                 None => {
@@ -151,7 +151,7 @@ impl RadTransport {
                     );
                     drop(fac);
                     let mut fac = self.fac.write().unwrap();
-                    fac.remove(from);
+                    fac.remove(&from);
                     None
                 },
                 Some(fac) => block_on(fac.open_stream(to, addr_hints)),
@@ -168,7 +168,7 @@ impl SmartSubtransport for RadTransport {
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
         let url: GitUrl = url.parse().map_err(into_git_err)?;
         let stream = self
-            .open_stream(&url.local_peer, &url.remote_peer, &url.addr_hints)
+            .open_stream(url.local_peer, url.remote_peer, &url.addr_hints)
             .ok_or_else(|| into_git_err(format!("No connection to {}", url.remote_peer)))?;
 
         Ok(Box::new(RadSubTransport {
@@ -202,7 +202,7 @@ impl RadSubTransport {
                     uri::Protocol::Git,
                     uri::Path::empty(),
                 ),
-                self.url.remote_peer.clone(),
+                self.url.remote_peer,
             );
             self.stream.write_all(header.to_string().as_bytes()).await
         } else {
