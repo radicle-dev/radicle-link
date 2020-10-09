@@ -57,7 +57,7 @@ fn smoke() {
     // Push something to `urn`
     {
         let repo_dir = tempdir().unwrap();
-        setup_repo(repo_dir.path(), &urn, peer_id.clone()).unwrap();
+        setup_repo(repo_dir.path(), &urn, peer_id).unwrap();
 
         let mut child = Command::new("git")
             .args(&["push", "origin", "master"])

@@ -316,7 +316,7 @@ impl RadUrn {
 
     pub fn as_rad_url_ref<'a>(&'a self, authority: &'a PeerId) -> RadUrlRef<'a> {
         RadUrlRef {
-            authority,
+            authority: &authority,
             urn: self,
         }
     }
@@ -592,7 +592,7 @@ pub struct RadUrlRef<'a> {
 impl<'a> RadUrlRef<'a> {
     pub fn to_owned(&self) -> RadUrl {
         RadUrl {
-            authority: self.authority.clone(),
+            authority: *self.authority,
             urn: self.urn.clone(),
         }
     }

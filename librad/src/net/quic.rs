@@ -103,7 +103,7 @@ impl Endpoint {
 
     pub async fn connect<'a>(
         &mut self,
-        peer: &PeerId,
+        peer: PeerId,
         addr: &SocketAddr,
     ) -> Result<(Connection, BoxStream<'a, Result<Stream>>)> {
         let conn = self
@@ -111,7 +111,7 @@ impl Endpoint {
             .connect(addr, peer.as_dns_name().as_ref().into())?
             .await?;
         match remote_peer(&conn)? {
-            Some(peer) => Ok(mk_connection(&peer, conn)),
+            Some(peer) => Ok(mk_connection(peer, conn)),
             None => Ok(mk_connection(peer, conn)),
         }
     }
@@ -133,8 +133,8 @@ impl Endpoint {
 impl LocalInfo for Endpoint {
     type Addr = SocketAddr;
 
-    fn local_peer_id(&self) -> &PeerId {
-        &self.peer_id
+    fn local_peer_id(&self) -> PeerId {
+        self.peer_id
     }
 
     fn local_addr(&self) -> io::Result<SocketAddr> {
@@ -146,7 +146,7 @@ async fn handle_incoming<'a>(connecting: quinn::Connecting) -> Result<(Connectio
     let conn = connecting.await?;
     remote_peer(&conn)?
         .ok_or_else(|| Error::RemoteIdUnavailable)
-        .map(|peer| mk_connection(&peer, conn))
+        .map(|peer| mk_connection(peer, conn))
 }
 
 /// Try to extract the remote identity from a newly established connection
@@ -181,7 +181,7 @@ fn remote_peer(conn: &NewConnection) -> Result<Option<PeerId>> {
 }
 
 fn mk_connection<'a>(
-    remote_peer: &PeerId,
+    remote_peer: PeerId,
     NewConnection {
         connection,
         bi_streams,
@@ -219,7 +219,7 @@ pub struct BoundEndpoint<'a> {
 impl<'a> LocalInfo for BoundEndpoint<'a> {
     type Addr = SocketAddr;
 
-    fn local_peer_id(&self) -> &PeerId {
+    fn local_peer_id(&self) -> PeerId {
         self.endpoint.local_peer_id()
     }
 
@@ -241,11 +241,8 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(peer: &PeerId, conn: quinn::Connection) -> Self {
-        Self {
-            peer: peer.clone(),
-            conn,
-        }
+    pub fn new(peer: PeerId, conn: quinn::Connection) -> Self {
+        Self { peer, conn }
     }
 
     pub async fn open_stream(&self) -> Result<Stream> {
@@ -272,8 +269,8 @@ impl Connection {
 impl RemoteInfo for Connection {
     type Addr = SocketAddr;
 
-    fn remote_peer_id(&self) -> &PeerId {
-        &self.peer
+    fn remote_peer_id(&self) -> PeerId {
+        self.peer
     }
 
     fn remote_addr(&self) -> SocketAddr {
@@ -304,8 +301,8 @@ impl Stream {
 impl RemoteInfo for Stream {
     type Addr = SocketAddr;
 
-    fn remote_peer_id(&self) -> &PeerId {
-        &self.conn.remote_peer_id()
+    fn remote_peer_id(&self) -> PeerId {
+        self.conn.remote_peer_id()
     }
 
     fn remote_addr(&self) -> SocketAddr {
@@ -360,8 +357,8 @@ impl RecvStream {
 impl RemoteInfo for RecvStream {
     type Addr = SocketAddr;
 
-    fn remote_peer_id(&self) -> &PeerId {
-        &self.conn.remote_peer_id()
+    fn remote_peer_id(&self) -> PeerId {
+        self.conn.remote_peer_id()
     }
 
     fn remote_addr(&self) -> SocketAddr {
@@ -393,8 +390,8 @@ impl SendStream {
 impl RemoteInfo for SendStream {
     type Addr = SocketAddr;
 
-    fn remote_peer_id(&self) -> &PeerId {
-        &self.conn.remote_peer_id()
+    fn remote_peer_id(&self) -> PeerId {
+        self.conn.remote_peer_id()
     }
 
     fn remote_addr(&self) -> SocketAddr {

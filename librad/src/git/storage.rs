@@ -160,8 +160,8 @@ pub struct Storage<S> {
 }
 
 impl<S: Clone> Storage<S> {
-    pub fn peer_id(&self) -> &PeerId {
-        &self.peer_id
+    pub fn peer_id(&self) -> PeerId {
+        self.peer_id
     }
 
     pub fn open_repo(&self, urn: RadUrn) -> Result<Repo<S>, Error> {
@@ -257,7 +257,7 @@ impl<S: Clone> Storage<S> {
         self.metadata_from_reference(NamespacedRef::rad_self(urn.id.clone(), peer).borrow())
     }
 
-    pub fn certifiers_of(&self, urn: &RadUrn, peer: &PeerId) -> Result<HashSet<RadUrn>, Error> {
+    pub fn certifiers_of(&self, urn: &RadUrn, peer: PeerId) -> Result<HashSet<RadUrn>, Error> {
         let mut refs = References::from_globs(
             &self.backend,
             &[format!(
@@ -321,7 +321,7 @@ impl<S: Clone> Storage<S> {
             .or_matches(is_not_found_err, || Ok(false))
     }
 
-    pub fn untrack(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
+    pub fn untrack(&self, urn: &RadUrn, peer: PeerId) -> Result<(), Error> {
         let remote_name = tracking_remote_name(urn, peer);
         // TODO: This removes all remote tracking branches matching the
         // fetchspec (I suppose). Not sure this is what we want.
@@ -355,7 +355,7 @@ impl<S: Clone> Storage<S> {
         // verify the signature, and add their [`Remotes`] to ours (minus the 3rd
         // degree)
         for (peer, tracked) in remotes.iter_mut() {
-            match self.rad_signed_refs_of(urn, peer.clone()) {
+            match self.rad_signed_refs_of(urn, *peer) {
                 Ok(refs) => *tracked = refs.remotes.cutoff(),
                 Err(Error::Blob(blob::Error::NotFound(_))) => {},
                 Err(e) => return Err(e),
@@ -372,13 +372,13 @@ impl<S: Clone> Storage<S> {
 
     pub fn rad_signed_refs_of(&self, urn: &RadUrn, peer: PeerId) -> Result<Refs, Error> {
         let signed = {
-            let refs = NamespacedRef::rad_signed_refs(urn.id.clone(), peer.clone());
+            let refs = NamespacedRef::rad_signed_refs(urn.id.clone(), peer);
             let blob = Blob::Tip {
                 branch: refs.borrow().into(),
                 path: Path::new("refs"),
             }
             .get(&self.backend)?;
-            refs::Signed::from_json(blob.content(), &peer)
+            refs::Signed::from_json(blob.content(), peer)
         }?;
 
         Ok(Refs::from(signed))
@@ -642,7 +642,7 @@ where
         let span = tracing::info_span!("Storage::clone_repo", local.id = %self.peer_id, url = %url);
         let _guard = span.enter();
 
-        let remote_peer = url.authority.clone();
+        let remote_peer = url.authority;
 
         let urn = RadUrn {
             path: uri::Path::empty(),
@@ -654,11 +654,11 @@ where
         }
 
         // Fetch the identity first
-        let git_url = GitUrl::from_rad_url(url, self.peer_id.clone(), addr_hints);
+        let git_url = GitUrl::from_rad_url(url, self.peer_id, addr_hints);
         let mut fetcher = Fetcher::new(&self.backend, git_url)?;
         fetcher.prefetch()?;
 
-        let meta = self.some_metadata_of(&urn, remote_peer.clone())?;
+        let meta = self.some_metadata_of(&urn, remote_peer)?;
 
         // TODO: properly verify
         let valid: Result<(), Error> = {
@@ -729,7 +729,7 @@ where
         let span = tracing::info_span!("Storage::fetch", local.id = %self.peer_id, url = %url);
         let _guard = span.enter();
 
-        let git_url = GitUrl::from_rad_url(url, self.peer_id.clone(), addr_hints);
+        let git_url = GitUrl::from_rad_url(url, self.peer_id, addr_hints);
         let fetcher = Fetcher::new(&self.backend, git_url)?;
         self.fetch_internal(fetcher)
     }
@@ -738,13 +738,14 @@ where
         let url = fetcher.url();
         let urn = url.clone().into_rad_url().urn;
 
-        let remote_peer = url.remote_peer.clone();
+        let remote_peer = url.remote_peer;
 
         let rad_signed_refs = self.rad_signed_refs(&urn)?;
         let transitively_tracked = rad_signed_refs
             .remotes
             .flatten()
-            .collect::<HashSet<&PeerId>>();
+            .copied()
+            .collect::<HashSet<PeerId>>();
 
         fetcher.fetch(
             transitively_tracked,
@@ -856,13 +857,13 @@ where
         }
     }
 
-    pub fn track(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
-        if peer == &self.peer_id {
+    pub fn track(&self, urn: &RadUrn, peer: PeerId) -> Result<(), Error> {
+        if peer == self.peer_id {
             return Err(Error::SelfReferential);
         }
 
         let remote_name = tracking_remote_name(urn, peer);
-        let url = GitUrlRef::from_rad_urn(&urn, &self.peer_id, peer, &[]).to_string();
+        let url = GitUrlRef::from_rad_urn(&urn, &self.peer_id, &peer, &[]).to_string();
 
         tracing::debug!(
             urn = %urn,
@@ -930,13 +931,13 @@ where
         meta.signatures()
             .iter()
             .map(|(pk, sig)| {
-                let peer_id = PeerId::from(pk.clone());
+                let peer_id = PeerId::from(*pk);
                 match &sig.by {
                     Signatory::User(urn) => (peer_id, Some(urn)),
                     Signatory::OwnedKey => (peer_id, None),
                 }
             })
-            .filter(|(peer, _)| peer != self.peer_id())
+            .filter(|(peer, _)| peer != &self.peer_id())
             .try_for_each(|(peer, urn)| {
                 tracing::debug!(
                     tracked.peer = %peer,
@@ -947,11 +948,11 @@ where
                 );
 
                 // Track the signer's version of this repo (if any)
-                self.track(&meta_urn, &peer)?;
+                self.track(&meta_urn, peer)?;
                 // Track the signer's version of the identity she used for
                 // signing (if any)
                 if let Some(urn) = urn {
-                    self.track(urn, &peer)?;
+                    self.track(urn, peer)?;
                 }
 
                 Ok(())
@@ -1008,7 +1009,7 @@ where
     /// Fails when attempting to find the pair fails, except when the
     /// encountered error checks [`is_not_found_err`], in which case
     /// `Ok(false)` is returned.
-    pub fn is_tracked(&self, urn: &RadUrn, peer: &PeerId) -> Result<bool, Error> {
+    pub fn is_tracked(&self, urn: &RadUrn, peer: PeerId) -> Result<bool, Error> {
         match self.backend.find_remote(&tracking_remote_name(urn, peer)) {
             Ok(_) => Ok(true),
             Err(e) if is_not_found_err(&e) => Ok(false),
@@ -1061,7 +1062,7 @@ impl Iterator for Tracked {
     }
 }
 
-fn tracking_remote_name(urn: &RadUrn, peer: &PeerId) -> String {
+fn tracking_remote_name(urn: &RadUrn, peer: PeerId) -> String {
     format!("{}/{}", urn.id, peer)
 }
 

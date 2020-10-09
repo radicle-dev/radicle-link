@@ -203,8 +203,8 @@ where
             .expect("blocking operation on storage panicked"))
     }
 
-    pub fn peer_id(&self) -> &PeerId {
-        &self.peer_id
+    pub fn peer_id(&self) -> PeerId {
+        self.peer_id
     }
 
     pub fn subscribe(&self) -> impl Future<Output = impl futures::Stream<Item = PeerEvent>> {
@@ -324,8 +324,8 @@ where
         self.listen_addr
     }
 
-    pub fn peer_id(&self) -> &PeerId {
-        &self.peer_id
+    pub fn peer_id(&self) -> PeerId {
+        self.peer_id
     }
 
     pub fn accept(self) -> Result<(PeerApi<S>, RunLoop), AcceptError> {
@@ -374,7 +374,7 @@ where
         };
 
         let gossip = gossip::Protocol::new(
-            &peer_id,
+            peer_id,
             gossip::PeerAdvertisement::new(listen_addr.ip(), listen_addr.port()),
             config.gossip_params,
             peer_storage,
@@ -384,7 +384,7 @@ where
         let _git_transport_protocol_ref =
             Arc::new(Box::new(protocol.clone()) as Box<dyn GitStreamFactory>);
         git::p2p::transport::register()
-            .register_stream_factory(&peer_id, Arc::downgrade(&_git_transport_protocol_ref));
+            .register_stream_factory(peer_id, Arc::downgrade(&_git_transport_protocol_ref));
 
         Ok(Self {
             paths: config.paths,
@@ -412,14 +412,13 @@ where
 {
     async fn git_fetch<'a>(
         &'a self,
-        from: &PeerId,
+        from: PeerId,
         urn: Either<RadUrn, Originates<RadUrn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> Result<(), PeerStorageError> {
         let git = self.inner.get().await?;
         let urn = urn_context(git.peer_id(), urn);
         let head = head.into();
-        let from = from.clone();
 
         spawn_blocking(move || {
             if let Some(head) = head {
@@ -457,7 +456,7 @@ where
 
     async fn is_tracked(&self, urn: RadUrn, peer: PeerId) -> Result<bool, PeerStorageError> {
         let git = self.inner.get().await?;
-        Ok(spawn_blocking(move || git.is_tracked(&urn, &peer))
+        Ok(spawn_blocking(move || git.is_tracked(&urn, peer))
             .await
             .expect("`PeerStorage::is_tracked` panicked")?)
     }
@@ -465,13 +464,13 @@ where
 
 /// If applicable, map the [`uri::Path`] of the given [`RadUrn`] to
 /// `refs/remotes/<origin>/<path>`
-fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
+fn urn_context(local_peer_id: PeerId, urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
     match urn {
         Either::Left(urn) => urn,
         Either::Right(Originates { from, value }) => {
             let urn = value;
 
-            if &from == local_peer_id {
+            if from == local_peer_id {
                 return urn;
             }
 
@@ -504,13 +503,13 @@ where
 {
     type Update = Gossip;
 
-    async fn put(&self, provider: &PeerId, has: Self::Update) -> PutResult {
+    async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult {
         let span = tracing::info_span!("Peer::LocalStorage::put");
         let _guard = span.enter();
 
         match has.urn.proto {
             uri::Protocol::Git => {
-                let peer_id = has.origin.clone().unwrap_or_else(|| provider.clone());
+                let peer_id = has.origin.clone().unwrap_or_else(|| provider);
                 let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
                     Ok(b) => b,
                     Err(e) => {
@@ -523,7 +522,6 @@ where
                     Some(Rev::Git(head)) if is_tracked => {
                         let res = {
                             let this = self.clone();
-                            let provider = provider.clone();
                             let has = has.clone();
                             let urn = match has.origin {
                                 Some(origin) => Either::Right(Originates {
@@ -532,7 +530,7 @@ where
                                 }),
                                 None => Either::Left(has.urn),
                             };
-                            this.git_fetch(&provider, urn, head).await
+                            this.git_fetch(provider, urn, head).await
                         };
 
                         match res {
@@ -568,7 +566,7 @@ where
 
                 self.subscribers
                     .emit(PeerEvent::GossipFetch(FetchInfo {
-                        provider: provider.clone(),
+                        provider,
                         gossip: has,
                         result: res,
                     }))

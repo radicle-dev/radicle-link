@@ -107,7 +107,7 @@ pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
     let mut seed_addrs = None;
     for _ in 0..num_peers {
         let peer = boot(seed_addrs.take().into_iter().collect()).await?;
-        seed_addrs = Some((peer.peer_id().clone(), peer.listen_addr()));
+        seed_addrs = Some((peer.peer_id(), peer.listen_addr()));
         peers.push(peer)
     }
 

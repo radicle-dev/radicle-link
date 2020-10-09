@@ -165,8 +165,8 @@ fn fetch_entry(remote: &Remote<LocalUrl>) -> (String, String) {
         match &remote.fetch_spec {
             Some(spec) => spec.as_refspec(),
             None => {
-                let peer_id = &remote.url.local_peer_id;
-                let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, Some(peer_id.clone()));
+                let heads: FlatRef<PeerId, _> =
+                    FlatRef::heads(PhantomData, Some(remote.url.local_peer_id));
                 let heads = heads.with_name("heads/*");
                 let remotes: FlatRef<String, _> =
                     FlatRef::heads(PhantomData, Some(remote.name.clone()));
@@ -213,7 +213,7 @@ mod test {
         let repo = Hash::hash(b"meow-meow");
         let url = LocalUrl {
             repo,
-            local_peer_id: (*LOCAL_PEER_ID).clone(),
+            local_peer_id: *LOCAL_PEER_ID,
         };
 
         // Start with an empty config to catch corner-cases where git2::Config does not
