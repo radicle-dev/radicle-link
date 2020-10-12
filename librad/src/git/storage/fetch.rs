@@ -76,13 +76,13 @@ impl<'a> Fetcher<'a> {
         // :refs/namespaces/<namespace>/refs/remotes/<remote_peer>/rad/ids/*`
         let refspecs = [
             remote_id
-                .set_remote(remote_peer.clone())
+                .set_remote(remote_peer)
                 .refspec(remote_id, Force::False),
             remote_self
-                .set_remote(remote_peer.clone())
+                .set_remote(remote_peer)
                 .refspec(remote_self, Force::False),
             remote_certifiers
-                .set_remote(remote_peer.clone())
+                .set_remote(remote_peer)
                 .refspec(remote_certifiers, Force::False),
         ]
         .iter()
@@ -109,17 +109,17 @@ impl<'a> Fetcher<'a> {
     /// 3. fetch advertised refs ⋂ signed refs
     pub fn fetch<F, G, E>(
         &mut self,
-        transitively_tracked: HashSet<&PeerId>,
+        transitively_tracked: HashSet<PeerId>,
         rad_signed_refs_of: F,
         certifiers_of: G,
     ) -> Result<(), E>
     where
         F: Fn(PeerId) -> Result<Refs, E>,
-        G: Fn(&PeerId) -> Result<HashSet<RadUrn>, E>,
+        G: Fn(PeerId) -> Result<HashSet<RadUrn>, E>,
         E: From<git2::Error>,
     {
         let namespace = &self.url.repo;
-        let remote_peer = &self.url.remote_peer;
+        let remote_peer = self.url.remote_peer;
 
         let mut fetch_opts = self.fetch_options();
 
@@ -127,8 +127,8 @@ impl<'a> Fetcher<'a> {
         {
             let refspecs = Refspec::rad_signed_refs(
                 self.url.repo.clone(),
-                &remote_peer,
-                transitively_tracked.iter().cloned(),
+                remote_peer,
+                transitively_tracked.clone().into_iter(),
             )
             .map(|spec| spec.to_string())
             .collect::<Vec<String>>();
@@ -155,8 +155,8 @@ impl<'a> Fetcher<'a> {
             let refspecs = Refspec::fetch_heads(
                 namespace.clone(),
                 remote_heads,
-                transitively_tracked.iter().cloned(),
-                &remote_peer,
+                transitively_tracked.into_iter(),
+                remote_peer,
                 rad_signed_refs_of,
                 certifiers_of,
             )?

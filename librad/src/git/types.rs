@@ -183,11 +183,11 @@ impl Refspec<PeerId, PeerId> {
     /// remote peer [`PeerId`], rejecting non-fast-forwards
     pub fn rad_signed_refs<'a>(
         namespace: Namespace,
-        remote_peer: &'a PeerId,
-        tracked: impl Iterator<Item = &'a PeerId> + 'a,
+        remote_peer: PeerId,
+        tracked: impl Iterator<Item = PeerId> + 'a,
     ) -> impl Iterator<Item = Self> + 'a {
         tracked.map(move |peer| {
-            let local = Reference::rad_signed_refs(namespace.clone(), (*peer).clone());
+            let local = Reference::rad_signed_refs(namespace.clone(), peer);
             let remote = if peer == remote_peer {
                 local.set_remote(None)
             } else {
@@ -201,10 +201,10 @@ impl Refspec<PeerId, PeerId> {
     pub fn fetch_heads<'a, E>(
         namespace: Namespace,
         remote_heads: HashMap<String, git2::Oid>,
-        tracked_peers: impl Iterator<Item = &'a PeerId> + 'a,
-        remote_peer: &'a PeerId,
+        tracked_peers: impl Iterator<Item = PeerId> + 'a,
+        remote_peer: PeerId,
         rad_signed_refs_of: impl Fn(PeerId) -> Result<Refs, E>,
-        certifiers_of: impl Fn(&PeerId) -> Result<HashSet<RadUrn>, E>,
+        certifiers_of: impl Fn(PeerId) -> Result<HashSet<RadUrn>, E>,
     ) -> Result<impl Iterator<Item = Self> + 'a, E> {
         // FIXME: do this in constant memory
         let mut refspecs = Vec::new();
@@ -215,7 +215,7 @@ impl Refspec<PeerId, PeerId> {
             // `+refs/namespaces/<namespace>/refs[/remotes/<peer>]/heads/* \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/heads/*`
             {
-                let their_singed_rad_refs = rad_signed_refs_of(tracked_peer.clone())?;
+                let their_singed_rad_refs = rad_signed_refs_of(tracked_peer)?;
                 for (name, target) in their_singed_rad_refs.heads {
                     let name_namespaced = format!("refs/namespaces/{}/{}", namespace, name);
                     if let Some(name) = name.strip_prefix("refs/heads/") {
@@ -230,8 +230,7 @@ impl Refspec<PeerId, PeerId> {
                             .unwrap_or(false);
 
                         if targets_match {
-                            let local =
-                                Reference::head(namespace.clone(), tracked_peer.clone(), &name);
+                            let local = Reference::head(namespace.clone(), tracked_peer, &name);
                             let remote = if tracked_peer == remote_peer {
                                 local.set_remote(None)
                             } else {
@@ -249,7 +248,7 @@ impl Refspec<PeerId, PeerId> {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/id \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/id`
             {
-                let local = Reference::rad_id(namespace.clone()).with_remote(tracked_peer.clone());
+                let local = Reference::rad_id(namespace.clone()).with_remote(tracked_peer);
                 let remote = if tracked_peer == remote_peer {
                     local.set_remote(None)
                 } else {
@@ -264,7 +263,7 @@ impl Refspec<PeerId, PeerId> {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/self \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/self`
             {
-                let local = Reference::rad_self(namespace.clone(), tracked_peer.clone());
+                let local = Reference::rad_self(namespace.clone(), tracked_peer);
                 let remote = if tracked_peer == remote_peer {
                     local.set_remote(None)
                 } else {
@@ -279,8 +278,7 @@ impl Refspec<PeerId, PeerId> {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/ids/* \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/ids/*`
             {
-                let local =
-                    Reference::rad_ids_glob(namespace.clone()).with_remote(tracked_peer.clone());
+                let local = Reference::rad_ids_glob(namespace.clone()).with_remote(tracked_peer);
                 let remote = if tracked_peer == remote_peer {
                     local.set_remote(None)
                 } else {
@@ -300,12 +298,11 @@ impl Refspec<PeerId, PeerId> {
             // `refs/namespaces/<certifier>/refs[/remotes/<peer>]/rad/ids/* \
             // :refs/namespaces/<certifier>/refs/remotes/<peer>/rad/ids/*`
             {
-                let their_certifiers = certifiers_of(&tracked_peer)?;
+                let their_certifiers = certifiers_of(tracked_peer)?;
                 for urn in their_certifiers {
                     // id
                     {
-                        let local =
-                            Reference::rad_id(urn.id.clone()).with_remote(tracked_peer.clone());
+                        let local = Reference::rad_id(urn.id.clone()).with_remote(tracked_peer);
                         let remote = if tracked_peer == remote_peer {
                             local.set_remote(None)
                         } else {
@@ -317,8 +314,8 @@ impl Refspec<PeerId, PeerId> {
 
                     // rad/ids/* of id
                     {
-                        let local = Reference::rad_ids_glob(urn.id.clone())
-                            .with_remote(tracked_peer.clone());
+                        let local =
+                            Reference::rad_ids_glob(urn.id.clone()).with_remote(tracked_peer);
                         let remote = if tracked_peer == remote_peer {
                             local.set_remote(None)
                         } else {

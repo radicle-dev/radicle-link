@@ -182,26 +182,24 @@ where
         if !self.peers.contains_key(&peer_id) && self.peers.len() + 1 > self.max_peers {
             self.peers.insert(peer_id, sink);
 
-            let eject = self
-                .peers
-                .keys()
-                .choose(&mut self.rng)
-                .expect("Iterator must contain at least 1 element, as per the if condition. qed")
-                .clone();
-            self.remove(&eject)
+            let (eject, _) = self
+                .random()
+                .expect("Iterator must contain at least 1 element, as per the if condition. qed");
+            self.remove(eject)
         } else {
-            self.peers
-                .insert(peer_id.clone(), sink)
-                .map(|s| (peer_id, s))
+            self.peers.insert(peer_id, sink).map(|s| (peer_id, s))
         }
     }
 
-    fn remove(&mut self, peer_id: &PeerId) -> Option<(PeerId, S)> {
-        self.peers.remove(peer_id).map(|s| (peer_id.to_owned(), s))
+    fn remove(&mut self, peer_id: PeerId) -> Option<(PeerId, S)> {
+        self.peers.remove(&peer_id).map(|s| (peer_id, s))
     }
 
-    fn random(&mut self) -> Option<(&PeerId, &mut S)> {
-        self.peers.iter_mut().choose(&mut self.rng)
+    fn random(&mut self) -> Option<(PeerId, &mut S)> {
+        self.peers
+            .iter_mut()
+            .choose(&mut self.rng)
+            .map(|(k, s)| (*k, s))
     }
 
     fn contains(&self, peer_id: &PeerId) -> bool {
@@ -253,7 +251,7 @@ where
         for info in peers {
             let entry = self
                 .peers
-                .entry(info.peer_id.clone())
+                .entry(info.peer_id)
                 .or_insert_with(|| info.clone());
             entry.seen_addrs = entry.seen_addrs.union(&info.seen_addrs).cloned().collect();
         }
@@ -322,7 +320,7 @@ where
         }
 
         Self {
-            local_id: self.local_id.clone(),
+            local_id: self.local_id,
             local_ad: self.local_ad.clone(),
             mparams: self.mparams.clone(),
             storage: self.storage.clone(),
@@ -351,7 +349,7 @@ where
     <W as RemoteInfo>::Addr: AsAddr<Addr>,
 {
     pub fn new(
-        local_id: &PeerId,
+        local_id: PeerId,
         local_ad: PeerAdvertisement<Addr>,
         mparams: MembershipParams,
         storage: Storage,
@@ -371,7 +369,7 @@ where
         })));
 
         let this = Self {
-            local_id: local_id.clone(),
+            local_id,
             local_ad,
 
             mparams,
@@ -422,8 +420,8 @@ where
         this
     }
 
-    pub fn peer_id(&self) -> &PeerId {
-        &self.local_id
+    pub fn peer_id(&self) -> PeerId {
+        self.local_id
     }
 
     pub async fn is_connected(&self) -> bool {
@@ -502,7 +500,7 @@ where
             let mut recv = FramedRead::new(recv, Codec::new());
             let send = FramedWrite::new(send, Codec::new());
 
-            let remote_id = recv.remote_peer_id().clone();
+            let remote_id = recv.remote_peer_id();
             // This should not be possible, as we prevent it in the TLS handshake.
             // Leaving it here regardless as a sanity check.
             if remote_id == self.local_id {
@@ -510,7 +508,7 @@ where
             }
 
             if let Some((ejected_peer, mut ejected_send)) =
-                self.add_connected(remote_id.clone(), send).await
+                self.add_connected(remote_id, send).await
             {
                 tracing::trace!(
                     msg = "Ejecting connected peer",
@@ -530,11 +528,11 @@ where
                 match recvd {
                     Ok(rpc) => match rpc {
                         Rpc::Membership(msg) => {
-                            self.handle_membership(&remote_id, recv.remote_addr().as_addr(), msg)
+                            self.handle_membership(remote_id, recv.remote_addr().as_addr(), msg)
                                 .await?
                         },
 
-                        Rpc::Gossip(msg) => self.handle_gossip(&remote_id, msg).await?,
+                        Rpc::Gossip(msg) => self.handle_gossip(remote_id, msg).await?,
                     },
 
                     Err(e) => {
@@ -545,7 +543,7 @@ where
             }
 
             tracing::trace!(msg = "Recv stream is done, disconnecting");
-            self.remove_connected(&remote_id).await;
+            self.remove_connected(remote_id).await;
 
             Ok(())
         }
@@ -555,14 +553,14 @@ where
 
     async fn handle_membership(
         &self,
-        remote_id: &PeerId,
+        remote_id: PeerId,
         remote_addr: Addr,
         msg: Membership<Addr>,
     ) -> Result<(), Error> {
         use Membership::*;
 
         let make_peer_info = |ad: PeerAdvertisement<Addr>| PeerInfo {
-            peer_id: remote_id.clone(),
+            peer_id: remote_id,
             advertised_info: ad,
             seen_addrs: vec![remote_addr].into_iter().collect(),
         };
@@ -627,7 +625,7 @@ where
                     self.send_adhoc(&origin, ShuffleReply { peers: sample })
                         .await
                 } else {
-                    let origin = if &origin.peer_id == remote_id {
+                    let origin = if origin.peer_id == remote_id {
                         make_peer_info(origin.advertised_info)
                     } else {
                         origin
@@ -656,7 +654,7 @@ where
 
     async fn handle_gossip(
         &self,
-        remote_id: &PeerId,
+        remote_id: PeerId,
         msg: Gossip<Addr, Broadcast>,
     ) -> Result<(), Error> {
         use Gossip::*;
@@ -675,7 +673,7 @@ where
                         })))
                         .await;
 
-                    match self.storage.put(&remote_id, val.clone()).await {
+                    match self.storage.put(remote_id, val.clone()).await {
                         // `val` was new, and is now fetched to local storage.
                         // Let connected peers know they can now fetch it from
                         // us.
@@ -742,7 +740,7 @@ where
                     let have = self.storage.ask(val.clone()).await;
                     if have {
                         self.reply(
-                            &remote_id.clone(),
+                            &remote_id,
                             Have {
                                 origin: self.local_peer_info(),
                                 val,
@@ -769,7 +767,7 @@ where
         self.connected_peers.lock().await.insert(peer_id, out)
     }
 
-    async fn remove_connected(&self, peer_id: &PeerId) {
+    async fn remove_connected(&self, peer_id: PeerId) {
         if let Some((_, mut stream)) = self.connected_peers.lock().await.remove(peer_id) {
             let _ = stream.close().await;
         }
@@ -779,7 +777,7 @@ where
         self.known_peers.lock().await.insert(
             peers
                 .into_iter()
-                .filter(|info| &info.peer_id != self.peer_id()),
+                .filter(|info| info.peer_id != self.peer_id()),
         )
     }
 
@@ -845,10 +843,10 @@ where
     }
 
     /// Send an [`Rpc`] to all currently connected peers, except `excluding`
-    async fn broadcast<'a, M, X>(&self, rpc: M, excluding: X)
+    async fn broadcast<M, X>(&self, rpc: M, excluding: X)
     where
         M: Into<Rpc<Addr, Broadcast>>,
-        X: Into<Option<&'a PeerId>>,
+        X: Into<Option<PeerId>>,
     {
         let rpc = rpc.into();
         let excluding = excluding.into();
@@ -857,7 +855,7 @@ where
         futures::stream::iter(
             connected_peers
                 .iter_mut()
-                .filter(|(peer_id, _)| Some(*peer_id) != excluding),
+                .filter(|(peer_id, _)| Some(*peer_id) != excluding.as_ref()),
         )
         .for_each_concurrent(None, |(peer, out)| {
             let rpc = rpc.clone();
@@ -882,7 +880,7 @@ where
 
     async fn reply<M: Into<Rpc<Addr, Broadcast>>>(&self, to: &PeerId, rpc: M) {
         let rpc = rpc.into();
-        futures::stream::iter(self.connected_peers.lock().await.get_mut(to))
+        futures::stream::iter(self.connected_peers.lock().await.get_mut(&to))
             .for_each(|out| {
                 let rpc = rpc.clone();
                 async move {
@@ -916,7 +914,7 @@ where
 
     fn local_peer_info(&self) -> PeerInfo<Addr> {
         PeerInfo {
-            peer_id: self.local_id.clone(),
+            peer_id: self.local_id,
             advertised_info: self.local_ad.clone(),
             seen_addrs: HashSet::with_capacity(0),
         }

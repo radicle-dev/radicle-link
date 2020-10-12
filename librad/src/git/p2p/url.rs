@@ -191,7 +191,7 @@ impl<'a> GitUrlRef<'a> {
     where
         Addrs: AsRef<[SocketAddr]>,
     {
-        Self::from_rad_urn(url.urn, local_peer, url.authority, addr_hints)
+        Self::from_rad_urn(url.urn, local_peer, &url.authority, addr_hints)
     }
 
     pub fn from_rad_urn<Addrs>(
@@ -213,8 +213,8 @@ impl<'a> GitUrlRef<'a> {
 
     pub fn to_owned(&self) -> GitUrl {
         GitUrl {
-            local_peer: self.local_peer.clone(),
-            remote_peer: self.remote_peer.clone(),
+            local_peer: *self.local_peer,
+            remote_peer: *self.remote_peer,
             addr_hints: self.addr_hints.to_vec(),
             repo: self.repo.clone(),
         }

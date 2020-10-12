@@ -122,7 +122,7 @@ impl<T, R, C> Indirect<T, R, C> {
                 entry.insert(pos);
                 Ok(())
             },
-            Entry::Occupied(entry) => Err(DuplicateKey(entry.key().clone())),
+            Entry::Occupied(entry) => Err(DuplicateKey(*entry.key())),
         };
 
         for d in iter {
@@ -137,7 +137,7 @@ impl<T, R, C> Indirect<T, R, C> {
                     let pos = ids.len() - 1;
 
                     for key in &ids[pos].doc.delegations {
-                        insert(key.clone(), Some(pos))?
+                        insert(*key, Some(pos))?
                     }
                 },
             }

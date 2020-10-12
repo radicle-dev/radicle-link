@@ -114,7 +114,7 @@ async fn can_fetch() {
         }
 
         let tracked_users = {
-            let url = radicle_urn.clone().into_rad_url(peer1.peer_id().clone());
+            let url = radicle_urn.clone().into_rad_url(peer1.peer_id());
             peer2
                 .with_storage(move |storage| {
                     storage.clone_repo::<ProjectInfo, _>(url, None).unwrap();
@@ -123,7 +123,7 @@ async fn can_fetch() {
                         .unwrap()
                         .map(|peer| {
                             storage
-                                .get_rad_self_of(&radicle_urn, Some(peer.clone()))
+                                .get_rad_self_of(&radicle_urn, Some(peer))
                                 .map(|user| (user, peer))
                         })
                         .collect::<Result<Vec<_>, _>>()
@@ -137,9 +137,9 @@ async fn can_fetch() {
 
         // Perform commit and push to working copy on peer1
         let repo = git2::Repository::init(tmp.path().join("peer1")).unwrap();
-        let url = LocalUrl::from_urn(radicle.urn(), peer1.peer_id().clone());
+        let url = LocalUrl::from_urn(radicle.urn(), peer1.peer_id());
 
-        let heads = NamespacedRef::heads(radicle.urn().id, Some(peer1.peer_id().clone()));
+        let heads = NamespacedRef::heads(radicle.urn().id, Some(peer1.peer_id()));
         let remotes: FlatRef<String, _> = FlatRef::heads(
             PhantomData,
             Some(format!("{}@{}", alice.name(), peer1.peer_id())),
@@ -153,7 +153,7 @@ async fn can_fetch() {
                 let rev = repo.find_reference(refname)?.target().unwrap();
 
                 futures::executor::block_on(peer1.protocol().announce(Gossip {
-                    origin: Some(peer1.peer_id().clone()),
+                    origin: Some(peer1.peer_id()),
                     urn: RadUrn {
                         path: uri::Path::parse(refname).unwrap(),
                         ..radicle.urn()
@@ -181,7 +181,7 @@ async fn can_fetch() {
         // Create the include file
         let url = LocalUrl {
             repo: radicle.urn().id,
-            local_peer_id: peer2.peer_id().clone(),
+            local_peer_id: peer2.peer_id(),
         };
         let inc = include::Include::from_tracked_users(tmp.path(), url, tracked_users.into_iter());
         let inc_path = inc.file_path();
@@ -210,7 +210,7 @@ async fn can_fetch() {
 }
 
 // Wait for peer2 to receive the gossip announcement
-async fn wait_for_event<S>(peer_events: S, remote: &PeerId)
+async fn wait_for_event<S>(peer_events: S, remote: PeerId)
 where
     S: Stream<Item = PeerEvent> + std::marker::Unpin,
 {
@@ -219,7 +219,7 @@ where
         peer_events
             .filter(|event| match event {
                 PeerEvent::GossipFetch(FetchInfo { provider, .. }) => {
-                    future::ready(provider == remote)
+                    future::ready(*provider == remote)
                 },
             })
             .map(|_| ())

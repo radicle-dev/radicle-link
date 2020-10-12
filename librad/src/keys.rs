@@ -54,7 +54,7 @@ impl<T: error::Error + Send + Sync + 'static> SignError for T {}
 pub struct SecretKey(ed25519::SigningKey);
 
 /// The public part of a `Key``
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct PublicKey(ed25519::VerificationKeyBytes);
 
 impl From<sign::PublicKey> for PublicKey {

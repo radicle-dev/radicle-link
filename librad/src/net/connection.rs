@@ -26,14 +26,14 @@ use futures::io::{AsyncRead, AsyncWrite};
 pub trait LocalInfo {
     type Addr;
 
-    fn local_peer_id(&self) -> &PeerId;
+    fn local_peer_id(&self) -> PeerId;
     fn local_addr(&self) -> io::Result<Self::Addr>;
 }
 
 pub trait RemoteInfo {
     type Addr;
 
-    fn remote_peer_id(&self) -> &PeerId;
+    fn remote_peer_id(&self) -> PeerId;
     fn remote_addr(&self) -> Self::Addr;
 }
 
@@ -108,12 +108,12 @@ pub(crate) mod mock {
     impl RemoteInfo for MockStream {
         type Addr = PeerId;
 
-        fn remote_peer_id(&self) -> &PeerId {
-            &self.id
+        fn remote_peer_id(&self) -> PeerId {
+            self.id
         }
 
         fn remote_addr(&self) -> Self::Addr {
-            self.id.clone()
+            self.id
         }
     }
 

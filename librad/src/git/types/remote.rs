@@ -192,10 +192,10 @@ mod tests {
         let namespace = Hash::hash(b"meow-meow");
         let url = LocalUrl {
             repo: namespace,
-            local_peer_id: peer_id.clone(),
+            local_peer_id: peer_id,
         };
         let name = format!("lyla@{}", peer_id);
-        let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, Some(peer_id.clone()));
+        let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, Some(peer_id));
         let heads = heads.with_name("heads/*");
         let remotes: FlatRef<String, _> = FlatRef::heads(PhantomData, Some(name.clone()));
         let remote = Remote {
