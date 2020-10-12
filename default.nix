@@ -18,6 +18,7 @@ in
       m4
       libiconv
       cargo-watch
+      cacert
     ];
     # why do we need to set the library path manually?
     shellHook = ''
