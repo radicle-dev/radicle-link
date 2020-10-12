@@ -5,11 +5,10 @@ let
   moz_overlay = import (builtins.fetchTarball https://github.com/mozilla/nixpkgs-mozilla/archive/4521bc61c2332f41e18664812a808294c8c78580.tar.gz);
   pkgs = import <nixpkgs> { overlays = [ moz_overlay ]; };
 in
-  with pkgs;
-  stdenv.mkDerivation {
+  pkgs.stdenv.mkDerivation {
     name = "clang-env-with-nightly-rust";
-    buildInputs = [
-      (pkgs.rustChannelOf { rustToolchain = ./rust-toolchain; }).rust
+    buildInputs = with pkgs; [
+      (rustChannelOf { rustToolchain = ./rust-toolchain; }).rust
       clang
       llvmPackages.libclang
       olm
