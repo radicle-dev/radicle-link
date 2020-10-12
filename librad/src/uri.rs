@@ -316,7 +316,7 @@ impl RadUrn {
 
     pub fn as_rad_url_ref<'a>(&'a self, authority: &'a PeerId) -> RadUrlRef<'a> {
         RadUrlRef {
-            authority: &authority,
+            authority,
             urn: self,
         }
     }

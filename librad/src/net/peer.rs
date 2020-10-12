@@ -417,7 +417,7 @@ where
         head: impl Into<Option<git2::Oid>>,
     ) -> Result<(), PeerStorageError> {
         let git = self.inner.get().await?;
-        let urn = urn_context(git.peer_id(), urn);
+        let urn = urn_context(&git.peer_id(), urn);
         let head = head.into();
 
         spawn_blocking(move || {
@@ -444,7 +444,7 @@ where
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
         let git = self.inner.get().await.unwrap();
-        let urn = urn_context(git.peer_id(), urn);
+        let urn = urn_context(&git.peer_id(), urn);
         let head = head.into();
         spawn_blocking(move || match head {
             None => git.has_urn(&urn).unwrap_or(false),
@@ -456,7 +456,7 @@ where
 
     async fn is_tracked(&self, urn: RadUrn, peer: PeerId) -> Result<bool, PeerStorageError> {
         let git = self.inner.get().await?;
-        Ok(spawn_blocking(move || git.is_tracked(&urn, peer))
+        Ok(spawn_blocking(move || git.is_tracked(&urn, &peer))
             .await
             .expect("`PeerStorage::is_tracked` panicked")?)
     }
@@ -464,13 +464,13 @@ where
 
 /// If applicable, map the [`uri::Path`] of the given [`RadUrn`] to
 /// `refs/remotes/<origin>/<path>`
-fn urn_context(local_peer_id: PeerId, urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
+fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
     match urn {
         Either::Left(urn) => urn,
         Either::Right(Originates { from, value }) => {
             let urn = value;
 
-            if from == local_peer_id {
+            if from == *local_peer_id {
                 return urn;
             }
 
@@ -509,7 +509,7 @@ where
 
         match has.urn.proto {
             uri::Protocol::Git => {
-                let peer_id = has.origin.clone().unwrap_or_else(|| provider);
+                let peer_id = has.origin.unwrap_or_else(|| provider);
                 let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
                     Ok(b) => b,
                     Err(e) => {

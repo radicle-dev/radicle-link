@@ -60,8 +60,8 @@ impl<S: Clone> Repo<'_, S> {
     /// Stop tracking [`PeerId`]s view of this repo
     ///
     /// Equivalent to `git remote rm`.
-    pub fn untrack(&self, peer: PeerId) -> Result<(), Error> {
-        self.storage.untrack(&self.urn, peer).map_err(Error::from)
+    pub fn untrack(&self, peer: &PeerId) -> Result<(), Error> {
+        self.storage.untrack(&self.urn, &peer).map_err(Error::from)
     }
 
     /// Retrieve all _directly_ tracked peers
@@ -131,8 +131,8 @@ where
     /// Track [`PeerId`]s view of this repo
     ///
     /// Equivalent to `git remote add`.
-    pub fn track(&self, peer: PeerId) -> Result<(), Error> {
-        self.storage.track(&self.urn, peer).map_err(Error::from)
+    pub fn track(&self, peer: &PeerId) -> Result<(), Error> {
+        self.storage.track(&self.urn, &peer).map_err(Error::from)
     }
 
     /// Set the `rad/self` identity for this repo

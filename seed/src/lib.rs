@@ -231,7 +231,7 @@ impl Node {
             api.with_storage(move |storage| {
                 storage
                     .clone_repo::<project::ProjectInfo, _>(url, addr_hints)
-                    .and_then(|_| storage.track(&urn, peer_id))
+                    .and_then(|_| storage.track(&urn, &peer_id))
             })
         }
         .await

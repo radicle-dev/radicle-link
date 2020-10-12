@@ -576,13 +576,13 @@ where
 {
     async fn open_stream(
         &self,
-        to: PeerId,
+        to: &PeerId,
         addr_hints: &[SocketAddr],
     ) -> Option<Box<dyn GitStream>> {
         let span = tracing::trace_span!("GitStreamFactory::open_stream", peer.id = %to);
 
         match self
-            .open_git(to, addr_hints.iter().copied())
+            .open_git(*to, addr_hints.iter().copied())
             .instrument(span.clone())
             .await
         {

@@ -740,7 +740,7 @@ where
                     let have = self.storage.ask(val.clone()).await;
                     if have {
                         self.reply(
-                            remote_id,
+                            &remote_id,
                             Have {
                                 origin: self.local_peer_info(),
                                 val,
@@ -843,7 +843,7 @@ where
     }
 
     /// Send an [`Rpc`] to all currently connected peers, except `excluding`
-    async fn broadcast<'a, M, X>(&self, rpc: M, excluding: X)
+    async fn broadcast<M, X>(&self, rpc: M, excluding: X)
     where
         M: Into<Rpc<Addr, Broadcast>>,
         X: Into<Option<PeerId>>,
@@ -878,7 +878,7 @@ where
         .await
     }
 
-    async fn reply<M: Into<Rpc<Addr, Broadcast>>>(&self, to: PeerId, rpc: M) {
+    async fn reply<M: Into<Rpc<Addr, Broadcast>>>(&self, to: &PeerId, rpc: M) {
         let rpc = rpc.into();
         futures::stream::iter(self.connected_peers.lock().await.get_mut(&to))
             .for_each(|out| {
