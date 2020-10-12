@@ -47,6 +47,13 @@ impl<R: Display, N> Display for FlatRef<R, N> {
 /// A representation of git reference that is under `refs/namespace/<namespace>`
 pub type NamespacedRef<N> = Reference<Namespace, PeerId, N>;
 
+impl<N> NamespacedRef<N> {
+    /// Get the [`Namespace`] for this reference.
+    pub fn namespace(&self) -> &Namespace {
+        &self._namespace
+    }
+}
+
 impl<N, R: Display> Display for Reference<Namespace, R, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "refs/namespaces/{}/refs/", self._namespace)?;
