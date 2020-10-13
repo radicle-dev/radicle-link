@@ -48,9 +48,6 @@ pub enum Error {
     #[error("supplied user entity is not signed by the local key")]
     NotSignedBySelf,
 
-    #[error("configuration key {config_key} is not set")]
-    Unset { config_key: &'static str },
-
     #[error(transparent)]
     PeerId(#[from] peer::conversion::Error),
 
@@ -260,12 +257,7 @@ mod tests {
         let config = setup(&*ALICE_KEY);
 
         assert_eq!(config.peer_id().unwrap(), *ALICE_PEER_ID);
-        assert_matches!(
-            config.user(),
-            Err(Error::Unset {
-                config_key: CONFIG_RAD_SELF
-            })
-        )
+        assert!(config.user().unwrap().is_none())
     }
 
     #[test]
