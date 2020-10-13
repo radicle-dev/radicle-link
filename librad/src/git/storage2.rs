@@ -22,27 +22,28 @@ use thiserror::Error;
 use crate::{
     git::{
         ext::{self, is_not_found_err},
-        types::{Multiple, Namespace2, Reference, Single},
+        types::{reference, Multiple, Namespace2, Reference, Single},
     },
-    identities,
-    internal::result::ResultExt as _,
     keys,
     paths::Paths,
     peer::PeerId,
     signer::Signer,
 };
 
-mod config;
+pub mod config;
 
 use config::Config;
 
 // FIXME: should be at the crate root
-pub type Urn = identities::git::Urn;
+pub use crate::identities::git::Urn;
 
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("signer key does not match the key used at initialisation")]
     SignerKeyMismatch,
+
+    #[error("malformed URN")]
+    Ref(#[from] reference::FromUrnError),
 
     #[error(transparent)]
     Config(#[from] config::Error),
@@ -51,24 +52,33 @@ pub enum Error {
     Git(#[from] git2::Error),
 }
 
-pub struct Storage {
+pub struct Storage<S> {
     backend: git2::Repository,
     peer_id: PeerId,
+    signer: S,
 }
 
-impl Storage {
-    pub fn open(paths: &Paths) -> Result<Self, Error> {
+impl<S> Storage<S>
+where
+    S: Signer,
+    S::Error: keys::SignError,
+{
+    pub fn open(paths: &Paths, signer: S) -> Result<Self, Error> {
         let backend = git2::Repository::open_bare(paths.git_dir())?;
         let peer_id = Config::try_from(&backend)?.peer_id()?;
 
-        Ok(Self { backend, peer_id })
+        if peer_id != PeerId::from_signer(&signer) {
+            return Err(Error::SignerKeyMismatch);
+        }
+
+        Ok(Self {
+            backend,
+            peer_id,
+            signer,
+        })
     }
 
-    pub fn init<S>(paths: &Paths, signer: &S) -> Result<Self, Error>
-    where
-        S: Signer,
-        S::Error: keys::SignError,
-    {
+    pub fn init(paths: &Paths, signer: S) -> Result<Self, Error> {
         let mut backend = git2::Repository::init_opts(
             paths.git_dir(),
             git2::RepositoryInitOptions::new()
@@ -76,19 +86,22 @@ impl Storage {
                 .no_reinit(true)
                 .external_template(false),
         )?;
-        Config::init(&mut backend, signer, None)?;
-        let peer_id = PeerId::from_signer(signer);
+        Config::init(&mut backend, &signer, None)?;
+        let peer_id = PeerId::from_signer(&signer);
 
-        Ok(Self { backend, peer_id })
+        Ok(Self {
+            backend,
+            peer_id,
+            signer,
+        })
     }
 
-    pub fn open_or_init<S>(paths: &Paths, signer: &S) -> Result<Self, Error>
+    pub fn open_or_init(paths: &Paths, signer: S) -> Result<Self, Error>
     where
-        S: Signer,
-        S::Error: keys::SignError,
+        S: Clone,
     {
-        let peer_id = PeerId::from_signer(signer);
-        match Self::open(paths) {
+        let peer_id = PeerId::from_signer(&signer);
+        match Self::open(paths, signer.clone()) {
             Err(Error::Git(e)) if is_not_found_err(&e) => Self::init(paths, signer),
             Err(e) => Err(e),
             Ok(this) if this.peer_id != peer_id => Err(Error::SignerKeyMismatch),
@@ -102,21 +115,7 @@ impl Storage {
     }
 
     pub fn has_urn(&self, urn: &Urn) -> Result<bool, Error> {
-        let namespace = Namespace2::from(urn);
-        let branch = {
-            let path = match &urn.path {
-                Some(refl) => refl.as_str(),
-                None => "rad/id",
-            };
-            path.strip_prefix("refs/").unwrap_or(path)
-        };
-
-        // TODO: implement in terms of `self::has_ref` -- can't construct a
-        // `Reference` from here at the moment
-        self.backend
-            .find_reference(&format!("refs/namespaces/{}/refs/{}", namespace, branch))
-            .map(|_| true)
-            .or_matches(is_not_found_err, || Ok(false))
+        self.has_ref(&Reference::try_from(urn)?)
     }
 
     pub fn has_ref<T>(&self, reference: &Reference<Namespace2, PeerId, T>) -> Result<bool, Error> {
@@ -126,6 +125,7 @@ impl Storage {
             .names()
             .filter_map(Result::ok)
             .count();
+
         Ok(found > 0)
     }
 
@@ -192,5 +192,21 @@ impl Storage {
         reference: &Reference<Namespace2, PeerId, Multiple>,
     ) -> Result<ext::References<'a>, Error> {
         Ok(reference.references(&self.backend)?)
+    }
+
+    pub fn config(&self) -> Result<Config, Error> {
+        Ok(Config::try_from(&self.backend)?)
+    }
+
+    pub(super) fn signer(&self) -> &S {
+        &self.signer
+    }
+
+    pub(super) fn identities<'a, T: 'a>(&'a self) -> crate::identities::git::Git<'a, T> {
+        crate::identities::git::Git::new(self.as_raw())
+    }
+
+    pub(super) fn as_raw(&self) -> &git2::Repository {
+        &self.backend
     }
 }

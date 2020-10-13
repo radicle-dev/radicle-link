@@ -100,7 +100,10 @@ impl Config {
             _ => this.set_peer_id(&peer_id)?,
         }
 
-        this.set_user(user.into())?;
+        match user.into() {
+            Some(user) => this.set_user(user),
+            None => this.set_user_info("anonymous"),
+        }?;
 
         Ok(this)
     }
@@ -159,10 +162,12 @@ impl Config {
         U: Into<Option<VerifiedUser>>,
     {
         match user.into() {
-            None => self
-                .inner
-                .remove(CONFIG_RAD_SELF)
-                .or_matches(is_not_found_err, || Ok(())),
+            None => {
+                self.inner
+                    .remove(CONFIG_RAD_SELF)
+                    .or_matches::<Error, _, _>(is_not_found_err, || Ok(()))?;
+                self.set_user_info("anonymous")
+            },
 
             Some(user) => {
                 self.guard_user_valid(&user)?;
@@ -186,17 +191,13 @@ impl Config {
         }
     }
 
-    pub fn user(&self) -> Result<Urn, Error> {
-        let urn = self
-            .inner
+    pub fn user(&self) -> Result<Option<Urn>, Error> {
+        self.inner
             .get_string(CONFIG_RAD_SELF)
-            .or_matches(is_not_found_err, || {
-                Err(Error::Unset {
-                    config_key: CONFIG_RAD_SELF,
-                })
-            })?;
-
-        urn.parse().map_err(Error::from)
+            .map(Some)
+            .or_matches::<Error, _, _>(is_not_found_err, || Ok(None))?
+            .map(|urn| urn.parse().map_err(Error::from))
+            .transpose()
     }
 }
 
@@ -299,15 +300,10 @@ mod tests {
         let alice_urn = alice.urn();
 
         config.set_user(alice).unwrap();
-        assert_eq!(alice_urn, config.user().unwrap());
+        assert_eq!(Some(alice_urn), config.user().unwrap());
 
         config.set_user(None).unwrap();
-        assert_matches!(
-            config.user(),
-            Err(Error::Unset {
-                config_key: CONFIG_RAD_SELF
-            })
-        )
+        assert!(config.user().unwrap().is_none())
     }
 
     #[test]

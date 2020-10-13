@@ -195,6 +195,12 @@ impl Deref for RefLike {
     }
 }
 
+impl AsRef<Path> for RefLike {
+    fn as_ref(&self) -> &Path {
+        self
+    }
+}
+
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum InvalidRefLike {

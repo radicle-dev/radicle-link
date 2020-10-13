@@ -16,13 +16,21 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    convert::TryFrom,
     fmt::{self, Display},
     marker::PhantomData,
 };
 
 use multihash::Multihash;
+use thiserror::Error;
 
-use crate::{git::ext, hash::Hash, identities, uri::RadUrn};
+use crate::{
+    git::ext,
+    hash::Hash,
+    identities::{self, urn},
+    peer::{self, PeerId},
+    uri::RadUrn,
+};
 
 use super::{
     existential::{SomeNamespace, SomeReference},
@@ -30,6 +38,8 @@ use super::{
     Refspec,
     SymbolicRef,
 };
+
+use identities::git::Urn;
 
 /// Type witness for a [`Reference`] that should point to a single reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,14 +65,14 @@ impl From<git2::Oid> for Namespace2 {
     }
 }
 
-impl From<identities::git::Urn> for Namespace2 {
-    fn from(urn: identities::git::Urn) -> Self {
+impl From<Urn> for Namespace2 {
+    fn from(urn: Urn) -> Self {
         Self::from(urn.id)
     }
 }
 
-impl From<&identities::git::Urn> for Namespace2 {
-    fn from(urn: &identities::git::Urn) -> Self {
+impl From<&Urn> for Namespace2 {
+    fn from(urn: &Urn) -> Self {
         Self::from(urn.id)
     }
 }
@@ -80,6 +90,18 @@ impl Display for Namespace2 {
 pub enum RefsCategory {
     Heads,
     Rad,
+    Tags,
+}
+
+impl RefsCategory {
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "heads" => Some(Self::Heads),
+            "rad" => Some(Self::Rad),
+            "tags" => Some(Self::Tags),
+            _ => None,
+        }
+    }
 }
 
 impl Display for RefsCategory {
@@ -87,6 +109,7 @@ impl Display for RefsCategory {
         match self {
             Self::Heads => f.write_str("heads"),
             Self::Rad => f.write_str("rad"),
+            Self::Tags => f.write_str("tags"),
         }
     }
 }
@@ -248,6 +271,19 @@ impl<N, R> Reference<N, R, Single> {
         repo.find_reference(&self.to_string())
     }
 
+    pub fn create<'a>(
+        &self,
+        repo: &'a git2::Repository,
+        target: git2::Oid,
+        force: super::Force,
+        log_message: &str,
+    ) -> Result<git2::Reference<'a>, git2::Error>
+    where
+        Self: ToString,
+    {
+        repo.reference(&self.to_string(), target, force.as_bool(), log_message)
+    }
+
     /// Create a [`SymbolicRef`] of the `self` parameter where the `source`
     /// parameter will be the newly created reference.
     ///
@@ -373,5 +409,60 @@ where
 {
     fn into(self) -> ext::blob::Branch<'a> {
         ext::blob::Branch::from(self.to_string())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum FromUrnError {
+    #[error("missing {0}")]
+    Missing(&'static str),
+
+    #[error("early eof")]
+    Eof,
+
+    #[error(transparent)]
+    PeerId(#[from] peer::conversion::Error),
+}
+
+impl TryFrom<&Urn> for Reference<Namespace2, PeerId, Single> {
+    type Error = FromUrnError;
+
+    fn try_from(urn: &Urn) -> Result<Self, Self::Error> {
+        let namespace = Namespace2::from(urn);
+        let path = urn.path.as_ref().unwrap_or(&urn::DEFAULT_PATH);
+        let mut iter = path
+            .iter()
+            .map(|x| x.to_str().expect("RefLike ensures utf8"))
+            .skip_while(|x| x == &"refs");
+
+        match iter.next() {
+            Some("remotes") => {
+                let remote = Some(
+                    iter.next()
+                        .ok_or(FromUrnError::Missing("remote peer id"))?
+                        .parse()?,
+                );
+
+                iter.next()
+                    .map(|x| Self {
+                        remote,
+                        category: RefsCategory::parse(x).unwrap_or(RefsCategory::Heads),
+                        name: iter.collect(),
+                        _namespace: namespace,
+                        _cardinality: PhantomData,
+                    })
+                    .ok_or(FromUrnError::Eof)
+            },
+
+            Some(x) => Ok(Self {
+                remote: None,
+                category: RefsCategory::parse(x).unwrap_or(RefsCategory::Heads),
+                name: iter.collect(),
+                _namespace: namespace,
+                _cardinality: PhantomData,
+            }),
+
+            None => Err(FromUrnError::Eof),
+        }
     }
 }
