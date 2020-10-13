@@ -22,11 +22,12 @@ use std::{
 
 use thiserror::Error;
 
+use super::common;
 use crate::{
     git::{
         ext::is_not_found_err,
         storage2::{self, Storage},
-        types::{reference, Force, Namespace2, Reference},
+        types::{reference, Reference},
     },
     identities::{
         self,
@@ -117,12 +118,7 @@ where
     let user = identities(storage).create(payload.into(), delegations, storage.signer())?;
     let urn = user.urn();
 
-    Reference::<_, PeerId, _>::rad_id(Namespace2::from(&urn)).create(
-        storage.as_raw(),
-        *user.content_id,
-        Force::False,
-        "initialised",
-    )?;
+    common::IdRef::from(&urn).create(storage, user.content_id)?;
 
     Ok(user)
 }
@@ -141,12 +137,7 @@ where
     let prev = Verifying::from(prev).signed()?;
     let next = identities(storage).update(prev, payload, delegations, storage.signer())?;
 
-    Reference::<_, PeerId, _>::rad_id(Namespace2::from(urn)).create(
-        storage.as_raw(),
-        *next.content_id,
-        Force::True,
-        "update",
-    )?;
+    common::IdRef::from(urn).update(storage, next.content_id, "update")?;
 
     Ok(next)
 }
@@ -175,12 +166,7 @@ where
     let theirs = Verifying::from(theirs).signed()?;
     let next = identities(storage).update_from(ours, theirs, storage.signer())?;
 
-    Reference::<_, PeerId, _>::rad_id(Namespace2::from(urn)).create(
-        storage.as_raw(),
-        *next.content_id,
-        Force::True,
-        &format!("merge from {}", from),
-    )?;
+    common::IdRef::from(urn).update(storage, next.content_id, &format!("merge from {}", from))?;
 
     Ok(next)
 }

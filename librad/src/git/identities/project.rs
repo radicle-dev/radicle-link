@@ -20,13 +20,15 @@ use std::{
     path::Path,
 };
 
+use either::Either;
 use thiserror::Error;
 
+use super::common;
 use crate::{
     git::{
         ext::is_not_found_err,
         storage2::{self, Storage},
-        types::{reference, Force, Namespace2, Reference},
+        types::{reference, Force, Namespace2, Reference, SymbolicRef2},
     },
     identities::{
         self,
@@ -131,14 +133,8 @@ where
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     let project = identities(storage).create(payload.into(), delegations, storage.signer())?;
-    let urn = project.urn();
 
-    Reference::<_, PeerId, _>::rad_id(Namespace2::from(&urn)).create(
-        storage.as_raw(),
-        *project.content_id,
-        Force::False,
-        "initialised",
-    )?;
+    Refs::Create(&project).apply(storage)?;
 
     Ok(project)
 }
@@ -153,16 +149,13 @@ where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
+    let delegations = delegations.into();
+
     let prev = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let prev = Verifying::from(prev).signed()?;
-    let next = identities(storage).update(prev, payload, delegations, storage.signer())?;
+    let next = identities(storage).update(prev, payload, delegations.clone(), storage.signer())?;
 
-    Reference::<_, PeerId, _>::rad_id(Namespace2::from(urn)).create(
-        storage.as_raw(),
-        *next.content_id,
-        Force::True,
-        "update",
-    )?;
+    Refs::Update(&next, "update").apply(storage)?;
 
     Ok(next)
 }
@@ -191,14 +184,60 @@ where
     let theirs = Verifying::from(theirs).signed()?;
     let next = identities(storage).update_from(ours, theirs, storage.signer())?;
 
-    Reference::<_, PeerId, _>::rad_id(Namespace2::from(urn)).create(
-        storage.as_raw(),
-        *next.content_id,
-        Force::True,
-        &format!("merge from {}", from),
-    )?;
+    Refs::Update(&next, &format!("merge from {}", from)).apply(storage)?;
 
     Ok(next)
+}
+
+enum Refs<'a> {
+    Create(&'a Project),
+    Update(&'a Project, &'a str),
+}
+
+impl<'a> Refs<'a> {
+    pub fn apply<S>(&self, storage: &Storage<S>) -> Result<(), Error<S::Error>>
+    where
+        S: Signer,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
+        for symref in self.delegates() {
+            symref.create(storage.as_raw())?;
+        }
+        match self {
+            Self::Create(project) => {
+                common::IdRef::from(&project.urn()).create(storage, project.content_id)
+            },
+            Self::Update(project, msg) => {
+                common::IdRef::from(&project.urn()).update(storage, project.content_id, msg)
+            },
+        }?;
+
+        Ok(())
+    }
+
+    fn project(&self) -> &Project {
+        match self {
+            Self::Create(project) => project,
+            Self::Update(project, _) => project,
+        }
+    }
+
+    fn delegates(&'a self) -> impl Iterator<Item = SymbolicRef2<PeerId>> + 'a {
+        let source = self.project().urn();
+        (&self.project().doc.delegations)
+            .into_iter()
+            .filter_map(Either::right)
+            .map(move |id| {
+                let urn = id.urn();
+                let symref: SymbolicRef2<PeerId> = SymbolicRef2 {
+                    source: Reference::rad_delegate(Namespace2::from(&source).into(), &urn),
+                    target: Reference::rad_id(Namespace2::from(&urn).into()),
+                    force: Force::True,
+                };
+
+                symref
+            })
+    }
 }
 
 fn identities<S>(storage: &Storage<S>) -> Identities<Project>

@@ -22,7 +22,7 @@ use std::{
 
 use either::Either;
 
-use super::reference::{Multiple, Namespace, Reference, Single};
+use super::reference::{Multiple, Namespace, Namespace2, Reference, Single};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SomeNamespace(Either<PhantomData<!>, Namespace>);
@@ -35,6 +35,21 @@ impl From<PhantomData<!>> for SomeNamespace {
 
 impl From<Namespace> for SomeNamespace {
     fn from(other: Namespace) -> Self {
+        Self(Either::Right(other))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SomeNamespace2(Either<PhantomData<!>, Namespace2>);
+
+impl From<PhantomData<!>> for SomeNamespace2 {
+    fn from(_: PhantomData<!>) -> Self {
+        Self(Either::Left(PhantomData))
+    }
+}
+
+impl From<Namespace2> for SomeNamespace2 {
+    fn from(other: Namespace2) -> Self {
         Self(Either::Right(other))
     }
 }
@@ -69,6 +84,18 @@ impl<N: Clone, R: Clone> Reference<SomeNamespace, R, N> {
     }
 }
 
+impl<N: Clone, R: Clone> Reference<SomeNamespace2, R, N> {
+    fn sequence(&self) -> Either<Reference<PhantomData<!>, R, N>, Reference<Namespace2, R, N>> {
+        match &self._namespace.0 {
+            Either::Left(_) => Either::Left(self.clone().with_namespace(PhantomData)),
+
+            Either::Right(namespace) => {
+                Either::Right(self.clone().with_namespace(namespace.clone()))
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SomeReference<R> {
     Single(Reference<SomeNamespace, R, Single>),
@@ -76,6 +103,15 @@ pub enum SomeReference<R> {
 }
 
 impl<N: Clone, R: Clone + Display> Display for Reference<SomeNamespace, R, N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.sequence() {
+            Either::Left(reference) => write!(f, "{}", reference),
+            Either::Right(reference) => write!(f, "{}", reference),
+        }
+    }
+}
+
+impl<N: Clone, R: Clone + Display> Display for Reference<SomeNamespace2, R, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.sequence() {
             Either::Left(reference) => write!(f, "{}", reference),

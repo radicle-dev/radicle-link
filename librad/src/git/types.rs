@@ -27,7 +27,7 @@ pub mod existential;
 pub mod reference;
 pub mod remote;
 
-pub use existential::{SomeNamespace, SomeReference};
+pub use existential::{SomeNamespace, SomeNamespace2, SomeReference};
 pub use reference::{Multiple, Namespace, Namespace2, Reference, RefsCategory, Single};
 
 /// A representation of git reference that is either under:
@@ -100,6 +100,44 @@ pub struct SymbolicRef<R> {
 }
 
 impl<R> SymbolicRef<R> {
+    /// Create a symbolic reference of `target`, where the `source` is the newly
+    /// created reference.
+    ///
+    /// # Errors
+    ///
+    ///   * If the `target` does not exist we won't create the symbolic
+    ///     reference and we error early.
+    ///   * If we could not create the new symbolic reference since the name
+    ///     already exists. Note that this will not be the case if `Force::True`
+    ///     is passed.
+    pub fn create<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error>
+    where
+        R: Display + Clone,
+    {
+        let source = self.source.to_string();
+        let target = self.target.to_string();
+
+        let sym_log_msg = &format!("creating symbolic ref {} -> {}", source, target);
+        tracing::info!("{}", sym_log_msg);
+
+        repo.find_reference(&target).and_then(|_| {
+            repo.reference_symbolic(&source, &target, self.force.as_bool(), sym_log_msg)
+        })
+    }
+}
+
+/// The data for creating a symbolic reference in a git repository.
+pub struct SymbolicRef2<R> {
+    /// The new symbolic reference.
+    pub source: Reference<SomeNamespace2, R, Single>,
+    /// The reference that already exists and we want to create symbolic
+    /// reference of.
+    pub target: Reference<SomeNamespace2, R, Single>,
+    /// Whether we should overwrite any pre-existing `source`.
+    pub force: Force,
+}
+
+impl<R> SymbolicRef2<R> {
     /// Create a symbolic reference of `target`, where the `source` is the newly
     /// created reference.
     ///

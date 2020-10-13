@@ -51,6 +51,7 @@ pub struct Multiple;
 
 pub type Namespace = Hash;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Namespace2(ext::Oid);
 
 impl From<ext::Oid> for Namespace2 {
@@ -315,6 +316,16 @@ impl<N, R> Reference<N, R, Single> {
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/rad/ids/<id>`
     pub fn rad_certifier(namespace: N, urn: &RadUrn) -> Self {
+        Self {
+            remote: None,
+            category: RefsCategory::Rad,
+            name: format!("ids/{}", urn.id),
+            _namespace: namespace,
+            _cardinality: PhantomData,
+        }
+    }
+
+    pub fn rad_delegate(namespace: N, urn: &Urn) -> Self {
         Self {
             remote: None,
             category: RefsCategory::Rad,
