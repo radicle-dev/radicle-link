@@ -153,7 +153,7 @@ where
 
     let prev = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let prev = Verifying::from(prev).signed()?;
-    let next = identities(storage).update(prev, payload, delegations.clone(), storage.signer())?;
+    let next = identities(storage).update(prev, payload, delegations, storage.signer())?;
 
     Refs::Update(&next, "update").apply(storage)?;
 

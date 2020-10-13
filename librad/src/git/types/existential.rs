@@ -88,10 +88,7 @@ impl<N: Clone, R: Clone> Reference<SomeNamespace2, R, N> {
     fn sequence(&self) -> Either<Reference<PhantomData<!>, R, N>, Reference<Namespace2, R, N>> {
         match &self._namespace.0 {
             Either::Left(_) => Either::Left(self.clone().with_namespace(PhantomData)),
-
-            Either::Right(namespace) => {
-                Either::Right(self.clone().with_namespace(namespace.clone()))
-            },
+            Either::Right(namespace) => Either::Right(self.clone().with_namespace(*namespace)),
         }
     }
 }
