@@ -83,30 +83,32 @@ pub type VerificationError = generic::error::Verify<Revision, ContentId>;
 pub type IndirectDelegation = delegation::Indirect<UserPayload, Revision, ContentId>;
 
 #[derive(Clone)]
-pub struct Git<'a, T> {
+pub struct Identities<'a, T> {
     repo: &'a git2::Repository,
     _marker: PhantomData<T>,
 }
 
-impl<'a, T: 'a> Git<'a, T> {
-    pub fn new(repo: &'a git2::Repository) -> Self {
+impl<'a, T: 'a> From<&'a git2::Repository> for Identities<'a, T> {
+    fn from(repo: &'a git2::Repository) -> Self {
         Self {
             repo,
             _marker: PhantomData,
         }
     }
+}
 
+impl<'a, T: 'a> Identities<'a, T> {
     /// Convenience to specialise `T` to [`User`].
-    pub fn as_user(&self) -> Git<'_, User> {
-        Git {
+    pub fn as_user(&self) -> Identities<'_, User> {
+        Identities {
             repo: self.repo,
             _marker: PhantomData,
         }
     }
 
     /// Convenience to specialise `T` to [`Project`].
-    pub fn as_project(&self) -> Git<'_, Project> {
-        Git {
+    pub fn as_project(&self) -> Identities<'_, Project> {
+        Identities {
             repo: self.repo,
             _marker: PhantomData,
         }
@@ -206,7 +208,7 @@ impl<'a, T: 'a> Git<'a, T> {
     }
 }
 
-impl<'a, T: 'a> Git<'a, Identity<T>>
+impl<'a, T: 'a> Identities<'a, Identity<T>>
 where
     T: Delegations + generic::Replaces<Revision = Revision>,
     T::Error: std::error::Error + 'static,
@@ -389,7 +391,7 @@ where
     }
 }
 
-impl<'a> Git<'a, User> {
+impl<'a> Identities<'a, User> {
     /// Attempt to read a [`User`] from commit `oid`, without verification.
     pub fn get(&self, oid: git2::Oid) -> Result<User, error::Load> {
         self.get_generic(oid)
@@ -512,7 +514,7 @@ impl<'a> Git<'a, User> {
     }
 }
 
-impl<'a> Git<'a, Project> {
+impl<'a> Identities<'a, Project> {
     /// Attempt to read a [`Project`] from commit `oid`, without verification.
     pub fn get(&self, oid: git2::Oid) -> Result<Project, error::Load> {
         self.get_generic(oid)

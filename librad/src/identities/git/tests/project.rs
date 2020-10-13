@@ -43,7 +43,7 @@ lazy_static! {
 fn create() -> anyhow::Result<()> {
     let repo = common::repo()?;
     {
-        let dylan = common::Device::new(&*DYLAN, Git::new(&repo))?;
+        let dylan = common::Device::new(&*DYLAN, Identities::from(&*repo))?;
         common::Project::new(dylan.clone())?.assert_verifies(|urn| {
             if urn == dylan.current().urn() {
                 Ok(*dylan.current().content_id)
@@ -58,8 +58,8 @@ fn create() -> anyhow::Result<()> {
 fn update() -> anyhow::Result<()> {
     let repo = common::repo()?;
     {
-        let cheyenne = common::Device::new(&*CHEYENNE_DESKTOP, Git::new(&repo))?;
-        let dylan = common::Device::new(&*DYLAN, Git::new(&repo))?;
+        let cheyenne = common::Device::new(&*CHEYENNE_DESKTOP, Identities::from(&*repo))?;
+        let dylan = common::Device::new(&*DYLAN, Identities::from(&*repo))?;
 
         let heads = current_heads_from(vec![&cheyenne, &dylan]);
 
@@ -86,14 +86,14 @@ fn revoke() -> anyhow::Result<()> {
     {
         let cheyenne = common::Device::new_with(
             &*CHEYENNE_DESKTOP,
-            Git::new(&repo),
+            Identities::from(&*repo),
             payload::User {
                 name: "cheyenne".into(),
             },
         )?;
         let dylan = common::Device::new_with(
             &*DYLAN,
-            Git::new(&repo),
+            Identities::from(&*repo),
             payload::User {
                 name: "dylan".into(),
             },
@@ -142,7 +142,7 @@ fn revoke_indirect() -> anyhow::Result<()> {
     {
         let cheyenne_desktop = common::Device::new_with(
             &*CHEYENNE_DESKTOP,
-            Git::new(&repo),
+            Identities::from(&*repo),
             payload::User {
                 name: "cheyenne".into(),
             },
@@ -159,7 +159,7 @@ fn revoke_indirect() -> anyhow::Result<()> {
 
         let dylan = common::Device::new_with(
             &*DYLAN,
-            Git::new(&repo),
+            Identities::from(&*repo),
             payload::User {
                 name: "dylan".into(),
             },
@@ -210,7 +210,7 @@ fn double_vote() -> anyhow::Result<()> {
     {
         let cheyenne_desktop = common::Device::new_with(
             &*CHEYENNE_DESKTOP,
-            Git::new(&repo),
+            Identities::from(&*repo),
             payload::User {
                 name: "cheyenne".into(),
             },
@@ -227,7 +227,7 @@ fn double_vote() -> anyhow::Result<()> {
 
         let dylan = common::Device::new_with(
             &*DYLAN,
-            Git::new(&repo),
+            Identities::from(&*repo),
             payload::User {
                 name: "dylan".into(),
             },

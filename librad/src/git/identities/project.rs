@@ -194,7 +194,7 @@ where
     Ok(next)
 }
 
-fn identities<S>(storage: &Storage<S>) -> identities::git::Git<Project>
+fn identities<S>(storage: &Storage<S>) -> identities::git::Identities<Project>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,

@@ -45,12 +45,12 @@ pub(super) fn repo() -> anyhow::Result<TmpRepo> {
 #[derive(Clone)]
 pub(super) struct Device<'a> {
     key: &'a SecretKey,
-    git: Git<'a, User>,
+    git: Identities<'a, User>,
     cur: User,
 }
 
 impl<'a> Device<'a> {
-    pub fn new(key: &'a SecretKey, git: Git<'a, User>) -> anyhow::Result<Self> {
+    pub fn new(key: &'a SecretKey, git: Identities<'a, User>) -> anyhow::Result<Self> {
         Self::new_with(
             key,
             git,
@@ -62,7 +62,7 @@ impl<'a> Device<'a> {
 
     pub fn new_with(
         key: &'a SecretKey,
-        git: Git<'a, User>,
+        git: Identities<'a, User>,
         payload: payload::User,
     ) -> anyhow::Result<Self> {
         let cur = git.create(
@@ -82,7 +82,7 @@ impl<'a> Device<'a> {
         Ok(Self {
             key,
             cur,
-            git: Git::new(other.git.repo),
+            git: Identities::from(other.git.repo),
         })
     }
 

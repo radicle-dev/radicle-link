@@ -26,7 +26,7 @@ use keystore::sign;
 use crate::{
     git::ext::{self, is_not_found_err},
     identities::{
-        git::{Urn, VerifiedUser},
+        git::{Identities, Urn, VerifiedUser},
         urn,
     },
     internal::result::ResultExt,
@@ -284,7 +284,7 @@ mod tests {
         let mut config = setup(&*ALICE_KEY);
 
         let alice = {
-            let ids = identities::git::Git::<User>::new(&config.repo);
+            let ids = Identities::<User>::from(&config.repo);
             let alice = ids
                 .create(
                     identities::payload::User {
@@ -311,7 +311,7 @@ mod tests {
         let config = setup(&*ALICE_KEY);
 
         let alice = {
-            let ids = identities::git::Git::<User>::new(&config.repo);
+            let ids = Identities::<User>::from(&config.repo);
             let alice = ids
                 .create(
                     identities::payload::User {
@@ -333,7 +333,7 @@ mod tests {
         let config = setup(&*ALICE_KEY);
 
         let bob = {
-            let ids = identities::git::Git::<User>::new(&config.repo);
+            let ids = Identities::<User>::from(&config.repo);
             let bob = ids
                 .create(
                     identities::payload::User { name: "bob".into() }.into(),

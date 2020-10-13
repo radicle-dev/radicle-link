@@ -24,6 +24,7 @@ use crate::{
         ext::{self, is_not_found_err},
         types::{reference, Multiple, Namespace2, Reference, Single},
     },
+    identities::git::Identities,
     keys,
     paths::Paths,
     peer::PeerId,
@@ -202,8 +203,8 @@ where
         &self.signer
     }
 
-    pub(super) fn identities<'a, T: 'a>(&'a self) -> crate::identities::git::Git<'a, T> {
-        crate::identities::git::Git::new(self.as_raw())
+    pub(super) fn identities<'a, T: 'a>(&'a self) -> Identities<'a, T> {
+        Identities::from(self.as_raw())
     }
 
     pub(super) fn as_raw(&self) -> &git2::Repository {
