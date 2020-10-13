@@ -17,6 +17,7 @@
 
 use std::{
     convert::TryFrom,
+    iter::FromIterator,
     ops::Deref,
     path::{Path, PathBuf},
     str::{self, FromStr},
@@ -35,13 +36,18 @@ pub struct References<'a> {
     inner: Vec<git2::References<'a>>,
 }
 
-impl<'a> References<'a> {
-    pub fn new(refs: impl IntoIterator<Item = git2::References<'a>>) -> Self {
+impl<'a> FromIterator<git2::References<'a>> for References<'a> {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = git2::References<'a>>,
+    {
         Self {
-            inner: refs.into_iter().collect(),
+            inner: iter.into_iter().collect(),
         }
     }
+}
 
+impl<'a> References<'a> {
     pub fn from_globs(
         repo: &'a git2::Repository,
         globs: impl IntoIterator<Item = impl AsRef<str>>,
@@ -57,7 +63,7 @@ impl<'a> References<'a> {
             iters.push(iter);
         }
 
-        Ok(Self::new(iters))
+        Ok(Self::from_iter(iters))
     }
 
     pub fn names<'b>(&'b mut self) -> ReferenceNames<'a, 'b> {
