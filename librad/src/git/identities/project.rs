@@ -30,7 +30,14 @@ use crate::{
     },
     identities::{
         self,
-        git::{IndirectDelegation, Project, VerificationError, VerifiedProject, Verifying},
+        git::{
+            Identities,
+            IndirectDelegation,
+            Project,
+            VerificationError,
+            VerifiedProject,
+            Verifying,
+        },
         urn,
     },
     peer::PeerId,
@@ -194,7 +201,7 @@ where
     Ok(next)
 }
 
-fn identities<S>(storage: &Storage<S>) -> identities::git::Identities<Project>
+fn identities<S>(storage: &Storage<S>) -> Identities<Project>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
