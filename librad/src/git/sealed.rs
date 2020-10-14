@@ -15,16 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod ext;
-pub mod include;
-pub mod local;
-pub mod p2p;
-pub mod refs;
-pub mod repo;
-pub mod storage;
-pub mod trailer;
-pub mod types;
-
-pub(crate) mod header;
-
-mod sealed;
+/// Constraint for [sealed traits] under the `git` module hierarchy.
+///
+/// [sealed traits]: https://rust-lang.github.io/api-guidelines/future-proofing.html#sealed-traits-protect-against-downstream-implementations-c-sealed
+pub trait Sealed {}

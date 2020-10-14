@@ -33,6 +33,7 @@ use thiserror::Error;
 use crate::{
     git::{
         ext::{
+            self,
             blob::{self, Blob},
             is_exists_err,
             is_not_found_err,
@@ -42,7 +43,7 @@ use crate::{
         p2p::url::{GitUrl, GitUrlRef},
         refs::{self, Refs},
         repo::Repo,
-        types::{Force, Multiple, NamespacedRef, Single},
+        types::{namespace, Force, Multiple, NamespacedRef, Single},
     },
     hash::Hash,
     internal::{
@@ -106,7 +107,7 @@ pub enum Error {
     NotSignedBySelf,
 
     #[error("local key certifier not found: {0}")]
-    NoSelf(NamespacedRef<Single>),
+    NoSelf(NamespacedRef<namespace::Legacy, Single>),
 
     #[error("missing certifier {certifier} of {urn}")]
     MissingCertifier { certifier: RadUrn, urn: RadUrn },
@@ -143,6 +144,9 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] io::Error),
+
+    #[error(transparent)]
+    Refname(#[from] ext::reference::name::Error),
 }
 
 #[derive(Clone, Debug)]
@@ -304,7 +308,10 @@ impl<S: Clone> Storage<S> {
         }
     }
 
-    pub fn has_ref(&self, reference: &NamespacedRef<Single>) -> Result<bool, Error> {
+    pub fn has_ref(
+        &self,
+        reference: &NamespacedRef<namespace::Legacy, Single>,
+    ) -> Result<bool, Error> {
         self.backend
             .find_reference(&reference.to_string())
             .map(|_| true)
@@ -339,8 +346,13 @@ impl<S: Clone> Storage<S> {
         tracing::debug!(urn = %urn, "Storage::rad_signed_refs");
 
         // Collect refs/heads (our branches) at their current state
-        let heads = self.references_glob(urn, Some("refs/heads/*"))?;
-        let heads: BTreeMap<String, Oid> = heads.map(|(name, oid)| (name, Oid(oid))).collect();
+        let mut heads = self.references_glob(urn, Some("refs/heads/*"))?;
+        let heads = heads.try_fold(BTreeMap::new(), |mut acc, (name, oid)| {
+            let refname = ext::RefLike::try_from(name)?;
+            acc.insert(ext::OneLevel::from(refname), Oid(oid));
+
+            Ok::<_, Error>(acc)
+        })?;
 
         tracing::debug!(heads = ?heads);
 
@@ -387,7 +399,7 @@ impl<S: Clone> Storage<S> {
     /// Get the [`NamespacedRef`] provided, if it exists.
     pub fn reference<'a>(
         &'a self,
-        reference: &NamespacedRef<Single>,
+        reference: &NamespacedRef<namespace::Legacy, Single>,
     ) -> Result<git2::Reference<'a>, Error> {
         reference.find(&self.backend).map_err(Error::from)
     }
@@ -395,7 +407,7 @@ impl<S: Clone> Storage<S> {
     /// Get the [`NamespacedRef`]s provided, if they exist.
     pub fn references<'a>(
         &'a self,
-        reference: &NamespacedRef<Multiple>,
+        reference: &NamespacedRef<namespace::Legacy, Multiple>,
     ) -> Result<References<'a>, Error> {
         reference.references(&self.backend).map_err(Error::from)
     }

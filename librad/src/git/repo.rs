@@ -23,7 +23,7 @@ use crate::{
     git::{
         refs::Refs,
         storage::{self, RadSelfSpec, Storage},
-        types::Namespace,
+        types::namespace,
     },
     keys,
     meta::{entity::Draft, user::User},
@@ -53,7 +53,7 @@ pub struct Repo<'a, S: Clone> {
 }
 
 impl<S: Clone> Repo<'_, S> {
-    pub fn namespace(&self) -> Namespace {
+    pub fn namespace(&self) -> namespace::Legacy {
         self.urn.id.clone()
     }
 
