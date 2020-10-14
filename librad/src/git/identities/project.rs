@@ -28,7 +28,7 @@ use crate::{
     git::{
         ext::is_not_found_err,
         storage2::{self, Storage},
-        types::{reference, Force, Namespace2, Reference, SymbolicRef2},
+        types::{namespace::Namespace, reference, Force, Reference, Single, SymbolicRef},
     },
     identities::{
         self,
@@ -112,7 +112,7 @@ where
         Ok(reference) => {
             let tip = reference.peel_to_commit()?.id();
             let lookup = |urn| {
-                let refname = Reference::<_, PeerId, _>::rad_id(Namespace2::from(urn)).to_string();
+                let refname = Reference::<_, PeerId, _>::rad_id(Namespace::from(urn)).to_string();
                 storage.as_raw().refname_to_id(&refname)
             };
             Ok(Some(identities(storage).verify(tip, lookup)?))
@@ -222,20 +222,25 @@ impl<'a> Refs<'a> {
         }
     }
 
-    fn delegates(&'a self) -> impl Iterator<Item = SymbolicRef2<PeerId>> + 'a {
+    fn delegates(
+        &'a self,
+    ) -> impl Iterator<
+        Item = SymbolicRef<
+            Reference<Namespace, PeerId, Single>,
+            Reference<Namespace, PeerId, Single>,
+        >,
+    > + 'a {
         let source = self.project().urn();
         (&self.project().doc.delegations)
             .into_iter()
             .filter_map(Either::right)
             .map(move |id| {
                 let urn = id.urn();
-                let symref: SymbolicRef2<PeerId> = SymbolicRef2 {
-                    source: Reference::rad_delegate(Namespace2::from(&source).into(), &urn),
-                    target: Reference::rad_id(Namespace2::from(&urn).into()),
+                SymbolicRef {
+                    source: Reference::rad_delegate(Namespace::from(&source), &urn),
+                    target: Reference::rad_id(Namespace::from(&urn)),
                     force: Force::True,
-                };
-
-                symref
+                }
             })
     }
 }

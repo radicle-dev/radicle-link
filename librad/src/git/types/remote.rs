@@ -66,8 +66,8 @@ impl<Url> Remote<Url> {
     /// let fetch = working_copy_heads
     ///         .clone()
     ///         .refspec(monorepo_heads.clone(), Force::True)
-    ///         .into_dyn();
-    /// let push = monorepo_heads.refspec(working_copy_heads, Force::False).into_dyn();
+    ///         .boxed();
+    /// let push = monorepo_heads.refspec(working_copy_heads, Force::False).boxed();
     ///
     /// // We point the remote to `LocalUrl` which will be of the form `rad://<peer id>@<id>.git`.
     /// let url = LocalUrl::from_urn(urn, peer_id);
@@ -156,8 +156,8 @@ mod tests {
             let fetch = heads
                 .clone()
                 .refspec(namespaced_heads.clone(), Force::True)
-                .into_dyn();
-            let push = namespaced_heads.refspec(heads, Force::False).into_dyn();
+                .boxed();
+            let push = namespaced_heads.refspec(heads, Force::False).boxed();
 
 
             let mut remote = Remote::rad_remote(path.display(), fetch);
@@ -201,7 +201,7 @@ mod tests {
         let remote = Remote {
             url,
             name: name.clone(),
-            fetch_spec: Some(remotes.refspec(heads, Force::True).into_dyn()),
+            fetch_spec: Some(remotes.refspec(heads, Force::True).boxed()),
             push_specs: vec![],
         };
 

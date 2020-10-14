@@ -22,7 +22,14 @@ use thiserror::Error;
 use crate::{
     git::{
         ext::{self, is_not_found_err},
-        types::{reference, Multiple, Namespace2, Reference, Single},
+        types::{
+            namespace::{AsNamespace, Namespace},
+            reference,
+            Many,
+            NamespacedRef,
+            One,
+            Reference,
+        },
     },
     identities::git::Identities,
     keys,
@@ -119,7 +126,10 @@ where
         self.has_ref(&Reference::try_from(urn)?)
     }
 
-    pub fn has_ref<T>(&self, reference: &Reference<Namespace2, PeerId, T>) -> Result<bool, Error> {
+    pub fn has_ref<N, C>(&self, reference: &NamespacedRef<N, C>) -> Result<bool, Error>
+    where
+        N: AsNamespace,
+    {
         let found = self
             .backend
             .references_glob(&reference.to_string())?
@@ -141,7 +151,7 @@ where
 
         match self.backend.find_commit(*oid) {
             Ok(commit) => {
-                let namespace = Namespace2::from(urn);
+                let namespace = Namespace::from(urn);
                 let branch = {
                     let path = match &urn.path {
                         Some(refl) => refl.as_str(),
@@ -181,17 +191,23 @@ where
         Ok(self.backend.odb()?.exists(*oid))
     }
 
-    pub fn reference<'a>(
+    pub fn reference<'a, N>(
         &'a self,
-        reference: &Reference<Namespace2, PeerId, Single>,
-    ) -> Result<git2::Reference<'a>, Error> {
+        reference: &NamespacedRef<N, One>,
+    ) -> Result<git2::Reference<'a>, Error>
+    where
+        N: AsNamespace,
+    {
         Ok(reference.find(&self.backend)?)
     }
 
-    pub fn references<'a>(
+    pub fn references<'a, N>(
         &'a self,
-        reference: &Reference<Namespace2, PeerId, Multiple>,
-    ) -> Result<ext::References<'a>, Error> {
+        reference: &NamespacedRef<N, Many>,
+    ) -> Result<ext::References<'a>, Error>
+    where
+        N: AsNamespace,
+    {
         Ok(reference.references(&self.backend)?)
     }
 

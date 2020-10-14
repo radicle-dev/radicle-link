@@ -18,7 +18,7 @@
 use crate::{
     git::{
         storage2::Storage,
-        types::{Force, Namespace2, Reference},
+        types::{namespace::Namespace, Force, Reference},
     },
     identities::git::Urn,
     peer::PeerId,
@@ -43,7 +43,7 @@ impl<'a> IdRef<'a> {
         S: Signer,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
-        Reference::<_, PeerId, _>::rad_id(Namespace2::from(self.0))
+        Reference::<_, PeerId, _>::rad_id(Namespace::from(self.0))
             .create(
                 storage.as_raw(),
                 *target.as_ref(),
@@ -63,7 +63,7 @@ impl<'a> IdRef<'a> {
         S: Signer,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
-        Reference::<_, PeerId, _>::rad_id(Namespace2::from(self.0))
+        Reference::<_, PeerId, _>::rad_id(Namespace::from(self.0))
             .create(storage.as_raw(), *target.as_ref(), Force::True, msg)
             .and(Ok(()))
     }

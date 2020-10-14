@@ -21,21 +21,25 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::{git::refs::Refs, peer::PeerId, uri::RadUrn};
+use crate::{
+    git::{refs::Refs, sealed},
+    hash::Hash,
+    peer::PeerId,
+    uri::RadUrn,
+};
 
-pub mod existential;
+pub mod namespace;
 pub mod reference;
 pub mod remote;
 
-pub use existential::{SomeNamespace, SomeNamespace2, SomeReference};
-pub use reference::{Multiple, Namespace, Namespace2, Reference, RefsCategory, Single};
+pub use reference::{Many, Multiple, One, Reference, RefsCategory, Single};
 
 /// A representation of git reference that is either under:
 ///   * `refs/heads`
 ///   * `refs/remotes/<origin>`
-pub type FlatRef<R, N> = Reference<PhantomData<!>, R, N>;
+pub type FlatRef<R, C> = Reference<PhantomData<!>, R, C>;
 
-impl<R: Display, N> Display for FlatRef<R, N> {
+impl<R: Display, C> Display for FlatRef<R, C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.remote {
             None => write!(f, "refs/heads/{}", self.name),
@@ -45,29 +49,7 @@ impl<R: Display, N> Display for FlatRef<R, N> {
 }
 
 /// A representation of git reference that is under `refs/namespace/<namespace>`
-pub type NamespacedRef<N> = Reference<Namespace, PeerId, N>;
-
-impl<N, R: Display> Display for Reference<Namespace, R, N> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "refs/namespaces/{}/refs/", self._namespace)?;
-
-        match &self.remote {
-            None => write!(f, "{}/{}", self.category, self.name),
-            Some(remote) => write!(f, "remotes/{}/{}/{}", remote, self.category, self.name),
-        }
-    }
-}
-
-impl<N, R: Display> Display for Reference<Namespace2, R, N> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "refs/namespaces/{}/refs/", self._namespace)?;
-
-        match &self.remote {
-            None => write!(f, "{}/{}", self.category, self.name),
-            Some(remote) => write!(f, "remotes/{}/{}/{}", remote, self.category, self.name),
-        }
-    }
-}
+pub type NamespacedRef<N, C> = Reference<N, PeerId, C>;
 
 /// Whether we should force the overwriting of a reference or not.
 #[derive(Debug, Clone)]
@@ -89,17 +71,17 @@ impl Force {
 }
 
 /// The data for creating a symbolic reference in a git repository.
-pub struct SymbolicRef<R> {
+pub struct SymbolicRef<S, T> {
     /// The new symbolic reference.
-    pub source: Reference<SomeNamespace, R, Single>,
+    pub source: S,
     /// The reference that already exists and we want to create symbolic
     /// reference of.
-    pub target: Reference<SomeNamespace, R, Single>,
+    pub target: T,
     /// Whether we should overwrite any pre-existing `source`.
     pub force: Force,
 }
 
-impl<R> SymbolicRef<R> {
+impl<S, T> SymbolicRef<S, T> {
     /// Create a symbolic reference of `target`, where the `source` is the newly
     /// created reference.
     ///
@@ -112,107 +94,59 @@ impl<R> SymbolicRef<R> {
     ///     is passed.
     pub fn create<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error>
     where
-        R: Display + Clone,
+        S: Display,
+        T: Display,
     {
         let source = self.source.to_string();
         let target = self.target.to_string();
 
-        let sym_log_msg = &format!("creating symbolic ref {} -> {}", source, target);
-        tracing::info!("{}", sym_log_msg);
+        let reflog_msg = &format!("creating symbolic ref {} -> {}", source, target);
+        tracing::info!("{}", reflog_msg);
 
         repo.find_reference(&target).and_then(|_| {
-            repo.reference_symbolic(&source, &target, self.force.as_bool(), sym_log_msg)
+            repo.reference_symbolic(&source, &target, self.force.as_bool(), reflog_msg)
         })
     }
 }
 
-/// The data for creating a symbolic reference in a git repository.
-pub struct SymbolicRef2<R> {
-    /// The new symbolic reference.
-    pub source: Reference<SomeNamespace2, R, Single>,
-    /// The reference that already exists and we want to create symbolic
-    /// reference of.
-    pub target: Reference<SomeNamespace2, R, Single>,
-    /// Whether we should overwrite any pre-existing `source`.
-    pub force: Force,
-}
-
-impl<R> SymbolicRef2<R> {
-    /// Create a symbolic reference of `target`, where the `source` is the newly
-    /// created reference.
-    ///
-    /// # Errors
-    ///
-    ///   * If the `target` does not exist we won't create the symbolic
-    ///     reference and we error early.
-    ///   * If we could not create the new symbolic reference since the name
-    ///     already exists. Note that this will not be the case if `Force::True`
-    ///     is passed.
-    pub fn create<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error>
-    where
-        R: Display + Clone,
-    {
-        let source = self.source.to_string();
-        let target = self.target.to_string();
-
-        let sym_log_msg = &format!("creating symbolic ref {} -> {}", source, target);
-        tracing::info!("{}", sym_log_msg);
-
-        repo.find_reference(&target).and_then(|_| {
-            repo.reference_symbolic(&source, &target, self.force.as_bool(), sym_log_msg)
-        })
-    }
-}
-
-/// If we want to be able to use a collection of [`Refspec`]s, where the remote
-/// portions don't line up, then we need to be able to talk about them using
-/// dynamically. In Rust this can be done via `Box<dyn MyTrait>`.
-///
-/// In this case, we want to be able to turn [`Refspec`]s into `String`s. To
-/// avoid allowing anything that is `ToString` or `Display`, we opt for adding a
-/// `ToString`-like trait called `AsRefspec`.
-///
-/// **N.B.**: The only implementor of this trait should be `Refspec`. We enforce
-/// this by making `AsRefspec` a [sealed
-/// trait](https://rust-lang.github.io/api-guidelines/future-proofing.html#sealed-traits-protect-against-downstream-implementations-c-sealed).
+/// Trait object for "existential" [`Refspec`]s.
 pub trait AsRefspec: sealed::Sealed {
     fn as_refspec(&self) -> String;
 }
 
-/// A private module to protect `AsRefspec` as a sealed trait.
-mod sealed {
-    use super::Refspec;
-
-    pub trait Sealed {}
-    impl<R, L> Sealed for Refspec<R, L> {}
-}
-
-#[derive(Clone)]
-pub struct Refspec<RemoteR, LocalR> {
-    pub(crate) remote: SomeReference<RemoteR>,
-    pub(crate) local: SomeReference<LocalR>,
-    /// Indicate whether the spec should include the force flag `+`.
+pub struct Refspec<Local, Remote> {
+    pub local: Local,
+    pub remote: Remote,
     pub force: Force,
 }
 
-impl<R, L> Refspec<R, L> {
-    /// Allows to existentialise the `Refspec` into a dynamic `AsRefspec`. This
-    /// means we forget about the type parameters on `Refspec` and we can
-    /// then have a collection of `Refspec`s with differeing remotes.
-    ///
-    /// This function, while trivial, is useful for type-inference, since Rust
-    /// will get confused about what you're trying to do when you have a
-    /// `vec![]` of `Refspec`s with different remotes.
-    pub fn into_dyn(self) -> Box<dyn AsRefspec>
-    where
-        R: Display + Clone + 'static,
-        L: Display + Clone + 'static,
-    {
+impl<L, R> Refspec<L, R>
+where
+    L: Display + 'static,
+    R: Display + 'static,
+{
+    pub fn boxed(self) -> Box<dyn AsRefspec> {
         Box::new(self)
     }
 }
 
-impl<R: Display + Clone, L: Display + Clone> Display for Refspec<R, L> {
+impl<L, R> AsRefspec for Refspec<L, R>
+where
+    L: Display,
+    R: Display,
+{
+    fn as_refspec(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl<L, R> sealed::Sealed for Refspec<L, R> {}
+
+impl<L, R> Display for Refspec<L, R>
+where
+    L: Display,
+    R: Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.force.as_bool() {
             f.write_str("+")?;
@@ -221,20 +155,18 @@ impl<R: Display + Clone, L: Display + Clone> Display for Refspec<R, L> {
     }
 }
 
-impl<R: Display + Clone, L: Display + Clone> AsRefspec for Refspec<R, L> {
-    fn as_refspec(&self) -> String {
-        self.to_string()
-    }
-}
-
-impl Refspec<PeerId, PeerId> {
-    /// [`Refspec`]s for fetching `rad/refs` in namespace [`Namespace`] from
-    /// remote peer [`PeerId`], rejecting non-fast-forwards
+impl<N> Refspec<Reference<N, PeerId, Single>, Reference<N, PeerId, Single>>
+where
+    N: Clone,
+{
     pub fn rad_signed_refs<'a>(
-        namespace: Namespace,
+        namespace: N,
         remote_peer: &'a PeerId,
         tracked: impl Iterator<Item = &'a PeerId> + 'a,
-    ) -> impl Iterator<Item = Self> + 'a {
+    ) -> impl Iterator<Item = Self> + 'a
+    where
+        N: 'a,
+    {
         tracked.map(move |peer| {
             let local = Reference::rad_signed_refs(namespace.clone(), (*peer).clone());
             let remote = if peer == remote_peer {
@@ -246,15 +178,17 @@ impl Refspec<PeerId, PeerId> {
             local.refspec(remote, Force::False)
         })
     }
+}
 
+impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
     pub fn fetch_heads<'a, E>(
-        namespace: Namespace,
+        namespace: Hash,
         remote_heads: HashMap<String, git2::Oid>,
         tracked_peers: impl Iterator<Item = &'a PeerId> + 'a,
         remote_peer: &'a PeerId,
         rad_signed_refs_of: impl Fn(PeerId) -> Result<Refs, E>,
         certifiers_of: impl Fn(&PeerId) -> Result<HashSet<RadUrn>, E>,
-    ) -> Result<impl Iterator<Item = Self> + 'a, E> {
+    ) -> Result<impl Iterator<Item = Box<dyn AsRefspec>> + 'a, E> {
         // FIXME: do this in constant memory
         let mut refspecs = Vec::new();
 
@@ -282,7 +216,7 @@ impl Refspec<PeerId, PeerId> {
                                 local.clone()
                             };
 
-                            refspecs.push(local.refspec(remote, Force::True))
+                            refspecs.push(local.refspec(remote, Force::True).boxed())
                         }
                     }
                 }
@@ -300,7 +234,7 @@ impl Refspec<PeerId, PeerId> {
                     local.clone()
                 };
 
-                refspecs.push(local.refspec(remote, Force::False));
+                refspecs.push(local.refspec(remote, Force::False).boxed());
             }
 
             // Self
@@ -315,7 +249,7 @@ impl Refspec<PeerId, PeerId> {
                     local.clone()
                 };
 
-                refspecs.push(local.refspec(remote, Force::False));
+                refspecs.push(local.refspec(remote, Force::False).boxed());
             }
 
             // Certifiers
@@ -331,7 +265,7 @@ impl Refspec<PeerId, PeerId> {
                     local.clone()
                 };
 
-                refspecs.push(local.refspec(remote, Force::False));
+                refspecs.push(local.refspec(remote, Force::False).boxed());
             }
 
             // Certifier top-level identities
@@ -356,7 +290,7 @@ impl Refspec<PeerId, PeerId> {
                             local.clone()
                         };
 
-                        refspecs.push(local.refspec(remote, Force::False));
+                        refspecs.push(local.refspec(remote, Force::False).boxed());
                     }
 
                     // rad/ids/* of id
@@ -369,7 +303,7 @@ impl Refspec<PeerId, PeerId> {
                             local.clone()
                         };
 
-                        refspecs.push(local.refspec(remote, Force::False));
+                        refspecs.push(local.refspec(remote, Force::False).boxed());
                     }
                 }
             }

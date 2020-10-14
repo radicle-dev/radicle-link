@@ -77,16 +77,19 @@ impl<'a> Fetcher<'a> {
         let refspecs = [
             remote_id
                 .set_remote(remote_peer.clone())
-                .refspec(remote_id, Force::False),
+                .refspec(remote_id, Force::False)
+                .boxed(),
             remote_self
                 .set_remote(remote_peer.clone())
-                .refspec(remote_self, Force::False),
+                .refspec(remote_self, Force::False)
+                .boxed(),
             remote_certifiers
                 .set_remote(remote_peer.clone())
-                .refspec(remote_certifiers, Force::False),
+                .refspec(remote_certifiers, Force::False)
+                .boxed(),
         ]
         .iter()
-        .map(|spec| spec.to_string())
+        .map(|spec| spec.as_refspec())
         .collect::<Vec<String>>();
 
         tracing::trace!(repo.clone.refspecs = ?refspecs);
@@ -159,7 +162,7 @@ impl<'a> Fetcher<'a> {
                 rad_signed_refs_of,
                 certifiers_of,
             )?
-            .map(|spec| spec.to_string())
+            .map(|spec| spec.as_refspec())
             .collect::<Vec<String>>();
 
             tracing::debug!(refspecs = ?refspecs, "Fetching refs/heads");

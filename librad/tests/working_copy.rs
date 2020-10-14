@@ -144,7 +144,7 @@ async fn can_fetch() {
             Some(format!("{}@{}", alice.name(), peer1.peer_id())),
         );
 
-        let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).into_dyn()));
+        let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
 
         let mut remote_callbacks = git2::RemoteCallbacks::new();
         remote_callbacks.push_update_reference(|refname, maybe_error| match maybe_error {
