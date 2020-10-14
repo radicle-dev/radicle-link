@@ -29,6 +29,7 @@ use thiserror::Error;
 use keystore::sign;
 
 use crate::{
+    git::ext::reference,
     internal::canonical::{Cjson, CjsonError},
     keys::{self, Signature},
     peer::PeerId,
@@ -117,7 +118,7 @@ pub mod signing {
 /// The current `refs/heads` and [`Remotes`] (transitive tracking graph)
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Refs {
-    pub heads: BTreeMap<String, Oid>,
+    pub heads: BTreeMap<reference::OneLevel, Oid>,
     pub remotes: Remotes<PeerId>,
 }
 

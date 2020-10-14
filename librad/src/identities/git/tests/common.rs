@@ -208,7 +208,7 @@ impl<'a> Project<'a> {
 
     pub fn verify<F>(&self, lookup: F) -> Result<VerifiedProject, error::VerifyProject<!>>
     where
-        F: Fn(Urn<Revision>) -> Result<git2::Oid, !>,
+        F: Fn(Urn) -> Result<git2::Oid, !>,
     {
         Ok(self
             .dev
@@ -219,7 +219,7 @@ impl<'a> Project<'a> {
 
     pub fn assert_verifies<F>(&self, lookup: F) -> anyhow::Result<()>
     where
-        F: Fn(Urn<Revision>) -> Result<git2::Oid, !>,
+        F: Fn(Urn) -> Result<git2::Oid, !>,
     {
         let verified = self.verify(lookup)?.into_inner();
         anyhow::ensure!(

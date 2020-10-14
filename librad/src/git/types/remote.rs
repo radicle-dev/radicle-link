@@ -38,6 +38,7 @@ impl<Url> Remote<Url> {
     /// use std::marker::PhantomData;
     /// use librad::{
     ///     git::{
+    ///         ext,
     ///         local::url::LocalUrl,
     ///         types::{remote::Remote, FlatRef, Force, NamespacedRef},
     ///     },
@@ -57,7 +58,7 @@ impl<Url> Remote<Url> {
     /// );
     ///
     /// // The working copy heads, i.e. `refs/heads/*`.
-    /// let working_copy_heads: FlatRef<String, _> = FlatRef::heads(PhantomData, None);
+    /// let working_copy_heads: FlatRef<ext::RefLike, _> = FlatRef::heads(PhantomData, None);
     ///
     /// // The monorepo heads, i.e. `refs/namespaces/<id>/refs/heads/*`.
     /// let monorepo_heads = NamespacedRef::heads(id, None);
@@ -66,8 +67,8 @@ impl<Url> Remote<Url> {
     /// let fetch = working_copy_heads
     ///         .clone()
     ///         .refspec(monorepo_heads.clone(), Force::True)
-    ///         .into_dyn();
-    /// let push = monorepo_heads.refspec(working_copy_heads, Force::False).into_dyn();
+    ///         .boxed();
+    /// let push = monorepo_heads.refspec(working_copy_heads, Force::False).boxed();
     ///
     /// // We point the remote to `LocalUrl` which will be of the form `rad://<peer id>@<id>.git`.
     /// let url = LocalUrl::from_urn(urn, peer_id);
@@ -137,7 +138,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        git::{local::url::LocalUrl, types::*},
+        git::{ext, local::url::LocalUrl, types::*},
         hash::Hash,
         keys::SecretKey,
         peer::PeerId,
@@ -150,20 +151,19 @@ mod tests {
             let repo = git2::Repository::init(path).expect("failed to init repo");
 
             let id = Hash::hash(b"geez");
-            let heads: FlatRef<String, _> = FlatRef::heads(PhantomData, None);
+            let heads: FlatRef<ext::RefLike, _> = FlatRef::heads(PhantomData, None);
             let namespaced_heads = NamespacedRef::heads(id, None);
 
             let fetch = heads
                 .clone()
                 .refspec(namespaced_heads.clone(), Force::True)
-                .into_dyn();
-            let push = namespaced_heads.refspec(heads, Force::False).into_dyn();
+                .boxed();
+            let push = namespaced_heads.refspec(heads, Force::False).boxed();
 
 
             let mut remote = Remote::rad_remote(path.display(), fetch);
             remote.add_pushes(vec![push].into_iter());
             let git_remote = remote.create(&repo).expect("failed to create the remote");
-
 
             assert_eq!(
                 git_remote
@@ -195,13 +195,14 @@ mod tests {
             local_peer_id: peer_id,
         };
         let name = format!("lyla@{}", peer_id);
-        let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, Some(peer_id));
-        let heads = heads.with_name("heads/*");
-        let remotes: FlatRef<String, _> = FlatRef::heads(PhantomData, Some(name.clone()));
+        let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, peer_id);
+        let heads = heads.with_name(ext::RefspecPattern::try_from("heads/*").unwrap());
+        let remotes: FlatRef<ext::RefLike, _> =
+            FlatRef::heads(PhantomData, ext::RefLike::try_from(name.as_str()).unwrap());
         let remote = Remote {
             url,
             name: name.clone(),
-            fetch_spec: Some(remotes.refspec(heads, Force::True).into_dyn()),
+            fetch_spec: Some(remotes.refspec(heads, Force::True).boxed()),
             push_specs: vec![],
         };
 

@@ -316,7 +316,15 @@ mod tests {
             prop::option::of(prop::collection::vec("[a-z0-9]+", 1..3)),
         )
             .prop_map(|(id, path)| {
-                let path = path.map(|elems| ext::RefLike::try_from(elems.join("/")).unwrap());
+                let path = path.map(|elems| {
+                    ext::RefLike::try_from(elems.join("/")).unwrap_or_else(|e| {
+                        panic!(
+                            "Unexpected error generating a RefLike from `{}`: {}",
+                            elems.join("/"),
+                            e
+                        )
+                    })
+                });
                 Urn { id, path }
             })
     }

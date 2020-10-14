@@ -17,7 +17,7 @@
 
 #![feature(async_closure)]
 
-use std::{marker::PhantomData, time::Duration};
+use std::{convert::TryFrom, marker::PhantomData, time::Duration};
 
 use assert_matches::assert_matches;
 use futures::{
@@ -28,6 +28,7 @@ use tempfile::tempdir;
 
 use librad::{
     git::{
+        ext,
         include,
         local::{transport, url::LocalUrl},
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
@@ -141,12 +142,12 @@ async fn can_fetch() {
         let url = LocalUrl::from_urn(radicle.urn(), peer1.peer_id());
 
         let heads = NamespacedRef::heads(radicle.urn().id, Some(peer1.peer_id()));
-        let remotes: FlatRef<String, _> = FlatRef::heads(
+        let remotes = FlatRef::heads(
             PhantomData,
-            Some(format!("{}@{}", alice.name(), peer1.peer_id())),
+            ext::RefLike::try_from(format!("{}@{}", alice.name(), peer1.peer_id())).unwrap(),
         );
 
-        let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).into_dyn()));
+        let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
 
         let mut remote_callbacks = git2::RemoteCallbacks::new();
         remote_callbacks.push_update_reference(|refname, maybe_error| match maybe_error {

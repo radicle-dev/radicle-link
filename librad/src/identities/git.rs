@@ -28,7 +28,7 @@ use crate::{
         generic::{self, Signed, Verified},
         payload::{self, ProjectPayload, UserPayload},
         sign::{Signature, Signatures},
-        urn::Urn,
+        urn,
     },
     internal::canonical::Cjson,
     keys::PublicKey,
@@ -48,6 +48,8 @@ pub(crate) mod tests;
 
 use iter::Iter;
 use load::ByOid;
+
+pub type Urn = urn::Urn<Revision>;
 
 pub type Revision = ext::Oid;
 pub type ContentId = ext::Oid;
@@ -533,7 +535,7 @@ impl<'a> Git<'a, Project> {
         find_latest_head: F,
     ) -> Result<VerifiedProject, error::VerifyProject<E>>
     where
-        F: Fn(Urn<Revision>) -> Result<git2::Oid, E>,
+        F: Fn(Urn) -> Result<git2::Oid, E>,
         E: std::error::Error + Send + Sync,
     {
         let generic::Folded { head, parent } = self.fold_verify_generic::<ProjectDoc>(head)?;
@@ -678,7 +680,7 @@ impl<'a> Git<'a, Project> {
     ) -> Result<IndirectDelegation, error::VerifyProject<E>>
     where
         I: IntoIterator<Item = Either<PublicKey, User>>,
-        F: Fn(Urn<Revision>) -> Result<git2::Oid, E>,
+        F: Fn(Urn) -> Result<git2::Oid, E>,
         E: std::error::Error + Send + Sync,
     {
         let mut updated = Vec::new();

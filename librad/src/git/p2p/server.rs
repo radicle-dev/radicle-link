@@ -43,7 +43,7 @@ use crate::{
     git::{
         ext::{into_io_err, References, UPLOAD_PACK_HEADER},
         header::{self, Header},
-        types::Namespace,
+        types::namespace::AsNamespace,
     },
     paths::Paths,
 };
@@ -115,14 +115,14 @@ enum UploadPack {
 }
 
 impl UploadPack {
-    fn advertise(repo_path: &Path, namespace: &Namespace) -> io::Result<Self> {
+    fn advertise<N: AsNamespace>(repo_path: &Path, namespace: &N) -> io::Result<Self> {
         let mut git = Command::new("git");
 
         git.args(&["-c", "uploadpack.hiderefs=refs/"])
             .arg("-c")
             .arg(format!(
                 "uploadpack.hiderefs=!refs/namespaces/{}",
-                namespace
+                namespace.as_namespace()
             ));
 
         // FIXME: we should probably keep one git2::Repository around, but
@@ -131,18 +131,22 @@ impl UploadPack {
         let mut refs = References::from_globs(
             &repo,
             &[
-                format!("refs/namespaces/{}/refs/rad/ids/*", namespace),
-                format!("refs/namespaces/{}/refs/remotes/**/rad/ids/*", namespace),
+                format!(
+                    "refs/namespaces/{}/refs/rad/ids/*",
+                    namespace.as_namespace()
+                ),
+                format!(
+                    "refs/namespaces/{}/refs/remotes/**/rad/ids/*",
+                    namespace.as_namespace()
+                ),
             ],
         )
         .map_err(into_io_err)?;
 
         for id_ref in refs.names() {
             if let Some(id) = id_ref.ok().and_then(|name| name.split('/').next_back()) {
-                git.arg("-c").arg(format!(
-                    "uploadpack.hiderefs=!refs/namespaces/{}/rad/id",
-                    id
-                ));
+                git.arg("-c")
+                    .arg(format!("uploadpack.hiderefs=!refs/namespaces/{}", id));
             }
         }
 
