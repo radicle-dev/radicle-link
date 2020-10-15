@@ -140,7 +140,7 @@ pub enum ParseError<E: std::error::Error + 'static> {
     InvalidId(#[source] E),
 
     #[error(transparent)]
-    InvalidPath(#[from] ext::InvalidRefLike),
+    InvalidPath(#[from] ext::reference::name::Error),
 
     #[error(transparent)]
     Encoding(#[from] multibase::Error),
@@ -313,7 +313,7 @@ mod tests {
     fn gen_urn() -> impl Strategy<Value = Urn<Oid>> {
         (
             gen_oid(git2::ObjectType::Tree),
-            prop::option::of(prop::collection::vec("[a-zA-Z0-9]+", 1..3)),
+            prop::option::of(prop::collection::vec("[a-z0-9]+", 1..3)),
         )
             .prop_map(|(id, path)| {
                 let path = path.map(|elems| ext::RefLike::try_from(elems.join("/")).unwrap());
