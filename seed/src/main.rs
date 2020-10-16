@@ -83,7 +83,7 @@ async fn main() {
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(1);
 
-    tokio::spawn(async move { while let Some(_) = rx.recv().await {} });
+    tokio::spawn(async move { while rx.recv().await.is_some() {} });
 
     node.run(tx).await.unwrap();
 }

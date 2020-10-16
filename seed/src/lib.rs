@@ -218,7 +218,7 @@ impl Node {
                         // Attempt to track, but keep going if it fails.
                         if Node::track_project(&api, urn, &provider).await.is_ok() {
                             transmit
-                                .send(Event::ProjectTracked(urn.clone(), peer_id.clone()))
+                                .send(Event::ProjectTracked(urn.clone(), *peer_id))
                                 .await
                                 .ok();
                         }
@@ -298,7 +298,7 @@ impl Node {
                     while let Some(peer) = peers.next().await {
                         if Node::track_project(&api, urn, &peer).await.is_ok() {
                             transmit
-                                .send(Event::ProjectTracked(urn.clone(), peer.peer_id.clone()))
+                                .send(Event::ProjectTracked(urn.clone(), peer.peer_id))
                                 .await
                                 .ok();
                             break;
