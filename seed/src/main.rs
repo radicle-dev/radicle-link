@@ -81,5 +81,9 @@ async fn main() {
     };
     let node = Node::new(config).unwrap();
 
-    node.run().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+
+    tokio::spawn(async move { while let Some(_) = rx.recv().await {} });
+
+    node.run(tx).await.unwrap();
 }
