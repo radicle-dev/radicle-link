@@ -86,7 +86,7 @@ async fn main() {
 
     tokio::spawn(async move {
         while let Some(event) = rx.next().await {
-            log::debug!("{:?}", event);
+            tracing::debug!("{:?}", event);
         }
     });
 
