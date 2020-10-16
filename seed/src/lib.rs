@@ -21,9 +21,8 @@ extern crate async_trait;
 
 use std::{collections::HashSet, io, net::SocketAddr, path::PathBuf, time::Duration, vec};
 
-use futures::stream::StreamExt;
+use futures::{channel::mpsc as chan, sink::SinkExt, stream::StreamExt};
 use thiserror::Error;
-use tokio::sync::mpsc as chan;
 
 use radicle_keystore::sign::ed25519;
 
