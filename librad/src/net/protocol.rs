@@ -279,6 +279,17 @@ where
         self.gossip.announce(have).await
     }
 
+    /// Mapping of currently connected [`PeerId`]s and their remote
+    /// [`SocketAddr`]s.
+    pub async fn connected_peers(&self) -> HashMap<PeerId, SocketAddr> {
+        self.connections
+            .lock()
+            .await
+            .iter()
+            .map(|(peer_id, conn)| (*peer_id, conn.remote_addr()))
+            .collect()
+    }
+
     /// Returns `true` if there is at least one active connection.
     pub async fn has_connections(&self) -> bool {
         !self.connections.lock().await.is_empty()
