@@ -17,6 +17,7 @@
 
 use std::{net, path::PathBuf};
 
+use futures::stream::StreamExt;
 use tracing_subscriber::FmtSubscriber;
 
 use librad::{peer::PeerId, uri::RadUrn};
@@ -81,5 +82,13 @@ async fn main() {
     };
     let node = Node::new(config).unwrap();
 
-    node.run().await.unwrap();
+    let (tx, mut rx) = futures::channel::mpsc::channel(1);
+
+    tokio::spawn(async move {
+        while let Some(event) = rx.next().await {
+            tracing::debug!("{:?}", event);
+        }
+    });
+
+    node.run(tx).await.unwrap();
 }
