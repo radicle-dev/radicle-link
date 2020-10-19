@@ -140,7 +140,7 @@ impl UploadPack {
         for id_ref in refs.names() {
             if let Some(id) = id_ref.ok().and_then(|name| name.split('/').next_back()) {
                 git.arg("-c").arg(format!(
-                    "uploadpack.hiderefs=!refs/namespaces/{}/rad/id",
+                    "uploadpack.hiderefs=!refs/namespaces/{}",
                     id
                 ));
             }
