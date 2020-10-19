@@ -18,9 +18,16 @@
 use std::{
     collections::HashMap,
     io::{self, Cursor, Read, Write},
+    panic::{self, UnwindSafe},
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio},
-    sync::{Arc, Mutex, Once, RwLock},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+        Mutex,
+        Once,
+        RwLock,
+    },
     thread,
 };
 
@@ -43,6 +50,17 @@ lazy_static! {
     static ref SETTINGS: Arc<RwLock<HashMap<PeerId, Settings>>> =
         Arc::new(RwLock::new(HashMap::with_capacity(1)));
 }
+
+/// Number of threads currently blocked on [`Connected::wait`].
+///
+/// Only applies when [`LocalTransport`] is used as a `libgit2` transport.
+static WAITERS: AtomicUsize = AtomicUsize::new(0);
+
+/// Maximum number of [`WAITERS`].
+///
+/// When this number is exceeded, attempting to create a new `libgit2` transport
+/// will fail with an error.
+const MAX_WAITERS: usize = 32;
 
 /// The settings for configuring a [`LocalTransportFactory`] and in turn a
 /// [`LocalTransport`].
@@ -101,7 +119,7 @@ impl SmartSubtransport for LocalTransportFactory {
             Some(settings) => {
                 let mut transport = LocalTransport::new(settings.clone()).map_err(into_git_err)?;
                 let stream = transport
-                    .stream(url, service, Localio::piped())
+                    .subtransport_stream(url, service, Localio::piped())
                     .map_err(into_git_err)?;
 
                 Ok(Box::new(stream))
@@ -125,6 +143,9 @@ pub enum Error {
     #[error("no such URN: {0}")]
     NoSuchUrn(RadUrn),
 
+    #[error("too many libgit2 transport streams")]
+    StreamLimitExceeded,
+
     #[error(transparent)]
     Storage(#[from] storage::Error),
 
@@ -143,22 +164,10 @@ pub enum Error {
 ///
 /// [`Connected::wait`] MUST be called, in order to `wait(2)` on the child
 /// process, and run post-service hooks.
-///
-/// When [`LocalTransport`] is used programmatically (i.e. as a custom `git2`
-/// transport), it is guaranteed that [`Connected::wait`] is called when the
-/// [`LocalStream`] is dropped. However, when used in this way there is no way
-/// to know whether the post-service hooks where invoked, nor what their result
-/// was, except by examining log output.
-///
-/// Note that it is assumed that the child process already exited, and its
-/// `stdin` / `stdout` have been closed (as per the destructor ordering of
-/// [`LocalStream`]). If it is unexpectedly still running, the child will be
-/// terminated by sending it the `TERM` signal (on UNIX), followed by
-/// `KILL` / `TerminateProcess`.
 #[must_use = "`wait` must be called"]
 pub struct Connected {
     process: Child,
-    on_success: Option<Box<dyn FnOnce() -> Result<(), Error> + Send + 'static>>,
+    on_success: Option<Box<dyn FnOnce() -> Result<(), Error> + Send + UnwindSafe + 'static>>,
 }
 
 impl Connected {
@@ -172,68 +181,6 @@ impl Connected {
         } else {
             Err(Error::Child(status))
         }
-    }
-}
-
-// Note that we assume that `git` handles `SIGTERM` properly on unix platforms,
-// however on Windows we are out of luck: there only really seems to exist
-// `TerminateProcess`, which is equivalent to `SIGKILL`. Let's just hope for
-// those poor Windows folks that `git-receive-pack` is fully `SIGKILL`-safe.
-impl Drop for Connected {
-    fn drop(&mut self) {
-        let span = tracing::trace_span!("Connected::drop");
-        let _guard = span.enter();
-
-        tracing::trace!("waiting on child process...");
-
-        // Spin for a bit in case we haven't received SIGCHLD yet
-        for _ in 0..42 {
-            if let Ok(None) = self.process.try_wait() {
-                thread::yield_now();
-                continue;
-            }
-            break;
-        }
-
-        #[cfg(unix)]
-        if let Ok(None) = self.process.try_wait() {
-            tracing::warn!("child process still running, sending SIGTERM");
-            unsafe {
-                libc::kill(self.process.id() as i32, libc::SIGTERM);
-            }
-        }
-
-        // `SIGKILL` if the process is still running, so we don't block on `wait`.
-        //
-        // We can ignore the result -- it is either `InvalidInput` if the child
-        // already exited, or there's nothing we can do anyway.
-        if let Ok(None) = self.process.try_wait() {
-            tracing::warn!("child process still running, sending SIGKILL");
-            let _ = self.process.kill();
-        }
-
-        match self.wait() {
-            Err(e) => {
-                // Make an effort to output an error in a disciplined way if we're
-                // running with tracing enabled, or roguely if we're not (eg. the
-                // remote helper won't).
-                let msg = format!("error waiting on child process: {}", e);
-                let mut tracing_enabled = false;
-                tracing::error!(
-                    traced = {
-                        tracing_enabled = true;
-                        tracing_enabled
-                    },
-                    "{}",
-                    msg
-                );
-                if !tracing_enabled {
-                    eprintln!("Local Transport: {}", msg)
-                }
-            },
-
-            Ok(()) => tracing::trace!("child exited successfully"),
-        };
     }
 }
 
@@ -277,16 +224,31 @@ impl LocalTransport {
         })
     }
 
-    pub fn stream(
+    fn subtransport_stream(
         &mut self,
         url: LocalUrl,
         service: Service,
         stdio: Localio,
     ) -> Result<LocalStream, Error> {
+        if WAITERS.load(Ordering::SeqCst) >= MAX_WAITERS {
+            return Err(Error::StreamLimitExceeded);
+        }
+
         let mut child = self.connect(url, service, Mode::Stateless, stdio)?;
 
         let stdin = child.process.stdin.take().unwrap();
         let stdout = child.process.stdout.take().unwrap();
+
+        WAITERS.fetch_add(1, Ordering::SeqCst);
+        thread::spawn(move || {
+            let res = panic::catch_unwind(move || child.wait());
+            WAITERS
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                    Some(x.saturating_sub(1))
+                })
+                .ok();
+            res
+        });
 
         let header = match service {
             Service::UploadPackLs => Some(UPLOAD_PACK_HEADER.to_vec()),
@@ -300,8 +262,6 @@ impl LocalTransport {
                 inner: stdout,
             },
             write: stdin,
-
-            _connected_to: child,
         })
     }
 
@@ -416,16 +376,6 @@ impl LocalTransport {
 pub struct LocalStream {
     read: LocalRead,
     write: ChildStdin,
-
-    /// The child process we're connected to.
-    ///
-    /// Tied to the lifetime of this stream, such that the process is
-    /// a-`wait(2)`-ed when it gets dropped (see [`Connected`]).
-    //
-    // NOTE: that we're implicitly relying on the drop order of struct fields
-    // being in declaration order: stdio of the child _should_ already be
-    // closed, so we have a guarantee that it's not waiting for `stdin`.
-    _connected_to: Connected,
 }
 
 impl Read for LocalStream {
