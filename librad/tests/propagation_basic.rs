@@ -25,7 +25,7 @@ use tokio::task::block_in_place;
 
 use librad::{
     git::{
-        local::url::LocalUrl,
+        local::{self, transport::LocalTransportFactory, url::LocalUrl},
         storage,
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
     },
@@ -206,14 +206,13 @@ async fn fetches_on_gossip_notify() {
                 .unwrap();
         }
 
-        let global_settings = librad::git::local::transport::Settings {
-            paths: peer1.paths().clone(),
-            signer: SomeSigner { signer: peer1_key }.into(),
-        };
-
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = block_in_place(|| {
-            librad::git::local::transport::register(global_settings);
+            librad::git::local::transport::register();
+            let transport_results = LocalTransportFactory::configure(local::transport::Settings {
+                paths: peer1.paths().clone(),
+                signer: SomeSigner { signer: peer1_key }.into(),
+            });
 
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
@@ -252,7 +251,11 @@ async fn fetches_on_gossip_notify() {
             let remote =
                 Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).into_dyn()));
 
-            initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks)).unwrap()
+            let oid =
+                initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks)).unwrap();
+            assert!(transport_results.wait(Duration::from_secs(3)).is_some());
+
+            oid
         });
 
         // Wait for peer2 to receive the gossip announcement
@@ -494,13 +497,13 @@ async fn menage_a_troi() {
             .unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
-        let settings = librad::git::local::transport::Settings {
-            paths: peer1.paths().clone(),
-            signer: SomeSigner { signer: peer1_key }.into(),
-        };
+        block_in_place(|| {
+            librad::git::local::transport::register();
+            let transport_results = LocalTransportFactory::configure(local::transport::Settings {
+                paths: peer1.paths().clone(),
+                signer: SomeSigner { signer: peer1_key }.into(),
+            });
 
-        let _commit_id = block_in_place(|| {
-            librad::git::local::transport::register(settings);
             // Perform commit and push to working copy on peer1
             let repo = git2::Repository::init(tmp.path().join("peer1")).unwrap();
             let url = LocalUrl::from_urn(urn.clone(), peer1_id);
@@ -519,6 +522,7 @@ async fn menage_a_troi() {
                 None,
             )
             .unwrap();
+            assert!(transport_results.wait(Duration::from_secs(3)).is_some());
         });
 
         let head = NamespacedRef::head(urn.clone().id, peer1_id, &default_branch);
