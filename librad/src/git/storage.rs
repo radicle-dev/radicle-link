@@ -1067,10 +1067,13 @@ fn tracking_remote_name(urn: &RadUrn, peer: &PeerId) -> String {
 }
 
 fn urn_from_ref(refname: &str) -> Option<RadUrn> {
-    refname
-        .split('/')
-        .next_back()
-        .and_then(|urn| urn.parse().ok())
+    refname.split('/').next_back().and_then(|hash| {
+        hash.parse().ok().map(|id| RadUrn {
+            id,
+            proto: uri::Protocol::Git,
+            path: uri::Path::empty(),
+        })
+    })
 }
 
 fn urns_from_refs<'a, E>(
