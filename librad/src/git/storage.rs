@@ -708,10 +708,6 @@ where
         self.update_refs(&urn)?;
         self.fetch_internal(fetcher)?;
 
-        for certifier in self.certifiers(&meta.urn())? {
-            self.fetch_repo(certifier.into_rad_url(remote_peer), addr_hints.clone())?;
-        }
-
         Ok(Repo {
             urn,
             storage: &self,
