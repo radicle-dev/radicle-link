@@ -73,13 +73,16 @@ async fn can_clone() {
 
         let radicle_urn = radicle.urn();
 
-        peer1
-            .with_storage(move |storage| {
-                storage.create_repo(&alice).unwrap();
-                storage.create_repo(&radicle).unwrap();
-            })
-            .await
-            .unwrap();
+        {
+            let alice = alice.clone();
+            peer1
+                .with_storage(move |storage| {
+                    storage.create_repo(&alice).unwrap();
+                    storage.create_repo(&radicle).unwrap();
+                })
+                .await
+                .unwrap();
+        }
         peer2
             .with_storage(move |storage| {
                 storage
@@ -90,6 +93,13 @@ async fn can_clone() {
                     .unwrap();
                 // sanity check
                 storage.open_repo(radicle_urn).unwrap();
+            })
+            .await
+            .unwrap();
+
+        let alice2 = peer2
+            .with_storage(move |storage| {
+                storage.some_metadata(&alice.urn()).unwrap();
             })
             .await
             .unwrap();
