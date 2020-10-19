@@ -83,23 +83,21 @@ async fn can_clone() {
                 .await
                 .unwrap();
         }
+
         peer2
             .with_storage(move |storage| {
+                let peer1_id = peer1.peer_id();
                 storage
-                    .clone_repo::<ProjectInfo, _>(
-                        radicle_urn.clone().into_rad_url(peer1.peer_id()),
-                        None,
-                    )
+                    .clone_repo::<ProjectInfo, _>(radicle_urn.clone().into_rad_url(peer1_id), None)
                     .unwrap();
                 // sanity check
-                storage.open_repo(radicle_urn).unwrap();
-            })
-            .await
-            .unwrap();
+                storage.open_repo(radicle_urn.clone()).unwrap();
 
-        let alice2 = peer2
-            .with_storage(move |storage| {
-                storage.some_metadata(&alice.urn()).unwrap();
+                // check rad/self of peer1 exists
+                storage.get_rad_self_of(&radicle_urn, peer1_id).unwrap();
+
+                // check user metadata exists
+                storage.some_metadata_of(&alice.urn(), peer1_id).unwrap();
             })
             .await
             .unwrap();
