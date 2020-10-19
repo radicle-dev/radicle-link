@@ -747,6 +747,8 @@ where
             .copied()
             .collect::<HashSet<PeerId>>();
 
+        // FIXME(haxpenny): wtf is a resolver... we need to verify the certifier delegations that
+        // are a retrieved from this fetch.
         fetcher.fetch(
             transitively_tracked,
             |peer| self.rad_signed_refs_of(&urn, peer),
