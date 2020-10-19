@@ -637,7 +637,7 @@ where
     pub fn clone_repo<T, Addrs>(&self, url: RadUrl, addr_hints: Addrs) -> Result<Repo<S>, Error>
     where
         T: Serialize + DeserializeOwned + Clone + EntityInfoExt,
-        Addrs: IntoIterator<Item = SocketAddr> + Clone,
+        Addrs: IntoIterator<Item = SocketAddr>,
     {
         let span = tracing::info_span!("Storage::clone_repo", local.id = %self.peer_id, url = %url);
         let _guard = span.enter();
@@ -654,7 +654,7 @@ where
         }
 
         // Fetch the identity first
-        let git_url = GitUrl::from_rad_url(url, self.peer_id, addr_hints.clone());
+        let git_url = GitUrl::from_rad_url(url, self.peer_id, addr_hints);
         let mut fetcher = Fetcher::new(&self.backend, git_url)?;
         fetcher.prefetch()?;
 
@@ -747,8 +747,8 @@ where
             .copied()
             .collect::<HashSet<PeerId>>();
 
-        // FIXME(haxpenny): wtf is a resolver... we need to verify the certifier delegations that
-        // are a retrieved from this fetch.
+        // FIXME(haxpenny): wtf is a resolver... we need to verify the certifier
+        // delegations that are a retrieved from this fetch.
         fetcher.fetch(
             transitively_tracked,
             |peer| self.rad_signed_refs_of(&urn, peer),
