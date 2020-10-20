@@ -100,6 +100,19 @@ fn test_untrack() {
 }
 
 #[test]
+fn untrack_non_existing_remote() {
+    let store = storage(SecretKey::new());
+    let urn = RadUrn {
+        id: Hash::hash(b"lala"),
+        proto: uri::Protocol::Git,
+        path: uri::Path::empty(),
+    };
+    let peer = PeerId::from(SecretKey::new());
+
+    store.untrack(&urn, &peer).unwrap();
+}
+
+#[test]
 fn test_all_metadata_heads() {
     let key = SecretKey::new();
     let store = storage(key);

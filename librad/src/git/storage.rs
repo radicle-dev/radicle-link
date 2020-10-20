@@ -321,13 +321,19 @@ impl<S: Clone> Storage<S> {
             .or_matches(is_not_found_err, || Ok(false))
     }
 
-    pub fn untrack(&self, urn: &RadUrn, peer: &PeerId) -> Result<(), Error> {
+    /// Untrack the identity under `urn` for the given `peer`.
+    ///
+    /// If the remote for this `peer` did not exists this function will return
+    /// `false`. Otherwise, if the remote did exist and was successfully
+    /// remove then this function will return `true`.
+    pub fn untrack(&self, urn: &RadUrn, peer: &PeerId) -> Result<bool, Error> {
         let remote_name = tracking_remote_name(urn, peer);
         // TODO: This removes all remote tracking branches matching the
         // fetchspec (I suppose). Not sure this is what we want.
         self.backend
             .remote_delete(&remote_name)
-            .map_err(|e| e.into())
+            .map(|()| true)
+            .or_matches(is_not_found_err, || Ok(false))
     }
 
     pub fn tracked(&self, urn: &RadUrn) -> Result<Tracked, Error> {
