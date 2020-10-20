@@ -755,6 +755,32 @@ where
             |peer| self.certifiers_of(&urn, &peer),
         )?;
 
+        // Ensure refs/namespaces/<certifier>/remotes/<tracked>/rad/id exists
+        // and adopt it as our own.
+        //
+        // FIXME(haxpenny): Currently rad/ids/* doesn't exist if something is signed by
+        // OwnedKey. Really looking forward to identity documents at this rate.
+        {
+            for certifier in self.certifiers_of(&urn, &remote_peer)?.into_iter() {
+                let remote_certifier =
+                    NamespacedRef::rad_id(certifier.id.clone()).with_remote(remote_peer);
+
+                if !self.has_ref(&remote_certifier)? {
+                    return Err(Error::MissingCertifier { certifier, urn });
+                }
+
+                let local_certifier = remote_certifier.clone().with_remote(None);
+
+                // We may have already cloned this certifier at some point
+                if !self.has_ref(&local_certifier)? {
+                    remote_certifier
+                        .symbolic_ref(local_certifier, Force::False)
+                        .create(&self.backend)
+                        .and(Ok(()))?;
+                }
+            }
+        }
+
         // Symref any certifiers from `remote_peer`, ie. for all valid refs in
         // the remotes's `rad/ids/*`, create a symref in the _local_ `rad/ids/*`
         // pointing to the `rad/id` in the respective top-level namespace.

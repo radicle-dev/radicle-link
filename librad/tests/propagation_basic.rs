@@ -97,7 +97,7 @@ async fn can_clone() {
                 storage.get_rad_self_of(&radicle_urn, peer1_id).unwrap();
 
                 // check user metadata exists
-                storage.some_metadata_of(&alice.urn(), peer1_id).unwrap();
+                storage.some_metadata_of(&alice.urn(), None).unwrap();
             })
             .await
             .unwrap();
