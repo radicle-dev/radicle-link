@@ -755,32 +755,6 @@ where
             |peer| self.certifiers_of(&urn, &peer),
         )?;
 
-        // Ensure refs/namespaces/<certifier>/remotes/<tracked>/rad/id exists
-        // and adopt it as our own.
-        //
-        // FIXME(haxpenny): Currently rad/ids/* doesn't exist if something is signed by
-        // OwnedKey. Really looking forward to identity documents at this rate.
-        {
-            for certifier in self.certifiers_of(&urn, &remote_peer)?.into_iter() {
-                let remote_certifier =
-                    NamespacedRef::rad_id(certifier.id.clone()).with_remote(remote_peer);
-
-                if !self.has_ref(&remote_certifier)? {
-                    return Err(Error::MissingCertifier { certifier, urn });
-                }
-
-                let local_certifier = remote_certifier.clone().with_remote(None);
-
-                // We may have already cloned this certifier at some point
-                if !self.has_ref(&local_certifier)? {
-                    remote_certifier
-                        .symbolic_ref(local_certifier, Force::False)
-                        .create(&self.backend)
-                        .and(Ok(()))?;
-                }
-            }
-        }
-
         // Symref any certifiers from `remote_peer`, ie. for all valid refs in
         // the remotes's `rad/ids/*`, create a symref in the _local_ `rad/ids/*`
         // pointing to the `rad/id` in the respective top-level namespace.
@@ -795,20 +769,19 @@ where
             .names()
             .try_for_each(|certifier_ref| {
                 let certifier_ref = certifier_ref?;
-                match certifier_ref.parse::<Hash>() {
-                    Err(_) => Ok(()),
-                    Ok(certifier_hash) => {
-                        let certifier_here = NamespacedRef::rad_certifier(
-                            urn.id.clone(),
-                            &RadUrn::new(
-                                certifier_hash.clone(),
-                                uri::Protocol::Git,
-                                uri::Path::empty(),
-                            ),
-                        );
-                        let certifier_id = NamespacedRef::rad_id(certifier_hash);
-                        certifier_id
-                            .symbolic_ref(certifier_here, Force::False)
+                let certifier = urn_from_ref(certifier_ref);
+                match certifier {
+                    None => {
+                        tracing::warn!("failed to parse URN from ref '{}'", certifier_ref);
+                        Ok(())
+                    },
+                    Some(certifier) => {
+                        let certifier_here =
+                            NamespacedRef::rad_certifier(urn.id.clone(), &certifier)
+                                .with_remote(remote_peer);
+                        let certifier_id = NamespacedRef::rad_id(certifier.id);
+                        certifier_here
+                            .symbolic_ref(certifier_id, Force::False)
                             .create(&self.backend)
                             .and(Ok(()))
                     },
