@@ -23,9 +23,12 @@ use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
 use keystore::sign;
 
-use crate::keys::{self, PublicKey, SecretKey};
+use crate::{
+    git::ext,
+    keys::{self, PublicKey, SecretKey},
+};
 
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Encode, Decode)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Encode, Decode)]
 #[cbor(array)]
 pub struct PeerId(#[n(0)] PublicKey);
 
@@ -192,6 +195,22 @@ impl Deref for PeerId {
     }
 }
 
+// FIXME(kim): We'd probably want From impls, instead of only Into, but the
+// typechecker fails to terminate in some cases. No clue why.
+
+impl Into<ext::RefLike> for &PeerId {
+    fn into(self) -> ext::RefLike {
+        ext::RefLike::try_from(self.to_string())
+            .expect("string representation of PeerId must be a valid git refname")
+    }
+}
+
+impl Into<ext::RefLike> for PeerId {
+    fn into(self) -> ext::RefLike {
+        (&self).into()
+    }
+}
+
 pub struct Originates<T> {
     pub from: PeerId,
     pub value: T,
@@ -256,5 +275,14 @@ pub mod tests {
         let peer_id2 = PeerId::try_from(dns_name.as_ref()).unwrap();
 
         assert_eq!(peer_id1, peer_id2)
+    }
+
+    #[test]
+    fn peerid_is_reflike() {
+        let peer_id = PeerId::from(SecretKey::new());
+        assert_eq!(
+            &peer_id.to_string(),
+            Into::<ext::RefLike>::into(&peer_id).as_str()
+        )
     }
 }

@@ -53,7 +53,7 @@ use crate::{
         connection::{CloseReason, LocalInfo, RemoteInfo, Stream},
         gossip,
         quic,
-        upgrade::{self, upgrade, with_upgrade, UpgradeRequest, Upgraded, WithUpgrade},
+        upgrade::{self, upgrade, with_upgraded, SomeUpgraded, UpgradeRequest, Upgraded},
     },
     peer::PeerId,
 };
@@ -94,7 +94,7 @@ pub enum Error {
     NoConnection(PeerId),
 
     #[error(transparent)]
-    Upgrade(#[from] upgrade::Error),
+    Upgrade(#[from] upgrade::ErrorSource),
 
     #[error(transparent)]
     Cbor(#[from] CborCodecError),
@@ -262,7 +262,7 @@ where
         (this, Box::pin(run_loop))
     }
 
-    pub fn peer_id(&self) -> &PeerId {
+    pub fn peer_id(&self) -> PeerId {
         self.gossip.peer_id()
     }
 
@@ -277,6 +277,17 @@ where
     /// Announce an update to the network
     pub async fn announce(&self, have: A) {
         self.gossip.announce(have).await
+    }
+
+    /// Mapping of currently connected [`PeerId`]s and their remote
+    /// [`SocketAddr`]s.
+    pub async fn connected_peers(&self) -> HashMap<PeerId, SocketAddr> {
+        self.connections
+            .lock()
+            .await
+            .iter()
+            .map(|(peer_id, conn)| (*peer_id, conn.remote_addr()))
+            .collect()
     }
 
     /// Returns `true` if there is at least one active connection.
@@ -309,9 +320,9 @@ where
     /// convenience (one can pass [`None`], for example).
     pub async fn open_git<Addrs>(
         &self,
-        to: &PeerId,
+        to: PeerId,
         addr_hints: Addrs,
-    ) -> Result<Upgraded<quic::Stream, upgrade::Git>, Error>
+    ) -> Result<Upgraded<upgrade::Git, quic::Stream>, Error>
     where
         Addrs: IntoIterator<Item = SocketAddr>,
     {
@@ -323,22 +334,22 @@ where
                         let addr_hints = addr_hints.into_iter().collect::<Vec<_>>();
                         let (conn, incoming) = connect(&self.endpoint, to, addr_hints)
                             .await
-                            .ok_or_else(|| Error::NoConnection(to.clone()))?;
+                            .ok_or_else(|| Error::NoConnection(to))?;
 
-                        let git_stream = conn
-                            .open_stream()
-                            .map_err(Error::from)
-                            .and_then(|stream| upgrade(stream, upgrade::Git).map_err(Error::from))
-                            .await?;
-
-                        {
-                            let this = self.clone();
-                            tokio::spawn(async move {
-                                this.handle_connect(conn, incoming.boxed(), None).await
-                            });
-                        }
-
-                        Ok(git_stream)
+                        let stream = conn.open_stream().await?;
+                        upgrade(stream, upgrade::Git)
+                            .await
+                            .map_err(|upgrade::Error { stream, source }| {
+                                stream.close(CloseReason::InvalidUpgrade);
+                                Error::from(source)
+                            })
+                            .map(|upgraded| {
+                                let this = self.clone();
+                                tokio::spawn(async move {
+                                    this.handle_connect(conn, incoming.boxed(), None).await
+                                });
+                                upgraded
+                            })
                     },
                     _ => Err(e),
                 }
@@ -356,7 +367,7 @@ where
                 );
 
                 if !self.connections.lock().await.contains_key(&peer) {
-                    if let Some((conn, incoming)) = connect(&self.endpoint, &peer, addrs).await {
+                    if let Some((conn, incoming)) = connect(&self.endpoint, peer, addrs).await {
                         self.handle_connect(conn, incoming.boxed(), None).await;
                     }
                 }
@@ -437,16 +448,16 @@ where
         mut incoming: BoxStream<'_, quic::Result<quic::Stream>>,
         hello: impl Into<Option<gossip::Rpc<IpAddr, A>>>,
     ) {
-        let remote_id = conn.remote_peer_id().clone();
+        let remote_id = conn.remote_peer_id();
         tracing::info!(remote.id = %remote_id, "New outgoing connection");
 
         {
             self.connections
                 .lock()
                 .await
-                .insert(remote_id.clone(), conn.clone());
+                .insert(remote_id, conn.clone());
             self.subscribers
-                .emit(ProtocolEvent::Connected(remote_id.clone()))
+                .emit(ProtocolEvent::Connected(remote_id))
                 .await;
         }
 
@@ -487,16 +498,13 @@ where
     where
         Incoming: futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
     {
-        let remote_id = conn.remote_peer_id().clone();
+        let remote_id = conn.remote_peer_id();
         tracing::info!(remote.id = %remote_id, "New incoming connection");
 
         {
-            self.connections
-                .lock()
-                .await
-                .insert(remote_id.clone(), conn);
+            self.connections.lock().await.insert(remote_id, conn);
             self.subscribers
-                .emit(ProtocolEvent::Connected(remote_id.clone()))
+                .emit(ProtocolEvent::Connected(remote_id))
                 .await;
         }
 
@@ -518,43 +526,56 @@ where
         stream: quic::Stream,
         hello: impl Into<Option<gossip::Rpc<IpAddr, A>>>,
     ) -> Result<(), Error> {
-        let upgraded = upgrade(stream, upgrade::Gossip).await?;
-        self.gossip
-            .outgoing(upgraded, hello)
-            .await
-            .map_err(|e| e.into())
+        match upgrade(stream, upgrade::Gossip).await {
+            Err(upgrade::Error { stream, source }) => {
+                stream.close(CloseReason::InvalidUpgrade);
+                Err(Error::from(source))
+            },
+
+            Ok(upgraded) => self
+                .gossip
+                .outgoing(upgraded, hello)
+                .await
+                .map_err(|e| e.into()),
+        }
     }
 
     async fn incoming(&self, stream: quic::Stream) -> Result<(), Error> {
-        match with_upgrade(stream).await? {
-            WithUpgrade::Gossip(upgraded) => self
-                .gossip
-                .incoming(upgraded.await?)
-                .await
-                .map_err(Error::Gossip),
+        match with_upgraded(stream).await {
+            Err(upgrade::Error { stream, source }) => {
+                stream.close(CloseReason::InvalidUpgrade);
+                Err(Error::from(source))
+            },
 
-            WithUpgrade::Git(upgraded) => self
-                .git
-                .invoke_service(upgraded.await?.into_stream().split())
-                .await
-                .map_err(Error::Git),
+            Ok(upgraded) => match upgraded {
+                SomeUpgraded::Gossip(upgraded) => {
+                    self.gossip.incoming(upgraded).await.map_err(Error::Gossip)
+                },
+
+                SomeUpgraded::Git(upgraded) => self
+                    .git
+                    .invoke_service(upgraded.into_stream().split())
+                    .await
+                    .map_err(Error::Git),
+            },
         }
     }
 
-    async fn open_stream<U>(&self, to: &PeerId, up: U) -> Result<Upgraded<quic::Stream, U>, Error>
+    async fn open_stream<U>(&self, to: PeerId, up: U) -> Result<Upgraded<U, quic::Stream>, Error>
     where
         U: Into<UpgradeRequest>,
     {
-        match self.connections.lock().await.get(to) {
-            Some(conn) => {
-                conn.open_stream()
-                    .map_err(|e| e.into())
-                    .and_then(|stream| upgrade(stream, up))
-                    .map_err(|e| e.into())
-                    .await
-            },
-            None => Err(Error::NoConnection(to.clone())),
-        }
+        let stream = match self.connections.lock().await.get(&to) {
+            Some(conn) => conn.open_stream().await.map_err(Error::from),
+            None => Err(Error::NoConnection(to)),
+        }?;
+
+        upgrade(stream, up)
+            .await
+            .map_err(|upgrade::Error { stream, source }| {
+                stream.close(CloseReason::InvalidUpgrade);
+                Error::from(source)
+            })
     }
 }
 
@@ -572,7 +593,7 @@ where
         let span = tracing::trace_span!("GitStreamFactory::open_stream", peer.id = %to);
 
         match self
-            .open_git(to, addr_hints.iter().copied())
+            .open_git(*to, addr_hints.iter().copied())
             .instrument(span.clone())
             .await
         {
@@ -606,12 +627,12 @@ async fn connect_peer_info(
     let addrs = iter::once(peer_info.advertised_info.listen_addr)
         .chain(peer_info.seen_addrs)
         .map(move |ip| SocketAddr::new(ip, advertised_port));
-    connect(endpoint, &peer_info.peer_id, addrs).await
+    connect(endpoint, peer_info.peer_id, addrs).await
 }
 
 async fn connect<Addrs>(
     endpoint: &quic::Endpoint,
-    peer_id: &PeerId,
+    peer_id: PeerId,
     addrs: Addrs,
 ) -> Option<(
     quic::Connection,

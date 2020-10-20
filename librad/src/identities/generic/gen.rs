@@ -263,7 +263,7 @@ pub fn gen_history(
                             .iter()
                             .map(|(pk, _)| {
                                 let sk = keys.get(pk).unwrap();
-                                (pk.clone(), sk.sign(revision.as_ref()))
+                                (*pk, sk.sign(revision.as_ref()))
                             })
                             .collect::<BTreeMap<_, _>>()
                             .into();
@@ -300,7 +300,7 @@ fn mk_direct(
 
     let delegations: delegation::Direct = signatures
         .iter()
-        .map(|(pk, _)| pk.clone())
+        .map(|(pk, _)| *pk)
         .collect::<BTreeSet<_>>()
         .into();
 
@@ -332,7 +332,7 @@ where
         let sig = signatures
             .iter()
             .next()
-            .map(|(k, s)| (k.clone(), s.clone()))
+            .map(|(k, s)| (*k, s.clone()))
             .unwrap();
         let inner = Identity {
             content_id: Boring,

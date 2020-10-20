@@ -26,14 +26,14 @@ use futures::io::{AsyncRead, AsyncWrite};
 pub trait LocalInfo {
     type Addr;
 
-    fn local_peer_id(&self) -> &PeerId;
+    fn local_peer_id(&self) -> PeerId;
     fn local_addr(&self) -> io::Result<Self::Addr>;
 }
 
 pub trait RemoteInfo {
     type Addr;
 
-    fn remote_peer_id(&self) -> &PeerId;
+    fn remote_peer_id(&self) -> PeerId;
     fn remote_addr(&self) -> Self::Addr;
 }
 
@@ -62,6 +62,7 @@ pub enum CloseReason {
     ConnectionError = 3,
     InternalError = 4,
     ServerShutdown = 5,
+    InvalidUpgrade = 6,
 }
 
 impl CloseReason {
@@ -72,6 +73,7 @@ impl CloseReason {
             Self::ConnectionError => b"connection error",
             Self::InternalError => b"internal server error",
             Self::ServerShutdown => b"server shutdown",
+            Self::InvalidUpgrade => b"invalid or unsupported protocol upgrade",
         }
     }
 }
@@ -106,12 +108,12 @@ pub(crate) mod mock {
     impl RemoteInfo for MockStream {
         type Addr = PeerId;
 
-        fn remote_peer_id(&self) -> &PeerId {
-            &self.id
+        fn remote_peer_id(&self) -> PeerId {
+            self.id
         }
 
         fn remote_addr(&self) -> Self::Addr {
-            self.id.clone()
+            self.id
         }
     }
 

@@ -15,7 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::fmt::{self, Display};
+use std::{
+    convert::TryFrom,
+    fmt::{self, Display},
+};
 
 use multihash::Multihash;
 
@@ -80,5 +83,11 @@ impl Display for Namespace {
             multibase::Base::Base32Z,
             Multihash::from(&self.0),
         ))
+    }
+}
+
+impl From<Namespace> for ext::RefLike {
+    fn from(ns: Namespace) -> Self {
+        Self::try_from(ns.to_string()).expect("`Namespace` is a valid refname")
     }
 }

@@ -16,9 +16,9 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
     fmt::{self, Display},
-    marker::PhantomData,
+    path::PathBuf,
 };
 
 use thiserror::Error;
@@ -40,15 +40,13 @@ use super::{
 use identities::git::Urn;
 
 /// Type witness for a [`Reference`] that should point to a single reference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct One;
+pub type One = ext::RefLike;
 
 /// Alias for [`One`].
 pub type Single = One;
 
 /// Type witness for a [`Reference`] that should point to multiple references.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Many;
+pub type Many = ext::RefspecPattern;
 
 /// Alias for [`Many`].
 pub type Multiple = Many;
@@ -81,17 +79,22 @@ impl Display for RefsCategory {
     }
 }
 
+impl From<RefsCategory> for ext::RefLike {
+    fn from(cat: RefsCategory) -> Self {
+        ext::RefLike::try_from(cat.to_string()).unwrap()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct Reference<Namespaced, Remote, Cardinality> {
+pub struct Reference<Namespace, Remote, Cardinality> {
     /// The remote portion of this reference.
     pub remote: Option<Remote>,
     /// Where this reference falls under, i.e. `rad` or `heads`.
     pub category: RefsCategory,
     /// The path of the reference, e.g. `feature/123`, `dev`.
-    pub name: String,
+    pub name: Cardinality,
 
-    pub(super) _namespace: Namespaced,
-    pub(super) _cardinality: PhantomData<Cardinality>,
+    pub(super) _namespace: Namespace,
 }
 
 // Polymorphic definitions
@@ -127,24 +130,23 @@ where
             remote: self.remote,
             category: self.category,
             _namespace: namespace,
-            _cardinality: self._cardinality,
         }
     }
 
     /// Set the named portion of this path.
     ///
     /// Note: This is consuming.
-    pub fn with_name(mut self, name: &str) -> Self {
-        self.name = name.to_owned();
+    pub fn with_name<S: Into<C>>(mut self, name: S) -> Self {
+        self.name = name.into();
         self
     }
 
     /// Set the named portion of this path.
     ///
     /// Note: This is not consuming.
-    pub fn set_name(&self, name: &str) -> Self {
+    pub fn set_name<S: Into<C>>(&self, name: S) -> Self {
         Self {
-            name: name.to_owned(),
+            name: name.into(),
             ..self.clone()
         }
     }
@@ -156,13 +158,13 @@ where
     ///
     /// ```
     /// use std::marker::PhantomData;
-    /// use librad::{git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
+    /// use librad::{git::{ext, types::*}, hash::Hash, keys::SecretKey, peer::PeerId};
     ///
     /// let id = Hash::hash(b"geez");
     /// let peer: PeerId = SecretKey::new().into();
     ///
     /// // Set up a ref to `refs/heads/*`
-    /// let flat_heads: FlatRef<String, _> = FlatRef::heads(PhantomData, None);
+    /// let flat_heads: FlatRef<ext::RefLike, _> = FlatRef::heads(PhantomData, None);
     ///
     /// // Set up a ref t `refs/namespaces/<geez>/refs/remotes/<peer>/heads/*`
     /// let namespace_heads = NamespacedRef::heads(id, peer.clone());
@@ -182,17 +184,17 @@ where
     /// ```
     ///
     /// ```
-    /// use std::marker::PhantomData;
-    /// use librad::{git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
+    /// use std::{convert::TryFrom, marker::PhantomData};
+    /// use librad::{git::{ext, types::*}, hash::Hash, keys::SecretKey, peer::PeerId};
     ///
     /// let id = Hash::hash(b"geez");
     /// let peer: PeerId = SecretKey::new().into();
     ///
     /// // Set up a ref to `refs/heads/*`
-    /// let flat_heads: FlatRef<String, _> = FlatRef::heads(PhantomData, None);
+    /// let flat_heads: FlatRef<ext::RefLike, _> = FlatRef::heads(PhantomData, None);
     ///
     /// // Set up a ref t `refs/namespaces/<geez>/refs/remotes/<peer>/heads/banana`
-    /// let namespace_head = NamespacedRef::head(id, peer.clone(), "banana");
+    /// let namespace_head = NamespacedRef::head(id, peer.clone(), One::try_from("banana").unwrap());
     ///
     /// // The below would fail to compile because `namespace_head` is a `Single`
     /// // reference while `flat_heads` is `Multiple`.
@@ -211,8 +213,8 @@ where
     }
 }
 
-// References with a Single cardinality
-impl<N, R> Reference<N, R, Single> {
+// References with a `One` cardinality
+impl<N, R> Reference<N, R, One> {
     /// Find this particular reference.
     pub fn find<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error>
     where
@@ -257,9 +259,8 @@ impl<N, R> Reference<N, R, Single> {
         Self {
             remote: None,
             category: RefsCategory::Rad,
-            name: "id".to_owned(),
+            name: "id".try_into().unwrap(),
             _namespace: namespace,
-            _cardinality: PhantomData,
         }
     }
 
@@ -269,9 +270,8 @@ impl<N, R> Reference<N, R, Single> {
         Self {
             remote: None,
             category: RefsCategory::Rad,
-            name: format!("ids/{}", urn.id),
+            name: format!("ids/{}", urn.id).try_into().unwrap(),
             _namespace: namespace,
-            _cardinality: PhantomData,
         }
     }
 
@@ -279,9 +279,8 @@ impl<N, R> Reference<N, R, Single> {
         Self {
             remote: None,
             category: RefsCategory::Rad,
-            name: format!("ids/{}", urn.id),
+            name: format!("ids/{}", urn.id).try_into().unwrap(),
             _namespace: namespace,
-            _cardinality: PhantomData,
         }
     }
 
@@ -293,9 +292,8 @@ impl<N, R> Reference<N, R, Single> {
         Self {
             remote: remote.into(),
             category: RefsCategory::Rad,
-            name: "signed_refs".to_owned(),
+            name: "signed_refs".try_into().unwrap(),
             _namespace: namespace,
-            _cardinality: PhantomData,
         }
     }
 
@@ -306,28 +304,67 @@ impl<N, R> Reference<N, R, Single> {
         Self {
             remote: remote.into(),
             category: RefsCategory::Rad,
-            name: "self".to_owned(),
+            name: "self".try_into().unwrap(),
             _namespace: namespace,
-            _cardinality: PhantomData,
         }
     }
 
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/heads/<name>`
     ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/heads/<name>
-    pub fn head(namespace: N, remote: impl Into<Option<R>>, name: &str) -> Self {
+    pub fn head(namespace: N, remote: impl Into<Option<R>>, name: One) -> Self {
         Self {
             remote: remote.into(),
             category: RefsCategory::Heads,
-            name: name.to_owned(),
+            name,
             _namespace: namespace,
-            _cardinality: PhantomData,
         }
     }
 }
 
-// References with a Multiple cardinality
-impl<N, R> Reference<N, R, Multiple> {
+impl<N, R> Display for Reference<N, R, One>
+where
+    N: AsNamespace,
+    for<'a> &'a R: Into<ext::RefLike>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(Into::<ext::RefLike>::into(self).as_str())
+    }
+}
+
+impl<N, R> From<&Reference<N, R, One>> for ext::RefLike
+where
+    N: AsNamespace,
+    for<'a> &'a R: Into<ext::RefLike>,
+{
+    fn from(r: &Reference<N, R, One>) -> Self {
+        let mut path = PathBuf::new();
+        path.push("refs/namespaces");
+        path.push(r._namespace.as_namespace());
+        path.push("refs");
+        if let Some(ref remote) = r.remote {
+            path.push("remotes");
+            path.push(Into::<ext::RefLike>::into(remote))
+        }
+        path.push(Into::<ext::RefLike>::into(r.category));
+        path.push(ext::OneLevel::from(r.name.clone()));
+
+        ext::RefLike::try_from(path.as_path()).unwrap()
+    }
+}
+
+impl<N, R> From<&Reference<N, R, One>> for ext::RefspecPattern
+where
+    N: AsNamespace,
+    for<'a> &'a R: Into<ext::RefLike>,
+{
+    fn from(r: &Reference<N, R, One>) -> Self {
+        Into::<ext::RefLike>::into(r).into()
+    }
+}
+
+// References with a `Many` cardinality
+impl<N, R> Reference<N, R, Many> {
     /// Get the iterator for these references.
     pub fn references<'a>(
         &self,
@@ -345,9 +382,8 @@ impl<N, R> Reference<N, R, Multiple> {
         Self {
             remote: None,
             category: RefsCategory::Rad,
-            name: "ids/*".to_owned(),
+            name: "ids/*".try_into().unwrap(),
             _namespace: namespace,
-            _cardinality: PhantomData,
         }
     }
 
@@ -357,29 +393,40 @@ impl<N, R> Reference<N, R, Multiple> {
         Self {
             remote: remote.into(),
             category: RefsCategory::Heads,
-            name: "*".to_owned(),
+            name: "*".try_into().unwrap(),
             _namespace: namespace,
-            _cardinality: PhantomData,
         }
     }
 }
 
-impl<N, R, C> Display for Reference<N, R, C>
+impl<N, R> Display for Reference<N, R, Many>
 where
     N: AsNamespace,
-    R: Display,
+    for<'a> &'a R: Into<ext::RefLike>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "refs/namespaces/{}/refs/",
-            self._namespace.as_namespace()
-        )?;
+        f.write_str(Into::<ext::RefspecPattern>::into(self).as_str())
+    }
+}
 
-        match &self.remote {
-            None => write!(f, "{}/{}", self.category, self.name),
-            Some(remote) => write!(f, "remotes/{}/{}/{}", remote, self.category, self.name),
+impl<N, R> From<&Reference<N, R, Many>> for ext::RefspecPattern
+where
+    N: AsNamespace,
+    for<'a> &'a R: Into<ext::RefLike>,
+{
+    fn from(r: &Reference<N, R, Many>) -> Self {
+        let mut path = PathBuf::new();
+        path.push("refs/namespaces");
+        path.push(r._namespace.as_namespace());
+        path.push("refs");
+        if let Some(ref remote) = r.remote {
+            path.push("remotes");
+            path.push(Into::<ext::RefLike>::into(remote));
         }
+        path.push(Into::<ext::RefLike>::into(r.category));
+        path.push(&r.name);
+
+        ext::RefspecPattern::try_from(path.as_path()).unwrap()
     }
 }
 
@@ -396,6 +443,9 @@ where
 pub enum FromUrnError {
     #[error("missing {0}")]
     Missing(&'static str),
+
+    #[error("invalid refs category: `{0}`")]
+    InvalidCategory(String),
 
     #[error("early eof")]
     Eof,
@@ -423,23 +473,28 @@ impl TryFrom<&Urn> for Reference<Namespace, PeerId, Single> {
                         .parse()?,
                 );
 
-                iter.next()
-                    .map(|x| Self {
-                        remote,
-                        category: RefsCategory::parse(x).unwrap_or(RefsCategory::Heads),
-                        name: iter.collect(),
-                        _namespace: namespace,
-                        _cardinality: PhantomData,
-                    })
-                    .ok_or(FromUrnError::Eof)
+                let category = match iter.next() {
+                    None => Err(FromUrnError::Missing("category")),
+                    Some(x) if x == "heads" => Ok(RefsCategory::Heads),
+                    Some(x) if x == "rad" => Ok(RefsCategory::Rad),
+                    Some(x) => Err(FromUrnError::InvalidCategory(x.to_owned())),
+                }?;
+
+                let name = iter.map(|x| ext::RefLike::try_from(x).unwrap()).collect();
+
+                Ok(Self {
+                    remote,
+                    category,
+                    name,
+                    _namespace: namespace,
+                })
             },
 
             Some(x) => Ok(Self {
                 remote: None,
                 category: RefsCategory::parse(x).unwrap_or(RefsCategory::Heads),
-                name: iter.collect(),
+                name: iter.map(|x| ext::RefLike::try_from(x).unwrap()).collect(),
                 _namespace: namespace,
-                _cardinality: PhantomData,
             }),
 
             None => Err(FromUrnError::Eof),

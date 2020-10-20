@@ -23,7 +23,7 @@ use crate::{
     git::{
         p2p::url::GitUrl,
         refs::Refs,
-        types::{Force, Reference, Refspec},
+        types::{AsRefspec, Force, Reference, Refspec},
     },
     peer::PeerId,
     uri::RadUrn,
@@ -60,7 +60,7 @@ impl<'a> Fetcher<'a> {
         tracing::debug!("Prefetching {}", self.url);
 
         let namespace = &self.url.repo;
-        let remote_peer = &self.url.remote_peer;
+        let remote_peer = self.url.remote_peer;
 
         let remote_id = Reference::rad_id(namespace.clone());
         let remote_self = Reference::rad_self(namespace.clone(), None);
@@ -76,15 +76,15 @@ impl<'a> Fetcher<'a> {
         // :refs/namespaces/<namespace>/refs/remotes/<remote_peer>/rad/ids/*`
         let refspecs = [
             remote_id
-                .set_remote(remote_peer.clone())
+                .set_remote(remote_peer)
                 .refspec(remote_id, Force::False)
                 .boxed(),
             remote_self
-                .set_remote(remote_peer.clone())
+                .set_remote(remote_peer)
                 .refspec(remote_self, Force::False)
                 .boxed(),
             remote_certifiers
-                .set_remote(remote_peer.clone())
+                .set_remote(remote_peer)
                 .refspec(remote_certifiers, Force::False)
                 .boxed(),
         ]
@@ -102,37 +102,38 @@ impl<'a> Fetcher<'a> {
         Ok(())
     }
 
-    /// Fetch remote heads according to the remote's signed `rad/refs` branch.
+    /// Fetch remote heads according to the remote's signed `rad/signed_refs`
+    /// branch.
     ///
     /// Proceeds in three stages:
     ///
-    /// 1. fetch the remote's view of `rad/refs`
+    /// 1. fetch the remote's view of `rad/signed_refs`
     /// 2. compare the signed refs against the advertised ones
     /// 3. fetch advertised refs ⋂ signed refs
     pub fn fetch<F, G, E>(
         &mut self,
-        transitively_tracked: HashSet<&PeerId>,
+        transitively_tracked: HashSet<PeerId>,
         rad_signed_refs_of: F,
         certifiers_of: G,
     ) -> Result<(), E>
     where
         F: Fn(PeerId) -> Result<Refs, E>,
-        G: Fn(&PeerId) -> Result<HashSet<RadUrn>, E>,
+        G: Fn(PeerId) -> Result<HashSet<RadUrn>, E>,
         E: From<git2::Error>,
     {
         let namespace = &self.url.repo;
-        let remote_peer = &self.url.remote_peer;
+        let remote_peer = self.url.remote_peer;
 
         let mut fetch_opts = self.fetch_options();
 
-        // Fetch `rad/refs` first
+        // Fetch `rad/signed_refs` first
         {
             let refspecs = Refspec::rad_signed_refs(
                 self.url.repo.clone(),
-                &remote_peer,
-                transitively_tracked.iter().cloned(),
+                remote_peer,
+                transitively_tracked.clone().into_iter(),
             )
-            .map(|spec| spec.to_string())
+            .map(|spec| spec.as_refspec())
             .collect::<Vec<String>>();
 
             tracing::debug!(refspecs = ?refspecs, "Fetching rad/refs");
@@ -157,8 +158,8 @@ impl<'a> Fetcher<'a> {
             let refspecs = Refspec::fetch_heads(
                 namespace.clone(),
                 remote_heads,
-                transitively_tracked.iter().cloned(),
-                &remote_peer,
+                transitively_tracked.into_iter(),
+                remote_peer,
                 rad_signed_refs_of,
                 certifiers_of,
             )?

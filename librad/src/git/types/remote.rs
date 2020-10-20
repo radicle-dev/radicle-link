@@ -38,6 +38,7 @@ impl<Url> Remote<Url> {
     /// use std::marker::PhantomData;
     /// use librad::{
     ///     git::{
+    ///         ext,
     ///         local::url::LocalUrl,
     ///         types::{remote::Remote, FlatRef, Force, NamespacedRef},
     ///     },
@@ -57,7 +58,7 @@ impl<Url> Remote<Url> {
     /// );
     ///
     /// // The working copy heads, i.e. `refs/heads/*`.
-    /// let working_copy_heads: FlatRef<String, _> = FlatRef::heads(PhantomData, None);
+    /// let working_copy_heads: FlatRef<ext::RefLike, _> = FlatRef::heads(PhantomData, None);
     ///
     /// // The monorepo heads, i.e. `refs/namespaces/<id>/refs/heads/*`.
     /// let monorepo_heads = NamespacedRef::heads(id, None);
@@ -137,7 +138,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        git::{local::url::LocalUrl, types::*},
+        git::{ext, local::url::LocalUrl, types::*},
         hash::Hash,
         keys::SecretKey,
         peer::PeerId,
@@ -150,7 +151,7 @@ mod tests {
             let repo = git2::Repository::init(path).expect("failed to init repo");
 
             let id = Hash::hash(b"geez");
-            let heads: FlatRef<String, _> = FlatRef::heads(PhantomData, None);
+            let heads: FlatRef<ext::RefLike, _> = FlatRef::heads(PhantomData, None);
             let namespaced_heads = NamespacedRef::heads(id, None);
 
             let fetch = heads
@@ -163,7 +164,6 @@ mod tests {
             let mut remote = Remote::rad_remote(path.display(), fetch);
             remote.add_pushes(vec![push].into_iter());
             let git_remote = remote.create(&repo).expect("failed to create the remote");
-
 
             assert_eq!(
                 git_remote
@@ -192,12 +192,13 @@ mod tests {
         let namespace = Hash::hash(b"meow-meow");
         let url = LocalUrl {
             repo: namespace,
-            local_peer_id: peer_id.clone(),
+            local_peer_id: peer_id,
         };
         let name = format!("lyla@{}", peer_id);
-        let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, Some(peer_id.clone()));
-        let heads = heads.with_name("heads/*");
-        let remotes: FlatRef<String, _> = FlatRef::heads(PhantomData, Some(name.clone()));
+        let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, peer_id);
+        let heads = heads.with_name(ext::RefspecPattern::try_from("heads/*").unwrap());
+        let remotes: FlatRef<ext::RefLike, _> =
+            FlatRef::heads(PhantomData, ext::RefLike::try_from(name.as_str()).unwrap());
         let remote = Remote {
             url,
             name: name.clone(),

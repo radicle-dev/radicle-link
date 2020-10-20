@@ -17,12 +17,14 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    convert::TryFrom,
     fmt::{self, Display},
     marker::PhantomData,
+    path::{Path, PathBuf},
 };
 
 use crate::{
-    git::{refs::Refs, sealed},
+    git::{ext, refs::Refs, sealed},
     hash::Hash,
     peer::PeerId,
     uri::RadUrn,
@@ -39,17 +41,82 @@ pub use reference::{Many, Multiple, One, Reference, RefsCategory, Single};
 ///   * `refs/remotes/<origin>`
 pub type FlatRef<R, C> = Reference<PhantomData<!>, R, C>;
 
-impl<R: Display, C> Display for FlatRef<R, C> {
+impl<R> Display for FlatRef<R, One>
+where
+    for<'a> &'a R: Into<ext::RefLike>,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.remote {
-            None => write!(f, "refs/heads/{}", self.name),
-            Some(remote) => write!(f, "refs/remotes/{}/{}", remote, self.name),
+        f.write_str(Into::<ext::RefLike>::into(self).as_str())
+    }
+}
+
+impl<R> From<&FlatRef<R, One>> for ext::RefLike
+where
+    for<'a> &'a R: Into<ext::RefLike>,
+{
+    fn from(r: &FlatRef<R, One>) -> Self {
+        let mut path = PathBuf::new();
+        match &r.remote {
+            None => path.push(ext::Qualified::from(r.name.clone())),
+            Some(remote) => {
+                path.push("refs/remotes");
+                path.push(remote.into());
+                path.push(ext::OneLevel::from(r.name.clone()))
+            },
         }
+
+        ext::RefLike::try_from(path.as_path()).unwrap()
+    }
+}
+
+impl<R> From<&FlatRef<R, One>> for ext::RefspecPattern
+where
+    for<'a> &'a R: Into<ext::RefLike>,
+{
+    fn from(r: &FlatRef<R, One>) -> Self {
+        Into::<ext::RefLike>::into(r).into()
+    }
+}
+
+impl<R> Display for FlatRef<R, Many>
+where
+    for<'a> &'a R: Into<ext::RefLike>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(Into::<ext::RefspecPattern>::into(self).as_str())
+    }
+}
+
+impl<R> From<&FlatRef<R, Many>> for ext::RefspecPattern
+where
+    for<'a> &'a R: Into<ext::RefLike>,
+{
+    fn from(r: &FlatRef<R, Many>) -> Self {
+        let mut path = PathBuf::new();
+        path.push("refs");
+        match &r.remote {
+            None => {
+                path.push("heads");
+            },
+            Some(remote) => {
+                path.push("remotes");
+                path.push(remote.into());
+            },
+        }
+        path.push(&r.name);
+
+        ext::RefspecPattern::try_from(path.as_path()).unwrap()
     }
 }
 
 /// A representation of git reference that is under `refs/namespace/<namespace>`
 pub type NamespacedRef<N, C> = Reference<N, PeerId, C>;
+
+impl<N, C> NamespacedRef<N, C> {
+    pub fn namespace(&self) -> &N {
+        &self._namespace
+    }
+}
 
 /// Whether we should force the overwriting of a reference or not.
 #[derive(Debug, Clone)]
@@ -94,22 +161,31 @@ impl<S, T> SymbolicRef<S, T> {
     ///     is passed.
     pub fn create<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error>
     where
-        S: Display,
-        T: Display,
+        for<'b> &'b S: Into<ext::RefLike>,
+        for<'b> &'b T: Into<ext::RefLike>,
     {
-        let source = self.source.to_string();
-        let target = self.target.to_string();
+        let source = Into::<ext::RefLike>::into(&self.source);
+        let target = Into::<ext::RefLike>::into(&self.target);
 
-        let reflog_msg = &format!("creating symbolic ref {} -> {}", source, target);
+        let reflog_msg = &format!(
+            "creating symbolic ref {} -> {}",
+            source.as_str(),
+            target.as_str()
+        );
         tracing::info!("{}", reflog_msg);
 
-        repo.find_reference(&target).and_then(|_| {
-            repo.reference_symbolic(&source, &target, self.force.as_bool(), reflog_msg)
+        repo.find_reference(target.as_str()).and_then(|_| {
+            repo.reference_symbolic(
+                source.as_str(),
+                target.as_str(),
+                self.force.as_bool(),
+                reflog_msg,
+            )
         })
     }
 }
 
-/// Trait object for "existential" [`Refspec`]s.
+/// Trait for creating "existential" [`Refspec`]s as trait objects.
 pub trait AsRefspec: sealed::Sealed {
     fn as_refspec(&self) -> String;
 }
@@ -122,8 +198,10 @@ pub struct Refspec<Local, Remote> {
 
 impl<L, R> Refspec<L, R>
 where
-    L: Display + 'static,
-    R: Display + 'static,
+    L: 'static,
+    R: 'static,
+    for<'a> &'a L: Into<ext::RefspecPattern>,
+    for<'a> &'a R: Into<ext::RefspecPattern>,
 {
     pub fn boxed(self) -> Box<dyn AsRefspec> {
         Box::new(self)
@@ -132,8 +210,8 @@ where
 
 impl<L, R> AsRefspec for Refspec<L, R>
 where
-    L: Display,
-    R: Display,
+    for<'a> &'a L: Into<ext::RefspecPattern>,
+    for<'a> &'a R: Into<ext::RefspecPattern>,
 {
     fn as_refspec(&self) -> String {
         self.to_string()
@@ -144,14 +222,18 @@ impl<L, R> sealed::Sealed for Refspec<L, R> {}
 
 impl<L, R> Display for Refspec<L, R>
 where
-    L: Display,
-    R: Display,
+    for<'a> &'a L: Into<ext::RefspecPattern>,
+    for<'a> &'a R: Into<ext::RefspecPattern>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.force.as_bool() {
             f.write_str("+")?;
         }
-        write!(f, "{}:{}", self.remote, self.local)
+
+        let remote = Into::<ext::RefspecPattern>::into(&self.remote);
+        let local = Into::<ext::RefspecPattern>::into(&self.local);
+
+        write!(f, "{}:{}", remote.as_str(), local.as_str())
     }
 }
 
@@ -161,14 +243,14 @@ where
 {
     pub fn rad_signed_refs<'a>(
         namespace: N,
-        remote_peer: &'a PeerId,
-        tracked: impl Iterator<Item = &'a PeerId> + 'a,
+        remote_peer: PeerId,
+        tracked: impl Iterator<Item = PeerId> + 'a,
     ) -> impl Iterator<Item = Self> + 'a
     where
         N: 'a,
     {
         tracked.map(move |peer| {
-            let local = Reference::rad_signed_refs(namespace.clone(), (*peer).clone());
+            let local = Reference::rad_signed_refs(namespace.clone(), peer);
             let remote = if peer == remote_peer {
                 local.set_remote(None)
             } else {
@@ -184,10 +266,10 @@ impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
     pub fn fetch_heads<'a, E>(
         namespace: Hash,
         remote_heads: HashMap<String, git2::Oid>,
-        tracked_peers: impl Iterator<Item = &'a PeerId> + 'a,
-        remote_peer: &'a PeerId,
+        tracked_peers: impl Iterator<Item = PeerId> + 'a,
+        remote_peer: PeerId,
         rad_signed_refs_of: impl Fn(PeerId) -> Result<Refs, E>,
-        certifiers_of: impl Fn(&PeerId) -> Result<HashSet<RadUrn>, E>,
+        certifiers_of: impl Fn(PeerId) -> Result<HashSet<RadUrn>, E>,
     ) -> Result<impl Iterator<Item = Box<dyn AsRefspec>> + 'a, E> {
         // FIXME: do this in constant memory
         let mut refspecs = Vec::new();
@@ -196,28 +278,53 @@ impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
             // Heads
             //
             // `+refs/namespaces/<namespace>/refs[/remotes/<peer>]/heads/* \
-            // :refs/namespaces/<namespace>/refs/remotes/<peer>/refs/heads/*`
+            // :refs/namespaces/<namespace>/refs/remotes/<peer>/heads/*`
             {
-                let their_singed_rad_refs = rad_signed_refs_of(tracked_peer.clone())?;
+                let their_singed_rad_refs = rad_signed_refs_of(tracked_peer)?;
                 for (name, target) in their_singed_rad_refs.heads {
-                    let name_namespaced = format!("refs/namespaces/{}/{}", namespace, name);
-                    if let Some(name) = name.strip_prefix("refs/heads/") {
-                        let targets_match = remote_heads
-                            .get(name_namespaced.as_str())
-                            .map(|remote_target| remote_target == &*target)
-                            .unwrap_or(false);
+                    // NB(kim): this is deprecated code, sparing myself the
+                    // effort to go through `Into<RefLike>` for namespace and
+                    // peer -- those are `unsafe_coerce` anyway
 
-                        if targets_match {
-                            let local =
-                                Reference::head(namespace.clone(), tracked_peer.clone(), &name);
-                            let remote = if tracked_peer == remote_peer {
-                                local.set_remote(None)
-                            } else {
-                                local.clone()
-                            };
+                    // Either the signed ref is in the "owned" section of
+                    // `remote_peer`'s repo...
+                    let name_namespaced = ext::RefLike::try_from(
+                        Path::new("refs/namespaces").join(namespace.to_string()),
+                    )
+                    .unwrap()
+                    .join(name.clone());
 
-                            refspecs.push(local.refspec(remote, Force::True).boxed())
-                        }
+                    // .. or `remote_peer` is tracking `tracked_peer`, in which
+                    // case it is in the remotes section.
+                    let name_namespaced_remote = ext::RefLike::try_from(
+                        Path::new("refs/namespaces")
+                            .join(namespace.to_string())
+                            .join("refs/remotes")
+                            .join(remote_peer.to_string())
+                            .join("heads"),
+                    )
+                    .unwrap()
+                    .join(name.clone());
+
+                    let targets_match = remote_heads
+                        .get(name_namespaced.as_str())
+                        .or_else(|| remote_heads.get(name_namespaced_remote.as_str()))
+                        .map(|remote_target| remote_target == &*target)
+                        .unwrap_or(false);
+
+                    if targets_match {
+                        let local = Reference::head(
+                            namespace.clone(),
+                            tracked_peer,
+                            ext::RefLike::try_from(name).unwrap(),
+                        );
+                        let remote = if tracked_peer == remote_peer {
+                            local.set_remote(None)
+                        } else {
+                            local.clone()
+                        };
+
+                        refspecs.push(local.refspec(remote, Force::True).boxed())
                     }
                 }
             }
@@ -227,7 +334,7 @@ impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/id \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/id`
             {
-                let local = Reference::rad_id(namespace.clone()).with_remote(tracked_peer.clone());
+                let local = Reference::rad_id(namespace.clone()).with_remote(tracked_peer);
                 let remote = if tracked_peer == remote_peer {
                     local.set_remote(None)
                 } else {
@@ -242,7 +349,7 @@ impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/self \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/self`
             {
-                let local = Reference::rad_self(namespace.clone(), tracked_peer.clone());
+                let local = Reference::rad_self(namespace.clone(), tracked_peer);
                 let remote = if tracked_peer == remote_peer {
                     local.set_remote(None)
                 } else {
@@ -257,8 +364,7 @@ impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
             // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/ids/* \
             // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/ids/*`
             {
-                let local =
-                    Reference::rad_ids_glob(namespace.clone()).with_remote(tracked_peer.clone());
+                let local = Reference::rad_ids_glob(namespace.clone()).with_remote(tracked_peer);
                 let remote = if tracked_peer == remote_peer {
                     local.set_remote(None)
                 } else {
@@ -278,12 +384,11 @@ impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
             // `refs/namespaces/<certifier>/refs[/remotes/<peer>]/rad/ids/* \
             // :refs/namespaces/<certifier>/refs/remotes/<peer>/rad/ids/*`
             {
-                let their_certifiers = certifiers_of(&tracked_peer)?;
+                let their_certifiers = certifiers_of(tracked_peer)?;
                 for urn in their_certifiers {
                     // id
                     {
-                        let local =
-                            Reference::rad_id(urn.id.clone()).with_remote(tracked_peer.clone());
+                        let local = Reference::rad_id(urn.id.clone()).with_remote(tracked_peer);
                         let remote = if tracked_peer == remote_peer {
                             local.set_remote(None)
                         } else {
@@ -295,8 +400,8 @@ impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
 
                     // rad/ids/* of id
                     {
-                        let local = Reference::rad_ids_glob(urn.id.clone())
-                            .with_remote(tracked_peer.clone());
+                        let local =
+                            Reference::rad_ids_glob(urn.id.clone()).with_remote(tracked_peer);
                         let remote = if tracked_peer == remote_peer {
                             local.set_remote(None)
                         } else {

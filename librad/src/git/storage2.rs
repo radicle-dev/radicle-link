@@ -32,6 +32,7 @@ use crate::{
         },
     },
     identities::git::Identities,
+    internal::result::ResultExt as _,
     keys,
     paths::Paths,
     peer::PeerId,
@@ -126,18 +127,14 @@ where
         self.has_ref(&Reference::try_from(urn)?)
     }
 
-    pub fn has_ref<N, C>(&self, reference: &NamespacedRef<N, C>) -> Result<bool, Error>
+    pub fn has_ref<N>(&self, reference: &NamespacedRef<N, One>) -> Result<bool, Error>
     where
         N: AsNamespace,
     {
-        let found = self
-            .backend
-            .references_glob(&reference.to_string())?
-            .names()
-            .filter_map(Result::ok)
-            .count();
-
-        Ok(found > 0)
+        self.backend
+            .find_reference(&reference.to_string())
+            .and(Ok(true))
+            .or_matches(is_not_found_err, || Ok(false))
     }
 
     pub fn has_commit<Oid>(&self, urn: &Urn, oid: Oid) -> Result<bool, Error>

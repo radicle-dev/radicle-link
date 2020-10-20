@@ -16,6 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    convert::TryFrom,
     io,
     marker::PhantomData,
     path::{self, PathBuf},
@@ -25,6 +26,7 @@ use tempfile::NamedTempFile;
 
 use crate::{
     git::{
+        ext,
         local::url::LocalUrl,
         types::{remote::Remote, AsRefspec, FlatRef, Force},
     },
@@ -46,6 +48,9 @@ pub enum Error {
 
     #[error(transparent)]
     Persist(#[from] tempfile::PersistError),
+
+    #[error(transparent)]
+    Refname(#[from] ext::reference::name::Error),
 }
 
 /// An `Include` is a representation of an include file which we want to
@@ -99,7 +104,7 @@ impl<Path> Include<Path> {
                 let (key, url) = url_entry(&remote);
                 config.set_str(&key, &url.to_string())?;
 
-                let (key, fetch) = fetch_entry(&remote);
+                let (key, fetch) = fetch_entry(&remote)?;
                 config.set_str(&key, &fetch)?;
             }
         }
@@ -158,23 +163,21 @@ fn url_entry(remote: &Remote<LocalUrl>) -> (String, &LocalUrl) {
     (format!("{}.url", key), &remote.url)
 }
 
-fn fetch_entry(remote: &Remote<LocalUrl>) -> (String, String) {
-    let key = remote_prefix(&remote);
-    (
-        format!("{}.fetch", key),
-        match &remote.fetch_spec {
-            Some(spec) => spec.as_refspec(),
-            None => {
-                let peer_id = &remote.url.local_peer_id;
-                let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, Some(peer_id.clone()));
-                let heads = heads.with_name("heads/*");
-                let remotes: FlatRef<String, _> =
-                    FlatRef::heads(PhantomData, Some(remote.name.clone()));
+fn fetch_entry(remote: &Remote<LocalUrl>) -> Result<(String, String), Error> {
+    let key = format!("{}.fetch", remote_prefix(&remote));
+    let spec = match &remote.fetch_spec {
+        Some(spec) => Ok::<_, Error>(spec.as_refspec()),
+        None => {
+            let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, remote.url.local_peer_id);
+            let heads = heads.with_name(ext::RefspecPattern::try_from("heads/*").unwrap());
+            let remotes: FlatRef<ext::RefLike, _> =
+                FlatRef::heads(PhantomData, ext::RefLike::try_from(remote.name.as_str())?);
 
-                remotes.refspec(heads, Force::True).as_refspec()
-            },
+            Ok::<_, Error>(remotes.refspec(heads, Force::True).as_refspec())
         },
-    )
+    }?;
+
+    Ok((key, spec))
 }
 
 #[cfg(test)]
@@ -213,7 +216,7 @@ mod test {
         let repo = Hash::hash(b"meow-meow");
         let url = LocalUrl {
             repo,
-            local_peer_id: (*LOCAL_PEER_ID).clone(),
+            local_peer_id: *LOCAL_PEER_ID,
         };
 
         // Start with an empty config to catch corner-cases where git2::Config does not
