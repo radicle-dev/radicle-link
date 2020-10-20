@@ -25,6 +25,7 @@ use crate::{
         refs::Refs,
         types::{AsRefspec, Force, Reference, Refspec},
     },
+    hash::Hash,
     peer::PeerId,
     uri::RadUrn,
 };
@@ -36,19 +37,19 @@ pub enum Error {
 }
 
 pub struct Fetcher<'a> {
-    url: GitUrl,
+    url: GitUrl<Hash>,
     remote: git2::Remote<'a>,
 }
 
 impl<'a> Fetcher<'a> {
-    pub fn new(repo: &'a git2::Repository, url: GitUrl) -> Result<Self, Error> {
+    pub fn new(repo: &'a git2::Repository, url: GitUrl<Hash>) -> Result<Self, Error> {
         let mut remote = repo.remote_anonymous(&url.to_string())?;
         remote.connect(git2::Direction::Fetch)?;
 
         Ok(Self { url, remote })
     }
 
-    pub fn url(&self) -> &GitUrl {
+    pub fn url(&self) -> &GitUrl<Hash> {
         &self.url
     }
 

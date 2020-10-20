@@ -70,6 +70,12 @@ impl TryFrom<Multihash> for Hash {
     }
 }
 
+impl From<&Hash> for Multihash {
+    fn from(Hash(mh): &Hash) -> Self {
+        mh.clone()
+    }
+}
+
 impl Display for Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.as_ref().fmt(f)

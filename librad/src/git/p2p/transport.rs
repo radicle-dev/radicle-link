@@ -62,6 +62,7 @@ use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Trans
 
 use crate::{
     git::{ext::into_git_err, header::Header, p2p::url::GitUrl},
+    hash::Hash,
     peer::PeerId,
     uri::{self, RadUrn},
 };
@@ -166,7 +167,7 @@ impl SmartSubtransport for RadTransport {
         url: &str,
         service: Service,
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        let url: GitUrl = url.parse().map_err(into_git_err)?;
+        let url: GitUrl<Hash> = url.parse().map_err(into_git_err)?;
         let stream = self
             .open_stream(&url.local_peer, &url.remote_peer, &url.addr_hints)
             .ok_or_else(|| into_git_err(format!("No connection to {}", url.remote_peer)))?;
@@ -186,7 +187,7 @@ impl SmartSubtransport for RadTransport {
 
 struct RadSubTransport {
     header_sent: bool,
-    url: GitUrl,
+    url: GitUrl<Hash>,
     service: Service,
     stream: Box<dyn GitStream>,
 }

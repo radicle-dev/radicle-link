@@ -16,29 +16,31 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    convert::TryFrom,
     fmt::{self, Display},
     net::{AddrParseError, SocketAddr},
     str::FromStr,
 };
 
+use multihash::Multihash;
 use thiserror::Error;
 use url::Url;
 
 use crate::{
-    hash::{self, Hash},
+    hash::Hash,
     peer::{self, PeerId},
     uri::{self, RadUrl, RadUrlRef, RadUrn},
 };
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct GitUrl {
+pub struct GitUrl<R> {
     pub local_peer: PeerId,
     pub remote_peer: PeerId,
     pub addr_hints: Vec<SocketAddr>,
-    pub repo: Hash,
+    pub repo: R,
 }
 
-impl GitUrl {
+impl GitUrl<Hash> {
     pub fn from_rad_url<Addrs>(url: RadUrl, local_peer: PeerId, addrs: Addrs) -> Self
     where
         Addrs: IntoIterator<Item = SocketAddr>,
@@ -63,7 +65,13 @@ impl GitUrl {
         }
     }
 
-    pub fn as_ref(&self) -> GitUrlRef {
+    pub fn into_rad_url(self) -> RadUrl {
+        self.into()
+    }
+}
+
+impl<R> GitUrl<R> {
+    pub fn as_ref(&self) -> GitUrlRef<R> {
         GitUrlRef {
             local_peer: &self.local_peer,
             remote_peer: &self.remote_peer,
@@ -71,13 +79,12 @@ impl GitUrl {
             repo: &self.repo,
         }
     }
-
-    pub fn into_rad_url(self) -> RadUrl {
-        self.into()
-    }
 }
 
-impl Display for GitUrl {
+impl<R> Display for GitUrl<R>
+where
+    for<'a> &'a R: Into<Multihash>,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.as_ref().fmt(f)
     }
@@ -85,7 +92,7 @@ impl Display for GitUrl {
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum ParseError {
+pub enum ParseError<Repo: std::error::Error + Send + Sync + 'static> {
     #[error("invalid scheme: {0}")]
     InvalidScheme(String),
 
@@ -101,15 +108,25 @@ pub enum ParseError {
     #[error("malformed URL")]
     Url(#[from] url::ParseError),
 
+    #[error("invalid repository identifier")]
+    Repo(#[source] Repo),
+
     #[error(transparent)]
-    Hash(#[from] hash::ParseError),
+    Multibase(#[from] multibase::Error),
+
+    #[error(transparent)]
+    Multihash(#[from] multihash::DecodeOwnedError),
 
     #[error(transparent)]
     Addr(#[from] AddrParseError),
 }
 
-impl FromStr for GitUrl {
-    type Err = ParseError;
+impl<R> FromStr for GitUrl<R>
+where
+    R: TryFrom<Multihash>,
+    R::Error: std::error::Error + Send + Sync + 'static,
+{
+    type Err = ParseError<R::Error>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let url = Url::parse(s)?;
@@ -132,9 +149,10 @@ impl FromStr for GitUrl {
             .next()
             .ok_or_else(|| Self::Err::MissingRepo)
             .and_then(|path| {
-                path.trim_end_matches(".git")
-                    .parse()
-                    .map_err(Self::Err::Hash)
+                let path = path.trim_end_matches(".git");
+                let bytes = multibase::decode(path).map(|(_base, bytes)| bytes)?;
+                let mhash = Multihash::from_bytes(bytes)?;
+                R::try_from(mhash).map_err(Self::Err::Repo)
             })?;
         let addr_hints = url
             .query_pairs()
@@ -150,7 +168,7 @@ impl FromStr for GitUrl {
     }
 }
 
-impl Into<RadUrl> for GitUrl {
+impl Into<RadUrl> for GitUrl<Hash> {
     fn into(self) -> RadUrl {
         RadUrl {
             authority: self.remote_peer,
@@ -164,14 +182,14 @@ impl Into<RadUrl> for GitUrl {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct GitUrlRef<'a> {
+pub struct GitUrlRef<'a, R> {
     pub local_peer: &'a PeerId,
     pub remote_peer: &'a PeerId,
     pub addr_hints: &'a [SocketAddr],
-    pub repo: &'a Hash,
+    pub repo: &'a R,
 }
 
-impl<'a> GitUrlRef<'a> {
+impl<'a> GitUrlRef<'a, Hash> {
     pub fn from_rad_url<Addrs>(
         url: &'a RadUrl,
         local_peer: &'a PeerId,
@@ -210,8 +228,13 @@ impl<'a> GitUrlRef<'a> {
             repo: &urn.id,
         }
     }
+}
 
-    pub fn to_owned(&self) -> GitUrl {
+impl<R> GitUrlRef<'_, R> {
+    pub fn to_owned(&self) -> GitUrl<R>
+    where
+        R: Clone,
+    {
         GitUrl {
             local_peer: *self.local_peer,
             remote_peer: *self.remote_peer,
@@ -221,7 +244,10 @@ impl<'a> GitUrlRef<'a> {
     }
 }
 
-impl<'a> Display for GitUrlRef<'a> {
+impl<'a, R> Display for GitUrlRef<'a, R>
+where
+    &'a R: Into<Multihash>,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut url = Url::parse(&format!(
             "{}://{}@{}",
@@ -236,7 +262,10 @@ impl<'a> Display for GitUrlRef<'a> {
                 .iter()
                 .map(|addr| ("addr", addr.to_string())),
         );
-        url.set_path(&format!("/{}.git", self.repo));
+        url.set_path(&format!(
+            "/{}.git",
+            multibase::encode(multibase::Base::Base32Z, self.repo.into())
+        ));
 
         f.write_str(url.as_str())
     }
