@@ -224,7 +224,7 @@ pub struct OneLevel(PathBuf);
 
 impl OneLevel {
     pub fn as_str(&self) -> &str {
-        self.into()
+        self.as_ref()
     }
 }
 
@@ -242,6 +242,14 @@ impl AsRef<Path> for OneLevel {
     }
 }
 
+impl AsRef<str> for OneLevel {
+    fn as_ref(&self) -> &str {
+        self.0
+            .to_str()
+            .expect("cannot be constructed from invalid utf8")
+    }
+}
+
 impl From<RefLike> for OneLevel {
     fn from(RefLike(path): RefLike) -> Self {
         if path.starts_with("refs/") {
@@ -255,13 +263,6 @@ impl From<RefLike> for OneLevel {
 impl From<OneLevel> for RefLike {
     fn from(OneLevel(path): OneLevel) -> Self {
         Self(path)
-    }
-}
-
-impl<'a> From<&'a OneLevel> for &'a str {
-    fn from(OneLevel(path): &'a OneLevel) -> &'a str {
-        path.to_str()
-            .expect("cannot be constructed from invalid utf8")
     }
 }
 
@@ -308,7 +309,7 @@ pub struct Qualified(PathBuf);
 
 impl Qualified {
     pub fn as_str(&self) -> &str {
-        self.into()
+        self.as_ref()
     }
 }
 
@@ -326,6 +327,14 @@ impl AsRef<Path> for Qualified {
     }
 }
 
+impl AsRef<str> for Qualified {
+    fn as_ref(&self) -> &str {
+        self.0
+            .to_str()
+            .expect("cannot be constructed from invalid utf8")
+    }
+}
+
 impl From<RefLike> for Qualified {
     fn from(RefLike(path): RefLike) -> Self {
         if path.starts_with("refs/") {
@@ -339,13 +348,6 @@ impl From<RefLike> for Qualified {
 impl From<Qualified> for RefLike {
     fn from(Qualified(path): Qualified) -> Self {
         Self(path)
-    }
-}
-
-impl<'a> From<&'a Qualified> for &'a str {
-    fn from(Qualified(path): &'a Qualified) -> &'a str {
-        path.to_str()
-            .expect("cannot be constructed from invalid utf8")
     }
 }
 

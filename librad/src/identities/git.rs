@@ -49,10 +49,10 @@ pub(crate) mod tests;
 use iter::Iter;
 use load::ByOid;
 
+pub type Urn = urn::Urn<Revision>;
+
 pub type Revision = ext::Oid;
 pub type ContentId = ext::Oid;
-
-pub type Urn = urn::Urn<Revision>;
 
 pub type Doc<T, D> = generic::Doc<T, D, Revision>;
 pub type Identity<T> = generic::Identity<T, Revision, ContentId>;

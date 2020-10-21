@@ -50,15 +50,15 @@ where
     }
 }
 
-impl<R> From<&FlatRef<R, One>> for ext::RefLike
+impl<'a, R> From<&'a FlatRef<R, One>> for ext::RefLike
 where
-    for<'a> &'a R: Into<ext::RefLike>,
+    &'a R: Into<ext::RefLike>,
 {
-    fn from(r: &FlatRef<R, One>) -> Self {
+    fn from(r: &'a FlatRef<R, One>) -> Self {
         let mut path = PathBuf::new();
-        match &r.remote {
+        match r.remote {
             None => path.push(ext::Qualified::from(r.name.clone())),
-            Some(remote) => {
+            Some(ref remote) => {
                 path.push("refs/remotes");
                 path.push(remote.into());
                 path.push(ext::OneLevel::from(r.name.clone()))
@@ -69,11 +69,11 @@ where
     }
 }
 
-impl<R> From<&FlatRef<R, One>> for ext::RefspecPattern
+impl<'a, R> From<&'a FlatRef<R, One>> for ext::RefspecPattern
 where
-    for<'a> &'a R: Into<ext::RefLike>,
+    &'a R: Into<ext::RefLike>,
 {
-    fn from(r: &FlatRef<R, One>) -> Self {
+    fn from(r: &'a FlatRef<R, One>) -> Self {
         Into::<ext::RefLike>::into(r).into()
     }
 }
@@ -87,18 +87,18 @@ where
     }
 }
 
-impl<R> From<&FlatRef<R, Many>> for ext::RefspecPattern
+impl<'a, R> From<&'a FlatRef<R, Many>> for ext::RefspecPattern
 where
-    for<'a> &'a R: Into<ext::RefLike>,
+    &'a R: Into<ext::RefLike>,
 {
-    fn from(r: &FlatRef<R, Many>) -> Self {
+    fn from(r: &'a FlatRef<R, Many>) -> Self {
         let mut path = PathBuf::new();
         path.push("refs");
-        match &r.remote {
+        match r.remote {
             None => {
                 path.push("heads");
             },
-            Some(remote) => {
+            Some(ref remote) => {
                 path.push("remotes");
                 path.push(remote.into());
             },
@@ -289,7 +289,9 @@ impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
                     // Either the signed ref is in the "owned" section of
                     // `remote_peer`'s repo...
                     let name_namespaced = ext::RefLike::try_from(
-                        Path::new("refs/namespaces").join(namespace.to_string()),
+                        Path::new("refs/namespaces")
+                            .join(namespace.to_string())
+                            .join("refs/heads"),
                     )
                     .unwrap()
                     .join(name.clone());
@@ -300,7 +302,7 @@ impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
                         Path::new("refs/namespaces")
                             .join(namespace.to_string())
                             .join("refs/remotes")
-                            .join(remote_peer.to_string())
+                            .join(tracked_peer.to_string())
                             .join("heads"),
                     )
                     .unwrap()

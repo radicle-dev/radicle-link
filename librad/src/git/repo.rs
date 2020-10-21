@@ -60,7 +60,7 @@ impl<S: Clone> Repo<'_, S> {
     /// Stop tracking [`PeerId`]s view of this repo
     ///
     /// Equivalent to `git remote rm`.
-    pub fn untrack(&self, peer: &PeerId) -> Result<(), Error> {
+    pub fn untrack(&self, peer: &PeerId) -> Result<bool, Error> {
         self.storage.untrack(&self.urn, &peer).map_err(Error::from)
     }
 

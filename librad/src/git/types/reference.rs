@@ -332,12 +332,12 @@ where
     }
 }
 
-impl<N, R> From<&Reference<N, R, One>> for ext::RefLike
+impl<'a, N, R> From<&'a Reference<N, R, One>> for ext::RefLike
 where
     N: AsNamespace,
-    for<'a> &'a R: Into<ext::RefLike>,
+    &'a R: Into<ext::RefLike>,
 {
-    fn from(r: &Reference<N, R, One>) -> Self {
+    fn from(r: &'a Reference<N, R, One>) -> Self {
         let mut path = PathBuf::new();
         path.push("refs/namespaces");
         path.push(r._namespace.as_namespace());
@@ -353,12 +353,12 @@ where
     }
 }
 
-impl<N, R> From<&Reference<N, R, One>> for ext::RefspecPattern
+impl<'a, N, R> From<&'a Reference<N, R, One>> for ext::RefspecPattern
 where
     N: AsNamespace,
-    for<'a> &'a R: Into<ext::RefLike>,
+    &'a R: Into<ext::RefLike>,
 {
-    fn from(r: &Reference<N, R, One>) -> Self {
+    fn from(r: &'a Reference<N, R, One>) -> Self {
         Into::<ext::RefLike>::into(r).into()
     }
 }
@@ -409,12 +409,12 @@ where
     }
 }
 
-impl<N, R> From<&Reference<N, R, Many>> for ext::RefspecPattern
+impl<'a, N, R> From<&'a Reference<N, R, Many>> for ext::RefspecPattern
 where
     N: AsNamespace,
-    for<'a> &'a R: Into<ext::RefLike>,
+    &'a R: Into<ext::RefLike>,
 {
-    fn from(r: &Reference<N, R, Many>) -> Self {
+    fn from(r: &'a Reference<N, R, Many>) -> Self {
         let mut path = PathBuf::new();
         path.push("refs/namespaces");
         path.push(r._namespace.as_namespace());
