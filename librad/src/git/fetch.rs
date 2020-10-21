@@ -137,7 +137,7 @@ pub mod refspecs {
                         .unwrap()
                         .join(Namespace::from(urn))
                         .join(ext::RefLike::try_from("refs/remotes").unwrap())
-                        .join(remote_peer)
+                        .join(tracked_peer)
                         .join(ext::RefLike::try_from("heads").unwrap())
                         .join(name.clone());
 
