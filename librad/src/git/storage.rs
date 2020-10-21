@@ -1028,8 +1028,8 @@ where
 
     fn adopt_as_ours(
         &self,
-        target: &NamespacedRef<Single>,
-        source: &NamespacedRef<Single>,
+        target: &NamespacedRef<namespace::Legacy, Single>,
+        source: &NamespacedRef<namespace::Legacy, Single>,
     ) -> Result<git2::Reference, Error> {
         let remote_id_head = self.reference(&target).and_then(|reference| {
             reference
