@@ -29,7 +29,7 @@ use radicle_keystore::sign::ed25519;
 use librad::{
     git,
     keys,
-    meta::{project, project::ProjectInfo},
+    meta::{entity, project, project::ProjectInfo, user::User},
     net::{
         discovery,
         gossip,
@@ -52,6 +52,9 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Git(#[from] git::repo::Error),
 
     #[error(transparent)]
     Bootstrap(#[from] peer::BootstrapError),
@@ -127,7 +130,10 @@ pub enum Event {
     /// The seed node is listening for peer connections.
     Listening(SocketAddr),
     /// A peer has connected.
-    PeerConnected(PeerId),
+    PeerConnected {
+        peer_id: PeerId,
+        name: Option<String>,
+    },
     /// A peer has disconnected.
     PeerDisconnected(PeerId),
     /// A project has been tracked from a peer.
@@ -140,6 +146,15 @@ pub enum Event {
 }
 
 impl Event {
+    async fn peer_connected(peer_id: PeerId, api: &PeerApi<Signer>) -> Result<Self, Error> {
+        let user = self::guess_user(peer_id, api).await?;
+
+        Ok(Self::PeerConnected {
+            peer_id,
+            name: user.map(|u| u.name().to_owned()),
+        })
+    }
+
     async fn project_tracked(
         urn: RadUrn,
         provider: PeerId,
@@ -244,12 +259,15 @@ impl Node {
                         // Attempt to track, but keep going if it fails.
                         if Node::track_project(&api, urn, &provider).await.is_ok() {
                             let event = Event::project_tracked(urn.clone(), *peer_id, &api).await?;
+
                             transmit.send(event).await.ok();
                         }
                     }
                 },
                 ProtocolEvent::Connected(id) => {
-                    transmit.send(Event::PeerConnected(id)).await.ok();
+                    let event = Event::peer_connected(id, &api).await?;
+
+                    transmit.send(event).await.ok();
                 },
                 ProtocolEvent::Disconnecting(id) => {
                     transmit.send(Event::PeerDisconnected(id)).await.ok();
@@ -342,4 +360,29 @@ impl Node {
         }
         Ok(())
     }
+}
+
+/// Guess a user given a peer id.
+async fn guess_user(
+    peer: PeerId,
+    api: &PeerApi<Signer>,
+) -> Result<Option<User<entity::Draft>>, Error> {
+    api.with_storage(move |s| {
+        let metas = s.all_metadata()?;
+
+        for meta in metas {
+            let meta = meta?;
+            let repo = s.open_repo(meta.urn())?;
+
+            for remote in repo.tracked()? {
+                if remote == peer {
+                    let user = repo.get_rad_self_of(remote)?;
+
+                    return Ok(Some(user));
+                }
+            }
+        }
+        Ok(None)
+    })
+    .await?
 }
