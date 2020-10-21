@@ -23,7 +23,7 @@ use crate::{
     git::{
         p2p::url::GitUrl,
         refs::Refs,
-        types::{Force, Reference, Refspec},
+        types::{AsRefspec, Force, Reference, Refspec},
     },
     peer::PeerId,
     uri::RadUrn,
@@ -60,7 +60,7 @@ impl<'a> Fetcher<'a> {
         tracing::debug!("Prefetching {}", self.url);
 
         let namespace = &self.url.repo;
-        let remote_peer = &self.url.remote_peer;
+        let remote_peer = self.url.remote_peer;
 
         let remote_id = Reference::rad_id(namespace.clone());
         let remote_self = Reference::rad_self(namespace.clone(), None);
@@ -77,16 +77,19 @@ impl<'a> Fetcher<'a> {
         let refspecs = [
             remote_id
                 .set_remote(remote_peer)
-                .refspec(remote_id, Force::False),
+                .refspec(remote_id, Force::False)
+                .boxed(),
             remote_self
                 .set_remote(remote_peer)
-                .refspec(remote_self, Force::False),
+                .refspec(remote_self, Force::False)
+                .boxed(),
             remote_certifiers
                 .set_remote(remote_peer)
-                .refspec(remote_certifiers, Force::False),
+                .refspec(remote_certifiers, Force::False)
+                .boxed(),
         ]
         .iter()
-        .map(|spec| spec.to_string())
+        .map(|spec| spec.as_refspec())
         .collect::<Vec<String>>();
 
         tracing::trace!(repo.clone.refspecs = ?refspecs);
@@ -130,7 +133,7 @@ impl<'a> Fetcher<'a> {
                 remote_peer,
                 transitively_tracked.clone().into_iter(),
             )
-            .map(|spec| spec.to_string())
+            .map(|spec| spec.as_refspec())
             .collect::<Vec<String>>();
 
             tracing::debug!(refspecs = ?refspecs, "Fetching rad/refs");
@@ -160,7 +163,7 @@ impl<'a> Fetcher<'a> {
                 rad_signed_refs_of,
                 certifiers_of,
             )?
-            .map(|spec| spec.to_string())
+            .map(|spec| spec.as_refspec())
             .collect::<Vec<String>>();
 
             tracing::debug!(refspecs = ?refspecs, "Fetching refs/heads");

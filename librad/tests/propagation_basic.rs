@@ -17,7 +17,7 @@
 
 #![feature(async_closure)]
 
-use std::{marker::PhantomData, time::Duration};
+use std::{convert::TryFrom, marker::PhantomData, time::Duration};
 
 use futures::{future, stream::StreamExt};
 use tempfile::tempdir;
@@ -25,6 +25,7 @@ use tokio::task::block_in_place;
 
 use librad::{
     git::{
+        ext,
         local::{self, transport::LocalTransportFactory, url::LocalUrl},
         storage,
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
@@ -251,13 +252,12 @@ async fn fetches_on_gossip_notify() {
             let url = LocalUrl::from_urn(urn.clone(), peer1.peer_id());
 
             let heads = NamespacedRef::heads(urn.clone().id, Some(peer1.peer_id()));
-            let remotes: FlatRef<String, _> = FlatRef::heads(
+            let remotes = FlatRef::heads(
                 PhantomData,
-                Some(format!("{}@{}", alice_name, peer1.peer_id())),
+                ext::RefLike::try_from(format!("{}@{}", alice_name, peer1.peer_id())).unwrap(),
             );
 
-            let remote =
-                Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).into_dyn()));
+            let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
 
             let oid =
                 initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks)).unwrap();
@@ -517,11 +517,12 @@ async fn menage_a_troi() {
             let url = LocalUrl::from_urn(urn.clone(), peer1_id);
 
             let heads = NamespacedRef::heads(urn.clone().id, Some(peer1_id));
-            let remotes: FlatRef<String, _> =
-                FlatRef::heads(PhantomData, Some(format!("{}@{}", alice_name, peer1_id)));
+            let remotes = FlatRef::heads(
+                PhantomData,
+                ext::RefLike::try_from(format!("{}@{}", alice_name, peer1_id)).unwrap(),
+            );
 
-            let remote =
-                Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).into_dyn()));
+            let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
 
             initial_commit(
                 &repo,
@@ -533,7 +534,11 @@ async fn menage_a_troi() {
             assert!(transport_results.wait(Duration::from_secs(3)).is_some());
         });
 
-        let head = NamespacedRef::head(urn.clone().id, peer1_id, &default_branch);
+        let head = NamespacedRef::head(
+            urn.clone().id,
+            peer1_id,
+            ext::RefLike::try_from(default_branch.as_str()).unwrap(),
+        );
         let peer2_has_ref = {
             let head = head.clone();
             let url = urn.clone().into_rad_url(peer1_id);

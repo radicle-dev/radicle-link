@@ -291,7 +291,7 @@ fn double_vote() -> anyhow::Result<()> {
 
 fn current_heads_from<'a>(
     devs: impl IntoIterator<Item = &'a common::Device<'a>>,
-) -> BTreeMap<Urn<Revision>, git2::Oid> {
+) -> BTreeMap<Urn, git2::Oid> {
     devs.into_iter()
         .map(|dev| {
             let cur = dev.current();
@@ -300,8 +300,6 @@ fn current_heads_from<'a>(
         .collect()
 }
 
-fn lookup<'a>(
-    map: &'a BTreeMap<Urn<Revision>, git2::Oid>,
-) -> impl Fn(Urn<Revision>) -> Result<git2::Oid, !> + 'a {
+fn lookup<'a>(map: &'a BTreeMap<Urn, git2::Oid>) -> impl Fn(Urn) -> Result<git2::Oid, !> + 'a {
     move |urn| Ok(*map.get(&urn).unwrap())
 }
