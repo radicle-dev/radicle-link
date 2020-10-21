@@ -753,8 +753,6 @@ where
             .copied()
             .collect::<HashSet<PeerId>>();
 
-        // FIXME(haxpenny): wtf is a resolver... we need to verify the certifier
-        // delegations that are a retrieved from this fetch.
         fetcher.fetch(
             transitively_tracked,
             |peer| self.rad_signed_refs_of(&urn, peer),
@@ -783,12 +781,36 @@ where
                     },
                     Some(certifier) => {
                         let certifier_here =
-                            NamespacedRef::rad_certifier(urn.id.clone(), &certifier)
-                                .with_remote(remote_peer);
+                            NamespacedRef::rad_certifier(urn.id.clone(), &certifier);
                         let certifier_id = NamespacedRef::rad_id(certifier.id);
-                        certifier_here
-                            .symbolic_ref(certifier_id, Force::False)
+
+                        // FIXME(haxpenny): wtf is a resolver... we need to verify the certifier
+                        // delegations that are a retrieved from this fetch.
+                        if !self.has_ref(&certifier_id)? {
+                            let remote_certifier = certifier_id.set_remote(remote_peer);
+                            let remote_id_head = self.reference(&remote_certifier).and_then(|reference| {
+                                reference
+                                    .target()
+                                    .ok_or_else(|| {
+                                        git2::Error::from_str(&format!(
+                                            "We just read `{}`, but now it's gone",
+                                            remote_certifier
+                                        ))
+                                    })
+                                    .map_err(Error::from)
+                            })?;
+                            self.backend.reference(
+                                &certifier_id.to_string(),
+                                remote_id_head,
+                                /* force */ false,
+                                &format!("Adopted `{}` as ours", remote_certifier),
+                            )?;
+                        }
+
+                        certifier_id
+                            .symbolic_ref(certifier_here, Force::False)
                             .create(&self.backend)
+                            .map_err(Error::from)
                             .and(Ok(()))
                     },
                 }
