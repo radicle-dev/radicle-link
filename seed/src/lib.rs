@@ -143,6 +143,7 @@ pub enum Event {
         provider: PeerId,
         name: String,
         description: Option<String>,
+        maintainers: HashSet<RadUrn>,
     },
 }
 
@@ -172,6 +173,7 @@ impl Event {
         Ok(Event::ProjectTracked {
             urn: urn.clone(),
             provider,
+            maintainers: proj.maintainers().clone(),
             name: proj.name().to_owned(),
             description: proj.description().to_owned(),
         })
