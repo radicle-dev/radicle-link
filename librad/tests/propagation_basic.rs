@@ -74,23 +74,31 @@ async fn can_clone() {
 
         let radicle_urn = radicle.urn();
 
-        peer1
-            .with_storage(move |storage| {
-                storage.create_repo(&alice).unwrap();
-                storage.create_repo(&radicle).unwrap();
-            })
-            .await
-            .unwrap();
+        {
+            let alice = alice.clone();
+            peer1
+                .with_storage(move |storage| {
+                    storage.create_repo(&alice).unwrap();
+                    storage.create_repo(&radicle).unwrap();
+                })
+                .await
+                .unwrap();
+        }
+
         peer2
             .with_storage(move |storage| {
+                let peer1_id = peer1.peer_id();
                 storage
-                    .clone_repo::<ProjectInfo, _>(
-                        radicle_urn.clone().into_rad_url(peer1.peer_id()),
-                        None,
-                    )
+                    .clone_repo::<ProjectInfo, _>(radicle_urn.clone().into_rad_url(peer1_id), None)
                     .unwrap();
                 // sanity check
-                storage.open_repo(radicle_urn).unwrap();
+                storage.open_repo(radicle_urn.clone()).unwrap();
+
+                // check rad/self of peer1 exists
+                storage.get_rad_self_of(&radicle_urn, peer1_id).unwrap();
+
+                // check user metadata exists
+                storage.some_metadata_of(&alice.urn(), None).unwrap();
             })
             .await
             .unwrap();
@@ -353,7 +361,7 @@ async fn all_metadata_returns_only_local_projects() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(1, all_metadata_acc_to_peer3.len());
+        assert_eq!(2, all_metadata_acc_to_peer3.len());
     })
     .await;
 }

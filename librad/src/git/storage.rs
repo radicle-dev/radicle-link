@@ -703,23 +703,7 @@ where
         {
             let local_id = NamespacedRef::rad_id(urn.id.clone());
             let remote_id = local_id.set_remote(remote_peer);
-            let remote_id_head = self.reference(&remote_id).and_then(|reference| {
-                reference
-                    .target()
-                    .ok_or_else(|| {
-                        git2::Error::from_str(&format!(
-                            "We just read `{}`, but now it's gone",
-                            remote_id
-                        ))
-                    })
-                    .map_err(Error::from)
-            })?;
-            self.backend.reference(
-                &local_id.to_string(),
-                remote_id_head,
-                /* force */ false,
-                &format!("Adopted `{}` as ours", remote_id),
-            )?;
+            self.adopt_as_ours(&remote_id, &local_id)?;
         }
 
         self.track_signers(&meta)?;
@@ -785,21 +769,28 @@ where
             .names()
             .try_for_each(|certifier_ref| {
                 let certifier_ref = certifier_ref?;
-                match certifier_ref.parse::<Hash>() {
-                    Err(_) => Ok(()),
-                    Ok(certifier_hash) => {
-                        let certifier_here = NamespacedRef::rad_certifier(
-                            urn.id.clone(),
-                            &RadUrn::new(
-                                certifier_hash.clone(),
-                                uri::Protocol::Git,
-                                uri::Path::empty(),
-                            ),
-                        );
-                        let certifier_id = NamespacedRef::rad_id(certifier_hash);
+                let certifier = urn_from_ref(certifier_ref);
+                match certifier {
+                    None => {
+                        tracing::warn!("failed to parse URN from ref '{}'", certifier_ref);
+                        Ok(())
+                    },
+                    Some(certifier) => {
+                        let certifier_here =
+                            NamespacedRef::rad_certifier(urn.id.clone(), &certifier);
+                        let certifier_id = NamespacedRef::rad_id(certifier.id);
+
+                        // FIXME(haxpenny): wtf is a resolver... we need to verify the certifier
+                        // delegations that are a retrieved before adopting.
+                        if !self.has_ref(&certifier_id)? {
+                            let remote_certifier = certifier_here.set_remote(remote_peer);
+                            self.adopt_as_ours(&remote_certifier, &certifier_id)?;
+                        }
+
                         certifier_id
                             .symbolic_ref(certifier_here, Force::False)
                             .create(&self.backend)
+                            .map_err(Error::from)
                             .and(Ok(()))
                     },
                 }
@@ -1034,6 +1025,29 @@ where
             Err(e) => Err(Error::from(e)),
         }
     }
+
+    fn adopt_as_ours(
+        &self,
+        target: &NamespacedRef<namespace::Legacy, Single>,
+        source: &NamespacedRef<namespace::Legacy, Single>,
+    ) -> Result<git2::Reference, Error> {
+        let remote_id_head = self.reference(&target).and_then(|reference| {
+            reference
+                .target()
+                .ok_or_else(|| {
+                    git2::Error::from_str(&format!("We just read `{}`, but now it's gone", target))
+                })
+                .map_err(Error::from)
+        })?;
+        self.backend
+            .reference(
+                &source.to_string(),
+                remote_id_head,
+                /* force */ false,
+                &format!("Adopted `{}` as ours", target),
+            )
+            .map_err(Error::from)
+    }
 }
 
 /// Iterator over the 1st degree tracked peers of a repo.
@@ -1085,10 +1099,13 @@ fn tracking_remote_name(urn: &RadUrn, peer: &PeerId) -> String {
 }
 
 fn urn_from_ref(refname: &str) -> Option<RadUrn> {
-    refname
-        .split('/')
-        .next_back()
-        .and_then(|urn| urn.parse().ok())
+    refname.split('/').next_back().and_then(|hash| {
+        hash.parse().ok().map(|id| RadUrn {
+            id,
+            proto: uri::Protocol::Git,
+            path: uri::Path::empty(),
+        })
+    })
 }
 
 fn urns_from_refs<'a, E>(
