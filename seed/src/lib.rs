@@ -132,6 +132,7 @@ pub enum Event {
     /// A peer has connected.
     PeerConnected {
         peer_id: PeerId,
+        urn: Option<RadUrn>,
         name: Option<String>,
     },
     /// A peer has disconnected.
@@ -151,7 +152,8 @@ impl Event {
 
         Ok(Self::PeerConnected {
             peer_id,
-            name: user.map(|u| u.name().to_owned()),
+            urn: user.as_ref().map(|u| u.urn()),
+            name: user.as_ref().map(|u| u.name().to_owned()),
         })
     }
 
