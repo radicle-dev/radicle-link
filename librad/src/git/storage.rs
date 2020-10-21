@@ -691,23 +691,7 @@ where
         {
             let local_id = NamespacedRef::rad_id(urn.id.clone());
             let remote_id = local_id.set_remote(remote_peer);
-            let remote_id_head = self.reference(&remote_id).and_then(|reference| {
-                reference
-                    .target()
-                    .ok_or_else(|| {
-                        git2::Error::from_str(&format!(
-                            "We just read `{}`, but now it's gone",
-                            remote_id
-                        ))
-                    })
-                    .map_err(Error::from)
-            })?;
-            self.backend.reference(
-                &local_id.to_string(),
-                remote_id_head,
-                /* force */ false,
-                &format!("Adopted `{}` as ours", remote_id),
-            )?;
+            self.adopt_as_ours(&remote_id, &local_id)?;
         }
 
         self.track_signers(&meta)?;
@@ -785,26 +769,10 @@ where
                         let certifier_id = NamespacedRef::rad_id(certifier.id);
 
                         // FIXME(haxpenny): wtf is a resolver... we need to verify the certifier
-                        // delegations that are a retrieved from this fetch.
+                        // delegations that are a retrieved before adopting.
                         if !self.has_ref(&certifier_id)? {
-                            let remote_certifier = certifier_id.set_remote(remote_peer);
-                            let remote_id_head = self.reference(&remote_certifier).and_then(|reference| {
-                                reference
-                                    .target()
-                                    .ok_or_else(|| {
-                                        git2::Error::from_str(&format!(
-                                            "We just read `{}`, but now it's gone",
-                                            remote_certifier
-                                        ))
-                                    })
-                                    .map_err(Error::from)
-                            })?;
-                            self.backend.reference(
-                                &certifier_id.to_string(),
-                                remote_id_head,
-                                /* force */ false,
-                                &format!("Adopted `{}` as ours", remote_certifier),
-                            )?;
+                            let remote_certifier = certifier_here.set_remote(remote_peer);
+                            self.adopt_as_ours(&remote_certifier, &certifier_id)?;
                         }
 
                         certifier_id
@@ -1044,6 +1012,29 @@ where
             Err(e) if is_not_found_err(&e) => Ok(false),
             Err(e) => Err(Error::from(e)),
         }
+    }
+
+    fn adopt_as_ours(
+        &self,
+        target: &NamespacedRef<Single>,
+        source: &NamespacedRef<Single>,
+    ) -> Result<git2::Reference, Error> {
+        let remote_id_head = self.reference(&target).and_then(|reference| {
+            reference
+                .target()
+                .ok_or_else(|| {
+                    git2::Error::from_str(&format!("We just read `{}`, but now it's gone", target))
+                })
+                .map_err(Error::from)
+        })?;
+        self.backend
+            .reference(
+                &source.to_string(),
+                remote_id_head,
+                /* force */ false,
+                &format!("Adopted `{}` as ours", target),
+            )
+            .map_err(Error::from)
     }
 }
 

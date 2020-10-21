@@ -361,7 +361,7 @@ async fn all_metadata_returns_only_local_projects() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(1, all_metadata_acc_to_peer3.len());
+        assert_eq!(2, all_metadata_acc_to_peer3.len());
     })
     .await;
 }
