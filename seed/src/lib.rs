@@ -29,7 +29,7 @@ use radicle_keystore::sign::ed25519;
 use librad::{
     git,
     keys,
-    meta::project,
+    meta::{project, project::ProjectInfo},
     net::{
         discovery,
         gossip,
@@ -131,7 +131,34 @@ pub enum Event {
     /// A peer has disconnected.
     PeerDisconnected(PeerId),
     /// A project has been tracked from a peer.
-    ProjectTracked(RadUrn, PeerId),
+    ProjectTracked {
+        urn: RadUrn,
+        provider: PeerId,
+        name: String,
+        description: Option<String>,
+    },
+}
+
+impl Event {
+    async fn project_tracked(
+        urn: RadUrn,
+        provider: PeerId,
+        api: &PeerApi<Signer>,
+    ) -> Result<Self, Error> {
+        let proj = api
+            .with_storage({
+                let urn = urn.clone();
+                move |s| s.metadata_of::<ProjectInfo, _>(&urn, provider)
+            })
+            .await??;
+
+        Ok(Event::ProjectTracked {
+            urn: urn.clone(),
+            provider,
+            name: proj.name().to_owned(),
+            description: proj.description().to_owned(),
+        })
+    }
 }
 
 /// Node configuration.
@@ -216,10 +243,8 @@ impl Node {
                     if mode.is_trackable(peer_id, urn) {
                         // Attempt to track, but keep going if it fails.
                         if Node::track_project(&api, urn, &provider).await.is_ok() {
-                            transmit
-                                .send(Event::ProjectTracked(urn.clone(), *peer_id))
-                                .await
-                                .ok();
+                            let event = Event::project_tracked(urn.clone(), *peer_id, &api).await?;
+                            transmit.send(event).await.ok();
                         }
                     }
                 },
@@ -296,10 +321,11 @@ impl Node {
                     // Attempt to track until we succeed.
                     while let Some(peer) = peers.next().await {
                         if Node::track_project(&api, urn, &peer).await.is_ok() {
-                            transmit
-                                .send(Event::ProjectTracked(urn.clone(), peer.peer_id))
-                                .await
-                                .ok();
+                            let event =
+                                Event::project_tracked(urn.clone(), peer.peer_id, api).await?;
+
+                            transmit.send(event).await.ok();
+
                             break;
                         }
                     }
