@@ -34,7 +34,7 @@ pub mod namespace;
 pub mod reference;
 pub mod remote;
 
-pub use reference::{Many, Multiple, One, Reference, RefsCategory, Single};
+pub use reference::{AsRemote, Many, Multiple, One, Reference, RefsCategory, Single};
 
 /// A representation of git reference that is either under:
 ///   * `refs/heads`
@@ -43,7 +43,7 @@ pub type FlatRef<R, C> = Reference<PhantomData<!>, R, C>;
 
 impl<R> Display for FlatRef<R, One>
 where
-    for<'a> &'a R: Into<ext::RefLike>,
+    for<'a> &'a R: AsRemote,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(Into::<ext::RefLike>::into(self).as_str())
@@ -52,7 +52,7 @@ where
 
 impl<'a, R> From<&'a FlatRef<R, One>> for ext::RefLike
 where
-    &'a R: Into<ext::RefLike>,
+    &'a R: AsRemote,
 {
     fn from(r: &'a FlatRef<R, One>) -> Self {
         let mut path = PathBuf::new();
@@ -71,7 +71,7 @@ where
 
 impl<'a, R> From<&'a FlatRef<R, One>> for ext::RefspecPattern
 where
-    &'a R: Into<ext::RefLike>,
+    &'a R: AsRemote,
 {
     fn from(r: &'a FlatRef<R, One>) -> Self {
         Into::<ext::RefLike>::into(r).into()
@@ -80,7 +80,7 @@ where
 
 impl<R> Display for FlatRef<R, Many>
 where
-    for<'a> &'a R: Into<ext::RefLike>,
+    for<'a> &'a R: AsRemote,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(Into::<ext::RefspecPattern>::into(self).as_str())
@@ -89,7 +89,7 @@ where
 
 impl<'a, R> From<&'a FlatRef<R, Many>> for ext::RefspecPattern
 where
-    &'a R: Into<ext::RefLike>,
+    &'a R: AsRemote,
 {
     fn from(r: &'a FlatRef<R, Many>) -> Self {
         let mut path = PathBuf::new();

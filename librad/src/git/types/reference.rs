@@ -32,6 +32,7 @@ use crate::{
 
 use super::{
     namespace::{AsNamespace, Namespace},
+    sealed,
     Force,
     Refspec,
     SymbolicRef,
@@ -84,6 +85,24 @@ impl From<RefsCategory> for ext::RefLike {
         ext::RefLike::try_from(cat.to_string()).unwrap()
     }
 }
+
+/// Ad-hoc trait to prevent the typechecker from recursing.
+///
+/// Morally, we can convert `Reference<N, R, C>` into `ext::RefLike` for any `R:
+/// Into<ext::RefLike>`. However, the typechecker may then attempt to unify `R`
+/// with `Reference<_, Reference<_, ...` recursively, leading to
+/// non-termination. Hence, we restrict the types which can be used as
+/// `Reference::remote` artificially.
+pub trait AsRemote: Into<ext::RefLike> + sealed::Sealed {}
+
+impl AsRemote for PeerId {}
+impl AsRemote for &PeerId {}
+
+impl AsRemote for ext::RefLike {}
+impl AsRemote for &ext::RefLike {}
+
+impl sealed::Sealed for ext::RefLike {}
+impl sealed::Sealed for &ext::RefLike {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reference<Namespace, Remote, Cardinality> {
@@ -325,7 +344,7 @@ impl<N, R> Reference<N, R, One> {
 impl<N, R> Display for Reference<N, R, One>
 where
     N: AsNamespace,
-    for<'a> &'a R: Into<ext::RefLike>,
+    for<'a> &'a R: AsRemote,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(Into::<ext::RefLike>::into(self).as_str())
@@ -335,7 +354,7 @@ where
 impl<'a, N, R> From<&'a Reference<N, R, One>> for ext::RefLike
 where
     N: AsNamespace,
-    &'a R: Into<ext::RefLike>,
+    &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, One>) -> Self {
         let mut path = PathBuf::new();
@@ -356,7 +375,7 @@ where
 impl<'a, N, R> From<&'a Reference<N, R, One>> for ext::RefspecPattern
 where
     N: AsNamespace,
-    &'a R: Into<ext::RefLike>,
+    &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, One>) -> Self {
         Into::<ext::RefLike>::into(r).into()
@@ -402,7 +421,7 @@ impl<N, R> Reference<N, R, Many> {
 impl<N, R> Display for Reference<N, R, Many>
 where
     N: AsNamespace,
-    for<'a> &'a R: Into<ext::RefLike>,
+    for<'a> &'a R: AsRemote,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(Into::<ext::RefspecPattern>::into(self).as_str())
@@ -412,7 +431,7 @@ where
 impl<'a, N, R> From<&'a Reference<N, R, Many>> for ext::RefspecPattern
 where
     N: AsNamespace,
-    &'a R: Into<ext::RefLike>,
+    &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, Many>) -> Self {
         let mut path = PathBuf::new();

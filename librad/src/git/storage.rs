@@ -790,8 +790,8 @@ where
                         certifier_id
                             .symbolic_ref(certifier_here, Force::False)
                             .create(&self.backend)
-                            .map_err(Error::from)
                             .and(Ok(()))
+                            .or_matches::<Error, _, _>(is_exists_err, || Ok(()))
                     },
                 }
             })?;
