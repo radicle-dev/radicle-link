@@ -26,6 +26,7 @@
 //! [`git-daemon`]: https://git-scm.com/docs/git-daemon
 
 use std::{
+    convert::TryFrom,
     io,
     path::{Path, PathBuf},
     process::Stdio,
@@ -41,7 +42,7 @@ use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
 use crate::{
     git::{
-        ext::{into_io_err, References, UPLOAD_PACK_HEADER},
+        ext::{self, into_io_err, References, UPLOAD_PACK_HEADER},
         header::{self, Header},
         types::namespace::AsNamespace,
     },
@@ -97,7 +98,7 @@ impl GitServer {
                     .await
             },
             Service::UploadPackLs => {
-                UploadPack::advertise(&self.monorepo, &header.repo.id)?
+                UploadPack::advertise(&self.monorepo, header.repo.id)?
                     .run(recv, send)
                     .await
             },
@@ -115,14 +116,21 @@ enum UploadPack {
 }
 
 impl UploadPack {
-    fn advertise<N: AsNamespace>(repo_path: &Path, namespace: &N) -> io::Result<Self> {
-        let mut git = Command::new("git");
+    fn advertise<N>(repo_path: &Path, namespace: N) -> io::Result<Self>
+    where
+        N: AsNamespace + Clone,
+    {
+        let namespace: ext::RefLike = namespace.into();
 
+        let mut git = Command::new("git");
         git.args(&["-c", "uploadpack.hiderefs=refs/"])
             .arg("-c")
             .arg(format!(
                 "uploadpack.hiderefs=!refs/namespaces/{}",
-                namespace.as_namespace()
+                ext::RefLike::try_from("refs/namespaces")
+                    .unwrap()
+                    .join(&namespace)
+                    .as_str()
             ));
 
         // FIXME: we should probably keep one git2::Repository around, but
@@ -131,13 +139,10 @@ impl UploadPack {
         let mut refs = References::from_globs(
             &repo,
             &[
-                format!(
-                    "refs/namespaces/{}/refs/rad/ids/*",
-                    namespace.as_namespace()
-                ),
+                format!("refs/namespaces/{}/refs/rad/ids/*", namespace.as_str()),
                 format!(
                     "refs/namespaces/{}/refs/remotes/**/rad/ids/*",
-                    namespace.as_namespace()
+                    namespace.as_str()
                 ),
             ],
         )

@@ -71,8 +71,8 @@ pub mod refspecs {
     pub fn peek(urn: &Urn, remote_peer: PeerId) -> Vec<Box<dyn AsRefspec>> {
         let namespace = Namespace::from(urn);
 
-        let rad_id = Reference::rad_id(namespace);
-        let rad_self = Reference::rad_self(namespace, None);
+        let rad_id = Reference::rad_id(namespace.clone());
+        let rad_self = Reference::rad_self(namespace.clone(), None);
         let rad_ids = Reference::rad_ids_glob(namespace);
 
         vec![

@@ -127,12 +127,12 @@ where
         self.has_ref(&Reference::try_from(urn)?)
     }
 
-    pub fn has_ref<N>(&self, reference: &NamespacedRef<N, One>) -> Result<bool, Error>
+    pub fn has_ref<'a, N>(&self, reference: &'a NamespacedRef<N, One>) -> Result<bool, Error>
     where
-        N: AsNamespace,
+        &'a N: AsNamespace,
     {
         self.backend
-            .find_reference(&reference.to_string())
+            .find_reference(ext::RefLike::from(reference).as_str())
             .and(Ok(true))
             .or_matches(is_not_found_err, || Ok(false))
     }
@@ -193,7 +193,7 @@ where
         reference: &NamespacedRef<N, One>,
     ) -> Result<git2::Reference<'a>, Error>
     where
-        N: AsNamespace,
+        for<'b> &'b N: AsNamespace,
     {
         Ok(reference.find(&self.backend)?)
     }
@@ -203,7 +203,7 @@ where
         reference: &NamespacedRef<N, Many>,
     ) -> Result<ext::References<'a>, Error>
     where
-        N: AsNamespace,
+        for<'b> &'b N: AsNamespace,
     {
         Ok(reference.references(&self.backend)?)
     }

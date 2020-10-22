@@ -107,6 +107,34 @@ impl<R> From<R> for Urn<R> {
     }
 }
 
+impl<R> From<Urn<R>> for ext::RefLike
+where
+    R: HasProtocol,
+    for<'a> &'a R: Into<Multihash>,
+{
+    fn from(urn: Urn<R>) -> Self {
+        Self::from(&urn)
+    }
+}
+
+impl<'a, R> From<&'a Urn<R>> for ext::RefLike
+where
+    R: HasProtocol,
+    &'a R: Into<Multihash>,
+{
+    fn from(urn: &'a Urn<R>) -> Self {
+        let refl = Self::try_from(multibase::encode(
+            multibase::Base::Base32Z,
+            (&urn.id).into(),
+        ))
+        .unwrap();
+        match &urn.path {
+            None => refl,
+            Some(path) => refl.join(ext::Qualified::from(path.clone())),
+        }
+    }
+}
+
 impl<R> Display for Urn<R>
 where
     R: HasProtocol,
@@ -306,13 +334,43 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     use librad_test::roundtrip::*;
     use proptest::prelude::*;
 
     use crate::git::ext::oid::{tests::gen_oid, Oid};
+
+    /// Fake `id` of a `Urn<FakeId>`.
+    ///
+    /// Not cryptographically secure, but cheap to create for tests.
+    #[derive(Clone, Copy, Debug)]
+    pub struct FakeId(pub usize);
+
+    impl sealed::Sealed for FakeId {}
+
+    impl HasProtocol for FakeId {
+        const PROTOCOL: &'static str = "test";
+    }
+
+    impl From<usize> for FakeId {
+        fn from(sz: usize) -> FakeId {
+            Self(sz)
+        }
+    }
+
+    impl From<FakeId> for Multihash {
+        fn from(id: FakeId) -> Self {
+            Self::from(&id)
+        }
+    }
+
+    impl From<&FakeId> for Multihash {
+        fn from(id: &FakeId) -> Self {
+            multihash::wrap(multihash::Code::Identity, &id.0.to_be_bytes())
+        }
+    }
 
     fn gen_urn() -> impl Strategy<Value = Urn<Oid>> {
         (
@@ -351,5 +409,37 @@ mod tests {
         fn roundtrip(urn in gen_urn()) {
             trippin(urn)
         }
+    }
+
+    #[test]
+    fn is_reflike() {
+        assert_eq!(
+            "hnrkyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+            ext::RefLike::from(Urn::new(ext::Oid::from(git2::Oid::zero()))).as_str()
+        )
+    }
+
+    #[test]
+    fn is_reflike_with_path() {
+        assert_eq!(
+            "hnrkyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/refs/heads/lolek/bolek",
+            ext::RefLike::from(Urn {
+                id: ext::Oid::from(git2::Oid::zero()),
+                path: Some(ext::RefLike::try_from("lolek/bolek").unwrap())
+            })
+            .as_str()
+        )
+    }
+
+    #[test]
+    fn is_reflike_with_qualified_path() {
+        assert_eq!(
+            "hnrkyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/refs/remotes/lolek/bolek",
+            ext::RefLike::from(Urn {
+                id: ext::Oid::from(git2::Oid::zero()),
+                path: Some(ext::RefLike::try_from("refs/remotes/lolek/bolek").unwrap())
+            })
+            .as_str()
+        )
     }
 }

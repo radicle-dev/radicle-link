@@ -28,7 +28,7 @@ use crate::{
     git::{
         ext::is_not_found_err,
         storage2::{self, Storage},
-        types::{namespace::Namespace, reference, Force, Reference, Single, SymbolicRef},
+        types::{namespace, reference, Force, Reference, Single, SymbolicRef},
     },
     identities::{
         self,
@@ -36,6 +36,7 @@ use crate::{
             Identities,
             IndirectDelegation,
             Project,
+            Revision,
             VerificationError,
             VerifiedProject,
             Verifying,
@@ -47,6 +48,8 @@ use crate::{
 };
 
 pub use identities::{git::Urn, payload::ProjectPayload};
+
+type Namespace = namespace::Namespace<Revision>;
 
 #[derive(Debug, Error)]
 pub enum Error<S: std::error::Error + Send + Sync + 'static> {

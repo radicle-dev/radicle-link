@@ -343,7 +343,7 @@ impl<N, R> Reference<N, R, One> {
 
 impl<N, R> Display for Reference<N, R, One>
 where
-    N: AsNamespace,
+    for<'a> &'a N: AsNamespace,
     for<'a> &'a R: AsRemote,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -353,13 +353,13 @@ where
 
 impl<'a, N, R> From<&'a Reference<N, R, One>> for ext::RefLike
 where
-    N: AsNamespace,
+    &'a N: AsNamespace,
     &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, One>) -> Self {
         let mut path = PathBuf::new();
         path.push("refs/namespaces");
-        path.push(r._namespace.as_namespace());
+        path.push(Into::<ext::RefLike>::into(&r._namespace));
         path.push("refs");
         if let Some(ref remote) = r.remote {
             path.push("remotes");
@@ -374,7 +374,7 @@ where
 
 impl<'a, N, R> From<&'a Reference<N, R, One>> for ext::RefspecPattern
 where
-    N: AsNamespace,
+    &'a N: AsNamespace,
     &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, One>) -> Self {
@@ -420,7 +420,7 @@ impl<N, R> Reference<N, R, Many> {
 
 impl<N, R> Display for Reference<N, R, Many>
 where
-    N: AsNamespace,
+    for<'a> &'a N: AsNamespace,
     for<'a> &'a R: AsRemote,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -430,13 +430,13 @@ where
 
 impl<'a, N, R> From<&'a Reference<N, R, Many>> for ext::RefspecPattern
 where
-    N: AsNamespace,
+    &'a N: AsNamespace,
     &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, Many>) -> Self {
         let mut path = PathBuf::new();
         path.push("refs/namespaces");
-        path.push(r._namespace.as_namespace());
+        path.push(Into::<ext::RefLike>::into(&r._namespace));
         path.push("refs");
         if let Some(ref remote) = r.remote {
             path.push("remotes");
@@ -473,7 +473,7 @@ pub enum FromUrnError {
     PeerId(#[from] peer::conversion::Error),
 }
 
-impl TryFrom<&Urn> for Reference<Namespace, PeerId, Single> {
+impl TryFrom<&Urn> for Reference<Namespace<ext::Oid>, PeerId, Single> {
     type Error = FromUrnError;
 
     fn try_from(urn: &Urn) -> Result<Self, Self::Error> {
