@@ -17,7 +17,7 @@
 
 #![feature(async_closure)]
 
-use std::{marker::PhantomData, time::Duration};
+use std::{convert::TryFrom, marker::PhantomData, time::Duration};
 
 use futures::{future, stream::StreamExt};
 use tempfile::tempdir;
@@ -25,7 +25,8 @@ use tokio::task::block_in_place;
 
 use librad::{
     git::{
-        local::url::LocalUrl,
+        ext,
+        local::{self, transport::LocalTransportFactory, url::LocalUrl},
         storage,
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
     },
@@ -73,23 +74,31 @@ async fn can_clone() {
 
         let radicle_urn = radicle.urn();
 
-        peer1
-            .with_storage(move |storage| {
-                storage.create_repo(&alice).unwrap();
-                storage.create_repo(&radicle).unwrap();
-            })
-            .await
-            .unwrap();
+        {
+            let alice = alice.clone();
+            peer1
+                .with_storage(move |storage| {
+                    storage.create_repo(&alice).unwrap();
+                    storage.create_repo(&radicle).unwrap();
+                })
+                .await
+                .unwrap();
+        }
+
         peer2
             .with_storage(move |storage| {
+                let peer1_id = peer1.peer_id();
                 storage
-                    .clone_repo::<ProjectInfo, _>(
-                        radicle_urn.clone().into_rad_url(peer1.peer_id()),
-                        None,
-                    )
+                    .clone_repo::<ProjectInfo, _>(radicle_urn.clone().into_rad_url(peer1_id), None)
                     .unwrap();
                 // sanity check
-                storage.open_repo(radicle_urn).unwrap();
+                storage.open_repo(radicle_urn.clone()).unwrap();
+
+                // check rad/self of peer1 exists
+                storage.get_rad_self_of(&radicle_urn, peer1_id).unwrap();
+
+                // check user metadata exists
+                storage.some_metadata_of(&alice.urn(), None).unwrap();
             })
             .await
             .unwrap();
@@ -206,14 +215,13 @@ async fn fetches_on_gossip_notify() {
                 .unwrap();
         }
 
-        let global_settings = librad::git::local::transport::Settings {
-            paths: peer1.paths().clone(),
-            signer: SomeSigner { signer: peer1_key }.into(),
-        };
-
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = block_in_place(|| {
-            librad::git::local::transport::register(global_settings);
+            librad::git::local::transport::register();
+            let transport_results = LocalTransportFactory::configure(local::transport::Settings {
+                paths: peer1.paths().clone(),
+                signer: SomeSigner { signer: peer1_key }.into(),
+            });
 
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
@@ -244,15 +252,18 @@ async fn fetches_on_gossip_notify() {
             let url = LocalUrl::from_urn(urn.clone(), peer1.peer_id());
 
             let heads = NamespacedRef::heads(urn.clone().id, Some(peer1.peer_id()));
-            let remotes: FlatRef<String, _> = FlatRef::heads(
+            let remotes = FlatRef::heads(
                 PhantomData,
-                Some(format!("{}@{}", alice_name, peer1.peer_id())),
+                ext::RefLike::try_from(format!("{}@{}", alice_name, peer1.peer_id())).unwrap(),
             );
 
-            let remote =
-                Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).into_dyn()));
+            let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
 
-            initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks)).unwrap()
+            let oid =
+                initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks)).unwrap();
+            assert!(transport_results.wait(Duration::from_secs(3)).is_some());
+
+            oid
         });
 
         // Wait for peer2 to receive the gossip announcement
@@ -350,7 +361,7 @@ async fn all_metadata_returns_only_local_projects() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(1, all_metadata_acc_to_peer3.len());
+        assert_eq!(2, all_metadata_acc_to_peer3.len());
     })
     .await;
 }
@@ -494,23 +505,24 @@ async fn menage_a_troi() {
             .unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
-        let settings = librad::git::local::transport::Settings {
-            paths: peer1.paths().clone(),
-            signer: SomeSigner { signer: peer1_key }.into(),
-        };
+        block_in_place(|| {
+            librad::git::local::transport::register();
+            let transport_results = LocalTransportFactory::configure(local::transport::Settings {
+                paths: peer1.paths().clone(),
+                signer: SomeSigner { signer: peer1_key }.into(),
+            });
 
-        let _commit_id = block_in_place(|| {
-            librad::git::local::transport::register(settings);
             // Perform commit and push to working copy on peer1
             let repo = git2::Repository::init(tmp.path().join("peer1")).unwrap();
             let url = LocalUrl::from_urn(urn.clone(), peer1_id);
 
             let heads = NamespacedRef::heads(urn.clone().id, Some(peer1_id));
-            let remotes: FlatRef<String, _> =
-                FlatRef::heads(PhantomData, Some(format!("{}@{}", alice_name, peer1_id)));
+            let remotes = FlatRef::heads(
+                PhantomData,
+                ext::RefLike::try_from(format!("{}@{}", alice_name, peer1_id)).unwrap(),
+            );
 
-            let remote =
-                Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).into_dyn()));
+            let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
 
             initial_commit(
                 &repo,
@@ -519,9 +531,14 @@ async fn menage_a_troi() {
                 None,
             )
             .unwrap();
+            assert!(transport_results.wait(Duration::from_secs(3)).is_some());
         });
 
-        let head = NamespacedRef::head(urn.clone().id, peer1_id, &default_branch);
+        let head = NamespacedRef::head(
+            urn.clone().id,
+            peer1_id,
+            ext::RefLike::try_from(default_branch.as_str()).unwrap(),
+        );
         let peer2_has_ref = {
             let head = head.clone();
             let url = urn.clone().into_rad_url(peer1_id);

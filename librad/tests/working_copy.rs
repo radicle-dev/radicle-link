@@ -17,8 +17,9 @@
 
 #![feature(async_closure)]
 
-use std::{marker::PhantomData, time::Duration};
+use std::{convert::TryFrom, marker::PhantomData, time::Duration};
 
+use assert_matches::assert_matches;
 use futures::{
     future,
     stream::{Stream, StreamExt},
@@ -27,6 +28,7 @@ use tempfile::tempdir;
 
 use librad::{
     git::{
+        ext,
         include,
         local::{transport, url::LocalUrl},
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
@@ -71,17 +73,17 @@ async fn can_fetch() {
         let (peer2, peer2_key) = apis.pop().unwrap();
         let peer2_events = peer2.subscribe().await;
 
-        let global_settings = transport::Settings {
-            paths: peer1.paths().clone(),
-            signer: SomeSigner { signer: peer1_key }.into(),
-        };
-        librad::git::local::transport::register(global_settings);
-
-        let global_settings = transport::Settings {
-            paths: peer2.paths().clone(),
-            signer: SomeSigner { signer: peer2_key }.into(),
-        };
-        librad::git::local::transport::register(global_settings);
+        librad::git::local::transport::register();
+        let local_transport_results_peer1 =
+            transport::LocalTransportFactory::configure(transport::Settings {
+                paths: peer1.paths().clone(),
+                signer: SomeSigner { signer: peer1_key }.into(),
+            });
+        let local_transport_results_peer2 =
+            transport::LocalTransportFactory::configure(transport::Settings {
+                paths: peer2.paths().clone(),
+                signer: SomeSigner { signer: peer2_key }.into(),
+            });
 
         let mut alice = Alice::new(peer1_key.public());
         let mut radicle = Radicle::new(&alice);
@@ -140,12 +142,12 @@ async fn can_fetch() {
         let url = LocalUrl::from_urn(radicle.urn(), peer1.peer_id());
 
         let heads = NamespacedRef::heads(radicle.urn().id, Some(peer1.peer_id()));
-        let remotes: FlatRef<String, _> = FlatRef::heads(
+        let remotes = FlatRef::heads(
             PhantomData,
-            Some(format!("{}@{}", alice.name(), peer1.peer_id())),
+            ext::RefLike::try_from(format!("{}@{}", alice.name(), peer1.peer_id())).unwrap(),
         );
 
-        let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).into_dyn()));
+        let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
 
         let mut remote_callbacks = git2::RemoteCallbacks::new();
         remote_callbacks.push_update_reference(|refname, maybe_error| match maybe_error {
@@ -173,6 +175,9 @@ async fn can_fetch() {
         // Push a change and wait for peer2 to receive it in their monorepo
         let commit_id =
             initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks)).unwrap();
+        assert!(local_transport_results_peer1
+            .wait(Duration::from_secs(3))
+            .is_some());
         wait_for_event(peer2_events, peer1.peer_id()).await;
 
         // Create working copy of project
@@ -204,6 +209,13 @@ async fn can_fetch() {
                 remote.fetch(&[&name], None, None).unwrap();
             }
         }
+        for res in local_transport_results_peer2
+            .wait(Duration::from_secs(5))
+            .unwrap()
+        {
+            assert_matches!(res, Ok(_), "fetch error");
+        }
+
         assert!(repo.find_commit(commit_id).is_ok());
     })
     .await;
