@@ -787,11 +787,15 @@ where
                             self.adopt_as_ours(&remote_certifier, &certifier_id)?;
                         }
 
-                        certifier_id
-                            .symbolic_ref(certifier_here, Force::False)
-                            .create(&self.backend)
-                            .map_err(Error::from)
-                            .and(Ok(()))
+                        if !self.has_ref(&certifier_here)? {
+                            certifier_id
+                                .symbolic_ref(certifier_here, Force::False)
+                                .create(&self.backend)
+                                .map_err(Error::from)
+                                .and(Ok(()))
+                        } else {
+                            Ok(())
+                        }
                     },
                 }
             })?;
