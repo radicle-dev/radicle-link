@@ -150,11 +150,12 @@ pub enum Event {
 impl Event {
     async fn peer_connected(peer_id: PeerId, api: &PeerApi<Signer>) -> Result<Self, Error> {
         let user = self::guess_user(peer_id, api).await?;
+        let user = user.as_ref();
 
         Ok(Self::PeerConnected {
             peer_id,
-            urn: user.as_ref().map(|u| u.urn()),
-            name: user.as_ref().map(|u| u.name().to_owned()),
+            urn: user.map(|u| u.urn()),
+            name: user.map(|u| u.name().to_owned()),
         })
     }
 
