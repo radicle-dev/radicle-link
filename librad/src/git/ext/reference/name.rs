@@ -56,7 +56,7 @@ pub enum Error {
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
 )]
-#[serde(into = "PathBuf", try_from = "&Path")]
+#[serde(into = "PathBuf", try_from = "PathBuf")]
 pub struct RefLike(PathBuf);
 
 impl RefLike {
@@ -368,7 +368,7 @@ impl From<Qualified> for PathBuf {
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
 )]
-#[serde(into = "PathBuf", try_from = "&Path")]
+#[serde(into = "PathBuf", try_from = "PathBuf")]
 pub struct RefspecPattern(PathBuf);
 
 impl RefspecPattern {
