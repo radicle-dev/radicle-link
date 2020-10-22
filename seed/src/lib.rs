@@ -19,7 +19,14 @@
 #[macro_use]
 extern crate async_trait;
 
-use std::{collections::HashSet, io, net::SocketAddr, path::PathBuf, time::Duration, vec};
+use std::{
+    collections::{HashMap, HashSet},
+    io,
+    net::SocketAddr,
+    path::PathBuf,
+    time::Duration,
+    vec,
+};
 
 use futures::{channel::mpsc as chan, select, sink::SinkExt as _, stream::StreamExt as _};
 use thiserror::Error;
@@ -218,7 +225,7 @@ impl NodeHandle {
         Ok(rx.next().await.unwrap())
     }
 
-    pub async fn get_peers(&mut self) -> Result<Vec<PeerId>, chan::SendError> {
+    pub async fn get_peers(&mut self) -> Result<HashMap<PeerId, SocketAddr>, chan::SendError> {
         let (tx, mut rx) = chan::channel(1);
         self.channel.send(Request::GetPeers(tx)).await?;
 
@@ -228,7 +235,7 @@ impl NodeHandle {
 
 pub enum Request {
     GetProjects(chan::Sender<Vec<()>>),
-    GetPeers(chan::Sender<Vec<PeerId>>),
+    GetPeers(chan::Sender<HashMap<PeerId,SocketAddr>>),
 }
 
 /// Seed node instance.
@@ -311,9 +318,15 @@ impl Node {
     }
 
     // Handle user requests.
-    async fn handle_request(request: Request, api: &PeerApi<Signer>) -> Result<(), Error> {
+    async fn handle_request(
+        request: Request,
+        api: &PeerApi<Signer>,
+    ) -> Result<(), chan::SendError> {
         match request {
-            Request::GetPeers(reply) => {},
+            Request::GetPeers(reply) => {
+                let peers = api.protocol().connected_peers().await;
+                reply.send(peers).await?;
+            },
             Request::GetProjects(reply) => {},
         }
         Ok(())
