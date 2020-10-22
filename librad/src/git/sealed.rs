@@ -15,7 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use crate::peer::PeerId;
+
 /// Constraint for [sealed traits] under the `git` module hierarchy.
 ///
 /// [sealed traits]: https://rust-lang.github.io/api-guidelines/future-proofing.html#sealed-traits-protect-against-downstream-implementations-c-sealed
 pub trait Sealed {}
+
+impl Sealed for PeerId {}
+impl Sealed for &PeerId {}
