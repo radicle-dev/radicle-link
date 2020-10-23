@@ -161,19 +161,17 @@ pub mod refspecs {
                 let heads = tracked_sigrefs.heads.iter().filter_map(|(name, target)| {
                     // Either the signed ref is in the "owned" section of
                     // `remote_peer`'s repo...
-                    let name_namespaced = ext::RefLike::try_from("refs/namespaces")
-                        .unwrap()
+                    let name_namespaced = reflike!("refs/namespaces")
                         .join(&namespace)
                         .join(name.clone());
 
                     // .. or `remote_peer` is tracking `tracked_peer`, in
                     // which case it is in the remotes section.
-                    let name_namespaced_remote = ext::RefLike::try_from("refs/namespaces")
-                        .unwrap()
+                    let name_namespaced_remote = reflike!("refs/namespaces")
                         .join(&namespace)
-                        .join(ext::RefLike::try_from("refs/remotes").unwrap())
+                        .join(reflike!("refs/remotes"))
                         .join(tracked_peer)
-                        .join(ext::RefLike::try_from("heads").unwrap())
+                        .join(reflike!("heads"))
                         .join(name.clone());
 
                     // Only include the advertised ref if its target OID
@@ -374,9 +372,9 @@ mod tests {
     use crate::identities::urn::tests::FakeId;
 
     lazy_static! {
-        static ref LOLEK: ext::RefLike = ext::RefLike::try_from("lolek").unwrap();
-        static ref BOLEK: ext::RefLike = ext::RefLike::try_from("bolek").unwrap();
-        static ref TOLA: ext::RefLike = ext::RefLike::try_from("tola").unwrap();
+        static ref LOLEK: ext::RefLike = reflike!("lolek");
+        static ref BOLEK: ext::RefLike = reflike!("bolek");
+        static ref TOLA: ext::RefLike = reflike!("tola");
         static ref URN_32: Urn<FakeId> = Urn::new(FakeId(32));
         static ref URN_32_REF: ext::RefLike = (&*URN_32).into();
     }
