@@ -223,11 +223,20 @@ impl Default for NodeConfig {
     }
 }
 
+/// An error returned by the [`NodeHandle`].
+#[derive(Debug, Error)]
+pub enum NodeHandleError {
+    #[error("Request failed: {0}")]
+    RequestFailed(#[from] chan::SendError),
+}
+
+/// Handle used to interact with the seed node.
 pub struct NodeHandle {
     channel: chan::UnboundedSender<Request>,
 }
 
 impl NodeHandle {
+    /// Get all local projects.
     pub async fn get_projects(&mut self) -> Result<Vec<Project>, NodeHandleError> {
         let (tx, mut rx) = chan::channel(1);
         self.channel.send(Request::GetProjects(tx)).await?;
@@ -235,6 +244,7 @@ impl NodeHandle {
         Ok(rx.next().await.unwrap())
     }
 
+    /// Get currently connected peers.
     pub async fn get_peers(&mut self) -> Result<HashMap<PeerId, SocketAddr>, NodeHandleError> {
         let (tx, mut rx) = chan::channel(1);
         self.channel.send(Request::GetPeers(tx)).await?;
@@ -243,21 +253,20 @@ impl NodeHandle {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum NodeHandleError {
-    #[error("Request failed: {0}")]
-    RequestFailed(#[from] chan::SendError),
-}
-
-pub enum Request {
+/// User request to the seed node.
+enum Request {
+    /// Get local projects.
     GetProjects(chan::Sender<Vec<Project>>),
+    /// Get connected peers.
     GetPeers(chan::Sender<HashMap<PeerId, SocketAddr>>),
 }
 
 /// Seed node instance.
 pub struct Node {
     config: NodeConfig,
+    /// Receiver end of user requests.
     requests: chan::UnboundedReceiver<Request>,
+    /// Sender end of user requests.
     handle: chan::UnboundedSender<Request>,
 }
 
@@ -273,6 +282,7 @@ impl Node {
         })
     }
 
+    /// Create a new handle.
     pub fn handle(&self) -> NodeHandle {
         NodeHandle {
             channel: self.handle.clone(),
@@ -319,6 +329,7 @@ impl Node {
                     if let Some(e) = event {
                         Node::handle_event(e, mode, &mut transmit, &api).await?;
                     } else {
+                        // If the Peer API isn't closed its end of the channel, we're done.
                         break;
                     }
                 }
@@ -333,7 +344,7 @@ impl Node {
         Ok(())
     }
 
-    // Handle user requests.
+    /// Handle user requests.
     async fn handle_request(request: Request, api: &PeerApi<Signer>) -> Result<(), Error> {
         match request {
             Request::GetPeers(mut reply) => {
@@ -348,8 +359,8 @@ impl Node {
         Ok(())
     }
 
-    // Handle gossip events. As soon as a peer announces something of interest,
-    // we check if we should track it.
+    /// Handle gossip events. As soon as a peer announces something of interest,
+    /// we check if we should track it.
     async fn handle_event(
         event: ProtocolEvent<peer::types::Gossip>,
         mode: &Mode,
