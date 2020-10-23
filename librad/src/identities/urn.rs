@@ -23,9 +23,8 @@ use std::{
 
 use multihash::{Multihash, MultihashRef};
 use percent_encoding::percent_decode_str;
+use radicle_git_ext as ext;
 use thiserror::Error;
-
-use crate::git::ext;
 
 use super::sealed;
 
@@ -307,8 +306,9 @@ mod tests {
 
     use librad_test::roundtrip::*;
     use proptest::prelude::*;
+    use radicle_git_ext::Oid;
 
-    use crate::git::ext::oid::{tests::gen_oid, Oid};
+    use crate::identities::gen::gen_oid;
 
     fn gen_urn() -> impl Strategy<Value = Urn<Oid>> {
         (

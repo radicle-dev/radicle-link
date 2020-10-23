@@ -598,9 +598,10 @@ mod tests {
 
     use librad_test::roundtrip::*;
     use pretty_assertions::assert_eq;
+    use radicle_git_ext::Oid;
 
     use crate::{
-        git::ext::oid::{tests::gen_oid, Oid},
+        identities::gen::gen_oid,
         keys::{tests::gen_public_key, SecretKey},
     };
 

@@ -15,11 +15,26 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-//! Modules internally used by `librad`.
-//!
-//! Code here may change in incompatible ways without prior notice.
+//! Extensions and wrappers for `git2` types
 
-pub mod borrow;
-pub mod canonical;
-pub mod channel;
-pub mod sync;
+pub mod blob;
+pub mod error;
+pub mod oid;
+pub mod reference;
+pub mod revwalk;
+pub mod transport;
+
+pub use blob::*;
+pub use error::*;
+pub use oid::*;
+pub use reference::*;
+pub use revwalk::*;
+pub use transport::*;
+
+#[cfg(test)]
+#[macro_use]
+extern crate assert_matches;
+
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;

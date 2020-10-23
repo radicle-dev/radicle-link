@@ -23,8 +23,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use radicle_git_ext as ext;
+
 use crate::{
-    git::{ext, refs::Refs, sealed},
+    git::{refs::Refs, sealed},
     hash::Hash,
     peer::PeerId,
     uri::RadUrn,

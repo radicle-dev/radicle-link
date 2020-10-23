@@ -20,9 +20,9 @@ use std::{convert::TryFrom, marker::PhantomData};
 use either::*;
 use futures::executor::block_on;
 use multihash::Multihash;
+use radicle_git_ext as ext;
 
 use crate::{
-    git::ext,
     identities::{
         delegation::{self, Delegations},
         generic::{self, Signed, Verified},

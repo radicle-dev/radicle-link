@@ -17,12 +17,10 @@
 
 use std::{borrow::Cow, path::Path};
 
+use radicle_std_ext::result::ResultExt as _;
 use thiserror::Error;
 
-use crate::{
-    git::ext::{error::is_not_found_err, revwalk},
-    internal::result::ResultExt,
-};
+use crate::{error::is_not_found_err, revwalk};
 
 #[derive(Debug, Error)]
 pub enum Error {

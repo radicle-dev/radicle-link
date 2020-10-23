@@ -27,11 +27,11 @@ use std::{
 };
 
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
+use radicle_git_ext::{into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
 use thiserror::Error;
 
 use crate::{
     git::{
-        ext::{into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER},
         local::{self, url::LocalUrl},
         storage::{self, Storage},
     },
