@@ -21,36 +21,48 @@ use std::{
     net::SocketAddr,
 };
 
+use multihash::Multihash;
+
 use crate::{
     git::{
         ext,
         p2p::url::GitUrl,
         refs::Refs,
         storage2::Storage,
-        types::{namespace::Namespace, AsRefspec, Force, Reference},
+        types::{namespace::Namespace, AsRefspec, AsRemote, Force, Reference},
     },
-    identities::git::Urn,
+    identities::{
+        git,
+        urn::{HasProtocol, Urn},
+    },
     keys,
     peer::PeerId,
     signer::Signer,
 };
 
-pub enum Fetchspecs {
+pub enum Fetchspecs<P, R> {
     Peek,
 
     SignedRefs {
-        tracked: BTreeSet<PeerId>,
+        tracked: BTreeSet<P>,
     },
 
     Replicate {
         remote_heads: BTreeMap<ext::RefLike, ext::Oid>,
-        tracked_sigrefs: BTreeMap<PeerId, Refs>,
-        delegates: BTreeSet<Urn>,
+        tracked_sigrefs: BTreeMap<P, Refs>,
+        delegates: BTreeSet<Urn<R>>,
     },
 }
 
-impl Fetchspecs {
-    pub fn refspecs(&self, urn: &Urn, remote_peer: PeerId) -> Vec<Box<dyn AsRefspec>> {
+impl<P, R> Fetchspecs<P, R>
+where
+    P: Clone + Ord + PartialEq + 'static,
+    for<'a> &'a P: AsRemote + Into<ext::RefLike>,
+
+    R: HasProtocol + Clone + 'static,
+    for<'a> &'a R: Into<Multihash>,
+{
+    pub fn refspecs(&self, urn: &Urn<R>, remote_peer: P) -> Vec<Box<dyn AsRefspec>> {
         match self {
             Self::Peek => refspecs::peek(urn, remote_peer),
 
@@ -68,8 +80,15 @@ impl Fetchspecs {
 pub mod refspecs {
     use super::*;
 
-    pub fn peek(urn: &Urn, remote_peer: PeerId) -> Vec<Box<dyn AsRefspec>> {
-        let namespace = Namespace::from(urn);
+    pub fn peek<P, R>(urn: &Urn<R>, remote_peer: P) -> Vec<Box<dyn AsRefspec>>
+    where
+        P: Clone + 'static,
+        for<'a> &'a P: AsRemote + Into<ext::RefLike>,
+
+        R: HasProtocol + Clone + 'static,
+        for<'a> &'a R: Into<Multihash>,
+    {
+        let namespace: Namespace<R> = Namespace::from(urn);
 
         let rad_id = Reference::rad_id(namespace.clone());
         let rad_self = Reference::rad_self(namespace.clone(), None);
@@ -77,11 +96,11 @@ pub mod refspecs {
 
         vec![
             rad_id
-                .set_remote(remote_peer)
+                .set_remote(remote_peer.clone())
                 .refspec(rad_id, Force::False)
                 .boxed(),
             rad_self
-                .set_remote(remote_peer)
+                .set_remote(remote_peer.clone())
                 .refspec(rad_self, Force::False)
                 .boxed(),
             rad_ids
@@ -91,15 +110,22 @@ pub mod refspecs {
         ]
     }
 
-    pub fn signed_refs(
-        urn: &Urn,
-        remote_peer: &PeerId,
-        tracked: &BTreeSet<PeerId>,
-    ) -> Vec<Box<dyn AsRefspec>> {
+    pub fn signed_refs<P, R>(
+        urn: &Urn<R>,
+        remote_peer: &P,
+        tracked: &BTreeSet<P>,
+    ) -> Vec<Box<dyn AsRefspec>>
+    where
+        P: Clone + PartialEq + 'static,
+        for<'a> &'a P: AsRemote + Into<ext::RefLike>,
+
+        R: HasProtocol + Clone + 'static,
+        for<'a> &'a R: Into<Multihash>,
+    {
         tracked
             .iter()
             .map(|tracked_peer| {
-                let local = Reference::rad_signed_refs(Namespace::from(urn), *tracked_peer);
+                let local = Reference::rad_signed_refs(Namespace::from(urn), tracked_peer.clone());
                 let remote = if tracked_peer == remote_peer {
                     local.set_remote(None)
                 } else {
@@ -111,13 +137,22 @@ pub mod refspecs {
             .collect()
     }
 
-    pub fn replicate(
-        urn: &Urn,
-        remote_peer: &PeerId,
+    pub fn replicate<P, R>(
+        urn: &Urn<R>,
+        remote_peer: &P,
         remote_heads: &BTreeMap<ext::RefLike, ext::Oid>,
-        tracked_sigrefs: &BTreeMap<PeerId, Refs>,
-        delegates: &BTreeSet<Urn>,
-    ) -> Vec<Box<dyn AsRefspec>> {
+        tracked_sigrefs: &BTreeMap<P, Refs>,
+        delegates: &BTreeSet<Urn<R>>,
+    ) -> Vec<Box<dyn AsRefspec>>
+    where
+        P: Clone + Ord + PartialEq + 'static,
+        for<'a> &'a P: AsRemote + Into<ext::RefLike>,
+
+        R: HasProtocol + Clone + 'static,
+        for<'a> &'a R: Into<Multihash>,
+    {
+        let namespace = Namespace::from(urn);
+
         let signed = tracked_sigrefs
             .iter()
             .map(|(tracked_peer, tracked_sigrefs)| {
@@ -128,14 +163,14 @@ pub mod refspecs {
                     // `remote_peer`'s repo...
                     let name_namespaced = ext::RefLike::try_from("refs/namespaces")
                         .unwrap()
-                        .join(Namespace::from(urn))
+                        .join(&namespace)
                         .join(name.clone());
 
                     // .. or `remote_peer` is tracking `tracked_peer`, in
                     // which case it is in the remotes section.
                     let name_namespaced_remote = ext::RefLike::try_from("refs/namespaces")
                         .unwrap()
-                        .join(Namespace::from(urn))
+                        .join(&namespace)
                         .join(ext::RefLike::try_from("refs/remotes").unwrap())
                         .join(tracked_peer)
                         .join(ext::RefLike::try_from("heads").unwrap())
@@ -151,8 +186,8 @@ pub mod refspecs {
 
                     targets_match.then_some({
                         let local = Reference::head(
-                            Namespace::from(urn),
-                            *tracked_peer,
+                            namespace.clone(),
+                            tracked_peer.clone(),
                             name.clone().into(),
                         );
                         let remote = if tracked_peer == remote_peer {
@@ -166,7 +201,7 @@ pub mod refspecs {
                 });
                 refspecs.extend(heads);
                 // Peek at the tracked peer, too
-                refspecs.extend(peek(urn, *tracked_peer));
+                refspecs.extend(peek(urn, tracked_peer.clone()));
 
                 refspecs
             })
@@ -176,7 +211,7 @@ pub mod refspecs {
         let delegates = delegates
             .iter()
             .map(|delegate_urn| {
-                let mut peek = peek(delegate_urn, *remote_peer);
+                let mut peek = peek(delegate_urn, remote_peer.clone());
                 peek.extend(signed_refs(
                     delegate_urn,
                     remote_peer,
@@ -198,12 +233,17 @@ pub struct FetchResult {
 
 pub trait Fetcher {
     type Error;
+    type PeerId;
+    type UrnId;
 
-    fn fetch(&mut self, fetchspecs: Fetchspecs) -> Result<FetchResult, Self::Error>;
+    fn fetch(
+        &mut self,
+        fetchspecs: Fetchspecs<Self::PeerId, Self::UrnId>,
+    ) -> Result<FetchResult, Self::Error>;
 }
 
 pub struct DefaultFetcher<'a> {
-    urn: Urn,
+    urn: git::Urn,
     remote_peer: PeerId,
     remote: git2::Remote<'a>,
 }
@@ -211,7 +251,7 @@ pub struct DefaultFetcher<'a> {
 impl<'a> DefaultFetcher<'a> {
     pub fn new<S, Addrs>(
         storage: &'a Storage<S>,
-        urn: Urn,
+        urn: git::Urn,
         remote_peer: PeerId,
         addr_hints: Addrs,
     ) -> Result<Self, git2::Error>
@@ -237,7 +277,10 @@ impl<'a> DefaultFetcher<'a> {
         })
     }
 
-    pub fn fetch(&mut self, fetchspecs: Fetchspecs) -> Result<FetchResult, git2::Error> {
+    pub fn fetch(
+        &mut self,
+        fetchspecs: Fetchspecs<PeerId, git::Revision>,
+    ) -> Result<FetchResult, git2::Error> {
         let span = tracing::info_span!("DefaultFetcher::fetch");
         let _guard = span.enter();
 
@@ -311,8 +354,13 @@ impl<'a> DefaultFetcher<'a> {
 
 impl Fetcher for DefaultFetcher<'_> {
     type Error = git2::Error;
+    type PeerId = PeerId;
+    type UrnId = git::Revision;
 
-    fn fetch(&mut self, fetchspecs: Fetchspecs) -> Result<FetchResult, Self::Error> {
+    fn fetch(
+        &mut self,
+        fetchspecs: Fetchspecs<Self::PeerId, Self::UrnId>,
+    ) -> Result<FetchResult, Self::Error> {
         self.fetch(fetchspecs)
     }
 }

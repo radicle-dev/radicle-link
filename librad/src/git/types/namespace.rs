@@ -119,6 +119,26 @@ where
     }
 }
 
+impl<R> From<Namespace<R>> for ext::RefspecPattern
+where
+    R: urn::HasProtocol,
+    for<'a> &'a R: Into<Multihash>,
+{
+    fn from(ns: Namespace<R>) -> Self {
+        ext::RefLike::from(ns).into()
+    }
+}
+
+impl<'a, R> From<&'a Namespace<R>> for ext::RefspecPattern
+where
+    R: urn::HasProtocol,
+    &'a R: Into<Multihash>,
+{
+    fn from(ns: &'a Namespace<R>) -> Self {
+        ext::RefLike::from(ns).into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

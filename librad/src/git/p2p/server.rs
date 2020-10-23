@@ -126,7 +126,7 @@ impl UploadPack {
         git.args(&["-c", "uploadpack.hiderefs=refs/"])
             .arg("-c")
             .arg(format!(
-                "uploadpack.hiderefs=!refs/namespaces/{}",
+                "uploadpack.hiderefs=!{}",
                 ext::RefLike::try_from("refs/namespaces")
                     .unwrap()
                     .join(&namespace)
