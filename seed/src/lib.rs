@@ -341,31 +341,7 @@ impl Node {
                 reply.send(peers).await?;
             },
             Request::GetProjects(mut reply) => {
-                let projs = api
-                    .with_storage(move |s| {
-                        // for meta in metas {
-                        let projs = s
-                            .all_metadata()?
-                            .flat_map(|meta| {
-                                let meta = meta.ok()?;
-
-                                meta.try_map(|info| match info {
-                                    entity::data::EntityInfo::Project(info) => Some(info),
-                                    _ => None,
-                                })
-                                .map(|meta| Project {
-                                    urn: meta.urn(),
-                                    name: meta.name().to_owned(),
-                                    description: meta.description().to_owned(),
-                                    maintainers: meta.maintainers().clone(),
-                                })
-                            })
-                            .collect();
-
-                        Ok::<_, git::storage::Error>(projs)
-                    })
-                    .await??;
-
+                let projs = self::get_projects(api).await?;
                 reply.send(projs).await?;
             },
         }
@@ -516,4 +492,30 @@ async fn guess_user(
         Ok(None)
     })
     .await?
+}
+
+/// Get all local projects.
+async fn get_projects(api: &PeerApi<Signer>) -> Result<Vec<Project>, Error> {
+    api.with_storage(move |s| {
+        let projs = s
+            .all_metadata()?
+            .flat_map(|meta| {
+                let meta = meta.ok()?;
+
+                meta.try_map(|info| match info {
+                    entity::data::EntityInfo::Project(info) => Some(info),
+                    _ => None,
+                })
+                .map(|meta| Project {
+                    urn: meta.urn(),
+                    name: meta.name().to_owned(),
+                    description: meta.description().to_owned(),
+                    maintainers: meta.maintainers().clone(),
+                })
+            })
+            .collect();
+
+        Ok::<_, git::storage::Error>(Ok(projs))
+    })
+    .await??
 }
