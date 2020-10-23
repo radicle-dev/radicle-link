@@ -496,7 +496,7 @@ async fn guess_user(
 
 /// Get all local projects.
 async fn get_projects(api: &PeerApi<Signer>) -> Result<Vec<Project>, Error> {
-    api.with_storage(move |s| {
+    api.with_storage(|s| {
         let projs = s
             .all_metadata()?
             .flat_map(|meta| {
