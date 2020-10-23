@@ -226,8 +226,8 @@ impl Default for NodeConfig {
 /// An error returned by the [`NodeHandle`].
 #[derive(Debug, Error)]
 pub enum NodeHandleError {
-    #[error("Request failed: {0}")]
-    RequestFailed(#[from] chan::SendError),
+    #[error("request failed: the node disconnected")]
+    RequestFailed,
 }
 
 /// Handle used to interact with the seed node.
@@ -239,17 +239,23 @@ impl NodeHandle {
     /// Get all local projects.
     pub async fn get_projects(&mut self) -> Result<Vec<Project>, NodeHandleError> {
         let (tx, mut rx) = chan::channel(1);
-        self.channel.send(Request::GetProjects(tx)).await?;
+        self.channel
+            .send(Request::GetProjects(tx))
+            .await
+            .map_err(|_| NodeHandleError::RequestFailed)?;
 
-        Ok(rx.next().await.unwrap())
+        rx.next().await.ok_or(NodeHandleError::RequestFailed)
     }
 
     /// Get currently connected peers.
     pub async fn get_peers(&mut self) -> Result<HashMap<PeerId, SocketAddr>, NodeHandleError> {
         let (tx, mut rx) = chan::channel(1);
-        self.channel.send(Request::GetPeers(tx)).await?;
+        self.channel
+            .send(Request::GetPeers(tx))
+            .await
+            .map_err(|_| NodeHandleError::RequestFailed)?;
 
-        Ok(rx.next().await.unwrap())
+        rx.next().await.ok_or(NodeHandleError::RequestFailed)
     }
 }
 
