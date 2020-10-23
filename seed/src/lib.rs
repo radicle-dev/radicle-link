@@ -70,7 +70,7 @@ pub enum Error {
     Accept(#[from] peer::AcceptError),
 
     #[error(transparent)]
-    NodeHandle(#[from] NodeHandleError),
+    Node(#[from] NodeError),
 
     #[error(transparent)]
     Channel(#[from] chan::SendError),
@@ -225,7 +225,7 @@ impl Default for NodeConfig {
 
 /// An error returned by the [`NodeHandle`].
 #[derive(Debug, Error)]
-pub enum NodeHandleError {
+pub enum NodeError {
     #[error("request failed: the node disconnected")]
     RequestFailed,
 }
@@ -237,25 +237,25 @@ pub struct NodeHandle {
 
 impl NodeHandle {
     /// Get all local projects.
-    pub async fn get_projects(&mut self) -> Result<Vec<Project>, NodeHandleError> {
+    pub async fn get_projects(&mut self) -> Result<Vec<Project>, NodeError> {
         let (tx, mut rx) = chan::channel(1);
         self.channel
             .send(Request::GetProjects(tx))
             .await
-            .map_err(|_| NodeHandleError::RequestFailed)?;
+            .map_err(|_| NodeError::RequestFailed)?;
 
-        rx.next().await.ok_or(NodeHandleError::RequestFailed)
+        rx.next().await.ok_or(NodeError::RequestFailed)
     }
 
     /// Get currently connected peers.
-    pub async fn get_peers(&mut self) -> Result<HashMap<PeerId, SocketAddr>, NodeHandleError> {
+    pub async fn get_peers(&mut self) -> Result<HashMap<PeerId, SocketAddr>, NodeError> {
         let (tx, mut rx) = chan::channel(1);
         self.channel
             .send(Request::GetPeers(tx))
             .await
-            .map_err(|_| NodeHandleError::RequestFailed)?;
+            .map_err(|_| NodeError::RequestFailed)?;
 
-        rx.next().await.ok_or(NodeHandleError::RequestFailed)
+        rx.next().await.ok_or(NodeError::RequestFailed)
     }
 }
 
