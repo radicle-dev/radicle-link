@@ -68,6 +68,12 @@ pub enum Error {
 
     #[error(transparent)]
     Accept(#[from] peer::AcceptError),
+
+    #[error(transparent)]
+    NodeHandle(#[from] NodeHandleError),
+
+    #[error(transparent)]
+    Channel(#[from] chan::SendError),
 }
 
 #[derive(Clone)]
@@ -218,14 +224,14 @@ pub struct NodeHandle {
 }
 
 impl NodeHandle {
-    pub async fn get_projects(&mut self) -> Result<Vec<()>, chan::SendError> {
+    pub async fn get_projects(&mut self) -> Result<Vec<()>, NodeHandleError> {
         let (tx, mut rx) = chan::channel(1);
         self.channel.send(Request::GetProjects(tx)).await?;
 
         Ok(rx.next().await.unwrap())
     }
 
-    pub async fn get_peers(&mut self) -> Result<HashMap<PeerId, SocketAddr>, chan::SendError> {
+    pub async fn get_peers(&mut self) -> Result<HashMap<PeerId, SocketAddr>, NodeHandleError> {
         let (tx, mut rx) = chan::channel(1);
         self.channel.send(Request::GetPeers(tx)).await?;
 
@@ -233,9 +239,15 @@ impl NodeHandle {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum NodeHandleError {
+    #[error("Request failed: {0}")]
+    RequestFailed(#[from] chan::SendError),
+}
+
 pub enum Request {
     GetProjects(chan::Sender<Vec<()>>),
-    GetPeers(chan::Sender<HashMap<PeerId,SocketAddr>>),
+    GetPeers(chan::Sender<HashMap<PeerId, SocketAddr>>),
 }
 
 /// Seed node instance.
@@ -323,7 +335,7 @@ impl Node {
         api: &PeerApi<Signer>,
     ) -> Result<(), chan::SendError> {
         match request {
-            Request::GetPeers(reply) => {
+            Request::GetPeers(mut reply) => {
                 let peers = api.protocol().connected_peers().await;
                 reply.send(peers).await?;
             },
