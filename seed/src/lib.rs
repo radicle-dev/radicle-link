@@ -513,9 +513,9 @@ async fn get_projects(api: &PeerApi<Signer>) -> Result<Vec<Project>, Error> {
                     maintainers: meta.maintainers().clone(),
                 })
             })
-            .collect();
+            .collect::<Vec<Project>>();
 
-        Ok::<_, git::storage::Error>(Ok(projs))
+        Ok(projs)
     })
-    .await??
+    .await?
 }
