@@ -23,6 +23,7 @@ use std::{
 
 use multibase::Base;
 use multihash::{Blake2b256, Multihash};
+use radicle_git_ext::{RefLike, RefspecPattern};
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
@@ -151,6 +152,18 @@ impl<'de> minicbor::Decode<'de> for Hash {
         Self::try_from(mhash).or(Err(minicbor::decode::Error::Message(
             "unsupported hash algorithm",
         )))
+    }
+}
+
+impl From<Hash> for RefLike {
+    fn from(h: Hash) -> Self {
+        Self::try_from(h.to_string()).unwrap()
+    }
+}
+
+impl From<Hash> for RefspecPattern {
+    fn from(h: Hash) -> Self {
+        Self::try_from(h.to_string()).unwrap()
     }
 }
 

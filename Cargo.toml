@@ -4,6 +4,7 @@ members = [
   "git-helpers",
   "librad",
   "librad-test",
+  "macros",
   "seed",
   "std-ext",
   "tracker",

@@ -79,6 +79,9 @@ features = ["tls-rustls"]
 [dependencies.radicle-git-ext]
 path = "../git-ext"
 
+[dependencies.radicle-macros]
+path = "../macros"
+
 [dependencies.radicle-std-ext]
 path = "../std-ext"
 
