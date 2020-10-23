@@ -29,7 +29,9 @@ extern crate lazy_static;
 #[macro_use]
 extern crate radicle_macros;
 
-extern crate radicle_keystore as keystore;
+pub extern crate radicle_git_ext as git_ext;
+pub extern crate radicle_keystore as keystore;
+pub extern crate radicle_std_ext as std_ext;
 
 pub mod git;
 pub mod hash;
@@ -42,6 +44,9 @@ pub mod paths;
 pub mod peer;
 pub mod signer;
 pub mod uri;
+
+// Re-exports
+pub use radicle_macros::*;
 
 #[cfg(test)]
 mod test;

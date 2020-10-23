@@ -21,9 +21,9 @@ use std::{
     str::FromStr,
 };
 
+use git_ext as ext;
 use multihash::{Multihash, MultihashRef};
 use percent_encoding::percent_decode_str;
-use radicle_git_ext as ext;
 use thiserror::Error;
 
 use super::sealed;
@@ -336,9 +336,9 @@ where
 pub(crate) mod tests {
     use super::*;
 
+    use git_ext::Oid;
     use librad_test::roundtrip::*;
     use proptest::prelude::*;
-    use radicle_git_ext::Oid;
 
     use crate::identities::gen::gen_oid;
 

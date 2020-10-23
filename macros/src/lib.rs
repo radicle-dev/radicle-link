@@ -43,7 +43,11 @@ pub fn reflike(input: TokenStream) -> TokenStream {
         Ok(safe) => {
             let safe_str = safe.as_str();
             let expand = quote! {
-                ::std::convert::TryInto::<::radicle_git_ext::RefLike>::try_into(#safe_str).unwrap()
+                unsafe {
+                    ::std::mem::transmute::<::std::path::PathBuf, ::radicle_git_ext::RefLike>(
+                        ::std::convert::From::from(#safe_str)
+                    )
+                }
             };
 
             TokenStream::from(expand)
@@ -78,7 +82,11 @@ pub fn refspec_pattern(input: TokenStream) -> TokenStream {
         Ok(safe) => {
             let safe_str = safe.as_str();
             let expand = quote! {
-                ::std::convert::TryInto::<::radicle_git_ext::RefspecPattern>::try_into(#safe_str).unwrap()
+                unsafe {
+                    ::std::mem::transmute::<::std::path::PathBuf, ::radicle_git_ext::RefspecPattern>(
+                        ::std::convert::From::from(#safe_str)
+                    )
+                }
             };
 
             TokenStream::from(expand)

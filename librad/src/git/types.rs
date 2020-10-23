@@ -22,7 +22,7 @@ use std::{
     marker::PhantomData,
 };
 
-use radicle_git_ext as ext;
+use git_ext as ext;
 
 use crate::{
     git::{refs::Refs, sealed},

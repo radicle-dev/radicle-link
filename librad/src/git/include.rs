@@ -22,7 +22,7 @@ use std::{
     path::{self, PathBuf},
 };
 
-use radicle_git_ext as ext;
+use git_ext as ext;
 use tempfile::NamedTempFile;
 
 use crate::{
