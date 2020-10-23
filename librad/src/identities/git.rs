@@ -19,8 +19,8 @@ use std::{convert::TryFrom, marker::PhantomData};
 
 use either::*;
 use futures::executor::block_on;
+use git_ext as ext;
 use multihash::Multihash;
-use radicle_git_ext as ext;
 
 use crate::{
     identities::{

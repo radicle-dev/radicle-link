@@ -21,9 +21,9 @@ use std::{
     str::FromStr,
 };
 
+use git_ext::{RefLike, RefspecPattern};
 use multibase::Base;
 use multihash::{Blake2b256, Multihash};
-use radicle_git_ext::{RefLike, RefspecPattern};
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 

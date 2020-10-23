@@ -24,7 +24,6 @@ use futures::{
     future,
     stream::{Stream, StreamExt},
 };
-use radicle_git_ext as ext;
 use tempfile::tempdir;
 
 use librad::{
@@ -33,6 +32,7 @@ use librad::{
         local::{transport, url::LocalUrl},
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
     },
+    git_ext as ext,
     meta::{entity::Signatory, project::ProjectInfo},
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     peer::PeerId,

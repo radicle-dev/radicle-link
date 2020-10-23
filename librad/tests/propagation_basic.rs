@@ -20,7 +20,6 @@
 use std::{convert::TryFrom, marker::PhantomData, time::Duration};
 
 use futures::{future, stream::StreamExt};
-use radicle_git_ext as ext;
 use tempfile::tempdir;
 use tokio::task::block_in_place;
 
@@ -30,6 +29,7 @@ use librad::{
         storage,
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
     },
+    git_ext as ext,
     meta::{entity::Signatory, project::ProjectInfo},
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     signer::SomeSigner,

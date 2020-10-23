@@ -36,8 +36,8 @@ impl<Url> Remote<Url> {
     ///
     /// ```
     /// use std::marker::PhantomData;
-    /// use radicle_git_ext as ext;
     /// use librad::{
+    ///     git_ext as ext,
     ///     git::{
     ///         local::url::LocalUrl,
     ///         types::{remote::Remote, FlatRef, Force, NamespacedRef},
@@ -136,7 +136,7 @@ impl<Url> Remote<Url> {
 mod tests {
     use std::{io, marker::PhantomData};
 
-    use radicle_git_ext as ext;
+    use git_ext as ext;
 
     use super::*;
     use crate::{

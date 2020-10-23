@@ -23,8 +23,8 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use git_ext::reference;
 use keystore::sign;
-use radicle_git_ext::reference;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -34,7 +34,7 @@ use crate::{
     peer::PeerId,
 };
 
-pub use radicle_git_ext::Oid;
+pub use git_ext::Oid;
 
 /// The transitive tracking graph, up to 3 degrees
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

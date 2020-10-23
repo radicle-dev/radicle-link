@@ -17,8 +17,8 @@
 
 use std::fmt::{self, Display};
 
+use git_ext as ext;
 use multihash::Multihash;
-use radicle_git_ext as ext;
 
 use crate::{hash::Hash, identities::git::Urn};
 

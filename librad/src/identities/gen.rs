@@ -15,8 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use git_ext::Oid;
 use proptest::prelude::*;
-use radicle_git_ext::Oid;
 
 pub fn gen_oid(kind: git2::ObjectType) -> impl Strategy<Value = Oid> {
     any::<Vec<u8>>()

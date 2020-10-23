@@ -21,7 +21,7 @@ use std::{
     path::PathBuf,
 };
 
-use radicle_git_ext as ext;
+use git_ext as ext;
 
 use crate::{peer::PeerId, uri::RadUrn};
 
@@ -151,8 +151,7 @@ where
     ///
     /// ```
     /// use std::marker::PhantomData;
-    /// use radicle_git_ext as ext;
-    /// use librad::{git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
+    /// use librad::{git_ext as ext, git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
     ///
     /// let id = Hash::hash(b"geez");
     /// let peer: PeerId = SecretKey::new().into();
@@ -179,9 +178,7 @@ where
     ///
     /// ```
     /// use std::{convert::TryFrom, marker::PhantomData};
-    /// use radicle_git_ext::RefLike;
-    /// use radicle_macros::reflike;
-    /// use librad::{git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
+    /// use librad::{git_ext::RefLike, reflike, git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
     ///
     /// let id = Hash::hash(b"geez");
     /// let peer: PeerId = SecretKey::new().into();

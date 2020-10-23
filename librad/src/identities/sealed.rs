@@ -15,8 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use radicle_git_ext::Oid;
-
 pub trait Sealed {}
 
-impl Sealed for Oid {}
+impl Sealed for git_ext::Oid {}

@@ -18,9 +18,9 @@
 use std::{convert::TryFrom, path::PathBuf};
 
 use either::Either;
+use git_ext::{self as ext, is_not_found_err};
 use multihash::Multihash;
-use radicle_git_ext::{self as ext, is_not_found_err};
-use radicle_std_ext::result::ResultExt as _;
+use std_ext::result::ResultExt as _;
 
 use crate::{
     identities::{

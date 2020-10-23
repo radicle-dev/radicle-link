@@ -27,7 +27,7 @@ use std::{
     path::Path,
 };
 
-use radicle_git_ext::{
+use git_ext::{
     self as ext,
     blob::{self, Blob},
     is_exists_err,
@@ -35,8 +35,8 @@ use radicle_git_ext::{
     Oid,
     References,
 };
-use radicle_std_ext::result::ResultExt as _;
 use serde::{de::DeserializeOwned, Serialize};
+use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
 use crate::{

@@ -596,9 +596,9 @@ where
 mod tests {
     use super::*;
 
+    use git_ext::Oid;
     use librad_test::roundtrip::*;
     use pretty_assertions::assert_eq;
-    use radicle_git_ext::Oid;
 
     use crate::{
         identities::gen::gen_oid,
