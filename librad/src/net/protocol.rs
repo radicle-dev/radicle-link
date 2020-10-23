@@ -61,7 +61,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub enum ProtocolEvent<A> {
     Connected(PeerId),
-    Disconnecting(PeerId),
+    Disconnected(PeerId),
     Listening(SocketAddr),
     Gossip(gossip::Info<IpAddr, A>),
     Membership(gossip::MembershipInfo<IpAddr>),
@@ -479,13 +479,15 @@ where
             tracing::warn!("Closing connection with {}, because: {}", remote_id, e);
             conn.close(CloseReason::InternalError);
         };
+
+        self.handle_disconnect(remote_id).await;
     }
 
     async fn handle_disconnect(&self, peer: PeerId) {
         if let Some(conn) = self.connections.lock().await.remove(&peer) {
             tracing::info!(msg = "Disconnecting", remote.addr = %conn.remote_addr());
             self.subscribers
-                .emit(ProtocolEvent::Disconnecting(peer))
+                .emit(ProtocolEvent::Disconnected(peer))
                 .await
         }
     }
@@ -517,6 +519,8 @@ where
                 }
             });
         }
+
+        self.handle_disconnect(remote_id).await;
 
         Ok(())
     }
