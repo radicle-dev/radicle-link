@@ -22,10 +22,10 @@ use std::{
 };
 
 use multihash::Multihash;
+use radicle_git_ext as ext;
 
 use crate::{
     git::{
-        ext,
         p2p::url::GitUrl,
         refs::Refs,
         storage2::Storage,
@@ -362,5 +362,75 @@ impl Fetcher for DefaultFetcher<'_> {
         fetchspecs: Fetchspecs<Self::PeerId, Self::UrnId>,
     ) -> Result<FetchResult, Self::Error> {
         self.fetch(fetchspecs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use pretty_assertions::assert_eq;
+
+    use crate::identities::urn::tests::FakeId;
+
+    lazy_static! {
+        static ref LOLEK: ext::RefLike = ext::RefLike::try_from("lolek").unwrap();
+        static ref BOLEK: ext::RefLike = ext::RefLike::try_from("bolek").unwrap();
+        static ref TOLA: ext::RefLike = ext::RefLike::try_from("tola").unwrap();
+        static ref URN_32: Urn<FakeId> = Urn::new(FakeId(32));
+        static ref URN_32_REF: ext::RefLike = (&*URN_32).into();
+    }
+
+    #[test]
+    fn peek_looks_legit() {
+        let specs = Fetchspecs::Peek.refspecs(&*URN_32, LOLEK.clone());
+        assert_eq!(
+            &specs.iter().map(|spec| spec.as_refspec()).collect::<Vec<_>>(),
+            &[
+                format!(
+                    "refs/namespaces/{}/refs/rad/id:refs/namespaces/{}/refs/remotes/lolek/rad/id",
+                    URN_32_REF.as_str(),
+                    URN_32_REF.as_str(),
+                ),
+                format!(
+                    "refs/namespaces/{}/refs/rad/self:refs/namespaces/{}/refs/remotes/lolek/rad/self",
+                    URN_32_REF.as_str(),
+                    URN_32_REF.as_str(),
+                ),
+                format!(
+                    "refs/namespaces/{}/refs/rad/ids/*:refs/namespaces/{}/refs/remotes/lolek/rad/ids/*",
+                    URN_32_REF.as_str(),
+                    URN_32_REF.as_str(),
+                ),
+            ]
+        )
+    }
+
+    #[test]
+    fn signed_refs_looks_legit() {
+        let specs = Fetchspecs::SignedRefs {
+            tracked: [&*LOLEK, &*BOLEK]
+                .iter()
+                .cloned()
+                .cloned()
+                .collect::<BTreeSet<ext::RefLike>>(),
+        }
+        .refspecs(&*URN_32, TOLA.clone());
+
+        assert_eq!(
+            &specs.iter().map(|spec| spec.as_refspec()).collect::<Vec<_>>(),
+            &[
+                format!(
+                    "refs/namespaces/{}/refs/remotes/bolek/rad/signed_refs:refs/namespaces/{}/refs/remotes/bolek/rad/signed_refs",
+                    URN_32_REF.as_str(),
+                    URN_32_REF.as_str(),
+                ),
+                format!(
+                    "refs/namespaces/{}/refs/remotes/lolek/rad/signed_refs:refs/namespaces/{}/refs/remotes/lolek/rad/signed_refs",
+                    URN_32_REF.as_str(),
+                    URN_32_REF.as_str(),
+                ),
+            ]
+        )
     }
 }

@@ -15,7 +15,7 @@ dyn-clone = "1.0"
 ed25519-zebra = "2.2"
 futures-timer = "3.0"
 governor = "0.3"
-lazy_static = "1.4"
+lazy_static = "1"
 libc = "0.2"
 log = "0.4"
 multibase = "0.8"
@@ -75,6 +75,15 @@ git = "https://github.com/djc/quinn"
 rev = "babb07b079e7e3ac4ff2fa7ef25b0dac5e934377"
 default-features = false
 features = ["tls-rustls"]
+
+[dependencies.radicle-git-ext]
+path = "../git-ext"
+
+[dependencies.radicle-macros]
+path = "../macros"
+
+[dependencies.radicle-std-ext]
+path = "../std-ext"
 
 # Note: this MUST always match the exact patch version `quinn` uses
 [dependencies.rustls]

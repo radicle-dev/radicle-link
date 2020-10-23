@@ -59,9 +59,10 @@ use futures::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
+use radicle_git_ext::into_git_err;
 
 use crate::{
-    git::{ext::into_git_err, header::Header, p2p::url::GitUrl},
+    git::{header::Header, p2p::url::GitUrl},
     hash::Hash,
     peer::PeerId,
     uri::{self, RadUrn},

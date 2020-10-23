@@ -15,11 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-//! Modules internally used by `librad`.
-//!
-//! Code here may change in incompatible ways without prior notice.
+use proptest::prelude::*;
+use radicle_git_ext::Oid;
 
-pub mod borrow;
-pub mod canonical;
-pub mod channel;
-pub mod sync;
+pub fn gen_oid(kind: git2::ObjectType) -> impl Strategy<Value = Oid> {
+    any::<Vec<u8>>()
+        .prop_map(move |bytes| git2::Oid::hash_object(kind, &bytes).map(Oid::from).unwrap())
+}

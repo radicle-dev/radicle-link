@@ -20,12 +20,12 @@
 use std::{convert::TryFrom, marker::PhantomData, time::Duration};
 
 use futures::{future, stream::StreamExt};
+use radicle_git_ext as ext;
 use tempfile::tempdir;
 use tokio::task::block_in_place;
 
 use librad::{
     git::{
-        ext,
         local::{self, transport::LocalTransportFactory, url::LocalUrl},
         storage,
         types::{remote::Remote, FlatRef, Force, NamespacedRef},

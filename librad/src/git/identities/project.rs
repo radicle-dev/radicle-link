@@ -21,12 +21,12 @@ use std::{
 };
 
 use either::Either;
+use radicle_git_ext::is_not_found_err;
 use thiserror::Error;
 
 use super::common;
 use crate::{
     git::{
-        ext::is_not_found_err,
         storage2::{self, Storage},
         types::{namespace, reference, Force, Reference, Single, SymbolicRef},
     },

@@ -19,17 +19,16 @@
 
 use std::{convert::TryFrom, io};
 
+use keystore::sign;
+use radicle_git_ext::{self as ext, is_not_found_err};
+use radicle_std_ext::result::ResultExt as _;
 use thiserror::Error;
 
-use keystore::sign;
-
 use crate::{
-    git::ext::{self, is_not_found_err},
     identities::{
         git::{Identities, Urn, VerifiedUser},
         urn,
     },
-    internal::result::ResultExt,
     keys::SecretKey,
     peer::{self, PeerId},
     uri::{self, RadUrn},

@@ -26,6 +26,8 @@
 extern crate async_trait;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate radicle_macros;
 
 extern crate radicle_keystore as keystore;
 

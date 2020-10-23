@@ -21,9 +21,10 @@ use std::{
 };
 
 use multihash::Multihash;
+use radicle_git_ext as ext;
 
 use crate::{
-    git::{ext, sealed},
+    git::sealed,
     hash::Hash,
     identities::urn::{self, Urn},
 };

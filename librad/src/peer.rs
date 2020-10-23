@@ -19,14 +19,12 @@ use std::{convert::TryFrom, fmt, ops::Deref, str::FromStr};
 
 use minicbor::{Decode, Encode};
 use multibase::Base::Base32Z;
+use radicle_git_ext as ext;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
 use keystore::sign;
 
-use crate::{
-    git::ext,
-    keys::{self, PublicKey, SecretKey},
-};
+use crate::keys::{self, PublicKey, SecretKey};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Encode, Decode)]
 #[cbor(array)]

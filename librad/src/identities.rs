@@ -24,4 +24,7 @@ pub mod urn;
 
 mod sealed;
 
+#[cfg(test)]
+pub(crate) mod gen;
+
 pub use git::*;

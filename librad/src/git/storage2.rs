@@ -17,22 +17,20 @@
 
 use std::convert::TryFrom;
 
+use radicle_git_ext::{is_not_found_err, RefLike, References};
+use radicle_std_ext::result::ResultExt as _;
 use thiserror::Error;
 
 use crate::{
-    git::{
-        ext::{self, is_not_found_err},
-        types::{
-            namespace::{AsNamespace, Namespace},
-            reference,
-            Many,
-            NamespacedRef,
-            One,
-            Reference,
-        },
+    git::types::{
+        namespace::{AsNamespace, Namespace},
+        reference,
+        Many,
+        NamespacedRef,
+        One,
+        Reference,
     },
     identities::git::Identities,
-    internal::result::ResultExt as _,
     keys,
     paths::Paths,
     peer::PeerId,
@@ -132,7 +130,7 @@ where
         &'a N: AsNamespace,
     {
         self.backend
-            .find_reference(ext::RefLike::from(reference).as_str())
+            .find_reference(RefLike::from(reference).as_str())
             .and(Ok(true))
             .or_matches(is_not_found_err, || Ok(false))
     }
@@ -157,7 +155,7 @@ where
                     path.strip_prefix("refs/").unwrap_or(path)
                 };
 
-                let refs = ext::References::from_globs(
+                let refs = References::from_globs(
                     &self.backend,
                     &[format!("refs/namespaces/{}/refs/{}", namespace, branch)],
                 )?;
@@ -201,7 +199,7 @@ where
     pub fn references<'a, N>(
         &'a self,
         reference: &NamespacedRef<N, Many>,
-    ) -> Result<ext::References<'a>, Error>
+    ) -> Result<References<'a>, Error>
     where
         for<'b> &'b N: AsNamespace,
     {

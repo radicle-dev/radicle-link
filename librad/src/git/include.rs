@@ -22,11 +22,11 @@ use std::{
     path::{self, PathBuf},
 };
 
+use radicle_git_ext as ext;
 use tempfile::NamedTempFile;
 
 use crate::{
     git::{
-        ext,
         local::url::LocalUrl,
         types::{remote::Remote, AsRefspec, FlatRef, Force},
     },

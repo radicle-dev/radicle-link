@@ -26,7 +26,6 @@
 //! [`git-daemon`]: https://git-scm.com/docs/git-daemon
 
 use std::{
-    convert::TryFrom,
     io,
     path::{Path, PathBuf},
     process::Stdio,
@@ -37,12 +36,12 @@ use futures::{
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
 };
 use git2::transport::Service;
+use radicle_git_ext::{into_io_err, RefLike, References, UPLOAD_PACK_HEADER};
 use tokio::process::{self, Command};
 use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
 use crate::{
     git::{
-        ext::{self, into_io_err, References, UPLOAD_PACK_HEADER},
         header::{self, Header},
         types::namespace::AsNamespace,
     },
@@ -120,17 +119,14 @@ impl UploadPack {
     where
         N: AsNamespace + Clone,
     {
-        let namespace: ext::RefLike = namespace.into();
+        let namespace: RefLike = namespace.into();
 
         let mut git = Command::new("git");
         git.args(&["-c", "uploadpack.hiderefs=refs/"])
             .arg("-c")
             .arg(format!(
                 "uploadpack.hiderefs=!{}",
-                ext::RefLike::try_from("refs/namespaces")
-                    .unwrap()
-                    .join(&namespace)
-                    .as_str()
+                reflike!("refs/namespaces").join(&namespace).as_str()
             ));
 
         // FIXME: we should probably keep one git2::Repository around, but

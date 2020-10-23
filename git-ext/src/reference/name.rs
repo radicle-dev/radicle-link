@@ -199,7 +199,7 @@ impl FromIterator<Self> for RefLike {
 ///
 /// ```rust
 /// use std::{convert::TryFrom, path::Path};
-/// use librad::git::ext::reference::name::*;
+/// use radicle_git_ext::reference::name::*;
 ///
 /// assert_eq!(
 ///     &*OneLevel::from(RefLike::try_from("refs/heads/next").unwrap()),
@@ -284,7 +284,7 @@ impl From<OneLevel> for PathBuf {
 ///
 /// ```rust
 /// use std::{convert::TryFrom, path::Path};
-/// use librad::git::ext::reference::name::*;
+/// use radicle_git_ext::reference::name::*;
 ///
 /// assert_eq!(
 ///     &*Qualified::from(RefLike::try_from("laplace").unwrap()),

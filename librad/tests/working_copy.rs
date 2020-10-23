@@ -24,11 +24,11 @@ use futures::{
     future,
     stream::{Stream, StreamExt},
 };
+use radicle_git_ext as ext;
 use tempfile::tempdir;
 
 use librad::{
     git::{
-        ext,
         include,
         local::{transport, url::LocalUrl},
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
