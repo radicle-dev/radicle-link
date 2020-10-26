@@ -30,7 +30,7 @@ use thiserror::Error;
 
 use crate::{
     internal::canonical::{Cjson, CjsonError},
-    keys::{self, Signature},
+    keys::Signature,
     peer::PeerId,
 };
 
@@ -125,7 +125,7 @@ impl Refs {
     pub fn sign<S>(self, signer: &S) -> Result<Signed, signing::Error>
     where
         S: sign::Signer,
-        S::Error: keys::SignError,
+        S::Error: std::error::Error + Send + Sync + 'static,
     {
         let signature = futures::executor::block_on(signer.sign(&self.canonical_form()?))
             .map_err(|err| signing::Error::Sign(Box::new(err)))?;

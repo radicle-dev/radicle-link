@@ -31,7 +31,6 @@ use crate::{
         Reference,
     },
     identities::git::Identities,
-    keys,
     paths::Paths,
     peer::PeerId,
     signer::Signer,
@@ -68,7 +67,7 @@ pub struct Storage<S> {
 impl<S> Storage<S>
 where
     S: Signer,
-    S::Error: keys::SignError,
+    S::Error: std::error::Error + Send + Sync + 'static,
 {
     pub fn open(paths: &Paths, signer: S) -> Result<Self, Error> {
         let backend = git2::Repository::open_bare(paths.git_dir())?;
