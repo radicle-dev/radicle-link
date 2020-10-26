@@ -65,6 +65,11 @@ impl RefLike {
         Self(self.0.join(other.into().0))
     }
 
+    /// Append a [`RefspecPattern`], yielding a [`RefspecPattern`]
+    pub fn with_pattern_suffix<Suf: Into<RefspecPattern>>(&self, suf: Suf) -> RefspecPattern {
+        RefspecPattern(self.0.join(suf.into().0))
+    }
+
     pub fn as_str(&self) -> &str {
         self.as_ref()
     }
