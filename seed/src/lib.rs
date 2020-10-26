@@ -357,9 +357,9 @@ async fn guess_user(
 
             for remote in repo.tracked()? {
                 if remote == peer {
-                    let user = repo.get_rad_self_of(remote)?;
-
-                    return Ok(Some(user));
+                    if let Ok(user) = repo.get_rad_self_of(remote) {
+                        return Ok(Some(user));
+                    }
                 }
             }
         }
