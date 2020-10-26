@@ -265,6 +265,12 @@ impl From<RefLike> for OneLevel {
     }
 }
 
+impl From<Qualified> for OneLevel {
+    fn from(Qualified(path): Qualified) -> Self {
+        Self::from(RefLike(path))
+    }
+}
+
 impl From<OneLevel> for RefLike {
     fn from(OneLevel(path): OneLevel) -> Self {
         Self(path)
@@ -347,6 +353,12 @@ impl From<RefLike> for Qualified {
         } else {
             Self(Path::new("refs/heads").join(path))
         }
+    }
+}
+
+impl From<OneLevel> for Qualified {
+    fn from(OneLevel(path): OneLevel) -> Self {
+        Self::from(RefLike(path))
     }
 }
 
