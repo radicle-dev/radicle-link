@@ -151,62 +151,65 @@ pub mod refspecs {
         R: HasProtocol + Clone + 'static,
         for<'a> &'a R: Into<Multihash>,
     {
-        let namespace = Namespace::from(urn);
-
-        let signed = tracked_sigrefs
+        let mut signed = tracked_sigrefs
             .iter()
             .map(|(tracked_peer, tracked_sigrefs)| {
-                let mut refspecs = Vec::new();
-
-                let heads = tracked_sigrefs.heads.iter().filter_map(|(name, target)| {
-                    // Either the signed ref is in the "owned" section of
-                    // `remote_peer`'s repo...
-                    let name_namespaced = reflike!("refs/namespaces")
-                        .join(&namespace)
-                        .join(name.clone());
-
-                    // .. or `remote_peer` is tracking `tracked_peer`, in
-                    // which case it is in the remotes section.
-                    let name_namespaced_remote = reflike!("refs/namespaces")
-                        .join(&namespace)
-                        .join(reflike!("refs/remotes"))
-                        .join(tracked_peer)
-                        .join(reflike!("heads"))
-                        .join(name.clone());
-
-                    // Only include the advertised ref if its target OID
-                    // is the same as the signed one.
-                    let targets_match = remote_heads
-                        .get(&name_namespaced)
-                        .or_else(|| remote_heads.get(&name_namespaced_remote))
-                        .map(|remote_target| remote_target == &*target)
-                        .unwrap_or(false);
-
-                    targets_match.then_some({
-                        let local = Reference::head(
-                            namespace.clone(),
-                            tracked_peer.clone(),
-                            name.clone().into(),
-                        );
-                        let remote = if tracked_peer == remote_peer {
-                            local.set_remote(None)
+                let namespace = Namespace::from(urn);
+                tracked_sigrefs
+                    .heads
+                    .iter()
+                    .filter_map(move |(name, target)| {
+                        let name_namespaced =
+                        // Either the signed ref is in the "owned" section of
+                        // `remote_peer`'s repo...
+                        if tracked_peer == remote_peer {
+                            reflike!("refs/namespaces")
+                            .join(&namespace)
+                            .join(ext::Qualified::from(name.clone()))
+                        // .. or `remote_peer` is tracking `tracked_peer`, in
+                        // which case it is in the remotes section.
                         } else {
-                            local.clone()
+                            reflike!("refs/namespaces")
+                                .join(&namespace)
+                                .join(reflike!("refs/remotes"))
+                                .join(tracked_peer)
+                                .join(ext::Qualified::from(name.clone()))
                         };
 
-                        local.refspec(remote, Force::True).boxed()
+                        // Only include the advertised ref if its target OID
+                        // is the same as the signed one.
+                        let targets_match = remote_heads
+                            .get(&name_namespaced)
+                            .map(|remote_target| remote_target == &*target)
+                            .unwrap_or(false);
+
+                        targets_match.then_some({
+                            let local = Reference::head(
+                                namespace.clone(),
+                                tracked_peer.clone(),
+                                name.clone().into(),
+                            );
+                            let remote = if tracked_peer == remote_peer {
+                                local.set_remote(None)
+                            } else {
+                                local.clone()
+                            };
+
+                            local.refspec(remote, Force::True).boxed()
+                        })
                     })
-                });
-                refspecs.extend(heads);
-                // Peek at the tracked peer, too
-                refspecs.extend(peek(urn, tracked_peer.clone()));
-
-                refspecs
             })
-            .flatten();
+            .flatten()
+            .collect::<Vec<_>>();
 
-        // Get id + signed_refs branches of top-level delegates
-        let delegates = delegates
+        // Peek at the remote peer
+        let mut peek_remote = peek(urn, remote_peer.clone());
+
+        // Get id + signed_refs branches of top-level delegates.
+        // **Note**: we don't know at this point whom we should track in the
+        // context of the delegate, so we just try to get at the signed_refs of
+        // whomever we're tracking for `urn`.
+        let mut delegates = delegates
             .iter()
             .map(|delegate_urn| {
                 let mut peek = peek(delegate_urn, remote_peer.clone());
@@ -218,9 +221,12 @@ pub mod refspecs {
 
                 peek
             })
-            .flatten();
+            .flatten()
+            .collect::<Vec<_>>();
 
-        signed.chain(delegates).collect()
+        signed.append(&mut peek_remote);
+        signed.append(&mut delegates);
+        signed
     }
 }
 
@@ -372,35 +378,52 @@ mod tests {
     use crate::identities::urn::tests::FakeId;
 
     lazy_static! {
+        // "PeerId"s
         static ref LOLEK: ext::RefLike = reflike!("lolek");
         static ref BOLEK: ext::RefLike = reflike!("bolek");
         static ref TOLA: ext::RefLike = reflike!("tola");
-        static ref URN_32: Urn<FakeId> = Urn::new(FakeId(32));
-        static ref URN_32_REF: ext::RefLike = (&*URN_32).into();
+
+        // "URN"s
+        static ref PROJECT_URN: Urn<FakeId> = Urn::new(FakeId(32));
+        static ref LOLEK_URN: Urn<FakeId> = Urn::new(FakeId(1));
+        static ref BOLEK_URN: Urn<FakeId> = Urn::new(FakeId(2));
+
+        // namespaces
+        static ref PROJECT_NAMESPACE: ext::RefLike = reflike!("refs/namespaces").join(&*PROJECT_URN);
+        static ref LOLEK_NAMESPACE: ext::RefLike = reflike!("refs/namespaces").join(&*LOLEK_URN);
+        static ref BOLEK_NAMESPACE: ext::RefLike = reflike!("refs/namespaces").join(&*BOLEK_URN);
     }
 
     #[test]
     fn peek_looks_legit() {
-        let specs = Fetchspecs::Peek.refspecs(&*URN_32, LOLEK.clone());
+        let specs = Fetchspecs::Peek.refspecs(&*PROJECT_URN, TOLA.clone());
         assert_eq!(
-            &specs.iter().map(|spec| spec.as_refspec()).collect::<Vec<_>>(),
-            &[
-                format!(
-                    "refs/namespaces/{}/refs/rad/id:refs/namespaces/{}/refs/remotes/lolek/rad/id",
-                    URN_32_REF.as_str(),
-                    URN_32_REF.as_str(),
+            specs
+                .iter()
+                .map(|spec| spec.as_refspec())
+                .collect::<Vec<_>>(),
+            [
+                (
+                    refspec_pattern!("refs/rad/id"),
+                    refspec_pattern!("refs/remotes/tola/rad/id")
                 ),
-                format!(
-                    "refs/namespaces/{}/refs/rad/self:refs/namespaces/{}/refs/remotes/lolek/rad/self",
-                    URN_32_REF.as_str(),
-                    URN_32_REF.as_str(),
+                (
+                    refspec_pattern!("refs/rad/self"),
+                    refspec_pattern!("refs/remotes/tola/rad/self")
                 ),
-                format!(
-                    "refs/namespaces/{}/refs/rad/ids/*:refs/namespaces/{}/refs/remotes/lolek/rad/ids/*",
-                    URN_32_REF.as_str(),
-                    URN_32_REF.as_str(),
-                ),
+                (
+                    refspec_pattern!("refs/rad/ids/*"),
+                    refspec_pattern!("refs/remotes/tola/rad/ids/*")
+                )
             ]
+            .iter()
+            .cloned()
+            .map(|(remote, local)| format!(
+                "{}:{}",
+                PROJECT_NAMESPACE.with_pattern_suffix(remote).as_str(),
+                PROJECT_NAMESPACE.with_pattern_suffix(local).as_str()
+            ))
+            .collect::<Vec<_>>()
         )
     }
 
@@ -413,22 +436,297 @@ mod tests {
                 .cloned()
                 .collect::<BTreeSet<ext::RefLike>>(),
         }
-        .refspecs(&*URN_32, TOLA.clone());
+        .refspecs(&*PROJECT_URN, TOLA.clone());
 
         assert_eq!(
-            &specs.iter().map(|spec| spec.as_refspec()).collect::<Vec<_>>(),
-            &[
+            specs
+                .iter()
+                .map(|spec| spec.as_refspec())
+                .collect::<Vec<_>>(),
+            [
+                (
+                    reflike!("refs/remotes/bolek/rad/signed_refs"),
+                    reflike!("refs/remotes/bolek/rad/signed_refs")
+                ),
+                (
+                    reflike!("refs/remotes/lolek/rad/signed_refs"),
+                    reflike!("refs/remotes/lolek/rad/signed_refs")
+                )
+            ]
+            .iter()
+            .cloned()
+            .map(|(remote, local)| format!(
+                "{}:{}",
+                PROJECT_NAMESPACE.join(remote).as_str(),
+                PROJECT_NAMESPACE.join(local).as_str()
+            ))
+            .collect::<Vec<_>>()
+        )
+    }
+
+    #[test]
+    fn replicate_looks_legit() {
+        use crate::git::refs::{Refs, Remotes};
+        use std::collections::HashMap;
+
+        lazy_static! {
+            static ref ZERO: ext::Oid = ext::Oid::from(git2::Oid::zero());
+        }
+
+        let delegates = [LOLEK_URN.clone(), BOLEK_URN.clone()]
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+
+        // Obviously, we have lolek and bolek's sigrefs
+        let tracked_sigrefs = [
+            (
+                LOLEK.clone(),
+                Refs {
+                    heads: [(ext::OneLevel::from(reflike!("mister")), *ZERO)]
+                        .iter()
+                        .cloned()
+                        .collect(),
+                    remotes: Remotes::from_map(HashMap::new()),
+                },
+            ),
+            (
+                BOLEK.clone(),
+                Refs {
+                    heads: [
+                        (ext::OneLevel::from(reflike!("mister")), *ZERO),
+                        (ext::OneLevel::from(reflike!("next")), *ZERO),
+                    ]
+                    .iter()
+                    .cloned()
+                    .collect(),
+                    remotes: Remotes::from_map(HashMap::new()),
+                },
+            ),
+        ]
+        .iter()
+        .cloned()
+        .collect::<BTreeMap<_, _>>();
+
+        // Tola is tracking PROJECT_URN, therefore she also has lolek and bolek
+        let remote_heads = [
+            (
+                reflike!("refs/namespaces")
+                    .join(&*PROJECT_URN)
+                    .join(reflike!("refs/heads/mister")),
+                *ZERO,
+            ),
+            (
+                reflike!("refs/namespaces")
+                    .join(&*PROJECT_URN)
+                    .join(reflike!("refs/rad/id")),
+                *ZERO,
+            ),
+            (
+                reflike!("refs/namespaces")
+                    .join(&*PROJECT_URN)
+                    .join(reflike!("refs/rad/ids"))
+                    .join(&*LOLEK_URN),
+                *ZERO,
+            ),
+            (
+                reflike!("refs/namespaces")
+                    .join(&*PROJECT_URN)
+                    .join(reflike!("refs/rad/ids"))
+                    .join(&*BOLEK_URN),
+                *ZERO,
+            ),
+            (
+                reflike!("refs/namespaces")
+                    .join(&*PROJECT_URN)
+                    .join(reflike!("refs/remotes/lolek/refs/heads/mister")),
+                *ZERO,
+            ),
+            (
+                reflike!("refs/namespaces")
+                    .join(&*PROJECT_URN)
+                    .join(reflike!("refs/remotes/bolek/refs/heads/mister")),
+                *ZERO,
+            ),
+            (
+                reflike!("refs/namespaces")
+                    .join(&*PROJECT_URN)
+                    .join(reflike!("refs/remotes/bolek/refs/heads/next")),
+                *ZERO,
+            ),
+            (
+                reflike!("refs/namespaces")
+                    .join(&*LOLEK_URN)
+                    .join(reflike!("refs/rad/id")),
+                *ZERO,
+            ),
+            (
+                reflike!("refs/namespaces")
+                    .join(&*BOLEK_URN)
+                    .join(reflike!("refs/rad/id")),
+                *ZERO,
+            ),
+        ]
+        .iter()
+        .cloned()
+        .collect::<BTreeMap<_, _>>();
+
+        let specs = Fetchspecs::Replicate {
+            remote_heads,
+            tracked_sigrefs,
+            delegates,
+        }
+        .refspecs(&*PROJECT_URN, TOLA.clone());
+
+        assert_eq!(
+            specs
+                .into_iter()
+                .map(|spec| spec.as_refspec())
+                .collect::<BTreeSet<String>>(),
+            [
+                // First, lolek + bolek's heads (forced)
                 format!(
-                    "refs/namespaces/{}/refs/remotes/bolek/rad/signed_refs:refs/namespaces/{}/refs/remotes/bolek/rad/signed_refs",
-                    URN_32_REF.as_str(),
-                    URN_32_REF.as_str(),
+                    "+{}:{}",
+                    PROJECT_NAMESPACE
+                        .join(reflike!("refs/remotes/bolek/heads/mister"))
+                        .as_str(),
+                    PROJECT_NAMESPACE
+                        .join(reflike!("refs/remotes/bolek/heads/mister"))
+                        .as_str()
                 ),
                 format!(
-                    "refs/namespaces/{}/refs/remotes/lolek/rad/signed_refs:refs/namespaces/{}/refs/remotes/lolek/rad/signed_refs",
-                    URN_32_REF.as_str(),
-                    URN_32_REF.as_str(),
+                    "+{}:{}",
+                    PROJECT_NAMESPACE
+                        .join(reflike!("refs/remotes/bolek/heads/next"))
+                        .as_str(),
+                    PROJECT_NAMESPACE
+                        .join(reflike!("refs/remotes/bolek/heads/next"))
+                        .as_str()
+                ),
+                format!(
+                    "+{}:{}",
+                    PROJECT_NAMESPACE
+                        .join(reflike!("refs/remotes/lolek/heads/mister"))
+                        .as_str(),
+                    PROJECT_NAMESPACE
+                        .join(reflike!("refs/remotes/lolek/heads/mister"))
+                        .as_str()
+                ),
+                // Tola's rad/*
+                format!(
+                    "{}:{}",
+                    PROJECT_NAMESPACE.join(reflike!("refs/rad/id")).as_str(),
+                    PROJECT_NAMESPACE
+                        .join(reflike!("refs/remotes/tola/rad/id"))
+                        .as_str()
+                ),
+                format!(
+                    "{}:{}",
+                    PROJECT_NAMESPACE.join(reflike!("refs/rad/self")).as_str(),
+                    PROJECT_NAMESPACE
+                        .join(reflike!("refs/remotes/tola/rad/self"))
+                        .as_str()
+                ),
+                format!(
+                    "{}:{}",
+                    PROJECT_NAMESPACE
+                        .with_pattern_suffix(refspec_pattern!("refs/rad/ids/*"))
+                        .as_str(),
+                    PROJECT_NAMESPACE
+                        .with_pattern_suffix(refspec_pattern!("refs/remotes/tola/rad/ids/*"))
+                        .as_str()
+                ),
+                // Tola's view of rad/* of lolek + bolek's top-level namespaces
+                format!(
+                    "{}:{}",
+                    BOLEK_NAMESPACE.join(reflike!("refs/rad/id")).as_str(),
+                    BOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/tola/rad/id"))
+                        .as_str()
+                ),
+                format!(
+                    "{}:{}",
+                    BOLEK_NAMESPACE.join(reflike!("refs/rad/self")).as_str(),
+                    BOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/tola/rad/self"))
+                        .as_str()
+                ),
+                format!(
+                    "{}:{}",
+                    BOLEK_NAMESPACE
+                        .with_pattern_suffix(refspec_pattern!("refs/rad/ids/*"))
+                        .as_str(),
+                    BOLEK_NAMESPACE
+                        .with_pattern_suffix(refspec_pattern!("refs/remotes/tola/rad/ids/*"))
+                        .as_str()
+                ),
+                format!(
+                    "{}:{}",
+                    LOLEK_NAMESPACE.join(reflike!("refs/rad/id")).as_str(),
+                    LOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/tola/rad/id"))
+                        .as_str()
+                ),
+                format!(
+                    "{}:{}",
+                    LOLEK_NAMESPACE.join(reflike!("refs/rad/self")).as_str(),
+                    LOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/tola/rad/self"))
+                        .as_str()
+                ),
+                format!(
+                    "{}:{}",
+                    LOLEK_NAMESPACE
+                        .with_pattern_suffix(refspec_pattern!("refs/rad/ids/*"))
+                        .as_str(),
+                    LOLEK_NAMESPACE
+                        .with_pattern_suffix(refspec_pattern!("refs/remotes/tola/rad/ids/*"))
+                        .as_str()
+                ),
+                // Bolek's signed_refs for BOLEK_URN
+                format!(
+                    "{}:{}",
+                    BOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/bolek/rad/signed_refs"))
+                        .as_str(),
+                    BOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/bolek/rad/signed_refs"))
+                        .as_str()
+                ),
+                // Lolek's signed_refs for BOLEK_URN (because we're tracking him)
+                format!(
+                    "{}:{}",
+                    BOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/lolek/rad/signed_refs"))
+                        .as_str(),
+                    BOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/lolek/rad/signed_refs"))
+                        .as_str()
+                ),
+                // Lolek's signed_refs for LOLEK_URN
+                format!(
+                    "{}:{}",
+                    LOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/lolek/rad/signed_refs"))
+                        .as_str(),
+                    LOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/lolek/rad/signed_refs"))
+                        .as_str()
+                ),
+                // Bolek's signed_refs for LOLEK_URN (because we're tracking him)
+                format!(
+                    "{}:{}",
+                    LOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/bolek/rad/signed_refs"))
+                        .as_str(),
+                    LOLEK_NAMESPACE
+                        .join(reflike!("refs/remotes/bolek/rad/signed_refs"))
+                        .as_str()
                 ),
             ]
+            .iter()
+            .map(std::borrow::ToOwned::to_owned)
+            .collect::<BTreeSet<String>>()
         )
     }
 }

@@ -345,7 +345,7 @@ pub(crate) mod tests {
     /// Fake `id` of a `Urn<FakeId>`.
     ///
     /// Not cryptographically secure, but cheap to create for tests.
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
     pub struct FakeId(pub usize);
 
     impl sealed::Sealed for FakeId {}
