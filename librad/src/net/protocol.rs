@@ -61,7 +61,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub enum ProtocolEvent<A> {
     Connected(PeerId),
-    Disconnected(PeerId),
+    Disconnecting(PeerId),
     Listening(SocketAddr),
     Gossip(gossip::Info<IpAddr, A>),
     Membership(gossip::MembershipInfo<IpAddr>),
@@ -487,7 +487,7 @@ where
         if let Some(conn) = self.connections.lock().await.remove(&peer) {
             tracing::info!(msg = "Disconnecting", remote.addr = %conn.remote_addr());
             self.subscribers
-                .emit(ProtocolEvent::Disconnected(peer))
+                .emit(ProtocolEvent::Disconnecting(peer))
                 .await
         }
     }

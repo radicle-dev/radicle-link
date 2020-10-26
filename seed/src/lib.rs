@@ -251,7 +251,7 @@ impl Node {
 
                 transmit.send(event).await.ok();
             },
-            ProtocolEvent::Disconnected(id) => {
+            ProtocolEvent::Disconnecting(id) => {
                 transmit.send(Event::PeerDisconnected(id)).await.ok();
             },
             ProtocolEvent::Listening(addr) => {
