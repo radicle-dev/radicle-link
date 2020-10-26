@@ -20,11 +20,12 @@ use std::{
     convert::TryFrom,
     fmt::{self, Display},
     marker::PhantomData,
-    path::{Path, PathBuf},
 };
 
+use git_ext as ext;
+
 use crate::{
-    git::{ext, refs::Refs, sealed},
+    git::{refs::Refs, sealed},
     hash::Hash,
     peer::PeerId,
     uri::RadUrn,
@@ -55,17 +56,12 @@ where
     &'a R: AsRemote,
 {
     fn from(r: &'a FlatRef<R, One>) -> Self {
-        let mut path = PathBuf::new();
         match r.remote {
-            None => path.push(ext::Qualified::from(r.name.clone())),
-            Some(ref remote) => {
-                path.push("refs/remotes");
-                path.push(remote.into());
-                path.push(ext::OneLevel::from(r.name.clone()))
-            },
+            None => ext::Qualified::from(r.name.clone()).into(),
+            Some(ref remote) => reflike!("refs/remotes")
+                .join(remote)
+                .join(ext::OneLevel::from(r.name.clone())),
         }
-
-        ext::RefLike::try_from(path.as_path()).unwrap()
     }
 }
 
@@ -92,20 +88,12 @@ where
     &'a R: AsRemote,
 {
     fn from(r: &'a FlatRef<R, Many>) -> Self {
-        let mut path = PathBuf::new();
-        path.push("refs");
-        match r.remote {
-            None => {
-                path.push("heads");
-            },
-            Some(ref remote) => {
-                path.push("remotes");
-                path.push(remote.into());
-            },
-        }
-        path.push(&r.name);
+        let refl = match r.remote {
+            None => reflike!("refs/heads"),
+            Some(ref remote) => reflike!("refs/remotes").join(remote),
+        };
 
-        ext::RefspecPattern::try_from(path.as_path()).unwrap()
+        ext::RefspecPattern::try_from((*refl).join(&r.name)).unwrap()
     }
 }
 
@@ -288,25 +276,19 @@ impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
 
                     // Either the signed ref is in the "owned" section of
                     // `remote_peer`'s repo...
-                    let name_namespaced = ext::RefLike::try_from(
-                        Path::new("refs/namespaces")
-                            .join(namespace.to_string())
-                            .join("refs/heads"),
-                    )
-                    .unwrap()
-                    .join(name.clone());
+                    let name_namespaced = reflike!("refs/namespaces")
+                        .join(namespace.clone())
+                        .join(reflike!("refs/heads"))
+                        .join(name.clone());
 
                     // .. or `remote_peer` is tracking `tracked_peer`, in which
                     // case it is in the remotes section.
-                    let name_namespaced_remote = ext::RefLike::try_from(
-                        Path::new("refs/namespaces")
-                            .join(namespace.to_string())
-                            .join("refs/remotes")
-                            .join(tracked_peer.to_string())
-                            .join("heads"),
-                    )
-                    .unwrap()
-                    .join(name.clone());
+                    let name_namespaced_remote = reflike!("refs/namespaces")
+                        .join(namespace.clone())
+                        .join(reflike!("refs/remotes"))
+                        .join(tracked_peer)
+                        .join(reflike!("heads"))
+                        .join(name.clone());
 
                     let targets_match = remote_heads
                         .get(name_namespaced.as_str())

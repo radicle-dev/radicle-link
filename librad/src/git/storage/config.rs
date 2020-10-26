@@ -19,13 +19,12 @@
 
 use std::{convert::TryFrom, io};
 
+use git_ext::is_not_found_err;
+use keystore::sign;
+use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
-use keystore::sign;
-
 use crate::{
-    git::ext::is_not_found_err,
-    internal::result::ResultExt,
     keys::SecretKey,
     meta::{
         entity::{Signatory, Verified},

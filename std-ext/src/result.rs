@@ -25,7 +25,7 @@ pub trait ResultExt<T, E> {
     ///
     /// ```
     /// use std::io;
-    /// use librad::internal::result::ResultExt;
+    /// use radicle_std_ext::result::ResultExt as _;
     ///
     /// let res = Err(io::Error::new(io::ErrorKind::Other, "crashbug"))
     ///     .or_matches::<io::Error, _, _>(|e| matches!(e.kind(), io::ErrorKind::Other), || Ok(()))

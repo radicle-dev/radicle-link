@@ -17,21 +17,16 @@
 
 use std::fmt::{self, Display};
 
+use git_ext as ext;
 use multihash::Multihash;
 
-use crate::{
-    git::{ext, sealed},
-    hash::Hash,
-    identities::git::Urn,
-};
+use crate::{hash::Hash, identities::git::Urn};
 
-pub trait AsNamespace: sealed::Sealed {
+pub trait AsNamespace {
     fn as_namespace(&self) -> String;
 }
 
 pub type Legacy = Hash;
-
-impl sealed::Sealed for Legacy {}
 
 impl AsNamespace for Legacy {
     fn as_namespace(&self) -> String {
@@ -41,8 +36,6 @@ impl AsNamespace for Legacy {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Namespace(ext::Oid);
-
-impl sealed::Sealed for Namespace {}
 
 impl AsNamespace for Namespace {
     fn as_namespace(&self) -> String {

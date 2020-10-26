@@ -1,8 +1,11 @@
 [workspace]
 members = [
+  "git-ext",
+  "git-helpers",
   "librad",
   "librad-test",
-  "git-helpers",
-  "tracker",
+  "macros",
   "seed",
+  "std-ext",
+  "tracker",
 ]

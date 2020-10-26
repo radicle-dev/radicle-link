@@ -175,15 +175,3 @@ impl From<&Oid> for Multihash {
         multihash::wrap(multihash::Code::Sha1, oid.as_ref())
     }
 }
-
-#[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
-
-    use proptest::prelude::*;
-
-    pub fn gen_oid(kind: git2::ObjectType) -> impl Strategy<Value = Oid> {
-        any::<Vec<u8>>()
-            .prop_map(move |bytes| git2::Oid::hash_object(kind, &bytes).map(Oid::from).unwrap())
-    }
-}

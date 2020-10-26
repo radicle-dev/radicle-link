@@ -1,0 +1,17 @@
+[package]
+name = "radicle-macros"
+version = "0.1.0"
+authors = ["The Radicle Team <dev@radicle.xyz>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+description = "Radicle procedural macros"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1"
+syn = "1"
+
+[dependencies.radicle-git-ext]
+path = "../git-ext"

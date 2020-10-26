@@ -27,29 +27,27 @@ use std::{
     path::Path,
 };
 
+use git_ext::{
+    self as ext,
+    blob::{self, Blob},
+    is_exists_err,
+    is_not_found_err,
+    Oid,
+    References,
+};
 use serde::{de::DeserializeOwned, Serialize};
+use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
 use crate::{
     git::{
-        ext::{
-            self,
-            blob::{self, Blob},
-            is_exists_err,
-            is_not_found_err,
-            Oid,
-            References,
-        },
         p2p::url::{GitUrl, GitUrlRef},
         refs::{self, Refs},
         repo::Repo,
         types::{namespace, Force, Multiple, NamespacedRef, Single},
     },
     hash::Hash,
-    internal::{
-        canonical::{Cjson, CjsonError},
-        result::ResultExt,
-    },
+    internal::canonical::{Cjson, CjsonError},
     keys,
     meta::{
         entity::{

@@ -25,11 +25,11 @@ use tokio::task::block_in_place;
 
 use librad::{
     git::{
-        ext,
         local::{self, transport::LocalTransportFactory, url::LocalUrl},
         storage,
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
     },
+    git_ext as ext,
     meta::{entity::Signatory, project::ProjectInfo},
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     signer::SomeSigner,

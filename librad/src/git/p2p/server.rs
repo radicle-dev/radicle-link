@@ -36,12 +36,12 @@ use futures::{
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
 };
 use git2::transport::Service;
+use git_ext::{into_io_err, References, UPLOAD_PACK_HEADER};
 use tokio::process::{self, Command};
 use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
 use crate::{
     git::{
-        ext::{into_io_err, References, UPLOAD_PACK_HEADER},
         header::{self, Header},
         types::namespace::AsNamespace,
     },

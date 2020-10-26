@@ -19,10 +19,10 @@ use std::{convert::TryFrom, marker::PhantomData};
 
 use either::*;
 use futures::executor::block_on;
+use git_ext as ext;
 use multihash::Multihash;
 
 use crate::{
-    git::ext,
     identities::{
         delegation::{self, Delegations},
         generic::{self, Signed, Verified},

@@ -28,11 +28,11 @@ use tempfile::tempdir;
 
 use librad::{
     git::{
-        ext,
         include,
         local::{transport, url::LocalUrl},
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
     },
+    git_ext as ext,
     meta::{entity::Signatory, project::ProjectInfo},
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     peer::PeerId,

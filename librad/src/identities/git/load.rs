@@ -18,10 +18,11 @@
 use std::{convert::TryFrom, path::PathBuf};
 
 use either::Either;
+use git_ext::{self as ext, is_not_found_err};
 use multihash::Multihash;
+use std_ext::result::ResultExt as _;
 
 use crate::{
-    git::ext::{self, is_not_found_err},
     identities::{
         delegation,
         generic,
@@ -36,7 +37,7 @@ use crate::{
         sign::Signatures,
         urn::Urn,
     },
-    internal::{canonical::Cjson, result::ResultExt},
+    internal::canonical::Cjson,
 };
 
 use super::{error, ContentId, Doc, Identity, Project, Revision, SomeIdentity, User};

@@ -596,11 +596,12 @@ where
 mod tests {
     use super::*;
 
+    use git_ext::Oid;
     use librad_test::roundtrip::*;
     use pretty_assertions::assert_eq;
 
     use crate::{
-        git::ext::oid::{tests::gen_oid, Oid},
+        identities::gen::gen_oid,
         keys::{tests::gen_public_key, SecretKey},
     };
 

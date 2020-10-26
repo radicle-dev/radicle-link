@@ -21,7 +21,9 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{git::ext, peer::PeerId, uri::RadUrn};
+use git_ext as ext;
+
+use crate::{peer::PeerId, uri::RadUrn};
 
 use super::{namespace::AsNamespace, sealed, Force, Refspec, SymbolicRef};
 
@@ -149,7 +151,7 @@ where
     ///
     /// ```
     /// use std::marker::PhantomData;
-    /// use librad::{git::{ext, types::*}, hash::Hash, keys::SecretKey, peer::PeerId};
+    /// use librad::{git_ext as ext, git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
     ///
     /// let id = Hash::hash(b"geez");
     /// let peer: PeerId = SecretKey::new().into();
@@ -176,16 +178,16 @@ where
     ///
     /// ```
     /// use std::{convert::TryFrom, marker::PhantomData};
-    /// use librad::{git::{ext, types::*}, hash::Hash, keys::SecretKey, peer::PeerId};
+    /// use librad::{git_ext::RefLike, reflike, git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
     ///
     /// let id = Hash::hash(b"geez");
     /// let peer: PeerId = SecretKey::new().into();
     ///
     /// // Set up a ref to `refs/heads/*`
-    /// let flat_heads: FlatRef<ext::RefLike, _> = FlatRef::heads(PhantomData, None);
+    /// let flat_heads: FlatRef<RefLike, _> = FlatRef::heads(PhantomData, None);
     ///
     /// // Set up a ref t `refs/namespaces/<geez>/refs/remotes/<peer>/heads/banana`
-    /// let namespace_head = NamespacedRef::head(id, peer.clone(), One::try_from("banana").unwrap());
+    /// let namespace_head = NamespacedRef::head(id, peer.clone(), reflike!("banana"));
     ///
     /// // The below would fail to compile because `namespace_head` is a `Single`
     /// // reference while `flat_heads` is `Multiple`.
@@ -250,7 +252,7 @@ impl<N, R> Reference<N, R, One> {
         Self {
             remote: None,
             category: RefsCategory::Rad,
-            name: "id".try_into().unwrap(),
+            name: reflike!("id"),
             _namespace: namespace,
         }
     }
@@ -274,7 +276,7 @@ impl<N, R> Reference<N, R, One> {
         Self {
             remote: remote.into(),
             category: RefsCategory::Rad,
-            name: "signed_refs".try_into().unwrap(),
+            name: reflike!("signed_refs"),
             _namespace: namespace,
         }
     }
@@ -286,7 +288,7 @@ impl<N, R> Reference<N, R, One> {
         Self {
             remote: remote.into(),
             category: RefsCategory::Rad,
-            name: "self".try_into().unwrap(),
+            name: reflike!("self"),
             _namespace: namespace,
         }
     }
@@ -364,7 +366,7 @@ impl<N, R> Reference<N, R, Many> {
         Self {
             remote: None,
             category: RefsCategory::Rad,
-            name: "ids/*".try_into().unwrap(),
+            name: refspec_pattern!("ids/*"),
             _namespace: namespace,
         }
     }
@@ -375,7 +377,7 @@ impl<N, R> Reference<N, R, Many> {
         Self {
             remote: remote.into(),
             category: RefsCategory::Heads,
-            name: "*".try_into().unwrap(),
+            name: refspec_pattern!("*"),
             _namespace: namespace,
         }
     }
