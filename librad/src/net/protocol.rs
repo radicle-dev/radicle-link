@@ -479,6 +479,8 @@ where
             tracing::warn!("Closing connection with {}, because: {}", remote_id, e);
             conn.close(CloseReason::InternalError);
         };
+
+        self.handle_disconnect(remote_id).await;
     }
 
     async fn handle_disconnect(&self, peer: PeerId) {
@@ -517,6 +519,8 @@ where
                 }
             });
         }
+
+        self.handle_disconnect(remote_id).await;
 
         Ok(())
     }
