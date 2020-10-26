@@ -28,6 +28,7 @@ use url::Url;
 
 use crate::{
     hash::Hash,
+    identities::urn::Urn,
     peer::{self, PeerId},
     uri::{self, RadUrl, RadUrlRef, RadUrn},
 };
@@ -214,6 +215,28 @@ impl<'a> GitUrlRef<'a, Hash> {
 
     pub fn from_rad_urn<Addrs>(
         urn: &'a RadUrn,
+        local_peer: &'a PeerId,
+        remote_peer: &'a PeerId,
+        addr_hints: &'a Addrs,
+    ) -> Self
+    where
+        Addrs: AsRef<[SocketAddr]>,
+    {
+        Self {
+            local_peer,
+            remote_peer,
+            addr_hints: addr_hints.as_ref(),
+            repo: &urn.id,
+        }
+    }
+}
+
+impl<'a, R> GitUrlRef<'a, R>
+where
+    &'a R: Into<Multihash>,
+{
+    pub fn from_urn<Addrs>(
+        urn: &'a Urn<R>,
         local_peer: &'a PeerId,
         remote_peer: &'a PeerId,
         addr_hints: &'a Addrs,

@@ -28,6 +28,7 @@ pub mod fetch;
 pub mod identities;
 pub mod replication;
 pub mod storage2;
+pub mod tracking;
 
 pub(crate) mod header;
 

@@ -35,7 +35,6 @@ use crate::{
         git,
         urn::{HasProtocol, Urn},
     },
-    keys,
     peer::PeerId,
     signer::Signer,
 };
@@ -240,6 +239,10 @@ pub trait Fetcher {
     type PeerId;
     type UrnId;
 
+    fn remote_peer(&self) -> Self::PeerId;
+
+    fn urn(&self) -> &Urn<Self::UrnId>;
+
     fn fetch(
         &mut self,
         fetchspecs: Fetchspecs<Self::PeerId, Self::UrnId>,
@@ -261,7 +264,7 @@ impl<'a> DefaultFetcher<'a> {
     ) -> Result<Self, git2::Error>
     where
         S: Signer,
-        S::Error: keys::SignError,
+        S::Error: std::error::Error + Send + Sync + 'static,
         Addrs: IntoIterator<Item = SocketAddr>,
     {
         let remote = storage.as_raw().remote_anonymous(
@@ -360,6 +363,14 @@ impl Fetcher for DefaultFetcher<'_> {
     type Error = git2::Error;
     type PeerId = PeerId;
     type UrnId = git::Revision;
+
+    fn remote_peer(&self) -> Self::PeerId {
+        self.remote_peer
+    }
+
+    fn urn(&self) -> &Urn<Self::UrnId> {
+        &self.urn
+    }
 
     fn fetch(
         &mut self,
