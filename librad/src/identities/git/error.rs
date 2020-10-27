@@ -150,3 +150,12 @@ pub enum VerifyUser {
     #[error(transparent)]
     Git(#[from] git2::Error),
 }
+
+#[derive(Debug, Error)]
+pub enum Verify {
+    #[error(transparent)]
+    Project(#[from] VerifyProject),
+
+    #[error(transparent)]
+    User(#[from] VerifyUser),
+}

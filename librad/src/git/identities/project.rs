@@ -22,25 +22,16 @@ use std::{
 
 use either::Either;
 use radicle_git_ext::is_not_found_err;
-use thiserror::Error;
 
-use super::common;
+use super::{common, error::Error};
 use crate::{
     git::{
         storage2::{self, Storage},
-        types::{namespace, reference, Force, Reference, Single, SymbolicRef},
+        types::{namespace, Force, Reference, Single, SymbolicRef},
     },
     identities::{
         self,
-        git::{
-            Identities,
-            IndirectDelegation,
-            Project,
-            Revision,
-            VerificationError,
-            VerifiedProject,
-            Verifying,
-        },
+        git::{Identities, IndirectDelegation, Project, Revision, VerifiedProject, Verifying},
         urn,
     },
     peer::PeerId,
@@ -50,42 +41,6 @@ use crate::{
 pub use identities::{git::Urn, payload::ProjectPayload};
 
 type Namespace = namespace::Namespace<Revision>;
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("the URN {0} already exists")]
-    AlreadyExists(Urn),
-
-    #[error("the URN {0} does not exist")]
-    NotFound(Urn),
-
-    #[error("malformed URN")]
-    Ref(#[from] reference::FromUrnError),
-
-    #[error(transparent)]
-    Verify(#[from] identities::error::VerifyProject),
-
-    #[error(transparent)]
-    Verification(#[from] VerificationError),
-
-    #[error(transparent)]
-    Config(#[from] storage2::config::Error),
-
-    #[error(transparent)]
-    Storage(#[from] storage2::Error),
-
-    #[error(transparent)]
-    Merge(#[from] identities::git::error::Merge),
-
-    #[error(transparent)]
-    Load(#[from] identities::git::error::Load),
-
-    #[error(transparent)]
-    Store(#[from] identities::git::error::Store),
-
-    #[error(transparent)]
-    Git(#[from] git2::Error),
-}
 
 pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Project>, Error>
 where
@@ -115,7 +70,10 @@ where
                 let refname = Reference::<_, PeerId, _>::rad_id(Namespace::from(urn)).to_string();
                 storage.as_raw().refname_to_id(&refname)
             };
-            Ok(Some(identities(storage).verify(tip, lookup)?))
+            identities(storage)
+                .verify(tip, lookup)
+                .map(Some)
+                .map_err(|e| Error::Verify(e.into()))
         },
 
         Err(storage2::Error::Git(e)) if is_not_found_err(&e) => Ok(None),

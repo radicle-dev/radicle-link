@@ -21,18 +21,17 @@ use std::{
 };
 
 use radicle_git_ext::is_not_found_err;
-use thiserror::Error;
 
-use super::common;
+use super::{common, error::Error};
 use crate::{
     git::{
         storage2::{self, Storage},
-        types::{reference, Reference},
+        types::Reference,
     },
     identities::{
         self,
         delegation,
-        git::{Identities, User, VerificationError, VerifiedUser, Verifying},
+        git::{Identities, User, VerifiedUser, Verifying},
         urn,
     },
     peer::PeerId,
@@ -40,39 +39,6 @@ use crate::{
 };
 
 pub use identities::{git::Urn, payload::UserPayload};
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("the URN {0} does not exist")]
-    NotFound(Urn),
-
-    #[error("malformed URN")]
-    Ref(#[from] reference::FromUrnError),
-
-    #[error(transparent)]
-    Verify(#[from] identities::error::VerifyUser),
-
-    #[error(transparent)]
-    Verification(#[from] VerificationError),
-
-    #[error(transparent)]
-    Config(#[from] storage2::config::Error),
-
-    #[error(transparent)]
-    Storage(#[from] storage2::Error),
-
-    #[error(transparent)]
-    Merge(#[from] identities::git::error::Merge),
-
-    #[error(transparent)]
-    Load(#[from] identities::git::error::Load),
-
-    #[error(transparent)]
-    Store(#[from] identities::git::error::Store),
-
-    #[error(transparent)]
-    Git(#[from] git2::Error),
-}
 
 pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<User>, Error>
 where
@@ -98,7 +64,10 @@ where
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(reference) => {
             let tip = reference.peel_to_commit()?.id();
-            Ok(Some(identities(storage).verify(tip)?))
+            identities(storage)
+                .verify(tip)
+                .map(Some)
+                .map_err(|e| Error::Verify(e.into()))
         },
 
         Err(storage2::Error::Git(e)) if is_not_found_err(&e) => Ok(None),
