@@ -21,3 +21,5 @@ pub mod project;
 pub mod user;
 
 mod common;
+
+pub use error::Error;

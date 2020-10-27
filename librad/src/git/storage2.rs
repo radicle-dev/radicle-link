@@ -17,7 +17,7 @@
 
 use std::convert::TryFrom;
 
-use radicle_git_ext::{is_not_found_err, RefLike, References};
+use radicle_git_ext::{self as ext, is_not_found_err, RefLike, References};
 use radicle_std_ext::result::ResultExt as _;
 use thiserror::Error;
 
@@ -183,6 +183,19 @@ where
         }
 
         Ok(self.backend.odb()?.exists(*oid))
+    }
+
+    pub fn tip(&self, urn: &Urn) -> Result<Option<ext::Oid>, Error> {
+        let reference = self
+            .backend
+            .find_reference(RefLike::from(&Reference::try_from(urn)?).as_str())
+            .map(Some)
+            .or_matches::<Error, _, _>(is_not_found_err, || Ok(None))?;
+
+        match reference {
+            None => Ok(None),
+            Some(r) => Ok(Some(r.peel_to_commit()?.id().into())),
+        }
     }
 
     pub fn reference<'a, N>(
