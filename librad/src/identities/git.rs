@@ -219,14 +219,15 @@ where
         &self,
         theirs: SignedIdentity<T>,
         signer: &S,
-    ) -> Result<Identity<T>, error::Store<S::Error>>
+    ) -> Result<Identity<T>, error::Store>
     where
         S: Signer,
         S::Error: std::error::Error + Send + Sync,
     {
         let mut signatures = theirs.signatures.clone();
         {
-            let sig = sign(signer, theirs.revision).map_err(error::Store::Signer)?;
+            let sig =
+                sign(signer, theirs.revision).map_err(|e| error::Store::Signer(Box::new(e)))?;
             signatures.extend(Some(sig))
         }
         let content_id = self.commit(
@@ -274,7 +275,7 @@ where
         ours: SignedIdentity<T>,
         theirs: SignedIdentity<T>,
         signer: &S,
-    ) -> Result<Identity<T>, error::Merge<S::Error>>
+    ) -> Result<Identity<T>, error::Merge>
     where
         S: Signer,
         S::Error: std::error::Error + Send + Sync,
@@ -339,7 +340,8 @@ where
             Action::SuccRev => {
                 let mut signatures = theirs.signatures.clone();
                 {
-                    let sig = sign(signer, theirs.revision).map_err(error::Merge::Signer)?;
+                    let sig = sign(signer, theirs.revision)
+                        .map_err(|e| error::Merge::Signer(Box::new(e)))?;
                     signatures.extend(Some(sig))
                 }
 
@@ -414,7 +416,7 @@ impl<'a> Identities<'a, User> {
         payload: UserPayload,
         delegations: delegation::Direct,
         signer: &S,
-    ) -> Result<User, error::Store<S::Error>>
+    ) -> Result<User, error::Store>
     where
         S: Signer,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -432,7 +434,9 @@ impl<'a> Identities<'a, User> {
             builder.insert(root.to_string(), *root, 0o100_644)?;
             builder.write().map(Revision::from)
         }?;
-        let signatures = sign(signer, revision).map_err(error::Store::Signer)?.into();
+        let signatures = sign(signer, revision)
+            .map_err(|e| error::Store::Signer(Box::new(e)))?
+            .into();
         let content_id = self.commit(
             &format!("Initialised user identity {}", root),
             &signatures,
@@ -462,7 +466,7 @@ impl<'a> Identities<'a, User> {
         payload: impl Into<Option<UserPayload>>,
         delegations: impl Into<Option<delegation::Direct>>,
         signer: &S,
-    ) -> Result<User, error::Store<S::Error>>
+    ) -> Result<User, error::Store>
     where
         S: Signer,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -496,7 +500,9 @@ impl<'a> Identities<'a, User> {
             return Ok(base.into_inner());
         }
 
-        let signatures = sign(signer, revision).map_err(error::Store::Signer)?.into();
+        let signatures = sign(signer, revision)
+            .map_err(|e| error::Store::Signer(Box::new(e)))?
+            .into();
         let content_id = self.commit(
             &format!("Updated to revision {}", revision),
             &signatures,
@@ -535,10 +541,10 @@ impl<'a> Identities<'a, Project> {
         &self,
         head: git2::Oid,
         find_latest_head: F,
-    ) -> Result<VerifiedProject, error::VerifyProject<E>>
+    ) -> Result<VerifiedProject, error::VerifyProject>
     where
         F: Fn(Urn) -> Result<git2::Oid, E>,
-        E: std::error::Error + Send + Sync,
+        E: std::error::Error + Send + Sync + 'static,
     {
         let generic::Folded { head, parent } = self.fold_verify_generic::<ProjectDoc>(head)?;
         let head = head
@@ -565,7 +571,7 @@ impl<'a> Identities<'a, Project> {
         payload: ProjectPayload,
         delegations: IndirectDelegation,
         signer: &S,
-    ) -> Result<Project, error::Store<S::Error>>
+    ) -> Result<Project, error::Store>
     where
         S: Signer,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -584,7 +590,9 @@ impl<'a> Identities<'a, Project> {
             builder.insert(root.to_string(), *root, 0o100_644)?;
             builder.write().map(Revision::from)
         }?;
-        let signatures = sign(signer, revision).map_err(error::Store::Signer)?.into();
+        let signatures = sign(signer, revision)
+            .map_err(|e| error::Store::Signer(Box::new(e)))?
+            .into();
         let content_id = self.commit(
             &format!("Initialised project identity {}", root),
             &signatures,
@@ -614,7 +622,7 @@ impl<'a> Identities<'a, Project> {
         payload: impl Into<Option<ProjectPayload>>,
         delegations: impl Into<Option<IndirectDelegation>>,
         signer: &S,
-    ) -> Result<Project, error::Store<S::Error>>
+    ) -> Result<Project, error::Store>
     where
         S: Signer,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -656,7 +664,9 @@ impl<'a> Identities<'a, Project> {
             return Ok(base.into_inner());
         }
 
-        let signatures = sign(signer, revision).map_err(error::Store::Signer)?.into();
+        let signatures = sign(signer, revision)
+            .map_err(|e| error::Store::Signer(Box::new(e)))?
+            .into();
         let content_id = self.commit(
             &format!("Updated to revision {}", revision),
             &signatures,
@@ -679,17 +689,18 @@ impl<'a> Identities<'a, Project> {
         &self,
         current: I,
         find_latest_head: &F,
-    ) -> Result<IndirectDelegation, error::VerifyProject<E>>
+    ) -> Result<IndirectDelegation, error::VerifyProject>
     where
         I: IntoIterator<Item = Either<PublicKey, User>>,
         F: Fn(Urn) -> Result<git2::Oid, E>,
-        E: std::error::Error + Send + Sync,
+        E: std::error::Error + Send + Sync + 'static,
     {
         let mut updated = Vec::new();
         for delegation in current {
             match delegation {
                 Right(id) => {
-                    let head = find_latest_head(id.urn()).map_err(error::VerifyProject::Lookup)?;
+                    let head = find_latest_head(id.urn())
+                        .map_err(|e| error::VerifyProject::Lookup(Box::new(e)))?;
                     let verified = self.updated_user(id, head)?;
                     updated.push(Right(verified.into_inner()))
                 },
@@ -720,14 +731,11 @@ impl<'a> Identities<'a, Project> {
         }
     }
 
-    fn inline_indirect<E>(
+    fn inline_indirect(
         &self,
         tree: &mut git2::TreeBuilder,
         delegations: &IndirectDelegation,
-    ) -> Result<(), error::Store<E>>
-    where
-        E: std::error::Error + Send + Sync,
-    {
+    ) -> Result<(), error::Store> {
         let mut builder = self.repo.treebuilder(None)?;
         for user_delegation in delegations.iter().filter_map(|x| x.right()) {
             let inlined = self.repo.blob(

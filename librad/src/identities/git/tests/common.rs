@@ -206,7 +206,7 @@ impl<'a> Project<'a> {
         Ok(Self { cur, ..self })
     }
 
-    pub fn verify<F>(&self, lookup: F) -> Result<VerifiedProject, error::VerifyProject<!>>
+    pub fn verify<F>(&self, lookup: F) -> Result<VerifiedProject, error::VerifyProject>
     where
         F: Fn(Urn) -> Result<git2::Oid, !>,
     {

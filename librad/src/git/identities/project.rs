@@ -52,7 +52,7 @@ pub use identities::{git::Urn, payload::ProjectPayload};
 type Namespace = namespace::Namespace<Revision>;
 
 #[derive(Debug, Error)]
-pub enum Error<S: std::error::Error + Send + Sync + 'static> {
+pub enum Error {
     #[error("the URN {0} already exists")]
     AlreadyExists(Urn),
 
@@ -63,7 +63,7 @@ pub enum Error<S: std::error::Error + Send + Sync + 'static> {
     Ref(#[from] reference::FromUrnError),
 
     #[error(transparent)]
-    Verify(#[from] identities::error::VerifyProject<git2::Error>),
+    Verify(#[from] identities::error::VerifyProject),
 
     #[error(transparent)]
     Verification(#[from] VerificationError),
@@ -75,19 +75,19 @@ pub enum Error<S: std::error::Error + Send + Sync + 'static> {
     Storage(#[from] storage2::Error),
 
     #[error(transparent)]
-    Merge(#[from] identities::git::error::Merge<S>),
+    Merge(#[from] identities::git::error::Merge),
 
     #[error(transparent)]
     Load(#[from] identities::git::error::Load),
 
     #[error(transparent)]
-    Store(#[from] identities::git::error::Store<S>),
+    Store(#[from] identities::git::error::Store),
 
     #[error(transparent)]
     Git(#[from] git2::Error),
 }
 
-pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Project>, Error<S::Error>>
+pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Project>, Error>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -103,10 +103,7 @@ where
     }
 }
 
-pub fn verify<S>(
-    storage: &Storage<S>,
-    urn: &Urn,
-) -> Result<Option<VerifiedProject>, Error<S::Error>>
+pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedProject>, Error>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -130,7 +127,7 @@ pub fn create<S>(
     storage: &Storage<S>,
     payload: impl Into<ProjectPayload>,
     delegations: IndirectDelegation,
-) -> Result<Project, Error<S::Error>>
+) -> Result<Project, Error>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -147,7 +144,7 @@ pub fn update<S>(
     urn: &Urn,
     payload: impl Into<Option<ProjectPayload>>,
     delegations: impl Into<Option<IndirectDelegation>>,
-) -> Result<Project, Error<S::Error>>
+) -> Result<Project, Error>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -163,7 +160,7 @@ where
     Ok(next)
 }
 
-pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<Project, Error<S::Error>>
+pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<Project, Error>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -198,7 +195,7 @@ enum Refs<'a> {
 }
 
 impl<'a> Refs<'a> {
-    pub fn apply<S>(&self, storage: &Storage<S>) -> Result<(), Error<S::Error>>
+    pub fn apply<S>(&self, storage: &Storage<S>) -> Result<(), Error>
     where
         S: Signer,
         S::Error: std::error::Error + Send + Sync + 'static,

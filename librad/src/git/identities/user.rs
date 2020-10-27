@@ -42,7 +42,7 @@ use crate::{
 pub use identities::{git::Urn, payload::UserPayload};
 
 #[derive(Debug, Error)]
-pub enum Error<S: std::error::Error + Send + Sync + 'static> {
+pub enum Error {
     #[error("the URN {0} does not exist")]
     NotFound(Urn),
 
@@ -62,19 +62,19 @@ pub enum Error<S: std::error::Error + Send + Sync + 'static> {
     Storage(#[from] storage2::Error),
 
     #[error(transparent)]
-    Merge(#[from] identities::git::error::Merge<S>),
+    Merge(#[from] identities::git::error::Merge),
 
     #[error(transparent)]
     Load(#[from] identities::git::error::Load),
 
     #[error(transparent)]
-    Store(#[from] identities::git::error::Store<S>),
+    Store(#[from] identities::git::error::Store),
 
     #[error(transparent)]
     Git(#[from] git2::Error),
 }
 
-pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<User>, Error<S::Error>>
+pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<User>, Error>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -90,7 +90,7 @@ where
     }
 }
 
-pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedUser>, Error<S::Error>>
+pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedUser>, Error>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -110,7 +110,7 @@ pub fn create<S>(
     storage: &Storage<S>,
     payload: impl Into<UserPayload>,
     delegations: delegation::Direct,
-) -> Result<User, Error<S::Error>>
+) -> Result<User, Error>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -128,7 +128,7 @@ pub fn update<S>(
     urn: &Urn,
     payload: impl Into<Option<UserPayload>>,
     delegations: impl Into<Option<delegation::Direct>>,
-) -> Result<User, Error<S::Error>>
+) -> Result<User, Error>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -142,7 +142,7 @@ where
     Ok(next)
 }
 
-pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<User, Error<S::Error>>
+pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<User, Error>
 where
     S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
