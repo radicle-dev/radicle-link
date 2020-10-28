@@ -277,23 +277,38 @@ impl Node {
             .map(|a: &std::net::IpAddr| (*a, port).into())
             .collect::<Vec<_>>();
 
-        let result = {
+        let exists = {
             let urn = urn.clone();
+            api.with_storage(move |storage| storage.has_urn(&urn))
+                .await??
+        };
+
+        let result = if exists {
+            // Fetch if a new peer announces changes for an existing project.
+            api.with_storage(move |storage| storage.fetch_repo(url, addr_hints))
+                .await?
+        } else {
+            // Clone if the project is not present
             api.with_storage(move |storage| {
                 storage
                     .clone_repo::<meta::project::ProjectInfo, _>(url, addr_hints)
-                    .and_then(|_| storage.track(&urn, &peer_id))
+                    .map(|_info| ())
             })
-        }
-        .await
-        .expect("`clone_repo` panicked");
+            .await?
+        };
 
         match &result {
             Ok(()) => {
-                tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id,);
+                {
+                    let urn = urn.clone();
+                    api.with_storage(move |storage| storage.track(&urn, &peer_id))
+                        .await??;
+                }
+
+                tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id);
             },
             Err(err) => {
-                tracing::debug!(
+                tracing::info!(
                     "Error tracking project {} from peer {}: {}",
                     urn,
                     peer_id,
