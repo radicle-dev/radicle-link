@@ -15,6 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+// clippy doesn't know GATs yet
+#![allow(clippy::needless_lifetimes)]
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     convert::TryFrom,
