@@ -285,26 +285,22 @@ impl Node {
         {
             let urn = urn.clone();
             api.with_storage(move |storage| storage.track(&urn, &peer_id))
-                .await??;
+                .await??
         }
 
-        // FIXME(xla): There should be a saner way to test.
-        let exists = {
+        let result = {
             let urn = project_urn.clone();
-            api.with_storage(move |storage| storage.has_urn(&urn))
-                .await??
-        };
+            api.with_storage(move |storage| -> Result<(), librad::git::storage::Error> {
+                // FIXME(xla): There should be a saner way to test.
+                let exists = storage.has_urn(&urn)?;
 
-        let result = if exists {
-            // Fetch if a new peer announces changes for an existing project.
-            api.with_storage(move |storage| storage.fetch_repo(url, addr_hints))
-                .await?
-        } else {
-            // Clone if the project is not present
-            api.with_storage(move |storage| {
-                storage
-                    .clone_repo::<meta::project::ProjectInfo, _>(url, addr_hints)
-                    .map(|_info| ())
+                if exists {
+                    storage.fetch_repo(url, addr_hints)
+                } else {
+                    storage
+                        .clone_repo::<meta::project::ProjectInfo, _>(url, addr_hints)
+                        .map(|_info| ())
+                }
             })
             .await?
         };
