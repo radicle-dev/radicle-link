@@ -17,10 +17,12 @@
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    convert::TryFrom,
     fmt::Debug,
     hash::Hash,
     iter,
     ops::{Deref, DerefMut},
+    path::Path,
 };
 
 use git_ext::reference;
@@ -28,12 +30,19 @@ use keystore::sign;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use super::{
+    storage2::{self, Storage},
+    tracking,
+    types::{namespace::Namespace, NamespacedRef},
+};
 use crate::{
     internal::canonical::{Cjson, CjsonError},
     keys::Signature,
     peer::PeerId,
+    signer::Signer,
 };
 
+pub use crate::identities::git::Urn;
 pub use git_ext::Oid;
 
 /// The transitive tracking graph, up to 3 degrees
@@ -114,6 +123,36 @@ pub mod signing {
     }
 }
 
+pub mod stored {
+    use super::*;
+
+    pub(super) const BLOB_PATH: &str = "refs"; // `Path::new` ain't no const fn :(
+
+    #[derive(Debug, Error)]
+    pub enum Error {
+        #[error(transparent)]
+        Signed(#[from] signed::Error),
+
+        #[error(transparent)]
+        Signing(#[from] signing::Error),
+
+        #[error(transparent)]
+        Track(#[from] tracking::Error),
+
+        #[error(transparent)]
+        Refname(#[from] reference::name::Error),
+
+        #[error(transparent)]
+        Cjson(#[from] CjsonError),
+
+        #[error(transparent)]
+        Store(#[from] storage2::Error),
+
+        #[error(transparent)]
+        Git(#[from] git2::Error),
+    }
+}
+
 /// The current `refs/heads` and [`Remotes`] (transitive tracking graph)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Refs {
@@ -122,6 +161,116 @@ pub struct Refs {
 }
 
 impl Refs {
+    /// Compute the [`Refs`] from the current storage state at [`Urn`].
+    pub fn compute<S>(storage: &Storage<S>, urn: &Urn) -> Result<Self, stored::Error>
+    where
+        S: Signer,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let heads = storage
+            .references(&NamespacedRef::heads(Namespace::from(urn), None))?
+            .peeled()
+            .try_fold(BTreeMap::new(), |mut acc, (name, oid)| {
+                let refname = reference::RefLike::try_from(name)?;
+                acc.insert(reference::OneLevel::from(refname), oid.into());
+
+                Ok::<_, stored::Error>(acc)
+            })?;
+
+        let mut remotes = tracking::tracked(storage, urn)?
+            .map(|peer| (peer, HashMap::new()))
+            .collect::<HashMap<PeerId, HashMap<PeerId, HashSet<PeerId>>>>();
+
+        for (peer, tracked) in remotes.iter_mut() {
+            match Self::load(storage, urn, *peer)? {
+                Some(refs) => *tracked = refs.remotes.cutoff(),
+                None => {},
+            }
+        }
+
+        Ok(Self {
+            heads,
+            remotes: remotes.into(),
+        })
+    }
+
+    /// Load the [`Refs`] of [`Urn`] (and optionally a remote `peer`) from
+    /// storage, and verify the signature.
+    ///
+    /// If `peer` is `None`, the signer's public key is used for signature
+    /// verification.
+    ///
+    /// If the blob where the signed [`Refs`] are expected to be stored is not
+    /// found, `None` is returned.
+    pub fn load<S>(
+        storage: &Storage<S>,
+        urn: &Urn,
+        peer: impl Into<Option<PeerId>>,
+    ) -> Result<Option<Self>, stored::Error>
+    where
+        S: Signer,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let peer = peer.into();
+        let signer = peer.unwrap_or_else(|| PeerId::from_signer(storage.signer()));
+        storage
+            .blob(
+                &NamespacedRef::rad_signed_refs(Namespace::from(urn), peer),
+                &Path::new(stored::BLOB_PATH),
+            )?
+            .map(|blob| Signed::from_json(blob.content(), &signer).map(|signed| signed.refs))
+            .transpose()
+            .map_err(stored::Error::from)
+    }
+
+    /// Compute the current [`Refs`], sign them, and store them at the
+    /// `rad/signed_refs` branch of [`Urn`].
+    pub fn update<S>(storage: &Storage<S>, urn: &Urn) -> Result<Self, stored::Error>
+    where
+        S: Signer,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let refs = Self::compute(storage, urn)?.sign(storage.signer())?;
+        let branch = NamespacedRef::rad_signed_refs(Namespace::from(urn), None);
+
+        let raw_git = storage.as_raw();
+
+        let parent: Option<git2::Commit> = storage
+            .reference(&branch)?
+            .map(|r| r.peel_to_commit())
+            .transpose()?;
+        let tree = {
+            let canonical = Cjson(&refs).canonical_form()?;
+            let blob = raw_git.blob(&canonical)?;
+            let mut builder = raw_git.treebuilder(None)?;
+
+            builder.insert(stored::BLOB_PATH, blob, 0o100_644)?;
+            let oid = builder.write()?;
+
+            raw_git.find_tree(oid)
+        }?;
+
+        if let Some(ref parent) = parent {
+            if parent.tree()?.id() == tree.id() {
+                return Ok(refs.refs);
+            }
+        }
+
+        {
+            let author = raw_git.signature()?;
+            raw_git.commit(
+                Some(reference::RefLike::from(&branch).as_str()),
+                &author,
+                &author,
+                &format!("Update rad/signed_refs for {}", urn),
+                &tree,
+                &parent.iter().collect::<Vec<&git2::Commit>>(),
+            )?;
+        }
+
+        Ok(refs.refs)
+    }
+
     pub fn sign<S>(self, signer: &S) -> Result<Signed, signing::Error>
     where
         S: sign::Signer,
