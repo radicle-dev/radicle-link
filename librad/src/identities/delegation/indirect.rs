@@ -211,6 +211,18 @@ pub struct Iter<'a, T, R, C> {
     delegations: btree_map::Iter<'a, PublicKey, Option<usize>>,
 }
 
+impl<'a, T, R, C> Iter<'a, T, R, C> {
+    /// Yield only the direct delegations.
+    pub fn direct(self) -> impl Iterator<Item = &'a PublicKey> {
+        self.filter_map(|d| d.either(Some, |_| None))
+    }
+
+    /// Yield only the indirect delegations.
+    pub fn indirect(self) -> impl Iterator<Item = &'a IndirectlyDelegating<T, R, C>> {
+        self.filter_map(|d| d.either(|_| None, Some))
+    }
+}
+
 impl<'a, T, R, C> Iterator for Iter<'a, T, R, C> {
     type Item = Either<&'a PublicKey, &'a IndirectlyDelegating<T, R, C>>;
 
@@ -250,6 +262,18 @@ impl<'a, T, R, C> IntoIterator for &'a Indirect<T, R, C> {
 pub struct IntoIter<T, R, C> {
     identities: vec::IntoIter<IndirectlyDelegating<T, R, C>>,
     delegations: btree_map::IntoIter<PublicKey, Option<usize>>,
+}
+
+impl<T, R, C> IntoIter<T, R, C> {
+    /// Yield only the direct delegations.
+    pub fn direct(self) -> impl Iterator<Item = PublicKey> {
+        self.filter_map(|d| d.either(Some, |_| None))
+    }
+
+    /// Yield only the indirect delegations.
+    pub fn indirect(self) -> impl Iterator<Item = IndirectlyDelegating<T, R, C>> {
+        self.filter_map(|d| d.either(|_| None, Some))
+    }
 }
 
 impl<T, R, C> Iterator for IntoIter<T, R, C> {

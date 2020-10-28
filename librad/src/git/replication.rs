@@ -124,12 +124,7 @@ where
 
             SomeIdentity::Project(proj) => {
                 // Verify + symref the delegates first
-                for delegate in proj
-                    .doc
-                    .delegations
-                    .iter()
-                    .filter_map(|del| del.either(|_| None, Some))
-                {
+                for delegate in proj.doc.delegations.iter().indirect() {
                     let delegate_urn = delegate.urn();
                     // Find in `refs/namespaces/<urn>/rad/ids/<delegate.urn>`
                     let in_rad_ids = Urn {
@@ -183,20 +178,16 @@ where
                 ensure_rad_id(storage, &urn, proj.content_id)?;
 
                 // Make sure we track any direct delegations
-                for key in proj
-                    .doc
-                    .delegations
-                    .iter()
-                    .filter_map(|del| del.either(Some, |_| None))
-                {
+                for key in proj.doc.delegations.iter().direct() {
                     tracking::track(storage, &urn, PeerId::from(*key))?;
                 }
 
                 Ok(Some(
                     proj.doc
                         .delegations
-                        .into_iter()
-                        .filter_map(|del| del.either(|_| None, |id| Some(id.urn())))
+                        .iter()
+                        .indirect()
+                        .map(|id| id.urn())
                         .collect(),
                 ))
             },
