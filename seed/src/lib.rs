@@ -270,7 +270,7 @@ impl Node {
     ) -> Result<(), Error> {
         let peer_id = peer_info.peer_id;
         let url = urn.clone().into_rad_url(peer_id);
-        let proejct_urn = RadUrn {
+        let project_urn = RadUrn {
             path: uri::Path::new(),
             ..urn.clone()
         };
@@ -281,29 +281,30 @@ impl Node {
             .map(|a: &std::net::IpAddr| (*a, port).into())
             .collect::<Vec<_>>();
 
+        // Track unconditionally.
+        {
+            let urn = urn.clone();
+            api.with_storage(move |storage| storage.track(&urn, &peer_id))
+                .await??;
+        }
+
         // FIXME(xla): There should be a saner way to test.
         let exists = {
-            let urn = proejct_urn.clone();
+            let urn = project_urn.clone();
             api.with_storage(move |storage| storage.has_urn(&urn))
                 .await??
         };
 
         let result = if exists {
-            let urn = urn.clone();
             // Fetch if a new peer announces changes for an existing project.
-            api.with_storage(move |storage| {
-                storage
-                    .track(&urn, &peer_id)
-                    .and_then(|_| storage.fetch_repo(url, addr_hints))
-            })
-            .await?
+            api.with_storage(move |storage| storage.fetch_repo(url, addr_hints))
+                .await?
         } else {
-            let urn = urn.clone();
             // Clone if the project is not present
             api.with_storage(move |storage| {
                 storage
                     .clone_repo::<meta::project::ProjectInfo, _>(url, addr_hints)
-                    .and_then(|_info| storage.track(&urn, &peer_id))
+                    .map(|_info| ())
             })
             .await?
         };
