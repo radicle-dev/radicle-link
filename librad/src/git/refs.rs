@@ -182,9 +182,8 @@ impl Refs {
             .collect::<HashMap<PeerId, HashMap<PeerId, HashSet<PeerId>>>>();
 
         for (peer, tracked) in remotes.iter_mut() {
-            match Self::load(storage, urn, *peer)? {
-                Some(refs) => *tracked = refs.remotes.cutoff(),
-                None => {},
+            if let Some(refs) = Self::load(storage, urn, *peer)? {
+                *tracked = refs.remotes.cutoff();
             }
         }
 
