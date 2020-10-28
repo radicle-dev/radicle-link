@@ -233,7 +233,11 @@ impl Refs {
 
     /// Compute the current [`Refs`], sign them, and store them at the
     /// `rad/signed_refs` branch of [`Urn`].
-    pub fn update<S>(storage: &Storage<S>, urn: &Urn) -> Result<Self, stored::Error>
+    ///
+    /// If the result of [`Self::compute`] is the same as the alread-stored
+    /// [`Refs`], no commit is made and `None` is returned. Otherwise, the
+    /// new and persisted [`Refs`] are returned in a `Some`.
+    pub fn update<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Self>, stored::Error>
     where
         S: Signer,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -260,7 +264,7 @@ impl Refs {
 
         if let Some(ref parent) = parent {
             if parent.tree()?.id() == tree.id() {
-                return Ok(refs.refs);
+                return Ok(None);
             }
         }
 
@@ -276,7 +280,7 @@ impl Refs {
             )?;
         }
 
-        Ok(refs.refs)
+        Ok(Some(refs.refs))
     }
 
     pub fn sign<S>(self, signer: &S) -> Result<Signed, signing::Error>
