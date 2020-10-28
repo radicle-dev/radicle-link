@@ -26,7 +26,6 @@ use std::{
 };
 
 use git_ext::reference;
-use keystore::sign;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -165,7 +164,6 @@ impl Refs {
     pub fn compute<S>(storage: &Storage<S>, urn: &Urn) -> Result<Self, stored::Error>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
     {
         let heads = storage
             .references(&NamespacedRef::heads(Namespace::from(urn), None))?
@@ -217,7 +215,6 @@ impl Refs {
     ) -> Result<Option<Self>, stored::Error>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
     {
         let peer = peer.into();
         let signer = peer.unwrap_or_else(|| PeerId::from_signer(storage.signer()));
@@ -240,7 +237,6 @@ impl Refs {
     pub fn update<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Self>, stored::Error>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
     {
         let refs = Self::compute(storage, urn)?.sign(storage.signer())?;
         let branch = NamespacedRef::rad_signed_refs(Namespace::from(urn), None);
@@ -285,8 +281,7 @@ impl Refs {
 
     pub fn sign<S>(self, signer: &S) -> Result<Signed, signing::Error>
     where
-        S: sign::Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
+        S: Signer,
     {
         let signature = futures::executor::block_on(signer.sign(&self.canonical_form()?))
             .map_err(|err| signing::Error::Sign(Box::new(err)))?;

@@ -25,9 +25,21 @@ use crate::{keys, peer::PeerId};
 
 /// A blanket trait over [`sign::Signer`] that can be shared safely among
 /// threads.
-pub trait Signer: sign::Signer + Send + Sync + dyn_clone::DynClone + 'static {}
+pub trait Signer:
+    sign::Signer<Error: std::error::Error + Send + Sync + 'static>
+    + Send
+    + Sync
+    + dyn_clone::DynClone
+    + 'static
+{
+}
 
-impl<T: sign::Signer + Send + Sync + Clone + 'static> Signer for T {}
+impl<T> Signer for T
+where
+    T: sign::Signer + Send + Sync + Clone + 'static,
+    <T as sign::Signer>::Error: std::error::Error + Send + Sync + 'static,
+{
+}
 
 // Here be Dragons...
 

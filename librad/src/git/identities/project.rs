@@ -45,7 +45,6 @@ type Namespace = namespace::Namespace<Revision>;
 pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Project>, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
@@ -62,7 +61,6 @@ where
 pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedProject>, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
@@ -90,7 +88,6 @@ pub fn create<S>(
 ) -> Result<Project, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     let project = identities(storage).create(payload.into(), delegations, storage.signer())?;
 
@@ -107,7 +104,6 @@ pub fn update<S>(
 ) -> Result<Project, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     let delegations = delegations.into();
 
@@ -123,7 +119,6 @@ where
 pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<Project, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     let ours = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let theirs = {
@@ -158,7 +153,6 @@ impl<'a> Refs<'a> {
     pub fn apply<S>(&self, storage: &Storage<S>) -> Result<(), Error>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
     {
         for symref in self.delegates() {
             symref.create(storage.as_raw())?;
@@ -208,7 +202,6 @@ impl<'a> Refs<'a> {
 fn identities<S>(storage: &Storage<S>) -> Identities<Project>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     storage.identities()
 }

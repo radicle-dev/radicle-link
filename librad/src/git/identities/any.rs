@@ -34,7 +34,6 @@ pub use identities::git::Urn;
 pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<SomeIdentity>, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {

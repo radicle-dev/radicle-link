@@ -134,7 +134,7 @@ pub struct PeerConfig<Disco, Signer> {
 impl<D, S> PeerConfig<D, S>
 where
     S: Signer + Clone + AsPKCS8,
-    S::Error: std::error::Error + Send + Sync + 'static,
+
     D: Discovery<Addr = SocketAddr>,
     <D as Discovery>::Stream: 'static,
 {
@@ -182,7 +182,6 @@ pub struct PeerApi<S> {
 impl<S> PeerApi<S>
 where
     S: Signer + Clone,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     pub fn listen_addr(&self) -> SocketAddr {
         self.listen_addr
@@ -318,7 +317,6 @@ pub struct Peer<S> {
 impl<S> Peer<S>
 where
     S: Signer + Clone,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     pub fn listen_addr(&self) -> SocketAddr {
         self.listen_addr
@@ -408,7 +406,6 @@ pub struct PeerStorage<S> {
 impl<S> PeerStorage<S>
 where
     S: Signer + Clone,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     async fn git_fetch<'a>(
         &'a self,
@@ -499,7 +496,6 @@ fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) 
 impl<S> LocalStorage for PeerStorage<S>
 where
     S: Signer + Clone,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     type Update = Gossip;
 

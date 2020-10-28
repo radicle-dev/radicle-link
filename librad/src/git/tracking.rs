@@ -39,7 +39,6 @@ pub enum Error {
 pub fn track<S>(storage: &Storage<S>, urn: &Urn, peer: PeerId) -> Result<bool, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     let local_peer = storage.peer_id();
 
@@ -71,7 +70,6 @@ where
 pub fn untrack<S>(storage: &Storage<S>, urn: &Urn, peer: PeerId) -> Result<bool, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     let remote_name = tracking_remote_name(urn, &peer);
     let was_removed = storage
@@ -101,7 +99,6 @@ where
 pub fn tracked<S>(storage: &Storage<S>, urn: &Urn) -> Result<Tracked, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     Ok(Tracked::collect(storage.as_raw(), urn)?)
 }

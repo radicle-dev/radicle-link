@@ -268,7 +268,6 @@ pub trait CanFetch {
 impl<S> CanFetch for Storage<S>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     type Error = storage2::Error;
     type Fetcher<'a> = DefaultFetcher<'a>;
@@ -317,7 +316,6 @@ impl<'a> DefaultFetcher<'a> {
     ) -> Result<Self, git2::Error>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
         Addrs: IntoIterator<Item = SocketAddr>,
     {
         let mut remote = storage.as_raw().remote_anonymous(

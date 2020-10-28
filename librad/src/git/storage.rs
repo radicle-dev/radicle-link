@@ -48,7 +48,6 @@ use crate::{
     },
     hash::Hash,
     internal::canonical::{Cjson, CjsonError},
-    keys,
     meta::{
         entity::{
             self,
@@ -503,7 +502,6 @@ impl Storage<NoSigner> {
 impl<S> Storage<S>
 where
     S: Signer + Clone,
-    S::Error: keys::SignError,
 {
     /// Open the `Storage` found at the given [`Paths::git_dir`], or initialise
     /// it if it isn't already.

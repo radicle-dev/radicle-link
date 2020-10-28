@@ -17,6 +17,7 @@
 
 #![allow(incomplete_features)]
 #![warn(clippy::extra_unused_lifetimes)]
+#![feature(associated_type_bounds)]
 #![feature(backtrace)]
 #![feature(bool_to_option)]
 #![feature(btree_drain_filter)]

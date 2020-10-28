@@ -43,7 +43,6 @@ pub use identities::{git::Urn, payload::UserPayload};
 pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<User>, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
@@ -60,7 +59,6 @@ where
 pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedUser>, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
@@ -84,7 +82,6 @@ pub fn create<S>(
 ) -> Result<User, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     let user = identities(storage).create(payload.into(), delegations, storage.signer())?;
     let urn = user.urn();
@@ -102,7 +99,6 @@ pub fn update<S>(
 ) -> Result<User, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     let prev = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let prev = Verifying::from(prev).signed()?;
@@ -116,7 +112,6 @@ where
 pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<User, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     let ours = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let theirs = {
@@ -145,7 +140,6 @@ where
 fn identities<S>(storage: &Storage<S>) -> Identities<User>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     storage.identities()
 }

@@ -89,8 +89,6 @@ pub fn replicate<S, Addrs>(
 ) -> Result<(), Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
-
     Addrs: IntoIterator<Item = SocketAddr>,
 {
     let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
@@ -154,7 +152,6 @@ where
 fn ensure_setup_as_user<S>(storage: &Storage<S>, urn: &Urn, user: User) -> Result<(), Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     let user = storage
         .identities::<'_, User>()
@@ -180,7 +177,6 @@ fn ensure_setup_as_project<S>(
 ) -> Result<impl Iterator<Item = Urn>, Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     // Verify + symref the delegates first
     for delegate in proj.doc.delegations.iter().indirect() {
@@ -252,7 +248,6 @@ where
 fn ensure_rad_id<S>(storage: &Storage<S>, urn: &Urn, tip: ext::Oid) -> Result<(), Error>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     Reference::<_, PeerId, _>::rad_id(Namespace::from(urn))
         .create(
@@ -277,7 +272,6 @@ pub enum LookupError {
 fn find_latest_head<S>(storage: &Storage<S>, urn: Urn) -> Result<git2::Oid, LookupError>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     storage
         .tip(&urn)?

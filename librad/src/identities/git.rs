@@ -222,7 +222,6 @@ where
     ) -> Result<Identity<T>, error::Store>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync,
     {
         let mut signatures = theirs.signatures.clone();
         {
@@ -278,7 +277,6 @@ where
     ) -> Result<Identity<T>, error::Merge>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync,
     {
         let ours = ours.into_inner();
         let theirs = theirs.into_inner();
@@ -419,7 +417,6 @@ impl<'a> Identities<'a, User> {
     ) -> Result<User, error::Store>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
     {
         let doc = Doc {
             version: 0,
@@ -469,7 +466,6 @@ impl<'a> Identities<'a, User> {
     ) -> Result<User, error::Store>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
     {
         let payload = payload.into();
         let delegations = delegations.into();
@@ -574,7 +570,6 @@ impl<'a> Identities<'a, Project> {
     ) -> Result<Project, error::Store>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
     {
         let doc = Doc {
             version: 0,
@@ -625,7 +620,6 @@ impl<'a> Identities<'a, Project> {
     ) -> Result<Project, error::Store>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
     {
         let payload = payload.into();
         let delegations = delegations.into();

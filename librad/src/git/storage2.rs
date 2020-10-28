@@ -70,7 +70,6 @@ pub struct Storage<S> {
 impl<S> Storage<S>
 where
     S: Signer,
-    S::Error: std::error::Error + Send + Sync + 'static,
 {
     pub fn open(paths: &Paths, signer: S) -> Result<Self, Error> {
         let backend = git2::Repository::open_bare(paths.git_dir())?;

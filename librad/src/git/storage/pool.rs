@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use deadpool::managed::{Manager, RecycleResult};
 
 use super::{Error, Storage};
-use crate::{keys, paths::Paths, signer::Signer};
+use crate::{paths::Paths, signer::Signer};
 
 pub type Pool<S> = deadpool::managed::Pool<Storage<S>, Error>;
 pub type Pooled<S> = deadpool::managed::Object<Storage<S>, Error>;
@@ -46,7 +46,6 @@ impl<S> Config<S> {
 impl<S> Manager<Storage<S>, Error> for Config<S>
 where
     S: Signer + Clone,
-    S::Error: keys::SignError,
 {
     async fn create(&self) -> Result<Storage<S>, Error> {
         // FIXME(kim): we should `block_in_place` here, but that forces the

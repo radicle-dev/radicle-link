@@ -25,7 +25,6 @@ use crate::{
         storage::{self, RadSelfSpec, Storage},
         types::namespace,
     },
-    keys,
     meta::{entity::Draft, user::User},
     peer::PeerId,
     signer::Signer,
@@ -106,7 +105,6 @@ impl<S: Clone> Repo<'_, S> {
 impl<'a, S> Repo<'a, S>
 where
     S: Signer + Clone,
-    S::Error: keys::SignError,
 {
     /// Fetch new refs and objects for this repo from [`PeerId`]
     ///

@@ -41,7 +41,6 @@ impl<'a> IdRef<'a> {
     ) -> Result<(), git2::Error>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
     {
         Reference::<_, PeerId, _>::rad_id(Namespace::from(self.0))
             .create(
@@ -61,7 +60,6 @@ impl<'a> IdRef<'a> {
     ) -> Result<(), git2::Error>
     where
         S: Signer,
-        S::Error: std::error::Error + Send + Sync + 'static,
     {
         Reference::<_, PeerId, _>::rad_id(Namespace::from(self.0))
             .create(storage.as_raw(), *target.as_ref(), Force::True, msg)
