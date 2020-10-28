@@ -15,10 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::convert::TryFrom;
+use std::{convert::TryFrom, path::Path};
 
-use radicle_git_ext::{self as ext, is_not_found_err, RefLike, References};
-use radicle_std_ext::result::ResultExt as _;
+use git_ext::{self as ext, blob, is_not_found_err, RefLike, References};
+use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
 use crate::{
@@ -53,6 +53,9 @@ pub enum Error {
 
     #[error(transparent)]
     Config(#[from] config::Error),
+
+    #[error(transparent)]
+    Blob(#[from] ext::blob::Error),
 
     #[error(transparent)]
     Git(#[from] git2::Error),
@@ -201,11 +204,14 @@ where
     pub fn reference<'a, N>(
         &'a self,
         reference: &NamespacedRef<N, One>,
-    ) -> Result<git2::Reference<'a>, Error>
+    ) -> Result<Option<git2::Reference<'a>>, Error>
     where
         for<'b> &'b N: AsNamespace,
     {
-        Ok(reference.find(&self.backend)?)
+        reference
+            .find(&self.backend)
+            .map(Some)
+            .or_matches(is_not_found_err, || Ok(None))
     }
 
     pub fn references<'a, N>(
@@ -216,6 +222,23 @@ where
         for<'b> &'b N: AsNamespace,
     {
         Ok(reference.references(&self.backend)?)
+    }
+
+    pub fn blob<'a, N>(
+        &'a self,
+        reference: &'a NamespacedRef<N, One>,
+        path: &'a Path,
+    ) -> Result<Option<git2::Blob<'a>>, Error>
+    where
+        for<'b> &'b N: AsNamespace,
+    {
+        ext::Blob::Tip {
+            branch: reference.into(),
+            path,
+        }
+        .get(self.as_raw())
+        .map(Some)
+        .or_matches(|e| matches!(e, blob::Error::NotFound(_)), || Ok(None))
     }
 
     pub fn config(&self) -> Result<Config, Error> {

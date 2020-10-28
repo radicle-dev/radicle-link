@@ -48,11 +48,12 @@ where
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     match storage.reference(&Reference::try_from(urn)?) {
-        Ok(reference) => {
+        Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
             Ok(Some(identities(storage).get(tip)?))
         },
 
+        Ok(None) => Ok(None),
         Err(storage2::Error::Git(e)) if is_not_found_err(&e) => Ok(None),
         Err(e) => Err(e.into()),
     }
@@ -64,7 +65,7 @@ where
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     match storage.reference(&Reference::try_from(urn)?) {
-        Ok(reference) => {
+        Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
             let lookup = |urn| {
                 let refname = Reference::<_, PeerId, _>::rad_id(Namespace::from(urn)).to_string();
@@ -76,6 +77,7 @@ where
                 .map_err(|e| Error::Verify(e.into()))
         },
 
+        Ok(None) => Ok(None),
         Err(storage2::Error::Git(e)) if is_not_found_err(&e) => Ok(None),
         Err(e) => Err(e.into()),
     }

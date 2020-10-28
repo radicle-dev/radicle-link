@@ -37,11 +37,12 @@ where
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     match storage.reference(&Reference::try_from(urn)?) {
-        Ok(reference) => {
+        Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
             Ok(Some(storage.identities::<'_, !>().some_identity(tip)?))
         },
 
+        Ok(None) => Ok(None),
         Err(storage2::Error::Git(e)) if is_not_found_err(&e) => Ok(None),
         Err(e) => Err(e.into()),
     }
