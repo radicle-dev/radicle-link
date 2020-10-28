@@ -122,16 +122,17 @@ where
             tracked: tracked.clone(),
         })
         .map_err(|e| Error::Fetch(e.into()))?;
-
     // Read `signed_refs` for all tracked
-    let tracked_sigrefs = tracked.iter().try_fold(BTreeMap::new(), |mut acc, peer| {
-        if let Some(refs) = Refs::load(storage, &urn, *peer)? {
-            acc.insert(*peer, refs);
-        }
+    let tracked_sigrefs = tracked
+        .into_iter()
+        .filter_map(|peer| match Refs::load(storage, &urn, peer) {
+            Ok(Some(refs)) => Some(Ok((peer, refs))),
 
-        Ok::<_, Error>(acc)
-    })?;
-
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    // Fetch all the rest
     fetcher
         .fetch(fetch::Fetchspecs::Replicate {
             tracked_sigrefs,
@@ -142,7 +143,10 @@ where
     // Update our signed refs
     Refs::update(storage, &urn)?;
 
-    // decide what should be fetched later
+    // TODO: At this point, the tracking graph may have changed, and/or we
+    // created top-level user namespaces. We will eventually converge, but
+    // perhaps we'd want to return some kind of continuation here, so the caller
+    // could schedule a deferred task directly?
 
     Ok(())
 }
