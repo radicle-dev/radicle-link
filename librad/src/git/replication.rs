@@ -105,91 +105,12 @@ where
         None => Err(Error::MissingIdentity),
         Some(some_id) => match some_id {
             SomeIdentity::User(user) => {
-                let user = storage
-                    .identities::<'_, User>()
-                    .verify(*user.content_id)
-                    .map_err(|e| Error::Verify(e.into()))?
-                    .into_inner();
-
-                // Create `rad/id` here, if not exists
-                ensure_rad_id(storage, &urn, user.content_id)?;
-
-                // Track all delegations
-                for key in user.doc.delegations {
-                    tracking::track(storage, &urn, PeerId::from(key))?;
-                }
-
+                ensure_setup_as_user(storage, &urn, user)?;
                 Ok(None)
             },
-
             SomeIdentity::Project(proj) => {
-                // Verify + symref the delegates first
-                for delegate in proj.doc.delegations.iter().indirect() {
-                    let delegate_urn = delegate.urn();
-                    // Find in `refs/namespaces/<urn>/rad/ids/<delegate.urn>`
-                    let in_rad_ids = Urn {
-                        path: Some(reflike!("rad/ids").join(&delegate_urn)),
-                        ..urn.clone()
-                    };
-
-                    match identities::user::get(storage, &in_rad_ids)? {
-                        None => Err(Error::Missing(in_rad_ids.into())),
-                        Some(delegate_user) => {
-                            let delegate_user = storage
-                                .identities::<'_, User>()
-                                .verify(*delegate_user.content_id)
-                                .map_err(|e| Error::Verify(e.into()))?
-                                .into_inner();
-
-                            // Ensure we have a top-level `refs/namespaces/<delegate>/rad/id`
-                            //
-                            // Either we fetched that before, or we take `remote_peer`s view (we
-                            // just verified the identity).
-                            ensure_rad_id(storage, &delegate_urn, delegate_user.content_id)?;
-                            // Also, track them
-                            for key in delegate_user.doc.delegations {
-                                tracking::track(storage, &delegate_urn, PeerId::from(key))?;
-                            }
-                            // Now point our view to the top-level
-                            Reference::try_from(&delegate_urn)
-                                .map_err(|e| Error::RefFromUrn {
-                                    urn: delegate_urn.clone(),
-                                    source: e,
-                                })?
-                                .symbolic_ref::<_, PeerId>(
-                                    Reference::rad_delegate(Namespace::from(&urn), &delegate_urn),
-                                    Force::False,
-                                )
-                                .create(storage.as_raw())
-                                .and(Ok(()))
-                                .or_matches(is_exists_err, || Ok(()))
-                                .map_err(|e: git2::Error| Error::Store(e.into()))
-                        },
-                    }?;
-                }
-
-                let proj = storage
-                    .identities::<'_, Project>()
-                    .verify(*proj.content_id, |urn| find_latest_head(storage, urn))
-                    .map_err(|e| Error::Verify(e.into()))?
-                    .into_inner();
-
-                // Create `rad/id` here, if not exists
-                ensure_rad_id(storage, &urn, proj.content_id)?;
-
-                // Make sure we track any direct delegations
-                for key in proj.doc.delegations.iter().direct() {
-                    tracking::track(storage, &urn, PeerId::from(*key))?;
-                }
-
-                Ok(Some(
-                    proj.doc
-                        .delegations
-                        .iter()
-                        .indirect()
-                        .map(|id| id.urn())
-                        .collect(),
-                ))
+                let delegates = ensure_setup_as_project(storage, &urn, proj)?;
+                Ok(Some(delegates.collect()))
             },
         },
     }?;
@@ -224,6 +145,104 @@ where
     // decide what should be fetched later
 
     Ok(())
+}
+
+fn ensure_setup_as_user<S>(storage: &Storage<S>, urn: &Urn, user: User) -> Result<(), Error>
+where
+    S: Signer,
+    S::Error: std::error::Error + Send + Sync + 'static,
+{
+    let user = storage
+        .identities::<'_, User>()
+        .verify(*user.content_id)
+        .map_err(|e| Error::Verify(e.into()))?
+        .into_inner();
+
+    // Create `rad/id` here, if not exists
+    ensure_rad_id(storage, &urn, user.content_id)?;
+
+    // Track all delegations
+    for key in user.doc.delegations {
+        tracking::track(storage, &urn, PeerId::from(key))?;
+    }
+
+    Ok(())
+}
+
+fn ensure_setup_as_project<S>(
+    storage: &Storage<S>,
+    urn: &Urn,
+    proj: Project,
+) -> Result<impl Iterator<Item = Urn>, Error>
+where
+    S: Signer,
+    S::Error: std::error::Error + Send + Sync + 'static,
+{
+    // Verify + symref the delegates first
+    for delegate in proj.doc.delegations.iter().indirect() {
+        let delegate_urn = delegate.urn();
+        // Find in `refs/namespaces/<urn>/rad/ids/<delegate.urn>`
+        let in_rad_ids = Urn {
+            path: Some(reflike!("rad/ids").join(&delegate_urn)),
+            ..urn.clone()
+        };
+
+        match identities::user::get(storage, &in_rad_ids)? {
+            None => Err(Error::Missing(in_rad_ids.into())),
+            Some(delegate_user) => {
+                let delegate_user = storage
+                    .identities::<'_, User>()
+                    .verify(*delegate_user.content_id)
+                    .map_err(|e| Error::Verify(e.into()))?
+                    .into_inner();
+
+                // Ensure we have a top-level `refs/namespaces/<delegate>/rad/id`
+                //
+                // Either we fetched that before, or we take `remote_peer`s view
+                // (we just verified the identity).
+                ensure_rad_id(storage, &delegate_urn, delegate_user.content_id)?;
+                // Also, track them
+                for key in delegate_user.doc.delegations {
+                    tracking::track(storage, &delegate_urn, PeerId::from(key))?;
+                }
+                // Now point our view to the top-level
+                Reference::try_from(&delegate_urn)
+                    .map_err(|e| Error::RefFromUrn {
+                        urn: delegate_urn.clone(),
+                        source: e,
+                    })?
+                    .symbolic_ref::<_, PeerId>(
+                        Reference::rad_delegate(Namespace::from(urn), &delegate_urn),
+                        Force::False,
+                    )
+                    .create(storage.as_raw())
+                    .and(Ok(()))
+                    .or_matches(is_exists_err, || Ok(()))
+                    .map_err(|e: git2::Error| Error::Store(e.into()))
+            },
+        }?;
+    }
+
+    let proj = storage
+        .identities::<'_, Project>()
+        .verify(*proj.content_id, |urn| find_latest_head(storage, urn))
+        .map_err(|e| Error::Verify(e.into()))?
+        .into_inner();
+
+    // Create `rad/id` here, if not exists
+    ensure_rad_id(storage, urn, proj.content_id)?;
+
+    // Make sure we track any direct delegations
+    for key in proj.doc.delegations.iter().direct() {
+        tracking::track(storage, urn, PeerId::from(*key))?;
+    }
+
+    Ok(proj
+        .doc
+        .delegations
+        .into_iter()
+        .indirect()
+        .map(|id| id.urn()))
 }
 
 fn ensure_rad_id<S>(storage: &Storage<S>, urn: &Urn, tip: ext::Oid) -> Result<(), Error>
