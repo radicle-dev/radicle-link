@@ -17,7 +17,12 @@
 
 use std::net::SocketAddr;
 
-use librad::{meta::project::ProjectInfo, net::peer::PeerApi, peer::PeerId, uri::RadUrn};
+use librad::{
+    meta::project::ProjectInfo,
+    net::peer::{types::Rev, PeerApi},
+    peer::PeerId,
+    uri::{self, RadUrn},
+};
 
 use crate::{guess_user, Error, Project, Signer};
 
@@ -36,6 +41,15 @@ pub enum Event {
     PeerDisconnected(PeerId),
     /// A project has been tracked from a peer.
     ProjectTracked(Project, PeerId),
+    /// A project has been updated from a peer.
+    ProjectUpdated {
+        /// The URN of the updated project, including the updated path.
+        urn: RadUrn,
+        /// The updated rev, if any.
+        rev: Option<Rev>,
+        /// The provider of the update.
+        provider: PeerId,
+    },
 }
 
 impl Event {
@@ -53,6 +67,18 @@ impl Event {
         })
     }
 
+    pub(crate) async fn project_updated(
+        urn: RadUrn,
+        provider: PeerId,
+        rev: Option<Rev>,
+    ) -> Result<Self, Error> {
+        Ok(Event::ProjectUpdated {
+            urn: urn.clone(),
+            rev,
+            provider,
+        })
+    }
+
     pub(crate) async fn project_tracked(
         urn: RadUrn,
         provider: PeerId,
@@ -65,9 +91,12 @@ impl Event {
             })
             .await??;
 
+        // Drop the path, if any.
+        let urn = RadUrn::new(urn.id, urn.proto, uri::Path::default());
+
         Ok(Event::ProjectTracked(
             Project {
-                urn: urn.clone(),
+                urn,
                 maintainers: proj.maintainers().clone(),
                 name: proj.name().to_owned(),
                 description: proj.description().to_owned(),

@@ -240,9 +240,12 @@ impl Node {
 
                 if mode.is_trackable(peer_id, urn) {
                     // Attempt to track, but keep going if it fails.
-                    if Node::track_project(&api, urn, &provider).await.is_ok() {
-                        let event = Event::project_tracked(urn.clone(), *peer_id, &api).await?;
-
+                    if let Ok(exists) = Node::track_project(&api, urn, &provider).await {
+                        let event = if exists {
+                            Event::project_updated(urn.clone(), *peer_id, val.rev).await?
+                        } else {
+                            Event::project_tracked(urn.clone(), *peer_id, &api).await?
+                        };
                         transmit.send(event).await.ok();
                     }
                 }
@@ -268,7 +271,7 @@ impl Node {
         api: &PeerApi<Signer>,
         urn: &RadUrn,
         peer_info: &PeerInfo<std::net::IpAddr>,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         let peer_id = peer_info.peer_id;
         let url = urn.clone().into_rad_url(peer_id);
         let project_urn = RadUrn {
@@ -291,24 +294,31 @@ impl Node {
 
         let result = {
             let urn = project_urn.clone();
-            api.with_storage(move |storage| -> Result<(), librad::git::storage::Error> {
-                // FIXME(xla): There should be a saner way to test.
-                let exists = storage.has_urn(&urn)?;
+            api.with_storage(
+                move |storage| -> Result<bool, librad::git::storage::Error> {
+                    // FIXME(xla): There should be a saner way to test.
+                    let exists = storage.has_urn(&urn)?;
 
-                if exists {
-                    storage.fetch_repo(url, addr_hints)
-                } else {
-                    storage
-                        .clone_repo::<meta::project::ProjectInfo, _>(url, addr_hints)
-                        .map(|_info| ())
-                }
-            })
+                    if exists {
+                        storage.fetch_repo(url, addr_hints)
+                    } else {
+                        storage
+                            .clone_repo::<meta::project::ProjectInfo, _>(url, addr_hints)
+                            .map(|_info| ())
+                    }
+                    .map(|_| exists)
+                },
+            )
             .await?
         };
 
         match &result {
-            Ok(()) => {
-                tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id);
+            Ok(exists) => {
+                if *exists {
+                    tracing::info!("Successfully updated project {} from peer {}", urn, peer_id);
+                } else {
+                    tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id);
+                }
             },
             Err(err) => {
                 tracing::info!(
