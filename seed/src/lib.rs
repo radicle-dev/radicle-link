@@ -42,7 +42,7 @@ use librad::{
     },
     paths,
     peer::PeerId,
-    uri::RadUrn,
+    uri::{self, RadUrn},
 };
 
 pub use crate::{
@@ -270,6 +270,10 @@ impl Node {
     ) -> Result<(), Error> {
         let peer_id = peer_info.peer_id;
         let url = urn.clone().into_rad_url(peer_id);
+        let proejct_urn = RadUrn {
+            path: uri::Path::new(),
+            ..urn.clone()
+        };
         let port = peer_info.advertised_info.listen_port;
         let addr_hints = peer_info
             .seen_addrs
@@ -277,34 +281,35 @@ impl Node {
             .map(|a: &std::net::IpAddr| (*a, port).into())
             .collect::<Vec<_>>();
 
+        // FIXME(xla): There should be a saner way to test.
         let exists = {
-            let urn = urn.clone();
+            let urn = proejct_urn.clone();
             api.with_storage(move |storage| storage.has_urn(&urn))
                 .await??
         };
 
         let result = if exists {
+            let urn = urn.clone();
             // Fetch if a new peer announces changes for an existing project.
-            api.with_storage(move |storage| storage.fetch_repo(url, addr_hints))
-                .await?
+            api.with_storage(move |storage| {
+                storage
+                    .track(&urn, &peer_id)
+                    .and_then(|_| storage.fetch_repo(url, addr_hints))
+            })
+            .await?
         } else {
+            let urn = urn.clone();
             // Clone if the project is not present
             api.with_storage(move |storage| {
                 storage
                     .clone_repo::<meta::project::ProjectInfo, _>(url, addr_hints)
-                    .map(|_info| ())
+                    .and_then(|_info| storage.track(&urn, &peer_id))
             })
             .await?
         };
 
         match &result {
             Ok(()) => {
-                {
-                    let urn = urn.clone();
-                    api.with_storage(move |storage| storage.track(&urn, &peer_id))
-                        .await??;
-                }
-
                 tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id);
             },
             Err(err) => {
