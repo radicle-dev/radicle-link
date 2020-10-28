@@ -18,6 +18,7 @@
 use std::{
     convert::TryFrom,
     ffi::CString,
+    fmt::{self, Display},
     iter::FromIterator,
     ops::Deref,
     path::{Path, PathBuf},
@@ -192,6 +193,12 @@ impl FromIterator<Self> for RefLike {
     }
 }
 
+impl Display for RefLike {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// A [`RefLike`] without a "refs/" prefix.
 ///
 /// Conversion functions strip the first **two** path components iff the path
@@ -283,6 +290,12 @@ impl From<OneLevel> for PathBuf {
     }
 }
 
+impl Display for OneLevel {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// A [`RefLike`] **with** a "refs/" prefix.
 ///
 /// Conversion functions will assume `refs/heads/` if the input was not
@@ -371,6 +384,12 @@ impl From<Qualified> for RefLike {
 impl From<Qualified> for PathBuf {
     fn from(Qualified(path): Qualified) -> Self {
         path
+    }
+}
+
+impl Display for Qualified {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -475,6 +494,12 @@ impl TryFrom<&Path> for RefspecPattern {
 impl From<RefspecPattern> for PathBuf {
     fn from(RefspecPattern(path): RefspecPattern) -> Self {
         path
+    }
+}
+
+impl Display for RefspecPattern {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

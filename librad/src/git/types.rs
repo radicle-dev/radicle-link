@@ -155,11 +155,7 @@ impl<S, T> SymbolicRef<S, T> {
         let source = Into::<ext::RefLike>::into(&self.source);
         let target = Into::<ext::RefLike>::into(&self.target);
 
-        let reflog_msg = &format!(
-            "creating symbolic ref {} -> {}",
-            source.as_str(),
-            target.as_str()
-        );
+        let reflog_msg = &format!("creating symbolic ref {} -> {}", source, target);
         tracing::info!("{}", reflog_msg);
 
         repo.find_reference(target.as_str()).and_then(|_| {
@@ -221,7 +217,7 @@ where
         let remote = Into::<ext::RefspecPattern>::into(&self.remote);
         let local = Into::<ext::RefspecPattern>::into(&self.local);
 
-        write!(f, "{}:{}", remote.as_str(), local.as_str())
+        write!(f, "{}:{}", remote, local)
     }
 }
 

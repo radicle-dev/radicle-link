@@ -126,7 +126,7 @@ impl UploadPack {
             .arg("-c")
             .arg(format!(
                 "uploadpack.hiderefs=!{}",
-                reflike!("refs/namespaces").join(&namespace).as_str()
+                reflike!("refs/namespaces").join(&namespace)
             ));
 
         // FIXME: we should probably keep one git2::Repository around, but
@@ -135,11 +135,8 @@ impl UploadPack {
         let mut refs = References::from_globs(
             &repo,
             &[
-                format!("refs/namespaces/{}/refs/rad/ids/*", namespace.as_str()),
-                format!(
-                    "refs/namespaces/{}/refs/remotes/**/rad/ids/*",
-                    namespace.as_str()
-                ),
+                format!("refs/namespaces/{}/refs/rad/ids/*", namespace),
+                format!("refs/namespaces/{}/refs/remotes/**/rad/ids/*", namespace),
             ],
         )
         .map_err(into_io_err)?;

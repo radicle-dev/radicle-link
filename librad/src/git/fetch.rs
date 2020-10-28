@@ -444,8 +444,8 @@ mod tests {
             .cloned()
             .map(|(remote, local)| format!(
                 "{}:{}",
-                PROJECT_NAMESPACE.with_pattern_suffix(remote).as_str(),
-                PROJECT_NAMESPACE.with_pattern_suffix(local).as_str()
+                PROJECT_NAMESPACE.with_pattern_suffix(remote),
+                PROJECT_NAMESPACE.with_pattern_suffix(local),
             ))
             .collect::<Vec<_>>()
         )
@@ -481,8 +481,8 @@ mod tests {
             .cloned()
             .map(|(remote, local)| format!(
                 "{}:{}",
-                PROJECT_NAMESPACE.join(remote).as_str(),
-                PROJECT_NAMESPACE.join(local).as_str()
+                PROJECT_NAMESPACE.join(remote),
+                PROJECT_NAMESPACE.join(local),
             ))
             .collect::<Vec<_>>()
         )
@@ -611,141 +611,92 @@ mod tests {
                 // First, lolek + bolek's heads (forced)
                 format!(
                     "+{}:{}",
-                    PROJECT_NAMESPACE
-                        .join(reflike!("refs/remotes/bolek/heads/mister"))
-                        .as_str(),
-                    PROJECT_NAMESPACE
-                        .join(reflike!("refs/remotes/bolek/heads/mister"))
-                        .as_str()
+                    PROJECT_NAMESPACE.join(reflike!("refs/remotes/bolek/heads/mister")),
+                    PROJECT_NAMESPACE.join(reflike!("refs/remotes/bolek/heads/mister"))
                 ),
                 format!(
                     "+{}:{}",
-                    PROJECT_NAMESPACE
-                        .join(reflike!("refs/remotes/bolek/heads/next"))
-                        .as_str(),
-                    PROJECT_NAMESPACE
-                        .join(reflike!("refs/remotes/bolek/heads/next"))
-                        .as_str()
+                    PROJECT_NAMESPACE.join(reflike!("refs/remotes/bolek/heads/next")),
+                    PROJECT_NAMESPACE.join(reflike!("refs/remotes/bolek/heads/next"))
                 ),
                 format!(
                     "+{}:{}",
-                    PROJECT_NAMESPACE
-                        .join(reflike!("refs/remotes/lolek/heads/mister"))
-                        .as_str(),
-                    PROJECT_NAMESPACE
-                        .join(reflike!("refs/remotes/lolek/heads/mister"))
-                        .as_str()
+                    PROJECT_NAMESPACE.join(reflike!("refs/remotes/lolek/heads/mister")),
+                    PROJECT_NAMESPACE.join(reflike!("refs/remotes/lolek/heads/mister"))
                 ),
                 // Tola's rad/*
                 format!(
                     "{}:{}",
-                    PROJECT_NAMESPACE.join(reflike!("refs/rad/id")).as_str(),
-                    PROJECT_NAMESPACE
-                        .join(reflike!("refs/remotes/tola/rad/id"))
-                        .as_str()
+                    PROJECT_NAMESPACE.join(reflike!("refs/rad/id")),
+                    PROJECT_NAMESPACE.join(reflike!("refs/remotes/tola/rad/id"))
                 ),
                 format!(
                     "{}:{}",
-                    PROJECT_NAMESPACE.join(reflike!("refs/rad/self")).as_str(),
-                    PROJECT_NAMESPACE
-                        .join(reflike!("refs/remotes/tola/rad/self"))
-                        .as_str()
+                    PROJECT_NAMESPACE.join(reflike!("refs/rad/self")),
+                    PROJECT_NAMESPACE.join(reflike!("refs/remotes/tola/rad/self"))
                 ),
                 format!(
                     "{}:{}",
-                    PROJECT_NAMESPACE
-                        .with_pattern_suffix(refspec_pattern!("refs/rad/ids/*"))
-                        .as_str(),
+                    PROJECT_NAMESPACE.with_pattern_suffix(refspec_pattern!("refs/rad/ids/*")),
                     PROJECT_NAMESPACE
                         .with_pattern_suffix(refspec_pattern!("refs/remotes/tola/rad/ids/*"))
-                        .as_str()
                 ),
                 // Tola's view of rad/* of lolek + bolek's top-level namespaces
                 format!(
                     "{}:{}",
-                    BOLEK_NAMESPACE.join(reflike!("refs/rad/id")).as_str(),
-                    BOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/tola/rad/id"))
-                        .as_str()
+                    BOLEK_NAMESPACE.join(reflike!("refs/rad/id")),
+                    BOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/id"))
                 ),
                 format!(
                     "{}:{}",
-                    BOLEK_NAMESPACE.join(reflike!("refs/rad/self")).as_str(),
-                    BOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/tola/rad/self"))
-                        .as_str()
+                    BOLEK_NAMESPACE.join(reflike!("refs/rad/self")),
+                    BOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/self"))
                 ),
                 format!(
                     "{}:{}",
-                    BOLEK_NAMESPACE
-                        .with_pattern_suffix(refspec_pattern!("refs/rad/ids/*"))
-                        .as_str(),
+                    BOLEK_NAMESPACE.with_pattern_suffix(refspec_pattern!("refs/rad/ids/*")),
                     BOLEK_NAMESPACE
                         .with_pattern_suffix(refspec_pattern!("refs/remotes/tola/rad/ids/*"))
-                        .as_str()
                 ),
                 format!(
                     "{}:{}",
-                    LOLEK_NAMESPACE.join(reflike!("refs/rad/id")).as_str(),
-                    LOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/tola/rad/id"))
-                        .as_str()
+                    LOLEK_NAMESPACE.join(reflike!("refs/rad/id")),
+                    LOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/id"))
                 ),
                 format!(
                     "{}:{}",
-                    LOLEK_NAMESPACE.join(reflike!("refs/rad/self")).as_str(),
-                    LOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/tola/rad/self"))
-                        .as_str()
+                    LOLEK_NAMESPACE.join(reflike!("refs/rad/self")),
+                    LOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/self"))
                 ),
                 format!(
                     "{}:{}",
-                    LOLEK_NAMESPACE
-                        .with_pattern_suffix(refspec_pattern!("refs/rad/ids/*"))
-                        .as_str(),
+                    LOLEK_NAMESPACE.with_pattern_suffix(refspec_pattern!("refs/rad/ids/*")),
                     LOLEK_NAMESPACE
                         .with_pattern_suffix(refspec_pattern!("refs/remotes/tola/rad/ids/*"))
-                        .as_str()
                 ),
                 // Bolek's signed_refs for BOLEK_URN
                 format!(
                     "{}:{}",
-                    BOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/bolek/rad/signed_refs"))
-                        .as_str(),
-                    BOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/bolek/rad/signed_refs"))
-                        .as_str()
+                    BOLEK_NAMESPACE.join(reflike!("refs/remotes/bolek/rad/signed_refs")),
+                    BOLEK_NAMESPACE.join(reflike!("refs/remotes/bolek/rad/signed_refs"))
                 ),
                 // Lolek's signed_refs for BOLEK_URN (because we're tracking him)
                 format!(
                     "{}:{}",
-                    BOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/lolek/rad/signed_refs"))
-                        .as_str(),
-                    BOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/lolek/rad/signed_refs"))
-                        .as_str()
+                    BOLEK_NAMESPACE.join(reflike!("refs/remotes/lolek/rad/signed_refs")),
+                    BOLEK_NAMESPACE.join(reflike!("refs/remotes/lolek/rad/signed_refs"))
                 ),
                 // Lolek's signed_refs for LOLEK_URN
                 format!(
                     "{}:{}",
-                    LOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/lolek/rad/signed_refs"))
-                        .as_str(),
-                    LOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/lolek/rad/signed_refs"))
-                        .as_str()
+                    LOLEK_NAMESPACE.join(reflike!("refs/remotes/lolek/rad/signed_refs")),
+                    LOLEK_NAMESPACE.join(reflike!("refs/remotes/lolek/rad/signed_refs"))
                 ),
                 // Bolek's signed_refs for LOLEK_URN (because we're tracking him)
                 format!(
                     "{}:{}",
-                    LOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/bolek/rad/signed_refs"))
-                        .as_str(),
-                    LOLEK_NAMESPACE
-                        .join(reflike!("refs/remotes/bolek/rad/signed_refs"))
-                        .as_str()
+                    LOLEK_NAMESPACE.join(reflike!("refs/remotes/bolek/rad/signed_refs")),
+                    LOLEK_NAMESPACE.join(reflike!("refs/remotes/bolek/rad/signed_refs"))
                 ),
             ]
             .iter()

@@ -118,7 +118,7 @@ impl Tracked {
     fn collect(repo: &git2::Repository, context: &Urn) -> Result<Self, git2::Error> {
         let remotes = repo.remotes()?;
         let range = 0..remotes.len();
-        let prefix = format!("{}/", RefLike::from(context).as_str());
+        let prefix = format!("{}/", RefLike::from(context));
         Ok(Self {
             remotes,
             range,
@@ -149,5 +149,5 @@ impl Iterator for Tracked {
 }
 
 fn tracking_remote_name(urn: &Urn, peer: &PeerId) -> String {
-    format!("{}/{}", RefLike::from(urn).as_str(), peer)
+    format!("{}/{}", RefLike::from(urn), peer)
 }
