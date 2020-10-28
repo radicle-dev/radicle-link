@@ -31,6 +31,7 @@ use thiserror::Error;
 
 use librad::{
     git,
+    git_ext,
     keys,
     meta::{self, entity, user::User},
     net::{
@@ -357,8 +358,15 @@ async fn guess_user(
 
             for remote in repo.tracked()? {
                 if remote == peer {
-                    if let Ok(user) = repo.get_rad_self_of(remote) {
-                        return Ok(Some(user));
+                    match repo.get_rad_self_of(remote) {
+                        Ok(user) => return Ok(Some(user)),
+
+                        Err(git::repo::Error::Storage(git::storage::Error::Blob(
+                            git_ext::blob::Error::NotFound(git_ext::NotFound::NoSuchBranch(_)),
+                        ))) => {
+                            continue;
+                        },
+                        Err(e) => return Err(Error::from(e)),
                     }
                 }
             }
