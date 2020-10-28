@@ -22,14 +22,14 @@ use std::{
     ops::Deref,
 };
 
+use git_ext as ext;
 use multihash::Multihash;
-use radicle_git_ext as ext;
 
 use crate::{
     git::{
         p2p::url::GitUrl,
         refs::Refs,
-        storage2::Storage,
+        storage2::{self, Storage},
         types::{namespace::Namespace, AsRefspec, AsRemote, Force, Reference},
     },
     identities::{
@@ -248,6 +248,41 @@ impl From<BTreeMap<ext::RefLike, ext::Oid>> for RemoteHeads {
     }
 }
 
+pub trait CanFetch {
+    type Error;
+    type Fetcher<'a>: Fetcher;
+
+    fn fetcher<'a, Addrs>(
+        &'a self,
+        urn: git::Urn,
+        remote_peer: PeerId,
+        addr_hints: Addrs,
+    ) -> Result<Self::Fetcher<'a>, Self::Error>
+    where
+        Addrs: IntoIterator<Item = SocketAddr>;
+}
+
+impl<S> CanFetch for Storage<S>
+where
+    S: Signer,
+    S::Error: std::error::Error + Send + Sync + 'static,
+{
+    type Error = storage2::Error;
+    type Fetcher<'a> = DefaultFetcher<'a>;
+
+    fn fetcher<'a, Addrs>(
+        &'a self,
+        urn: git::Urn,
+        remote_peer: PeerId,
+        addr_hints: Addrs,
+    ) -> Result<DefaultFetcher<'a>, Self::Error>
+    where
+        Addrs: IntoIterator<Item = SocketAddr>,
+    {
+        Ok(DefaultFetcher::new(self, urn, remote_peer, addr_hints)?)
+    }
+}
+
 pub struct FetchResult {
     pub updated_tips: BTreeMap<ext::RefLike, ext::Oid>,
 }
@@ -256,10 +291,6 @@ pub trait Fetcher {
     type Error;
     type PeerId;
     type UrnId;
-
-    fn remote_peer(&self) -> Self::PeerId;
-
-    fn urn(&self) -> &Urn<Self::UrnId>;
 
     fn fetch(
         &mut self,
@@ -376,14 +407,6 @@ impl Fetcher for DefaultFetcher<'_> {
     type Error = git2::Error;
     type PeerId = PeerId;
     type UrnId = git::Revision;
-
-    fn remote_peer(&self) -> Self::PeerId {
-        self.remote_peer
-    }
-
-    fn urn(&self) -> &Urn<Self::UrnId> {
-        &self.urn
-    }
 
     fn fetch(
         &mut self,

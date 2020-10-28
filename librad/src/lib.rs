@@ -15,11 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+#![allow(incomplete_features)]
 #![warn(clippy::extra_unused_lifetimes)]
 #![feature(backtrace)]
 #![feature(bool_to_option)]
 #![feature(btree_drain_filter)]
 #![feature(core_intrinsics)]
+#![feature(generic_associated_types)]
 #![feature(never_type)]
 
 #[macro_use]

@@ -18,6 +18,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     convert::TryFrom,
+    net::SocketAddr,
 };
 
 use git_ext::{self as ext, is_exists_err};
@@ -25,7 +26,7 @@ use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
 use super::{
-    fetch,
+    fetch::{self, CanFetch as _},
     identities,
     refs::{self, Refs},
     storage2::{self, Storage},
@@ -37,9 +38,9 @@ use super::{
     },
 };
 use crate::{
-    identities::git::{self, Project, SomeIdentity, User},
+    identities::git::{Project, SomeIdentity, User},
     peer::PeerId,
-    signer,
+    signer::Signer,
 };
 
 pub use crate::identities::git::Urn;
@@ -80,24 +81,27 @@ pub enum Error {
     Store(#[from] storage2::Error),
 }
 
-pub fn replicate<Signer, Fetcher>(
-    storage: &Storage<Signer>,
-    mut fetcher: Fetcher,
+pub fn replicate<S, Addrs>(
+    storage: &Storage<S>,
+    urn: Urn,
+    remote_peer: PeerId,
+    addr_hints: Addrs,
 ) -> Result<(), Error>
 where
-    Signer: signer::Signer,
-    Signer::Error: std::error::Error + Send + Sync + 'static,
+    S: Signer,
+    S::Error: std::error::Error + Send + Sync + 'static,
 
-    Fetcher: fetch::Fetcher<PeerId = PeerId, UrnId = git::Revision>,
-    Fetcher::Error: std::error::Error + Send + Sync + 'static,
+    Addrs: IntoIterator<Item = SocketAddr>,
 {
-    if storage.has_urn(fetcher.urn())? {
+    let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
+
+    if storage.has_urn(&urn)? {
         let _ = fetcher
             .fetch(fetch::Fetchspecs::Peek)
             .map_err(|e| Error::Fetch(e.into()))?;
     }
 
-    let delegates = match identities::any::get(storage, fetcher.urn())? {
+    let delegates = match identities::any::get(storage, &urn)? {
         None => Err(Error::MissingIdentity),
         Some(some_id) => match some_id {
             SomeIdentity::User(user) => {
@@ -108,11 +112,11 @@ where
                     .into_inner();
 
                 // Create `rad/id` here, if not exists
-                ensure_rad_id(storage, fetcher.urn(), user.content_id)?;
+                ensure_rad_id(storage, &urn, user.content_id)?;
 
                 // Track all delegations
                 for key in user.doc.delegations {
-                    tracking::track(storage, fetcher.urn(), PeerId::from(key))?;
+                    tracking::track(storage, &urn, PeerId::from(key))?;
                 }
 
                 Ok(None)
@@ -130,7 +134,7 @@ where
                     // Find in `refs/namespaces/<urn>/rad/ids/<delegate.urn>`
                     let in_rad_ids = Urn {
                         path: Some(reflike!("rad/ids").join(&delegate_urn)),
-                        ..fetcher.urn().clone()
+                        ..urn.clone()
                     };
 
                     match identities::user::get(storage, &in_rad_ids)? {
@@ -158,10 +162,7 @@ where
                                     source: e,
                                 })?
                                 .symbolic_ref::<_, PeerId>(
-                                    Reference::rad_delegate(
-                                        Namespace::from(fetcher.urn()),
-                                        &delegate_urn,
-                                    ),
+                                    Reference::rad_delegate(Namespace::from(&urn), &delegate_urn),
                                     Force::False,
                                 )
                                 .create(storage.as_raw())
@@ -179,7 +180,7 @@ where
                     .into_inner();
 
                 // Create `rad/id` here, if not exists
-                ensure_rad_id(storage, fetcher.urn(), proj.content_id)?;
+                ensure_rad_id(storage, &urn, proj.content_id)?;
 
                 // Make sure we track any direct delegations
                 for key in proj
@@ -188,7 +189,7 @@ where
                     .iter()
                     .filter_map(|del| del.either(Some, |_| None))
                 {
-                    tracking::track(storage, fetcher.urn(), PeerId::from(*key))?;
+                    tracking::track(storage, &urn, PeerId::from(*key))?;
                 }
 
                 Ok(Some(
@@ -202,7 +203,7 @@ where
         },
     }?;
 
-    let tracked = tracking::tracked(storage, fetcher.urn())?.collect::<BTreeSet<_>>();
+    let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
     // Fetch `signed_refs` for every peer we track now
     fetcher
         .fetch(fetch::Fetchspecs::SignedRefs {
@@ -212,7 +213,7 @@ where
 
     // Read `signed_refs` for all tracked
     let tracked_sigrefs = tracked.iter().try_fold(BTreeMap::new(), |mut acc, peer| {
-        if let Some(refs) = Refs::load(storage, fetcher.urn(), *peer)? {
+        if let Some(refs) = Refs::load(storage, &urn, *peer)? {
             acc.insert(*peer, refs);
         }
 
@@ -227,7 +228,7 @@ where
         .map_err(|e| Error::Fetch(e.into()))?;
 
     // Update our signed refs
-    Refs::update(storage, fetcher.urn())?;
+    Refs::update(storage, &urn)?;
 
     // decide what should be fetched later
 
@@ -236,7 +237,7 @@ where
 
 fn ensure_rad_id<S>(storage: &Storage<S>, urn: &Urn, tip: ext::Oid) -> Result<(), Error>
 where
-    S: signer::Signer,
+    S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     Reference::<_, PeerId, _>::rad_id(Namespace::from(urn))
@@ -261,7 +262,7 @@ pub enum LookupError {
 
 fn find_latest_head<S>(storage: &Storage<S>, urn: Urn) -> Result<git2::Oid, LookupError>
 where
-    S: signer::Signer,
+    S: Signer,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     storage
