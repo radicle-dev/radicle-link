@@ -169,7 +169,16 @@ impl Refs {
     {
         let heads = storage
             .references(&NamespacedRef::heads(Namespace::from(urn), None))?
-            .peeled()
+            // FIXME: this is `git_ext::reference::iter::References::peeled()`,
+            // which we need to generalise to allow impl Iterator combinators
+            .filter_map(|reference| {
+                reference.ok().and_then(|head| {
+                    head.name().and_then(|name| {
+                        head.target()
+                            .map(|target| (name.to_owned(), target.to_owned()))
+                    })
+                })
+            })
             .try_fold(BTreeMap::new(), |mut acc, (name, oid)| {
                 let refname = reference::RefLike::try_from(name)?;
                 acc.insert(reference::OneLevel::from(refname), oid.into());

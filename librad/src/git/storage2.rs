@@ -17,7 +17,7 @@
 
 use std::{convert::TryFrom, path::Path};
 
-use git_ext::{self as ext, blob, is_not_found_err, RefLike, References};
+use git_ext::{self as ext, blob, is_not_found_err, RefLike, References, RefspecPattern};
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
@@ -217,11 +217,30 @@ where
     pub fn references<'a, N>(
         &'a self,
         reference: &NamespacedRef<N, Many>,
-    ) -> Result<References<'a>, Error>
+    ) -> Result<impl Iterator<Item = Result<git2::Reference<'a>, Error>> + 'a, Error>
     where
         for<'b> &'b N: AsNamespace,
     {
-        Ok(reference.references(&self.backend)?)
+        let pat = glob::Pattern::new(RefspecPattern::from(reference).as_str())
+            .expect("RefspecPattern is expected to be a valid glob::Pattern");
+        self.references_glob(pat)
+    }
+
+    pub fn references_glob<'a>(
+        &'a self,
+        glob: glob::Pattern,
+    ) -> Result<impl Iterator<Item = Result<git2::Reference<'a>, Error>> + 'a, Error> {
+        Ok(self
+            .backend
+            .references()?
+            .filter_map(move |reference| match reference {
+                Ok(reference) => match reference.name() {
+                    Some(name) if glob.matches(name) => Some(Ok(reference)),
+                    _ => None,
+                },
+
+                Err(e) => Some(Err(e.into())),
+            }))
     }
 
     pub fn blob<'a, N>(
