@@ -31,6 +31,7 @@ use thiserror::Error;
 
 use librad::{
     git,
+    git_ext,
     keys,
     meta::{self, entity, user::User},
     net::{
@@ -42,7 +43,7 @@ use librad::{
     },
     paths,
     peer::PeerId,
-    uri::RadUrn,
+    uri::{self, RadUrn},
 };
 
 pub use crate::{
@@ -270,6 +271,10 @@ impl Node {
     ) -> Result<(), Error> {
         let peer_id = peer_info.peer_id;
         let url = urn.clone().into_rad_url(peer_id);
+        let project_urn = RadUrn {
+            path: uri::Path::new(),
+            ..urn.clone()
+        };
         let port = peer_info.advertised_info.listen_port;
         let addr_hints = peer_info
             .seen_addrs
@@ -277,23 +282,36 @@ impl Node {
             .map(|a: &std::net::IpAddr| (*a, port).into())
             .collect::<Vec<_>>();
 
-        let result = {
+        // Track unconditionally.
+        {
             let urn = urn.clone();
-            api.with_storage(move |storage| {
-                storage
-                    .clone_repo::<meta::project::ProjectInfo, _>(url, addr_hints)
-                    .and_then(|_| storage.track(&urn, &peer_id))
-            })
+            api.with_storage(move |storage| storage.track(&urn, &peer_id))
+                .await??
         }
-        .await
-        .expect("`clone_repo` panicked");
+
+        let result = {
+            let urn = project_urn.clone();
+            api.with_storage(move |storage| -> Result<(), librad::git::storage::Error> {
+                // FIXME(xla): There should be a saner way to test.
+                let exists = storage.has_urn(&urn)?;
+
+                if exists {
+                    storage.fetch_repo(url, addr_hints)
+                } else {
+                    storage
+                        .clone_repo::<meta::project::ProjectInfo, _>(url, addr_hints)
+                        .map(|_info| ())
+                }
+            })
+            .await?
+        };
 
         match &result {
             Ok(()) => {
-                tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id,);
+                tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id);
             },
             Err(err) => {
-                tracing::debug!(
+                tracing::info!(
                     "Error tracking project {} from peer {}: {}",
                     urn,
                     peer_id,
@@ -357,9 +375,16 @@ async fn guess_user(
 
             for remote in repo.tracked()? {
                 if remote == peer {
-                    let user = repo.get_rad_self_of(remote)?;
+                    match repo.get_rad_self_of(remote) {
+                        Ok(user) => return Ok(Some(user)),
 
-                    return Ok(Some(user));
+                        Err(git::repo::Error::Storage(git::storage::Error::Blob(
+                            git_ext::blob::Error::NotFound(git_ext::NotFound::NoSuchBranch(_)),
+                        ))) => {
+                            continue;
+                        },
+                        Err(e) => return Err(Error::from(e)),
+                    }
                 }
             }
         }
