@@ -15,7 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::convert::TryFrom;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    convert::TryFrom,
+};
 
 use git_ext::{self as ext, is_exists_err};
 use std_ext::result::ResultExt as _;
@@ -24,6 +27,7 @@ use thiserror::Error;
 use super::{
     fetch,
     identities,
+    refs::{self, Refs},
     storage2::{self, Storage},
     tracking,
     types::{
@@ -53,6 +57,9 @@ pub enum Error {
         urn: Urn,
         source: reference::FromUrnError,
     },
+
+    #[error(transparent)]
+    Refs(#[from] refs::stored::Error),
 
     #[error(transparent)]
     Track(#[from] tracking::Error),
@@ -90,7 +97,7 @@ where
             .map_err(|e| Error::Fetch(e.into()))?;
     }
 
-    match identities::any::get(storage, fetcher.urn())? {
+    let delegates = match identities::any::get(storage, fetcher.urn())? {
         None => Err(Error::MissingIdentity),
         Some(some_id) => match some_id {
             SomeIdentity::User(user) => {
@@ -108,7 +115,7 @@ where
                     tracking::track(storage, fetcher.urn(), PeerId::from(key))?;
                 }
 
-                Ok(())
+                Ok(None)
             },
 
             SomeIdentity::Project(proj) => {
@@ -178,26 +185,51 @@ where
                 for key in proj
                     .doc
                     .delegations
-                    .into_iter()
+                    .iter()
                     .filter_map(|del| del.either(Some, |_| None))
                 {
-                    tracking::track(storage, fetcher.urn(), PeerId::from(key))?;
+                    tracking::track(storage, fetcher.urn(), PeerId::from(*key))?;
                 }
 
-                Ok(())
+                Ok(Some(
+                    proj.doc
+                        .delegations
+                        .into_iter()
+                        .filter_map(|del| del.either(|_| None, |id| Some(id.urn())))
+                        .collect(),
+                ))
             },
         },
     }?;
 
+    let tracked = tracking::tracked(storage, fetcher.urn())?.collect::<BTreeSet<_>>();
     // Fetch `signed_refs` for every peer we track now
     fetcher
         .fetch(fetch::Fetchspecs::SignedRefs {
-            tracked: tracking::tracked(storage, fetcher.urn())?.collect(),
+            tracked: tracked.clone(),
         })
         .map_err(|e| Error::Fetch(e.into()))?;
 
-    // read `signed_refs` for all tracked
-    // fetch `Replicate`
+    // Read `signed_refs` for all tracked
+    let tracked_sigrefs = tracked.iter().try_fold(BTreeMap::new(), |mut acc, peer| {
+        if let Some(refs) = Refs::load(storage, fetcher.urn(), *peer)? {
+            acc.insert(*peer, refs);
+        }
+
+        Ok::<_, Error>(acc)
+    })?;
+
+    fetcher
+        .fetch(fetch::Fetchspecs::Replicate {
+            tracked_sigrefs,
+            delegates: delegates.unwrap_or_default(),
+        })
+        .map_err(|e| Error::Fetch(e.into()))?;
+
+    // Update our signed refs
+    Refs::update(storage, fetcher.urn())?;
+
+    // decide what should be fetched later
 
     Ok(())
 }

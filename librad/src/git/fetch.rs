@@ -19,6 +19,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     convert::TryFrom,
     net::SocketAddr,
+    ops::Deref,
 };
 
 use multihash::Multihash;
@@ -47,7 +48,6 @@ pub enum Fetchspecs<P, R> {
     },
 
     Replicate {
-        remote_heads: BTreeMap<ext::RefLike, ext::Oid>,
         tracked_sigrefs: BTreeMap<P, Refs>,
         delegates: BTreeSet<Urn<R>>,
     },
@@ -61,14 +61,16 @@ where
     R: HasProtocol + Clone + 'static,
     for<'a> &'a R: Into<Multihash>,
 {
-    pub fn refspecs(&self, urn: &Urn<R>, remote_peer: P) -> Vec<Box<dyn AsRefspec>> {
+    pub fn refspecs(
+        &self,
+        urn: &Urn<R>,
+        remote_peer: P,
+        remote_heads: &RemoteHeads,
+    ) -> Vec<Box<dyn AsRefspec>> {
         match self {
             Self::Peek => refspecs::peek(urn, remote_peer),
-
             Self::SignedRefs { tracked } => refspecs::signed_refs(urn, &remote_peer, tracked),
-
             Self::Replicate {
-                remote_heads,
                 tracked_sigrefs,
                 delegates,
             } => refspecs::replicate(urn, &remote_peer, remote_heads, tracked_sigrefs, delegates),
@@ -139,7 +141,7 @@ pub mod refspecs {
     pub fn replicate<P, R>(
         urn: &Urn<R>,
         remote_peer: &P,
-        remote_heads: &BTreeMap<ext::RefLike, ext::Oid>,
+        remote_heads: &RemoteHeads,
         tracked_sigrefs: &BTreeMap<P, Refs>,
         delegates: &BTreeSet<Urn<R>>,
     ) -> Vec<Box<dyn AsRefspec>>
@@ -229,8 +231,24 @@ pub mod refspecs {
     }
 }
 
+#[derive(Default)]
+pub struct RemoteHeads(BTreeMap<ext::RefLike, ext::Oid>);
+
+impl Deref for RemoteHeads {
+    type Target = BTreeMap<ext::RefLike, ext::Oid>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<BTreeMap<ext::RefLike, ext::Oid>> for RemoteHeads {
+    fn from(map: BTreeMap<ext::RefLike, ext::Oid>) -> Self {
+        Self(map)
+    }
+}
+
 pub struct FetchResult {
-    pub remote_heads: BTreeMap<ext::RefLike, ext::Oid>,
     pub updated_tips: BTreeMap<ext::RefLike, ext::Oid>,
 }
 
@@ -252,6 +270,7 @@ pub trait Fetcher {
 pub struct DefaultFetcher<'a> {
     urn: git::Urn,
     remote_peer: PeerId,
+    remote_heads: RemoteHeads,
     remote: git2::Remote<'a>,
 }
 
@@ -267,7 +286,7 @@ impl<'a> DefaultFetcher<'a> {
         S::Error: std::error::Error + Send + Sync + 'static,
         Addrs: IntoIterator<Item = SocketAddr>,
     {
-        let remote = storage.as_raw().remote_anonymous(
+        let mut remote = storage.as_raw().remote_anonymous(
             &GitUrl {
                 local_peer: PeerId::from_signer(storage.signer()),
                 remote_peer,
@@ -276,27 +295,8 @@ impl<'a> DefaultFetcher<'a> {
             }
             .to_string(),
         )?;
-
-        Ok(Self {
-            urn,
-            remote_peer,
-            remote,
-        })
-    }
-
-    pub fn fetch(
-        &mut self,
-        fetchspecs: Fetchspecs<PeerId, git::Revision>,
-    ) -> Result<FetchResult, git2::Error> {
-        let span = tracing::info_span!("DefaultFetcher::fetch");
-        let _guard = span.enter();
-
-        if !self.remote.connected() {
-            self.remote.connect(git2::Direction::Fetch)?;
-        }
-
-        let remote_heads = self
-            .remote
+        remote.connect(git2::Direction::Fetch)?;
+        let remote_heads = remote
             .list()?
             .iter()
             .filter_map(|remote_head| match remote_head.symref_target() {
@@ -309,9 +309,25 @@ impl<'a> DefaultFetcher<'a> {
                     },
                 },
             })
-            .collect();
+            .collect::<BTreeMap<_, _>>()
+            .into();
 
-        let refspecs = fetchspecs.refspecs(&self.urn, self.remote_peer);
+        Ok(Self {
+            urn,
+            remote_peer,
+            remote_heads,
+            remote,
+        })
+    }
+
+    pub fn fetch(
+        &mut self,
+        fetchspecs: Fetchspecs<PeerId, git::Revision>,
+    ) -> Result<FetchResult, git2::Error> {
+        let span = tracing::info_span!("DefaultFetcher::fetch");
+        let _guard = span.enter();
+
+        let refspecs = fetchspecs.refspecs(&self.urn, self.remote_peer, &self.remote_heads);
         {
             let mut callbacks = git2::RemoteCallbacks::new();
             callbacks.transfer_progress(|prog| {
@@ -352,10 +368,7 @@ impl<'a> DefaultFetcher<'a> {
             Some(&format!("updated from {}", self.remote_peer)),
         )?;
 
-        Ok(FetchResult {
-            remote_heads,
-            updated_tips,
-        })
+        Ok(FetchResult { updated_tips })
     }
 }
 
@@ -407,7 +420,7 @@ mod tests {
 
     #[test]
     fn peek_looks_legit() {
-        let specs = Fetchspecs::Peek.refspecs(&*PROJECT_URN, TOLA.clone());
+        let specs = Fetchspecs::Peek.refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
         assert_eq!(
             specs
                 .iter()
@@ -447,7 +460,7 @@ mod tests {
                 .cloned()
                 .collect::<BTreeSet<ext::RefLike>>(),
         }
-        .refspecs(&*PROJECT_URN, TOLA.clone());
+        .refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
 
         assert_eq!(
             specs
@@ -580,14 +593,14 @@ mod tests {
         ]
         .iter()
         .cloned()
-        .collect::<BTreeMap<_, _>>();
+        .collect::<BTreeMap<_, _>>()
+        .into();
 
         let specs = Fetchspecs::Replicate {
-            remote_heads,
             tracked_sigrefs,
             delegates,
         }
-        .refspecs(&*PROJECT_URN, TOLA.clone());
+        .refspecs(&*PROJECT_URN, TOLA.clone(), &remote_heads);
 
         assert_eq!(
             specs
