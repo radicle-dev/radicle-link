@@ -136,6 +136,7 @@ pub mod conversion {
     use thiserror::Error;
 
     #[derive(Debug, Error)]
+    #[non_exhaustive]
     pub enum Error {
         #[error("unexpected input length: {0}")]
         UnexpectedInputLength(usize),

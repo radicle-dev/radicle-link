@@ -114,6 +114,7 @@ pub mod signing {
     use std::error;
 
     #[derive(Debug, Error)]
+    #[non_exhaustive]
     pub enum Error {
         #[error(transparent)]
         Sign(#[from] Box<dyn error::Error + Send + Sync + 'static>),
@@ -128,6 +129,7 @@ pub mod stored {
     pub(super) const BLOB_PATH: &str = "refs"; // `Path::new` ain't no const fn :(
 
     #[derive(Debug, Error)]
+    #[non_exhaustive]
     pub enum Error {
         #[error(transparent)]
         Signed(#[from] signed::Error),
@@ -306,6 +308,7 @@ pub mod signed {
     use super::*;
 
     #[derive(Debug, Error)]
+    #[non_exhaustive]
     pub enum Error {
         #[error("invalid signature")]
         InvalidSignature(Refs),

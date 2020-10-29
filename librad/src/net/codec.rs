@@ -23,6 +23,7 @@ use minicbor::{Decode, Encode};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum CborCodecError {
     #[error(transparent)]
     Encode(#[from] minicbor::encode::Error<io::Error>),

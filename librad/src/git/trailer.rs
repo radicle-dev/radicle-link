@@ -20,6 +20,7 @@ use std::{borrow::Cow, convert::TryFrom, fmt, ops::Deref};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Eq, PartialEq, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("the trailers paragraph is missing in the given message")]
     MissingParagraph,
@@ -50,6 +51,7 @@ impl<'a> Trailer<'a> {
 pub struct Token<'a>(&'a str);
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum InvalidToken {
     #[error("trailing characters: '{0}'")]
     Trailing(String),

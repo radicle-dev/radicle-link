@@ -92,6 +92,7 @@ pub mod path {
     }
 
     #[derive(Debug, Error, PartialEq)]
+    #[non_exhaustive]
     pub enum ViolatesRefFormat {
         #[error("ends with `.lock`")]
         EndsWithDotLock,

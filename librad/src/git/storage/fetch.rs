@@ -31,6 +31,7 @@ use crate::{
 };
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error(transparent)]
     Git(#[from] git2::Error),

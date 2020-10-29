@@ -31,6 +31,7 @@ use crate::{
 };
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Load {
     #[error("the identity document could not be resolved")]
     MissingDoc,
@@ -67,6 +68,7 @@ pub enum Load {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Store {
     #[error(transparent)]
     Load(#[from] self::Load),
@@ -82,6 +84,7 @@ pub enum Store {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Merge {
     #[error("attempt to update an identity not previously signed by us")]
     ForeignBase,
@@ -103,6 +106,7 @@ pub enum Merge {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Signatures {
     #[error("Invalid utf8")]
     Utf8,
@@ -115,6 +119,7 @@ pub enum Signatures {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum VerifyProject {
     #[error("error resolving latest head")]
     Lookup(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
@@ -136,6 +141,7 @@ pub enum VerifyProject {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum VerifyUser {
     #[error("Revision {revision} of {root} not in ancestry path of {head}")]
     NotInAncestryPath {
@@ -152,6 +158,7 @@ pub enum VerifyUser {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Verify {
     #[error(transparent)]
     Project(#[from] VerifyProject),

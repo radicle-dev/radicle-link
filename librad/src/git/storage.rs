@@ -79,6 +79,7 @@ use config::Config;
 use fetch::Fetcher;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("already exists: {0}")]
     AlreadyExists(RadUrn),

@@ -459,6 +459,7 @@ where
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum FromUrnError {
     #[error("missing {0}")]
     Missing(&'static str),

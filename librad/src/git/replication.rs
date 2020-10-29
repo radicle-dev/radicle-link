@@ -46,6 +46,7 @@ use crate::{
 pub use crate::identities::git::Urn;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("identity not found")]
     MissingIdentity,
@@ -254,6 +255,7 @@ where
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum LookupError {
     #[error("identity at {0} not available")]
     NotFound(Urn),

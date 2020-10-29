@@ -53,6 +53,7 @@ pub use crate::{
 };
 
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum Error {
     #[error(transparent)]
     Api(#[from] peer::ApiError),

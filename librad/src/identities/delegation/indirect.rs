@@ -40,6 +40,7 @@ pub mod error {
     use super::PublicKey;
 
     #[derive(Debug, Error)]
+    #[non_exhaustive]
     pub enum FromIter<R: Display + Debug> {
         #[error("duplicate key `{0}`")]
         DuplicateKey(PublicKey),

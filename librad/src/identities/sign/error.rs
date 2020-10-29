@@ -20,6 +20,7 @@ use thiserror::Error;
 use crate::git::trailer;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Signature {
     #[error("missing {0}")]
     Missing(&'static str),
@@ -29,6 +30,7 @@ pub enum Signature {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Signatures {
     #[error(transparent)]
     Trailer(#[from] trailer::Error),

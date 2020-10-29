@@ -34,6 +34,7 @@ use crate::{
 pub use storage::Tracked;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error(transparent)]
     Storage(#[from] storage::Error),

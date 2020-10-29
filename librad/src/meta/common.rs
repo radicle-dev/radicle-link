@@ -84,6 +84,7 @@ pub mod email {
     }
 
     #[derive(Debug, Error)]
+    #[non_exhaustive]
     pub enum Error {
         #[error("email address exceeds 254 character limit")]
         AddrTooLong,

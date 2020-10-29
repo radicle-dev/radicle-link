@@ -28,6 +28,7 @@ use super::storage2::Storage;
 pub use crate::identities::git::Urn;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("can't track oneself")]
     SelfReferential,

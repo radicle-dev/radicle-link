@@ -44,6 +44,7 @@ use config::Config;
 pub use crate::identities::git::Urn;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("signer key does not match the key used at initialisation")]
     SignerKeyMismatch,

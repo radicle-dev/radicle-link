@@ -83,6 +83,7 @@ impl Display for Hash {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
+#[non_exhaustive]
 pub enum ParseError {
     #[error(transparent)]
     Algo(#[from] AlgorithmMismatch),

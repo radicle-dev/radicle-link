@@ -45,6 +45,7 @@ pub mod data;
 use data::{EntityData, EntityInfo, EntityInfoExt, EntityKind};
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("serialization failed ({0})")]
     SerializationFailed(String),
@@ -108,6 +109,7 @@ pub enum Error {
 }
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UpdateVerificationError {
     #[error("non monotonic revision")]
     NonMonotonicRevision,
@@ -126,6 +128,7 @@ pub enum UpdateVerificationError {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum HistoryVerificationError {
     #[error("empty history")]
     EmptyHistory,

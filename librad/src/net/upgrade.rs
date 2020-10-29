@@ -132,6 +132,7 @@ impl<S> Debug for Error<S> {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ErrorSource {
     #[error("timed out")]
     Timeout,

@@ -26,6 +26,7 @@ use crate::{
 };
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("the URN {0} does not exist")]
     NotFound(Urn),

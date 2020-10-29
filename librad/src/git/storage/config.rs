@@ -40,6 +40,7 @@ const CONFIG_RAD_SELF: &str = "rad.self";
 const CONFIG_RAD_PEER_ID: &str = "rad.peerid";
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("storage was already initialised with peer id {0}")]
     AlreadyInitialised(PeerId),

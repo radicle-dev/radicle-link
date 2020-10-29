@@ -248,6 +248,7 @@ pub enum Mode {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("no such URN: {0}")]
     NoSuchUrn(RadUrn),

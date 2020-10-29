@@ -68,6 +68,7 @@ impl Display for Header {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ParseError {
     #[error("missing service")]
     MissingService,
