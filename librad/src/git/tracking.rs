@@ -21,8 +21,11 @@ use git_ext::{is_exists_err, is_not_found_err, RefLike};
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
-use super::storage2::{self, Storage};
-use crate::{git::p2p::url::GitUrlRef, peer::PeerId, signer::Signer};
+use super::{
+    p2p::url::GitUrlRef,
+    storage2::{self, Storage},
+};
+use crate::{peer::PeerId, signer::Signer};
 
 pub use crate::identities::git::Urn;
 

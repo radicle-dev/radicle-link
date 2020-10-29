@@ -19,12 +19,14 @@ use std::convert::TryFrom;
 
 use git_ext::is_not_found_err;
 
-use super::error::Error;
-use crate::{
-    git::{
+use super::{
+    super::{
         storage2::{self, Storage},
         types::Reference,
     },
+    error::Error,
+};
+use crate::{
     identities::{self, git::SomeIdentity},
     signer::Signer,
 };

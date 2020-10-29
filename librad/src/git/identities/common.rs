@@ -18,15 +18,11 @@
 use git_ext::is_exists_err;
 use std_ext::result::ResultExt as _;
 
-use crate::{
-    git::{
-        storage2::Storage,
-        types::{namespace::Namespace, Force, Reference},
-    },
-    identities::git::Urn,
-    peer::PeerId,
-    signer::Signer,
+use super::super::{
+    storage2::Storage,
+    types::{namespace::Namespace, Force, Reference},
 };
+use crate::{identities::git::Urn, peer::PeerId, signer::Signer};
 
 /// Ad-hoc helper type for conveniently managing `rad/id` refs
 pub struct IdRef<'a>(&'a Urn);

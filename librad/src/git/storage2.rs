@@ -21,20 +21,15 @@ use git_ext::{self as ext, blob, is_not_found_err, RefLike, References, RefspecP
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
-use crate::{
-    git::types::{
-        namespace::{AsNamespace, Namespace},
-        reference,
-        Many,
-        NamespacedRef,
-        One,
-        Reference,
-    },
-    identities::git::Identities,
-    paths::Paths,
-    peer::PeerId,
-    signer::Signer,
+use super::types::{
+    namespace::{AsNamespace, Namespace},
+    reference,
+    Many,
+    NamespacedRef,
+    One,
+    Reference,
 };
+use crate::{identities::git::Identities, paths::Paths, peer::PeerId, signer::Signer};
 
 pub mod config;
 

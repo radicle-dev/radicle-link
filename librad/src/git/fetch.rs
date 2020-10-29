@@ -28,13 +28,13 @@ use std::{
 use git_ext as ext;
 use multihash::Multihash;
 
+use super::{
+    p2p::url::GitUrl,
+    refs::Refs,
+    storage2::{self, Storage},
+    types::{namespace::Namespace, AsRefspec, AsRemote, Force, Reference},
+};
 use crate::{
-    git::{
-        p2p::url::GitUrl,
-        refs::Refs,
-        storage2::{self, Storage},
-        types::{namespace::Namespace, AsRefspec, AsRemote, Force, Reference},
-    },
     identities::{
         git,
         urn::{HasProtocol, Urn},
