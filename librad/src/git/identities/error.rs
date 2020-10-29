@@ -35,9 +35,6 @@ pub enum Error {
     Ref(#[from] reference::FromUrnError),
 
     #[error(transparent)]
-    Verify(#[from] identities::error::Verify),
-
-    #[error(transparent)]
     Verification(#[from] VerificationError),
 
     #[error(transparent)]
@@ -45,6 +42,9 @@ pub enum Error {
 
     #[error(transparent)]
     Storage(#[from] storage2::Error),
+
+    #[error(transparent)]
+    Verify(#[from] identities::git::error::Verify),
 
     #[error(transparent)]
     Merge(#[from] identities::git::error::Merge),
