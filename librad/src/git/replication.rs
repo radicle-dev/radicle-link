@@ -38,7 +38,7 @@ use super::{
     },
 };
 use crate::{
-    identities::git::{Project, SomeIdentity, User},
+    identities::git::{Project, SomeIdentity},
     peer::PeerId,
     signer::Signer,
 };
@@ -73,9 +73,6 @@ pub enum Error {
     Fetch(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error(transparent)]
-    Verify(#[from] crate::identities::git::error::Verify),
-
-    #[error(transparent)]
     Identities(#[from] identities::error::Error),
 
     #[error(transparent)]
@@ -102,8 +99,8 @@ where
     let delegates = match identities::any::get(storage, &urn)? {
         None => Err(Error::MissingIdentity),
         Some(some_id) => match some_id {
-            SomeIdentity::User(user) => {
-                ensure_setup_as_user(storage, &urn, user)?;
+            SomeIdentity::User(_) => {
+                ensure_setup_as_user(storage, &urn)?;
                 Ok(None)
             },
             SomeIdentity::Project(proj) => {
@@ -149,25 +146,24 @@ where
     Ok(())
 }
 
-fn ensure_setup_as_user<S>(storage: &Storage<S>, urn: &Urn, user: User) -> Result<(), Error>
+fn ensure_setup_as_user<S>(storage: &Storage<S>, urn: &Urn) -> Result<(), Error>
 where
     S: Signer,
 {
-    let user = storage
-        .identities::<'_, User>()
-        .verify(*user.content_id)
-        .map_err(|e| Error::Verify(e.into()))?
-        .into_inner();
+    match identities::user::verify(storage, urn)? {
+        None => Err(Error::MissingIdentity),
+        Some(user) => {
+            // Create `rad/id` here, if not exists
+            ensure_rad_id(storage, &urn, user.content_id)?;
 
-    // Create `rad/id` here, if not exists
-    ensure_rad_id(storage, &urn, user.content_id)?;
+            // Track all delegations
+            for key in user.into_inner().doc.delegations {
+                tracking::track(storage, &urn, PeerId::from(key))?;
+            }
 
-    // Track all delegations
-    for key in user.doc.delegations {
-        tracking::track(storage, &urn, PeerId::from(key))?;
+            Ok(())
+        },
     }
-
-    Ok(())
 }
 
 fn ensure_setup_as_project<S>(
@@ -187,23 +183,17 @@ where
             ..urn.clone()
         };
 
-        match identities::user::get(storage, &in_rad_ids)? {
+        match identities::user::verify(storage, &in_rad_ids)? {
             None => Err(Error::Missing(in_rad_ids.into())),
             Some(delegate_user) => {
-                let delegate_user = storage
-                    .identities::<'_, User>()
-                    .verify(*delegate_user.content_id)
-                    .map_err(|e| Error::Verify(e.into()))?
-                    .into_inner();
-
                 // Ensure we have a top-level `refs/namespaces/<delegate>/rad/id`
                 //
                 // Either we fetched that before, or we take `remote_peer`s view
                 // (we just verified the identity).
                 ensure_rad_id(storage, &delegate_urn, delegate_user.content_id)?;
                 // Also, track them
-                for key in delegate_user.doc.delegations {
-                    tracking::track(storage, &delegate_urn, PeerId::from(key))?;
+                for key in delegate_user.doc.delegations.iter() {
+                    tracking::track(storage, &delegate_urn, PeerId::from(*key))?;
                 }
                 // Now point our view to the top-level
                 Reference::try_from(&delegate_urn)
@@ -223,10 +213,8 @@ where
         }?;
     }
 
-    let proj = storage
-        .identities::<'_, Project>()
-        .verify(*proj.content_id, |urn| find_latest_head(storage, urn))
-        .map_err(|e| Error::Verify(e.into()))?
+    let proj = identities::project::verify(storage, urn)?
+        .ok_or(Error::MissingIdentity)?
         .into_inner();
 
     // Create `rad/id` here, if not exists
@@ -252,24 +240,4 @@ where
     identities::common::IdRef::from(urn)
         .create(storage, tip)
         .map_err(|e| Error::Store(e.into()))
-}
-
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum LookupError {
-    #[error("identity at {0} not available")]
-    NotFound(Urn),
-
-    #[error(transparent)]
-    Store(#[from] storage2::Error),
-}
-
-fn find_latest_head<S>(storage: &Storage<S>, urn: Urn) -> Result<git2::Oid, LookupError>
-where
-    S: Signer,
-{
-    storage
-        .tip(&urn)?
-        .map(|oid| *oid)
-        .ok_or_else(|| LookupError::NotFound(urn))
 }

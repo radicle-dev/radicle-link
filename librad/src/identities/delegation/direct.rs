@@ -35,6 +35,10 @@ impl Direct {
     pub fn eligible(&self, votes: BTreeSet<&PublicKey>) -> BTreeSet<&PublicKey> {
         self.0.iter().filter(|pk| votes.contains(pk)).collect()
     }
+
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a PublicKey> {
+        self.into_iter()
+    }
 }
 
 impl Delegations for Direct {
