@@ -172,11 +172,14 @@ impl SmartSubtransport for RadTransport {
         let stream = self
             .open_stream(&url.local_peer, &url.remote_peer, &url.addr_hints)
             .ok_or_else(|| into_git_err(format!("No connection to {}", url.remote_peer)))?;
+        let header = Header::new(
+            service,
+            RadUrn::new(url.repo, uri::Protocol::Git, uri::Path::empty()),
+            url.remote_peer,
+        );
 
         Ok(Box::new(RadSubTransport {
-            header_sent: false,
-            url,
-            service,
+            header: Some(header),
             stream,
         }))
     }
@@ -187,29 +190,17 @@ impl SmartSubtransport for RadTransport {
 }
 
 struct RadSubTransport {
-    header_sent: bool,
-    url: GitUrl<Hash>,
-    service: Service,
+    header: Option<Header>,
     stream: Box<dyn GitStream>,
 }
 
 impl RadSubTransport {
     async fn ensure_header_sent(&mut self) -> io::Result<()> {
-        if !self.header_sent {
-            self.header_sent = true;
-            let header = Header::new(
-                self.service,
-                RadUrn::new(
-                    self.url.repo.clone(),
-                    uri::Protocol::Git,
-                    uri::Path::empty(),
-                ),
-                self.url.remote_peer,
-            );
-            self.stream.write_all(header.to_string().as_bytes()).await
-        } else {
-            Ok(())
+        if let Some(header) = self.header.take() {
+            self.stream.write_all(header.to_string().as_bytes()).await?;
         }
+
+        Ok(())
     }
 }
 
