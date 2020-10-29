@@ -17,11 +17,12 @@
 
 use std::{
     convert::{TryFrom, TryInto},
+    fmt::Debug,
     path::Path,
 };
 
 use either::Either;
-use radicle_git_ext::is_not_found_err;
+use git_ext::is_not_found_err;
 
 use super::{common, error::Error};
 use crate::{
@@ -42,6 +43,7 @@ pub use identities::{git::Urn, payload::ProjectPayload};
 
 type Namespace = namespace::Namespace<Revision>;
 
+#[tracing::instrument(level = "trace", skip(storage), err)]
 pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Project>, Error>
 where
     S: Signer,
@@ -58,6 +60,7 @@ where
     }
 }
 
+#[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedProject>, Error>
 where
     S: Signer,
@@ -81,13 +84,15 @@ where
     }
 }
 
-pub fn create<S>(
+#[tracing::instrument(level = "debug", skip(storage), err)]
+pub fn create<S, P>(
     storage: &Storage<S>,
-    payload: impl Into<ProjectPayload>,
+    payload: P,
     delegations: IndirectDelegation,
 ) -> Result<Project, Error>
 where
     S: Signer,
+    P: Into<ProjectPayload> + Debug,
 {
     let project = identities(storage).create(payload.into(), delegations, storage.signer())?;
 
@@ -96,14 +101,17 @@ where
     Ok(project)
 }
 
-pub fn update<S>(
+#[tracing::instrument(level = "debug", skip(storage), err)]
+pub fn update<S, P, D>(
     storage: &Storage<S>,
     urn: &Urn,
-    payload: impl Into<Option<ProjectPayload>>,
-    delegations: impl Into<Option<IndirectDelegation>>,
+    payload: P,
+    delegations: D,
 ) -> Result<Project, Error>
 where
     S: Signer,
+    P: Into<Option<ProjectPayload>> + Debug,
+    D: Into<Option<IndirectDelegation>> + Debug,
 {
     let delegations = delegations.into();
 
@@ -116,6 +124,7 @@ where
     Ok(next)
 }
 
+#[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<Project, Error>
 where
     S: Signer,

@@ -17,7 +17,7 @@
 
 use std::convert::TryFrom;
 
-use radicle_git_ext::is_not_found_err;
+use git_ext::is_not_found_err;
 
 use super::error::Error;
 use crate::{

@@ -43,6 +43,7 @@ use crate::{
     signer::Signer,
 };
 
+#[derive(Debug)]
 pub enum Fetchspecs<P, R> {
     Peek,
 
@@ -308,6 +309,7 @@ pub struct DefaultFetcher<'a> {
 }
 
 impl<'a> DefaultFetcher<'a> {
+    #[tracing::instrument(skip(storage, addr_hints), err)]
     pub fn new<S, Addrs>(
         storage: &'a Storage<S>,
         urn: git::Urn,
@@ -352,6 +354,7 @@ impl<'a> DefaultFetcher<'a> {
         })
     }
 
+    #[tracing::instrument(skip(self), err)]
     pub fn fetch(
         &mut self,
         fetchspecs: Fetchspecs<PeerId, git::Revision>,

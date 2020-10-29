@@ -79,6 +79,7 @@ pub enum Error {
     Store(#[from] storage2::Error),
 }
 
+#[tracing::instrument(skip(storage, addr_hints), err)]
 pub fn replicate<S, Addrs>(
     storage: &Storage<S>,
     urn: Urn,

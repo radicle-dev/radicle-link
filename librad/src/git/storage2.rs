@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{convert::TryFrom, path::Path};
+use std::{convert::TryFrom, fmt::Debug, path::Path};
 
 use git_ext::{self as ext, blob, is_not_found_err, RefLike, References, RefspecPattern};
 use std_ext::result::ResultExt as _;
@@ -123,12 +123,15 @@ where
         &self.peer_id
     }
 
+    #[tracing::instrument(level = "debug", skip(self), err)]
     pub fn has_urn(&self, urn: &Urn) -> Result<bool, Error> {
         self.has_ref(&Reference::try_from(urn)?)
     }
 
+    #[tracing::instrument(level = "debug", skip(self), err)]
     pub fn has_ref<'a, N>(&self, reference: &'a NamespacedRef<N, One>) -> Result<bool, Error>
     where
+        N: Debug,
         &'a N: AsNamespace,
     {
         self.backend
@@ -137,9 +140,10 @@ where
             .or_matches(is_not_found_err, || Ok(false))
     }
 
+    #[tracing::instrument(level = "debug", skip(self), err)]
     pub fn has_commit<Oid>(&self, urn: &Urn, oid: Oid) -> Result<bool, Error>
     where
-        Oid: AsRef<git2::Oid>,
+        Oid: AsRef<git2::Oid> + Debug,
     {
         let oid = oid.as_ref();
         if oid.is_zero() {
@@ -176,9 +180,10 @@ where
         }
     }
 
+    #[tracing::instrument(level = "debug", skip(self), err)]
     pub fn has_object<Oid>(&self, oid: Oid) -> Result<bool, Error>
     where
-        Oid: AsRef<git2::Oid>,
+        Oid: AsRef<git2::Oid> + Debug,
     {
         let oid = oid.as_ref();
         if oid.is_zero() {
@@ -188,6 +193,7 @@ where
         Ok(self.backend.odb()?.exists(*oid))
     }
 
+    #[tracing::instrument(level = "trace", skip(self), err)]
     pub fn tip(&self, urn: &Urn) -> Result<Option<ext::Oid>, Error> {
         let reference = self
             .backend
@@ -201,11 +207,13 @@ where
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self), err)]
     pub fn reference<'a, N>(
         &'a self,
         reference: &NamespacedRef<N, One>,
     ) -> Result<Option<git2::Reference<'a>>, Error>
     where
+        N: Debug,
         for<'b> &'b N: AsNamespace,
     {
         reference
@@ -214,11 +222,13 @@ where
             .or_matches(is_not_found_err, || Ok(None))
     }
 
+    #[tracing::instrument(level = "trace", skip(self), err)]
     pub fn references<'a, N>(
         &'a self,
         reference: &NamespacedRef<N, Many>,
     ) -> Result<impl Iterator<Item = Result<git2::Reference<'a>, Error>> + 'a, Error>
     where
+        N: Debug,
         for<'b> &'b N: AsNamespace,
     {
         let pat = glob::Pattern::new(RefspecPattern::from(reference).as_str())
@@ -226,6 +236,7 @@ where
         self.references_glob(pat)
     }
 
+    #[tracing::instrument(level = "trace", skip(self), err)]
     pub fn references_glob<'a>(
         &'a self,
         glob: glob::Pattern,
@@ -243,12 +254,14 @@ where
             }))
     }
 
+    #[tracing::instrument(level = "trace", skip(self), err)]
     pub fn blob<'a, N>(
         &'a self,
         reference: &'a NamespacedRef<N, One>,
         path: &'a Path,
     ) -> Result<Option<git2::Blob<'a>>, Error>
     where
+        N: Debug,
         for<'b> &'b N: AsNamespace,
     {
         ext::Blob::Tip {

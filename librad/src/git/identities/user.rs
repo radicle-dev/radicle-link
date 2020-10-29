@@ -17,6 +17,7 @@
 
 use std::{
     convert::{TryFrom, TryInto},
+    fmt::Debug,
     path::Path,
 };
 
@@ -40,6 +41,7 @@ use crate::{
 
 pub use identities::{git::Urn, payload::UserPayload};
 
+#[tracing::instrument(level = "trace", skip(storage), err)]
 pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<User>, Error>
 where
     S: Signer,
@@ -56,6 +58,7 @@ where
     }
 }
 
+#[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedUser>, Error>
 where
     S: Signer,
@@ -75,13 +78,15 @@ where
     }
 }
 
-pub fn create<S>(
+#[tracing::instrument(level = "debug", skip(storage), err)]
+pub fn create<S, P>(
     storage: &Storage<S>,
-    payload: impl Into<UserPayload>,
+    payload: P,
     delegations: delegation::Direct,
 ) -> Result<User, Error>
 where
     S: Signer,
+    P: Into<UserPayload> + Debug,
 {
     let user = identities(storage).create(payload.into(), delegations, storage.signer())?;
     let urn = user.urn();
@@ -91,14 +96,17 @@ where
     Ok(user)
 }
 
-pub fn update<S>(
+#[tracing::instrument(level = "debug", skip(storage), err)]
+pub fn update<S, P, D>(
     storage: &Storage<S>,
     urn: &Urn,
-    payload: impl Into<Option<UserPayload>>,
-    delegations: impl Into<Option<delegation::Direct>>,
+    payload: P,
+    delegations: D,
 ) -> Result<User, Error>
 where
     S: Signer,
+    P: Into<Option<UserPayload>> + Debug,
+    D: Into<Option<delegation::Direct>> + Debug,
 {
     let prev = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let prev = Verifying::from(prev).signed()?;
@@ -109,6 +117,7 @@ where
     Ok(next)
 }
 
+#[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<User, Error>
 where
     S: Signer,

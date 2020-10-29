@@ -37,6 +37,7 @@ pub enum Error {
     Git(#[from] git2::Error),
 }
 
+#[tracing::instrument(skip(storage), err)]
 pub fn track<S>(storage: &Storage<S>, urn: &Urn, peer: PeerId) -> Result<bool, Error>
 where
     S: Signer,
@@ -68,6 +69,7 @@ where
     Ok(was_created)
 }
 
+#[tracing::instrument(skip(storage), err)]
 pub fn untrack<S>(storage: &Storage<S>, urn: &Urn, peer: PeerId) -> Result<bool, Error>
 where
     S: Signer,
