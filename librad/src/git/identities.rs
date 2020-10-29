@@ -20,6 +20,6 @@ pub mod error;
 pub mod project;
 pub mod user;
 
-mod common;
+pub(super) mod common;
 
 pub use error::Error;

@@ -249,14 +249,8 @@ fn ensure_rad_id<S>(storage: &Storage<S>, urn: &Urn, tip: ext::Oid) -> Result<()
 where
     S: Signer,
 {
-    Reference::<_, PeerId, _>::rad_id(Namespace::from(urn))
-        .create(
-            storage.as_raw(),
-            *tip,
-            Force::False,
-            &format!("Initial rad/id for {}: {}", urn, tip),
-        )
-        .and(Ok(()))
+    identities::common::IdRef::from(urn)
+        .create(storage, tip)
         .map_err(|e| Error::Store(e.into()))
 }
 

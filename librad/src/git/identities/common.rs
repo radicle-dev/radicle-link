@@ -15,6 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use git_ext::is_exists_err;
+use std_ext::result::ResultExt as _;
+
 use crate::{
     git::{
         storage2::Storage,
@@ -47,9 +50,10 @@ impl<'a> IdRef<'a> {
                 storage.as_raw(),
                 *target.as_ref(),
                 Force::False,
-                "initialise",
+                &format!("Initial rad/id for {}: {}", self.0, target.as_ref()),
             )
             .and(Ok(()))
+            .or_matches(is_exists_err, || Ok(()))
     }
 
     pub fn update<S: Signer>(
