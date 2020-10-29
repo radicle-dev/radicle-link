@@ -15,11 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    convert::{TryFrom, TryInto},
-    fmt::Debug,
-    path::Path,
-};
+use std::{convert::TryFrom, fmt::Debug};
 
 use radicle_git_ext::is_not_found_err;
 
@@ -145,13 +141,7 @@ where
     let theirs = {
         let their_urn = Urn {
             id: urn.id,
-            path: Some(
-                Path::new("remotes")
-                    .join(from.to_string())
-                    .join(&*urn::DEFAULT_PATH)
-                    .try_into()
-                    .unwrap(),
-            ),
+            path: Some(reflike!("remotes").join(from).join(&*urn::DEFAULT_PATH)),
         };
         get(storage, &their_urn)?.ok_or_else(|| Error::NotFound(their_urn))?
     };
