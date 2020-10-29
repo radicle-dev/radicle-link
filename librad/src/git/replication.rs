@@ -38,7 +38,7 @@ use super::{
     },
 };
 use crate::{
-    identities::git::{Project, SomeIdentity},
+    identities::git::{Project, SomeIdentity, User},
     peer::PeerId,
     signer::Signer,
 };
@@ -99,12 +99,12 @@ where
     let delegates = match identities::any::get(storage, &urn)? {
         None => Err(Error::MissingIdentity),
         Some(some_id) => match some_id {
-            SomeIdentity::User(_) => {
-                ensure_setup_as_user(storage, &urn)?;
+            SomeIdentity::User(user) => {
+                ensure_setup_as_user(storage, user)?;
                 Ok(None)
             },
             SomeIdentity::Project(proj) => {
-                let delegates = ensure_setup_as_project(storage, &urn, proj)?;
+                let delegates = ensure_setup_as_project(storage, proj)?;
                 Ok(Some(delegates.collect()))
             },
         },
@@ -146,11 +146,12 @@ where
     Ok(())
 }
 
-fn ensure_setup_as_user<S>(storage: &Storage<S>, urn: &Urn) -> Result<(), Error>
+fn ensure_setup_as_user<S>(storage: &Storage<S>, user: User) -> Result<(), Error>
 where
     S: Signer,
 {
-    match identities::user::verify(storage, urn)? {
+    let urn = user.urn();
+    match identities::user::verify(storage, &urn)? {
         None => Err(Error::MissingIdentity),
         Some(user) => {
             // Create `rad/id` here, if not exists
@@ -168,12 +169,13 @@ where
 
 fn ensure_setup_as_project<S>(
     storage: &Storage<S>,
-    urn: &Urn,
     proj: Project,
 ) -> Result<impl Iterator<Item = Urn>, Error>
 where
     S: Signer,
 {
+    let urn = proj.urn();
+
     // Verify + symref the delegates first
     for delegate in proj.doc.delegations.iter().indirect() {
         let delegate_urn = delegate.urn();
@@ -202,7 +204,7 @@ where
                         source: e,
                     })?
                     .symbolic_ref::<_, PeerId>(
-                        Reference::rad_delegate(Namespace::from(urn), &delegate_urn),
+                        Reference::rad_delegate(Namespace::from(&urn), &delegate_urn),
                         Force::False,
                     )
                     .create(storage.as_raw())
@@ -213,16 +215,16 @@ where
         }?;
     }
 
-    let proj = identities::project::verify(storage, urn)?
+    let proj = identities::project::verify(storage, &urn)?
         .ok_or(Error::MissingIdentity)?
         .into_inner();
 
     // Create `rad/id` here, if not exists
-    ensure_rad_id(storage, urn, proj.content_id)?;
+    ensure_rad_id(storage, &urn, proj.content_id)?;
 
     // Make sure we track any direct delegations
     for key in proj.doc.delegations.iter().direct() {
-        tracking::track(storage, urn, PeerId::from(*key))?;
+        tracking::track(storage, &urn, PeerId::from(*key))?;
     }
 
     Ok(proj
