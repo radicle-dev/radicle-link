@@ -28,10 +28,26 @@ use url::Url;
 
 use crate::{
     hash::Hash,
-    identities::urn::Urn,
+    identities::{self, urn::Urn},
     peer::{self, PeerId},
     uri::{self, RadUrl, RadUrlRef, RadUrn},
 };
+
+// Stop-gap until we got rid of RadUrn
+pub enum SomeGitUrl {
+    Legacy(GitUrl<Hash>),
+    NuSkool(GitUrl<identities::git::Revision>),
+}
+
+impl FromStr for SomeGitUrl {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse()
+            .map(Self::Legacy)
+            .or_else(|_| s.parse().map(Self::NuSkool))
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GitUrl<R> {
@@ -93,7 +109,7 @@ where
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum ParseError<Repo: std::error::Error + Send + Sync + 'static> {
+pub enum ParseError {
     #[error("invalid scheme: {0}")]
     InvalidScheme(String),
 
@@ -110,7 +126,7 @@ pub enum ParseError<Repo: std::error::Error + Send + Sync + 'static> {
     Url(#[from] url::ParseError),
 
     #[error("invalid repository identifier")]
-    Repo(#[source] Repo),
+    Repo(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error(transparent)]
     Multibase(#[from] multibase::Error),
@@ -127,7 +143,7 @@ where
     R: TryFrom<Multihash>,
     R::Error: std::error::Error + Send + Sync + 'static,
 {
-    type Err = ParseError<R::Error>;
+    type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let url = Url::parse(s)?;
@@ -153,7 +169,7 @@ where
                 let path = path.trim_end_matches(".git");
                 let bytes = multibase::decode(path).map(|(_base, bytes)| bytes)?;
                 let mhash = Multihash::from_bytes(bytes)?;
-                R::try_from(mhash).map_err(Self::Err::Repo)
+                R::try_from(mhash).map_err(|e| Self::Err::Repo(Box::new(e)))
             })?;
         let addr_hints = url
             .query_pairs()

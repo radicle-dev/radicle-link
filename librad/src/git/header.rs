@@ -25,19 +25,45 @@ use git2::transport::Service as GitService;
 use thiserror::Error;
 
 use crate::{
+    identities::git::Urn,
     peer::{self, PeerId},
-    uri::{self, RadUrn},
+    uri::RadUrn,
 };
 
+// Stop-gap until we got rid of RadUrn
+pub enum SomeHeader {
+    Legacy(Header<RadUrn>),
+    NuSkool(Header<Urn>),
+}
+
+impl FromStr for SomeHeader {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse()
+            .map(Self::Legacy)
+            .or_else(|_| s.parse().map(Self::NuSkool))
+    }
+}
+
+impl Display for SomeHeader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Legacy(hdr) => Display::fmt(hdr, f),
+            Self::NuSkool(hdr) => Display::fmt(hdr, f),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
-pub(crate) struct Header {
+pub struct Header<Urn> {
     pub service: Service,
-    pub repo: RadUrn,
+    pub repo: Urn,
     pub peer: PeerId,
 }
 
-impl Header {
-    pub fn new(service: GitService, repo: RadUrn, peer: PeerId) -> Self {
+impl<Urn> Header<Urn> {
+    pub fn new(service: GitService, repo: Urn, peer: PeerId) -> Self {
         Self {
             service: Service(service),
             repo,
@@ -46,7 +72,7 @@ impl Header {
     }
 }
 
-impl Display for Header {
+impl<Urn: Display> Display for Header<Urn> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.service.0 {
             GitService::UploadPackLs => {
@@ -80,7 +106,7 @@ pub enum ParseError {
     MissingRepo,
 
     #[error("invalid repo")]
-    InvalidRepo(#[from] uri::rad_urn::ParseError),
+    InvalidRepo(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error("missing host")]
     MissingHost,
@@ -92,7 +118,11 @@ pub enum ParseError {
     InvalidMode(String),
 }
 
-impl FromStr for Header {
+impl<Urn> FromStr for Header<Urn>
+where
+    Urn: FromStr,
+    <Urn as FromStr>::Err: std::error::Error + Send + Sync + 'static,
+{
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -102,7 +132,10 @@ impl FromStr for Header {
         let repo = parts
             .next()
             .ok_or_else(|| ParseError::MissingRepo)
-            .and_then(|repo| repo.parse::<RadUrn>().map_err(|e| e.into()))?;
+            .and_then(|repo| {
+                repo.parse::<Urn>()
+                    .map_err(|e| ParseError::InvalidRepo(Box::new(e)))
+            })?;
         let peer = parts
             .next()
             .and_then(|peer| peer.strip_prefix("host="))
@@ -169,7 +202,11 @@ impl Deref for Service {
 mod tests {
     use super::*;
 
-    use crate::{hash::Hash, keys::SecretKey};
+    use crate::{
+        hash::Hash,
+        keys::SecretKey,
+        uri::{self, RadUrn},
+    };
 
     #[test]
     fn test_str_roundtrip() {
@@ -183,6 +220,6 @@ mod tests {
             PeerId::from(SecretKey::new()),
         );
 
-        assert_eq!(hdr, hdr.to_string().parse::<Header>().unwrap())
+        assert_eq!(hdr, hdr.to_string().parse::<Header<RadUrn>>().unwrap())
     }
 }

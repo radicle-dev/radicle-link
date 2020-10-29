@@ -62,8 +62,11 @@ use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Trans
 use git_ext::into_git_err;
 
 use crate::{
-    git::{header::Header, p2p::url::GitUrl},
-    hash::Hash,
+    git::{
+        header::{Header, SomeHeader},
+        p2p::url::{GitUrl, SomeGitUrl},
+    },
+    identities::git::Urn,
     peer::PeerId,
     uri::{self, RadUrn},
 };
@@ -168,15 +171,40 @@ impl SmartSubtransport for RadTransport {
         url: &str,
         service: Service,
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        let url: GitUrl<Hash> = url.parse().map_err(into_git_err)?;
-        let stream = self
-            .open_stream(&url.local_peer, &url.remote_peer, &url.addr_hints)
-            .ok_or_else(|| into_git_err(format!("No connection to {}", url.remote_peer)))?;
-        let header = Header::new(
-            service,
-            RadUrn::new(url.repo, uri::Protocol::Git, uri::Path::empty()),
-            url.remote_peer,
-        );
+        let url: SomeGitUrl = url.parse().map_err(into_git_err)?;
+        let (header, stream) = match url {
+            SomeGitUrl::Legacy(GitUrl {
+                local_peer,
+                remote_peer,
+                repo,
+                addr_hints,
+            }) => {
+                let stream = self
+                    .open_stream(&local_peer, &remote_peer, &addr_hints)
+                    .ok_or_else(|| into_git_err(format!("No connection to {}", remote_peer)))?;
+                let header = SomeHeader::Legacy(Header::new(
+                    service,
+                    RadUrn::new(repo, uri::Protocol::Git, uri::Path::empty()),
+                    remote_peer,
+                ));
+
+                Ok::<_, git2::Error>((header, stream))
+            },
+
+            SomeGitUrl::NuSkool(GitUrl {
+                local_peer,
+                remote_peer,
+                repo,
+                addr_hints,
+            }) => {
+                let stream = self
+                    .open_stream(&local_peer, &remote_peer, &addr_hints)
+                    .ok_or_else(|| into_git_err(format!("No connection to {}", remote_peer)))?;
+                let header = SomeHeader::NuSkool(Header::new(service, Urn::new(repo), remote_peer));
+
+                Ok::<_, git2::Error>((header, stream))
+            },
+        }?;
 
         Ok(Box::new(RadSubTransport {
             header: Some(header),
@@ -190,7 +218,7 @@ impl SmartSubtransport for RadTransport {
 }
 
 struct RadSubTransport {
-    header: Option<Header>,
+    header: Option<SomeHeader>,
     stream: Box<dyn GitStream>,
 }
 

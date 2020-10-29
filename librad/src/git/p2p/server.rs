@@ -26,6 +26,7 @@
 //! [`git-daemon`]: https://git-scm.com/docs/git-daemon
 
 use std::{
+    fmt::Debug,
     io,
     path::{Path, PathBuf},
     process::Stdio,
@@ -42,8 +43,8 @@ use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
 use crate::{
     git::{
-        header::{self, Header},
-        types::namespace::AsNamespace,
+        header::{self, Header, SomeHeader},
+        types::namespace::{AsNamespace, Namespace},
     },
     paths::Paths,
 };
@@ -62,14 +63,12 @@ impl GitServer {
 }
 
 impl GitServer {
+    #[tracing::instrument(skip(self, recv, send), err)]
     pub async fn invoke_service<R, W>(&self, (recv, mut send): (R, W)) -> io::Result<()>
     where
         R: AsyncRead + Unpin,
         W: AsyncWrite + Unpin,
     {
-        let span = tracing::trace_span!("GitServer::invoke_service", git.server.path = %self.monorepo.display());
-        let _guard = span.enter();
-
         let mut recv = BufReader::new(recv);
         let mut hdr_buf = String::with_capacity(256);
         if let Err(e) = recv.read_line(&mut hdr_buf).await {
@@ -77,33 +76,44 @@ impl GitServer {
             return send_err(&mut send, "garbage header").await;
         }
 
-        let header = match hdr_buf.parse::<Header>() {
-            Ok(hdr) => hdr,
+        match hdr_buf.parse::<SomeHeader>() {
+            Ok(SomeHeader::Legacy(Header { service, repo, .. })) => match *service {
+                Service::UploadPack => {
+                    UploadPack::upload_pack(&self.monorepo)?
+                        .run(recv, send)
+                        .await
+                },
+                Service::UploadPackLs => {
+                    UploadPack::advertise(&self.monorepo, repo.id)?
+                        .run(recv, send)
+                        .await
+                },
+                service => {
+                    tracing::error!("Invalid git service: {:?}", header::Service(service));
+                    send_err(&mut send, "service not enabled").await
+                },
+            },
+
+            Ok(SomeHeader::NuSkool(Header { service, repo, .. })) => match *service {
+                Service::UploadPack => {
+                    UploadPack::upload_pack(&self.monorepo)?
+                        .run(recv, send)
+                        .await
+                },
+                Service::UploadPackLs => {
+                    UploadPack::advertise(&self.monorepo, Namespace::from(repo))?
+                        .run(recv, send)
+                        .await
+                },
+                service => {
+                    tracing::error!("Invalid git service: {:?}", header::Service(service));
+                    send_err(&mut send, "service not enabled").await
+                },
+            },
+
             Err(e) => {
                 tracing::error!("Error parsing git service header: {}", e);
-                return send_err(&mut send, "invalid header").await;
-            },
-        };
-
-        tracing::trace!(
-            git.service = ?header.service,
-            git.urn = %header.repo,
-        );
-
-        match *header.service {
-            Service::UploadPack => {
-                UploadPack::upload_pack(&self.monorepo)?
-                    .run(recv, send)
-                    .await
-            },
-            Service::UploadPackLs => {
-                UploadPack::advertise(&self.monorepo, header.repo.id)?
-                    .run(recv, send)
-                    .await
-            },
-            service => {
-                tracing::error!("Invalid git service: {:?}", header::Service(service));
-                send_err(&mut send, "service not enabled").await
+                send_err(&mut send, "invalid header").await
             },
         }
     }
@@ -115,9 +125,10 @@ enum UploadPack {
 }
 
 impl UploadPack {
+    #[tracing::instrument(level = "debug", err)]
     fn advertise<N>(repo_path: &Path, namespace: N) -> io::Result<Self>
     where
-        N: AsNamespace + Clone,
+        N: AsNamespace + Clone + Debug,
     {
         let namespace: RefLike = namespace.into();
 
@@ -164,6 +175,7 @@ impl UploadPack {
         .map(Self::AdvertiseRefs)
     }
 
+    #[tracing::instrument(level = "debug", err)]
     fn upload_pack(repo_path: &Path) -> io::Result<Self> {
         let mut git = Command::new("git");
         git_tracing(&mut git);
@@ -182,6 +194,7 @@ impl UploadPack {
         .map(Self::UploadPack)
     }
 
+    #[tracing::instrument(skip(self, recv, send), err)]
     async fn run<R, W>(self, mut recv: R, mut send: W) -> io::Result<()>
     where
         R: AsyncRead + Unpin,
