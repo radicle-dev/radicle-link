@@ -43,6 +43,9 @@ pub use identities::{git::Urn, payload::ProjectPayload};
 
 type Namespace = namespace::Namespace<Revision>;
 
+/// Read a [`Project`] from the tip of the ref [`Urn::path`] points to.
+///
+/// If the ref is not found, `None` is returned.
 #[tracing::instrument(level = "trace", skip(storage), err)]
 pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Project>, Error>
 where
@@ -60,6 +63,16 @@ where
     }
 }
 
+/// Read and verify the [`Project`] pointed to by `urn`.
+///
+/// If the ref pointed to by [`Urn::path`] is not found, `None` is returned.
+///
+/// # Caveats
+///
+/// Keep in mind that the `content_id` of a successfully verified project may
+/// not be the same as the tip of the ref [`Urn::path`] points to. That is, this
+/// function cannot be used to assert that the state after an [`update`] is
+/// valid.
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedProject>, Error>
 where
@@ -84,6 +97,7 @@ where
     }
 }
 
+/// Create a new [`Project`].
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn create<S, P>(
     storage: &Storage<S>,
@@ -101,6 +115,7 @@ where
     Ok(project)
 }
 
+/// Update the [`Project`] at `urn`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn update<S, P, D>(
     storage: &Storage<S>,
@@ -124,6 +139,7 @@ where
     Ok(next)
 }
 
+/// Merge and sign the [`Project`] state as seen by `from`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<Project, Error>
 where

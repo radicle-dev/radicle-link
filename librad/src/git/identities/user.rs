@@ -41,6 +41,9 @@ use crate::{
 
 pub use identities::{git::Urn, payload::UserPayload};
 
+/// Read a [`User`] from the tip of thr ref [`Urn::path`] points to.
+///
+/// If the ref is not found, `None` is returned.
 #[tracing::instrument(level = "trace", skip(storage), err)]
 pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<User>, Error>
 where
@@ -58,6 +61,16 @@ where
     }
 }
 
+/// Read and verify the [`User`] pointed to by `urn`.
+///
+/// If the ref pointed to by [`Urn::path`] is not found, `None` is returned.
+///
+/// # Caveats
+///
+/// Keep in mind that the `content_id` of a successfully verified user may
+/// not be the same as the tip of the ref [`Urn::path`] points to. That is, this
+/// function cannot be used to assert that the state after an [`update`] is
+/// valid.
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedUser>, Error>
 where
@@ -78,6 +91,7 @@ where
     }
 }
 
+/// Create a new [`User`].
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn create<S, P>(
     storage: &Storage<S>,
@@ -96,6 +110,7 @@ where
     Ok(user)
 }
 
+/// Update the [`User`] at `urn`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn update<S, P, D>(
     storage: &Storage<S>,
@@ -117,6 +132,7 @@ where
     Ok(next)
 }
 
+/// Merge and sign the [`User`] state as seen by `from`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<User, Error>
 where

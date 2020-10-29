@@ -62,6 +62,7 @@ pub enum Error {
     Git(#[from] git2::Error),
 }
 
+/// Low-level operations on the link "monorepo".
 pub struct Storage<S> {
     backend: git2::Repository,
     peer_id: PeerId,
@@ -285,6 +286,9 @@ where
         Identities::from(self.as_raw())
     }
 
+    // TODO: we would need to wrap a few more low-level git operations (such as:
+    // create commit, manipulate refs, manipulate config) in order to be able to
+    // model "capabilities" in terms of traits.
     pub(super) fn as_raw(&self) -> &git2::Repository {
         &self.backend
     }

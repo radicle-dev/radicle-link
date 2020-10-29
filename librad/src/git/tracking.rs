@@ -21,9 +21,8 @@ use git_ext::{is_exists_err, is_not_found_err, RefLike};
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
+use super::storage2::{self, Storage};
 use crate::{git::p2p::url::GitUrlRef, peer::PeerId, signer::Signer};
-
-use super::storage2::Storage;
 
 pub use crate::identities::git::Urn;
 
@@ -34,9 +33,22 @@ pub enum Error {
     SelfReferential,
 
     #[error(transparent)]
+    Store(#[from] storage2::Error),
+
+    #[error(transparent)]
     Git(#[from] git2::Error),
 }
 
+/// Track the given `peer` in the context of `urn`.
+///
+/// `true` is returned if the tracking relationship didn't exist before and was
+/// created as a side-effect of the function call. Otherwise, `false` is
+/// returned.
+///
+/// # Errors
+///
+/// Attempting to track oneself (as per the public key of the [`Signer`] is an
+/// error.
 #[tracing::instrument(skip(storage), err)]
 pub fn track<S>(storage: &Storage<S>, urn: &Urn, peer: PeerId) -> Result<bool, Error>
 where
@@ -69,6 +81,18 @@ where
     Ok(was_created)
 }
 
+/// Remove the tracking of `peer` in the context of `urn`.
+///
+/// `true` is returned if the tracking relationship existed and was removed as a
+/// side-effect of the function call. Otherwise, `false` is returned.
+///
+/// # Caveats
+///
+/// Untracking will also attempt to prune any remote branches associated with
+/// `peer` (this mirrors the behaviour of `git`). Since refdb operations are not
+/// (yet) atomic, this may fail, leaving "dangling" refs in the storage. It is
+/// safe to call this function repeatedly, so as to ensure all remote tracking
+/// branches have been pruned.
 #[tracing::instrument(skip(storage), err)]
 pub fn untrack<S>(storage: &Storage<S>, urn: &Urn, peer: PeerId) -> Result<bool, Error>
 where
@@ -82,14 +106,16 @@ where
         .or_matches::<Error, _, _>(is_not_found_err, || Ok(false))?;
 
     // Prune all remote branches
-    // FIXME: proper globbing in storage
-    let prune = storage.as_raw().references_glob(
-        reflike!("refs/namespaces")
-            .join(urn)
-            .join(reflike!("refs/remotes"))
-            .join(peer)
-            .with_pattern_suffix(refspec_pattern!("*"))
-            .as_str(),
+    let prune = storage.references_glob(
+        glob::Pattern::new(
+            reflike!("refs/namespaces")
+                .join(urn)
+                .join(reflike!("refs/remotes"))
+                .join(peer)
+                .with_pattern_suffix(refspec_pattern!("*"))
+                .as_str(),
+        )
+        .expect("RefspecPattern should be a valid glob::Pattern"),
     )?;
 
     for branch in prune {
@@ -99,6 +125,8 @@ where
     Ok(was_removed)
 }
 
+/// Obtain an iterator over the 1st degree tracked peers in the context of
+/// `urn`.
 pub fn tracked<S>(storage: &Storage<S>, urn: &Urn) -> Result<Tracked, Error>
 where
     S: Signer,

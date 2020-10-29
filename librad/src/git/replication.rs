@@ -79,6 +79,25 @@ pub enum Error {
     Store(#[from] storage2::Error),
 }
 
+/// Attempt to fetch `urn` from `remote_peer`, optionally supplying
+/// `addr_hints`. `urn` may or may not already exist locally.
+///
+/// The [`Urn::path`] is ignored (defaulting to `rad/id`).
+///
+/// The fetch proceeds in three stages:
+///
+/// 1. Update the remote branches needed for identity verification
+///
+///    The identity according to `remote_peer` is verified, and if that passes
+///    the local branch layout created (if it does not already exist). It may
+///    also update local tracking relationships based on the identity
+///    information.
+///
+/// 2. Fetch the `rad/signed_refs` of all tracked peers, and compute the
+/// eligible heads (i.e. where    the `remote_peer` advertises the same tip oid
+/// as found in the signed refs)
+///
+/// 3. Fetch the rest (i.e. eligible heads)
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(skip(storage, addr_hints), err)]
 pub fn replicate<S, Addrs>(
@@ -91,6 +110,7 @@ where
     S: Signer,
     Addrs: IntoIterator<Item = SocketAddr>,
 {
+    let urn = Urn::new(urn.id);
     let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
 
     // Update identity branches first

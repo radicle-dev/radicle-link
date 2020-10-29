@@ -28,6 +28,7 @@ use crate::{
     signer::Signer,
 };
 
+/// Ad-hoc helper type for conveniently managing `rad/id` refs
 pub struct IdRef<'a>(&'a Urn);
 
 impl<'a> From<&'a Urn> for IdRef<'a> {

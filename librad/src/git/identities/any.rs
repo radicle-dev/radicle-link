@@ -31,6 +31,11 @@ use crate::{
 
 pub use identities::git::Urn;
 
+/// Read an identity for which the type is not known statically.
+///
+/// Note that the [`Urn::path`] is honoured, and the identity is read from the
+/// tip of the branch it resolves to. If that branch is not found, `None` is
+/// returned.
 pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<SomeIdentity>, Error>
 where
     S: Signer,

@@ -43,14 +43,21 @@ use crate::{
     signer::Signer,
 };
 
+/// Seed value to compute the fetchspecs for the desired fetch phase from.
+///
+/// See also: [`super::replication::replicate`]
 #[derive(Debug)]
 pub enum Fetchspecs<P, R> {
+    /// Only request the branches necessary for identity verification.
     Peek,
 
-    SignedRefs {
-        tracked: BTreeSet<P>,
-    },
+    /// Request the `rad/signed_refs` branches of the given set of tracked
+    /// peers.
+    SignedRefs { tracked: BTreeSet<P> },
 
+    /// Request the remote heads matching the signed refs of the respective
+    /// tracked peers, as well as top-level delegates found in the identity
+    /// document.
     Replicate {
         tracked_sigrefs: BTreeMap<P, Refs>,
         delegates: BTreeSet<Urn<R>>,
@@ -252,6 +259,10 @@ impl From<BTreeMap<ext::RefLike, ext::Oid>> for RemoteHeads {
     }
 }
 
+/// Types which can create a [`Fetcher`].
+///
+/// This is an experimental trait to gauge if [`Storage`] capabilities could be
+/// modelled entirely in terms of traits.
 pub trait CanFetch {
     type Error;
     type Fetcher<'a>: Fetcher;
@@ -290,6 +301,8 @@ pub struct FetchResult {
     pub updated_tips: BTreeMap<ext::RefLike, ext::Oid>,
 }
 
+/// Types which can process [`Fetchspecs`], and update the local [`Storage`]
+/// accordingly.
 pub trait Fetcher {
     type Error;
     type PeerId;
@@ -301,6 +314,7 @@ pub trait Fetcher {
     ) -> Result<FetchResult, Self::Error>;
 }
 
+/// The default [`Fetcher`], which uses the peer-to-peer network for fetching.
 pub struct DefaultFetcher<'a> {
     urn: git::Urn,
     remote_peer: PeerId,
@@ -338,7 +352,7 @@ impl<'a> DefaultFetcher<'a> {
                 None => match ext::RefLike::try_from(remote_head.name()) {
                     Ok(refname) => Some((refname, remote_head.oid().into())),
                     Err(e) => {
-                        tracing::trace!("invalid refname `{}`: {}", remote_head.name(), e);
+                        tracing::warn!("invalid refname `{}`: {}", remote_head.name(), e);
                         None
                     },
                 },
