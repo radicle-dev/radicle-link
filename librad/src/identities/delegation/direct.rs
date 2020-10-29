@@ -36,7 +36,7 @@ impl Direct {
         self.0.iter().filter(|pk| votes.contains(pk)).collect()
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a PublicKey> {
+    pub fn iter(&self) -> impl Iterator<Item = &PublicKey> {
         self.into_iter()
     }
 }
