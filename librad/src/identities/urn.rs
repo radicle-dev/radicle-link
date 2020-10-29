@@ -29,7 +29,7 @@ use thiserror::Error;
 use super::sealed;
 
 lazy_static! {
-    pub static ref DEFAULT_PATH: ext::RefLike = ext::RefLike::try_from("rad/id").unwrap();
+    pub static ref DEFAULT_PATH: ext::RefLike = reflike!("rad/id");
 }
 
 pub trait HasProtocol: sealed::Sealed {
