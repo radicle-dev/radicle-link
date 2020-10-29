@@ -93,11 +93,10 @@ where
 {
     let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
 
-    if storage.has_urn(&urn)? {
-        let _ = fetcher
-            .fetch(fetch::Fetchspecs::Peek)
-            .map_err(|e| Error::Fetch(e.into()))?;
-    }
+    // Update identity branches first
+    let _ = fetcher
+        .fetch(fetch::Fetchspecs::Peek)
+        .map_err(|e| Error::Fetch(e.into()))?;
 
     let delegates = match identities::any::get(storage, &urn)? {
         None => Err(Error::MissingIdentity),
