@@ -27,6 +27,7 @@ use super::{
     },
     common,
     error::Error,
+    local::LocalIdentity,
 };
 use crate::{
     identities::{
@@ -97,9 +98,10 @@ where
 }
 
 /// Create a new [`Project`].
-#[tracing::instrument(level = "debug", skip(storage), err)]
+#[tracing::instrument(level = "debug", skip(storage, whoami), err)]
 pub fn create<S, P>(
     storage: &Storage<S>,
+    whoami: LocalIdentity,
     payload: P,
     delegations: IndirectDelegation,
 ) -> Result<Project, Error>
@@ -108,32 +110,35 @@ where
     P: Into<ProjectPayload> + Debug,
 {
     let project = identities(storage).create(payload.into(), delegations, storage.signer())?;
-
     Refs::Create(&project).apply(storage)?;
+    whoami.link(storage, &project.urn())?;
 
     Ok(project)
 }
 
 /// Update the [`Project`] at `urn`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn update<S, P, D>(
+pub fn update<S, L, P, D>(
     storage: &Storage<S>,
     urn: &Urn,
+    whoami: L,
     payload: P,
     delegations: D,
 ) -> Result<Project, Error>
 where
     S: Signer,
+    L: Into<Option<LocalIdentity>> + Debug,
     P: Into<Option<ProjectPayload>> + Debug,
     D: Into<Option<IndirectDelegation>> + Debug,
 {
-    let delegations = delegations.into();
-
     let prev = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let prev = Verifying::from(prev).signed()?;
     let next = identities(storage).update(prev, payload, delegations, storage.signer())?;
 
     Refs::Update(&next, "update").apply(storage)?;
+    if let Some(local_id) = whoami.into() {
+        local_id.link(storage, urn)?;
+    }
 
     Ok(next)
 }

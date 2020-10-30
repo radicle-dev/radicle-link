@@ -27,13 +27,13 @@ use std::{
 };
 
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
-use git_ext::{into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
+use git_ext::{into_git_err, is_not_found_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
 use thiserror::Error;
 
 use crate::{
     git::{
         local::{self, url::LocalUrl},
-        storage::{self, Storage},
+        storage::{self, RadSelfSpec, Storage},
     },
     paths::Paths,
     peer::PeerId,
@@ -392,16 +392,34 @@ impl LocalTransport {
             .stderr(Stdio::inherit())
             .spawn()?;
 
-        let this = self.clone();
+        let on_success: Option<
+            Box<dyn FnOnce() -> Result<(), Error> + Send + UnwindSafe + 'static>,
+        > = match service {
+            Service::ReceivePack => {
+                let storage = self.storage.clone();
+                let hook = move || {
+                    let storage = storage.lock().unwrap();
+                    storage.update_refs(&urn)?;
+
+                    // Ensure `rad/self` is present, set from default if not
+                    match storage.get_rad_self(&urn) {
+                        Ok(_) => Ok(()),
+                        Err(storage::Error::Git(e)) if is_not_found_err(&e) => {
+                            Ok(storage.set_rad_self(&urn, RadSelfSpec::Default)?)
+                        },
+                        Err(e) => Err(e.into()),
+                    }
+                };
+
+                Some(Box::new(hook))
+            },
+
+            _ => None,
+        };
+
         Ok(Connected {
             process: child,
-            on_success: Some(Box::new(move || {
-                if matches!(service, Service::ReceivePack) {
-                    return this.update_refs(&urn);
-                }
-
-                Ok(())
-            })),
+            on_success,
         })
     }
 
@@ -431,14 +449,6 @@ impl LocalTransport {
 
     fn repo_path(&self) -> PathBuf {
         self.storage.lock().unwrap().path().to_path_buf()
-    }
-
-    fn update_refs(&self, urn: &RadUrn) -> Result<(), Error> {
-        self.storage
-            .lock()
-            .unwrap()
-            .update_refs(urn)
-            .map_err(Error::from)
     }
 }
 

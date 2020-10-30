@@ -91,7 +91,7 @@ where
                 .no_reinit(true)
                 .external_template(false),
         )?;
-        Config::init(&mut backend, &signer, None)?;
+        Config::init(&mut backend, &signer)?;
         let peer_id = PeerId::from_signer(&signer);
 
         Ok(Self {
@@ -269,8 +269,8 @@ where
         .or_matches(|e| matches!(e, blob::Error::NotFound(_)), || Ok(None))
     }
 
-    pub fn config(&self) -> Result<Config, Error> {
-        Ok(Config::try_from(&self.backend)?)
+    pub fn config(&self) -> Result<Config<S>, Error> {
+        Ok(Config::try_from(self)?)
     }
 
     pub(super) fn signer(&self) -> &S {

@@ -27,7 +27,7 @@ use thiserror::Error;
 
 use super::{
     fetch::{self, CanFetch as _},
-    identities,
+    identities::{self, local::LocalIdentity},
     refs::{self, Refs},
     storage2::{self, Storage},
     tracking,
@@ -98,10 +98,21 @@ pub enum Error {
 /// as found in the signed refs)
 ///
 /// 3. Fetch the rest (i.e. eligible heads)
+///
+/// Optionally, a [`LocalIdentity`] can be specified to identify as in the
+/// context of this namespace (ie. to be used as the `rad/self` branch). If not
+/// specified, the existing identity is left untouched. If there is no existing
+/// `rad/self` identity (eg. because this is the first time `urn` is fetched),
+/// not specifying `whoami` is also referred to as "anonymous replication".
+///
+/// Note, however, that pushing local modifications requires a `rad/self` to be
+/// set, which is enforced by the
+/// [`crate::git::local::transport::LocalTransport`].
 #[allow(clippy::unit_arg)]
-#[tracing::instrument(skip(storage, addr_hints), err)]
+#[tracing::instrument(skip(storage, whoami, addr_hints), err)]
 pub fn replicate<S, Addrs>(
     storage: &Storage<S>,
+    whoami: Option<LocalIdentity>,
     urn: Urn,
     remote_peer: PeerId,
     addr_hints: Addrs,
@@ -159,6 +170,10 @@ where
 
     // Update our signed refs
     Refs::update(storage, &urn)?;
+    // Symref `rad/self` if a `LocalIdentity` was given
+    if let Some(local_id) = whoami {
+        local_id.link(storage, &urn)?;
+    }
 
     // TODO: At this point, the tracking graph may have changed, and/or we
     // created top-level user namespaces. We will eventually converge, but

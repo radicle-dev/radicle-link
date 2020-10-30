@@ -20,9 +20,9 @@ use std_ext::result::ResultExt as _;
 
 use super::super::{
     storage2::Storage,
-    types::{namespace::Namespace, Force, Reference},
+    types::{namespace::Namespace, Force, NamespacedRef},
 };
-use crate::{identities::git::Urn, peer::PeerId, signer::Signer};
+use crate::{identities::git::Urn, signer::Signer};
 
 /// Ad-hoc helper type for conveniently managing `rad/id` refs
 pub struct IdRef<'a>(&'a Urn);
@@ -42,7 +42,7 @@ impl<'a> IdRef<'a> {
     where
         S: Signer,
     {
-        Reference::<_, PeerId, _>::rad_id(Namespace::from(self.0))
+        NamespacedRef::rad_id(Namespace::from(self.0))
             .create(
                 storage.as_raw(),
                 *target.as_ref(),
@@ -62,7 +62,7 @@ impl<'a> IdRef<'a> {
     where
         S: Signer,
     {
-        Reference::<_, PeerId, _>::rad_id(Namespace::from(self.0))
+        NamespacedRef::rad_id(Namespace::from(self.0))
             .create(storage.as_raw(), *target.as_ref(), Force::True, msg)
             .and(Ok(()))
     }

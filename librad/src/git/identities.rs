@@ -17,6 +17,7 @@
 
 pub mod any;
 pub mod error;
+pub mod local;
 pub mod project;
 pub mod user;
 

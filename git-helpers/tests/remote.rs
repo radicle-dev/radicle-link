@@ -104,6 +104,11 @@ fn setup_entity(paths: &Paths, key: SecretKey) -> anyhow::Result<RadUrn> {
         let store = Storage::open_or_init(&paths, key)?;
         store.create_repo(&alice)?;
         store.create_repo(&radicle)?;
+        store.set_default_rad_self(
+            (*alice)
+                .clone()
+                .check_history_status(&resolves_to_alice, &resolves_to_alice)?,
+        )?;
     }
 
     Ok(radicle.urn())
