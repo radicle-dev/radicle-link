@@ -248,7 +248,7 @@ mod tests {
 
     type TmpState<'a> = WithTmpDir<TmpConfig<'a>>;
 
-    fn setup<'a>(key: &'a SecretKey) -> TmpState<'a> {
+    fn setup(key: &SecretKey) -> TmpState {
         WithTmpDir::new::<_, Error>(|path| {
             let mut repo = git2::Repository::init_bare(path)?;
             let config = Config::init(&mut repo, key)?;
