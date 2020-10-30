@@ -23,7 +23,7 @@ use thiserror::Error;
 
 use super::{
     p2p::url::GitUrlRef,
-    storage2::{self, Storage},
+    storage2::{self, glob, Storage},
 };
 use crate::{peer::PeerId, signer::Signer};
 
@@ -109,17 +109,13 @@ where
         .or_matches::<Error, _, _>(is_not_found_err, || Ok(false))?;
 
     // Prune all remote branches
-    let prune = storage.references_glob(
-        glob::Pattern::new(
-            reflike!("refs/namespaces")
-                .join(urn)
-                .join(reflike!("refs/remotes"))
-                .join(peer)
-                .with_pattern_suffix(refspec_pattern!("*"))
-                .as_str(),
-        )
-        .expect("RefspecPattern should be a valid glob::Pattern"),
-    )?;
+    let prune = storage.references_glob(glob::FromRefspec::from(
+        reflike!("refs/namespaces")
+            .join(urn)
+            .join(reflike!("refs/remotes"))
+            .join(peer)
+            .with_pattern_suffix(refspec_pattern!("*")),
+    ))?;
 
     for branch in prune {
         branch?.delete()?;

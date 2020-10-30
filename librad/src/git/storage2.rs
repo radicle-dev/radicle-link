@@ -32,9 +32,11 @@ use super::types::{
 use crate::{identities::git::Identities, paths::Paths, peer::PeerId, signer::Signer};
 
 pub mod config;
+pub mod glob;
 pub mod pool;
 
 pub use config::Config;
+pub use glob::Pattern;
 pub use pool::{Pool, Pooled};
 
 // FIXME: should be at the crate root
@@ -159,6 +161,7 @@ where
                     path.strip_prefix("refs/").unwrap_or(path)
                 };
 
+                // FIXME: use references_glob
                 let refs = References::from_globs(
                     &self.backend,
                     &[format!("refs/namespaces/{}/refs/{}", namespace, branch)],
@@ -229,16 +232,17 @@ where
         N: Debug,
         for<'b> &'b N: AsNamespace,
     {
-        let pat = glob::Pattern::new(RefspecPattern::from(reference).as_str())
-            .expect("RefspecPattern is expected to be a valid glob::Pattern");
-        self.references_glob(pat)
+        self.references_glob(glob::FromRefspec::from(RefspecPattern::from(reference)))
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
-    pub fn references_glob<'a>(
+    pub fn references_glob<'a, G: 'a>(
         &'a self,
-        glob: glob::Pattern,
-    ) -> Result<impl Iterator<Item = Result<git2::Reference<'a>, Error>> + 'a, Error> {
+        glob: G,
+    ) -> Result<impl Iterator<Item = Result<git2::Reference<'a>, Error>> + 'a, Error>
+    where
+        G: Pattern + Debug,
+    {
         Ok(self
             .backend
             .references()?
