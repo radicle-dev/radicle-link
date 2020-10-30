@@ -17,12 +17,13 @@
 
 use thiserror::Error;
 
-use crate::{
-    git::{storage2, types::reference},
-    identities::{
-        self,
-        git::{Urn, VerificationError},
-    },
+use super::{
+    super::{storage2, types::reference},
+    local,
+};
+use crate::identities::{
+    self,
+    git::{Urn, VerificationError},
 };
 
 #[derive(Debug, Error)]
@@ -33,6 +34,9 @@ pub enum Error {
 
     #[error("malformed URN")]
     Ref(#[from] reference::FromUrnError),
+
+    #[error(transparent)]
+    LocalId(#[from] local::ValidationError),
 
     #[error(transparent)]
     Verification(#[from] VerificationError),

@@ -26,6 +26,7 @@ use super::{
     },
     common,
     error::Error,
+    local::LocalIdentity,
 };
 use crate::{
     identities::{
@@ -91,6 +92,10 @@ where
 }
 
 /// Create a new [`User`].
+///
+/// The `delegations` must include the [`Signer`] key, such that the newly
+/// created [`User`] is also a valid [`LocalIdentity`] -- it is, in fact, its
+/// own [`LocalIdentity`]. This can be changed via [`update`].
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn create<S, P>(
     storage: &Storage<S>,
@@ -101,24 +106,33 @@ where
     S: Signer,
     P: Into<UserPayload> + Debug,
 {
-    let user = identities(storage).create(payload.into(), delegations, storage.signer())?;
+    let user = {
+        let user = identities(storage).create(payload.into(), delegations, storage.signer())?;
+        let verified = identities(storage)
+            .verify(*user.content_id)
+            .map_err(|e| Error::Verify(e.into()))?;
+        LocalIdentity::valid(verified, storage.signer())
+    }?;
+
     let urn = user.urn();
-
     common::IdRef::from(&urn).create(storage, user.content_id)?;
+    user.link(storage, &urn)?;
 
-    Ok(user)
+    Ok(user.into_inner().into_inner())
 }
 
 /// Update the [`User`] at `urn`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn update<S, P, D>(
+pub fn update<S, L, P, D>(
     storage: &Storage<S>,
     urn: &Urn,
+    whoami: L,
     payload: P,
     delegations: D,
 ) -> Result<User, Error>
 where
     S: Signer,
+    L: Into<Option<LocalIdentity>> + Debug,
     P: Into<Option<UserPayload>> + Debug,
     D: Into<Option<delegation::Direct>> + Debug,
 {
@@ -127,6 +141,9 @@ where
     let next = identities(storage).update(prev, payload, delegations, storage.signer())?;
 
     common::IdRef::from(urn).update(storage, next.content_id, "update")?;
+    if let Some(local_id) = whoami.into() {
+        local_id.link(storage, urn)?;
+    }
 
     Ok(next)
 }

@@ -78,7 +78,7 @@ impl Deref for LocalIdentity {
 }
 
 impl LocalIdentity {
-    fn valid<S>(user: VerifiedUser, signer: &S) -> Result<Self, ValidationError>
+    pub(super) fn valid<S>(user: VerifiedUser, signer: &S) -> Result<Self, ValidationError>
     where
         S: Signer,
     {
@@ -108,6 +108,10 @@ impl LocalIdentity {
             .create(storage.as_raw())
             .and(Ok(()))
             .map_err(storage2::Error::from)
+    }
+
+    pub fn into_inner(self) -> VerifiedUser {
+        self.0
     }
 }
 
