@@ -63,6 +63,7 @@ impl GitServer {
 }
 
 impl GitServer {
+    #[allow(clippy::unit_arg)]
     #[tracing::instrument(skip(self, recv, send), err)]
     pub async fn invoke_service<R, W>(&self, (recv, mut send): (R, W)) -> io::Result<()>
     where
@@ -194,6 +195,7 @@ impl UploadPack {
         .map(Self::UploadPack)
     }
 
+    #[allow(clippy::unit_arg)]
     #[tracing::instrument(skip(self, recv, send), err)]
     async fn run<R, W>(self, mut recv: R, mut send: W) -> io::Result<()>
     where
