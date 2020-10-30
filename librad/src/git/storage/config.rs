@@ -17,20 +17,21 @@
 
 #![allow(unused)]
 
-use std::{convert::TryFrom, io};
+use std::{convert::TryFrom, io, marker::PhantomData};
 
-use git_ext::is_not_found_err;
-use keystore::sign;
+use git_ext::{self as ext, is_not_found_err};
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
+use super::{super::identities::local::LocalIdentity, Storage};
 use crate::{
-    keys::SecretKey,
-    meta::{
-        entity::{Signatory, Verified},
-        user::User,
+    identities::{
+        git::{Identities, Urn, VerifiedUser},
+        urn,
     },
+    keys::SecretKey,
     peer::{self, PeerId},
+    signer::Signer,
     uri::{self, RadUrn},
 };
 
@@ -45,79 +46,86 @@ pub enum Error {
     #[error("storage was already initialised with peer id {0}")]
     AlreadyInitialised(PeerId),
 
-    #[error("supplied user entity is not signed by the local key")]
-    NotSignedBySelf,
-
-    #[error("entity must be  signed with an owned key")]
-    OwnedKeyRequired,
-
-    #[error("configuration key {config_key} is not set")]
-    Unset { config_key: &'static str },
+    #[error(transparent)]
+    PeerId(#[from] peer::conversion::Error),
 
     #[error(transparent)]
-    Peer(#[from] peer::conversion::Error),
-
-    #[error(transparent)]
-    Urn(#[from] uri::rad_urn::ParseError),
+    Urn(#[from] urn::ParseError<ext::oid::FromMultihashError>),
 
     #[error(transparent)]
     Git(#[from] git2::Error),
 
+    #[cfg(test)]
     #[error(transparent)]
     Io(#[from] io::Error),
 }
 
-pub struct Config {
+pub struct Config<'a, S> {
     inner: git2::Config,
+    signer: &'a S,
 }
 
-impl<'a> TryFrom<&'a git2::Repository> for Config {
-    type Error = git2::Error;
+impl<'a, S> TryFrom<&'a Storage<S>> for Config<'a, S>
+where
+    S: Signer,
+{
+    type Error = Error;
 
-    fn try_from(repo: &'a git2::Repository) -> Result<Self, Self::Error> {
-        let inner = repo.config()?;
-        Ok(Self { inner })
-    }
-}
-
-impl Config {
-    pub fn init<U>(
-        repo: &mut git2::Repository,
-        signer: &impl sign::Signer,
-        user: U,
-    ) -> Result<Self, Error>
-    where
-        U: Into<Option<User<Verified>>>,
-    {
-        let peer_id = PeerId::from_signer(signer);
-        let mut config = repo.config()?;
-        let mut this = Config { inner: config };
-
-        match this.peer_id().map(Some).or_matches::<Error, _, _>(
-            |err| matches!(err, Error::Git(e) if is_not_found_err(&e)),
-            || Ok(None),
-        )? {
-            Some(initialised_with) if initialised_with != peer_id => {
-                return Err(Error::AlreadyInitialised(initialised_with));
-            },
-            _ => this.set_peer_id(&peer_id)?,
-        }
-
-        let user = user.into();
-        this.set_user_info(user.as_ref().map(|u| u.name()).unwrap_or("radicle"))?;
-        this.set_user(user)?;
+    fn try_from(storage: &'a Storage<S>) -> Result<Self, Self::Error> {
+        let inner = storage.as_raw().config()?;
+        let this = Self {
+            inner,
+            signer: storage.signer(),
+        };
+        this.guard_key_change()?;
 
         Ok(this)
     }
+}
 
-    pub fn user_name(&self) -> Result<String, Error> {
-        self.inner.get_string(CONFIG_USER_NAME).map_err(Error::from)
+impl TryFrom<&git2::Repository> for Config<'_, PhantomData<!>> {
+    type Error = git2::Error;
+
+    fn try_from(repo: &git2::Repository) -> Result<Self, Self::Error> {
+        let inner = repo.config()?;
+        Ok(Self {
+            inner,
+            signer: &PhantomData,
+        })
+    }
+}
+
+impl<'a, S> Config<'a, S>
+where
+    S: Signer,
+{
+    fn guard_key_change(&self) -> Result<(), Error> {
+        let configured_peer_id = self.peer_id().map(Some).or_matches::<Error, _, _>(
+            |err| matches!(err, Error::Git(e) if is_not_found_err(&e)),
+            || Ok(None),
+        )?;
+        let signer_peer_id = PeerId::from_signer(self.signer);
+        match configured_peer_id {
+            Some(initialised_with) if initialised_with != signer_peer_id => {
+                Err(Error::AlreadyInitialised(initialised_with))
+            },
+
+            _ => Ok(()),
+        }
     }
 
-    pub fn user_email(&self) -> Result<String, Error> {
-        self.inner
-            .get_string(CONFIG_USER_EMAIL)
-            .map_err(Error::from)
+    pub(super) fn init(repo: &mut git2::Repository, signer: &'a S) -> Result<Self, Error> {
+        let peer_id = PeerId::from_signer(signer);
+        let config = repo.config()?;
+        let mut this = Config {
+            inner: config,
+            signer,
+        };
+        this.guard_key_change()?;
+        this.set_peer_id(PeerId::from_signer(signer))?;
+        this.set_user_info("anonymous")?;
+
+        Ok(this)
     }
 
     fn set_user_info(&mut self, name: &str) -> Result<(), Error> {
@@ -129,6 +137,49 @@ impl Config {
         Ok(())
     }
 
+    fn set_peer_id(&mut self, peer_id: PeerId) -> Result<(), Error> {
+        self.inner
+            .set_str(CONFIG_RAD_PEER_ID, &peer_id.to_string())
+            .map_err(Error::from)
+    }
+
+    /// Set the default identity.
+    ///
+    /// Passing [`Option::None`] removes the setting.
+    pub fn set_user<U>(&mut self, user: U) -> Result<(), Error>
+    where
+        U: Into<Option<LocalIdentity>>,
+    {
+        match user.into() {
+            None => {
+                self.inner
+                    .remove(CONFIG_RAD_SELF)
+                    .or_matches::<Error, _, _>(is_not_found_err, || Ok(()))?;
+                self.set_user_info("anonymous")
+            },
+
+            Some(user) => {
+                self.inner
+                    .set_str(CONFIG_RAD_SELF, &user.urn().to_string())
+                    .map_err(Error::from)?;
+                self.set_user_info(&user.doc.payload.subject.name)?;
+
+                Ok(())
+            },
+        }
+    }
+}
+
+impl<S> Config<'_, S> {
+    pub fn user_name(&self) -> Result<String, Error> {
+        self.inner.get_string(CONFIG_USER_NAME).map_err(Error::from)
+    }
+
+    pub fn user_email(&self) -> Result<String, Error> {
+        self.inner
+            .get_string(CONFIG_USER_EMAIL)
+            .map_err(Error::from)
+    }
     pub fn peer_id(&self) -> Result<PeerId, Error> {
         self.inner
             .get_string(CONFIG_RAD_PEER_ID)
@@ -136,74 +187,19 @@ impl Config {
             .and_then(|peer_id| peer_id.parse().map_err(Error::from))
     }
 
-    fn set_peer_id(&mut self, peer_id: &PeerId) -> Result<(), Error> {
+    pub fn user(&self) -> Result<Option<Urn>, Error> {
         self.inner
-            .set_str(CONFIG_RAD_PEER_ID, &peer_id.to_string())
-            .map_err(Error::from)
-    }
-
-    /// Set the default [`User`] identity.
-    ///
-    /// Passing [`Option::None`] removes the setting.
-    ///
-    /// # Invariants
-    ///
-    /// ## Unchecked
-    ///
-    /// The caller must ensure that the entity is persisted.
-    ///
-    /// ## Checked
-    ///
-    /// An error is returned if:
-    ///
-    /// * The [`User`] is not signed by the configured [`PeerId`]'s key
-    /// * The signature of the configured key is not owned by the [`User`] (ie.
-    ///   the local key refers to a different entity)
-    pub fn set_user<U>(&mut self, user: U) -> Result<(), Error>
-    where
-        U: Into<Option<User<Verified>>>,
-    {
-        match user.into() {
-            None => self
-                .inner
-                .remove(CONFIG_RAD_SELF)
-                .or_matches(is_not_found_err, || Ok(())),
-
-            Some(user) => {
-                self.guard_user_valid(&user)?;
-                self.inner
-                    .set_str(CONFIG_RAD_SELF, &user.urn().to_string())
-                    .map_err(Error::from)?;
-                self.set_user_info(user.name())?;
-
-                Ok(())
-            },
-        }
-    }
-
-    /// Validation rules as described for [`Config::set_user`]
-    pub fn guard_user_valid<S>(&self, user: &User<S>) -> Result<(), Error> {
-        let peer_id = self.peer_id()?;
-        user.signatures()
-            .get(peer_id.as_public_key())
-            .ok_or(Error::NotSignedBySelf)
-            .and_then(|sig| match sig.by {
-                Signatory::User(_) => Err(Error::OwnedKeyRequired),
-                Signatory::OwnedKey => Ok(()),
-            })
-    }
-
-    pub fn user(&self) -> Result<RadUrn, Error> {
-        let urn = self
-            .inner
             .get_string(CONFIG_RAD_SELF)
-            .or_matches(is_not_found_err, || {
-                Err(Error::Unset {
-                    config_key: CONFIG_RAD_SELF,
-                })
-            })?;
+            .map(Some)
+            .or_matches::<Error, _, _>(is_not_found_err, || Ok(None))?
+            .map(|urn| urn.parse().map_err(Error::from))
+            .transpose()
+    }
+}
 
-        urn.parse().map_err(Error::from)
+impl Config<'_, PhantomData<!>> {
+    pub fn readonly(repo: &git2::Repository) -> Result<Self, git2::Error> {
+        Self::try_from(repo)
     }
 }
 
@@ -211,98 +207,72 @@ impl Config {
 mod tests {
     use super::*;
 
-    use std::ops::Deref;
+    use std::ops::{Deref, DerefMut};
 
-    use tempfile::tempdir;
-
-    use crate::{keys::SecretKey, meta::entity::Draft, test::ConstResolver};
+    use crate::{
+        identities::{self, git::User},
+        keys::SecretKey,
+    };
     use librad_test::tempdir::WithTmpDir;
 
-    struct TmpConfig {
-        repo: git2::Repository,
-        config: Config,
+    lazy_static! {
+        static ref ALICE_KEY: SecretKey = SecretKey::from_seed([
+            81, 151, 13, 57, 246, 76, 127, 57, 30, 125, 102, 210, 87, 132, 7, 92, 12, 122, 7, 30,
+            202, 71, 235, 169, 66, 199, 172, 11, 97, 50, 173, 150
+        ]);
+        static ref BOB_KEY: SecretKey = SecretKey::from_seed([
+            117, 247, 70, 158, 119, 191, 163, 76, 169, 138, 229, 198, 147, 90, 8, 220, 233, 86,
+            170, 139, 85, 5, 233, 64, 1, 58, 193, 241, 12, 87, 14, 60
+        ]);
+        static ref ALICE_PEER_ID: PeerId = PeerId::from(&*ALICE_KEY);
     }
 
-    impl Deref for TmpConfig {
-        type Target = Config;
+    struct TmpConfig<'a> {
+        repo: git2::Repository,
+        config: Config<'a, SecretKey>,
+    }
+
+    impl<'a> Deref for TmpConfig<'a> {
+        type Target = Config<'a, SecretKey>;
 
         fn deref(&self) -> &Self::Target {
             &self.config
         }
     }
 
-    type TmpState = WithTmpDir<TmpConfig>;
+    impl<'a> DerefMut for TmpConfig<'a> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.config
+        }
+    }
+
+    type TmpState<'a> = WithTmpDir<TmpConfig<'a>>;
 
     fn setup(key: &SecretKey) -> TmpState {
         WithTmpDir::new::<_, Error>(|path| {
             let mut repo = git2::Repository::init_bare(path)?;
-            let config = Config::init(&mut repo, key, None)?;
+            let config = Config::init(&mut repo, key)?;
             Ok(TmpConfig { repo, config })
         })
         .unwrap()
     }
 
     #[test]
-    fn test_init() {
-        let key = SecretKey::new();
-        let config = setup(&key);
+    fn init_proper() {
+        let config = setup(&*ALICE_KEY);
 
-        assert_eq!(config.peer_id().unwrap(), PeerId::from(&key));
-        assert!(matches!(
-            config.user(),
-            Err(Error::Unset {
-                config_key: CONFIG_RAD_SELF
-            })
-        ))
+        assert_eq!(config.peer_id().unwrap(), *ALICE_PEER_ID);
+        assert!(config.user().unwrap().is_none())
     }
 
     #[test]
-    fn test_guard_user_unsigned() {
-        let key = SecretKey::new();
-        let config = setup(&key);
+    fn reinit_with_different_key() {
+        let mut alice_config = setup(&*ALICE_KEY);
+        let bob_config = Config::init(&mut alice_config.repo, &*BOB_KEY);
 
-        let alice = User::<Draft>::create("alice".to_owned(), key.public()).unwrap();
-        assert!(matches!(
-            config.guard_user_valid(&alice),
-            Err(Error::NotSignedBySelf)
-        ))
-    }
-
-    #[test]
-    fn test_guard_user_not_self_signed() {
-        let key = SecretKey::new();
-        let config = setup(&key);
-
-        let mut alice = User::<Draft>::create("alice".to_owned(), key.public()).unwrap();
-        {
-            let bob = User::<Draft>::create("bob".to_owned(), key.public()).unwrap();
-            alice
-                .sign(&key, &Signatory::User(bob.urn()), &ConstResolver::new(bob))
-                .unwrap();
-        }
-
-        assert!(matches!(
-            config.guard_user_valid(&alice),
-            Err(Error::OwnedKeyRequired)
-        ))
-    }
-
-    #[test]
-    fn test_guard_user_valid() {
-        let key = SecretKey::new();
-        let config = setup(&key);
-
-        let mut alice = User::<Draft>::create("alice".to_owned(), key.public()).unwrap();
-        {
-            alice
-                .sign(
-                    &key,
-                    &Signatory::OwnedKey,
-                    &ConstResolver::new(alice.clone()),
-                )
-                .unwrap();
-        }
-
-        assert!(matches!(config.guard_user_valid(&alice), Ok(())))
+        assert_matches!(
+            bob_config.map(|_| ()), // map to avoid `Debug` impl
+            Err(Error::AlreadyInitialised(pid)) if pid == *ALICE_PEER_ID
+        )
     }
 }

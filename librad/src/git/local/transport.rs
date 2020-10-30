@@ -30,16 +30,14 @@ use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Trans
 use git_ext::{into_git_err, is_not_found_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
 use thiserror::Error;
 
-use crate::{
-    git::{
-        local::{self, url::LocalUrl},
+use super::{
+    super::{
+        refs::Refs,
         storage::{self, RadSelfSpec, Storage},
     },
-    paths::Paths,
-    peer::PeerId,
-    signer::BoxedSigner,
-    uri::RadUrn,
+    url::LocalUrl,
 };
+use crate::{paths::Paths, peer::PeerId, signer::BoxedSigner, uri::RadUrn};
 
 lazy_static! {
     static ref SETTINGS: Arc<RwLock<HashMap<PeerId, SettingsInternal>>> =
@@ -54,7 +52,7 @@ pub fn register() {
     static INIT: Once = Once::new();
     unsafe {
         INIT.call_once(move || {
-            git2::transport::register(local::URL_SCHEME, move |remote| {
+            git2::transport::register(super::URL_SCHEME, move |remote| {
                 Transport::smart(&remote, true, LocalTransportFactory::new())
             })
             .unwrap()
@@ -251,7 +249,10 @@ pub enum Mode {
 #[non_exhaustive]
 pub enum Error {
     #[error("no such URN: {0}")]
-    NoSuchUrn(RadUrn),
+    NoSuchUrn(Urn),
+
+    #[error("no rad/self present and no default identity configured")]
+    NoLocalIdentity,
 
     #[error("too many libgit2 transport streams")]
     StreamLimitExceeded,
@@ -328,7 +329,7 @@ pub struct LocalTransport {
 
 impl LocalTransport {
     pub fn new(settings: Settings) -> Result<Self, Error> {
-        let storage = Storage::open(&settings.paths)?.with_signer(settings.signer)?;
+        let storage = Storage::open(&settings.paths, settings.signer)?;
         Ok(LocalTransport {
             storage: Arc::new(Mutex::new(storage)),
         })
@@ -399,15 +400,13 @@ impl LocalTransport {
                 let storage = self.storage.clone();
                 let hook = move || {
                     let storage = storage.lock().unwrap();
-                    storage.update_refs(&urn)?;
-
-                    // Ensure `rad/self` is present, set from default if not
-                    match storage.get_rad_self(&urn) {
-                        Ok(_) => Ok(()),
-                        Err(storage::Error::Git(e)) if is_not_found_err(&e) => {
-                            Ok(storage.set_rad_self(&urn, RadSelfSpec::Default)?)
-                        },
-                        Err(e) => Err(e.into()),
+                    Refs::update(&storage, &urn)?;
+                    let local_id = identities::local::load(&storage, &urn)?
+                        .or_else(|| identities::local::default(&storage))
+                        .transpose()?;
+                    match local_id {
+                        None => Err(Error::NoLocalIdentity),
+                        Some(local_id) => local_id.link(&storage, &urn),
                     }
                 };
 
@@ -423,16 +422,18 @@ impl LocalTransport {
         })
     }
 
-    fn guard_has_urn(&self, urn: &RadUrn) -> Result<(), Error> {
-        self.storage
+    fn guard_has_urn(&self, urn: &Urn) -> Result<(), Error> {
+        let have = self
+            .storage
             .lock()
             .unwrap()
             .has_urn(urn)
-            .map_err(Error::from)
-            .and_then(|have| {
-                have.then_some(())
-                    .ok_or_else(|| Error::NoSuchUrn(urn.clone()))
-            })
+            .map_err(Error::from)?;
+        if !have {
+            Err(Error::NoSuchUrn(urn.clone()))
+        } else {
+            Ok(())
+        }
     }
 
     fn visible_remotes(&self, urn: &RadUrn) -> Result<impl Iterator<Item = String>, Error> {

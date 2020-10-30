@@ -22,7 +22,7 @@ use git_ext::is_not_found_err;
 
 use super::{
     super::{
-        storage2::{self, Storage},
+        storage::{self, Storage},
         types::{namespace, Force, Reference, Single, SymbolicRef},
     },
     common,
@@ -58,7 +58,7 @@ where
         },
 
         Ok(None) => Ok(None),
-        Err(storage2::Error::Git(e)) if is_not_found_err(&e) => Ok(None),
+        Err(storage::Error::Git(e)) if is_not_found_err(&e) => Ok(None),
         Err(e) => Err(e.into()),
     }
 }
@@ -92,7 +92,7 @@ where
         },
 
         Ok(None) => Ok(None),
-        Err(storage2::Error::Git(e)) if is_not_found_err(&e) => Ok(None),
+        Err(storage::Error::Git(e)) if is_not_found_err(&e) => Ok(None),
         Err(e) => Err(e.into()),
     }
 }

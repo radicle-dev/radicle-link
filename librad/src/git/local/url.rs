@@ -16,30 +16,27 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    convert::TryFrom,
     fmt::{self, Display},
     str::FromStr,
 };
 
+use git_ext as ext;
+use multihash::Multihash;
 use thiserror::Error;
 
-use crate::{
-    hash::{self, Hash},
-    peer::{self, PeerId},
-    uri::{self, RadUrn},
-};
+use super::Urn;
+use crate::peer::{self, PeerId};
 
 #[derive(Clone)]
 pub struct LocalUrl {
-    pub repo: Hash,
+    pub urn: Urn,
     pub local_peer_id: PeerId,
 }
 
 impl LocalUrl {
-    pub fn from_urn(urn: RadUrn, local_peer_id: PeerId) -> Self {
-        Self {
-            repo: urn.id,
-            local_peer_id,
-        }
+    pub fn from_urn(urn: Urn, local_peer_id: PeerId) -> Self {
+        Self { urn, local_peer_id }
     }
 }
 
@@ -50,7 +47,7 @@ impl Display for LocalUrl {
             "{}://{}@{}.git",
             super::URL_SCHEME,
             self.local_peer_id,
-            self.repo
+            multibase::encode(multibase::Base::Base32Z, Multihash::from(&self.urn.id))
         )
     }
 }
@@ -68,7 +65,13 @@ pub enum ParseError {
     Url(#[from] url::ParseError),
 
     #[error(transparent)]
-    Hash(#[from] hash::ParseError),
+    Oid(#[from] ext::oid::FromMultihashError),
+
+    #[error(transparent)]
+    Multibase(#[from] multibase::Error),
+
+    #[error(transparent)]
+    Multihash(#[from] multihash::DecodeOwnedError),
 
     #[error(transparent)]
     Peer(#[from] peer::conversion::Error),
@@ -86,27 +89,23 @@ impl FromStr for LocalUrl {
             return Err(Self::Err::CannotBeABase);
         }
 
-        let repo = url
+        let host = url
             .host_str()
             .expect("we checked for cannot-be-a-base. qed")
-            .trim_end_matches(".git")
-            .parse()?;
+            .trim_end_matches(".git");
+        let bytes = multibase::decode(host).map(|(_base, bytes)| bytes)?;
+        let mhash = Multihash::from_bytes(bytes)?;
+        let oid = ext::Oid::try_from(mhash)?;
+        let urn = Urn::new(oid);
 
         let local_peer_id = url.username().parse()?;
 
-        Ok(Self {
-            repo,
-            local_peer_id,
-        })
+        Ok(Self { urn, local_peer_id })
     }
 }
 
-impl Into<RadUrn> for LocalUrl {
-    fn into(self) -> RadUrn {
-        RadUrn {
-            id: self.repo,
-            proto: uri::Protocol::Git,
-            path: uri::Path::empty(),
-        }
+impl Into<Urn> for LocalUrl {
+    fn into(self) -> Urn {
+        self.urn
     }
 }

@@ -23,7 +23,7 @@ use thiserror::Error;
 
 use super::{
     p2p::url::GitUrlRef,
-    storage2::{self, Storage},
+    storage::{self, Storage},
 };
 use crate::{peer::PeerId, signer::Signer};
 
@@ -36,7 +36,7 @@ pub enum Error {
     SelfReferential,
 
     #[error(transparent)]
-    Store(#[from] storage2::Error),
+    Store(#[from] storage::Error),
 
     #[error(transparent)]
     Git(#[from] git2::Error),
@@ -76,7 +76,7 @@ where
         // Remove default fetchspec, as it is almost always invalid (we compute
         // the fetchspecs ourselves). We also don't want libgit2 to prune the
         // remote.
-        // FIXME: go through `&mut storage2::Config`
+        // FIXME: go through `&mut storage::Config`
         let mut config = storage.as_raw().config()?;
         config.remove_multivar(&remote_name, ".*")?;
     }

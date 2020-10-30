@@ -21,7 +21,7 @@ use thiserror::Error;
 
 use super::{
     super::{
-        storage2::{self, config, Storage},
+        storage::{self, config, Storage},
         types::{namespace::Namespace, Force, NamespacedRef},
     },
     user,
@@ -41,7 +41,7 @@ pub enum Error {
     Identities(#[from] super::Error),
 
     #[error(transparent)]
-    Store(#[from] storage2::Error),
+    Store(#[from] storage::Error),
 
     #[error(transparent)]
     Config(#[from] config::Error),
@@ -96,7 +96,7 @@ impl LocalIdentity {
     ///
     /// That is, create a symref from `refs/namespaces/<urn>/rad/self` to
     /// `refs/namespaces/<local id>/rad/id`.
-    pub fn link<S>(&self, storage: &Storage<S>, from: &Urn) -> Result<(), storage2::Error>
+    pub fn link<S>(&self, storage: &Storage<S>, from: &Urn) -> Result<(), storage::Error>
     where
         S: Signer,
     {
@@ -107,7 +107,7 @@ impl LocalIdentity {
             )
             .create(storage.as_raw())
             .and(Ok(()))
-            .map_err(storage2::Error::from)
+            .map_err(storage::Error::from)
     }
 
     pub fn into_inner(self) -> VerifiedUser {

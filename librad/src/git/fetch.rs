@@ -31,7 +31,7 @@ use multihash::Multihash;
 use super::{
     p2p::url::GitUrl,
     refs::Refs,
-    storage2::{self, Storage},
+    storage::{self, Storage},
     types::{namespace::Namespace, AsRefspec, AsRemote, Force, Reference},
 };
 use crate::{
@@ -281,7 +281,7 @@ impl<S> CanFetch for Storage<S>
 where
     S: Signer,
 {
-    type Error = storage2::Error;
+    type Error = storage::Error;
     type Fetcher<'a> = DefaultFetcher<'a>;
 
     fn fetcher<'a, Addrs>(

@@ -19,3 +19,5 @@ pub mod transport;
 pub mod url;
 
 pub const URL_SCHEME: &str = "rad";
+
+use super::Urn;

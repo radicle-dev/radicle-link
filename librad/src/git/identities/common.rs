@@ -19,7 +19,7 @@ use git_ext::is_exists_err;
 use std_ext::result::ResultExt as _;
 
 use super::super::{
-    storage2::Storage,
+    storage::Storage,
     types::{namespace::Namespace, Force, NamespacedRef},
 };
 use crate::{identities::git::Urn, signer::Signer};

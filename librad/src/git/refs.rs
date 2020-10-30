@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::{
-    storage2::{self, Storage},
+    storage::{self, Storage},
     tracking,
     types::{namespace::Namespace, NamespacedRef},
 };
@@ -147,7 +147,7 @@ pub mod stored {
         Cjson(#[from] CjsonError),
 
         #[error(transparent)]
-        Store(#[from] storage2::Error),
+        Store(#[from] storage::Error),
 
         #[error(transparent)]
         Git(#[from] git2::Error),

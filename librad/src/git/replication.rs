@@ -29,7 +29,7 @@ use super::{
     fetch::{self, CanFetch as _},
     identities::{self, local::LocalIdentity},
     refs::{self, Refs},
-    storage2::{self, Storage},
+    storage::{self, Storage},
     tracking,
     types::{
         namespace::Namespace,
@@ -76,7 +76,7 @@ pub enum Error {
     Identities(#[from] identities::error::Error),
 
     #[error(transparent)]
-    Store(#[from] storage2::Error),
+    Store(#[from] storage::Error),
 }
 
 /// Attempt to fetch `urn` from `remote_peer`, optionally supplying

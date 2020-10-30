@@ -18,7 +18,7 @@
 use thiserror::Error;
 
 use super::{
-    super::{storage2, types::reference},
+    super::{storage, types::reference},
     local,
 };
 use crate::identities::{
@@ -42,10 +42,10 @@ pub enum Error {
     Verification(#[from] VerificationError),
 
     #[error(transparent)]
-    Config(#[from] storage2::config::Error),
+    Config(#[from] storage::config::Error),
 
     #[error(transparent)]
-    Storage(#[from] storage2::Error),
+    Storage(#[from] storage::Error),
 
     #[error(transparent)]
     Verify(#[from] identities::git::error::Verify),

@@ -15,19 +15,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod fetch;
+pub mod identities;
 pub mod include;
 pub mod local;
 pub mod p2p;
 pub mod refs;
-pub mod repo;
+pub mod replication;
 pub mod storage;
+pub mod tracking;
 pub mod trailer;
 pub mod types;
 
-pub mod fetch;
-pub mod identities;
-pub mod replication;
-pub mod storage2;
-pub mod tracking;
-
 mod sealed;
+
+pub use crate::identities::git::Urn;

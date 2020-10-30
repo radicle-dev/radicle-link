@@ -41,7 +41,6 @@ pub mod hash;
 pub mod identities;
 pub mod internal;
 pub mod keys;
-pub mod meta;
 pub mod net;
 pub mod paths;
 pub mod peer;
