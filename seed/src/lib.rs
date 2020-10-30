@@ -32,7 +32,6 @@ use thiserror::Error;
 use librad::{
     git,
     git_ext,
-    keys,
     meta::{self, entity, user::User},
     net::{
         discovery,
@@ -110,8 +109,6 @@ pub struct NodeConfig {
     pub mode: Mode,
     /// Radicle root path.
     pub root: Option<PathBuf>,
-    /// Signer.
-    pub signer: Signer,
 }
 
 impl Default for NodeConfig {
@@ -120,16 +117,19 @@ impl Default for NodeConfig {
             listen_addr: ([0, 0, 0, 0], 0).into(),
             mode: Mode::TrackEverything,
             root: None,
-            signer: Signer {
-                key: keys::SecretKey::new(),
-            },
         }
     }
 }
 
+/// Discovery type used by peer.
+type Discovery = discovery::Static<vec::IntoIter<(PeerId, SocketAddr)>, SocketAddr>;
+
 /// Seed node instance.
 pub struct Node {
+    /// Node configuration.
     config: NodeConfig,
+    /// Peer configuration.
+    peer_config: PeerConfig<Discovery, Signer>,
     /// Receiver end of user requests.
     requests: chan::UnboundedReceiver<Request>,
     /// Sender end of user requests.
@@ -138,14 +138,37 @@ pub struct Node {
 
 impl Node {
     /// Create a new seed node.
-    pub fn new(config: NodeConfig) -> Result<Self, Error> {
+    pub fn new(config: NodeConfig, signer: Signer) -> Result<Self, Error> {
         let (handle, requests) = chan::unbounded::<Request>();
+        let paths = if let Some(root) = &config.root {
+            paths::Paths::from_root(root)?
+        } else {
+            paths::Paths::new()?
+        };
+        let gossip_params = Default::default();
+        let seeds: Vec<(PeerId, SocketAddr)> = vec![];
+        let disco = discovery::Static::new(seeds);
+        let storage_config = Default::default();
+        let peer_config = PeerConfig {
+            signer,
+            paths,
+            listen_addr: config.listen_addr,
+            gossip_params,
+            disco,
+            storage_config,
+        };
 
         Ok(Node {
+            peer_config,
             config,
             handle,
             requests,
         })
+    }
+
+    /// Get the node's peer id.
+    pub fn peer_id(&self) -> PeerId {
+        PeerId::from_signer(&self.peer_config.signer)
     }
 
     /// Create a new handle.
@@ -156,26 +179,7 @@ impl Node {
     /// Run the seed node. This function runs indefinitely until a fatal error
     /// occurs.
     pub async fn run(self, mut transmit: chan::Sender<Event>) -> Result<(), Error> {
-        let paths = if let Some(root) = &self.config.root {
-            paths::Paths::from_root(root)?
-        } else {
-            paths::Paths::new()?
-        };
-        let gossip_params = Default::default();
-        let seeds: Vec<(PeerId, SocketAddr)> = vec![];
-        let disco = discovery::Static::new(seeds);
-        let storage_config = Default::default();
-        let config = PeerConfig {
-            signer: self.config.signer,
-            paths,
-            listen_addr: self.config.listen_addr,
-            gossip_params,
-            disco,
-            storage_config,
-        };
-
-        let peer = config.try_into_peer().await?;
-
+        let peer = self.peer_config.try_into_peer().await?;
         let (api, future) = peer.accept()?;
         let mut events = api.protocol().subscribe().await.fuse();
         let mut requests = self.requests;
