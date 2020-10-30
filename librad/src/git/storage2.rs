@@ -32,8 +32,10 @@ use super::types::{
 use crate::{identities::git::Identities, paths::Paths, peer::PeerId, signer::Signer};
 
 pub mod config;
+pub mod pool;
 
-use config::Config;
+pub use config::Config;
+pub use pool::{Pool, Pooled};
 
 // FIXME: should be at the crate root
 pub use crate::identities::git::Urn;
