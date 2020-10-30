@@ -61,11 +61,11 @@ use futures::{
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
 use git_ext::into_git_err;
 
+use super::{
+    header::{Header, SomeHeader},
+    url::{GitUrl, SomeGitUrl},
+};
 use crate::{
-    git::{
-        header::{Header, SomeHeader},
-        p2p::url::{GitUrl, SomeGitUrl},
-    },
     identities::git::Urn,
     peer::PeerId,
     uri::{self, RadUrn},

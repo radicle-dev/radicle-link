@@ -41,13 +41,11 @@ use git_ext::{into_io_err, RefLike, References, UPLOAD_PACK_HEADER};
 use tokio::process::{self, Command};
 use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
-use crate::{
-    git::{
-        header::{self, Header, SomeHeader},
-        types::namespace::{AsNamespace, Namespace},
-    },
-    paths::Paths,
+use super::{
+    super::types::namespace::{AsNamespace, Namespace},
+    header::{self, Header, SomeHeader},
 };
+use crate::paths::Paths;
 
 #[derive(Clone)]
 pub struct GitServer {
