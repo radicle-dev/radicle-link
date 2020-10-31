@@ -24,36 +24,7 @@ use std::{
 use git2::transport::Service as GitService;
 use thiserror::Error;
 
-use crate::{
-    identities::git::Urn,
-    peer::{self, PeerId},
-    uri::RadUrn,
-};
-
-// Stop-gap until we got rid of RadUrn
-pub enum SomeHeader {
-    Legacy(Header<RadUrn>),
-    NuSkool(Header<Urn>),
-}
-
-impl FromStr for SomeHeader {
-    type Err = ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse()
-            .map(Self::Legacy)
-            .or_else(|_| s.parse().map(Self::NuSkool))
-    }
-}
-
-impl Display for SomeHeader {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Legacy(hdr) => Display::fmt(hdr, f),
-            Self::NuSkool(hdr) => Display::fmt(hdr, f),
-        }
-    }
-}
+use crate::peer::{self, PeerId};
 
 #[derive(Debug, PartialEq)]
 pub struct Header<Urn> {
@@ -202,24 +173,16 @@ impl Deref for Service {
 mod tests {
     use super::*;
 
-    use crate::{
-        hash::Hash,
-        keys::SecretKey,
-        uri::{self, RadUrn},
-    };
+    use crate::{identities::git::Urn, keys::SecretKey};
 
     #[test]
     fn test_str_roundtrip() {
         let hdr = Header::new(
             GitService::UploadPackLs,
-            RadUrn {
-                id: Hash::hash(b"linux"),
-                proto: uri::Protocol::Git,
-                path: uri::Path::empty(),
-            },
+            Urn::new(ext::Oid::from(git2::Oid::zero())),
             PeerId::from(SecretKey::new()),
         );
 
-        assert_eq!(hdr, hdr.to_string().parse::<Header<RadUrn>>().unwrap())
+        assert_eq!(hdr, hdr.to_string().parse::<Header<Urn>>().unwrap())
     }
 }

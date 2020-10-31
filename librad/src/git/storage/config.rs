@@ -32,7 +32,6 @@ use crate::{
     keys::SecretKey,
     peer::{self, PeerId},
     signer::Signer,
-    uri::{self, RadUrn},
 };
 
 const CONFIG_USER_NAME: &str = "user.name";

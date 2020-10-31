@@ -61,15 +61,8 @@ use futures::{
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
 use git_ext::into_git_err;
 
-use super::{
-    header::{Header, SomeHeader},
-    url::{GitUrl, SomeGitUrl},
-};
-use crate::{
-    identities::git::Urn,
-    peer::PeerId,
-    uri::{self, RadUrn},
-};
+use super::{header::Header, url::GitUrl};
+use crate::{identities::git::Urn, peer::PeerId};
 
 type Factories = Arc<RwLock<HashMap<PeerId, Weak<Box<dyn GitStreamFactory>>>>>;
 
@@ -171,40 +164,16 @@ impl SmartSubtransport for RadTransport {
         url: &str,
         service: Service,
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        let url: SomeGitUrl = url.parse().map_err(into_git_err)?;
-        let (header, stream) = match url {
-            SomeGitUrl::Legacy(GitUrl {
-                local_peer,
-                remote_peer,
-                repo,
-                addr_hints,
-            }) => {
-                let stream = self
-                    .open_stream(&local_peer, &remote_peer, &addr_hints)
-                    .ok_or_else(|| into_git_err(format!("No connection to {}", remote_peer)))?;
-                let header = SomeHeader::Legacy(Header::new(
-                    service,
-                    RadUrn::new(repo, uri::Protocol::Git, uri::Path::empty()),
-                    remote_peer,
-                ));
-
-                Ok::<_, git2::Error>((header, stream))
-            },
-
-            SomeGitUrl::NuSkool(GitUrl {
-                local_peer,
-                remote_peer,
-                repo,
-                addr_hints,
-            }) => {
-                let stream = self
-                    .open_stream(&local_peer, &remote_peer, &addr_hints)
-                    .ok_or_else(|| into_git_err(format!("No connection to {}", remote_peer)))?;
-                let header = SomeHeader::NuSkool(Header::new(service, Urn::new(repo), remote_peer));
-
-                Ok::<_, git2::Error>((header, stream))
-            },
-        }?;
+        let GitUrl {
+            local_peer,
+            remote_peer,
+            repo,
+            addr_hints,
+        } = url.parse().map_err(into_git_err)?;
+        let stream = self
+            .open_stream(&local_peer, &remote_peer, &addr_hints)
+            .ok_or_else(|| into_git_err(format!("No connection to {}", remote_peer)))?;
+        let header = Header::new(service, Urn::new(repo), remote_peer);
 
         Ok(Box::new(RadSubTransport {
             header: Some(header),
@@ -218,7 +187,7 @@ impl SmartSubtransport for RadTransport {
 }
 
 struct RadSubTransport {
-    header: Option<SomeHeader>,
+    header: Option<Header<Urn>>,
     stream: Box<dyn GitStream>,
 }
 

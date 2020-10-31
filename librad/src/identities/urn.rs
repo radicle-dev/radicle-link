@@ -106,6 +106,60 @@ impl<R> From<R> for Urn<R> {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum FromRefLikeError {
+    #[error("missing {0}")]
+    Missing(&'static str),
+
+    #[error("must be an absolute ref, ie. start with `refs/namespaces`")]
+    Absolute(#[from] std::path::StripPrefixError),
+
+    #[error(transparent)]
+    OidFromMultihash(#[from] ext::oid::FromMultihashError),
+
+    #[error(transparent)]
+    Path(#[from] ext::reference::name::Error),
+
+    #[error(transparent)]
+    Encoding(#[from] multibase::Error),
+
+    #[error(transparent)]
+    Multihash(#[from] multihash::DecodeOwnedError),
+
+    #[error("invalid utf8")]
+    Utf8,
+}
+
+// FIXME: For some inexplicable reason, rustc rejects an impl for Urn<R>,
+// claiming that the blanket impl `impl<T, U> TryFrom<U> for T where U: Into<T>`
+// overlaps. We absolutely do not have `Into<Urn<R>> for ext::RefLike`.
+impl TryFrom<ext::RefLike> for Urn<ext::Oid> {
+    type Error = FromRefLikeError;
+
+    fn try_from(refl: ext::RefLike) -> Result<Self, Self::Error> {
+        let mut suf = refl.strip_prefix("refs/namespaces/")?.iter();
+        let id = suf
+            .next()
+            .ok_or(Self::Error::Missing("namespace"))
+            .and_then(|ns| {
+                let ns = ns.to_str().ok_or(Self::Error::Utf8)?;
+                let bytes = multibase::decode(ns).map(|(_base, bytes)| bytes)?;
+                let mhash = Multihash::from_bytes(bytes)?;
+                Ok(ext::Oid::try_from(mhash)?)
+            })?;
+        let path = {
+            let path = suf.as_path();
+            if path.as_os_str().is_empty() {
+                Ok(None)
+            } else {
+                ext::RefLike::try_from(path).map(Some)
+            }
+        }?;
+
+        Ok(Self { id, path })
+    }
+}
+
 impl<R> From<Urn<R>> for ext::RefLike
 where
     R: HasProtocol,

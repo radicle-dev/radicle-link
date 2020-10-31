@@ -29,16 +29,19 @@ use futures::{
     stream::StreamExt,
 };
 use futures_timer::Delay;
+use git_ext as ext;
 use thiserror::Error;
 use tokio::task::spawn_blocking;
-use tracing_futures::Instrument as _;
 
 use crate::{
     git::{
         self,
         p2p::{server::GitServer, transport::GitStreamFactory},
+        replication,
         storage,
+        tracking,
     },
+    identities::git::Urn,
     internal::channel::Fanout,
     keys::AsPKCS8,
     net::{
@@ -51,7 +54,6 @@ use crate::{
     paths::Paths,
     peer::{Originates, PeerId},
     signer::Signer,
-    uri::{self, RadUrl, RadUrn},
 };
 
 pub mod types;
@@ -63,6 +65,12 @@ pub use types::*;
 pub enum PeerStorageError {
     #[error("already have {0}")]
     KnownObject(git2::Oid),
+
+    #[error(transparent)]
+    Tracking(#[from] tracking::Error),
+
+    #[error(transparent)]
+    Replication(#[from] replication::Error),
 
     #[error(transparent)]
     Store(#[from] git::storage::Error),
@@ -230,52 +238,50 @@ where
     /// thus far. This is to prevent callers from polling the stream
     /// indefinitely, even though no more responses can be expected. A realistic
     /// timeout value is in the order of 10s of seconds.
-    pub fn providers(
+    #[tracing::instrument(skip(self))]
+    pub async fn providers(
         &self,
-        urn: RadUrn,
+        urn: Urn,
         timeout: Duration,
-    ) -> impl Future<Output = impl futures::Stream<Item = PeerInfo<IpAddr>>> {
-        let span = tracing::trace_span!("PeerApi::providers", urn = %urn);
+    ) -> impl futures::Stream<Item = PeerInfo<IpAddr>> {
         let protocol = self.protocol.clone();
-        let target_urn = urn.clone();
 
-        async move {
-            let providers = futures::stream::select(
-                futures::stream::once(
-                    async move {
-                        Delay::new(timeout).await;
-                        Err("timed out")
-                    }
-                    .boxed(),
-                ),
-                protocol
-                    .subscribe()
-                    .await
-                    .filter_map(move |evt| {
-                        future::ready(match evt {
-                            ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has {
-                                provider,
-                                val,
-                            })) if val.urn == urn => Some(provider),
-                            _ => None,
-                        })
-                    })
-                    .map(Ok),
-            )
-            .take_while(|x| future::ready(x.is_ok()))
-            .map(Result::unwrap);
-
+        let urn2 = urn.clone();
+        let providers = futures::stream::select(
+            futures::stream::once(
+                async move {
+                    Delay::new(timeout).await;
+                    Err("timed out")
+                }
+                .boxed(),
+            ),
             protocol
-                .query(Gossip {
-                    urn: target_urn,
-                    rev: None,
-                    origin: None,
+                .subscribe()
+                .await
+                .filter_map(move |evt| {
+                    future::ready(match evt {
+                        ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val }))
+                            if val.urn == urn2 =>
+                        {
+                            Some(provider)
+                        },
+                        _ => None,
+                    })
                 })
-                .instrument(span)
-                .await;
+                .map(Ok),
+        )
+        .take_while(|x| future::ready(x.is_ok()))
+        .map(Result::unwrap);
 
-            providers
-        }
+        protocol
+            .query(Gossip {
+                urn,
+                rev: None,
+                origin: None,
+            })
+            .await;
+
+        providers
     }
 
     pub fn paths(&self) -> &Paths {
@@ -410,25 +416,21 @@ where
     async fn git_fetch<'a>(
         &'a self,
         from: PeerId,
-        urn: Either<RadUrn, Originates<RadUrn>>,
+        urn: Either<Urn, Originates<Urn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> Result<(), PeerStorageError> {
         let git = self.inner.get().await?;
         let urn = urn_context(&git.peer_id(), urn);
-        let head = head.into();
+        let head = head.into().map(ext::Oid::from);
 
         spawn_blocking(move || {
             if let Some(head) = head {
                 if git.has_commit(&urn, head)? {
-                    return Err(PeerStorageError::KnownObject(head));
+                    return Err(PeerStorageError::KnownObject(*head));
                 }
             }
 
-            let url = RadUrl {
-                authority: from,
-                urn,
-            };
-            git.fetch_repo(url, None).map_err(|e| e.into())
+            Ok(replication::replicate(&git, None, urn, from, None)?)
         })
         .await
         .expect("`PeerStorage::git_fetch` panicked")
@@ -437,12 +439,12 @@ where
     /// Determine if we have the given object locally
     async fn git_has(
         &self,
-        urn: Either<RadUrn, Originates<RadUrn>>,
+        urn: Either<Urn, Originates<Urn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
         let git = self.inner.get().await.unwrap();
         let urn = urn_context(&git.peer_id(), urn);
-        let head = head.into();
+        let head = head.into().map(ext::Oid::from);
         spawn_blocking(move || match head {
             None => git.has_urn(&urn).unwrap_or(false),
             Some(head) => git.has_commit(&urn, head).unwrap_or(false),
@@ -451,42 +453,33 @@ where
         .expect("`PeerStorage::git_has` panicked")
     }
 
-    async fn is_tracked(&self, urn: RadUrn, peer: PeerId) -> Result<bool, PeerStorageError> {
+    async fn is_tracked(&self, urn: Urn, peer: PeerId) -> Result<bool, PeerStorageError> {
         let git = self.inner.get().await?;
-        Ok(spawn_blocking(move || git.is_tracked(&urn, &peer))
-            .await
-            .expect("`PeerStorage::is_tracked` panicked")?)
+        Ok(
+            spawn_blocking(move || tracking::is_tracked(&git, &urn, peer))
+                .await
+                .expect("`PeerStorage::is_tracked` panicked")?,
+        )
     }
 }
 
-/// If applicable, map the [`uri::Path`] of the given [`RadUrn`] to
+/// If applicable, map the `path` of the given [`Urn`] to
 /// `refs/remotes/<origin>/<path>`
-fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
+fn urn_context(local_peer_id: &PeerId, urn: Either<Urn, Originates<Urn>>) -> Urn {
     match urn {
         Either::Left(urn) => urn,
-        Either::Right(Originates { from, value }) => {
-            let urn = value;
-
+        Either::Right(Originates { from, value: urn }) => {
             if from == *local_peer_id {
-                return urn;
-            }
-
-            let path = urn
-                .path
-                .strip_prefix("refs/")
-                .map(|tail| {
-                    uri::Path::parse(tail)
-                        .expect("`Path` is still valid after stripping a valid prefix")
-                })
-                .unwrap_or(urn.path);
-
-            let mut remote =
-                uri::Path::parse(format!("refs/remotes/{}", from)).expect("Known valid path");
-            remote.push(path);
-
-            RadUrn {
-                path: remote,
-                ..urn
+                urn
+            } else {
+                let mut path = reflike!("refs/remotes").join(from);
+                if let Some(urn_path) = urn.path {
+                    path = path.join(urn_path);
+                }
+                Urn {
+                    path: Some(path),
+                    ..urn
+                }
             }
         },
     }
@@ -499,98 +492,83 @@ where
 {
     type Update = Gossip;
 
+    #[tracing::instrument(level = "debug", skip(self))]
     async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult {
-        let span = tracing::info_span!("Peer::LocalStorage::put");
-        let _guard = span.enter();
-
-        match has.urn.proto {
-            uri::Protocol::Git => {
-                let peer_id = has.origin.unwrap_or_else(|| provider);
-                let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
-                    Ok(b) => b,
-                    Err(e) => {
-                        tracing::error!(err = %e, "Git::Storage::is_tracked error");
-                        return PutResult::Error;
-                    },
-                };
-                let res = match has.rev {
-                    // TODO: may need to fetch eagerly if we tracked while offline (#141)
-                    Some(Rev::Git(head)) if is_tracked => {
-                        let res = {
-                            let this = self.clone();
-                            let has = has.clone();
-                            let urn = match has.origin {
-                                Some(origin) => Either::Right(Originates {
-                                    from: origin,
-                                    value: has.urn,
-                                }),
-                                None => Either::Left(has.urn),
-                            };
-                            this.git_fetch(provider, urn, head).await
-                        };
-
-                        match res {
-                            Ok(()) => {
-                                if self.ask(has.clone()).await {
-                                    PutResult::Applied
-                                } else {
-                                    tracing::warn!(
-                                        provider = %provider,
-                                        has.origin = ?has.origin,
-                                        has.urn = %has.urn,
-                                        "Provider announced non-existent rev"
-                                    );
-                                    PutResult::Stale
-                                }
-                            },
-                            Err(e) => match e {
-                                PeerStorageError::KnownObject(_) => PutResult::Stale,
-                                PeerStorageError::Store(storage::Error::NoSuchUrn(_)) => {
-                                    PutResult::Uninteresting
-                                },
-                                e => {
-                                    tracing::error!(err = %e, "Fetch error");
-                                    PutResult::Error
-                                },
-                            },
-                        }
-                    },
-                    // The update is uninteresting if it refers to no revision
-                    // or if its originated by a peer we are not tracking.
-                    _ => PutResult::Uninteresting,
-                };
-
-                self.subscribers
-                    .emit(PeerEvent::GossipFetch(FetchInfo {
-                        provider,
-                        gossip: has,
-                        result: res,
-                    }))
-                    .await;
-
-                res
+        let peer_id = has.origin.unwrap_or_else(|| provider);
+        let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::error!(err = %e, "Git::Storage::is_tracked error");
+                return PutResult::Error;
             },
-        }
-    }
-
-    async fn ask(&self, want: Self::Update) -> bool {
-        let span = tracing::info_span!("Peer::LocalStorage::ask");
-        let _guard = span.enter();
-
-        match want.urn.proto {
-            uri::Protocol::Git => {
-                self.git_has(
-                    match want.origin {
+        };
+        let res = match has.rev {
+            // TODO: may need to fetch eagerly if we tracked while offline (#141)
+            Some(Rev::Git(head)) if is_tracked => {
+                let res = {
+                    let this = self.clone();
+                    let has = has.clone();
+                    let urn = match has.origin {
                         Some(origin) => Either::Right(Originates {
                             from: origin,
-                            value: want.urn,
+                            value: has.urn,
                         }),
-                        None => Either::Left(want.urn),
+                        None => Either::Left(has.urn),
+                    };
+                    this.git_fetch(provider, urn, head).await
+                };
+
+                match res {
+                    Ok(()) => {
+                        if self.ask(has.clone()).await {
+                            PutResult::Applied
+                        } else {
+                            tracing::warn!(
+                                provider = %provider,
+                                has.origin = ?has.origin,
+                                has.urn = %has.urn,
+                                "Provider announced non-existent rev"
+                            );
+                            PutResult::Stale
+                        }
                     },
-                    want.rev.map(|Rev::Git(head)| head),
-                )
-                .await
+                    Err(e) => match e {
+                        PeerStorageError::KnownObject(_) => PutResult::Stale,
+                        e => {
+                            tracing::error!(err = %e, "Fetch error");
+                            PutResult::Error
+                        },
+                    },
+                }
             },
-        }
+            // The update is uninteresting if it refers to no revision
+            // or if its originated by a peer we are not tracking.
+            _ => PutResult::Uninteresting,
+        };
+
+        self.subscribers
+            .emit(PeerEvent::GossipFetch(FetchInfo {
+                provider,
+                gossip: has,
+                result: res,
+            }))
+            .await;
+
+        res
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    async fn ask(&self, want: Self::Update) -> bool {
+        self.git_has(
+            match want.origin {
+                Some(origin) => Either::Right(Originates {
+                    from: origin,
+                    value: want.urn,
+                }),
+                None => Either::Left(want.urn),
+            },
+            want.rev.map(|Rev::Git(head)| head),
+        )
+        .await
     }
 }

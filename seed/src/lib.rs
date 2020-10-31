@@ -30,9 +30,13 @@ use futures::{channel::mpsc as chan, select, sink::SinkExt as _, stream::StreamE
 use thiserror::Error;
 
 use librad::{
-    git,
+    git::{
+        identities::{self, SomeIdentity, Urn, User},
+        replication,
+        storage,
+        tracking,
+    },
     keys,
-    meta::{self, entity, user::User},
     net::{
         discovery,
         gossip,
@@ -42,7 +46,6 @@ use librad::{
     },
     paths,
     peer::PeerId,
-    uri::RadUrn,
 };
 
 pub use crate::{
@@ -55,17 +58,26 @@ pub use crate::{
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
+    #[error("unable to resolve URN {0}")]
+    NoSuchUrn(Urn),
+
     #[error(transparent)]
     Api(#[from] peer::ApiError),
 
     #[error(transparent)]
-    Storage(#[from] git::storage::Error),
+    Storage(#[from] storage::Error),
+
+    #[error(transparent)]
+    Tracking(#[from] tracking::Error),
+
+    #[error(transparent)]
+    Identities(#[from] identities::Error),
+
+    #[error(transparent)]
+    Replication(#[from] replication::Error),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
-
-    #[error(transparent)]
-    Git(#[from] git::repo::Error),
 
     #[error(transparent)]
     Bootstrap(#[from] peer::BootstrapError),
@@ -88,12 +100,12 @@ pub enum Mode {
     /// Track everything from these peers, and nothing else.
     TrackPeers(HashSet<PeerId>),
     /// Track the specified URNs.
-    TrackUrns(HashSet<RadUrn>),
+    TrackUrns(HashSet<Urn>),
 }
 
 impl Mode {
     /// Returns whether or not a given peer/URN pair should be tracked or not.
-    fn is_trackable(&self, peer: &PeerId, urn: &RadUrn) -> bool {
+    fn is_trackable(&self, peer: &PeerId, urn: &Urn) -> bool {
         match self {
             Mode::TrackEverything => true,
             Mode::TrackUrns(ref urns) => urns.contains(urn),
@@ -242,7 +254,6 @@ impl Node {
                     // Attempt to track, but keep going if it fails.
                     if Node::track_project(&api, urn, &provider).await.is_ok() {
                         let event = Event::project_tracked(urn.clone(), *peer_id, &api).await?;
-
                         transmit.send(event).await.ok();
                     }
                 }
@@ -266,11 +277,10 @@ impl Node {
     /// Attempt to track a project.
     async fn track_project(
         api: &PeerApi<Signer>,
-        urn: &RadUrn,
+        urn: &Urn,
         peer_info: &PeerInfo<std::net::IpAddr>,
     ) -> Result<(), Error> {
         let peer_id = peer_info.peer_id;
-        let url = urn.clone().into_rad_url(peer_id);
         let port = peer_info.advertised_info.listen_port;
         let addr_hints = peer_info
             .seen_addrs
@@ -281,9 +291,10 @@ impl Node {
         let result = {
             let urn = urn.clone();
             api.with_storage(move |storage| {
-                storage
-                    .clone_repo::<meta::project::ProjectInfo, _>(url, addr_hints)
-                    .and_then(|_| storage.track(&urn, &peer_id))
+                replication::replicate(&storage, None, urn.clone(), peer_id, addr_hints)?;
+                tracking::track(&storage, &urn, peer_id)?;
+
+                Ok::<_, Error>(())
             })
         }
         .await
@@ -323,7 +334,6 @@ impl Node {
                         if Node::track_project(&api, urn, &peer).await.is_ok() {
                             let event =
                                 Event::project_tracked(urn.clone(), peer.peer_id, api).await?;
-
                             transmit.send(event).await.ok();
 
                             break;
@@ -345,25 +355,23 @@ impl Node {
 }
 
 /// Guess a user given a peer id.
-async fn guess_user(
-    peer: PeerId,
-    api: &PeerApi<Signer>,
-) -> Result<Option<User<entity::Draft>>, Error> {
+async fn guess_user(peer: PeerId, api: &PeerApi<Signer>) -> Result<Option<User>, Error> {
     api.with_storage(move |s| {
-        let metas = s.all_metadata()?;
+        let users = identities::any::list(&s)?.filter_map(|res| {
+            res.map(|id| match id {
+                SomeIdentity::User(user) => Some(user),
+                _ => None,
+            })
+            .transpose()
+        });
 
-        for meta in metas {
-            let meta = meta?;
-            let repo = s.open_repo(meta.urn())?;
-
-            for remote in repo.tracked()? {
-                if remote == peer {
-                    let user = repo.get_rad_self_of(remote)?;
-
-                    return Ok(Some(user));
-                }
+        for user in users {
+            let user = user?;
+            if user.doc.delegations.contains(&peer) {
+                return Ok(Some(user));
             }
         }
+
         Ok(None)
     })
     .await?

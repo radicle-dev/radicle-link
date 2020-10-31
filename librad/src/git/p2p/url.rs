@@ -27,27 +27,9 @@ use thiserror::Error;
 use url::Url;
 
 use crate::{
-    hash::Hash,
-    identities::{self, urn::Urn},
+    identities::urn::Urn,
     peer::{self, PeerId},
-    uri::{self, RadUrl, RadUrlRef, RadUrn},
 };
-
-// Stop-gap until we got rid of RadUrn
-pub enum SomeGitUrl {
-    Legacy(GitUrl<Hash>),
-    NuSkool(GitUrl<identities::git::Revision>),
-}
-
-impl FromStr for SomeGitUrl {
-    type Err = ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse()
-            .map(Self::Legacy)
-            .or_else(|_| s.parse().map(Self::NuSkool))
-    }
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GitUrl<R> {
@@ -55,36 +37,6 @@ pub struct GitUrl<R> {
     pub remote_peer: PeerId,
     pub addr_hints: Vec<SocketAddr>,
     pub repo: R,
-}
-
-impl GitUrl<Hash> {
-    pub fn from_rad_url<Addrs>(url: RadUrl, local_peer: PeerId, addrs: Addrs) -> Self
-    where
-        Addrs: IntoIterator<Item = SocketAddr>,
-    {
-        Self::from_rad_urn(url.urn, local_peer, url.authority, addrs)
-    }
-
-    pub fn from_rad_urn<Addrs>(
-        urn: RadUrn,
-        local_peer: PeerId,
-        remote_peer: PeerId,
-        addrs: Addrs,
-    ) -> Self
-    where
-        Addrs: IntoIterator<Item = SocketAddr>,
-    {
-        Self {
-            local_peer,
-            remote_peer,
-            addr_hints: addrs.into_iter().collect(),
-            repo: urn.id,
-        }
-    }
-
-    pub fn into_rad_url(self) -> RadUrl {
-        self.into()
-    }
 }
 
 impl<R> GitUrl<R> {
@@ -185,66 +137,12 @@ where
     }
 }
 
-impl Into<RadUrl> for GitUrl<Hash> {
-    fn into(self) -> RadUrl {
-        RadUrl {
-            authority: self.remote_peer,
-            urn: RadUrn {
-                id: self.repo,
-                proto: uri::Protocol::Git,
-                path: uri::Path::empty(),
-            },
-        }
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct GitUrlRef<'a, R> {
     pub local_peer: &'a PeerId,
     pub remote_peer: &'a PeerId,
     pub addr_hints: &'a [SocketAddr],
     pub repo: &'a R,
-}
-
-impl<'a> GitUrlRef<'a, Hash> {
-    pub fn from_rad_url<Addrs>(
-        url: &'a RadUrl,
-        local_peer: &'a PeerId,
-        addr_hints: &'a Addrs,
-    ) -> Self
-    where
-        Addrs: AsRef<[SocketAddr]>,
-    {
-        Self::from_rad_urn(&url.urn, local_peer, &url.authority, addr_hints)
-    }
-
-    pub fn from_rad_url_ref<Addrs>(
-        url: RadUrlRef<'a>,
-        local_peer: &'a PeerId,
-        addr_hints: &'a Addrs,
-    ) -> Self
-    where
-        Addrs: AsRef<[SocketAddr]>,
-    {
-        Self::from_rad_urn(url.urn, local_peer, &url.authority, addr_hints)
-    }
-
-    pub fn from_rad_urn<Addrs>(
-        urn: &'a RadUrn,
-        local_peer: &'a PeerId,
-        remote_peer: &'a PeerId,
-        addr_hints: &'a Addrs,
-    ) -> Self
-    where
-        Addrs: AsRef<[SocketAddr]>,
-    {
-        Self {
-            local_peer,
-            remote_peer,
-            addr_hints: addr_hints.as_ref(),
-            repo: &urn.id,
-        }
-    }
 }
 
 impl<'a, R> GitUrlRef<'a, R>
@@ -333,7 +231,7 @@ mod tests {
                     0,
                 )),
             ],
-            repo: Hash::hash(b"leboeuf"),
+            repo: identities::git::Revision::from(git2::Oid::zero()),
         };
 
         str_roundtrip(url)

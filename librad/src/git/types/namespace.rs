@@ -15,17 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    convert::TryFrom,
-    fmt::{self, Display},
-};
+use std::fmt::{self, Display};
 
 use git_ext as ext;
 use multihash::Multihash;
 
 use crate::{
     git::sealed,
-    hash::Hash,
     identities::urn::{self, Urn},
 };
 
@@ -34,26 +30,6 @@ pub trait AsNamespace: Into<ext::RefLike> + sealed::Sealed {
         self.into()
     }
 }
-
-pub type Legacy = Hash;
-
-impl From<Legacy> for ext::RefLike {
-    fn from(hash: Legacy) -> Self {
-        Self::try_from(hash.to_string()).unwrap()
-    }
-}
-
-impl From<&Legacy> for ext::RefLike {
-    fn from(hash: &Legacy) -> Self {
-        Self::try_from(hash.to_string()).unwrap()
-    }
-}
-
-impl AsNamespace for Legacy {}
-impl AsNamespace for &Legacy {}
-
-impl sealed::Sealed for Legacy {}
-impl sealed::Sealed for &Legacy {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Namespace<R>(Urn<R>);

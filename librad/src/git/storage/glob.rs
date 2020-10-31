@@ -35,16 +35,16 @@ impl Pattern for globset::GlobSet {
     }
 }
 
-#[derive(Debug)]
-pub struct FromRefspec(globset::GlobMatcher);
+#[derive(Clone, Debug)]
+pub struct RefspecMatcher(globset::GlobMatcher);
 
-impl From<ext::RefspecPattern> for FromRefspec {
+impl From<ext::RefspecPattern> for RefspecMatcher {
     fn from(pat: ext::RefspecPattern) -> Self {
         Self(globset::Glob::new(pat.as_str()).unwrap().compile_matcher())
     }
 }
 
-impl Pattern for FromRefspec {
+impl Pattern for RefspecMatcher {
     fn matches<P: AsRef<Path>>(&self, path: P) -> bool {
         self.0.is_match(path)
     }

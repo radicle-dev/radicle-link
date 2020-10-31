@@ -37,7 +37,6 @@ pub extern crate radicle_keystore as keystore;
 pub extern crate radicle_std_ext as std_ext;
 
 pub mod git;
-pub mod hash;
 pub mod identities;
 pub mod internal;
 pub mod keys;
@@ -45,7 +44,6 @@ pub mod net;
 pub mod paths;
 pub mod peer;
 pub mod signer;
-pub mod uri;
 
 // Re-exports
 pub use radicle_macros::*;

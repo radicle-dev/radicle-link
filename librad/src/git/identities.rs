@@ -23,4 +23,5 @@ pub mod user;
 
 pub(super) mod common;
 
+pub use crate::identities::git::*;
 pub use error::Error;

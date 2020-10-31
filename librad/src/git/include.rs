@@ -23,16 +23,15 @@ use std::{
 };
 
 use git_ext as ext;
+use multihash::Multihash;
 use tempfile::NamedTempFile;
 
-use crate::{
-    git::{
-        local::url::LocalUrl,
-        types::{remote::Remote, AsRefspec, FlatRef, Force},
-    },
-    meta::user::User,
-    peer::PeerId,
+use super::{
+    identities::user::User,
+    local::url::LocalUrl,
+    types::{remote::Remote, AsRefspec, FlatRef, Force},
 };
+use crate::peer::PeerId;
 
 /// Config key to reference generated include files in working copies.
 pub const GIT_CONFIG_PATH_KEY: &str = "include.path";
@@ -121,7 +120,10 @@ impl<Path> Include<Path> {
         self.path
             .as_ref()
             .to_path_buf()
-            .join(self.local_url.repo.to_string())
+            .join(multibase::encode(
+                multibase::Base::Base32Z,
+                Multihash::from(self.local_url.urn.id),
+            ))
             .with_extension("inc")
     }
 
@@ -130,13 +132,18 @@ impl<Path> Include<Path> {
     ///
     /// The tracked users are expected to be retrieved by talking to the
     /// [`crate::git::storage::Storage`].
-    pub fn from_tracked_users<S>(
+    pub fn from_tracked_users(
         path: Path,
         local_url: LocalUrl,
-        tracked: impl Iterator<Item = (User<S>, PeerId)>,
+        tracked: impl Iterator<Item = (User, PeerId)>,
     ) -> Self {
         let remotes = tracked
-            .map(|(user, peer)| Remote::new(local_url.clone(), format!("{}@{}", user.name(), peer)))
+            .map(|(user, peer)| {
+                Remote::new(
+                    local_url.clone(),
+                    format!("{}@{}", user.doc.payload.subject.name, peer),
+                )
+            })
             .collect();
         Self {
             remotes,

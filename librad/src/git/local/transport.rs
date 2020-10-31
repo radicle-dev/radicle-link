@@ -17,6 +17,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    convert::TryFrom,
     io::{self, Cursor, Read, Write},
     panic::{self, UnwindSafe},
     path::PathBuf,
@@ -27,17 +28,20 @@ use std::{
 };
 
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
-use git_ext::{into_git_err, is_not_found_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
+use git_ext::{self as ext, into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
 use thiserror::Error;
 
 use super::{
     super::{
-        refs::Refs,
-        storage::{self, RadSelfSpec, Storage},
+        identities,
+        refs::{self, Refs},
+        storage::{self, Storage},
+        types::namespace::Namespace,
+        Urn,
     },
     url::LocalUrl,
 };
-use crate::{paths::Paths, peer::PeerId, signer::BoxedSigner, uri::RadUrn};
+use crate::{paths::Paths, peer::PeerId, signer::BoxedSigner};
 
 lazy_static! {
     static ref SETTINGS: Arc<RwLock<HashMap<PeerId, SettingsInternal>>> =
@@ -264,6 +268,12 @@ pub enum Error {
     Child(ExitStatus),
 
     #[error(transparent)]
+    Refs(#[from] refs::stored::Error),
+
+    #[error(transparent)]
+    LocalId(#[from] identities::local::Error),
+
+    #[error(transparent)]
     Git(#[from] git2::Error),
 
     #[error(transparent)]
@@ -400,13 +410,18 @@ impl LocalTransport {
                 let storage = self.storage.clone();
                 let hook = move || {
                     let storage = storage.lock().unwrap();
+
+                    // Update `rad/signed_refs`
                     Refs::update(&storage, &urn)?;
-                    let local_id = identities::local::load(&storage, &urn)?
-                        .or_else(|| identities::local::default(&storage))
+
+                    // Ensure we have a `rad/self`
+                    let local_id = identities::local::load(&storage, &urn)
+                        .transpose()
+                        .or_else(|| identities::local::default(&storage).transpose())
                         .transpose()?;
                     match local_id {
                         None => Err(Error::NoLocalIdentity),
-                        Some(local_id) => local_id.link(&storage, &urn),
+                        Some(local_id) => Ok(local_id.link(&storage, &urn)?),
                     }
                 };
 
@@ -436,16 +451,34 @@ impl LocalTransport {
         }
     }
 
-    fn visible_remotes(&self, urn: &RadUrn) -> Result<impl Iterator<Item = String>, Error> {
-        const GLOBS: &[&str] = &["refs/remotes/*/heads/*", "refs/remotes/*/tags/*"];
+    fn visible_remotes(&self, urn: &Urn) -> Result<impl Iterator<Item = ext::RefLike>, Error> {
+        let glob = globset::Glob::new(&format!(
+            "{}/*/{{heads, tags}}/*",
+            reflike!("refs/namespaces")
+                .join(Namespace::from(urn))
+                .join(reflike!("refs/remotes"))
+        ))
+        .unwrap()
+        .compile_matcher();
 
-        self.storage
+        let remotes = self
+            .storage
             .lock()
             .unwrap()
-            .references_glob(urn, GLOBS)
-            .map(|iter| iter.map(|(name, _)| name).collect::<Vec<_>>())
-            .map(|v| v.into_iter())
-            .map_err(Error::from)
+            .references_glob(glob)?
+            .filter_map(move |reference| match reference {
+                Ok(reference) => match reference.name() {
+                    Some(name) => match ext::RefLike::try_from(name) {
+                        Ok(refl) => Some(Ok(refl)),
+                        Err(_) => None,
+                    },
+                    None => None,
+                },
+                Err(e) => Some(Err(e)),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(remotes.into_iter())
     }
 
     fn repo_path(&self) -> PathBuf {

@@ -32,14 +32,17 @@ use crate::{
     identities::{
         self,
         delegation,
-        git::{Identities, User, VerifiedUser, Verifying},
+        git::{Identities, Verifying},
         urn,
     },
     peer::PeerId,
     signer::Signer,
 };
 
-pub use identities::{git::Urn, payload::UserPayload};
+pub use identities::{
+    git::{Urn, User, VerifiedUser},
+    payload::UserPayload,
+};
 
 /// Read a [`User`] from the tip of thr ref [`Urn::path`] points to.
 ///

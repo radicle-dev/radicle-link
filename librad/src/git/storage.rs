@@ -123,6 +123,10 @@ where
         &self.peer_id
     }
 
+    pub fn path(&self) -> &Path {
+        &self.backend.path()
+    }
+
     #[tracing::instrument(level = "debug", skip(self), err)]
     pub fn has_urn(&self, urn: &Urn) -> Result<bool, Error> {
         self.has_ref(&Reference::try_from(urn)?)
@@ -232,7 +236,7 @@ where
         N: Debug,
         for<'b> &'b N: AsNamespace,
     {
-        self.references_glob(glob::FromRefspec::from(RefspecPattern::from(reference)))
+        self.references_glob(glob::RefspecMatcher::from(RefspecPattern::from(reference)))
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
@@ -254,6 +258,25 @@ where
 
                 Err(e) => Some(Err(e.into())),
             }))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self), err)]
+    pub fn reference_names_glob<'a, G: 'a>(
+        &'a self,
+        glob: G,
+    ) -> Result<impl Iterator<Item = Result<ext::RefLike, Error>> + 'a, Error>
+    where
+        G: Pattern + Debug,
+    {
+        let iter = ReferenceNames {
+            iter: self.backend.references()?,
+        };
+        Ok(iter.filter_map(move |refname| match refname {
+            Ok(reflike) if glob.matches(&reflike) => Some(Ok(reflike)),
+            Ok(_) => None,
+
+            Err(e) => Some(Err(e)),
+        }))
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
@@ -292,5 +315,28 @@ where
     // model "capabilities" in terms of traits.
     pub(super) fn as_raw(&self) -> &git2::Repository {
         &self.backend
+    }
+}
+
+struct ReferenceNames<'a> {
+    iter: git2::References<'a>,
+}
+
+impl<'a> Iterator for ReferenceNames<'a> {
+    type Item = Result<ext::RefLike, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut names = self.iter.names();
+        while let Some(name) = names.next() {
+            match name {
+                Err(e) => return Some(Err(e.into())),
+                Ok(name) => match ext::RefLike::try_from(name).ok() {
+                    Some(refl) => return Some(Ok(refl)),
+                    None => continue,
+                },
+            }
+        }
+
+        None
     }
 }

@@ -21,7 +21,7 @@ use git_ext::is_not_found_err;
 
 use super::{
     super::{
-        storage::{self, Storage},
+        storage::{self, glob, Storage},
         types::Reference,
     },
     error::Error,
@@ -52,4 +52,29 @@ where
         Err(storage::Error::Git(e)) if is_not_found_err(&e) => Ok(None),
         Err(e) => Err(e.into()),
     }
+}
+
+/// List all identities found in `storage`.
+pub fn list<'a, S>(
+    storage: &'a Storage<S>,
+) -> Result<impl Iterator<Item = Result<SomeIdentity, Error>> + 'a, Error>
+where
+    S: Signer,
+{
+    lazy_static! {
+        static ref GLOB: glob::RefspecMatcher =
+            refspec_pattern!("refs/namespaces/*/refs/rad/id").into();
+    }
+
+    let iter = storage
+        .reference_names_glob(GLOB.clone())?
+        .filter_map(move |name| match name {
+            Ok(name) => {
+                Urn::try_from(name).map_or(None, |urn| self::get(storage, &urn).transpose())
+            },
+
+            Err(e) => Some(Err(e.into())),
+        });
+
+    Ok(iter)
 }

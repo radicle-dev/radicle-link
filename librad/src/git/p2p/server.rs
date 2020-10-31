@@ -42,8 +42,11 @@ use tokio::process::{self, Command};
 use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
 use super::{
-    super::types::namespace::{AsNamespace, Namespace},
-    header::{self, Header, SomeHeader},
+    super::{
+        types::namespace::{AsNamespace, Namespace},
+        Urn,
+    },
+    header::{self, Header},
 };
 use crate::paths::Paths;
 
@@ -75,25 +78,8 @@ impl GitServer {
             return send_err(&mut send, "garbage header").await;
         }
 
-        match hdr_buf.parse::<SomeHeader>() {
-            Ok(SomeHeader::Legacy(Header { service, repo, .. })) => match *service {
-                Service::UploadPack => {
-                    UploadPack::upload_pack(&self.monorepo)?
-                        .run(recv, send)
-                        .await
-                },
-                Service::UploadPackLs => {
-                    UploadPack::advertise(&self.monorepo, repo.id)?
-                        .run(recv, send)
-                        .await
-                },
-                service => {
-                    tracing::error!("Invalid git service: {:?}", header::Service(service));
-                    send_err(&mut send, "service not enabled").await
-                },
-            },
-
-            Ok(SomeHeader::NuSkool(Header { service, repo, .. })) => match *service {
+        match hdr_buf.parse::<Header<Urn>>() {
+            Ok(Header { service, repo, .. }) => match *service {
                 Service::UploadPack => {
                     UploadPack::upload_pack(&self.monorepo)?
                         .run(recv, send)

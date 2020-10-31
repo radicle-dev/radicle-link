@@ -16,7 +16,6 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{HashMap, HashSet},
     convert::TryFrom,
     fmt::{self, Display},
     marker::PhantomData,
@@ -24,12 +23,8 @@ use std::{
 
 use git_ext as ext;
 
-use crate::{
-    git::{refs::Refs, sealed},
-    hash::Hash,
-    peer::PeerId,
-    uri::RadUrn,
-};
+use super::sealed;
+use crate::peer::PeerId;
 
 pub mod namespace;
 pub mod reference;
@@ -218,182 +213,5 @@ where
         let local = Into::<ext::RefspecPattern>::into(&self.local);
 
         write!(f, "{}:{}", remote, local)
-    }
-}
-
-impl<N> Refspec<Reference<N, PeerId, Single>, Reference<N, PeerId, Single>>
-where
-    N: Clone,
-{
-    pub fn rad_signed_refs<'a>(
-        namespace: N,
-        remote_peer: PeerId,
-        tracked: impl Iterator<Item = PeerId> + 'a,
-    ) -> impl Iterator<Item = Self> + 'a
-    where
-        N: 'a,
-    {
-        tracked.map(move |peer| {
-            let local = Reference::rad_signed_refs(namespace.clone(), peer);
-            let remote = if peer == remote_peer {
-                local.set_remote(None)
-            } else {
-                local.clone()
-            };
-
-            local.refspec(remote, Force::False)
-        })
-    }
-}
-
-impl Refspec<Reference<Hash, PeerId, Single>, Reference<Hash, PeerId, Single>> {
-    pub fn fetch_heads<'a, E>(
-        namespace: Hash,
-        remote_heads: HashMap<String, git2::Oid>,
-        tracked_peers: impl Iterator<Item = PeerId> + 'a,
-        remote_peer: PeerId,
-        rad_signed_refs_of: impl Fn(PeerId) -> Result<Refs, E>,
-        certifiers_of: impl Fn(PeerId) -> Result<HashSet<RadUrn>, E>,
-    ) -> Result<impl Iterator<Item = Box<dyn AsRefspec>> + 'a, E> {
-        // FIXME: do this in constant memory
-        let mut refspecs = Vec::new();
-
-        for tracked_peer in tracked_peers {
-            // Heads
-            //
-            // `+refs/namespaces/<namespace>/refs[/remotes/<peer>]/heads/* \
-            // :refs/namespaces/<namespace>/refs/remotes/<peer>/heads/*`
-            {
-                let their_singed_rad_refs = rad_signed_refs_of(tracked_peer)?;
-                for (name, target) in their_singed_rad_refs.heads {
-                    // NB(kim): this is deprecated code, sparing myself the
-                    // effort to go through `Into<RefLike>` for namespace and
-                    // peer -- those are `unsafe_coerce` anyway
-
-                    // Either the signed ref is in the "owned" section of
-                    // `remote_peer`'s repo...
-                    let name_namespaced = reflike!("refs/namespaces")
-                        .join(namespace.clone())
-                        .join(reflike!("refs/heads"))
-                        .join(name.clone());
-
-                    // .. or `remote_peer` is tracking `tracked_peer`, in which
-                    // case it is in the remotes section.
-                    let name_namespaced_remote = reflike!("refs/namespaces")
-                        .join(namespace.clone())
-                        .join(reflike!("refs/remotes"))
-                        .join(tracked_peer)
-                        .join(reflike!("heads"))
-                        .join(name.clone());
-
-                    let targets_match = remote_heads
-                        .get(name_namespaced.as_str())
-                        .or_else(|| remote_heads.get(name_namespaced_remote.as_str()))
-                        .map(|remote_target| remote_target == &*target)
-                        .unwrap_or(false);
-
-                    if targets_match {
-                        let local = Reference::head(
-                            namespace.clone(),
-                            tracked_peer,
-                            ext::RefLike::try_from(name).unwrap(),
-                        );
-                        let remote = if tracked_peer == remote_peer {
-                            local.set_remote(None)
-                        } else {
-                            local.clone()
-                        };
-
-                        refspecs.push(local.refspec(remote, Force::True).boxed())
-                    }
-                }
-            }
-
-            // Id
-            //
-            // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/id \
-            // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/id`
-            {
-                let local = Reference::rad_id(namespace.clone()).with_remote(tracked_peer);
-                let remote = if tracked_peer == remote_peer {
-                    local.set_remote(None)
-                } else {
-                    local.clone()
-                };
-
-                refspecs.push(local.refspec(remote, Force::False).boxed());
-            }
-
-            // Self
-            //
-            // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/self \
-            // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/self`
-            {
-                let local = Reference::rad_self(namespace.clone(), tracked_peer);
-                let remote = if tracked_peer == remote_peer {
-                    local.set_remote(None)
-                } else {
-                    local.clone()
-                };
-
-                refspecs.push(local.refspec(remote, Force::False).boxed());
-            }
-
-            // Certifiers
-            //
-            // `refs/namespaces/<namespace>/refs[/remotes/<peer>]/rad/ids/* \
-            // :refs/namespaces/<namespace>/refs/remotes/<peer>/rad/ids/*`
-            {
-                let local = Reference::rad_ids_glob(namespace.clone()).with_remote(tracked_peer);
-                let remote = if tracked_peer == remote_peer {
-                    local.set_remote(None)
-                } else {
-                    local.clone()
-                };
-
-                refspecs.push(local.refspec(remote, Force::False).boxed());
-            }
-
-            // Certifier top-level identities
-            //
-            // `refs/namespaces/<certifier>/refs[/remotes/<peer>]/rad/id \
-            // :refs/namespaces/<certifier>/refs/remotes/<peer>/rad/id`
-            //
-            // and
-            //
-            // `refs/namespaces/<certifier>/refs[/remotes/<peer>]/rad/ids/* \
-            // :refs/namespaces/<certifier>/refs/remotes/<peer>/rad/ids/*`
-            {
-                let their_certifiers = certifiers_of(tracked_peer)?;
-                for urn in their_certifiers {
-                    // id
-                    {
-                        let local = Reference::rad_id(urn.id.clone()).with_remote(tracked_peer);
-                        let remote = if tracked_peer == remote_peer {
-                            local.set_remote(None)
-                        } else {
-                            local.clone()
-                        };
-
-                        refspecs.push(local.refspec(remote, Force::False).boxed());
-                    }
-
-                    // rad/ids/* of id
-                    {
-                        let local =
-                            Reference::rad_ids_glob(urn.id.clone()).with_remote(tracked_peer);
-                        let remote = if tracked_peer == remote_peer {
-                            local.set_remote(None)
-                        } else {
-                            local.clone()
-                        };
-
-                        refspecs.push(local.refspec(remote, Force::False).boxed());
-                    }
-                }
-            }
-        }
-
-        Ok(refspecs.into_iter())
     }
 }

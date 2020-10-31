@@ -27,7 +27,6 @@ use thiserror::Error;
 use crate::{
     identities::{self, urn},
     peer::{self, PeerId},
-    uri::RadUrn,
 };
 
 use super::{
@@ -285,15 +284,6 @@ impl<N, R> Reference<N, R, One> {
 
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/rad/ids/<id>`
-    pub fn rad_certifier(namespace: N, urn: &RadUrn) -> Self {
-        Self {
-            remote: None,
-            category: RefsCategory::Rad,
-            name: format!("ids/{}", urn.id).try_into().unwrap(),
-            _namespace: namespace,
-        }
-    }
-
     pub fn rad_delegate(namespace: N, urn: &Urn) -> Self {
         Self {
             remote: None,

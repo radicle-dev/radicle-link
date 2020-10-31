@@ -109,7 +109,7 @@ where
         .or_matches::<Error, _, _>(is_not_found_err, || Ok(false))?;
 
     // Prune all remote branches
-    let prune = storage.references_glob(glob::FromRefspec::from(
+    let prune = storage.references_glob(glob::RefspecMatcher::from(
         reflike!("refs/namespaces")
             .join(urn)
             .join(reflike!("refs/remotes"))
@@ -122,6 +122,19 @@ where
     }
 
     Ok(was_removed)
+}
+
+/// Determine if `peer` is tracked in the context of `urn`.
+#[tracing::instrument(level = "trace", skip(storage), err)]
+pub fn is_tracked<S>(storage: &Storage<S>, urn: &Urn, peer: PeerId) -> Result<bool, Error>
+where
+    S: Signer,
+{
+    storage
+        .as_raw()
+        .find_remote(&tracking_remote_name(urn, &peer))
+        .and(Ok(true))
+        .or_matches(is_not_found_err, || Ok(false))
 }
 
 /// Obtain an iterator over the 1st degree tracked peers in the context of

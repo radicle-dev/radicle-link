@@ -17,40 +17,59 @@
 
 use std::collections::HashSet;
 
-use librad::{meta::entity, net::peer::PeerApi, uri::RadUrn};
+use librad::{
+    git::{
+        identities::{self, SomeIdentity},
+        Urn,
+    },
+    net::peer::PeerApi,
+};
 
 use crate::{Error, Signer};
 
 #[derive(Debug, Clone)]
 pub struct Project {
-    pub urn: RadUrn,
+    pub urn: Urn,
     pub name: String,
     pub description: Option<String>,
-    pub maintainers: HashSet<RadUrn>,
+    pub maintainers: HashSet<Urn>,
+}
+
+impl From<identities::Project> for Project {
+    fn from(proj: identities::Project) -> Self {
+        Self {
+            urn: proj.urn(),
+            name: proj.doc.payload.subject.name.to_string(),
+            description: proj
+                .doc
+                .payload
+                .subject
+                .description
+                .map(|desc| desc.to_string()),
+            maintainers: proj
+                .doc
+                .delegations
+                .into_iter()
+                .indirect()
+                .map(|id| id.urn())
+                .collect(),
+        }
+    }
 }
 
 /// Get all local projects.
 pub async fn get_projects(api: &PeerApi<Signer>) -> Result<Vec<Project>, Error> {
     api.with_storage(|s| {
-        let projs = s
-            .all_metadata()?
-            .flat_map(|meta| {
-                let meta = meta.ok()?;
-
-                meta.try_map(|info| match info {
-                    entity::data::EntityInfo::Project(info) => Some(info),
+        identities::any::list(&s)?
+            .filter_map(|res| {
+                res.map(|id| match id {
+                    SomeIdentity::Project(proj) => Some(Project::from(proj)),
                     _ => None,
                 })
-                .map(|meta| Project {
-                    urn: meta.urn(),
-                    name: meta.name().to_owned(),
-                    description: meta.description().to_owned(),
-                    maintainers: meta.maintainers().clone(),
-                })
+                .map_err(Error::from)
+                .transpose()
             })
-            .collect::<Vec<Project>>();
-
-        Ok(projs)
+            .collect::<Result<Vec<_>, _>>()
     })
     .await?
 }
