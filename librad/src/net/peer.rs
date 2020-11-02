@@ -19,6 +19,7 @@ use std::{
     future::Future,
     io,
     net::{IpAddr, SocketAddr},
+    ops::Deref,
     sync::Arc,
     time::Duration,
 };
@@ -474,14 +475,13 @@ fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) 
                 return urn;
             }
 
-            let path = urn
-                .path
-                .strip_prefix("refs/")
-                .map(|tail| {
-                    uri::Path::parse(tail)
-                        .expect("`Path` is still valid after stripping a valid prefix")
-                })
-                .unwrap_or(urn.path);
+            let path = match urn.path.strip_prefix("refs/") {
+                Some(tail) => uri::Path::parse(tail)
+                    .expect("`Path` is still valid after stripping a valid prefix"),
+                // If there's no 'refs/' we assume we need to add 'heads/' to the reference name.
+                None => uri::Path::parse(format!("heads/{}", urn.path.deref()))
+                    .expect("`Path` is valid after adding 'heads/` prefix"),
+            };
 
             let mut remote =
                 uri::Path::parse(format!("refs/remotes/{}", from)).expect("Known valid path");
