@@ -140,21 +140,25 @@ mod tests {
 
     use super::*;
     use crate::{
-        git::{local::url::LocalUrl, types::*},
-        hash::Hash,
+        git::{local::url::LocalUrl, types::*, Urn},
         keys::SecretKey,
         peer::PeerId,
     };
     use librad_test::tempdir::WithTmpDir;
+
+    lazy_static! {
+        static ref URN: Urn = Urn::new(git_ext::Oid::from(
+            git2::Oid::hash_object(git2::ObjectType::Commit, b"meow-meow").unwrap()
+        ));
+    }
 
     #[test]
     fn can_create_remote() {
         WithTmpDir::new::<_, io::Error>(|path| {
             let repo = git2::Repository::init(path).expect("failed to init repo");
 
-            let id = Hash::hash(b"geez");
             let heads: FlatRef<ext::RefLike, _> = FlatRef::heads(PhantomData, None);
-            let namespaced_heads = NamespacedRef::heads(id, None);
+            let namespaced_heads = NamespacedRef::heads(URN.clone(), None);
 
             let fetch = heads
                 .clone()
@@ -191,14 +195,13 @@ mod tests {
     fn check_remote_fetch_spec() -> Result<(), git2::Error> {
         let key = SecretKey::new();
         let peer_id = PeerId::from(key);
-        let namespace = Hash::hash(b"meow-meow");
         let url = LocalUrl {
-            repo: namespace,
+            urn: URN.clone(),
             local_peer_id: peer_id,
         };
         let name = format!("lyla@{}", peer_id);
         let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, peer_id);
-        let heads = heads.with_name(ext::RefspecPattern::try_from("heads/*").unwrap());
+        let heads = heads.with_name(refspec_pattern!("heads/*"));
         let remotes: FlatRef<ext::RefLike, _> =
             FlatRef::heads(PhantomData, ext::RefLike::try_from(name.as_str()).unwrap());
         let remote = Remote {

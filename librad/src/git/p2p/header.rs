@@ -173,13 +173,13 @@ impl Deref for Service {
 mod tests {
     use super::*;
 
-    use crate::{identities::git::Urn, keys::SecretKey};
+    use crate::{git::Urn, keys::SecretKey};
 
     #[test]
     fn test_str_roundtrip() {
         let hdr = Header::new(
             GitService::UploadPackLs,
-            Urn::new(ext::Oid::from(git2::Oid::zero())),
+            Urn::new(git_ext::Oid::from(git2::Oid::zero())),
             PeerId::from(SecretKey::new()),
         );
 

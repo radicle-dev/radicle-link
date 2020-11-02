@@ -320,6 +320,8 @@ fn try_now() -> Result<webpki::Time, TLSError> {
 mod tests {
     use super::*;
 
+    use std::io;
+
     use crate::keys::SecretKey;
     use rustls::{ClientSession, ServerSession, Session};
 
@@ -360,7 +362,10 @@ mod tests {
         let mut buf = [0u8; 262_144];
 
         while left.wants_write() {
-            let sz = left.write_tls(&mut buf.as_mut()).unwrap();
+            let sz = {
+                let into_buf: &mut dyn io::Write = &mut &mut buf[..];
+                left.write_tls(into_buf).unwrap()
+            };
 
             if sz == 0 {
                 break;
@@ -368,7 +373,8 @@ mod tests {
 
             let mut offs = 0;
             loop {
-                offs += right.read_tls(&mut buf[offs..sz].as_ref()).unwrap();
+                let from_buf: &mut dyn io::Read = &mut &buf[offs..sz];
+                offs += right.read_tls(from_buf).unwrap();
                 if sz == offs {
                     break;
                 }

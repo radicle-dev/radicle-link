@@ -141,7 +141,7 @@ mod tests {
     fn strips_path_from_urn() {
         let ns = Namespace::from(Urn {
             id: FakeId(42),
-            path: Some(ext::RefLike::try_from("lolek/bolek").unwrap()),
+            path: Some(reflike!("lolek/bolek")),
         });
         assert_eq!("hyyryyyyyyyyyyybk", ext::RefLike::from(ns).as_str())
     }

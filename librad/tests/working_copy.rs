@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+/*
 #![feature(async_closure)]
 
 use std::{convert::TryFrom, marker::PhantomData, time::Duration};
@@ -240,3 +241,4 @@ where
     .await
     .unwrap();
 }
+*/

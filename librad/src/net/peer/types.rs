@@ -98,9 +98,9 @@ mod tests {
     #[test]
     fn test_gossip_cbor() {
         let gossip = Gossip {
-            urn: Urn::new(ext::Oid::from(git2::Oid::zero())),
-            rev: Rev::Git(*OID),
-            origin: PeerId::from(SecretKey::new()),
+            urn: Urn::new(git_ext::Oid::from(git2::Oid::zero())),
+            rev: Some(Rev::Git(*OID)),
+            origin: Some(PeerId::from(SecretKey::new())),
         };
 
         cbor_roundtrip(gossip)

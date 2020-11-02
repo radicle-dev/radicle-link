@@ -49,9 +49,6 @@ pub mod signer;
 pub use radicle_macros::*;
 
 #[cfg(test)]
-mod test;
-
-#[cfg(test)]
 #[macro_use]
 extern crate futures_await_test;
 #[cfg(test)]

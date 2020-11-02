@@ -30,21 +30,17 @@ use librad::{
         types::{remote::Remote, FlatRef, Force, NamespacedRef},
     },
     git_ext as ext,
-    meta::{entity::Signatory, project::ProjectInfo},
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     signer::SomeSigner,
-    uri::{self, RadUrn},
 };
 
 use librad_test::{
     git::initial_commit,
     logging,
-    rad::{
-        entity::{Alice, Radicle},
-        testnet,
-    },
+    rad::{identities, testnet},
 };
 
+/*
 #[tokio::test]
 async fn can_clone() {
     logging::init();
@@ -571,3 +567,4 @@ async fn menage_a_troi() {
     })
     .await;
 }
+*/

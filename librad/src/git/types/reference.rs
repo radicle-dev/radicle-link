@@ -18,7 +18,6 @@
 use std::{
     convert::{TryFrom, TryInto},
     fmt::{self, Display},
-    path::PathBuf,
 };
 
 use git_ext as ext;
@@ -347,18 +346,16 @@ where
     &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, One>) -> Self {
-        let mut path = PathBuf::new();
-        path.push("refs/namespaces");
-        path.push(Into::<ext::RefLike>::into(&r._namespace));
-        path.push("refs");
-        if let Some(ref remote) = r.remote {
-            path.push("remotes");
-            path.push(Into::<ext::RefLike>::into(remote))
-        }
-        path.push(Into::<ext::RefLike>::into(r.category));
-        path.push(ext::OneLevel::from(r.name.clone()));
+        let mut refl = reflike!("refs/namespaces")
+            .join(&r._namespace)
+            .join(reflike!("refs"));
 
-        ext::RefLike::try_from(path.as_path()).unwrap()
+        if let Some(ref remote) = r.remote {
+            refl = refl.join(reflike!("remotes")).join(remote);
+        }
+
+        refl.join(r.category)
+            .join(ext::OneLevel::from(r.name.to_owned()))
     }
 }
 
@@ -424,18 +421,15 @@ where
     &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, Many>) -> Self {
-        let mut path = PathBuf::new();
-        path.push("refs/namespaces");
-        path.push(Into::<ext::RefLike>::into(&r._namespace));
-        path.push("refs");
-        if let Some(ref remote) = r.remote {
-            path.push("remotes");
-            path.push(Into::<ext::RefLike>::into(remote));
-        }
-        path.push(Into::<ext::RefLike>::into(r.category));
-        path.push(&r.name);
+        let mut refl = reflike!("refs/namespaces")
+            .join(&r._namespace)
+            .join(reflike!("refs"));
 
-        ext::RefspecPattern::try_from(path.as_path()).unwrap()
+        if let Some(ref remote) = r.remote {
+            refl = refl.join(reflike!("remotes")).join(remote);
+        }
+
+        refl.join(r.category).with_pattern_suffix(r.name.to_owned())
     }
 }
 

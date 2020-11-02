@@ -214,7 +214,7 @@ mod tests {
 
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 
-    use crate::keys::SecretKey;
+    use crate::{identities::git, keys::SecretKey};
     use librad_test::roundtrip::str_roundtrip;
 
     #[test]
@@ -231,7 +231,7 @@ mod tests {
                     0,
                 )),
             ],
-            repo: identities::git::Revision::from(git2::Oid::zero()),
+            repo: git::Revision::from(git2::Oid::zero()),
         };
 
         str_roundtrip(url)

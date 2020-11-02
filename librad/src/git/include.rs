@@ -189,7 +189,11 @@ fn fetch_entry(remote: &Remote<LocalUrl>) -> Result<(String, String), Error> {
 
 #[cfg(test)]
 mod test {
-    use crate::{git::local::url::LocalUrl, hash::Hash, keys::SecretKey, peer::PeerId};
+    use crate::{
+        git::{local::url::LocalUrl, Urn},
+        keys::SecretKey,
+        peer::PeerId,
+    };
 
     use super::*;
 
@@ -220,9 +224,8 @@ mod test {
     #[test]
     fn can_create_and_update() -> Result<(), Error> {
         let tmp_dir = tempfile::tempdir()?;
-        let repo = Hash::hash(b"meow-meow");
         let url = LocalUrl {
-            repo,
+            urn: Urn::new(git2::Oid::zero().into()),
             local_peer_id: *LOCAL_PEER_ID,
         };
 
