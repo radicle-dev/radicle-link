@@ -480,6 +480,8 @@ where
             tracing::warn!("Closing connection with {}, because: {}", remote_id, e);
             conn.close(CloseReason::InternalError);
         };
+
+        self.handle_disconnect(remote_id).await;
     }
 
     async fn handle_disconnect(&self, peer: PeerId) {
@@ -494,7 +496,7 @@ where
     async fn handle_incoming<Incoming>(
         &self,
         conn: quic::Connection,
-        mut incoming: Incoming,
+        incoming: Incoming,
     ) -> Result<(), Error>
     where
         Incoming: futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
@@ -509,6 +511,17 @@ where
                 .await;
         }
 
+        let res = self.handle_incoming_streams(incoming).await;
+
+        self.handle_disconnect(remote_id).await;
+
+        res
+    }
+
+    async fn handle_incoming_streams<Incoming>(&self, mut incoming: Incoming) -> Result<(), Error>
+    where
+        Incoming: futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
+    {
         while let Some(stream) = incoming.try_next().await? {
             tracing::trace!("New incoming stream");
             let this = self.clone();

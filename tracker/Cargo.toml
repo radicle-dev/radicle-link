@@ -10,7 +10,7 @@ license = "GPL-3.0-or-later"
 [dependencies]
 nonempty = "0.5"
 num-bigint = "0.3"
-thiserror = "1.0"
+thiserror = "1"
 
 [dev-dependencies]
 proptest = "0"

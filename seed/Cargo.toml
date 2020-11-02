@@ -10,6 +10,6 @@ async-trait = "0.1"
 futures = "0.3"
 librad = { path = "../librad" }
 radicle-keystore = "0"
-thiserror = "1.0"
+thiserror = "1"
 tokio = "0.2"
 tracing = "0.1"
