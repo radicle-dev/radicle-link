@@ -28,7 +28,7 @@ use thiserror::Error;
 use super::Urn;
 use crate::peer::{self, PeerId};
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LocalUrl {
     pub urn: Urn,
     pub local_peer_id: PeerId,
@@ -107,5 +107,23 @@ impl FromStr for LocalUrl {
 impl Into<Urn> for LocalUrl {
     fn into(self) -> Urn {
         self.urn
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::{git::Urn, keys::SecretKey, peer::PeerId};
+    use librad_test::roundtrip::str_roundtrip;
+
+    #[test]
+    fn trip() {
+        let url = LocalUrl {
+            urn: Urn::new(git2::Oid::zero().into()),
+            local_peer_id: PeerId::from(SecretKey::new()),
+        };
+
+        str_roundtrip(url)
     }
 }

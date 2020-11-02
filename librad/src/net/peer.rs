@@ -19,7 +19,6 @@ use std::{
     future::Future,
     io,
     net::{IpAddr, SocketAddr},
-    ops::Deref,
     sync::Arc,
     time::Duration,
 };

@@ -345,6 +345,7 @@ impl LocalTransport {
         })
     }
 
+    #[tracing::instrument(level = "debug", skip(self, service, stdio), err)]
     pub fn connect(
         &mut self,
         url: LocalUrl,
@@ -414,14 +415,18 @@ impl LocalTransport {
                     // Update `rad/signed_refs`
                     Refs::update(&storage, &urn)?;
 
+                    let self_urn = Urn {
+                        path: Some(reflike!("rad/self")),
+                        ..urn.clone()
+                    };
                     // Ensure we have a `rad/self`
-                    let local_id = identities::local::load(&storage, &urn)
+                    let local_id = identities::local::load(&storage, &self_urn)
                         .transpose()
                         .or_else(|| identities::local::default(&storage).transpose())
                         .transpose()?;
                     match local_id {
                         None => Err(Error::NoLocalIdentity),
-                        Some(local_id) => Ok(local_id.link(&storage, &urn)?),
+                        Some(local_id) => Ok(local_id.link(&storage, &self_urn)?),
                     }
                 };
 

@@ -260,6 +260,7 @@ impl<'a> TryFrom<ByOid<'a>> for Project {
 
 type InlinedUser = generic::Identity<Doc<UserPayload, UserDelegations>, Revision, ContentId>;
 
+#[tracing::instrument(level = "debug", skip(repo, tree), err)]
 fn resolve_inlined_user(
     repo: &git2::Repository,
     tree: &git2::Tree,

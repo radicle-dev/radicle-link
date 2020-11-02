@@ -120,6 +120,7 @@ impl LocalIdentity {
 /// If the identity could not be found, `None` is returned. If the identity
 /// passes verification, is signed by the [`Signer`] of `storage`, and delegates
 /// to the key of the [`Signer`], the [`LocalIdentity`] is returned in a `Some`.
+#[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn load<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<LocalIdentity>, Error>
 where
     S: Signer,
@@ -137,6 +138,7 @@ where
 ///
 /// If no default identity was configured, `None` is returned. Otherwise, the
 /// result is the result of calling [`load`] with the pre-configured [`Urn`].
+#[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn default<S>(storage: &Storage<S>) -> Result<Option<LocalIdentity>, Error>
 where
     S: Signer,

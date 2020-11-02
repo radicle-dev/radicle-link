@@ -18,11 +18,11 @@
 use librad::identities::payload;
 
 lazy_static! {
-    static ref ALICE: payload::User = payload::User {
+    pub static ref ALICE: payload::User = payload::User {
         name: "alice".into()
     };
-    static ref BOB: payload::User = payload::User { name: "bob".into() };
-    static ref RADICLE: payload::Project = payload::Project {
+    pub static ref BOB: payload::User = payload::User { name: "bob".into() };
+    pub static ref RADICLE: payload::Project = payload::Project {
         name: "radicle".into(),
         description: Some("pea two pea".into()),
         default_branch: Some("next".into())

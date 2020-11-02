@@ -293,30 +293,13 @@ impl Node {
             .map(|a: &std::net::IpAddr| (*a, port).into())
             .collect::<Vec<_>>();
 
-        // Track unconditionally.
-        {
+        let result = {
             let urn = urn.clone();
             api.with_storage(move |storage| {
                 replication::replicate(&storage, None, urn.clone(), peer_id, addr_hints)?;
                 tracking::track(&storage, &urn, peer_id)?;
 
                 Ok::<_, Error>(())
-            })
-        }
-
-        let result = {
-            let urn = project_urn.clone();
-            api.with_storage(move |storage| -> Result<(), librad::git::storage::Error> {
-                // FIXME(xla): There should be a saner way to test.
-                let exists = storage.has_urn(&urn)?;
-
-                if exists {
-                    storage.fetch_repo(url, addr_hints)
-                } else {
-                    storage
-                        .clone_repo::<meta::project::ProjectInfo, _>(url, addr_hints)
-                        .map(|_info| ())
-                }
             })
             .await?
         };

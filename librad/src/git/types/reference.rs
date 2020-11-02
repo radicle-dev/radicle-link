@@ -175,22 +175,36 @@ where
     ///
     /// ```
     /// use std::marker::PhantomData;
-    /// use librad::{git_ext as ext, git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
+    /// use librad::{
+    ///     git_ext::RefLike,
+    ///     git::{
+    ///         Urn,
+    ///         types::{
+    ///             namespace::Namespace,
+    ///             FlatRef,
+    ///             Force,
+    ///             NamespacedRef,
+    ///         },
+    ///     },
+    ///     keys::SecretKey,
+    ///     peer::PeerId
+    /// };
     ///
-    /// let id = Hash::hash(b"geez");
+    /// let urn = Urn::new(git2::Oid::hash_object(git2::ObjectType::Commit, b"geez").unwrap().into());
     /// let peer: PeerId = SecretKey::new().into();
     ///
     /// // Set up a ref to `refs/heads/*`
-    /// let flat_heads: FlatRef<ext::RefLike, _> = FlatRef::heads(PhantomData, None);
+    /// let flat_heads: FlatRef<RefLike, _> = FlatRef::heads(PhantomData, None);
     ///
     /// // Set up a ref t `refs/namespaces/<geez>/refs/remotes/<peer>/heads/*`
-    /// let namespace_heads = NamespacedRef::heads(id, peer.clone());
+    /// let namespace_heads = NamespacedRef::heads(Namespace::from(&urn), peer.clone());
     ///
     /// // Create a refspec between these two refs
     /// let spec = flat_heads.refspec(namespace_heads, Force::True);
     ///
     /// let expected = format!(
-    ///     "+refs/namespaces/hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/refs/remotes/{}/heads/*:refs/heads/*",
+    ///     "+refs/namespaces/{}/refs/remotes/{}/heads/*:refs/heads/*",
+    ///     Namespace::from(&urn),
     ///     peer
     /// );
     ///
@@ -202,16 +216,30 @@ where
     ///
     /// ```
     /// use std::{convert::TryFrom, marker::PhantomData};
-    /// use librad::{git_ext::RefLike, reflike, git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
+    /// use librad::{
+    ///     git_ext::RefLike,
+    ///     git::{
+    ///         Urn,
+    ///         types::{
+    ///             namespace::Namespace,
+    ///             FlatRef,
+    ///             Force,
+    ///             NamespacedRef,
+    ///         },
+    ///     },
+    ///     keys::SecretKey,
+    ///     peer::PeerId,
+    ///     reflike,
+    /// };
     ///
-    /// let id = Hash::hash(b"geez");
+    /// let urn = Urn::new(git2::Oid::hash_object(git2::ObjectType::Commit, b"geez").unwrap().into());
     /// let peer: PeerId = SecretKey::new().into();
     ///
     /// // Set up a ref to `refs/heads/*`
     /// let flat_heads: FlatRef<RefLike, _> = FlatRef::heads(PhantomData, None);
     ///
     /// // Set up a ref t `refs/namespaces/<geez>/refs/remotes/<peer>/heads/banana`
-    /// let namespace_head = NamespacedRef::head(id, peer.clone(), reflike!("banana"));
+    /// let namespace_head = NamespacedRef::head(Namespace::from(&urn), peer.clone(), reflike!("banana"));
     ///
     /// // The below would fail to compile because `namespace_head` is a `Single`
     /// // reference while `flat_heads` is `Multiple`.
