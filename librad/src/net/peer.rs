@@ -467,11 +467,9 @@ where
 /// `refs/remotes/<origin>/<path>`
 fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
     match urn {
-        Either::Left(urn) => {
-            RadUrn {
-                path: qualify_path(&urn.path),
-                ..urn
-            }
+        Either::Left(urn) => RadUrn {
+            path: qualify_path(&urn.path),
+            ..urn
         },
         Either::Right(Originates { from, value }) => {
             let urn = value;
@@ -495,14 +493,21 @@ fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) 
 
 /// Strip the `refs/` prefix of the provided path.
 ///
-/// If there's no 'refs/' we assume we need to add 'heads/' to the reference name.
+/// If there's no 'refs/' prefix we assume we need to add 'heads/' to the reference
+/// name.
 fn qualify_path(path: &uri::Path) -> uri::Path {
+    if path.is_empty() {
+        return uri::Path::empty()
+    }
+
     match path.strip_prefix("refs/") {
-        Some(tail) => uri::Path::parse(tail)
-            .expect("`Path` is still valid after stripping a valid prefix"),
-        // If there's no 'refs/' we assume we need to add 'heads/' to the reference name.
-        None => uri::Path::parse(format!("heads/{}", path.deref()))
-            .expect("`Path` is valid after adding 'heads/` prefix"),
+        Some(tail) => {
+            uri::Path::parse(tail).expect("`Path` is still valid after stripping a valid prefix")
+        },
+        None => {
+            uri::Path::parse(format!("heads/{}", path.deref()))
+            .expect("`Path` is valid after adding 'heads/` prefix")
+        },
     }
 }
 
