@@ -119,7 +119,7 @@ pub enum PeerEvent {
 pub struct FetchInfo {
     pub provider: PeerId,
     pub gossip: Gossip,
-    pub result: PutResult,
+    pub result: PutResult<Gossip>,
 }
 
 #[derive(Clone)]
@@ -517,7 +517,7 @@ where
 {
     type Update = Gossip;
 
-    async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult {
+    async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult<Self::Update> {
         let span = tracing::info_span!("Peer::LocalStorage::put");
         let _guard = span.enter();
 
@@ -552,9 +552,10 @@ where
                                 // If we cloned from the provider we need to ask for their
                                 // commit.
                                 let mut has = has.clone();
-                                has.origin = Some(has.origin.unwrap_or_else(|| provider));
+                                let peer_id = has.origin.unwrap_or_else(|| provider);
+                                has.origin = Some(peer_id);
                                 if self.ask(has.clone()).await {
-                                    PutResult::Applied
+                                    PutResult::Applied(has)
                                 } else {
                                     tracing::warn!(
                                         provider = %provider,
@@ -586,7 +587,7 @@ where
                     .emit(PeerEvent::GossipFetch(FetchInfo {
                         provider,
                         gossip: has,
-                        result: res,
+                        result: res.clone(),
                     }))
                     .await;
 
