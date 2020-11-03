@@ -289,15 +289,12 @@ impl<S: Clone> Storage<S> {
                 let branch = urn.path.deref_or_default();
                 let branch = branch.strip_prefix("refs/").unwrap_or(branch);
 
-                let glob = format!("refs/namespaces/{}/refs/{}", namespace, branch);
-                tracing::info!("Searching for ref '{}'", glob);
                 let refs = References::from_globs(
                     &self.backend,
-                    &[glob],
+                    &[format!("refs/namespaces/{}/refs/{}", namespace, branch)],
                 )?;
 
                 for (_, oid) in refs.peeled() {
-                    tracing::info!("Ref Oid '{}'", oid);
                     if oid == commit.id() || self.backend.graph_descendant_of(oid, commit.id())? {
                         return Ok(true);
                     }
