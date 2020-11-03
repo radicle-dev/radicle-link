@@ -546,6 +546,10 @@ where
 
                         match res {
                             Ok(()) => {
+                                // If we cloned from the provider we need to ask for their
+                                // commit.
+                                let mut has = has.clone();
+                                has.origin = Some(has.origin.unwrap_or_else(|| provider));
                                 if self.ask(has.clone()).await {
                                     PutResult::Applied
                                 } else {
