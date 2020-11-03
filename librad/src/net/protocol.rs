@@ -362,7 +362,7 @@ where
             Run::Discovered { peer, addrs } => {
                 tracing::trace!(
                     remote.id = %peer,
-                    remote.addrs = ?addrs,
+                    remote.addrs = ?(addrs.iter().map(std::net::SocketAddr::to_string).collect::<Vec<_>>()),
                     "Run::Discovered",
                 );
 
