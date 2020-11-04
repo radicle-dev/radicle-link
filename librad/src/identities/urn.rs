@@ -89,6 +89,14 @@ impl<R> Urn<R> {
         Self { id, path: None }
     }
 
+    /// Render [`Self::id`] into the canonical string encoding.
+    pub fn encode_id<'a>(&'a self) -> String
+    where
+        &'a R: Into<Multihash>,
+    {
+        multibase::encode(multibase::Base::Base32Z, (&self.id).into())
+    }
+
     pub fn map<F, S>(self, f: F) -> Urn<S>
     where
         F: FnOnce(R) -> S,
@@ -196,11 +204,7 @@ where
     &'a R: Into<Multihash>,
 {
     fn from(urn: &'a Urn<R>) -> Self {
-        let refl = Self::try_from(multibase::encode(
-            multibase::Base::Base32Z,
-            (&urn.id).into(),
-        ))
-        .unwrap();
+        let refl = Self::try_from(urn.encode_id()).unwrap();
         match &urn.path {
             None => refl,
             Some(path) => refl.join(ext::Qualified::from(path.clone())),
@@ -214,12 +218,7 @@ where
     for<'a> &'a R: Into<Multihash>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "rad:{}:{}",
-            R::PROTOCOL,
-            multibase::encode(multibase::Base::Base32Z, (&self.id).into())
-        )?;
+        write!(f, "rad:{}:{}", R::PROTOCOL, self.encode_id())?;
 
         if let Some(path) = &self.path {
             write!(f, "/{}", path.percent_encode())?;

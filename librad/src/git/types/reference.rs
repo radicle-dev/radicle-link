@@ -21,7 +21,6 @@ use std::{
 };
 
 use git_ext as ext;
-use multihash::Multihash;
 use thiserror::Error;
 
 use crate::{
@@ -323,13 +322,7 @@ impl<N, R> Reference<N, R, One> {
         Self {
             remote: None,
             category: RefsCategory::Rad,
-            name: reflike!("ids").join(
-                ext::RefLike::try_from(multibase::encode(
-                    multibase::Base::Base32Z,
-                    Multihash::try_from(urn.id).unwrap(),
-                ))
-                .unwrap(),
-            ),
+            name: reflike!("ids").join(ext::RefLike::try_from(urn.encode_id()).unwrap()),
             _namespace: namespace,
         }
     }

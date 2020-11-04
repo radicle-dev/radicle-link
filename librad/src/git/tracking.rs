@@ -18,7 +18,6 @@
 use std::{ops::Range, str::FromStr};
 
 use git_ext::{is_exists_err, is_not_found_err, RefLike};
-use multihash::Multihash;
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
@@ -192,11 +191,7 @@ impl Iterator for Tracked {
 }
 
 fn tracking_remote_name(urn: &Urn, peer: &PeerId) -> String {
-    format!(
-        "{}/{}",
-        multibase::encode(multibase::Base::Base32Z, Multihash::from(urn.id)),
-        peer
-    )
+    format!("{}/{}", urn.encode_id(), peer)
 }
 
 #[cfg(test)]

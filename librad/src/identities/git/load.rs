@@ -19,7 +19,6 @@ use std::{convert::TryFrom, path::PathBuf};
 
 use either::Either;
 use git_ext::{self as ext, is_not_found_err};
-use multihash::Multihash;
 use std_ext::result::ResultExt as _;
 
 use crate::{
@@ -266,10 +265,7 @@ fn resolve_inlined_user(
     tree: &git2::Tree,
     urn: Urn<Revision>,
 ) -> Result<User, error::Load> {
-    let path = PathBuf::from(format!(
-        "delegations/{}",
-        multibase::encode(multibase::Base::Base32Z, Multihash::from(urn.id))
-    ));
+    let path = PathBuf::from(format!("delegations/{}", urn.encode_id()));
     let blob = tree
         .get_path(&path)?
         .to_object(repo)?

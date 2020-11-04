@@ -24,7 +24,6 @@ use std::{
 };
 
 use git_ext as ext;
-use multihash::Multihash;
 use tempfile::NamedTempFile;
 
 use super::{
@@ -125,10 +124,7 @@ impl<Path> Include<Path> {
         self.path
             .as_ref()
             .to_path_buf()
-            .join(multibase::encode(
-                multibase::Base::Base32Z,
-                Multihash::from(self.local_url.urn.id),
-            ))
+            .join(self.local_url.urn.encode_id())
             .with_extension("inc")
     }
 

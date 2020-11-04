@@ -47,7 +47,7 @@ impl Display for LocalUrl {
             "{}://{}@{}.git",
             super::URL_SCHEME,
             self.local_peer_id,
-            multibase::encode(multibase::Base::Base32Z, Multihash::from(&self.urn.id))
+            self.urn.encode_id(),
         )
     }
 }
