@@ -418,7 +418,7 @@ where
         head: impl Into<Option<git2::Oid>>,
     ) -> Result<(), PeerStorageError> {
         let git = self.inner.get().await?;
-        let urn = urn_context(&git.peer_id(), urn);
+        let urn = urn_context(urn);
         let head = head.into();
 
         spawn_blocking(move || {
@@ -445,7 +445,7 @@ where
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
         let git = self.inner.get().await.unwrap();
-        let urn = urn_context(&git.peer_id(), urn);
+        let urn = urn_context(urn);
         let head = head.into();
         spawn_blocking(move || match head {
             None => git.has_urn(&urn).unwrap_or(false),
@@ -465,7 +465,7 @@ where
 
 /// If applicable, map the [`uri::Path`] of the given [`RadUrn`] to
 /// `refs/remotes/<origin>/<path>`
-fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
+fn urn_context(urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
     match urn {
         Either::Left(urn) => RadUrn {
             path: qualify_path(urn.path),
@@ -473,10 +473,6 @@ fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) 
         },
         Either::Right(Originates { from, value }) => {
             let urn = value;
-
-            if from == *local_peer_id {
-                return urn;
-            }
 
             let path = qualify_path(urn.path);
             let mut remote =
@@ -491,16 +487,17 @@ fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) 
     }
 }
 
-/// When receiving a `uri::Path`, we want to ensure that it points to correct path in the monorepo
-/// tree.
+/// When receiving a `uri::Path`, we want to ensure that it points to correct
+/// path in the monorepo tree.
 ///
-/// In the cases of the path being empty or starting with `refs/rad` we do nothing.
+/// In the cases of the path being empty or starting with `refs/rad` we do
+/// nothing.
 ///
-/// In the case of starting with `refs/` -- not followed by `rad` -- we strip the `refs` and return
-/// the rest of the path.
+/// In the case of starting with `refs/` -- not followed by `rad` -- we strip
+/// the `refs` and return the rest of the path.
 ///
-/// If it does not start with `refs/rad` nor `refs/` then we assume it needs to be qualified by
-/// `heads/`.
+/// If it does not start with `refs/rad` nor `refs/` then we assume it needs to
+/// be qualified by `heads/`.
 fn qualify_path(path: uri::Path) -> uri::Path {
     if path.is_empty() || path.starts_with("refs/rad") {
         return path;
@@ -526,6 +523,11 @@ where
     async fn put(&self, provider: PeerId, mut has: Self::Update) -> PutResult<Self::Update> {
         let span = tracing::info_span!("Peer::LocalStorage::put");
         let _guard = span.enter();
+
+        let git = self.inner.get().await.unwrap();
+        if git.peer_id() == provider {
+            return PutResult::Stale;
+        }
 
         match has.urn.proto {
             uri::Protocol::Git => {
@@ -603,11 +605,13 @@ where
     async fn ask(&self, want: Self::Update) -> bool {
         let span = tracing::info_span!("Peer::LocalStorage::ask");
         let _guard = span.enter();
+        let git = self.inner.get().await.unwrap();
 
         match want.urn.proto {
             uri::Protocol::Git => {
                 self.git_has(
                     match want.origin {
+                        Some(origin) if origin == git.peer_id() => Either::Left(want.urn),
                         Some(origin) => Either::Right(Originates {
                             from: origin,
                             value: want.urn,
