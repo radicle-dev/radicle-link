@@ -23,7 +23,7 @@ use git_ext::is_not_found_err;
 use super::{
     super::{
         storage::{self, Storage},
-        types::{namespace, Force, Reference, Single, SymbolicRef},
+        types::{namespace, Force, NamespacedRef, Reference, Single, SymbolicRef},
     },
     common,
     error::Error,
@@ -82,7 +82,7 @@ where
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
             let lookup = |urn| {
-                let refname = Reference::<_, PeerId, _>::rad_id(Namespace::from(urn)).to_string();
+                let refname = NamespacedRef::rad_id(Namespace::from(urn)).to_string();
                 storage.as_raw().refname_to_id(&refname)
             };
             identities(storage)
