@@ -491,16 +491,17 @@ fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) 
     }
 }
 
-/// When receiving a `uri::Path`, we want to ensure that it points to correct path in the monorepo
-/// tree.
+/// When receiving a `uri::Path`, we want to ensure that it points to correct
+/// path in the monorepo tree.
 ///
-/// In the cases of the path being empty or starting with `refs/rad` we do nothing.
+/// In the cases of the path being empty or starting with `refs/rad` we do
+/// nothing.
 ///
-/// In the case of starting with `refs/` -- not followed by `rad` -- we strip the `refs` and return
-/// the rest of the path.
+/// In the case of starting with `refs/` -- not followed by `rad` -- we strip
+/// the `refs` and return the rest of the path.
 ///
-/// If it does not start with `refs/rad` nor `refs/` then we assume it needs to be qualified by
-/// `heads/`.
+/// If it does not start with `refs/rad` nor `refs/` then we assume it needs to
+/// be qualified by `heads/`.
 fn qualify_path(path: uri::Path) -> uri::Path {
     if path.is_empty() || path.starts_with("refs/rad") {
         return path;
