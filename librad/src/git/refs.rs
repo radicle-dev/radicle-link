@@ -299,7 +299,8 @@ impl Refs {
             )?
         };
         tracing::trace!(
-            "updated signed refs to {}: {:?}",
+            "updated signed refs at {} to {}: {:?}",
+            branch,
             commit_id,
             signed_refs.refs
         );

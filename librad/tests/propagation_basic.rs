@@ -19,28 +19,33 @@
 
 use std::{convert::TryFrom, marker::PhantomData, time::Duration};
 
+use assert_matches::assert_matches;
 use futures::{future, stream::StreamExt};
 use tempfile::tempdir;
 use tokio::task::block_in_place;
 
 use librad::{
     git::{
+        identities::{self, SomeIdentity},
         local::{self, transport::LocalTransportFactory, url::LocalUrl},
-        storage,
-        types::{remote::Remote, FlatRef, Force, NamespacedRef},
+        replication,
+        types::{namespace::Namespace, remote::Remote, FlatRef, Force, NamespacedRef},
     },
     git_ext as ext,
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
+    reflike,
     signer::SomeSigner,
 };
 
 use librad_test::{
     git::initial_commit,
     logging,
-    rad::{identities, testnet},
+    rad::{
+        identities::{create_test_project, TestProject},
+        testnet,
+    },
 };
 
-/*
 #[tokio::test]
 async fn can_clone() {
     logging::init();
@@ -49,52 +54,38 @@ async fn can_clone() {
 
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
     testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
-        let (peer1, peer1_key) = apis.pop().unwrap();
+        let (peer1, _) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
 
-        let mut alice = Alice::new(peer1_key.public());
-        let mut radicle = Radicle::new(&alice);
-        {
-            let resolves_to_alice = alice.clone();
-            alice
-                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-                .unwrap();
-            radicle
-                .sign(
-                    &peer1_key,
-                    &Signatory::User(alice.urn()),
-                    &resolves_to_alice,
-                )
-                .unwrap();
-        }
-
-        let radicle_urn = radicle.urn();
-
-        {
-            let alice = alice.clone();
-            peer1
-                .with_storage(move |storage| {
-                    storage.create_repo(&alice).unwrap();
-                    storage.create_repo(&radicle).unwrap();
-                })
-                .await
-                .unwrap();
-        }
+        let TestProject { project, owner } = peer1
+            .with_storage(move |storage| create_test_project(&storage))
+            .await
+            .unwrap()
+            .unwrap();
 
         peer2
             .with_storage(move |storage| {
-                let peer1_id = peer1.peer_id();
-                storage
-                    .clone_repo::<ProjectInfo, _>(radicle_urn.clone().into_rad_url(peer1_id), None)
-                    .unwrap();
-                // sanity check
-                storage.open_repo(radicle_urn.clone()).unwrap();
+                let urn = project.urn();
+                replication::replicate(&storage, None, urn.clone(), peer1.peer_id(), None).unwrap();
 
                 // check rad/self of peer1 exists
-                storage.get_rad_self_of(&radicle_urn, peer1_id).unwrap();
+                assert!(
+                    storage
+                        .has_ref(&NamespacedRef::rad_self(
+                            Namespace::from(&urn),
+                            peer1.peer_id()
+                        ))
+                        .unwrap(),
+                    "`refs/remotes/<peer1>/rad/self` should exist"
+                );
 
-                // check user metadata exists
-                storage.some_metadata_of(&alice.urn(), None).unwrap();
+                // check we have a top-level namespace for `owner`
+                let urn = owner.urn();
+                assert_eq!(
+                    Some(owner),
+                    identities::user::get(&storage, &urn).unwrap(),
+                    "alice should be a first class citizen"
+                )
             })
             .await
             .unwrap();
@@ -110,44 +101,45 @@ async fn can_clone_disconnected() {
 
     let peers = testnet::setup_disconnected(NUM_PEERS).await.unwrap();
     testnet::run_on_testnet(peers, 0, async move |mut apis| {
-        let (peer1, peer1_key) = apis.pop().unwrap();
+        let (peer1, _) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
 
-        let mut alice = Alice::new(peer1_key.public());
-        let mut radicle = Radicle::new(&alice);
-        {
-            let resolves_to_alice = alice.clone();
-            alice
-                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-                .unwrap();
-            radicle
-                .sign(
-                    &peer1_key,
-                    &Signatory::User(alice.urn()),
-                    &resolves_to_alice,
-                )
-                .unwrap();
-        }
-
-        let radicle_urn = radicle.urn();
-
-        peer1
-            .with_storage(move |storage| {
-                storage.create_repo(&alice).unwrap();
-                storage.create_repo(&radicle).unwrap();
-            })
+        let TestProject { project, owner } = peer1
+            .with_storage(move |storage| create_test_project(&storage))
             .await
+            .unwrap()
             .unwrap();
+
         peer2
             .with_storage(move |storage| {
-                storage
-                    .clone_repo::<ProjectInfo, _>(
-                        radicle_urn.clone().into_rad_url(peer1.peer_id()),
-                        Some(peer1.listen_addr()),
-                    )
-                    .unwrap();
-                // sanity check
-                storage.open_repo(radicle_urn).unwrap();
+                let urn = project.urn();
+                replication::replicate(
+                    &storage,
+                    None,
+                    urn.clone(),
+                    peer1.peer_id(),
+                    Some(peer1.listen_addr()),
+                )
+                .unwrap();
+
+                // check rad/self of peer1 exists
+                assert!(
+                    storage
+                        .has_ref(&NamespacedRef::rad_self(
+                            Namespace::from(&urn),
+                            peer1.peer_id()
+                        ))
+                        .unwrap(),
+                    "`refs/remotes/<peer1>/rad/self` should exist"
+                );
+
+                // check we have a top-level namespace for `owner`
+                let urn = owner.urn();
+                assert_eq!(
+                    Some(owner),
+                    identities::user::get(&storage, &urn).unwrap(),
+                    "alice should be a first class citizen"
+                )
             })
             .await
             .unwrap();
@@ -166,50 +158,22 @@ async fn fetches_on_gossip_notify() {
         let (peer1, peer1_key) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
 
-        let mut alice = Alice::new(peer1_key.public());
-        let mut radicle = Radicle::new(&alice);
-        {
-            let resolves_to_alice = alice.clone();
-            alice
-                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-                .unwrap();
-            radicle
-                .sign(
-                    &peer1_key,
-                    &Signatory::User(alice.urn()),
-                    &resolves_to_alice,
-                )
-                .unwrap();
-        }
+        let TestProject { project, owner } = peer1
+            .with_storage(move |storage| create_test_project(&storage))
+            .await
+            .unwrap()
+            .unwrap();
+        peer2
+            .with_storage({
+                let urn = project.urn();
+                let peer_id = peer1.peer_id();
+                move |storage| replication::replicate(&storage, None, urn, peer_id, None)
+            })
+            .await
+            .unwrap()
+            .expect("should be able to replicate");
 
         let peer2_events = peer2.subscribe().await;
-        let urn = radicle.urn();
-        let alice_name = alice.name();
-
-        // Create project on peer1, and clone from peer2
-        {
-            let alice = alice.clone();
-            let radicle = radicle.clone();
-            peer1
-                .with_storage(move |storage| {
-                    storage.create_repo(&alice).unwrap();
-                    storage.create_repo(&radicle).unwrap();
-                })
-                .await
-                .unwrap();
-        }
-
-        {
-            let radicle_at_peer1 = radicle.urn().into_rad_url(peer1.peer_id());
-            peer2
-                .with_storage(move |storage| {
-                    storage
-                        .clone_repo::<ProjectInfo, _>(radicle_at_peer1, None)
-                        .unwrap();
-                })
-                .await
-                .unwrap();
-        }
 
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = block_in_place(|| {
@@ -222,19 +186,13 @@ async fn fetches_on_gossip_notify() {
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
 
+            let mut updated_refs = Vec::new();
             let mut remote_callbacks = git2::RemoteCallbacks::new();
             remote_callbacks.push_update_reference(|refname, maybe_error| match maybe_error {
                 None => {
                     let rev = repo.find_reference(refname)?.target().unwrap();
-
-                    futures::executor::block_on(peer1.protocol().announce(Gossip {
-                        origin: Some(peer1.peer_id()),
-                        urn: RadUrn {
-                            path: uri::Path::parse(refname).unwrap(),
-                            ..radicle.urn()
-                        },
-                        rev: Some(Rev::Git(rev)),
-                    }));
+                    let refname = ext::RefLike::try_from(refname).unwrap();
+                    updated_refs.push((refname, rev));
 
                     Ok(())
                 },
@@ -245,12 +203,16 @@ async fn fetches_on_gossip_notify() {
                 ))),
             });
 
-            let url = LocalUrl::from_urn(urn.clone(), peer1.peer_id());
-
-            let heads = NamespacedRef::heads(urn.clone().id, Some(peer1.peer_id()));
+            let url = LocalUrl::from_urn(project.urn(), peer1.peer_id());
+            let heads = NamespacedRef::heads(Namespace::from(project.urn()), Some(peer1.peer_id()));
             let remotes = FlatRef::heads(
                 PhantomData,
-                ext::RefLike::try_from(format!("{}@{}", alice_name, peer1.peer_id())).unwrap(),
+                ext::RefLike::try_from(format!(
+                    "{}@{}",
+                    owner.doc.payload.subject.name,
+                    peer1.peer_id()
+                ))
+                .unwrap(),
             );
 
             let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
@@ -259,7 +221,15 @@ async fn fetches_on_gossip_notify() {
                 initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks)).unwrap();
             assert!(transport_results.wait(Duration::from_secs(3)).is_some());
 
-            oid
+            for (path, rev) in updated_refs {
+                futures::executor::block_on(peer1.protocol().announce(Gossip {
+                    origin: None,
+                    urn: project.urn().with_path(path),
+                    rev: Some(Rev::Git(rev)),
+                }))
+            }
+
+            ext::Oid::from(oid)
         });
 
         // Wait for peer2 to receive the gossip announcement
@@ -284,14 +254,11 @@ async fn fetches_on_gossip_notify() {
         let peer2_has_commit = peer2
             .with_storage(move |storage| {
                 storage.has_commit(
-                    &RadUrn {
-                        path: uri::Path::parse(format!(
-                            "refs/remotes/{}/heads/master",
-                            peer1.peer_id()
-                        ))
-                        .unwrap(),
-                        ..radicle.urn()
-                    },
+                    &project.urn().with_path(
+                        reflike!("refs/remotes")
+                            .join(peer1.peer_id())
+                            .join(reflike!("heads/master")),
+                    ),
                     commit_id,
                 )
             })
@@ -303,61 +270,49 @@ async fn fetches_on_gossip_notify() {
     .await;
 }
 
+// FIXME(kim): does this belong here?
 #[tokio::test]
-async fn all_metadata_returns_only_local_projects() {
+async fn list_identities_returns_only_local_projects() {
     logging::init();
 
     const NUM_PEERS: usize = 3;
 
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
     testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
-        let (peer1, peer1_key) = apis.pop().unwrap();
+        let (peer1, _) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
         let (peer3, _) = apis.pop().unwrap();
 
-        let mut alice = Alice::new(peer1_key.public());
-        let mut radicle = Radicle::new(&alice);
-        {
-            let resolves_to_alice = alice.clone();
-            alice
-                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-                .unwrap();
-            radicle
-                .sign(
-                    &peer1_key,
-                    &Signatory::User(alice.urn()),
-                    &resolves_to_alice,
-                )
-                .unwrap();
-        }
-
-        let radicle_at_peer1 = radicle.urn().into_rad_url(peer1.peer_id());
-        let radicle_at_peer2 = radicle.urn().into_rad_url(peer2.peer_id());
-
-        peer1
-            .with_storage(move |storage| {
-                storage.create_repo(&alice).unwrap();
-                storage.create_repo(&radicle).unwrap();
-            })
+        let TestProject { project, .. } = peer1
+            .with_storage(move |storage| create_test_project(&storage))
             .await
+            .unwrap()
             .unwrap();
+
         peer2
-            .with_storage(move |storage| {
-                storage
-                    .clone_repo::<ProjectInfo, _>(radicle_at_peer1, None)
-                    .unwrap();
-            })
-            .await
-            .unwrap();
-        let all_metadata_acc_to_peer3 = peer3
-            .with_storage(move |storage| {
-                storage.clone_repo::<ProjectInfo, _>(radicle_at_peer2, None)?;
-                Ok::<_, storage::Error>(storage.all_metadata()?.collect::<Vec<_>>())
+            .with_storage({
+                let urn = project.urn();
+                let remote_peer = peer1.peer_id();
+                move |storage| replication::replicate(&storage, None, urn, remote_peer, None)
             })
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(2, all_metadata_acc_to_peer3.len());
+
+        let all_identities = peer3
+            .with_storage({
+                let urn = project.urn();
+                let remote_peer = peer2.peer_id();
+                move |storage| -> Result<Vec<SomeIdentity>, anyhow::Error> {
+                    replication::replicate(&storage, None, urn, remote_peer, None)?;
+                    Ok(identities::any::list(&storage)?.collect::<Result<Vec<_>, _>>()?)
+                }
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(2, all_identities.len());
     })
     .await;
 }
@@ -375,80 +330,58 @@ async fn ask_and_clone() {
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
 
     testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
-        let (peer1, peer1_key) = apis.pop().unwrap();
-        let mut alice = Alice::new(peer1_key.public());
-        let mut radicle = Radicle::new(&alice);
+        let (peer1, _) = apis.pop().unwrap();
 
-        {
-            let resolves_to_alice = alice.clone();
-            alice
-                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-                .unwrap();
-            radicle
-                .sign(
-                    &peer1_key,
-                    &Signatory::User(alice.urn()),
-                    &resolves_to_alice,
-                )
-                .unwrap();
-        }
-
-        let repo_urn = peer1
-            .with_storage(move |storage| {
-                storage.create_repo(&alice).unwrap();
-                storage.create_repo(&radicle).unwrap().urn
-            })
+        let TestProject { project, .. } = peer1
+            .with_storage(move |storage| create_test_project(&storage))
             .await
+            .unwrap()
             .unwrap();
 
         let (peer2, _) = apis.pop().unwrap();
         let res = peer2
-            .providers(repo_urn.clone(), Duration::from_secs(5))
+            .providers(project.urn(), Duration::from_secs(5))
             .await
             .next()
             .await;
 
-        let peer_id = match res {
+        let remote_peer = match res {
             Some(peer_info) => peer_info.peer_id,
             None => panic!("Expected to have obtained peer1 but got None instead"),
         };
 
-        let peer2_has_urn = {
-            let repo_urn = repo_urn.clone();
+        let peer2_has_urn = async || {
             peer2
-                .with_storage(move |storage| storage.has_urn(&repo_urn))
-                .await
-                .unwrap()
-                .unwrap()
-        };
-        assert_eq!(
-            false, peer2_has_urn,
-            "expected peer2 to not have URN {} yet",
-            repo_urn
-        );
-
-        {
-            let url = repo_urn.clone().into_rad_url(peer_id);
-            peer2
-                .with_storage(move |storage| {
-                    storage.clone_repo::<ProjectInfo, _>(url, None).unwrap();
+                .with_storage({
+                    let urn = project.urn();
+                    move |storage| storage.has_urn(&urn)
                 })
                 .await
-                .unwrap();
-        }
-
-        let peer2_has_urn = {
-            let repo_urn = repo_urn.clone();
-            peer2
-                .with_storage(move |storage| storage.has_urn(&repo_urn))
-                .await
                 .unwrap()
                 .unwrap()
         };
+
         assert_eq!(
-            true, peer2_has_urn,
+            false,
+            peer2_has_urn().await,
+            "expected peer2 to not have URN {} yet",
+            project.urn()
+        );
+
+        peer2
+            .with_storage({
+                let urn = project.urn();
+                move |storage| replication::replicate(&storage, None, urn, remote_peer, None)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            true,
+            peer2_has_urn().await,
             "expected peer2 to have URN {}",
-            repo_urn
+            project.urn()
         )
     })
     .await;
@@ -463,42 +396,22 @@ async fn menage_a_troi() {
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
     testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
         let (peer1, peer1_key) = apis.pop().unwrap();
-        let peer1_id = peer1.peer_id();
-        let peer1_addr = peer1.listen_addr();
-
         let (peer2, _) = apis.pop().unwrap();
-        let peer2_id = peer2.peer_id();
-        let peer2_addr = peer2.listen_addr();
-
         let (peer3, _) = apis.pop().unwrap();
 
-        let mut alice = Alice::new(peer1_key.public());
-        let mut radicle = Radicle::new(&alice);
-        {
-            let resolves_to_alice = alice.clone();
-            alice
-                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-                .unwrap();
-            radicle
-                .sign(
-                    &peer1_key,
-                    &Signatory::User(alice.urn()),
-                    &resolves_to_alice,
-                )
-                .unwrap();
-        }
-
-        let urn = radicle.urn();
-        let default_branch = radicle.default_branch().to_string();
-        let alice_name = alice.name().to_string();
-
-        peer1
-            .with_storage(move |storage| {
-                storage.create_repo(&alice).unwrap();
-                storage.create_repo(&radicle).unwrap();
-            })
+        let TestProject { project, owner } = peer1
+            .with_storage(move |storage| create_test_project(&storage))
             .await
+            .unwrap()
             .unwrap();
+        let default_branch = project
+            .doc
+            .payload
+            .subject
+            .default_branch
+            .as_ref()
+            .map(|cstring| cstring.to_string())
+            .unwrap_or_else(|| "mistress".to_owned());
 
         let tmp = tempfile::tempdir().unwrap();
         block_in_place(|| {
@@ -510,12 +423,17 @@ async fn menage_a_troi() {
 
             // Perform commit and push to working copy on peer1
             let repo = git2::Repository::init(tmp.path().join("peer1")).unwrap();
-            let url = LocalUrl::from_urn(urn.clone(), peer1_id);
+            let url = LocalUrl::from_urn(project.urn(), peer1.peer_id());
 
-            let heads = NamespacedRef::heads(urn.clone().id, Some(peer1_id));
+            let heads = NamespacedRef::heads(Namespace::from(project.urn()), Some(peer1.peer_id()));
             let remotes = FlatRef::heads(
                 PhantomData,
-                ext::RefLike::try_from(format!("{}@{}", alice_name, peer1_id)).unwrap(),
+                ext::RefLike::try_from(format!(
+                    "{}@{}",
+                    owner.doc.payload.subject.name,
+                    peer1.peer_id()
+                ))
+                .unwrap(),
             );
 
             let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
@@ -527,44 +445,50 @@ async fn menage_a_troi() {
                 None,
             )
             .unwrap();
-            assert!(transport_results.wait(Duration::from_secs(3)).is_some());
+
+            while let Some(results) = transport_results.wait(Duration::from_secs(3)) {
+                for res in results {
+                    assert_matches!(res, Ok(_), "push error");
+                }
+            }
         });
 
         let head = NamespacedRef::head(
-            urn.clone().id,
-            peer1_id,
+            Namespace::from(project.urn()),
+            peer1.peer_id(),
             ext::RefLike::try_from(default_branch.as_str()).unwrap(),
         );
-        let peer2_has_ref = {
-            let head = head.clone();
-            let url = urn.clone().into_rad_url(peer1_id);
-            peer2
-                .with_storage(move |storage| {
-                    storage
-                        .clone_repo::<ProjectInfo, _>(url, Some(peer1_addr))
-                        .unwrap();
-                    storage.has_ref(&head).unwrap()
-                })
-                .await
-                .unwrap()
-        };
-        let peer3_has_ref = {
-            let head = head.clone();
-            let url = urn.clone().into_rad_url(peer2_id);
-            peer3
-                .with_storage(move |storage| {
-                    storage
-                        .clone_repo::<ProjectInfo, _>(url, Some(peer2_addr))
-                        .unwrap();
-                    storage.has_ref(&head).unwrap()
-                })
-                .await
-                .unwrap()
-        };
+        let peer2_has_ref = peer2
+            .with_storage({
+                let head = head.clone();
+                let urn = project.urn();
+                let remote_peer = peer1.peer_id();
+                let addrs = Some(peer1.listen_addr());
+                move |storage| -> Result<bool, anyhow::Error> {
+                    replication::replicate(&storage, None, urn, remote_peer, addrs)?;
+                    Ok(storage.has_ref(&head)?)
+                }
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        let peer3_has_ref = peer3
+            .with_storage({
+                let head = head.clone();
+                let urn = project.urn();
+                let remote_peer = peer2.peer_id();
+                let addrs = Some(peer2.listen_addr());
+                move |storage| -> Result<bool, anyhow::Error> {
+                    replication::replicate(&storage, None, urn, remote_peer, addrs)?;
+                    Ok(storage.has_ref(&head)?)
+                }
+            })
+            .await
+            .unwrap()
+            .unwrap();
 
-        assert!(peer2_has_ref, format!("peer 2 missing ref '{}'", head));
-        assert!(peer3_has_ref, format!("peer 3 missing ref '{}'", head));
+        assert!(peer2_has_ref, format!("peer 2 missing ref `{}`", head));
+        assert!(peer3_has_ref, format!("peer 3 missing ref `{}`", head));
     })
     .await;
 }
-*/

@@ -99,8 +99,6 @@ async fn can_fetch() {
             peer2
                 .with_storage(move |store| {
                     replication::replicate(&store, None, urn.clone(), peer1_id, None).unwrap();
-                    eprintln!("listing tracked for {}", urn);
-
                     tracking::tracked(&store, &urn)
                         .unwrap()
                         .map(|peer| {
@@ -203,7 +201,7 @@ where
 
     for (path, rev) in updated_refs {
         futures::executor::block_on(peer.protocol().announce(Gossip {
-            origin: Some(peer.peer_id()),
+            origin: None,
             urn: project.urn().with_path(path),
             rev: Some(Rev::Git(rev)),
         }))

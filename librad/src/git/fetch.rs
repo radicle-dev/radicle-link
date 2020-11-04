@@ -185,8 +185,13 @@ pub mod refspecs {
                                 .join(&namespace)
                                 .join(reflike!("refs/remotes"))
                                 .join(tracked_peer)
-                                .join(ext::Qualified::from(name.clone()))
+                                // Nb.: `name` is `OneLevel`, but we are in the
+                                // remote tracking branches, so we need `heads`
+                                // Like `Qualified::from(name).strip_prefix("refs")`
+                                .join(reflike!("heads")).join(name.clone())
                         };
+
+                        tracing::trace!("looking for {} in {:?}", name_namespaced, **remote_heads);
 
                         // Only include the advertised ref if its target OID
                         // is the same as the signed one.
@@ -604,19 +609,19 @@ mod tests {
             (
                 reflike!("refs/namespaces")
                     .join(&*PROJECT_URN)
-                    .join(reflike!("refs/remotes/lolek/refs/heads/mister")),
+                    .join(reflike!("refs/remotes/lolek/heads/mister")),
                 *ZERO,
             ),
             (
                 reflike!("refs/namespaces")
                     .join(&*PROJECT_URN)
-                    .join(reflike!("refs/remotes/bolek/refs/heads/mister")),
+                    .join(reflike!("refs/remotes/bolek/heads/mister")),
                 *ZERO,
             ),
             (
                 reflike!("refs/namespaces")
                     .join(&*PROJECT_URN)
-                    .join(reflike!("refs/remotes/bolek/refs/heads/next")),
+                    .join(reflike!("refs/remotes/bolek/heads/next")),
                 *ZERO,
             ),
             (
