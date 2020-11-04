@@ -219,7 +219,11 @@ async fn fetches_on_gossip_notify() {
 
             let oid =
                 initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks)).unwrap();
-            assert!(transport_results.wait(Duration::from_secs(3)).is_some());
+            while let Some(results) = transport_results.wait(Duration::from_secs(1)) {
+                for res in results {
+                    assert_matches!(res, Ok(_), "push error");
+                }
+            }
 
             for (path, rev) in updated_refs {
                 futures::executor::block_on(peer1.protocol().announce(Gossip {
@@ -446,7 +450,7 @@ async fn menage_a_troi() {
             )
             .unwrap();
 
-            while let Some(results) = transport_results.wait(Duration::from_secs(3)) {
+            while let Some(results) = transport_results.wait(Duration::from_secs(1)) {
                 for res in results {
                     assert_matches!(res, Ok(_), "push error");
                 }

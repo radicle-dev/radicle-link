@@ -120,11 +120,10 @@ async fn can_fetch() {
             let commit_id =
                 commit_and_push(tmp.path().join("peer1"), &peer1, &owner, &project).unwrap();
 
-            for res in local_transport_results_peer1
-                .wait(Duration::from_secs(5))
-                .expect("there should have been push activity")
-            {
-                assert_matches!(res, Ok(_), "push error");
+            while let Some(results) = local_transport_results_peer1.wait(Duration::from_secs(1)) {
+                for res in results {
+                    assert_matches!(res, Ok(_), "push error");
+                }
             }
 
             wait_for_event(peer2_events, peer1.peer_id()).await;
@@ -138,11 +137,10 @@ async fn can_fetch() {
             )
             .unwrap();
 
-            for res in local_transport_results_peer2
-                .wait(Duration::from_secs(5))
-                .expect("there should have been fetch activity")
-            {
-                assert_matches!(res, Ok(_), "fetch error");
+            while let Some(results) = local_transport_results_peer2.wait(Duration::from_secs(1)) {
+                for res in results {
+                    assert_matches!(res, Ok(_), "fetch error");
+                }
             }
 
             assert!(peer2_repo.find_commit(commit_id).is_ok());
