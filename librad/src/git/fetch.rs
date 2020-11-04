@@ -191,14 +191,34 @@ pub mod refspecs {
                                 .join(reflike!("heads")).join(name.clone())
                         };
 
-                        tracing::trace!("looking for {} in {:?}", name_namespaced, **remote_heads);
-
                         // Only include the advertised ref if its target OID
                         // is the same as the signed one.
-                        let targets_match = remote_heads
-                            .get(&name_namespaced)
-                            .map(|remote_target| remote_target == &*target)
-                            .unwrap_or(false);
+                        let targets_match = {
+                            let found = remote_heads.get(&name_namespaced);
+                            match found {
+                                None => {
+                                    tracing::debug!(
+                                        "{} not found in remote heads",
+                                        name_namespaced
+                                    );
+                                    false
+                                },
+
+                                Some(remote_target) => {
+                                    if remote_target == &*target {
+                                        true
+                                    } else {
+                                        tracing::warn!(
+                                            "{} target mismatch: expected {}, got {}",
+                                            name_namespaced,
+                                            target,
+                                            remote_target
+                                        );
+                                        false
+                                    }
+                                },
+                            }
+                        };
 
                         targets_match.then_some({
                             let local = Reference::head(
