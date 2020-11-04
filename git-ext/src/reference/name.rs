@@ -88,7 +88,7 @@ impl RefLike {
     ///
     /// If `base` is not a prefix of `self`, or `base` equals the path in `self`
     /// (ie. the result would be the empty path, which is not a valid
-    /// [`RefLike`].
+    /// [`RefLike`]).
     pub fn strip_prefix<P: AsRef<Path>>(&self, base: P) -> Result<Self, StripPrefixError> {
         self.0
             .strip_prefix(base)
