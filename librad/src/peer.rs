@@ -210,6 +210,7 @@ impl Into<ext::RefLike> for PeerId {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Originates<T> {
     pub from: PeerId,
     pub value: T,
@@ -224,6 +225,7 @@ impl<T> Originates<T> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct OriginatesRef<'a, T> {
     pub from: &'a PeerId,
     pub value: &'a T,

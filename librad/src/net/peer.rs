@@ -23,13 +23,13 @@ use std::{
     time::Duration,
 };
 
-use either::Either;
+use either::Either::{self, Left, Right};
 use futures::{
     future::{self, BoxFuture, FutureExt},
     stream::StreamExt,
 };
 use futures_timer::Delay;
-use git_ext as ext;
+use git_ext::{self as ext, reference};
 use thiserror::Error;
 use tokio::task::spawn_blocking;
 
@@ -41,7 +41,7 @@ use crate::{
         storage,
         tracking,
     },
-    identities::git::Urn,
+    identities::{git::Urn, urn},
     internal::channel::Fanout,
     keys::AsPKCS8,
     net::{
@@ -126,7 +126,7 @@ pub enum PeerEvent {
 pub struct FetchInfo {
     pub provider: PeerId,
     pub gossip: Gossip,
-    pub result: PutResult,
+    pub result: PutResult<Gossip>,
 }
 
 #[derive(Clone)]
@@ -420,7 +420,7 @@ where
         head: impl Into<Option<git2::Oid>>,
     ) -> Result<(), PeerStorageError> {
         let git = self.inner.get().await?;
-        let urn = urn_context(&git.peer_id(), urn);
+        let urn = urn_context(*git.peer_id(), urn);
         let head = head.into().map(ext::Oid::from);
 
         spawn_blocking(move || {
@@ -443,7 +443,7 @@ where
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
         let git = self.inner.get().await.unwrap();
-        let urn = urn_context(&git.peer_id(), urn);
+        let urn = urn_context(*git.peer_id(), urn);
         let head = head.into().map(ext::Oid::from);
         spawn_blocking(move || match head {
             None => git.has_urn(&urn).unwrap_or(false),
@@ -465,23 +465,34 @@ where
 
 /// If applicable, map the `path` of the given [`Urn`] to
 /// `refs/remotes/<origin>/<path>`
-fn urn_context(local_peer_id: &PeerId, urn: Either<Urn, Originates<Urn>>) -> Urn {
+fn urn_context(local_peer_id: PeerId, urn: Either<Urn, Originates<Urn>>) -> Urn {
+    fn remote(urn: Urn, peer: PeerId) -> Urn {
+        let path = reflike!("refs/remotes").join(peer).join(
+            ext::RefLike::from(reference::Qualified::from(
+                urn.path.unwrap_or_else(|| urn::DEFAULT_PATH.clone()),
+            ))
+            .strip_prefix("refs")
+            .unwrap(),
+        );
+
+        Urn {
+            id: urn.id,
+            path: Some(path),
+        }
+    }
+
+    fn local(urn: Urn) -> Urn {
+        urn.map_path(|path| {
+            path.or_else(|| Some(urn::DEFAULT_PATH.clone()))
+                .map(reference::Qualified::from)
+                .map(ext::RefLike::from)
+        })
+    }
+
     match urn {
-        Either::Left(urn) => urn,
-        Either::Right(Originates { from, value: urn }) => {
-            if from == *local_peer_id {
-                urn
-            } else {
-                let mut path = reflike!("refs/remotes").join(from);
-                if let Some(urn_path) = urn.path {
-                    path = path.join(urn_path);
-                }
-                Urn {
-                    path: Some(path),
-                    ..urn
-                }
-            }
-        },
+        Left(urn) => local(urn),
+        Right(Originates { from, value: urn }) if from == local_peer_id => local(urn),
+        Right(Originates { from, value: urn }) => remote(urn, from),
     }
 }
 
@@ -492,36 +503,38 @@ where
 {
     type Update = Gossip;
 
-    #[tracing::instrument(level = "debug", skip(self))]
-    async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult {
+    #[tracing::instrument(skip(self))]
+    async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult<Self::Update> {
         let peer_id = has.origin.unwrap_or_else(|| provider);
         let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
             Ok(b) => b,
             Err(e) => {
-                tracing::error!(err = %e, "Git::Storage::is_tracked error");
+                tracing::error!(err = %e, "error determining tracking status");
                 return PutResult::Error;
             },
         };
+
         let res = match has.rev {
             // TODO: may need to fetch eagerly if we tracked while offline (#141)
             Some(Rev::Git(head)) if is_tracked => {
-                let res = {
-                    let this = self.clone();
-                    let has = has.clone();
-                    let urn = match has.origin {
-                        Some(origin) => Either::Right(Originates {
-                            from: origin,
-                            value: has.urn,
-                        }),
-                        None => Either::Left(has.urn),
-                    };
-                    this.git_fetch(provider, urn, head).await
+                let urn = match has.origin {
+                    Some(origin) => Right(Originates {
+                        from: origin,
+                        value: has.urn.clone(),
+                    }),
+                    None => Left(has.urn.clone()),
                 };
+
+                let this = self.clone();
+                let res = this.git_fetch(provider, urn.clone(), head).await;
 
                 match res {
                     Ok(()) => {
-                        if self.ask(has.clone()).await {
-                            PutResult::Applied
+                        if this.git_has(urn, head).await {
+                            PutResult::Applied(Gossip {
+                                origin: Some(peer_id),
+                                ..has.clone()
+                            })
                         } else {
                             tracing::warn!(
                                 provider = %provider,
@@ -532,6 +545,7 @@ where
                             PutResult::Stale
                         }
                     },
+
                     Err(e) => match e {
                         PeerStorageError::KnownObject(_) => PutResult::Stale,
                         e => {
@@ -550,7 +564,7 @@ where
             .emit(PeerEvent::GossipFetch(FetchInfo {
                 provider,
                 gossip: has,
-                result: res,
+                result: res.clone(),
             }))
             .await;
 
@@ -561,14 +575,156 @@ where
     async fn ask(&self, want: Self::Update) -> bool {
         self.git_has(
             match want.origin {
-                Some(origin) => Either::Right(Originates {
+                Some(origin) => Right(Originates {
                     from: origin,
                     value: want.urn,
                 }),
-                None => Either::Left(want.urn),
+                None => Left(want.urn),
             },
             want.rev.map(|Rev::Git(head)| head),
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod urn_context {
+        use super::*;
+        use crate::keys::SecretKey;
+
+        lazy_static! {
+            static ref LOCAL_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed([
+                188, 124, 109, 100, 178, 93, 115, 53, 15, 22, 114, 181, 15, 211, 233, 104, 32, 189,
+                9, 162, 235, 148, 204, 172, 21, 117, 34, 9, 236, 247, 238, 113
+            ]));
+            static ref OTHER_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed([
+                236, 225, 197, 234, 16, 153, 83, 54, 15, 203, 86, 253, 157, 81, 144, 96, 106, 99,
+                65, 129, 8, 181, 125, 141, 120, 122, 58, 48, 22, 97, 32, 9
+            ]));
+            static ref ZERO_OID: ext::Oid = git2::Oid::zero().into();
+        }
+
+        #[test]
+        fn direct_empty() {
+            let urn = Urn::new(*ZERO_OID);
+            let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
+            assert_eq!(urn.with_path(urn::DEFAULT_PATH.clone()), ctx)
+        }
+
+        #[test]
+        fn direct_onelevel() {
+            let urn = Urn::new(*ZERO_OID).with_path(reflike!("ban/ana"));
+            let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
+            assert_eq!(urn.with_path(reflike!("refs/heads/ban/ana")), ctx)
+        }
+
+        #[test]
+        fn direct_qualified() {
+            let urn = Urn::new(*ZERO_OID).with_path(reflike!("refs/heads/next"));
+            let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
+            assert_eq!(urn, ctx)
+        }
+
+        #[test]
+        fn remote_empty() {
+            let urn = Urn::new(*ZERO_OID);
+            let ctx = urn_context(
+                *LOCAL_PEER_ID,
+                Right(Originates {
+                    from: *OTHER_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(
+                urn.with_path(
+                    reflike!("refs/remotes")
+                        .join(*OTHER_PEER_ID)
+                        .join(urn::DEFAULT_PATH.strip_prefix("refs").unwrap())
+                ),
+                ctx
+            )
+        }
+
+        #[test]
+        fn remote_onelevel() {
+            let urn = Urn::new(*ZERO_OID).with_path(reflike!("ban/ana"));
+            let ctx = urn_context(
+                *LOCAL_PEER_ID,
+                Right(Originates {
+                    from: *OTHER_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(
+                urn.with_path(
+                    reflike!("refs/remotes")
+                        .join(*OTHER_PEER_ID)
+                        .join(reflike!("heads/ban/ana"))
+                ),
+                ctx
+            )
+        }
+
+        #[test]
+        fn remote_qualified() {
+            let urn = Urn::new(*ZERO_OID).with_path(reflike!("refs/heads/next"));
+            let ctx = urn_context(
+                *LOCAL_PEER_ID,
+                Right(Originates {
+                    from: *OTHER_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(
+                urn.with_path(
+                    reflike!("refs/remotes")
+                        .join(*OTHER_PEER_ID)
+                        .join(reflike!("heads/next"))
+                ),
+                ctx
+            )
+        }
+
+        #[test]
+        fn self_origin_empty() {
+            let urn = Urn::new(*ZERO_OID);
+            let ctx = urn_context(
+                *LOCAL_PEER_ID,
+                Right(Originates {
+                    from: *LOCAL_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(urn.with_path(urn::DEFAULT_PATH.clone()), ctx)
+        }
+
+        #[test]
+        fn self_origin_onelevel() {
+            let urn = Urn::new(*ZERO_OID).with_path(reflike!("ban/ana"));
+            let ctx = urn_context(
+                *LOCAL_PEER_ID,
+                Right(Originates {
+                    from: *LOCAL_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(urn.with_path(reflike!("refs/heads/ban/ana")), ctx)
+        }
+
+        #[test]
+        fn self_origin_qualified() {
+            let urn = Urn::new(*ZERO_OID).with_path(reflike!("refs/heads/next"));
+            let ctx = urn_context(
+                *LOCAL_PEER_ID,
+                Right(Originates {
+                    from: *LOCAL_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(urn, ctx)
+        }
     }
 }

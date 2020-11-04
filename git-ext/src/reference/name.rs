@@ -21,7 +21,7 @@ use std::{
     fmt::{self, Display},
     iter::FromIterator,
     ops::Deref,
-    path::{Path, PathBuf},
+    path::{self, Path, PathBuf},
     str::{self, FromStr},
 };
 
@@ -42,6 +42,16 @@ pub enum Error {
 
     #[error(transparent)]
     Git(#[from] git2::Error),
+}
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum StripPrefixError {
+    #[error("prefix is equal to path")]
+    ImproperPrefix,
+
+    #[error("not prefixed by given path")]
+    NotPrefix(#[from] path::StripPrefixError),
 }
 
 /// An owned path-like value which is a valid git refname.
@@ -69,6 +79,27 @@ impl RefLike {
     /// Append a [`RefspecPattern`], yielding a [`RefspecPattern`]
     pub fn with_pattern_suffix<Suf: Into<RefspecPattern>>(&self, suf: Suf) -> RefspecPattern {
         RefspecPattern(self.0.join(suf.into().0))
+    }
+
+    /// Returns a [`RefLike`] that, when joined onto `base` (converted into
+    /// [`Self`]), yields `self`.
+    ///
+    /// # Errors
+    ///
+    /// If `base` is not a prefix of `self`, or `base` equals the path in `self`
+    /// (ie. the result would be the empty path, which is not a valid
+    /// [`RefLike`].
+    pub fn strip_prefix<P: AsRef<Path>>(&self, base: P) -> Result<Self, StripPrefixError> {
+        self.0
+            .strip_prefix(base)
+            .map_err(StripPrefixError::from)
+            .and_then(|path| {
+                if path.as_os_str().is_empty() {
+                    Err(StripPrefixError::ImproperPrefix)
+                } else {
+                    Ok(Self(path.to_path_buf()))
+                }
+            })
     }
 
     pub fn as_str(&self) -> &str {

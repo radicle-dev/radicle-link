@@ -677,7 +677,7 @@ where
                         // `val` was new, and is now fetched to local storage.
                         // Let connected peers know they can now fetch it from
                         // us.
-                        PutResult::Applied => {
+                        PutResult::Applied(val) => {
                             tracing::info!(value = ?val, "Announcing applied value");
 
                             self.broadcast(

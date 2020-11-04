@@ -18,8 +18,8 @@
 use crate::peer::PeerId;
 
 #[derive(Clone, Copy, Debug)]
-pub enum PutResult {
-    Applied,
+pub enum PutResult<Update> {
+    Applied(Update),
     Stale,
     Uninteresting,
     Error,
@@ -40,7 +40,7 @@ pub trait LocalStorage: Clone + Send + Sync {
     /// up-to-date, or it was not possible to fetch the actual state from
     /// the `provider`. In this case, the network is asked to retransmit
     /// [`Self::Update`], so we can eventually try again.
-    async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult;
+    async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult<Self::Update>;
 
     /// Ask the local storage if value `A` is available.
     ///

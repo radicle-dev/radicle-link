@@ -128,8 +128,8 @@ pub enum FromRefLikeError {
     #[error("missing {0}")]
     Missing(&'static str),
 
-    #[error("must be an absolute ref, ie. start with `refs/namespaces`")]
-    Absolute(#[from] std::path::StripPrefixError),
+    #[error("must be a fully-qualified ref, ie. start with `refs/namespaces`")]
+    Namespaced(#[from] ext::reference::name::StripPrefixError),
 
     #[error(transparent)]
     OidFromMultihash(#[from] ext::oid::FromMultihashError),
@@ -154,7 +154,8 @@ impl TryFrom<ext::RefLike> for Urn<ext::Oid> {
     type Error = FromRefLikeError;
 
     fn try_from(refl: ext::RefLike) -> Result<Self, Self::Error> {
-        let mut suf = refl.strip_prefix("refs/namespaces/")?.iter();
+        let refl = refl.strip_prefix("refs/namespaces")?;
+        let mut suf = refl.iter();
         let id = suf
             .next()
             .ok_or(Self::Error::Missing("namespace"))
