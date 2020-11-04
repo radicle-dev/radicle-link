@@ -36,7 +36,6 @@ use librad::{
         storage,
         tracking,
     },
-    keys,
     net::{
         discovery,
         gossip,

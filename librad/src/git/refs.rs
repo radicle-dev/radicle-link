@@ -163,23 +163,31 @@ pub struct Refs {
 
 impl Refs {
     /// Compute the [`Refs`] from the current storage state at [`Urn`].
+    #[tracing::instrument(level = "debug", skip(storage), err)]
     pub fn compute<S>(storage: &Storage<S>, urn: &Urn) -> Result<Self, stored::Error>
     where
         S: Signer,
     {
+        let namespace = Namespace::from(urn);
+        let namespace_prefix = format!("refs/namespaces/{}/", namespace);
+        let heads_ref = NamespacedRef::heads(namespace, None);
+
+        tracing::debug!("reading heads from {}", &heads_ref);
+
         let heads = storage
-            .references(&NamespacedRef::heads(Namespace::from(urn), None))?
+            .references(&heads_ref)?
             // FIXME: this is `git_ext::reference::iter::References::peeled()`,
             // which we need to generalise to allow impl Iterator combinators
             .filter_map(|reference| {
                 reference.ok().and_then(|head| {
-                    head.name().and_then(|name| {
-                        head.target()
-                            .map(|target| (name.to_owned(), target.to_owned()))
-                    })
+                    head.name()
+                        .and_then(|name| head.target().map(|target| (name.to_owned(), target)))
                 })
             })
             .try_fold(BTreeMap::new(), |mut acc, (name, oid)| {
+                tracing::trace!("raw refname: {}", name);
+                let name = name.strip_prefix(&namespace_prefix).unwrap_or(&name);
+                tracing::trace!("stripped namespace: {}", name);
                 let refname = reference::RefLike::try_from(name)?;
                 acc.insert(reference::OneLevel::from(refname), oid.into());
 
@@ -210,21 +218,30 @@ impl Refs {
     ///
     /// If the blob where the signed [`Refs`] are expected to be stored is not
     /// found, `None` is returned.
-    pub fn load<S>(
+    #[tracing::instrument(skip(storage), err)]
+    pub fn load<S, P>(
         storage: &Storage<S>,
         urn: &Urn,
-        peer: impl Into<Option<PeerId>>,
+        peer: P,
     ) -> Result<Option<Self>, stored::Error>
     where
         S: Signer,
+        P: Into<Option<PeerId>> + Debug,
     {
         let peer = peer.into();
         let signer = peer.unwrap_or_else(|| PeerId::from_signer(storage.signer()));
+
+        let blob_ref = NamespacedRef::rad_signed_refs(Namespace::from(urn), peer);
+        let blob_path = Path::new(stored::BLOB_PATH);
+
+        tracing::debug!(
+            "loading signed_refs from {} {}",
+            blob_ref,
+            blob_path.display()
+        );
+
         storage
-            .blob(
-                &NamespacedRef::rad_signed_refs(Namespace::from(urn), peer),
-                &Path::new(stored::BLOB_PATH),
-            )?
+            .blob(&blob_ref.clone(), &blob_path)?
             .map(|blob| Signed::from_json(blob.content(), &signer).map(|signed| signed.refs))
             .transpose()
             .map_err(stored::Error::from)
@@ -236,12 +253,15 @@ impl Refs {
     /// If the result of [`Self::compute`] is the same as the alread-stored
     /// [`Refs`], no commit is made and `None` is returned. Otherwise, the
     /// new and persisted [`Refs`] are returned in a `Some`.
+    #[tracing::instrument(skip(storage), err)]
     pub fn update<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Self>, stored::Error>
     where
         S: Signer,
     {
-        let refs = Self::compute(storage, urn)?.sign(storage.signer())?;
         let branch = NamespacedRef::rad_signed_refs(Namespace::from(urn), None);
+        tracing::debug!("updating signed refs for {}", branch);
+
+        let signed_refs = Self::compute(storage, urn)?.sign(storage.signer())?;
 
         let raw_git = storage.as_raw();
 
@@ -250,7 +270,7 @@ impl Refs {
             .map(|r| r.peel_to_commit())
             .transpose()?;
         let tree = {
-            let canonical = Cjson(&refs).canonical_form()?;
+            let canonical = Cjson(&signed_refs).canonical_form()?;
             let blob = raw_git.blob(&canonical)?;
             let mut builder = raw_git.treebuilder(None)?;
 
@@ -262,11 +282,12 @@ impl Refs {
 
         if let Some(ref parent) = parent {
             if parent.tree()?.id() == tree.id() {
+                tracing::debug!("signed refs already up-to-date");
                 return Ok(None);
             }
         }
 
-        {
+        let commit_id = {
             let author = raw_git.signature()?;
             raw_git.commit(
                 Some(reference::RefLike::from(&branch).as_str()),
@@ -275,10 +296,15 @@ impl Refs {
                 &format!("Update rad/signed_refs for {}", urn),
                 &tree,
                 &parent.iter().collect::<Vec<&git2::Commit>>(),
-            )?;
-        }
+            )?
+        };
+        tracing::trace!(
+            "updated signed refs to {}: {:?}",
+            commit_id,
+            signed_refs.refs
+        );
 
-        Ok(Some(refs.refs))
+        Ok(Some(signed_refs.refs))
     }
 
     pub fn sign<S>(self, signer: &S) -> Result<Signed, signing::Error>

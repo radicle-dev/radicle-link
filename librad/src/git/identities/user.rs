@@ -44,7 +44,7 @@ pub use identities::{
     payload::UserPayload,
 };
 
-/// Read a [`User`] from the tip of thr ref [`Urn::path`] points to.
+/// Read a [`User`] from the tip of the ref [`Urn::path`] points to.
 ///
 /// If the ref is not found, `None` is returned.
 #[tracing::instrument(level = "trace", skip(storage), err)]
@@ -79,7 +79,9 @@ pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedUser>
 where
     S: Signer,
 {
-    match storage.reference(&Reference::try_from(urn)?) {
+    let branch = Reference::try_from(urn)?;
+    tracing::debug!("verifying {} from {}", urn, branch);
+    match storage.reference(&branch) {
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
             identities(storage)

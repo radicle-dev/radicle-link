@@ -29,7 +29,7 @@ use thiserror::Error;
 use super::sealed;
 
 lazy_static! {
-    pub static ref DEFAULT_PATH: ext::RefLike = reflike!("rad/id");
+    pub static ref DEFAULT_PATH: ext::RefLike = reflike!("refs/rad/id");
 }
 
 pub trait HasProtocol: sealed::Sealed {
@@ -97,6 +97,23 @@ impl<R> Urn<R> {
             id: f(self.id),
             path: self.path,
         }
+    }
+
+    pub fn map_path<F>(self, f: F) -> Self
+    where
+        F: FnOnce(Option<ext::RefLike>) -> Option<ext::RefLike>,
+    {
+        Self {
+            id: self.id,
+            path: f(self.path),
+        }
+    }
+
+    pub fn with_path<P>(self, path: P) -> Self
+    where
+        P: Into<Option<ext::RefLike>>,
+    {
+        self.map_path(|_| path.into())
     }
 }
 
@@ -170,6 +187,8 @@ where
     }
 }
 
+// FIXME: this is not kosher -- doesn't include `refs/namespaces`, but
+// everything after that. Should have a better type for that.
 impl<'a, R> From<&'a Urn<R>> for ext::RefLike
 where
     R: HasProtocol,

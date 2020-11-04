@@ -15,16 +15,47 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use librad::identities::payload;
+use librad::{
+    git::{
+        identities::{self, Project, User},
+        storage::Storage,
+    },
+    identities::{delegation, payload},
+    signer::Signer,
+};
 
-lazy_static! {
-    pub static ref ALICE: payload::User = payload::User {
-        name: "alice".into()
-    };
-    pub static ref BOB: payload::User = payload::User { name: "bob".into() };
-    pub static ref RADICLE: payload::Project = payload::Project {
-        name: "radicle".into(),
-        description: Some("pea two pea".into()),
-        default_branch: Some("next".into())
-    };
+pub struct TestProject {
+    pub owner: User,
+    pub project: Project,
+}
+
+pub fn create_test_project<S>(storage: &Storage<S>) -> Result<TestProject, anyhow::Error>
+where
+    S: Signer,
+{
+    let peer_id = storage.peer_id();
+    let alice = identities::user::create(
+        storage,
+        payload::User {
+            name: "alice".into(),
+        },
+        Some(*peer_id.as_public_key()).into_iter().collect(),
+    )?;
+    let local_id = identities::local::load(storage, alice.urn())?
+        .expect("local id must exist as we just created it");
+    let proj = identities::project::create(
+        storage,
+        local_id,
+        payload::Project {
+            name: "radicle-link".into(),
+            description: Some("pea two pea".into()),
+            default_branch: Some("next".into()),
+        },
+        delegation::Indirect::from(alice.clone()),
+    )?;
+
+    Ok(TestProject {
+        owner: alice,
+        project: proj,
+    })
 }

@@ -373,11 +373,14 @@ impl<'a> DefaultFetcher<'a> {
         &mut self,
         fetchspecs: Fetchspecs<PeerId, git::Revision>,
     ) -> Result<FetchResult, git2::Error> {
-        let span = tracing::info_span!("DefaultFetcher::fetch");
-        let _guard = span.enter();
-
-        let refspecs = fetchspecs.refspecs(&self.urn, self.remote_peer, &self.remote_heads);
         {
+            let refspecs = fetchspecs
+                .refspecs(&self.urn, self.remote_peer, &self.remote_heads)
+                .into_iter()
+                .map(|spec| spec.as_refspec())
+                .collect::<Vec<_>>();
+            tracing::trace!("{:?}", refspecs);
+
             let mut callbacks = git2::RemoteCallbacks::new();
             callbacks.transfer_progress(|prog| {
                 tracing::trace!("Fetch: received {} bytes", prog.received_bytes());
@@ -385,10 +388,7 @@ impl<'a> DefaultFetcher<'a> {
             });
 
             self.remote.download(
-                &refspecs
-                    .into_iter()
-                    .map(|spec| spec.as_refspec())
-                    .collect::<Vec<_>>(),
+                &refspecs,
                 Some(
                     git2::FetchOptions::new()
                         .prune(git2::FetchPrune::On)

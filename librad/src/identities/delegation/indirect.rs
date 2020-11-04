@@ -188,6 +188,26 @@ impl<T, R, C> Indirect<T, R, C> {
     }
 }
 
+/// Create an [`Indirect`] delegation from a single [`PublicKey`].
+impl<T, R, C> From<PublicKey> for Indirect<T, R, C> {
+    fn from(pk: PublicKey) -> Self {
+        Self {
+            identities: vec![],
+            delegations: Some((pk, None)).into_iter().collect(),
+        }
+    }
+}
+
+/// Create an [`Indirect`] delegation from a single [`IndirectlyDelegating`].
+impl<T, R, C> From<IndirectlyDelegating<T, R, C>> for Indirect<T, R, C> {
+    fn from(id: IndirectlyDelegating<T, R, C>) -> Self {
+        Self {
+            identities: vec![id],
+            delegations: Default::default(),
+        }
+    }
+}
+
 impl<T, R, C> From<Indirect<T, R, C>> for payload::ProjectDelegations<R>
 where
     R: Clone + Ord,

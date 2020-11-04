@@ -34,6 +34,7 @@ pub fn init() {
         let subscriber = FmtSubscriber::builder()
             .with_env_filter(EnvFilter::from_default_env())
             .with_target(true)
+            .compact()
             .finish();
 
         tracing::subscriber::set_global_default(subscriber)

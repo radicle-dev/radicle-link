@@ -15,10 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-/*
 #![feature(async_closure)]
 
-use std::{convert::TryFrom, marker::PhantomData, time::Duration};
+use std::{convert::TryFrom, fmt::Debug, marker::PhantomData, path::Path, time::Duration};
 
 use assert_matches::assert_matches;
 use futures::{
@@ -29,23 +28,25 @@ use tempfile::tempdir;
 
 use librad::{
     git::{
+        identities::{self, Project, User},
         include,
         local::{transport, url::LocalUrl},
-        types::{remote::Remote, FlatRef, Force, NamespacedRef},
+        replication,
+        tracking,
+        types::{namespace::Namespace, remote::Remote, FlatRef, Force, NamespacedRef},
+        Urn,
     },
     git_ext as ext,
-    meta::{entity::Signatory, project::ProjectInfo},
-    net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
+    net::peer::{FetchInfo, Gossip, PeerApi, PeerEvent, Rev},
     peer::PeerId,
-    signer::SomeSigner,
-    uri::{self, RadUrn},
+    signer::{Signer, SomeSigner},
 };
 
 use librad_test::{
     git::initial_commit,
     logging,
     rad::{
-        entity::{Alice, Radicle},
+        identities::{create_test_project, TestProject},
         testnet,
     },
 };
@@ -86,143 +87,182 @@ async fn can_fetch() {
                 signer: SomeSigner { signer: peer2_key }.into(),
             });
 
-        let mut alice = Alice::new(peer1_key.public());
-        let mut radicle = Radicle::new(&alice);
-        {
-            let resolves_to_alice = alice.clone();
-            alice
-                .sign(&peer1_key, &Signatory::OwnedKey, &resolves_to_alice)
-                .unwrap();
-            radicle
-                .sign(
-                    &peer1_key,
-                    &Signatory::User(alice.urn()),
-                    &resolves_to_alice,
-                )
-                .unwrap();
-        }
-
-        let radicle_urn = radicle.urn();
-
-        {
-            let alice = alice.clone();
-            let radicle = radicle.clone();
-            peer1
-                .with_storage(move |storage| {
-                    storage.create_repo(&alice).unwrap();
-                    storage.create_repo(&radicle).unwrap();
-                })
-                .await
-                .unwrap();
-        }
+        let TestProject { project, owner } = peer1
+            .with_storage(move |store| create_test_project(&store))
+            .await
+            .unwrap()
+            .unwrap();
 
         let tracked_users = {
-            let url = radicle_urn.clone().into_rad_url(peer1.peer_id());
+            let urn = project.urn();
+            let peer1_id = peer1.peer_id();
             peer2
-                .with_storage(move |storage| {
-                    storage.clone_repo::<ProjectInfo, _>(url, None).unwrap();
-                    storage
-                        .tracked(&radicle_urn)
+                .with_storage(move |store| {
+                    replication::replicate(&store, None, urn.clone(), peer1_id, None).unwrap();
+                    eprintln!("listing tracked for {}", urn);
+
+                    tracking::tracked(&store, &urn)
                         .unwrap()
                         .map(|peer| {
-                            storage
-                                .get_rad_self_of(&radicle_urn, Some(peer))
-                                .map(|user| (user, peer))
+                            let self_ref = NamespacedRef::rad_self(Namespace::from(&urn), peer);
+                            let user = identities::user::get(&store, &Urn::from(self_ref))
+                                .unwrap()
+                                .expect("tracked user should exist");
+                            (user, peer)
                         })
-                        .collect::<Result<Vec<_>, _>>()
-                        .unwrap()
+                        .collect::<Vec<(User, PeerId)>>()
                 })
                 .await
                 .unwrap()
         };
+        assert!(!tracked_users.is_empty());
 
         let tmp = tempdir().unwrap();
-
-        // Perform commit and push to working copy on peer1
-        let repo = git2::Repository::init(tmp.path().join("peer1")).unwrap();
-        let url = LocalUrl::from_urn(radicle.urn(), peer1.peer_id());
-
-        let heads = NamespacedRef::heads(radicle.urn().id, Some(peer1.peer_id()));
-        let remotes = FlatRef::heads(
-            PhantomData,
-            ext::RefLike::try_from(format!("{}@{}", alice.name(), peer1.peer_id())).unwrap(),
-        );
-
-        let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
-
-        let mut remote_callbacks = git2::RemoteCallbacks::new();
-        remote_callbacks.push_update_reference(|refname, maybe_error| match maybe_error {
-            None => {
-                let rev = repo.find_reference(refname)?.target().unwrap();
-
-                futures::executor::block_on(peer1.protocol().announce(Gossip {
-                    origin: Some(peer1.peer_id()),
-                    urn: RadUrn {
-                        path: uri::Path::parse(refname).unwrap(),
-                        ..radicle.urn()
-                    },
-                    rev: Some(Rev::Git(rev)),
-                }));
-
-                Ok(())
-            },
-
-            Some(err) => Err(git2::Error::from_str(&format!(
-                "Remote rejected {}: {}",
-                refname, err
-            ))),
-        });
-
-        // Push a change and wait for peer2 to receive it in their monorepo
-        let commit_id =
-            initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks)).unwrap();
-        assert!(local_transport_results_peer1
-            .wait(Duration::from_secs(3))
-            .is_some());
-        wait_for_event(peer2_events, peer1.peer_id()).await;
-
-        // Create working copy of project
-        let repo = git2::Repository::init(tmp.path().join("peer2")).unwrap();
-
-        // Create the include file
-        let url = LocalUrl {
-            repo: radicle.urn().id,
-            local_peer_id: peer2.peer_id(),
-        };
-        let inc = include::Include::from_tracked_users(tmp.path(), url, tracked_users.into_iter());
-        let inc_path = inc.file_path();
-        inc.save().unwrap();
-
-        // Add the include above to include.path of the repo config
-        include::set_include_path(&repo, inc_path).unwrap();
-
-        // Fetch from the working copy and check we have the commit in the working copy
-        for remote in repo.remotes().unwrap().iter() {
-            let mut remote = repo.find_remote(remote.unwrap()).unwrap();
-            remote.connect(git2::Direction::Fetch).unwrap();
-            let remote_list = remote
-                .list()
-                .unwrap()
-                .iter()
-                .map(|head| head.name().to_string())
-                .collect::<Vec<_>>();
-            for name in remote_list {
-                remote.fetch(&[&name], None, None).unwrap();
-            }
-        }
-        for res in local_transport_results_peer2
-            .wait(Duration::from_secs(5))
-            .unwrap()
         {
-            assert_matches!(res, Ok(_), "fetch error");
-        }
+            let commit_id =
+                commit_and_push(tmp.path().join("peer1"), &peer1, &owner, &project).unwrap();
 
-        assert!(repo.find_commit(commit_id).is_ok());
+            for res in local_transport_results_peer1
+                .wait(Duration::from_secs(5))
+                .expect("there should have been push activity")
+            {
+                assert_matches!(res, Ok(_), "push error");
+            }
+
+            wait_for_event(peer2_events, peer1.peer_id()).await;
+
+            let peer2_repo = create_working_copy(
+                tmp.path().join("peer2"),
+                tmp.path().to_path_buf(),
+                &peer2,
+                &project,
+                tracked_users,
+            )
+            .unwrap();
+
+            for res in local_transport_results_peer2
+                .wait(Duration::from_secs(5))
+                .expect("there should have been fetch activity")
+            {
+                assert_matches!(res, Ok(_), "fetch error");
+            }
+
+            assert!(peer2_repo.find_commit(commit_id).is_ok());
+        }
     })
     .await;
 }
 
+// Perform commit and push to working copy on peer1
+#[tracing::instrument(skip(peer), err)]
+fn commit_and_push<P, S>(
+    repo_path: P,
+    peer: &PeerApi<S>,
+    owner: &User,
+    project: &Project,
+) -> Result<git2::Oid, anyhow::Error>
+where
+    P: AsRef<Path> + Debug,
+    S: Signer + Clone,
+{
+    let repo = git2::Repository::init(repo_path)?;
+    let url = LocalUrl::from_urn(project.urn(), peer.peer_id());
+
+    let heads = NamespacedRef::heads(Namespace::from(project.urn()), peer.peer_id());
+    let remotes = FlatRef::heads(
+        PhantomData,
+        ext::RefLike::try_from(format!(
+            "{}@{}",
+            owner.doc.payload.subject.name,
+            peer.peer_id()
+        ))
+        .unwrap(),
+    );
+
+    let fetchspec = remotes.refspec(heads, Force::True);
+    let remote = Remote::rad_remote(url, fetchspec.boxed());
+
+    let mut updated_refs = Vec::new();
+    let mut remote_callbacks = git2::RemoteCallbacks::new();
+    remote_callbacks.push_update_reference(|refname, maybe_error| match maybe_error {
+        None => {
+            let rev = repo.find_reference(refname)?.target().unwrap();
+            let refname = ext::RefLike::try_from(refname).unwrap();
+            updated_refs.push((refname, rev));
+
+            Ok(())
+        },
+
+        Some(err) => Err(git2::Error::from_str(&format!(
+            "Remote rejected {}: {}",
+            refname, err
+        ))),
+    });
+
+    let oid = initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks))?;
+
+    for (path, rev) in updated_refs {
+        futures::executor::block_on(peer.protocol().announce(Gossip {
+            origin: Some(peer.peer_id()),
+            urn: project.urn().with_path(path),
+            rev: Some(Rev::Git(rev)),
+        }))
+    }
+
+    Ok(oid)
+}
+
+// Create working copy of project
+#[tracing::instrument(skip(peer), err)]
+fn create_working_copy<P, S, I>(
+    repo_path: P,
+    inc_path: P,
+    peer: &PeerApi<S>,
+    project: &Project,
+    tracked_users: I,
+) -> Result<git2::Repository, anyhow::Error>
+where
+    P: AsRef<Path> + Debug,
+    S: Signer + Clone,
+    I: IntoIterator<Item = (User, PeerId)> + Debug,
+{
+    let repo = git2::Repository::init(repo_path)?;
+
+    let inc = include::Include::from_tracked_users(
+        inc_path,
+        LocalUrl {
+            urn: project.urn(),
+            local_peer_id: peer.peer_id(),
+        },
+        tracked_users,
+    );
+    let inc_path = inc.file_path();
+    inc.save()?;
+
+    // Add the include above to include.path of the repo config
+    include::set_include_path(&repo, inc_path)?;
+
+    // Fetch from the working copy and check we have the commit in the working copy
+    for remote in repo.remotes()?.iter() {
+        let mut remote = repo.find_remote(remote.unwrap())?;
+        remote.connect(git2::Direction::Fetch)?;
+        let remote_list = remote
+            .list()
+            .unwrap()
+            .iter()
+            .map(|head| head.name().to_string())
+            .collect::<Vec<_>>();
+        for name in remote_list {
+            tracing::debug!("fetching {}", name);
+            remote.fetch(&[&name], None, None)?;
+        }
+    }
+
+    Ok(repo)
+}
+
 // Wait for peer2 to receive the gossip announcement
+#[tracing::instrument(skip(peer_events))]
 async fn wait_for_event<S>(peer_events: S, remote: PeerId)
 where
     S: Stream<Item = PeerEvent> + std::marker::Unpin,
@@ -241,4 +281,3 @@ where
     .await
     .unwrap();
 }
-*/

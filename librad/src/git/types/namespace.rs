@@ -116,6 +116,12 @@ where
     }
 }
 
+impl<R> From<Namespace<R>> for Urn<R> {
+    fn from(ns: Namespace<R>) -> Self {
+        ns.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

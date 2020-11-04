@@ -17,6 +17,7 @@
 
 use librad::git::{local::url::LocalUrl, types::remote::Remote};
 
+#[tracing::instrument(skip(repo, remote_callbacks), err)]
 pub fn initial_commit(
     repo: &git2::Repository,
     remote: Remote<LocalUrl>,
@@ -48,6 +49,8 @@ pub fn initial_commit(
         None => &mut opts,
     };
     remote.push(&[reference], Some(opts))?;
+
+    tracing::debug!("pushed {} to {}", commit_id, reference);
 
     Ok(commit_id)
 }

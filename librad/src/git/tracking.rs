@@ -15,9 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::ops::Range;
+use std::{ops::Range, str::FromStr};
 
 use git_ext::{is_exists_err, is_not_found_err, RefLike};
+use multihash::Multihash;
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
@@ -66,6 +67,8 @@ where
     let remote_name = tracking_remote_name(urn, &peer);
     let url = GitUrlRef::from_urn(urn, local_peer, &peer, &[]);
 
+    tracing::debug!("setting up remote.{}.url = {}", remote_name, url);
+
     let was_created = storage
         .as_raw()
         .remote(&remote_name, &url.to_string())
@@ -78,7 +81,7 @@ where
         // remote.
         // FIXME: go through `&mut storage::Config`
         let mut config = storage.as_raw().config()?;
-        config.remove_multivar(&remote_name, ".*")?;
+        config.remove_multivar(&format!("remote.{}.fetch", remote_name), ".*")?;
     }
 
     Ok(was_created)
@@ -171,16 +174,16 @@ impl Iterator for Tracked {
     type Item = PeerId;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.range.next().and_then(|i| self.remotes.get(i));
-        match next {
-            None => None,
-            Some(name) => {
-                let peer = name
-                    .strip_prefix(&self.prefix)
-                    .and_then(|peer| peer.parse().ok());
-                peer.or_else(|| self.next())
-            },
+        while let Some(name) = self.range.next().and_then(|i| self.remotes.get(i)) {
+            if let Some(peer) = name
+                .strip_prefix(&self.prefix)
+                .and_then(|peer| PeerId::from_str(peer).ok())
+            {
+                return Some(peer);
+            }
         }
+
+        None
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -189,5 +192,97 @@ impl Iterator for Tracked {
 }
 
 fn tracking_remote_name(urn: &Urn, peer: &PeerId) -> String {
-    format!("{}/{}", RefLike::from(urn), peer)
+    format!(
+        "{}/{}",
+        multibase::encode(multibase::Base::Base32Z, Multihash::from(urn.id)),
+        peer
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::collections::BTreeSet;
+
+    use crate::{keys::SecretKey, paths::Paths};
+
+    #[test]
+    fn track_is_tracked() {
+        let tmp = tempfile::tempdir().unwrap();
+        {
+            let paths = Paths::from_root(tmp).unwrap();
+            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let remote_peer = PeerId::from(SecretKey::new());
+            let urn = Urn::new(git2::Oid::zero().into());
+
+            track(&storage, &urn, remote_peer).unwrap();
+            assert!(is_tracked(&storage, &urn, remote_peer).unwrap())
+        }
+    }
+
+    #[test]
+    fn track_untrack_is_not_tracked() {
+        let tmp = tempfile::tempdir().unwrap();
+        {
+            let paths = Paths::from_root(tmp).unwrap();
+            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let remote_peer = PeerId::from(SecretKey::new());
+            let urn = Urn::new(git2::Oid::zero().into());
+
+            track(&storage, &urn, remote_peer).unwrap();
+            assert!(is_tracked(&storage, &urn, remote_peer).unwrap());
+            untrack(&storage, &urn, remote_peer).unwrap();
+            assert!(!is_tracked(&storage, &urn, remote_peer).unwrap())
+        }
+    }
+
+    #[test]
+    fn track_track_is_tracked() {
+        let tmp = tempfile::tempdir().unwrap();
+        {
+            let paths = Paths::from_root(tmp).unwrap();
+            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let remote_peer = PeerId::from(SecretKey::new());
+            let urn = Urn::new(git2::Oid::zero().into());
+
+            track(&storage, &urn, remote_peer).unwrap();
+            assert!(is_tracked(&storage, &urn, remote_peer).unwrap());
+            track(&storage, &urn, remote_peer).unwrap();
+            assert!(is_tracked(&storage, &urn, remote_peer).unwrap())
+        }
+    }
+
+    #[test]
+    fn untrack_nonexistent_is_not_tracked() {
+        let tmp = tempfile::tempdir().unwrap();
+        {
+            let paths = Paths::from_root(tmp).unwrap();
+            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let remote_peer = PeerId::from(SecretKey::new());
+            let urn = Urn::new(git2::Oid::zero().into());
+
+            untrack(&storage, &urn, remote_peer).unwrap();
+            assert!(!is_tracked(&storage, &urn, remote_peer).unwrap());
+        }
+    }
+
+    #[test]
+    fn track_yields_tracked() {
+        let tmp = tempfile::tempdir().unwrap();
+        {
+            let paths = Paths::from_root(tmp).unwrap();
+            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let peer1 = PeerId::from(SecretKey::new());
+            let peer2 = PeerId::from(SecretKey::new());
+            let urn = Urn::new(git2::Oid::zero().into());
+
+            track(&storage, &urn, peer1).unwrap();
+            track(&storage, &urn, peer2).unwrap();
+            assert_eq!(
+                [peer1, peer2].iter().map(|x| *x).collect::<BTreeSet<_>>(),
+                tracked(&storage, &urn).unwrap().collect::<BTreeSet<_>>()
+            )
+        }
+    }
 }

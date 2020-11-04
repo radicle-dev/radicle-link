@@ -17,6 +17,7 @@
 
 use std::{
     convert::TryFrom,
+    fmt::Debug,
     io,
     marker::PhantomData,
     path::{self, PathBuf},
@@ -92,6 +93,7 @@ impl<Path> Include<Path> {
     }
 
     /// Writes the contents of the [`git2::Config`] of the include file to disk.
+    #[tracing::instrument(level = "debug", skip(self), err)]
     pub fn save(self) -> Result<(), Error>
     where
         Path: AsRef<path::Path>,
@@ -101,9 +103,11 @@ impl<Path> Include<Path> {
             let mut config = git2::Config::open(tmp.path())?;
             for remote in &self.remotes {
                 let (key, url) = url_entry(&remote);
+                tracing::trace!("{} = {}", key, url);
                 config.set_str(&key, &url.to_string())?;
 
                 let (key, fetch) = fetch_entry(&remote)?;
+                tracing::trace!("{} = {}", key, fetch);
                 config.set_str(&key, &fetch)?;
             }
         }
@@ -132,12 +136,14 @@ impl<Path> Include<Path> {
     ///
     /// The tracked users are expected to be retrieved by talking to the
     /// [`crate::git::storage::Storage`].
-    pub fn from_tracked_users(
-        path: Path,
-        local_url: LocalUrl,
-        tracked: impl Iterator<Item = (User, PeerId)>,
-    ) -> Self {
+    #[tracing::instrument(level = "debug")]
+    pub fn from_tracked_users<I>(path: Path, local_url: LocalUrl, tracked: I) -> Self
+    where
+        Path: Debug,
+        I: IntoIterator<Item = (User, PeerId)> + Debug,
+    {
         let remotes = tracked
+            .into_iter()
             .map(|(user, peer)| {
                 Remote::new(
                     local_url.clone(),
@@ -145,6 +151,8 @@ impl<Path> Include<Path> {
                 )
             })
             .collect();
+        tracing::trace!("computed remotes: {:?}", remotes);
+
         Self {
             remotes,
             path,

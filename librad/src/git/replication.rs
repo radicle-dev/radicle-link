@@ -35,6 +35,7 @@ use super::{
         namespace::Namespace,
         reference::{self, Reference},
         Force,
+        NamespacedRef,
     },
 };
 use crate::{
@@ -125,19 +126,23 @@ where
     let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
 
     // Update identity branches first
+    tracing::debug!("updating identity branches");
     let _ = fetcher
         .fetch(fetch::Fetchspecs::Peek)
         .map_err(|e| Error::Fetch(e.into()))?;
 
-    let delegates = match identities::any::get(storage, &urn)? {
+    let remote_ident: Urn = NamespacedRef::rad_id(Namespace::from(&urn))
+        .with_remote(remote_peer)
+        .into();
+    let delegates = match identities::any::get(storage, &remote_ident)? {
         None => Err(Error::MissingIdentity),
         Some(some_id) => match some_id {
             SomeIdentity::User(user) => {
-                ensure_setup_as_user(storage, user)?;
+                ensure_setup_as_user(storage, user, remote_peer)?;
                 Ok(None)
             },
             SomeIdentity::Project(proj) => {
-                let delegates = ensure_setup_as_project(storage, proj)?;
+                let delegates = ensure_setup_as_project(storage, proj, remote_peer)?;
                 Ok(Some(delegates.collect()))
             },
         },
@@ -145,6 +150,7 @@ where
 
     let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
     // Fetch `signed_refs` for every peer we track now
+    tracing::debug!("fetching signed refs");
     fetcher
         .fetch(fetch::Fetchspecs::SignedRefs {
             tracked: tracked.clone(),
@@ -161,6 +167,7 @@ where
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     // Fetch all the rest
+    tracing::debug!("fetching heads: {:?}, {:?}", tracked_sigrefs, delegates);
     fetcher
         .fetch(fetch::Fetchspecs::Replicate {
             tracked_sigrefs,
@@ -183,11 +190,19 @@ where
     Ok(())
 }
 
-fn ensure_setup_as_user<S>(storage: &Storage<S>, user: User) -> Result<(), Error>
+#[tracing::instrument(level = "trace", skip(storage), err)]
+fn ensure_setup_as_user<S>(
+    storage: &Storage<S>,
+    user: User,
+    remote_peer: PeerId,
+) -> Result<(), Error>
 where
     S: Signer,
 {
-    let urn = user.urn();
+    let urn: Urn = NamespacedRef::rad_id(Namespace::from(user.urn()))
+        .with_remote(remote_peer)
+        .into();
+
     match identities::user::verify(storage, &urn)? {
         None => Err(Error::MissingIdentity),
         Some(user) => {
@@ -204,24 +219,27 @@ where
     }
 }
 
+#[tracing::instrument(level = "trace", skip(storage), err)]
 fn ensure_setup_as_project<S>(
     storage: &Storage<S>,
     proj: Project,
+    remote_peer: PeerId,
 ) -> Result<impl Iterator<Item = Urn>, Error>
 where
     S: Signer,
 {
-    let urn = proj.urn();
+    let urn: Urn = NamespacedRef::rad_id(Namespace::from(proj.urn()))
+        .with_remote(remote_peer)
+        .into();
 
     // Verify + symref the delegates first
     for delegate in proj.doc.delegations.iter().indirect() {
         let delegate_urn = delegate.urn();
-        // Find in `refs/namespaces/<urn>/rad/ids/<delegate.urn>`
-        let in_rad_ids = Urn {
-            path: Some(reflike!("rad/ids").join(&delegate_urn)),
-            ..urn.clone()
-        };
-
+        // Find in `refs/namespaces/<urn>/refs/remotes/<remote
+        // peer>/rad/ids/<delegate.urn>`
+        let in_rad_ids: Urn = NamespacedRef::rad_delegate(Namespace::from(&urn), &delegate_urn)
+            .with_remote(remote_peer)
+            .into();
         match identities::user::verify(storage, &in_rad_ids)? {
             None => Err(Error::Missing(in_rad_ids.into())),
             Some(delegate_user) => {
@@ -232,7 +250,11 @@ where
                 ensure_rad_id(storage, &delegate_urn, delegate_user.content_id)?;
                 // Also, track them
                 for key in delegate_user.doc.delegations.iter() {
-                    tracking::track(storage, &delegate_urn, PeerId::from(*key))?;
+                    let peer_id = PeerId::from(*key);
+                    // Top-level
+                    tracking::track(storage, &delegate_urn, peer_id)?;
+                    // as well as for `proj`
+                    tracking::track(storage, &proj.urn(), peer_id)?;
                 }
                 // Now point our view to the top-level
                 Reference::try_from(&delegate_urn)
@@ -272,6 +294,7 @@ where
         .map(|id| id.urn()))
 }
 
+#[tracing::instrument(level = "trace", skip(storage), err)]
 fn ensure_rad_id<S>(storage: &Storage<S>, urn: &Urn, tip: ext::Oid) -> Result<(), Error>
 where
     S: Signer,

@@ -16,15 +16,16 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    convert::{TryFrom, TryInto},
+    convert::TryFrom,
     fmt::{self, Display},
 };
 
 use git_ext as ext;
+use multihash::Multihash;
 use thiserror::Error;
 
 use crate::{
-    identities::{self, urn},
+    identities,
     peer::{self, PeerId},
 };
 
@@ -278,6 +279,13 @@ impl<N, R> Reference<N, R, One> {
     where
         Self: ToString,
     {
+        tracing::debug!(
+            "creating direct reference {} -> {} (force: {}, reflog: '{}')",
+            self.to_string(),
+            target,
+            force.as_bool(),
+            log_message
+        );
         repo.reference(&self.to_string(), target, force.as_bool(), log_message)
     }
 
@@ -315,7 +323,13 @@ impl<N, R> Reference<N, R, One> {
         Self {
             remote: None,
             category: RefsCategory::Rad,
-            name: format!("ids/{}", urn.id).try_into().unwrap(),
+            name: reflike!("ids").join(
+                ext::RefLike::try_from(multibase::encode(
+                    multibase::Base::Base32Z,
+                    Multihash::try_from(urn.id).unwrap(),
+                ))
+                .unwrap(),
+            ),
             _namespace: namespace,
         }
     }
@@ -397,6 +411,16 @@ where
     }
 }
 
+// TODO(kim): what is this for?
+impl<'a, N, R> Into<ext::blob::Branch<'a>> for &'a Reference<N, R, Single>
+where
+    Self: ToString,
+{
+    fn into(self) -> ext::blob::Branch<'a> {
+        ext::blob::Branch::from(self.to_string())
+    }
+}
+
 // References with a `Many` cardinality
 impl<N, R> Reference<N, R, Many> {
     /// Get the iterator for these references.
@@ -461,12 +485,20 @@ where
     }
 }
 
-impl<'a, N, R> Into<ext::blob::Branch<'a>> for &'a Reference<N, R, Single>
-where
-    Self: ToString,
-{
-    fn into(self) -> ext::blob::Branch<'a> {
-        ext::blob::Branch::from(self.to_string())
+////////////////////////////////////////////////////////////////////////////////
+
+impl From<Reference<Namespace<ext::Oid>, PeerId, One>> for Urn {
+    fn from(r: Reference<Namespace<ext::Oid>, PeerId, One>) -> Self {
+        let mut path = reflike!("refs");
+        if let Some(remote) = r.remote {
+            path = path.join(reflike!("remotes")).join(remote);
+        }
+        path = path.join(r.category).join(r.name);
+
+        Self {
+            path: Some(path),
+            ..Self::from(r._namespace)
+        }
     }
 }
 
@@ -486,50 +518,102 @@ pub enum FromUrnError {
     PeerId(#[from] peer::conversion::Error),
 }
 
-impl TryFrom<&Urn> for Reference<Namespace<ext::Oid>, PeerId, Single> {
+impl TryFrom<&Urn> for Reference<Namespace<ext::Oid>, PeerId, One> {
     type Error = FromUrnError;
 
     fn try_from(urn: &Urn) -> Result<Self, Self::Error> {
         let namespace = Namespace::from(urn);
-        let path = urn.path.as_ref().unwrap_or(&urn::DEFAULT_PATH);
-        let mut iter = path
-            .iter()
-            .map(|x| x.to_str().expect("RefLike ensures utf8"))
-            .skip_while(|x| x == &"refs");
+        match &urn.path {
+            None => Ok(Self::rad_id(namespace)),
 
-        match iter.next() {
-            Some("remotes") => {
-                let remote = Some(
-                    iter.next()
-                        .ok_or(FromUrnError::Missing("remote peer id"))?
-                        .parse()?,
-                );
+            Some(path) => {
+                let path = ext::reference::Qualified::from(path.clone());
+                let mut iter = path
+                    .iter()
+                    .map(|x| x.to_str().expect("RefLike ensures utf8"))
+                    .skip_while(|x| x == &"refs");
 
-                let category = match iter.next() {
-                    None => Err(FromUrnError::Missing("category")),
-                    Some(x) if x == "heads" => Ok(RefsCategory::Heads),
-                    Some(x) if x == "rad" => Ok(RefsCategory::Rad),
-                    Some(x) => Err(FromUrnError::InvalidCategory(x.to_owned())),
-                }?;
+                match iter.next() {
+                    Some("remotes") => {
+                        let remote = Some(
+                            iter.next()
+                                .ok_or(FromUrnError::Missing("remote peer id"))?
+                                .parse()?,
+                        );
 
-                let name = iter.map(|x| ext::RefLike::try_from(x).unwrap()).collect();
+                        let category = match iter.next() {
+                            None => Err(FromUrnError::Missing("category")),
+                            Some(x) if x == "heads" => Ok(RefsCategory::Heads),
+                            Some(x) if x == "rad" => Ok(RefsCategory::Rad),
+                            Some(x) => Err(FromUrnError::InvalidCategory(x.to_owned())),
+                        }?;
 
-                Ok(Self {
-                    remote,
-                    category,
-                    name,
-                    _namespace: namespace,
-                })
+                        let name = iter.map(|x| ext::RefLike::try_from(x).unwrap()).collect();
+
+                        Ok(Self {
+                            remote,
+                            category,
+                            name,
+                            _namespace: namespace,
+                        })
+                    },
+
+                    Some(x) => Ok(Self {
+                        remote: None,
+                        category: RefsCategory::parse(x).unwrap_or(RefsCategory::Heads),
+                        name: iter.map(|x| ext::RefLike::try_from(x).unwrap()).collect(),
+                        _namespace: namespace,
+                    }),
+
+                    None => Err(FromUrnError::Eof),
+                }
             },
-
-            Some(x) => Ok(Self {
-                remote: None,
-                category: RefsCategory::parse(x).unwrap_or(RefsCategory::Heads),
-                name: iter.map(|x| ext::RefLike::try_from(x).unwrap()).collect(),
-                _namespace: namespace,
-            }),
-
-            None => Err(FromUrnError::Eof),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::keys::SecretKey;
+
+    #[test]
+    fn pathless_urn_roundtrip() {
+        let urn = Urn::new(git2::Oid::zero().into());
+        let as_ref = Reference::try_from(&urn).unwrap();
+        assert_eq!(
+            urn.with_path(identities::urn::DEFAULT_PATH.clone()),
+            Urn::from(as_ref)
+        )
+    }
+
+    #[test]
+    fn remotes_path_urn_roundtrip() {
+        let peer_id = PeerId::from(SecretKey::new());
+        let urn = Urn::new(git2::Oid::zero().into()).with_path(
+            reflike!("refs/remotes")
+                .join(peer_id)
+                .join(reflike!("rad/id")),
+        );
+        let as_ref = Reference::try_from(&urn).unwrap();
+        assert_eq!(urn, Urn::from(as_ref))
+    }
+
+    #[test]
+    fn qualified_path_urn_roundtrip() {
+        let urn = Urn::new(git2::Oid::zero().into()).with_path(reflike!("refs/rad/id"));
+        let as_ref = Reference::try_from(&urn).unwrap();
+        assert_eq!(urn, Urn::from(as_ref))
+    }
+
+    #[test]
+    fn onelevel_path_urn_roundtrip() {
+        let urn = Urn::new(git2::Oid::zero().into()).with_path(reflike!("rad/id"));
+        let as_ref = Reference::try_from(&urn).unwrap();
+        assert_eq!(
+            urn.with_path(reflike!("refs/heads/rad/id")),
+            Urn::from(as_ref)
+        )
     }
 }

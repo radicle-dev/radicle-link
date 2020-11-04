@@ -27,7 +27,10 @@ use super::{
     error::Error,
 };
 use crate::{
-    identities::{self, git::SomeIdentity},
+    identities::{
+        self,
+        git::{Identities, SomeIdentity},
+    },
     signer::Signer,
 };
 
@@ -38,14 +41,21 @@ pub use identities::git::Urn;
 /// Note that the [`Urn::path`] is honoured, and the identity is read from the
 /// tip of the branch it resolves to. If that branch is not found, `None` is
 /// returned.
+#[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<SomeIdentity>, Error>
 where
     S: Signer,
 {
-    match storage.reference(&Reference::try_from(urn)?) {
+    let branch = Reference::try_from(urn)?;
+    tracing::trace!(
+        "trying to resolve unknown identity at {} from {}",
+        urn,
+        branch
+    );
+    match storage.reference(&branch) {
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
-            Ok(Some(storage.identities::<'_, !>().some_identity(tip)?))
+            Ok(Some(identities(&storage).some_identity(tip)?))
         },
 
         Ok(None) => Ok(None),
@@ -55,6 +65,7 @@ where
 }
 
 /// List all identities found in `storage`.
+#[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn list<'a, S>(
     storage: &'a Storage<S>,
 ) -> Result<impl Iterator<Item = Result<SomeIdentity, Error>> + 'a, Error>
@@ -77,4 +88,11 @@ where
         });
 
     Ok(iter)
+}
+
+fn identities<'a, S>(storage: &Storage<S>) -> Identities<!>
+where
+    S: Signer,
+{
+    storage.identities()
 }

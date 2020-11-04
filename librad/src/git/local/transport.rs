@@ -292,6 +292,7 @@ pub struct Connected {
 }
 
 impl Connected {
+    #[tracing::instrument(skip(self), err)]
     pub fn wait(&mut self) -> Result<(), Error> {
         let status = self.process.wait()?;
         if status.success() {
@@ -360,7 +361,7 @@ impl LocalTransport {
         git.envs(::std::env::vars().filter(|(key, _)| key.starts_with("GIT_TRACE")))
             .current_dir(self.repo_path())
             .args(&[
-                &format!("--namespace={}", urn.id),
+                &format!("--namespace={}", Namespace::from(&urn)),
                 "-c",
                 "transfer.hiderefs=refs/",
                 "-c",
@@ -374,7 +375,7 @@ impl LocalTransport {
                 // Fetching remotes is ok, pushing is not
                 self.visible_remotes(&urn)?.for_each(|remote_ref| {
                     git.arg("-c")
-                        .arg(format!("uploadpack.hiderefs=!{}", remote_ref));
+                        .arg(format!("uploadpack.hiderefs=!^{}", remote_ref));
                 });
                 git.args(&["upload-pack", "--strict", "--timeout=5"]);
             },
@@ -415,18 +416,14 @@ impl LocalTransport {
                     // Update `rad/signed_refs`
                     Refs::update(&storage, &urn)?;
 
-                    let self_urn = Urn {
-                        path: Some(reflike!("rad/self")),
-                        ..urn.clone()
-                    };
                     // Ensure we have a `rad/self`
-                    let local_id = identities::local::load(&storage, &self_urn)
+                    let local_id = identities::local::load(&storage, urn.clone())
                         .transpose()
                         .or_else(|| identities::local::default(&storage).transpose())
                         .transpose()?;
                     match local_id {
                         None => Err(Error::NoLocalIdentity),
-                        Some(local_id) => Ok(local_id.link(&storage, &self_urn)?),
+                        Some(local_id) => Ok(local_id.link(&storage, &urn)?),
                     }
                 };
 
@@ -471,15 +468,13 @@ impl LocalTransport {
             .lock()
             .unwrap()
             .references_glob(glob)?
-            .filter_map(move |reference| match reference {
-                Ok(reference) => match reference.name() {
-                    Some(name) => match ext::RefLike::try_from(name) {
-                        Ok(refl) => Some(Ok(refl)),
-                        Err(_) => None,
-                    },
-                    None => None,
-                },
-                Err(e) => Some(Err(e)),
+            .filter_map(move |res| {
+                res.map(|reference| {
+                    reference
+                        .name()
+                        .and_then(|name| ext::RefLike::try_from(name).ok())
+                })
+                .transpose()
             })
             .collect::<Result<Vec<_>, _>>()?;
 

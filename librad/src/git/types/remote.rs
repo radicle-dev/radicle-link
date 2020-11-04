@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::fmt::{self, Debug};
+
 use super::AsRefspec;
 
 pub struct Remote<Url> {
@@ -27,6 +29,30 @@ pub struct Remote<Url> {
     pub fetch_spec: Option<Box<dyn AsRefspec>>,
     /// The set of push specs to add upon creation.
     pub push_specs: Vec<Box<dyn AsRefspec>>,
+}
+
+impl<Url> Debug for Remote<Url>
+where
+    Url: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Remote")
+            .field("url", &self.url)
+            .field("name", &self.name)
+            .field(
+                "fetch_spec",
+                &self.fetch_spec.as_ref().map(|spec| spec.as_refspec()),
+            )
+            .field(
+                "push_specs",
+                &self
+                    .push_specs
+                    .iter()
+                    .map(|spec| spec.as_refspec())
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 impl<Url> Remote<Url> {

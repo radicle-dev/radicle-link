@@ -23,25 +23,16 @@ use std::{
     process::Command,
 };
 
-use either::Either::*;
 use keystore::{crypto, pinentry::SecUtf8, Keystore};
 use tempfile::tempdir;
 
 use librad::{
-    git::{
-        identities::{self, IndirectDelegation},
-        local::url::LocalUrl,
-        storage::Storage,
-        Urn,
-    },
+    git::{local::url::LocalUrl, storage::Storage, Urn},
     keys::{PublicKey, SecretKey},
     paths::Paths,
     peer::PeerId,
 };
-use librad_test::{
-    logging,
-    rad::identities::{ALICE, RADICLE},
-};
+use librad_test::{logging, rad::identities::create_test_project};
 
 const PASSPHRASE: &str = "123";
 
@@ -54,7 +45,7 @@ fn smoke() {
     let key = SecretKey::new();
     let peer_id = PeerId::from(key);
 
-    let urn = setup_entity(&rad_paths, key).unwrap();
+    let urn = setup_project(&rad_paths, key).unwrap();
     setup_keystore(rad_paths.keys_dir(), key).unwrap();
     let path = setup_path().unwrap();
 
@@ -97,18 +88,10 @@ fn smoke() {
     }
 }
 
-fn setup_entity(paths: &Paths, key: SecretKey) -> anyhow::Result<Urn> {
-    let pk = key.public();
+fn setup_project(paths: &Paths, key: SecretKey) -> anyhow::Result<Urn> {
     let store = Storage::open_or_init(paths, key)?;
-    let alice = identities::user::create(&store, ALICE.clone(), Some(pk).into_iter().collect())?;
-    let radicle = identities::project::create(
-        &store,
-        identities::local::load(&store, &alice.urn())?.unwrap(),
-        RADICLE.clone(),
-        IndirectDelegation::try_from_iter(Some(Right(alice))).unwrap(),
-    )?;
-
-    Ok(radicle.urn())
+    let proj = create_test_project(&store)?;
+    Ok(proj.project.urn())
 }
 
 fn setup_keystore(dir: &Path, key: SecretKey) -> anyhow::Result<()> {
