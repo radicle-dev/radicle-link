@@ -524,11 +524,9 @@ where
         let span = tracing::info_span!("Peer::LocalStorage::put");
         let _guard = span.enter();
 
-        {
-            let git = self.inner.get().await.unwrap();
-            if git.peer_id() == provider {
-                return PutResult::Stale;
-            }
+        let git = self.inner.get().await.unwrap();
+        if git.peer_id() == provider {
+            return PutResult::Stale;
         }
 
         match has.urn.proto {
@@ -607,16 +605,13 @@ where
     async fn ask(&self, want: Self::Update) -> bool {
         let span = tracing::info_span!("Peer::LocalStorage::ask");
         let _guard = span.enter();
-        let local_peer_id = {
-            let git = self.inner.get().await.unwrap();
-            git.peer_id()
-        };
+        let git = self.inner.get().await.unwrap();
 
         match want.urn.proto {
             uri::Protocol::Git => {
                 self.git_has(
                     match want.origin {
-                        Some(origin) if origin == local_peer_id => Either::Left(want.urn),
+                        Some(origin) if origin == git.peer_id() => Either::Left(want.urn),
                         Some(origin) => Either::Right(Originates {
                             from: origin,
                             value: want.urn,
