@@ -93,6 +93,7 @@ impl<Path> Include<Path> {
     }
 
     /// Writes the contents of the [`git2::Config`] of the include file to disk.
+    #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "debug", skip(self), err)]
     pub fn save(self) -> Result<(), Error>
     where

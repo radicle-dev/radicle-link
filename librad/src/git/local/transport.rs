@@ -292,6 +292,7 @@ pub struct Connected {
 }
 
 impl Connected {
+    #[allow(clippy::unit_arg)]
     #[tracing::instrument(skip(self), err)]
     pub fn wait(&mut self) -> Result<(), Error> {
         let status = self.process.wait()?;

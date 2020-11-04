@@ -90,7 +90,7 @@ where
     Ok(iter)
 }
 
-fn identities<'a, S>(storage: &Storage<S>) -> Identities<!>
+fn identities<S>(storage: &Storage<S>) -> Identities<!>
 where
     S: Signer,
 {

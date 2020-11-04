@@ -236,12 +236,12 @@ impl Refs {
 
         tracing::debug!(
             "loading signed_refs from {} {}",
-            blob_ref,
+            &blob_ref,
             blob_path.display()
         );
 
-        storage
-            .blob(&blob_ref.clone(), &blob_path)?
+        let maybe_blob = storage.blob(&blob_ref, &blob_path)?;
+        maybe_blob
             .map(|blob| Signed::from_json(blob.content(), &signer).map(|signed| signed.refs))
             .transpose()
             .map_err(stored::Error::from)

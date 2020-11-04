@@ -190,6 +190,7 @@ where
     Ok(())
 }
 
+#[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage), err)]
 fn ensure_setup_as_user<S>(
     storage: &Storage<S>,
@@ -294,6 +295,7 @@ where
         .map(|id| id.urn()))
 }
 
+#[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage), err)]
 fn ensure_rad_id<S>(storage: &Storage<S>, urn: &Urn, tip: ext::Oid) -> Result<(), Error>
 where

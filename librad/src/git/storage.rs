@@ -326,8 +326,8 @@ impl<'a> Iterator for ReferenceNames<'a> {
     type Item = Result<ext::RefLike, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut names = self.iter.names();
-        while let Some(name) = names.next() {
+        let names = self.iter.names();
+        for name in names {
             match name {
                 Err(e) => return Some(Err(e.into())),
                 Ok(name) => match ext::RefLike::try_from(name).ok() {

@@ -280,7 +280,7 @@ mod tests {
             track(&storage, &urn, peer1).unwrap();
             track(&storage, &urn, peer2).unwrap();
             assert_eq!(
-                [peer1, peer2].iter().map(|x| *x).collect::<BTreeSet<_>>(),
+                [peer1, peer2].iter().copied().collect::<BTreeSet<_>>(),
                 tracked(&storage, &urn).unwrap().collect::<BTreeSet<_>>()
             )
         }
