@@ -18,6 +18,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     convert::TryFrom,
+    fmt::Debug,
     io::{self, Cursor, Read, Write},
     panic::{self, UnwindSafe},
     path::PathBuf,
@@ -35,7 +36,7 @@ use super::{
     super::{
         identities,
         refs::{self, Refs},
-        storage::{self, Storage},
+        storage::{self, glob, Storage},
         types::namespace::Namespace,
         Urn,
     },
@@ -455,20 +456,11 @@ impl LocalTransport {
     }
 
     fn visible_remotes(&self, urn: &Urn) -> Result<impl Iterator<Item = ext::RefLike>, Error> {
-        let glob = globset::Glob::new(&format!(
-            "{}/*/{{heads, tags}}/*",
-            reflike!("refs/namespaces")
-                .join(Namespace::from(urn))
-                .join(reflike!("refs/remotes"))
-        ))
-        .unwrap()
-        .compile_matcher();
-
         let remotes = self
             .storage
             .lock()
             .unwrap()
-            .references_glob(glob)?
+            .references_glob(visible_remotes_glob(urn))?
             .filter_map(move |res| {
                 res.map(|reference| {
                     reference
@@ -485,6 +477,17 @@ impl LocalTransport {
     fn repo_path(&self) -> PathBuf {
         self.storage.lock().unwrap().path().to_path_buf()
     }
+}
+
+fn visible_remotes_glob(urn: &Urn) -> impl glob::Pattern + Debug {
+    globset::Glob::new(&format!(
+        "{}/*/{{heads,tags}}/*",
+        reflike!("refs/namespaces")
+            .join(Namespace::from(urn))
+            .join(reflike!("refs/remotes"))
+    ))
+    .unwrap()
+    .compile_matcher()
 }
 
 pub struct LocalStream {
@@ -519,5 +522,36 @@ impl Read for LocalRead {
             None => self.inner.read(buf),
             Some(hdr) => Cursor::new(hdr).read(buf),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::git::storage::glob::Pattern as _;
+
+    #[test]
+    fn visible_remotes_glob_seems_legit() {
+        let urn = Urn::new(git2::Oid::zero().into());
+        let glob = visible_remotes_glob(&urn);
+
+        assert!(glob.matches(
+            reflike!("refs/namespaces")
+                .join(Namespace::from(&urn))
+                .join(reflike!("refs/remotes/lolek/heads/next"))
+        ));
+        assert!(glob.matches(
+            reflike!("refs/namespaces")
+                .join(Namespace::from(&urn))
+                .join(reflike!("refs/remotes/bolek/tags/v0.99"))
+        ));
+        assert!(!glob.matches("refs/heads/master"));
+        assert!(!glob.matches("refs/namespaces/othernamespace/refs/remotes/tola/heads/next"));
+        assert!(!glob.matches(
+            reflike!("refs/namespaces")
+                .join(Namespace::from(&urn))
+                .join(reflike!("refs/heads/hidden"))
+        ));
     }
 }
