@@ -523,12 +523,18 @@ where
 
         match has.urn.proto {
             uri::Protocol::Git => {
+                let urn = match has.origin.as_ref() {
+                    None => Either::Left(has.urn.clone()),
+                    Some(origin) => Either::Right(Originates {
+                        from: *origin,
+                        value: has.urn.clone(),
+                    }),
+                };
+
+                // Set the origin to which remote's changes we end up fetching.
                 let peer_id = has.origin.unwrap_or_else(|| provider);
                 has.origin = Some(peer_id);
-                let urn = Either::Right(Originates {
-                    from: peer_id,
-                    value: has.urn.clone(),
-                });
+
                 let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
                     Ok(b) => b,
                     Err(e) => {
