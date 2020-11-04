@@ -468,7 +468,7 @@ where
 fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
     match urn {
         Either::Left(urn) => RadUrn {
-            path: qualify_path(&urn.path),
+            path: qualify_path(urn.path),
             ..urn
         },
         Either::Right(Originates { from, value }) => {
@@ -478,7 +478,7 @@ fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) 
                 return urn;
             }
 
-            let path = qualify_path(&urn.path);
+            let path = qualify_path(urn.path);
             let mut remote =
                 uri::Path::parse(format!("refs/remotes/{}", from)).expect("Known valid path");
             remote.push(path);
@@ -491,13 +491,19 @@ fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) 
     }
 }
 
-/// Strip the `refs/` prefix of the provided path.
+/// When receiving a `uri::Path`, we want to ensure that it points to correct path in the monorepo
+/// tree.
 ///
-/// If there's no 'refs/' prefix we assume we need to add 'heads/' to the
-/// reference name.
-fn qualify_path(path: &uri::Path) -> uri::Path {
-    if path.is_empty() {
-        return uri::Path::empty();
+/// In the cases of the path being empty or starting with `refs/rad` we do nothing.
+///
+/// In the case of starting with `refs/` -- not followed by `rad` -- we strip the `refs` and return
+/// the rest of the path.
+///
+/// If it does not start with `refs/rad` nor `refs/` then we assume it needs to be qualified by
+/// `heads/`.
+fn qualify_path(path: uri::Path) -> uri::Path {
+    if path.is_empty() || path.starts_with("refs/rad") {
+        return path;
     }
 
     match path.strip_prefix("refs/") {
