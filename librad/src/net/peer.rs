@@ -517,13 +517,18 @@ where
 {
     type Update = Gossip;
 
-    async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult<Self::Update> {
+    async fn put(&self, provider: PeerId, mut has: Self::Update) -> PutResult<Self::Update> {
         let span = tracing::info_span!("Peer::LocalStorage::put");
         let _guard = span.enter();
 
         match has.urn.proto {
             uri::Protocol::Git => {
                 let peer_id = has.origin.unwrap_or_else(|| provider);
+                has.origin = Some(peer_id);
+                let urn = Either::Right(Originates {
+                    from: peer_id,
+                    value: has.urn.clone(),
+                });
                 let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
                     Ok(b) => b,
                     Err(e) => {
@@ -536,26 +541,13 @@ where
                     Some(Rev::Git(head)) if is_tracked => {
                         let res = {
                             let this = self.clone();
-                            let has = has.clone();
-                            let urn = match has.origin {
-                                Some(origin) => Either::Right(Originates {
-                                    from: origin,
-                                    value: has.urn,
-                                }),
-                                None => Either::Left(has.urn),
-                            };
                             this.git_fetch(provider, urn, head).await
                         };
 
                         match res {
                             Ok(()) => {
-                                // If we cloned from the provider we need to ask for their
-                                // commit.
-                                let mut has = has.clone();
-                                let peer_id = has.origin.unwrap_or_else(|| provider);
-                                has.origin = Some(peer_id);
                                 if self.ask(has.clone()).await {
-                                    PutResult::Applied(has)
+                                    PutResult::Applied(has.clone())
                                 } else {
                                     tracing::warn!(
                                         provider = %provider,
