@@ -18,8 +18,10 @@
 use std::{
     convert::TryFrom,
     ffi::CString,
+    fmt::{self, Display},
+    iter::FromIterator,
     ops::Deref,
-    path::{Path, PathBuf},
+    path::{self, Path, PathBuf},
     str::{self, FromStr},
 };
 
@@ -42,6 +44,16 @@ pub enum Error {
     Git(#[from] git2::Error),
 }
 
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum StripPrefixError {
+    #[error("prefix is equal to path")]
+    ImproperPrefix,
+
+    #[error("not prefixed by given path")]
+    NotPrefix(#[from] path::StripPrefixError),
+}
+
 /// An owned path-like value which is a valid git refname.
 ///
 /// See [`git-check-ref-format`] for what the rules for refnames are --
@@ -62,6 +74,32 @@ impl RefLike {
     /// Append the path in `Other` to `self.
     pub fn join<Other: Into<Self>>(&self, other: Other) -> Self {
         Self(self.0.join(other.into().0))
+    }
+
+    /// Append a [`RefspecPattern`], yielding a [`RefspecPattern`]
+    pub fn with_pattern_suffix<Suf: Into<RefspecPattern>>(&self, suf: Suf) -> RefspecPattern {
+        RefspecPattern(self.0.join(suf.into().0))
+    }
+
+    /// Returns a [`RefLike`] that, when joined onto `base` (converted into
+    /// [`Self`]), yields `self`.
+    ///
+    /// # Errors
+    ///
+    /// If `base` is not a prefix of `self`, or `base` equals the path in `self`
+    /// (ie. the result would be the empty path, which is not a valid
+    /// [`RefLike`].
+    pub fn strip_prefix<P: AsRef<Path>>(&self, base: P) -> Result<Self, StripPrefixError> {
+        self.0
+            .strip_prefix(base)
+            .map_err(StripPrefixError::from)
+            .and_then(|path| {
+                if path.as_os_str().is_empty() {
+                    Err(StripPrefixError::ImproperPrefix)
+                } else {
+                    Ok(Self(path.to_path_buf()))
+                }
+            })
     }
 
     pub fn as_str(&self) -> &str {
@@ -177,6 +215,21 @@ impl From<RefLike> for PathBuf {
     }
 }
 
+impl FromIterator<Self> for RefLike {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = Self>,
+    {
+        Self(iter.into_iter().map(|x| x.0).collect())
+    }
+}
+
+impl Display for RefLike {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// A [`RefLike`] without a "refs/" prefix.
 ///
 /// Conversion functions strip the first **two** path components iff the path
@@ -250,6 +303,12 @@ impl From<RefLike> for OneLevel {
     }
 }
 
+impl From<Qualified> for OneLevel {
+    fn from(Qualified(path): Qualified) -> Self {
+        Self::from(RefLike(path))
+    }
+}
+
 impl From<OneLevel> for RefLike {
     fn from(OneLevel(path): OneLevel) -> Self {
         Self(path)
@@ -259,6 +318,12 @@ impl From<OneLevel> for RefLike {
 impl From<OneLevel> for PathBuf {
     fn from(OneLevel(path): OneLevel) -> Self {
         path
+    }
+}
+
+impl Display for OneLevel {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -335,6 +400,12 @@ impl From<RefLike> for Qualified {
     }
 }
 
+impl From<OneLevel> for Qualified {
+    fn from(OneLevel(path): OneLevel) -> Self {
+        Self::from(RefLike(path))
+    }
+}
+
 impl From<Qualified> for RefLike {
     fn from(Qualified(path): Qualified) -> Self {
         Self(path)
@@ -344,6 +415,12 @@ impl From<Qualified> for RefLike {
 impl From<Qualified> for PathBuf {
     fn from(Qualified(path): Qualified) -> Self {
         path
+    }
+}
+
+impl Display for Qualified {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -448,6 +525,12 @@ impl TryFrom<&Path> for RefspecPattern {
 impl From<RefspecPattern> for PathBuf {
     fn from(RefspecPattern(path): RefspecPattern) -> Self {
         path
+    }
+}
+
+impl Display for RefspecPattern {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
