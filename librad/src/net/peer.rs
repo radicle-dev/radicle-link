@@ -16,6 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    convert::TryFrom,
     future::Future,
     io,
     net::{IpAddr, SocketAddr},
@@ -40,6 +41,7 @@ use crate::{
         p2p::{server::GitServer, transport::GitStreamFactory},
         storage,
     },
+    git_ext::reference,
     internal::channel::Fanout,
     keys::{self, AsPKCS8},
     net::{
@@ -463,56 +465,47 @@ where
     }
 }
 
-/// If applicable, map the [`uri::Path`] of the given [`RadUrn`] to
-/// `refs/remotes/<origin>/<path>`
+/// If applicable:
+///   * map the [`uri::Path`] of the given [`RadUrn`] to
+///     `refs/remotes/<origin>/<path>`
+///   * qualify the [`uri::Path`] to `heads/<path>`
 fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
-    match urn {
-        Either::Left(urn) => RadUrn {
-            path: qualify_path(urn.path),
+    fn remote(urn: RadUrn, peer: PeerId) -> RadUrn {
+        let path = if urn.path.is_empty() {
+            format!("refs/{}", urn.path.deref_or_default())
+        } else {
+            urn.path.deref().to_string()
+        };
+        let qualified = reference::Qualified::from(
+            reference::RefLike::try_from(path).expect("path is reflike"),
+        );
+        let path: reference::RefLike = reflike!("remotes").join(peer).join(qualified);
+        RadUrn {
+            path: uri::Path::parse(path.as_str()).expect("reflike is path"),
             ..urn
-        },
-        Either::Right(Originates { from, value }) => {
-            let urn = value;
-
-            if from == *local_peer_id {
-                return urn;
-            }
-
-            let path = qualify_path(urn.path);
-            let mut remote =
-                uri::Path::parse(format!("refs/remotes/{}", from)).expect("Known valid path");
-            remote.push(path);
-
-            RadUrn {
-                path: remote,
-                ..urn
-            }
-        },
-    }
-}
-
-/// When receiving a `uri::Path`, we want to ensure that it points to correct
-/// path in the monorepo tree.
-///
-/// In the cases of the path being empty or starting with `refs/rad` we do
-/// nothing.
-///
-/// In the case of starting with `refs/` -- not followed by `rad` -- we strip
-/// the `refs` and return the rest of the path.
-///
-/// If it does not start with `refs/rad` nor `refs/` then we assume it needs to
-/// be qualified by `heads/`.
-fn qualify_path(path: uri::Path) -> uri::Path {
-    if path.is_empty() || path.starts_with("refs/rad") {
-        return path;
+        }
     }
 
-    match path.strip_prefix("refs/") {
-        Some(tail) => {
-            uri::Path::parse(tail).expect("`Path` is still valid after stripping a valid prefix")
-        },
-        None => uri::Path::parse(format!("heads/{}", path.deref()))
-            .expect("`Path` is valid after adding 'heads/` prefix"),
+    fn local(urn: RadUrn) -> RadUrn {
+        let path = if urn.path.is_empty() {
+            format!("refs/{}", urn.path.deref_or_default())
+        } else {
+            urn.path.deref().to_string()
+        };
+        let path = uri::Path::parse(
+            reference::Qualified::from(
+                reference::RefLike::try_from(path).expect("path is reflike"),
+            )
+            .as_str(),
+        )
+        .expect("reflike is path");
+        RadUrn { path, ..urn }
+    }
+
+    match urn {
+        Either::Left(urn) => local(urn),
+        Either::Right(Originates { from, value: urn }) if from == *local_peer_id => local(urn),
+        Either::Right(Originates { from, value: urn }) => remote(urn, from),
     }
 }
 
