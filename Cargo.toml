@@ -6,6 +6,7 @@ members = [
   "librad-test",
   "macros",
   "seed",
+  "sign-refs",
   "std-ext",
   "tracker",
 ]
