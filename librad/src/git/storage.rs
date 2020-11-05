@@ -387,6 +387,7 @@ impl<S: Clone> Storage<S> {
     }
 
     pub fn rad_signed_refs_of(&self, urn: &RadUrn, peer: PeerId) -> Result<Refs, Error> {
+        tracing::info!("Storage::rad_signed_refs_of urn = {}, peer = {}", urn, peer);
         let signed = {
             let refs = NamespacedRef::rad_signed_refs(urn.id.clone(), peer);
             let blob = Blob::Tip {
