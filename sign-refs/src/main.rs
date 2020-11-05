@@ -15,13 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{env, path::Path};
+use std::{env, io, path::Path};
 
 use radicle_keystore::{crypto, pinentry, FileStorage, Keystore};
 
 use librad::{
     git::refs::Refs,
-    keys::{PublicKey, SecretKey},
+    keys::{self, PublicKey, SecretKey},
     paths::Paths,
     signer::{BoxedSigner, SomeSigner},
 };
@@ -40,21 +40,42 @@ fn get_signer(keys_dir: &Path) -> anyhow::Result<BoxedSigner> {
     Ok(SomeSigner { signer: key }.into())
 }
 
-fn parse_args() -> anyhow::Result<Refs> {
+fn parse_args() -> anyhow::Result<(bool, Refs)> {
     let args = env::args().skip(1).take(2).collect::<Vec<_>>();
-    serde_json::from_str(&args[0]).map_err(|err| {
-        anyhow::anyhow!(
-            "invalid args: {:?}, expected a 'Refs' JSON\nError: {}",
-            args,
-            err
-        )
-    })
+    let stdin = if args[0] == "stdin" { true } else { false };
+    serde_json::from_str(&args[1])
+        .map_err(|err| {
+            anyhow::anyhow!(
+                "invalid args: {:?}, expected a 'Refs' JSON\nError: {}",
+                args,
+                err
+            )
+        })
+        .map(|refs| (stdin, refs))
+}
+
+pub fn from_std_in<R: io::Read>(mut r: R) -> anyhow::Result<BoxedSigner> {
+    use radicle_keystore::SecretKeyExt;
+
+    let mut bytes = Vec::new();
+    r.read_to_end(&mut bytes)?;
+
+    let sbytes: keys::SecStr = bytes.into();
+    match keys::SecretKey::from_bytes_and_meta(sbytes, &()) {
+        Ok(key) => Ok(SomeSigner { signer: key }.into()),
+        Err(err) => Err(io::Error::new(io::ErrorKind::InvalidData, err).into()),
+    }
 }
 
 fn main() -> anyhow::Result<()> {
-    let refs = parse_args()?;
-    let paths = Paths::new()?;
-    let signer = get_signer(paths.keys_dir())?;
+    let (stdin, refs) = parse_args()?;
+
+    let signer = if stdin {
+        from_std_in(io::stdin())?
+    } else {
+        let paths = Paths::from_env()?;
+        get_signer(paths.keys_dir())?
+    };
     let signed = refs.sign(&signer)?;
 
     println!("{}", serde_json::to_string(&signed)?);
