@@ -26,6 +26,7 @@ use crate::Project;
 
 /// An error returned by the [`NodeHandle`].
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum NodeError {
     #[error("request failed: the node disconnected")]
     RequestFailed,

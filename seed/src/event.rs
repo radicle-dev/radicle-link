@@ -17,7 +17,11 @@
 
 use std::net::SocketAddr;
 
-use librad::{meta::project::ProjectInfo, net::peer::PeerApi, peer::PeerId, uri::RadUrn};
+use librad::{
+    git::{identities, Urn},
+    net::peer::PeerApi,
+    peer::PeerId,
+};
 
 use crate::{guess_user, Error, Project, Signer};
 
@@ -29,7 +33,7 @@ pub enum Event {
     /// A peer has connected.
     PeerConnected {
         peer_id: PeerId,
-        urn: Option<RadUrn>,
+        urn: Option<Urn>,
         name: Option<String>,
     },
     /// A peer has disconnected.
@@ -49,30 +53,23 @@ impl Event {
         Ok(Self::PeerConnected {
             peer_id,
             urn: user.map(|u| u.urn()),
-            name: user.map(|u| u.name().to_owned()),
+            name: user.map(|u| u.doc.payload.subject.name.to_string()),
         })
     }
 
     pub(crate) async fn project_tracked(
-        urn: RadUrn,
+        urn: Urn,
         provider: PeerId,
         api: &PeerApi<Signer>,
     ) -> Result<Self, Error> {
         let proj = api
             .with_storage({
                 let urn = urn.clone();
-                move |s| s.metadata_of::<ProjectInfo, _>(&urn, provider)
+                move |s| identities::project::get(&s, &urn)
             })
             .await??;
 
-        Ok(Event::ProjectTracked(
-            Project {
-                urn: urn.clone(),
-                maintainers: proj.maintainers().clone(),
-                name: proj.name().to_owned(),
-                description: proj.description().to_owned(),
-            },
-            provider,
-        ))
+        proj.ok_or_else(|| Error::NoSuchUrn(urn))
+            .map(|proj| Event::ProjectTracked(Project::from(proj), provider))
     }
 }

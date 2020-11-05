@@ -28,6 +28,10 @@ use thiserror::Error;
 
 use super::sealed;
 
+lazy_static! {
+    pub static ref DEFAULT_PATH: ext::RefLike = reflike!("refs/rad/id");
+}
+
 pub trait HasProtocol: sealed::Sealed {
     const PROTOCOL: &'static str;
 }
@@ -85,6 +89,14 @@ impl<R> Urn<R> {
         Self { id, path: None }
     }
 
+    /// Render [`Self::id`] into the canonical string encoding.
+    pub fn encode_id<'a>(&'a self) -> String
+    where
+        &'a R: Into<Multihash>,
+    {
+        multibase::encode(multibase::Base::Base32Z, (&self.id).into())
+    }
+
     pub fn map<F, S>(self, f: F) -> Urn<S>
     where
         F: FnOnce(R) -> S,
@@ -94,11 +106,109 @@ impl<R> Urn<R> {
             path: self.path,
         }
     }
+
+    pub fn map_path<F>(self, f: F) -> Self
+    where
+        F: FnOnce(Option<ext::RefLike>) -> Option<ext::RefLike>,
+    {
+        Self {
+            id: self.id,
+            path: f(self.path),
+        }
+    }
+
+    pub fn with_path<P>(self, path: P) -> Self
+    where
+        P: Into<Option<ext::RefLike>>,
+    {
+        self.map_path(|_| path.into())
+    }
 }
 
 impl<R> From<R> for Urn<R> {
     fn from(r: R) -> Self {
         Self::new(r)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum FromRefLikeError {
+    #[error("missing {0}")]
+    Missing(&'static str),
+
+    #[error("must be a fully-qualified ref, ie. start with `refs/namespaces`")]
+    Namespaced(#[from] ext::reference::name::StripPrefixError),
+
+    #[error(transparent)]
+    OidFromMultihash(#[from] ext::oid::FromMultihashError),
+
+    #[error(transparent)]
+    Path(#[from] ext::reference::name::Error),
+
+    #[error(transparent)]
+    Encoding(#[from] multibase::Error),
+
+    #[error(transparent)]
+    Multihash(#[from] multihash::DecodeOwnedError),
+
+    #[error("invalid utf8")]
+    Utf8,
+}
+
+// FIXME: For some inexplicable reason, rustc rejects an impl for Urn<R>,
+// claiming that the blanket impl `impl<T, U> TryFrom<U> for T where U: Into<T>`
+// overlaps. We absolutely do not have `Into<Urn<R>> for ext::RefLike`.
+impl TryFrom<ext::RefLike> for Urn<ext::Oid> {
+    type Error = FromRefLikeError;
+
+    fn try_from(refl: ext::RefLike) -> Result<Self, Self::Error> {
+        let refl = refl.strip_prefix("refs/namespaces")?;
+        let mut suf = refl.iter();
+        let id = suf
+            .next()
+            .ok_or(Self::Error::Missing("namespace"))
+            .and_then(|ns| {
+                let ns = ns.to_str().ok_or(Self::Error::Utf8)?;
+                let bytes = multibase::decode(ns).map(|(_base, bytes)| bytes)?;
+                let mhash = Multihash::from_bytes(bytes)?;
+                Ok(ext::Oid::try_from(mhash)?)
+            })?;
+        let path = {
+            let path = suf.as_path();
+            if path.as_os_str().is_empty() {
+                Ok(None)
+            } else {
+                ext::RefLike::try_from(path).map(Some)
+            }
+        }?;
+
+        Ok(Self { id, path })
+    }
+}
+
+impl<R> From<Urn<R>> for ext::RefLike
+where
+    R: HasProtocol,
+    for<'a> &'a R: Into<Multihash>,
+{
+    fn from(urn: Urn<R>) -> Self {
+        Self::from(&urn)
+    }
+}
+
+// FIXME: this is not kosher -- doesn't include `refs/namespaces`, but
+// everything after that. Should have a better type for that.
+impl<'a, R> From<&'a Urn<R>> for ext::RefLike
+where
+    R: HasProtocol,
+    &'a R: Into<Multihash>,
+{
+    fn from(urn: &'a Urn<R>) -> Self {
+        let refl = Self::try_from(urn.encode_id()).unwrap();
+        match &urn.path {
+            None => refl,
+            Some(path) => refl.join(ext::Qualified::from(path.clone())),
+        }
     }
 }
 
@@ -108,12 +218,7 @@ where
     for<'a> &'a R: Into<Multihash>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "rad:{}:{}",
-            R::PROTOCOL,
-            multibase::encode(multibase::Base::Base32Z, (&self.id).into())
-        )?;
+        write!(f, "rad:{}:{}", R::PROTOCOL, self.encode_id())?;
 
         if let Some(path) = &self.path {
             write!(f, "/{}", path.percent_encode())?;
@@ -301,7 +406,7 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     use git_ext::Oid;
@@ -309,6 +414,36 @@ mod tests {
     use proptest::prelude::*;
 
     use crate::identities::gen::gen_oid;
+
+    /// Fake `id` of a `Urn<FakeId>`.
+    ///
+    /// Not cryptographically secure, but cheap to create for tests.
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    pub struct FakeId(pub usize);
+
+    impl sealed::Sealed for FakeId {}
+
+    impl HasProtocol for FakeId {
+        const PROTOCOL: &'static str = "test";
+    }
+
+    impl From<usize> for FakeId {
+        fn from(sz: usize) -> FakeId {
+            Self(sz)
+        }
+    }
+
+    impl From<FakeId> for Multihash {
+        fn from(id: FakeId) -> Self {
+            Self::from(&id)
+        }
+    }
+
+    impl From<&FakeId> for Multihash {
+        fn from(id: &FakeId) -> Self {
+            multihash::wrap(multihash::Code::Identity, &id.0.to_be_bytes())
+        }
+    }
 
     fn gen_urn() -> impl Strategy<Value = Urn<Oid>> {
         (
@@ -347,5 +482,37 @@ mod tests {
         fn roundtrip(urn in gen_urn()) {
             trippin(urn)
         }
+    }
+
+    #[test]
+    fn is_reflike() {
+        assert_eq!(
+            "hnrkyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+            ext::RefLike::from(Urn::new(ext::Oid::from(git2::Oid::zero()))).as_str()
+        )
+    }
+
+    #[test]
+    fn is_reflike_with_path() {
+        assert_eq!(
+            "hnrkyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/refs/heads/lolek/bolek",
+            ext::RefLike::from(Urn {
+                id: ext::Oid::from(git2::Oid::zero()),
+                path: Some(ext::RefLike::try_from("lolek/bolek").unwrap())
+            })
+            .as_str()
+        )
+    }
+
+    #[test]
+    fn is_reflike_with_qualified_path() {
+        assert_eq!(
+            "hnrkyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/refs/remotes/lolek/bolek",
+            ext::RefLike::from(Urn {
+                id: ext::Oid::from(git2::Oid::zero()),
+                path: Some(ext::RefLike::try_from("refs/remotes/lolek/bolek").unwrap())
+            })
+            .as_str()
+        )
     }
 }

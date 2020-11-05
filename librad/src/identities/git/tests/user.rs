@@ -37,7 +37,7 @@ lazy_static! {
 fn create() -> anyhow::Result<()> {
     let repo = repo()?;
     {
-        Device::new(&*DESKTOP, Git::new(&repo))?.assert_verifies()
+        Device::new(&*DESKTOP, Identities::from(&*repo))?.assert_verifies()
     }
 }
 
@@ -45,7 +45,7 @@ fn create() -> anyhow::Result<()> {
 fn update() -> anyhow::Result<()> {
     let repo = repo()?;
     {
-        let desktop = Device::new(&*DESKTOP, Git::new(&repo))?.update(Some(
+        let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?.update(Some(
             vec![DESKTOP.public(), LAPTOP.public()]
                 .into_iter()
                 .collect(),
@@ -65,7 +65,7 @@ fn update() -> anyhow::Result<()> {
 fn revoke_a_deux() -> anyhow::Result<()> {
     let repo = repo()?;
     {
-        let desktop = Device::new(&*DESKTOP, Git::new(&repo))?.update(Some(
+        let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?.update(Some(
             vec![DESKTOP.public(), LAPTOP.public()]
                 .into_iter()
                 .collect(),
@@ -100,7 +100,7 @@ fn revoke_a_deux() -> anyhow::Result<()> {
 fn revoke_a_trois() -> anyhow::Result<()> {
     let repo = repo()?;
     {
-        let desktop = Device::new(&*DESKTOP, Git::new(&repo))?.update(Some(
+        let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?.update(Some(
             vec![DESKTOP.public(), LAPTOP.public(), PALMTOP.public()]
                 .into_iter()
                 .collect(),

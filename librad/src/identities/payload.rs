@@ -212,6 +212,7 @@ pub struct Payload<T> {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ExtError {
     #[error("extension namespace can not be the subject namespace")]
     ExtensionIsSubject,
@@ -484,7 +485,7 @@ where
 
 impl<'de, R, E> serde::Deserialize<'de> for KeyOrUrn<R>
 where
-    R: HasProtocol + TryFrom<Multihash, Error = E>,
+    R: HasProtocol + TryFrom<Multihash, Error = E> + Debug,
     E: std::error::Error + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

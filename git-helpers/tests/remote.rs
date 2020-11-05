@@ -27,17 +27,12 @@ use keystore::{crypto, pinentry::SecUtf8, Keystore};
 use tempfile::tempdir;
 
 use librad::{
-    git::{local::url::LocalUrl, storage::Storage},
+    git::{local::url::LocalUrl, storage::Storage, Urn},
     keys::{PublicKey, SecretKey},
-    meta::entity::Signatory,
     paths::Paths,
     peer::PeerId,
-    uri::RadUrn,
 };
-use librad_test::{
-    logging,
-    rad::entity::{Alice, Radicle},
-};
+use librad_test::{logging, rad::identities::create_test_project};
 
 const PASSPHRASE: &str = "123";
 
@@ -50,7 +45,7 @@ fn smoke() {
     let key = SecretKey::new();
     let peer_id = PeerId::from(key);
 
-    let urn = setup_entity(&rad_paths, key).unwrap();
+    let urn = setup_project(&rad_paths, key).unwrap();
     setup_keystore(rad_paths.keys_dir(), key).unwrap();
     let path = setup_path().unwrap();
 
@@ -93,20 +88,10 @@ fn smoke() {
     }
 }
 
-fn setup_entity(paths: &Paths, key: SecretKey) -> anyhow::Result<RadUrn> {
-    let mut alice = Alice::new(key.public());
-    let mut radicle = Radicle::new(&alice);
-    {
-        let resolves_to_alice = alice.clone();
-        alice.sign(&key, &Signatory::OwnedKey, &resolves_to_alice)?;
-        radicle.sign(&key, &Signatory::User(alice.urn()), &resolves_to_alice)?;
-
-        let store = Storage::open_or_init(&paths, key)?;
-        store.create_repo(&alice)?;
-        store.create_repo(&radicle)?;
-    }
-
-    Ok(radicle.urn())
+fn setup_project(paths: &Paths, key: SecretKey) -> anyhow::Result<Urn> {
+    let store = Storage::open_or_init(paths, key)?;
+    let proj = create_test_project(&store)?;
+    Ok(proj.project.urn())
 }
 
 fn setup_keystore(dir: &Path, key: SecretKey) -> anyhow::Result<()> {
@@ -121,7 +106,7 @@ fn setup_keystore(dir: &Path, key: SecretKey) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn setup_repo(path: &Path, origin: &RadUrn, peer_id: PeerId) -> anyhow::Result<()> {
+fn setup_repo(path: &Path, origin: &Urn, peer_id: PeerId) -> anyhow::Result<()> {
     let repo = git2::Repository::init(path)?;
     let blob = repo.blob(b"do you know who I am?")?;
     let tree = {

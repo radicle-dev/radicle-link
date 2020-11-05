@@ -15,20 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod common;
-pub mod entity;
-pub mod profile;
+pub mod any;
+pub mod error;
+pub mod local;
 pub mod project;
 pub mod user;
 
-#[allow(dead_code)]
-mod serde_helpers;
+pub(super) mod common;
 
-// Re-exports
-pub use common::*;
-pub use profile::{Geo, ProfileImage, UserProfile};
-pub use project::{default_branch, Project, ProjectData, Relation};
-pub use user::{ProfileRef, User, UserData};
-
-#[cfg(test)]
-pub mod entity_test;
+pub use crate::identities::git::*;
+pub use error::Error;

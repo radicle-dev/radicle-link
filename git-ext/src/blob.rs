@@ -23,6 +23,7 @@ use thiserror::Error;
 use crate::{error::is_not_found_err, revwalk};
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error(transparent)]
     NotFound(#[from] NotFound),
@@ -32,6 +33,7 @@ pub enum Error {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum NotFound {
     #[error("blob with path {0} not found")]
     NoSuchBlob(String),

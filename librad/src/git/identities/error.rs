@@ -17,24 +17,48 @@
 
 use thiserror::Error;
 
-use crate::git::trailer;
+use super::{
+    super::{storage, types::reference},
+    local,
+};
+use crate::identities::{
+    self,
+    git::{Urn, VerificationError},
+};
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum Signature {
-    #[error("missing {0}")]
-    Missing(&'static str),
+pub enum Error {
+    #[error("the URN {0} does not exist")]
+    NotFound(Urn),
+
+    #[error("malformed URN")]
+    Ref(#[from] reference::FromUrnError),
 
     #[error(transparent)]
-    Serde(#[from] serde::de::value::Error),
-}
-
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum Signatures {
-    #[error(transparent)]
-    Trailer(#[from] trailer::Error),
+    LocalId(#[from] local::ValidationError),
 
     #[error(transparent)]
-    Signature(#[from] Signature),
+    Verification(#[from] VerificationError),
+
+    #[error(transparent)]
+    Config(#[from] storage::config::Error),
+
+    #[error(transparent)]
+    Storage(#[from] storage::Error),
+
+    #[error(transparent)]
+    Verify(#[from] identities::git::error::Verify),
+
+    #[error(transparent)]
+    Merge(#[from] identities::git::error::Merge),
+
+    #[error(transparent)]
+    Load(#[from] identities::git::error::Load),
+
+    #[error(transparent)]
+    Store(#[from] identities::git::error::Store),
+
+    #[error(transparent)]
+    Git(#[from] git2::Error),
 }

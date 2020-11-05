@@ -17,6 +17,8 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    convert::TryFrom,
+    fmt::Debug,
     io::{self, Cursor, Read, Write},
     panic::{self, UnwindSafe},
     path::PathBuf,
@@ -27,19 +29,20 @@ use std::{
 };
 
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
-use git_ext::{into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
+use git_ext::{self as ext, into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
 use thiserror::Error;
 
-use crate::{
-    git::{
-        local::{self, url::LocalUrl},
-        storage::{self, Storage},
+use super::{
+    super::{
+        identities,
+        refs::{self, Refs},
+        storage::{self, glob, Storage},
+        types::namespace::Namespace,
+        Urn,
     },
-    paths::Paths,
-    peer::PeerId,
-    signer::BoxedSigner,
-    uri::RadUrn,
+    url::LocalUrl,
 };
+use crate::{paths::Paths, peer::PeerId, signer::BoxedSigner};
 
 lazy_static! {
     static ref SETTINGS: Arc<RwLock<HashMap<PeerId, SettingsInternal>>> =
@@ -54,7 +57,7 @@ pub fn register() {
     static INIT: Once = Once::new();
     unsafe {
         INIT.call_once(move || {
-            git2::transport::register(local::URL_SCHEME, move |remote| {
+            git2::transport::register(super::URL_SCHEME, move |remote| {
                 Transport::smart(&remote, true, LocalTransportFactory::new())
             })
             .unwrap()
@@ -248,9 +251,13 @@ pub enum Mode {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("no such URN: {0}")]
-    NoSuchUrn(RadUrn),
+    NoSuchUrn(Urn),
+
+    #[error("no rad/self present and no default identity configured")]
+    NoLocalIdentity,
 
     #[error("too many libgit2 transport streams")]
     StreamLimitExceeded,
@@ -260,6 +267,12 @@ pub enum Error {
 
     #[error("child exited unsuccessfully")]
     Child(ExitStatus),
+
+    #[error(transparent)]
+    Refs(#[from] refs::stored::Error),
+
+    #[error(transparent)]
+    LocalId(#[from] identities::local::Error),
 
     #[error(transparent)]
     Git(#[from] git2::Error),
@@ -280,6 +293,8 @@ pub struct Connected {
 }
 
 impl Connected {
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(skip(self), err)]
     pub fn wait(&mut self) -> Result<(), Error> {
         let status = self.process.wait()?;
         if status.success() {
@@ -327,12 +342,13 @@ pub struct LocalTransport {
 
 impl LocalTransport {
     pub fn new(settings: Settings) -> Result<Self, Error> {
-        let storage = Storage::open(&settings.paths)?.with_signer(settings.signer)?;
+        let storage = Storage::open(&settings.paths, settings.signer)?;
         Ok(LocalTransport {
             storage: Arc::new(Mutex::new(storage)),
         })
     }
 
+    #[tracing::instrument(level = "debug", skip(self, service, stdio), err)]
     pub fn connect(
         &mut self,
         url: LocalUrl,
@@ -347,7 +363,7 @@ impl LocalTransport {
         git.envs(::std::env::vars().filter(|(key, _)| key.starts_with("GIT_TRACE")))
             .current_dir(self.repo_path())
             .args(&[
-                &format!("--namespace={}", urn.id),
+                &format!("--namespace={}", Namespace::from(&urn)),
                 "-c",
                 "transfer.hiderefs=refs/",
                 "-c",
@@ -361,7 +377,7 @@ impl LocalTransport {
                 // Fetching remotes is ok, pushing is not
                 self.visible_remotes(&urn)?.for_each(|remote_ref| {
                     git.arg("-c")
-                        .arg(format!("uploadpack.hiderefs=!{}", remote_ref));
+                        .arg(format!("uploadpack.hiderefs=!^{}", remote_ref));
                 });
                 git.args(&["upload-pack", "--strict", "--timeout=5"]);
             },
@@ -391,54 +407,87 @@ impl LocalTransport {
             .stderr(Stdio::inherit())
             .spawn()?;
 
-        let this = self.clone();
+        let on_success: Option<
+            Box<dyn FnOnce() -> Result<(), Error> + Send + UnwindSafe + 'static>,
+        > = match service {
+            Service::ReceivePack => {
+                let storage = self.storage.clone();
+                let hook = move || {
+                    let storage = storage.lock().unwrap();
+
+                    // Update `rad/signed_refs`
+                    Refs::update(&storage, &urn)?;
+
+                    // Ensure we have a `rad/self`
+                    let local_id = identities::local::load(&storage, urn.clone())
+                        .transpose()
+                        .or_else(|| identities::local::default(&storage).transpose())
+                        .transpose()?;
+                    match local_id {
+                        None => Err(Error::NoLocalIdentity),
+                        Some(local_id) => Ok(local_id.link(&storage, &urn)?),
+                    }
+                };
+
+                Some(Box::new(hook))
+            },
+
+            _ => None,
+        };
+
         Ok(Connected {
             process: child,
-            on_success: Some(Box::new(move || {
-                if matches!(service, Service::ReceivePack) {
-                    return this.update_refs(&urn);
-                }
-
-                Ok(())
-            })),
+            on_success,
         })
     }
 
-    fn guard_has_urn(&self, urn: &RadUrn) -> Result<(), Error> {
-        self.storage
+    fn guard_has_urn(&self, urn: &Urn) -> Result<(), Error> {
+        let have = self
+            .storage
             .lock()
             .unwrap()
             .has_urn(urn)
-            .map_err(Error::from)
-            .and_then(|have| {
-                have.then_some(())
-                    .ok_or_else(|| Error::NoSuchUrn(urn.clone()))
-            })
+            .map_err(Error::from)?;
+        if !have {
+            Err(Error::NoSuchUrn(urn.clone()))
+        } else {
+            Ok(())
+        }
     }
 
-    fn visible_remotes(&self, urn: &RadUrn) -> Result<impl Iterator<Item = String>, Error> {
-        const GLOBS: &[&str] = &["refs/remotes/*/heads/*", "refs/remotes/*/tags/*"];
-
-        self.storage
+    fn visible_remotes(&self, urn: &Urn) -> Result<impl Iterator<Item = ext::RefLike>, Error> {
+        let remotes = self
+            .storage
             .lock()
             .unwrap()
-            .references_glob(urn, GLOBS)
-            .map(|iter| iter.map(|(name, _)| name).collect::<Vec<_>>())
-            .map(|v| v.into_iter())
-            .map_err(Error::from)
+            .references_glob(visible_remotes_glob(urn))?
+            .filter_map(move |res| {
+                res.map(|reference| {
+                    reference
+                        .name()
+                        .and_then(|name| ext::RefLike::try_from(name).ok())
+                })
+                .transpose()
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(remotes.into_iter())
     }
 
     fn repo_path(&self) -> PathBuf {
         self.storage.lock().unwrap().path().to_path_buf()
     }
+}
 
-    fn update_refs(&self, urn: &RadUrn) -> Result<(), Error> {
-        self.storage
-            .lock()
-            .unwrap()
-            .update_refs(urn)
-            .map_err(Error::from)
-    }
+fn visible_remotes_glob(urn: &Urn) -> impl glob::Pattern + Debug {
+    globset::Glob::new(&format!(
+        "{}/*/{{heads,tags}}/*",
+        reflike!("refs/namespaces")
+            .join(Namespace::from(urn))
+            .join(reflike!("refs/remotes"))
+    ))
+    .unwrap()
+    .compile_matcher()
 }
 
 pub struct LocalStream {
@@ -473,5 +522,36 @@ impl Read for LocalRead {
             None => self.inner.read(buf),
             Some(hdr) => Cursor::new(hdr).read(buf),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::git::storage::glob::Pattern as _;
+
+    #[test]
+    fn visible_remotes_glob_seems_legit() {
+        let urn = Urn::new(git2::Oid::zero().into());
+        let glob = visible_remotes_glob(&urn);
+
+        assert!(glob.matches(
+            reflike!("refs/namespaces")
+                .join(Namespace::from(&urn))
+                .join(reflike!("refs/remotes/lolek/heads/next"))
+        ));
+        assert!(glob.matches(
+            reflike!("refs/namespaces")
+                .join(Namespace::from(&urn))
+                .join(reflike!("refs/remotes/bolek/tags/v0.99"))
+        ));
+        assert!(!glob.matches("refs/heads/master"));
+        assert!(!glob.matches("refs/namespaces/othernamespace/refs/remotes/tola/heads/next"));
+        assert!(!glob.matches(
+            reflike!("refs/namespaces")
+                .join(Namespace::from(&urn))
+                .join(reflike!("refs/heads/hidden"))
+        ));
     }
 }

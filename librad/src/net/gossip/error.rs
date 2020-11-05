@@ -22,6 +22,7 @@ use thiserror::Error;
 use crate::net::codec::CborCodecError;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("connection to self")]
     SelfConnection,

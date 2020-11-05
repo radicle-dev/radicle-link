@@ -26,6 +26,7 @@
 //! [`git-daemon`]: https://git-scm.com/docs/git-daemon
 
 use std::{
+    fmt::Debug,
     io,
     path::{Path, PathBuf},
     process::Stdio,
@@ -36,17 +37,18 @@ use futures::{
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
 };
 use git2::transport::Service;
-use git_ext::{into_io_err, References, UPLOAD_PACK_HEADER};
+use git_ext::{into_io_err, RefLike, References, UPLOAD_PACK_HEADER};
 use tokio::process::{self, Command};
 use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
 
-use crate::{
-    git::{
-        header::{self, Header},
-        types::namespace::AsNamespace,
+use super::{
+    super::{
+        types::namespace::{AsNamespace, Namespace},
+        Urn,
     },
-    paths::Paths,
+    header::{self, Header},
 };
+use crate::paths::Paths;
 
 #[derive(Clone)]
 pub struct GitServer {
@@ -62,14 +64,13 @@ impl GitServer {
 }
 
 impl GitServer {
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(skip(self, recv, send), err)]
     pub async fn invoke_service<R, W>(&self, (recv, mut send): (R, W)) -> io::Result<()>
     where
         R: AsyncRead + Unpin,
         W: AsyncWrite + Unpin,
     {
-        let span = tracing::trace_span!("GitServer::invoke_service", git.server.path = %self.monorepo.display());
-        let _guard = span.enter();
-
         let mut recv = BufReader::new(recv);
         let mut hdr_buf = String::with_capacity(256);
         if let Err(e) = recv.read_line(&mut hdr_buf).await {
@@ -77,33 +78,27 @@ impl GitServer {
             return send_err(&mut send, "garbage header").await;
         }
 
-        let header = match hdr_buf.parse::<Header>() {
-            Ok(hdr) => hdr,
+        match hdr_buf.parse::<Header<Urn>>() {
+            Ok(Header { service, repo, .. }) => match *service {
+                Service::UploadPack => {
+                    UploadPack::upload_pack(&self.monorepo)?
+                        .run(recv, send)
+                        .await
+                },
+                Service::UploadPackLs => {
+                    UploadPack::advertise(&self.monorepo, Namespace::from(repo))?
+                        .run(recv, send)
+                        .await
+                },
+                service => {
+                    tracing::error!("Invalid git service: {:?}", header::Service(service));
+                    send_err(&mut send, "service not enabled").await
+                },
+            },
+
             Err(e) => {
                 tracing::error!("Error parsing git service header: {}", e);
-                return send_err(&mut send, "invalid header").await;
-            },
-        };
-
-        tracing::trace!(
-            git.service = ?header.service,
-            git.urn = %header.repo,
-        );
-
-        match *header.service {
-            Service::UploadPack => {
-                UploadPack::upload_pack(&self.monorepo)?
-                    .run(recv, send)
-                    .await
-            },
-            Service::UploadPackLs => {
-                UploadPack::advertise(&self.monorepo, &header.repo.id)?
-                    .run(recv, send)
-                    .await
-            },
-            service => {
-                tracing::error!("Invalid git service: {:?}", header::Service(service));
-                send_err(&mut send, "service not enabled").await
+                send_err(&mut send, "invalid header").await
             },
         }
     }
@@ -115,14 +110,19 @@ enum UploadPack {
 }
 
 impl UploadPack {
-    fn advertise<N: AsNamespace>(repo_path: &Path, namespace: &N) -> io::Result<Self> {
-        let mut git = Command::new("git");
+    #[tracing::instrument(level = "debug", err)]
+    fn advertise<N>(repo_path: &Path, namespace: N) -> io::Result<Self>
+    where
+        N: AsNamespace + Clone + Debug,
+    {
+        let namespace: RefLike = namespace.into();
 
+        let mut git = Command::new("git");
         git.args(&["-c", "uploadpack.hiderefs=refs/"])
             .arg("-c")
             .arg(format!(
-                "uploadpack.hiderefs=!refs/namespaces/{}",
-                namespace.as_namespace()
+                "uploadpack.hiderefs=!{}",
+                reflike!("refs/namespaces").join(&namespace)
             ));
 
         // FIXME: we should probably keep one git2::Repository around, but
@@ -131,14 +131,8 @@ impl UploadPack {
         let mut refs = References::from_globs(
             &repo,
             &[
-                format!(
-                    "refs/namespaces/{}/refs/rad/ids/*",
-                    namespace.as_namespace()
-                ),
-                format!(
-                    "refs/namespaces/{}/refs/remotes/**/rad/ids/*",
-                    namespace.as_namespace()
-                ),
+                format!("refs/namespaces/{}/refs/rad/ids/*", namespace),
+                format!("refs/namespaces/{}/refs/remotes/**/rad/ids/*", namespace),
             ],
         )
         .map_err(into_io_err)?;
@@ -166,6 +160,7 @@ impl UploadPack {
         .map(Self::AdvertiseRefs)
     }
 
+    #[tracing::instrument(level = "debug", err)]
     fn upload_pack(repo_path: &Path) -> io::Result<Self> {
         let mut git = Command::new("git");
         git_tracing(&mut git);
@@ -184,6 +179,8 @@ impl UploadPack {
         .map(Self::UploadPack)
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(skip(self, recv, send), err)]
     async fn run<R, W>(self, mut recv: R, mut send: W) -> io::Result<()>
     where
         R: AsyncRead + Unpin,

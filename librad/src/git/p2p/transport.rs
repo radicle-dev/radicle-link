@@ -61,11 +61,8 @@ use futures::{
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
 use git_ext::into_git_err;
 
-use crate::{
-    git::{header::Header, p2p::url::GitUrl},
-    peer::PeerId,
-    uri::{self, RadUrn},
-};
+use super::{header::Header, url::GitUrl};
+use crate::{identities::git::Urn, peer::PeerId};
 
 type Factories = Arc<RwLock<HashMap<PeerId, Weak<Box<dyn GitStreamFactory>>>>>;
 
@@ -167,15 +164,19 @@ impl SmartSubtransport for RadTransport {
         url: &str,
         service: Service,
     ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        let url: GitUrl = url.parse().map_err(into_git_err)?;
+        let GitUrl {
+            local_peer,
+            remote_peer,
+            repo,
+            addr_hints,
+        } = url.parse().map_err(into_git_err)?;
         let stream = self
-            .open_stream(&url.local_peer, &url.remote_peer, &url.addr_hints)
-            .ok_or_else(|| into_git_err(format!("No connection to {}", url.remote_peer)))?;
+            .open_stream(&local_peer, &remote_peer, &addr_hints)
+            .ok_or_else(|| into_git_err(format!("No connection to {}", remote_peer)))?;
+        let header = Header::new(service, Urn::new(repo), remote_peer);
 
         Ok(Box::new(RadSubTransport {
-            header_sent: false,
-            url,
-            service,
+            header: Some(header),
             stream,
         }))
     }
@@ -186,29 +187,17 @@ impl SmartSubtransport for RadTransport {
 }
 
 struct RadSubTransport {
-    header_sent: bool,
-    url: GitUrl,
-    service: Service,
+    header: Option<Header<Urn>>,
     stream: Box<dyn GitStream>,
 }
 
 impl RadSubTransport {
     async fn ensure_header_sent(&mut self) -> io::Result<()> {
-        if !self.header_sent {
-            self.header_sent = true;
-            let header = Header::new(
-                self.service,
-                RadUrn::new(
-                    self.url.repo.clone(),
-                    uri::Protocol::Git,
-                    uri::Path::empty(),
-                ),
-                self.url.remote_peer,
-            );
-            self.stream.write_all(header.to_string().as_bytes()).await
-        } else {
-            Ok(())
+        if let Some(header) = self.header.take() {
+            self.stream.write_all(header.to_string().as_bytes()).await?;
         }
+
+        Ok(())
     }
 }
 

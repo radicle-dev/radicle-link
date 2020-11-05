@@ -40,6 +40,7 @@ pub mod error {
     use super::PublicKey;
 
     #[derive(Debug, Error)]
+    #[non_exhaustive]
     pub enum FromIter<R: Display + Debug> {
         #[error("duplicate key `{0}`")]
         DuplicateKey(PublicKey),
@@ -187,6 +188,26 @@ impl<T, R, C> Indirect<T, R, C> {
     }
 }
 
+/// Create an [`Indirect`] delegation from a single [`PublicKey`].
+impl<T, R, C> From<PublicKey> for Indirect<T, R, C> {
+    fn from(pk: PublicKey) -> Self {
+        Self {
+            identities: vec![],
+            delegations: Some((pk, None)).into_iter().collect(),
+        }
+    }
+}
+
+/// Create an [`Indirect`] delegation from a single [`IndirectlyDelegating`].
+impl<T, R, C> From<IndirectlyDelegating<T, R, C>> for Indirect<T, R, C> {
+    fn from(id: IndirectlyDelegating<T, R, C>) -> Self {
+        Self {
+            identities: vec![id],
+            delegations: Default::default(),
+        }
+    }
+}
+
 impl<T, R, C> From<Indirect<T, R, C>> for payload::ProjectDelegations<R>
 where
     R: Clone + Ord,
@@ -209,6 +230,18 @@ where
 pub struct Iter<'a, T, R, C> {
     identities: slice::Iter<'a, IndirectlyDelegating<T, R, C>>,
     delegations: btree_map::Iter<'a, PublicKey, Option<usize>>,
+}
+
+impl<'a, T, R, C> Iter<'a, T, R, C> {
+    /// Yield only the direct delegations.
+    pub fn direct(self) -> impl Iterator<Item = &'a PublicKey> {
+        self.filter_map(|d| d.either(Some, |_| None))
+    }
+
+    /// Yield only the indirect delegations.
+    pub fn indirect(self) -> impl Iterator<Item = &'a IndirectlyDelegating<T, R, C>> {
+        self.filter_map(|d| d.either(|_| None, Some))
+    }
 }
 
 impl<'a, T, R, C> Iterator for Iter<'a, T, R, C> {
@@ -250,6 +283,18 @@ impl<'a, T, R, C> IntoIterator for &'a Indirect<T, R, C> {
 pub struct IntoIter<T, R, C> {
     identities: vec::IntoIter<IndirectlyDelegating<T, R, C>>,
     delegations: btree_map::IntoIter<PublicKey, Option<usize>>,
+}
+
+impl<T, R, C> IntoIter<T, R, C> {
+    /// Yield only the direct delegations.
+    pub fn direct(self) -> impl Iterator<Item = PublicKey> {
+        self.filter_map(|d| d.either(Some, |_| None))
+    }
+
+    /// Yield only the indirect delegations.
+    pub fn indirect(self) -> impl Iterator<Item = IndirectlyDelegating<T, R, C>> {
+        self.filter_map(|d| d.either(|_| None, Some))
+    }
 }
 
 impl<T, R, C> Iterator for IntoIter<T, R, C> {

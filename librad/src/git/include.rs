@@ -17,6 +17,7 @@
 
 use std::{
     convert::TryFrom,
+    fmt::Debug,
     io,
     marker::PhantomData,
     path::{self, PathBuf},
@@ -25,14 +26,12 @@ use std::{
 use git_ext as ext;
 use tempfile::NamedTempFile;
 
-use crate::{
-    git::{
-        local::url::LocalUrl,
-        types::{remote::Remote, AsRefspec, FlatRef, Force},
-    },
-    meta::user::User,
-    peer::PeerId,
+use super::{
+    identities::user::User,
+    local::url::LocalUrl,
+    types::{remote::Remote, AsRefspec, FlatRef, Force},
 };
+use crate::peer::PeerId;
 
 /// Config key to reference generated include files in working copies.
 pub const GIT_CONFIG_PATH_KEY: &str = "include.path";
@@ -93,6 +92,8 @@ impl<Path> Include<Path> {
     }
 
     /// Writes the contents of the [`git2::Config`] of the include file to disk.
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "debug", skip(self), err)]
     pub fn save(self) -> Result<(), Error>
     where
         Path: AsRef<path::Path>,
@@ -102,9 +103,11 @@ impl<Path> Include<Path> {
             let mut config = git2::Config::open(tmp.path())?;
             for remote in &self.remotes {
                 let (key, url) = url_entry(&remote);
+                tracing::trace!("{} = {}", key, url);
                 config.set_str(&key, &url.to_string())?;
 
                 let (key, fetch) = fetch_entry(&remote)?;
+                tracing::trace!("{} = {}", key, fetch);
                 config.set_str(&key, &fetch)?;
             }
         }
@@ -121,7 +124,7 @@ impl<Path> Include<Path> {
         self.path
             .as_ref()
             .to_path_buf()
-            .join(self.local_url.repo.to_string())
+            .join(self.local_url.urn.encode_id())
             .with_extension("inc")
     }
 
@@ -130,14 +133,23 @@ impl<Path> Include<Path> {
     ///
     /// The tracked users are expected to be retrieved by talking to the
     /// [`crate::git::storage::Storage`].
-    pub fn from_tracked_users<S>(
-        path: Path,
-        local_url: LocalUrl,
-        tracked: impl Iterator<Item = (User<S>, PeerId)>,
-    ) -> Self {
+    #[tracing::instrument(level = "debug")]
+    pub fn from_tracked_users<I>(path: Path, local_url: LocalUrl, tracked: I) -> Self
+    where
+        Path: Debug,
+        I: IntoIterator<Item = (User, PeerId)> + Debug,
+    {
         let remotes = tracked
-            .map(|(user, peer)| Remote::new(local_url.clone(), format!("{}@{}", user.name(), peer)))
+            .into_iter()
+            .map(|(user, peer)| {
+                Remote::new(
+                    local_url.clone(),
+                    format!("{}@{}", user.doc.payload.subject.name, peer),
+                )
+            })
             .collect();
+        tracing::trace!("computed remotes: {:?}", remotes);
+
         Self {
             remotes,
             path,
@@ -182,7 +194,11 @@ fn fetch_entry(remote: &Remote<LocalUrl>) -> Result<(String, String), Error> {
 
 #[cfg(test)]
 mod test {
-    use crate::{git::local::url::LocalUrl, hash::Hash, keys::SecretKey, peer::PeerId};
+    use crate::{
+        git::{local::url::LocalUrl, Urn},
+        keys::SecretKey,
+        peer::PeerId,
+    };
 
     use super::*;
 
@@ -213,9 +229,8 @@ mod test {
     #[test]
     fn can_create_and_update() -> Result<(), Error> {
         let tmp_dir = tempfile::tempdir()?;
-        let repo = Hash::hash(b"meow-meow");
         let url = LocalUrl {
-            repo,
+            urn: Urn::new(git2::Oid::zero().into()),
             local_peer_id: *LOCAL_PEER_ID,
         };
 

@@ -74,6 +74,7 @@ impl<A> DataState<A> {
 /// Errors can occur when navigating around a thread or when attempting to
 /// delete the root item of a thread.
 #[derive(Error, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum Error {
     /// An attempt was made to delete the root of a thread, but the root is
     /// immutable.

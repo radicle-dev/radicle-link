@@ -31,6 +31,7 @@ use crate::{
 };
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Load {
     #[error("the identity document could not be resolved")]
     MissingDoc,
@@ -67,12 +68,13 @@ pub enum Load {
 }
 
 #[derive(Debug, Error)]
-pub enum Store<S: std::error::Error + Send + Sync + 'static> {
+#[non_exhaustive]
+pub enum Store {
     #[error(transparent)]
     Load(#[from] self::Load),
 
     #[error("failed to produce a signature")]
-    Signer(#[source] S),
+    Signer(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error(transparent)]
     Cjson(#[from] CjsonError),
@@ -82,7 +84,8 @@ pub enum Store<S: std::error::Error + Send + Sync + 'static> {
 }
 
 #[derive(Debug, Error)]
-pub enum Merge<S: std::error::Error + Send + Sync + 'static> {
+#[non_exhaustive]
+pub enum Merge {
     #[error("attempt to update an identity not previously signed by us")]
     ForeignBase,
 
@@ -96,13 +99,14 @@ pub enum Merge<S: std::error::Error + Send + Sync + 'static> {
     RevisionMismatch,
 
     #[error("failed to produce a signature")]
-    Signer(#[source] S),
+    Signer(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error(transparent)]
     Git(#[from] git2::Error),
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Signatures {
     #[error("Invalid utf8")]
     Utf8,
@@ -115,9 +119,10 @@ pub enum Signatures {
 }
 
 #[derive(Debug, Error)]
-pub enum VerifyProject<E: std::error::Error + Send + Sync + 'static> {
+#[non_exhaustive]
+pub enum VerifyProject {
     #[error("error resolving latest head")]
-    Lookup(#[source] E),
+    Lookup(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error(transparent)]
     Verification(#[from] generic::error::Verify<Revision, ContentId>),
@@ -136,6 +141,7 @@ pub enum VerifyProject<E: std::error::Error + Send + Sync + 'static> {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum VerifyUser {
     #[error("Revision {revision} of {root} not in ancestry path of {head}")]
     NotInAncestryPath {
@@ -149,4 +155,14 @@ pub enum VerifyUser {
 
     #[error(transparent)]
     Git(#[from] git2::Error),
+}
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum Verify {
+    #[error(transparent)]
+    Project(#[from] VerifyProject),
+
+    #[error(transparent)]
+    User(#[from] VerifyUser),
 }

@@ -16,16 +16,27 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    convert::{TryFrom, TryInto},
+    convert::TryFrom,
     fmt::{self, Display},
-    path::PathBuf,
 };
 
 use git_ext as ext;
+use thiserror::Error;
 
-use crate::{peer::PeerId, uri::RadUrn};
+use crate::{
+    identities,
+    peer::{self, PeerId},
+};
 
-use super::{namespace::AsNamespace, sealed, Force, Refspec, SymbolicRef};
+use super::{
+    namespace::{AsNamespace, Namespace},
+    sealed,
+    Force,
+    Refspec,
+    SymbolicRef,
+};
+
+use identities::git::Urn;
 
 /// Type witness for a [`Reference`] that should point to a single reference.
 pub type One = ext::RefLike;
@@ -43,6 +54,18 @@ pub type Multiple = Many;
 pub enum RefsCategory {
     Heads,
     Rad,
+    Tags,
+}
+
+impl RefsCategory {
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "heads" => Some(Self::Heads),
+            "rad" => Some(Self::Rad),
+            "tags" => Some(Self::Tags),
+            _ => None,
+        }
+    }
 }
 
 impl Display for RefsCategory {
@@ -50,6 +73,7 @@ impl Display for RefsCategory {
         match self {
             Self::Heads => f.write_str("heads"),
             Self::Rad => f.write_str("rad"),
+            Self::Tags => f.write_str("tags"),
         }
     }
 }
@@ -151,22 +175,36 @@ where
     ///
     /// ```
     /// use std::marker::PhantomData;
-    /// use librad::{git_ext as ext, git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
+    /// use librad::{
+    ///     git_ext::RefLike,
+    ///     git::{
+    ///         Urn,
+    ///         types::{
+    ///             namespace::Namespace,
+    ///             FlatRef,
+    ///             Force,
+    ///             NamespacedRef,
+    ///         },
+    ///     },
+    ///     keys::SecretKey,
+    ///     peer::PeerId
+    /// };
     ///
-    /// let id = Hash::hash(b"geez");
+    /// let urn = Urn::new(git2::Oid::hash_object(git2::ObjectType::Commit, b"geez").unwrap().into());
     /// let peer: PeerId = SecretKey::new().into();
     ///
     /// // Set up a ref to `refs/heads/*`
-    /// let flat_heads: FlatRef<ext::RefLike, _> = FlatRef::heads(PhantomData, None);
+    /// let flat_heads: FlatRef<RefLike, _> = FlatRef::heads(PhantomData, None);
     ///
     /// // Set up a ref t `refs/namespaces/<geez>/refs/remotes/<peer>/heads/*`
-    /// let namespace_heads = NamespacedRef::heads(id, peer.clone());
+    /// let namespace_heads = NamespacedRef::heads(Namespace::from(&urn), peer.clone());
     ///
     /// // Create a refspec between these two refs
     /// let spec = flat_heads.refspec(namespace_heads, Force::True);
     ///
     /// let expected = format!(
-    ///     "+refs/namespaces/hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/refs/remotes/{}/heads/*:refs/heads/*",
+    ///     "+refs/namespaces/{}/refs/remotes/{}/heads/*:refs/heads/*",
+    ///     Namespace::from(&urn),
     ///     peer
     /// );
     ///
@@ -178,16 +216,30 @@ where
     ///
     /// ```
     /// use std::{convert::TryFrom, marker::PhantomData};
-    /// use librad::{git_ext::RefLike, reflike, git::types::*, hash::Hash, keys::SecretKey, peer::PeerId};
+    /// use librad::{
+    ///     git_ext::RefLike,
+    ///     git::{
+    ///         Urn,
+    ///         types::{
+    ///             namespace::Namespace,
+    ///             FlatRef,
+    ///             Force,
+    ///             NamespacedRef,
+    ///         },
+    ///     },
+    ///     keys::SecretKey,
+    ///     peer::PeerId,
+    ///     reflike,
+    /// };
     ///
-    /// let id = Hash::hash(b"geez");
+    /// let urn = Urn::new(git2::Oid::hash_object(git2::ObjectType::Commit, b"geez").unwrap().into());
     /// let peer: PeerId = SecretKey::new().into();
     ///
     /// // Set up a ref to `refs/heads/*`
     /// let flat_heads: FlatRef<RefLike, _> = FlatRef::heads(PhantomData, None);
     ///
     /// // Set up a ref t `refs/namespaces/<geez>/refs/remotes/<peer>/heads/banana`
-    /// let namespace_head = NamespacedRef::head(id, peer.clone(), reflike!("banana"));
+    /// let namespace_head = NamespacedRef::head(Namespace::from(&urn), peer.clone(), reflike!("banana"));
     ///
     /// // The below would fail to compile because `namespace_head` is a `Single`
     /// // reference while `flat_heads` is `Multiple`.
@@ -226,6 +278,13 @@ impl<N, R> Reference<N, R, One> {
     where
         Self: ToString,
     {
+        tracing::debug!(
+            "creating direct reference {} -> {} (force: {}, reflog: '{}')",
+            self.to_string(),
+            target,
+            force.as_bool(),
+            log_message
+        );
         repo.reference(&self.to_string(), target, force.as_bool(), log_message)
     }
 
@@ -259,11 +318,11 @@ impl<N, R> Reference<N, R, One> {
 
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/rad/ids/<id>`
-    pub fn rad_certifier(namespace: N, urn: &RadUrn) -> Self {
+    pub fn rad_delegate(namespace: N, urn: &Urn) -> Self {
         Self {
             remote: None,
             category: RefsCategory::Rad,
-            name: format!("ids/{}", urn.id).try_into().unwrap(),
+            name: reflike!("ids").join(ext::RefLike::try_from(urn.encode_id()).unwrap()),
             _namespace: namespace,
         }
     }
@@ -308,7 +367,7 @@ impl<N, R> Reference<N, R, One> {
 
 impl<N, R> Display for Reference<N, R, One>
 where
-    N: AsNamespace,
+    for<'a> &'a N: AsNamespace,
     for<'a> &'a R: AsRemote,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -318,32 +377,40 @@ where
 
 impl<'a, N, R> From<&'a Reference<N, R, One>> for ext::RefLike
 where
-    N: AsNamespace,
+    &'a N: AsNamespace,
     &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, One>) -> Self {
-        let mut path = PathBuf::new();
-        path.push("refs/namespaces");
-        path.push(r._namespace.as_namespace());
-        path.push("refs");
-        if let Some(ref remote) = r.remote {
-            path.push("remotes");
-            path.push(Into::<ext::RefLike>::into(remote))
-        }
-        path.push(Into::<ext::RefLike>::into(r.category));
-        path.push(ext::OneLevel::from(r.name.clone()));
+        let mut refl = reflike!("refs/namespaces")
+            .join(&r._namespace)
+            .join(reflike!("refs"));
 
-        ext::RefLike::try_from(path.as_path()).unwrap()
+        if let Some(ref remote) = r.remote {
+            refl = refl.join(reflike!("remotes")).join(remote);
+        }
+
+        refl.join(r.category)
+            .join(ext::OneLevel::from(r.name.to_owned()))
     }
 }
 
 impl<'a, N, R> From<&'a Reference<N, R, One>> for ext::RefspecPattern
 where
-    N: AsNamespace,
+    &'a N: AsNamespace,
     &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, One>) -> Self {
         Into::<ext::RefLike>::into(r).into()
+    }
+}
+
+// TODO(kim): what is this for?
+impl<'a, N, R> Into<ext::blob::Branch<'a>> for &'a Reference<N, R, Single>
+where
+    Self: ToString,
+{
+    fn into(self) -> ext::blob::Branch<'a> {
+        ext::blob::Branch::from(self.to_string())
     }
 }
 
@@ -385,7 +452,7 @@ impl<N, R> Reference<N, R, Many> {
 
 impl<N, R> Display for Reference<N, R, Many>
 where
-    N: AsNamespace,
+    for<'a> &'a N: AsNamespace,
     for<'a> &'a R: AsRemote,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -395,30 +462,151 @@ where
 
 impl<'a, N, R> From<&'a Reference<N, R, Many>> for ext::RefspecPattern
 where
-    N: AsNamespace,
+    &'a N: AsNamespace,
     &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, Many>) -> Self {
-        let mut path = PathBuf::new();
-        path.push("refs/namespaces");
-        path.push(r._namespace.as_namespace());
-        path.push("refs");
-        if let Some(ref remote) = r.remote {
-            path.push("remotes");
-            path.push(Into::<ext::RefLike>::into(remote));
-        }
-        path.push(Into::<ext::RefLike>::into(r.category));
-        path.push(&r.name);
+        let mut refl = reflike!("refs/namespaces")
+            .join(&r._namespace)
+            .join(reflike!("refs"));
 
-        ext::RefspecPattern::try_from(path.as_path()).unwrap()
+        if let Some(ref remote) = r.remote {
+            refl = refl.join(reflike!("remotes")).join(remote);
+        }
+
+        refl.join(r.category).with_pattern_suffix(r.name.to_owned())
     }
 }
 
-impl<'a, N, R> Into<ext::blob::Branch<'a>> for &'a Reference<N, R, Single>
-where
-    Self: ToString,
-{
-    fn into(self) -> ext::blob::Branch<'a> {
-        ext::blob::Branch::from(self.to_string())
+////////////////////////////////////////////////////////////////////////////////
+
+impl From<Reference<Namespace<ext::Oid>, PeerId, One>> for Urn {
+    fn from(r: Reference<Namespace<ext::Oid>, PeerId, One>) -> Self {
+        let mut path = reflike!("refs");
+        if let Some(remote) = r.remote {
+            path = path.join(reflike!("remotes")).join(remote);
+        }
+        path = path.join(r.category).join(r.name);
+
+        Self {
+            path: Some(path),
+            ..Self::from(r._namespace)
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum FromUrnError {
+    #[error("missing {0}")]
+    Missing(&'static str),
+
+    #[error("invalid refs category: `{0}`")]
+    InvalidCategory(String),
+
+    #[error("early eof")]
+    Eof,
+
+    #[error(transparent)]
+    PeerId(#[from] peer::conversion::Error),
+}
+
+impl TryFrom<&Urn> for Reference<Namespace<ext::Oid>, PeerId, One> {
+    type Error = FromUrnError;
+
+    fn try_from(urn: &Urn) -> Result<Self, Self::Error> {
+        let namespace = Namespace::from(urn);
+        match &urn.path {
+            None => Ok(Self::rad_id(namespace)),
+
+            Some(path) => {
+                let path = ext::reference::Qualified::from(path.clone());
+                let mut iter = path
+                    .iter()
+                    .map(|x| x.to_str().expect("RefLike ensures utf8"))
+                    .skip_while(|x| x == &"refs");
+
+                match iter.next() {
+                    Some("remotes") => {
+                        let remote = Some(
+                            iter.next()
+                                .ok_or(FromUrnError::Missing("remote peer id"))?
+                                .parse()?,
+                        );
+
+                        let category = match iter.next() {
+                            None => Err(FromUrnError::Missing("category")),
+                            Some(x) if x == "heads" => Ok(RefsCategory::Heads),
+                            Some(x) if x == "rad" => Ok(RefsCategory::Rad),
+                            Some(x) => Err(FromUrnError::InvalidCategory(x.to_owned())),
+                        }?;
+
+                        let name = iter.map(|x| ext::RefLike::try_from(x).unwrap()).collect();
+
+                        Ok(Self {
+                            remote,
+                            category,
+                            name,
+                            _namespace: namespace,
+                        })
+                    },
+
+                    Some(x) => Ok(Self {
+                        remote: None,
+                        category: RefsCategory::parse(x).unwrap_or(RefsCategory::Heads),
+                        name: iter.map(|x| ext::RefLike::try_from(x).unwrap()).collect(),
+                        _namespace: namespace,
+                    }),
+
+                    None => Err(FromUrnError::Eof),
+                }
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::keys::SecretKey;
+
+    #[test]
+    fn pathless_urn_roundtrip() {
+        let urn = Urn::new(git2::Oid::zero().into());
+        let as_ref = Reference::try_from(&urn).unwrap();
+        assert_eq!(
+            urn.with_path(identities::urn::DEFAULT_PATH.clone()),
+            Urn::from(as_ref)
+        )
+    }
+
+    #[test]
+    fn remotes_path_urn_roundtrip() {
+        let peer_id = PeerId::from(SecretKey::new());
+        let urn = Urn::new(git2::Oid::zero().into()).with_path(
+            reflike!("refs/remotes")
+                .join(peer_id)
+                .join(reflike!("rad/id")),
+        );
+        let as_ref = Reference::try_from(&urn).unwrap();
+        assert_eq!(urn, Urn::from(as_ref))
+    }
+
+    #[test]
+    fn qualified_path_urn_roundtrip() {
+        let urn = Urn::new(git2::Oid::zero().into()).with_path(reflike!("refs/rad/id"));
+        let as_ref = Reference::try_from(&urn).unwrap();
+        assert_eq!(urn, Urn::from(as_ref))
+    }
+
+    #[test]
+    fn onelevel_path_urn_roundtrip() {
+        let urn = Urn::new(git2::Oid::zero().into()).with_path(reflike!("rad/id"));
+        let as_ref = Reference::try_from(&urn).unwrap();
+        assert_eq!(
+            urn.with_path(reflike!("refs/heads/rad/id")),
+            Urn::from(as_ref)
+        )
     }
 }

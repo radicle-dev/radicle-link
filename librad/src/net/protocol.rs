@@ -89,6 +89,7 @@ enum Run<'a, A> {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("no connection to {0}")]
     NoConnection(PeerId),

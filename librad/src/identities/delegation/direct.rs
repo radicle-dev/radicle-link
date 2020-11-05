@@ -32,8 +32,16 @@ use super::{payload, sealed, Delegations};
 pub struct Direct(BTreeSet<PublicKey>);
 
 impl Direct {
+    pub fn contains(&self, key: &PublicKey) -> bool {
+        self.0.contains(key)
+    }
+
     pub fn eligible(&self, votes: BTreeSet<&PublicKey>) -> BTreeSet<&PublicKey> {
         self.0.iter().filter(|pk| votes.contains(pk)).collect()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &PublicKey> {
+        self.into_iter()
     }
 }
 

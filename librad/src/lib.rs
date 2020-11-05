@@ -15,11 +15,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+#![allow(incomplete_features)]
 #![warn(clippy::extra_unused_lifetimes)]
+#![feature(associated_type_bounds)]
 #![feature(backtrace)]
 #![feature(bool_to_option)]
 #![feature(btree_drain_filter)]
 #![feature(core_intrinsics)]
+#![feature(generic_associated_types)]
 #![feature(never_type)]
 
 #[macro_use]
@@ -34,22 +37,16 @@ pub extern crate radicle_keystore as keystore;
 pub extern crate radicle_std_ext as std_ext;
 
 pub mod git;
-pub mod hash;
 pub mod identities;
 pub mod internal;
 pub mod keys;
-pub mod meta;
 pub mod net;
 pub mod paths;
 pub mod peer;
 pub mod signer;
-pub mod uri;
 
 // Re-exports
 pub use radicle_macros::*;
-
-#[cfg(test)]
-mod test;
 
 #[cfg(test)]
 #[macro_use]

@@ -19,4 +19,6 @@ pub mod server;
 pub mod transport;
 pub mod url;
 
+mod header;
+
 pub const URL_SCHEME: &str = "rad-p2p";

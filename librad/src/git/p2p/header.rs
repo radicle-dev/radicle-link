@@ -24,20 +24,17 @@ use std::{
 use git2::transport::Service as GitService;
 use thiserror::Error;
 
-use crate::{
-    peer::{self, PeerId},
-    uri::{self, RadUrn},
-};
+use crate::peer::{self, PeerId};
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct Header {
+pub struct Header<Urn> {
     pub service: Service,
-    pub repo: RadUrn,
+    pub repo: Urn,
     pub peer: PeerId,
 }
 
-impl Header {
-    pub fn new(service: GitService, repo: RadUrn, peer: PeerId) -> Self {
+impl<Urn> Header<Urn> {
+    pub fn new(service: GitService, repo: Urn, peer: PeerId) -> Self {
         Self {
             service: Service(service),
             repo,
@@ -46,7 +43,7 @@ impl Header {
     }
 }
 
-impl Display for Header {
+impl<Urn: Display> Display for Header<Urn> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.service.0 {
             GitService::UploadPackLs => {
@@ -68,6 +65,7 @@ impl Display for Header {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ParseError {
     #[error("missing service")]
     MissingService,
@@ -79,7 +77,7 @@ pub enum ParseError {
     MissingRepo,
 
     #[error("invalid repo")]
-    InvalidRepo(#[from] uri::rad_urn::ParseError),
+    InvalidRepo(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error("missing host")]
     MissingHost,
@@ -91,7 +89,11 @@ pub enum ParseError {
     InvalidMode(String),
 }
 
-impl FromStr for Header {
+impl<Urn> FromStr for Header<Urn>
+where
+    Urn: FromStr,
+    <Urn as FromStr>::Err: std::error::Error + Send + Sync + 'static,
+{
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -101,7 +103,10 @@ impl FromStr for Header {
         let repo = parts
             .next()
             .ok_or_else(|| ParseError::MissingRepo)
-            .and_then(|repo| repo.parse::<RadUrn>().map_err(|e| e.into()))?;
+            .and_then(|repo| {
+                repo.parse::<Urn>()
+                    .map_err(|e| ParseError::InvalidRepo(Box::new(e)))
+            })?;
         let peer = parts
             .next()
             .and_then(|peer| peer.strip_prefix("host="))
@@ -168,20 +173,16 @@ impl Deref for Service {
 mod tests {
     use super::*;
 
-    use crate::{hash::Hash, keys::SecretKey};
+    use crate::{git::Urn, keys::SecretKey};
 
     #[test]
     fn test_str_roundtrip() {
         let hdr = Header::new(
             GitService::UploadPackLs,
-            RadUrn {
-                id: Hash::hash(b"linux"),
-                proto: uri::Protocol::Git,
-                path: uri::Path::empty(),
-            },
+            Urn::new(git_ext::Oid::from(git2::Oid::zero())),
             PeerId::from(SecretKey::new()),
         );
 
-        assert_eq!(hdr, hdr.to_string().parse::<Header>().unwrap())
+        assert_eq!(hdr, hdr.to_string().parse::<Header<Urn>>().unwrap())
     }
 }

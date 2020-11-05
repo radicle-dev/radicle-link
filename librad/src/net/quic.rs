@@ -50,6 +50,7 @@ const DEFAULT_PING_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("remote PeerId could not be determined")]
     RemoteIdUnavailable,
@@ -229,6 +230,7 @@ impl<'a> LocalInfo for BoundEndpoint<'a> {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ConnectionError {
     #[error(transparent)]
     Connection(#[from] quinn::ConnectionError),
