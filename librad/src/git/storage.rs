@@ -970,16 +970,10 @@ where
     pub(crate) fn update_refs(&self, urn: &RadUrn) -> Result<(), Error> {
         tracing::debug!("Storage::update_refs");
 
-        let refsig_canonical =
-            self.rad_signed_refs(urn)?
-                .sign(&self.signer)
-                .and_then(|signed| {
-                    tracing::info!(
-                        "Resulting signed_refs: {}",
-                        serde_json::to_string(&signed).unwrap()
-                    );
-                    Ok(Cjson(signed).canonical_form()?)
-                })?;
+        let refsig_canonical = self
+            .rad_signed_refs(urn)?
+            .sign(&self.signer)
+            .and_then(|signed| Ok(Cjson(signed).canonical_form()?))?;
 
         let rad_signed_refs_ref = NamespacedRef::rad_signed_refs(urn.id.clone(), None).to_string();
 
