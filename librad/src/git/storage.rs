@@ -974,7 +974,7 @@ where
             self.rad_signed_refs(urn)?
                 .sign(&self.signer)
                 .and_then(|signed| {
-                    eprintln!(
+                    tracing::info!(
                         "Resulting signed_refs: {}",
                         serde_json::to_string(&signed).unwrap()
                     );
