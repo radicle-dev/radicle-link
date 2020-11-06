@@ -357,11 +357,15 @@ pub struct Signed {
 impl Signed {
     pub fn from_json(data: &[u8], signer: &PeerId) -> Result<Self, signed::Error> {
         let this: Self = serde_json::from_slice(data)?;
-        let canonical = this.refs.canonical_form()?;
-        if this.signature.verify(&canonical, &*signer) {
-            Ok(this)
+        this.verify(signer)
+    }
+
+    pub fn verify(self, signer: &PeerId) -> Result<Self, signed::Error> {
+        let canonical = self.refs.canonical_form()?;
+        if self.signature.verify(&canonical, &*signer) {
+            Ok(self)
         } else {
-            Err(signed::Error::InvalidSignature(this.refs))
+            Err(signed::Error::InvalidSignature(self.refs))
         }
     }
 }
