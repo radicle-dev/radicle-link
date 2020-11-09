@@ -16,7 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::BTreeMap,
     fmt::Debug,
     hash::Hash,
     iter,
@@ -38,19 +38,19 @@ pub use git_ext::Oid;
 
 /// The transitive tracking graph, up to 3 degrees
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Remotes<A: PartialEq + Eq + Ord + Hash>(HashMap<A, HashMap<A, BTreeSet<A>>>);
+pub struct Remotes<A: PartialEq + Eq + Ord>(BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>);
 
 impl<A> Remotes<A>
 where
     A: PartialEq + Eq + Ord + Hash,
 {
-    pub fn cutoff(self) -> HashMap<A, BTreeSet<A>>
+    pub fn cutoff(self) -> BTreeMap<A, BTreeMap<A, ()>>
     where
         A: Clone,
     {
         self.0
             .into_iter()
-            .map(|(k, v)| (k, v.keys().cloned().collect()))
+            .map(|(k, v)| (k, v.keys().map(|x| (x.clone(), ())).collect()))
             .collect()
     }
 
@@ -58,12 +58,12 @@ where
         self.0.iter().flat_map(|(k, v)| {
             iter::once(k).chain(
                 v.iter()
-                    .flat_map(|(k1, v1)| iter::once(k1).chain(v1.iter())),
+                    .flat_map(|(k1, v1)| iter::once(k1).chain(v1.keys())),
             )
         })
     }
 
-    pub fn from_map(map: HashMap<A, HashMap<A, BTreeSet<A>>>) -> Self {
+    pub fn from_map(map: BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>) -> Self {
         Self(map)
     }
 
@@ -76,7 +76,7 @@ impl<A> Deref for Remotes<A>
 where
     A: PartialEq + Eq + Ord + Hash,
 {
-    type Target = HashMap<A, HashMap<A, BTreeSet<A>>>;
+    type Target = BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -92,11 +92,11 @@ where
     }
 }
 
-impl<A> From<HashMap<A, HashMap<A, BTreeSet<A>>>> for Remotes<A>
+impl<A> From<BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>> for Remotes<A>
 where
     A: PartialEq + Eq + Ord + Hash,
 {
-    fn from(map: HashMap<A, HashMap<A, BTreeSet<A>>>) -> Self {
+    fn from(map: BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>) -> Self {
         Self::from_map(map)
     }
 }
