@@ -459,7 +459,7 @@ impl<'de> Deserialize<'de> for Signed<Unverified> {
             }
         }
 
-        const FIELDS: &'static [&'static str] = &[FIELD_REFS, FIELD_SIGNATURE];
+        const FIELDS: &[&str] = &[FIELD_REFS, FIELD_SIGNATURE];
         deserializer.deserialize_struct(SIGNATURE, FIELDS, SignedVisitor)
     }
 }
