@@ -557,7 +557,6 @@ mod tests {
     #[test]
     fn replicate_looks_legit() {
         use crate::git::refs::{Refs, Remotes};
-        use std::collections::HashMap;
 
         lazy_static! {
             static ref ZERO: ext::Oid = ext::Oid::from(git2::Oid::zero());
@@ -577,7 +576,7 @@ mod tests {
                         .iter()
                         .cloned()
                         .collect(),
-                    remotes: Remotes::from_map(HashMap::new()),
+                    remotes: Remotes::from_map(BTreeMap::new()),
                 },
             ),
             (
@@ -590,7 +589,7 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
-                    remotes: Remotes::from_map(HashMap::new()),
+                    remotes: Remotes::from_map(BTreeMap::new()),
                 },
             ),
         ]
