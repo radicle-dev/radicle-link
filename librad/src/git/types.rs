@@ -120,6 +120,16 @@ impl Force {
     }
 }
 
+impl From<bool> for Force {
+    fn from(b: bool) -> Self {
+        if b {
+            Self::True
+        } else {
+            Self::False
+        }
+    }
+}
+
 /// The data for creating a symbolic reference in a git repository.
 pub struct SymbolicRef<S, T> {
     /// The new symbolic reference.
@@ -213,5 +223,29 @@ where
         let local = Into::<ext::RefspecPattern>::into(&self.local);
 
         write!(f, "{}:{}", remote, local)
+    }
+}
+
+impl TryFrom<&str> for Refspec<ext::RefspecPattern, ext::RefspecPattern> {
+    type Error = ext::reference::name::Error;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        let force = s.starts_with('+').into();
+        let specs = s.trim_start_matches('+');
+        let mut iter = specs.split(':');
+        let remote = iter
+            .next()
+            .ok_or(ext::reference::name::Error::RefFormat)
+            .and_then(ext::RefspecPattern::try_from)?;
+        let local = iter
+            .next()
+            .ok_or(ext::reference::name::Error::RefFormat)
+            .and_then(ext::RefspecPattern::try_from)?;
+
+        Ok(Self {
+            remote,
+            local,
+            force,
+        })
     }
 }

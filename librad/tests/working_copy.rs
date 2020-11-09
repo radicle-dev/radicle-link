@@ -226,10 +226,7 @@ where
 
     let inc = include::Include::from_tracked_users(
         inc_path,
-        LocalUrl {
-            urn: project.urn(),
-            local_peer_id: peer.peer_id(),
-        },
+        LocalUrl::from_urn(project.urn(), peer.peer_id()),
         tracked_users,
     );
     let inc_path = inc.file_path();

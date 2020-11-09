@@ -32,11 +32,16 @@ use crate::peer::{self, PeerId};
 pub struct LocalUrl {
     pub urn: Urn,
     pub local_peer_id: PeerId,
+    pub(super) active_index: Option<usize>,
 }
 
 impl LocalUrl {
     pub fn from_urn(urn: Urn, local_peer_id: PeerId) -> Self {
-        Self { urn, local_peer_id }
+        Self {
+            urn,
+            local_peer_id,
+            active_index: None,
+        }
     }
 }
 
@@ -48,7 +53,13 @@ impl Display for LocalUrl {
             super::URL_SCHEME,
             self.local_peer_id,
             self.urn.encode_id(),
-        )
+        )?;
+
+        if let Some(idx) = self.active_index {
+            write!(f, "#{}", idx)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -63,6 +74,9 @@ pub enum ParseError {
 
     #[error("malformed URL")]
     Url(#[from] url::ParseError),
+
+    #[error("active index is not a number")]
+    Idx(#[from] std::num::ParseIntError),
 
     #[error(transparent)]
     Oid(#[from] ext::oid::FromMultihashError),
@@ -99,8 +113,13 @@ impl FromStr for LocalUrl {
         let urn = Urn::new(oid);
 
         let local_peer_id = url.username().parse()?;
+        let active_index = url.fragment().map(|s| s.parse()).transpose()?;
 
-        Ok(Self { urn, local_peer_id })
+        Ok(Self {
+            urn,
+            local_peer_id,
+            active_index,
+        })
     }
 }
 
@@ -119,10 +138,10 @@ mod tests {
 
     #[test]
     fn trip() {
-        let url = LocalUrl {
-            urn: Urn::new(git2::Oid::zero().into()),
-            local_peer_id: PeerId::from(SecretKey::new()),
-        };
+        let url = LocalUrl::from_urn(
+            Urn::new(git2::Oid::zero().into()),
+            PeerId::from(SecretKey::new()),
+        );
 
         str_roundtrip(url)
     }

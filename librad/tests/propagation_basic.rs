@@ -27,7 +27,7 @@ use tokio::task::block_in_place;
 use librad::{
     git::{
         identities::{self, SomeIdentity},
-        local::{self, transport::LocalTransportFactory, url::LocalUrl},
+        local::{self, transport::with_local_transport, url::LocalUrl},
         replication,
         types::{namespace::Namespace, remote::Remote, FlatRef, Force, NamespacedRef},
     },
@@ -177,7 +177,6 @@ async fn fetches_on_gossip_notify() {
 
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = block_in_place(|| {
-            librad::git::local::transport::register();
             let transport_results = LocalTransportFactory::configure(local::transport::Settings {
                 paths: peer1.paths().clone(),
                 signer: SomeSigner { signer: peer1_key }.into(),
@@ -185,6 +184,9 @@ async fn fetches_on_gossip_notify() {
 
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
+            with_local_transport(|| Storage::open(peer1.paths(), peer1_key), repo,
+                LocalUrl::from_urn(project.urn(), peer1.peer_id()),
+                Duration::from_sec(5), |
 
             let mut updated_refs = Vec::new();
             let mut remote_callbacks = git2::RemoteCallbacks::new();

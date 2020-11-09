@@ -229,10 +229,7 @@ mod test {
     #[test]
     fn can_create_and_update() -> Result<(), Error> {
         let tmp_dir = tempfile::tempdir()?;
-        let url = LocalUrl {
-            urn: Urn::new(git2::Oid::zero().into()),
-            local_peer_id: *LOCAL_PEER_ID,
-        };
+        let url = LocalUrl::from_urn(Urn::new(git2::Oid::zero().into()), *LOCAL_PEER_ID);
 
         // Start with an empty config to catch corner-cases where git2::Config does not
         // create a file yet.

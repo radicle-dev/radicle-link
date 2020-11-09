@@ -156,6 +156,12 @@ impl<Url> Remote<Url> {
     }
 }
 
+impl<Url> AsRef<Url> for Remote<Url> {
+    fn as_ref(&self) -> &Url {
+        &self.url
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{convert::TryFrom, io, marker::PhantomData};
@@ -242,10 +248,7 @@ mod tests {
     fn check_remote_fetch_spec() -> Result<(), git2::Error> {
         let key = SecretKey::new();
         let peer_id = PeerId::from(key);
-        let url = LocalUrl {
-            urn: URN.clone(),
-            local_peer_id: peer_id,
-        };
+        let url = LocalUrl::from_urn(URN.clone(), peer_id);
         let name = format!("lyla@{}", peer_id);
         let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, peer_id);
         let heads = heads.with_name(refspec_pattern!("heads/*"));

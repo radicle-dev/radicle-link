@@ -16,20 +16,18 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{HashMap, VecDeque},
     convert::TryFrom,
     fmt::Debug,
     io::{self, Cursor, Read, Write},
     panic::{self, UnwindSafe},
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio},
-    sync::{Arc, Condvar, Mutex, Once, RwLock},
-    thread,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
-use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
-use git_ext::{self as ext, into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
+use git2::transport::Service;
+use git_ext::{self as ext};
 use thiserror::Error;
 
 use super::{
@@ -42,213 +40,9 @@ use super::{
     },
     url::LocalUrl,
 };
-use crate::{paths::Paths, peer::PeerId, signer::BoxedSigner};
+use crate::{paths::Paths, signer::BoxedSigner};
 
-lazy_static! {
-    static ref SETTINGS: Arc<RwLock<HashMap<PeerId, SettingsInternal>>> =
-        Arc::new(RwLock::new(HashMap::with_capacity(1)));
-}
-
-/// Register [`LocalTransport`] as a custom transport with `libgit2`.
-///
-/// This function should only be called once per program (it is however guarded
-/// by a [`Once`], so repeated invocations are safe).
-pub fn register() {
-    static INIT: Once = Once::new();
-    unsafe {
-        INIT.call_once(move || {
-            git2::transport::register(super::URL_SCHEME, move |remote| {
-                Transport::smart(&remote, true, LocalTransportFactory::new())
-            })
-            .unwrap()
-        });
-    }
-}
-
-/// The settings for configuring a [`LocalTransport`] instance.
-///
-/// Note that transports are keyed by the public key of the `signer`, so this
-/// can be used to configure different transports for different peers, e.g. in
-/// tests.
-#[derive(Clone)]
-pub struct Settings {
-    pub paths: Paths,
-    pub signer: BoxedSigner,
-}
-
-/// Results of instantiations of [`LocalTransport`] as a `libgit2` transport.
-///
-/// See [`Self::wait`].
-pub struct Results {
-    done: Mutex<VecDeque<thread::Result<Result<(), Error>>>>,
-    cvar: Condvar,
-}
-
-impl Results {
-    /// Wait on the results of operations on [`git2::Remote`] using the
-    /// [`LocalTransport`].
-    ///
-    /// This works around the issue of `libgit2` dropping the [`LocalTransport`]
-    /// handle prematurely in some cases (e.g. `git-receive-pack` may
-    /// trigger a `git gc`, but has sent main-band output already, so
-    /// `libgit2` thinks it's done).
-    ///
-    /// [`Results`] is internally a queue -- results will appear in the order
-    /// their corresponding child processes complete (i.e. **not**
-    /// necessarily the order in which they were initated). Repeatedly
-    /// calling [`Results::wait`] may thus yield more results.
-    ///
-    /// Normally, these results are not interesting, but users of
-    /// [`LocalTransport`] as a custom `libgit2` transport **should** make
-    /// sure to call [`Self::wait`] _at least_ before exiting the process,
-    /// in order to ensure auxiliary operations complete. Doing so in a [`Drop`]
-    /// impl would be a good choice.
-    ///
-    /// # Safety
-    ///
-    /// It is required to supply a timeout, in order to defend against the
-    /// pathological case that the child process does not terminate, in
-    /// which case we do not want to block the parent process. Note,
-    /// however, that waiting on child processes is done by spawning threads --
-    /// if an operation on [`git2::Remote`] is not [`Self::wait`]ed on, or the
-    /// wait times out, the waiting thread will continue to run until the
-    /// parent process is terminated.
-    ///
-    /// In other words, using [`LocalTransport`] as a custom `libgit2` transport
-    /// may leak threads.
-    ///
-    /// # Errors
-    ///
-    /// If the `wait` timed out, [`None`] is returned, otherwise a
-    /// [`thread::Result`]. If that is an [`Err`] value, the child process
-    /// has panicked. Otherwise, the value contained in the [`Ok`] variant
-    /// is the result of [`Connected::wait`].
-    pub fn wait(&self, timeout: Duration) -> Option<Vec<thread::Result<Result<(), Error>>>> {
-        let mut guard = self.done.lock().unwrap();
-        loop {
-            if guard.len() > 0 {
-                return Some(guard.drain(0..).collect());
-            } else {
-                let res = self.cvar.wait_timeout(guard, timeout).unwrap();
-                if res.1.timed_out() {
-                    return None;
-                } else {
-                    guard = res.0;
-                }
-            }
-        }
-    }
-
-    fn new() -> Self {
-        Self {
-            done: Mutex::new(VecDeque::new()),
-            cvar: Condvar::new(),
-        }
-    }
-
-    fn done(&self, res: thread::Result<Result<(), Error>>) {
-        self.done.lock().unwrap().push_back(res);
-        self.cvar.notify_all();
-    }
-}
-
-struct SettingsInternal {
-    settings: Settings,
-    results: Arc<Results>,
-}
-
-#[derive(Clone)]
-pub struct LocalTransportFactory {
-    settings: Arc<RwLock<HashMap<PeerId, SettingsInternal>>>,
-}
-
-impl LocalTransportFactory {
-    fn new() -> Self {
-        Self {
-            settings: SETTINGS.clone(),
-        }
-    }
-
-    /// Set up the [`LocalTransportFactory`] with some [`Settings`], and obtain
-    /// a side-channel to receive results of operations on [`git2::Remote`]
-    /// using this transport.
-    ///
-    /// This must be called before any attempt to use the local transport. It
-    /// **should** be called only once per program, and the returned
-    /// [`Results`] awaited on in an appropriate place (e.g. a `Drop`
-    /// finaliser).
-    ///
-    /// See [`Results::wait`] for more details.
-    #[must_use = "results should be inspected"]
-    pub fn configure(settings: Settings) -> Arc<Results> {
-        let peer_id = settings.signer.peer_id();
-        let results = Arc::new(Results::new());
-
-        Self::new().settings.write().unwrap().insert(
-            peer_id,
-            SettingsInternal {
-                settings,
-                results: Arc::clone(&results),
-            },
-        );
-
-        results
-    }
-}
-
-impl SmartSubtransport for LocalTransportFactory {
-    fn action(
-        &self,
-        url: &str,
-        service: Service,
-    ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        let settings = &*self.settings.read().unwrap();
-        let url = url.parse::<LocalUrl>().map_err(into_git_err)?;
-
-        match settings.get(&url.local_peer_id) {
-            None => Err(git2::Error::from_str("local transport unconfigured")),
-            Some(SettingsInternal { settings, results }) => {
-                let mut transport = LocalTransport::new(settings.clone()).map_err(into_git_err)?;
-                let mut child = transport
-                    .connect(url, service, Mode::Stateless, Localio::piped())
-                    .map_err(into_git_err)?;
-
-                let stdin = child.process.stdin.take().unwrap();
-                let stdout = child.process.stdout.take().unwrap();
-
-                let results = Arc::clone(results);
-                thread::spawn(move || {
-                    let res = panic::catch_unwind(move || child.wait());
-                    results.done(res)
-                });
-
-                let header = match service {
-                    Service::UploadPackLs => Some(UPLOAD_PACK_HEADER.to_vec()),
-                    Service::ReceivePackLs => Some(RECEIVE_PACK_HEADER.to_vec()),
-                    _ => None,
-                };
-
-                Ok(Box::new(LocalStream {
-                    read: LocalRead {
-                        header,
-                        inner: stdout,
-                    },
-                    write: stdin,
-                }))
-            },
-        }
-    }
-
-    fn close(&self) -> Result<(), git2::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum Mode {
-    Stateless,
-    Stateful,
-}
+mod internal;
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -279,6 +73,40 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] io::Error),
+}
+
+pub fn with_local_transport<F, G, A>(
+    open_storage: F,
+    repo: &git2::Repository,
+    url: impl AsRef<LocalUrl>,
+    timeout: Duration,
+    g: G,
+) -> Result<A, Error>
+where
+    F: Fn() -> Result<Storage<BoxedSigner>, Box<dyn std::error::Error + Send + Sync + 'static>>
+        + Send
+        + Sync
+        + 'static,
+    G: FnOnce(&mut git2::Remote) -> A,
+{
+    let (url, results) = internal::activate(open_storage, url.as_ref().clone());
+    let mut remote = repo.remote_anonymous(&url.to_string())?;
+    let ret = g(&mut remote);
+
+    match results.wait(timeout) {
+        None => panic!("a subprocess failed to terminate"),
+        Some(ress) => {
+            for res in ress {
+                match res {
+                    Err(e) => panic::resume_unwind(e),
+                    Ok(Err(inner)) => return Err(inner),
+                    Ok(Ok(())) => (),
+                }
+            }
+        },
+    }
+
+    Ok(ret)
 }
 
 /// A running service (as per the [`Service`] argument) with it's stdio
@@ -333,6 +161,17 @@ impl Localio {
             child_stdout: Stdio::inherit(),
         }
     }
+}
+
+pub struct Settings {
+    pub paths: Paths,
+    pub signer: BoxedSigner,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Mode {
+    Stateless,
+    Stateful,
 }
 
 #[derive(Clone)]
@@ -488,6 +327,14 @@ fn visible_remotes_glob(urn: &Urn) -> impl glob::Pattern + Debug {
     ))
     .unwrap()
     .compile_matcher()
+}
+
+impl From<Storage<BoxedSigner>> for LocalTransport {
+    fn from(storage: Storage<BoxedSigner>) -> Self {
+        Self {
+            storage: Arc::new(Mutex::new(storage)),
+        }
+    }
 }
 
 pub struct LocalStream {
