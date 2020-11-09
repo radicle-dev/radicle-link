@@ -16,7 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     convert::TryFrom,
     fmt::Debug,
     hash::Hash,
@@ -46,13 +46,13 @@ pub use git_ext::Oid;
 
 /// The transitive tracking graph, up to 3 degrees
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Remotes<A: PartialEq + Eq + Hash>(HashMap<A, HashMap<A, HashSet<A>>>);
+pub struct Remotes<A: PartialEq + Eq + Ord + Hash>(HashMap<A, HashMap<A, BTreeSet<A>>>);
 
 impl<A> Remotes<A>
 where
-    A: PartialEq + Eq + Hash,
+    A: PartialEq + Eq + Ord + Hash,
 {
-    pub fn cutoff(self) -> HashMap<A, HashSet<A>>
+    pub fn cutoff(self) -> HashMap<A, BTreeSet<A>>
     where
         A: Clone,
     {
@@ -71,7 +71,7 @@ where
         })
     }
 
-    pub fn from_map(map: HashMap<A, HashMap<A, HashSet<A>>>) -> Self {
+    pub fn from_map(map: HashMap<A, HashMap<A, BTreeSet<A>>>) -> Self {
         Self(map)
     }
 
@@ -82,9 +82,9 @@ where
 
 impl<A> Deref for Remotes<A>
 where
-    A: PartialEq + Eq + Hash,
+    A: PartialEq + Eq + Ord + Hash,
 {
-    type Target = HashMap<A, HashMap<A, HashSet<A>>>;
+    type Target = HashMap<A, HashMap<A, BTreeSet<A>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -93,18 +93,18 @@ where
 
 impl<A> DerefMut for Remotes<A>
 where
-    A: PartialEq + Eq + Hash,
+    A: PartialEq + Eq + Ord + Hash,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<A> From<HashMap<A, HashMap<A, HashSet<A>>>> for Remotes<A>
+impl<A> From<HashMap<A, HashMap<A, BTreeSet<A>>>> for Remotes<A>
 where
-    A: PartialEq + Eq + Hash,
+    A: PartialEq + Eq + Ord + Hash,
 {
-    fn from(map: HashMap<A, HashMap<A, HashSet<A>>>) -> Self {
+    fn from(map: HashMap<A, HashMap<A, BTreeSet<A>>>) -> Self {
         Self::from_map(map)
     }
 }
@@ -196,7 +196,7 @@ impl Refs {
 
         let mut remotes = tracking::tracked(storage, urn)?
             .map(|peer| (peer, HashMap::new()))
-            .collect::<HashMap<PeerId, HashMap<PeerId, HashSet<PeerId>>>>();
+            .collect::<HashMap<PeerId, HashMap<PeerId, BTreeSet<PeerId>>>>();
 
         for (peer, tracked) in remotes.iter_mut() {
             if let Some(refs) = Self::load(storage, urn, *peer)? {
