@@ -381,6 +381,26 @@ pub struct Signed<V> {
     _verified: PhantomData<V>,
 }
 
+impl Signed<Verified> {
+    pub fn from_json(data: &[u8], signer: &PeerId) -> Result<Self, signed::Error> {
+        let unknown = serde_json::from_slice(data)?;
+        Self::verify(unknown, signer)
+    }
+
+    pub fn verify(unknown: Signed<Unverified>, signer: &PeerId) -> Result<Self, signed::Error> {
+        let canonical = unknown.refs.canonical_form()?;
+        if unknown.signature.verify(&canonical, &*signer) {
+            Ok(Signed {
+                refs: unknown.refs,
+                signature: unknown.signature,
+                _verified: PhantomData,
+            })
+        } else {
+            Err(signed::Error::InvalidSignature(unknown.refs))
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for Signed<Unverified> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -453,25 +473,5 @@ impl Serialize for Signed<Verified> {
         state.serialize_field("refs", &self.refs)?;
         state.serialize_field("signature", &self.signature)?;
         state.end()
-    }
-}
-
-impl Signed<Verified> {
-    pub fn from_json(data: &[u8], signer: &PeerId) -> Result<Self, signed::Error> {
-        let unknown = serde_json::from_slice(data)?;
-        Self::verify(unknown, signer)
-    }
-
-    pub fn verify(unknown: Signed<Unverified>, signer: &PeerId) -> Result<Self, signed::Error> {
-        let canonical = unknown.refs.canonical_form()?;
-        if unknown.signature.verify(&canonical, &*signer) {
-            Ok(Signed {
-                refs: unknown.refs,
-                signature: unknown.signature,
-                _verified: PhantomData,
-            })
-        } else {
-            Err(signed::Error::InvalidSignature(unknown.refs))
-        }
     }
 }
