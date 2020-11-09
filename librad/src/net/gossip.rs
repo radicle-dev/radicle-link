@@ -101,6 +101,7 @@ where
     Addr: Clone + PartialEq + Eq + Hash,
 {
     Has(Has<Addr, A>),
+    Applied(A),
 }
 
 #[derive(Clone, Debug)]
@@ -683,11 +684,15 @@ where
                             self.broadcast(
                                 Have {
                                     origin: self.local_peer_info(),
-                                    val,
+                                    val: val.clone(),
                                 },
                                 remote_id,
                             )
-                            .await
+                            .await;
+
+                            self.subscribers
+                                .emit(ProtocolEvent::Info(Info::Applied(val)))
+                                .await;
                         },
 
                         // Meh. Request retransmission.

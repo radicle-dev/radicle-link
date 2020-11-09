@@ -251,6 +251,15 @@ impl Node {
                     }
                 }
             },
+            ProtocolEvent::Gossip(gossip::Info::Applied(peer::Gossip { urn, rev, origin })) => {
+                let peer_id = origin.map(|peer| peer.to_string());
+                tracing::info!(
+                    "Applied change for URN `{}`, rev = {:?}, peer.id = {:?}",
+                    urn,
+                    rev,
+                    peer_id
+                );
+            },
             ProtocolEvent::Connected(id) => {
                 let event = Event::peer_connected(id, &api).await?;
 
