@@ -144,6 +144,9 @@ pub mod stored {
         Refname(#[from] reference::name::Error),
 
         #[error(transparent)]
+        Json(#[from] serde_json::Error),
+
+        #[error(transparent)]
         Cjson(#[from] CjsonError),
 
         #[error(transparent)]
@@ -270,11 +273,13 @@ impl Refs {
             .map(|r| r.peel_to_commit())
             .transpose()?;
         let tree = {
-            let canonical = Cjson(&signed_refs).canonical_form()?;
-            let blob = raw_git.blob(&canonical)?;
-            let mut builder = raw_git.treebuilder(None)?;
+            let blob_oid = {
+                let json = serde_json::to_vec(&signed_refs)?;
+                raw_git.blob(&json)?
+            };
 
-            builder.insert(stored::BLOB_PATH, blob, 0o100_644)?;
+            let mut builder = raw_git.treebuilder(None)?;
+            builder.insert(stored::BLOB_PATH, blob_oid, 0o100_644)?;
             let oid = builder.write()?;
 
             raw_git.find_tree(oid)
