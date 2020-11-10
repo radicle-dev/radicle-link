@@ -176,8 +176,8 @@ impl<Path> Include<Path> {
 
     fn build_remote(url: LocalUrl, peer: PeerId, handle: &str) -> Result<Remote<LocalUrl>, Error> {
         let name = format!("{}@{}", handle, peer);
-        let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, peer);
-        let heads = heads.with_name(ext::RefspecPattern::try_from("heads/*").unwrap());
+        let heads: FlatRef<PeerId, _> =
+            FlatRef::heads(PhantomData, peer).with_name(refspec_pattern!("heads/*"));
         let remotes = FlatRef::heads(PhantomData, ext::RefLike::try_from(handle)?);
         Ok(Remote::new(url, name).with_refspec(remotes.refspec(heads, Force::True).boxed()))
     }
