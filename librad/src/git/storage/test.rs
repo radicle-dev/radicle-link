@@ -17,7 +17,7 @@
 
 use super::*;
 
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use crate::{
     git::types::NamespacedRef,

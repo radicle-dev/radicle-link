@@ -17,7 +17,7 @@
 
 use std::{
     borrow::Borrow,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     convert::TryFrom,
     io,
     iter,
@@ -362,8 +362,8 @@ impl<S: Clone> Storage<S> {
 
         // Get 1st degree tracked peers from the remotes configured in .git/config
         let tracked = self.tracked(urn)?;
-        let mut remotes: HashMap<PeerId, HashMap<PeerId, HashSet<PeerId>>> =
-            tracked.map(|peer| (peer, HashMap::new())).collect();
+        let mut remotes: BTreeMap<PeerId, BTreeMap<PeerId, BTreeMap<PeerId, ()>>> =
+            tracked.map(|peer| (peer, BTreeMap::new())).collect();
 
         tracing::debug!(urn = %urn, remotes.bare = ?remotes);
 
