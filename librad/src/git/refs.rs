@@ -18,15 +18,21 @@
 use std::{
     collections::BTreeMap,
     convert::TryFrom,
-    fmt::Debug,
+    fmt::{self, Debug},
     hash::Hash,
     iter,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     path::Path,
 };
 
 use git_ext::reference;
-use serde::{Deserialize, Serialize};
+use serde::{
+    de,
+    ser::{self, SerializeStruct},
+    Deserialize,
+    Serialize,
+};
 use thiserror::Error;
 
 use super::{
@@ -313,7 +319,7 @@ impl Refs {
         Ok(Some(signed_refs.refs))
     }
 
-    pub fn sign<S>(self, signer: &S) -> Result<Signed, signing::Error>
+    pub fn sign<S>(self, signer: &S) -> Result<Signed<Verified>, signing::Error>
     where
         S: Signer,
     {
@@ -322,6 +328,7 @@ impl Refs {
         Ok(Signed {
             refs: self,
             signature: signature.into(),
+            _verified: PhantomData,
         })
     }
 
@@ -330,8 +337,8 @@ impl Refs {
     }
 }
 
-impl From<Signed> for Refs {
-    fn from(sig: Signed) -> Self {
+impl<V> From<Signed<V>> for Refs {
+    fn from(sig: Signed<V>) -> Self {
         sig.refs
     }
 }
@@ -353,20 +360,123 @@ pub mod signed {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct Signed {
+/// Type witness to tell us that a [`Signed`] is in a verified state.
+pub struct Verified;
+
+/// Type witness to tell us that a [`Signed`] is in a unverified state.
+pub struct Unverified;
+
+/// `Signed` is the combination of [`Refs`] and a [`Signature`]. The `Signature`
+/// is cryptographic signature over the `Refs`. This allows us to easily verify
+/// if a set of `Refs` came from a particular [`PeerId`].
+///
+/// The type parameter keeps track of whether the `Signed` was [`Verified`] or
+/// [`Unverified`].
+///
+/// The only way to produce a [`Signed`] that is verified is either by verifying
+/// [`Refs`] with a [`Signer`], or verifying an unverified set with a
+/// [`PeerId`], using [`Signed::verify`]. A shorthand for verifying bytes with a
+/// `PeerId` is given by [`Signed::from_json`].
+///
+/// Note that we may only persist a `Signed<Verified>`, and can only deserialize
+/// a `Signed<Unverified>`.
+pub struct Signed<V> {
     refs: Refs,
     signature: Signature,
+    _verified: PhantomData<V>,
 }
 
-impl Signed {
+impl Signed<Verified> {
     pub fn from_json(data: &[u8], signer: &PeerId) -> Result<Self, signed::Error> {
-        let this: Self = serde_json::from_slice(data)?;
-        let canonical = this.refs.canonical_form()?;
-        if this.signature.verify(&canonical, &*signer) {
-            Ok(this)
+        let unknown = serde_json::from_slice(data)?;
+        Self::verify(unknown, signer)
+    }
+
+    pub fn verify(unknown: Signed<Unverified>, signer: &PeerId) -> Result<Self, signed::Error> {
+        let canonical = unknown.refs.canonical_form()?;
+        if unknown.signature.verify(&canonical, &*signer) {
+            Ok(Signed {
+                refs: unknown.refs,
+                signature: unknown.signature,
+                _verified: PhantomData,
+            })
         } else {
-            Err(signed::Error::InvalidSignature(this.refs))
+            Err(signed::Error::InvalidSignature(unknown.refs))
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for Signed<Unverified> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        const SIGNATURE: &str = "Signature";
+        const FIELD_REFS: &str = "refs";
+        const FIELD_SIGNATURE: &str = "signature";
+
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "lowercase")]
+        enum Field {
+            Refs,
+            Signature,
+        }
+
+        struct SignedVisitor;
+
+        impl<'de> de::Visitor<'de> for SignedVisitor {
+            type Value = Signed<Unverified>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("struct Signed")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Signed<Unverified>, V::Error>
+            where
+                V: de::MapAccess<'de>,
+            {
+                let mut refs = None;
+                let mut signature = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Refs => {
+                            if refs.is_some() {
+                                return Err(de::Error::duplicate_field(FIELD_REFS));
+                            }
+                            refs = Some(map.next_value()?);
+                        },
+                        Field::Signature => {
+                            if signature.is_some() {
+                                return Err(de::Error::duplicate_field(FIELD_SIGNATURE));
+                            }
+                            signature = Some(map.next_value()?);
+                        },
+                    }
+                }
+                let refs = refs.ok_or_else(|| de::Error::missing_field(FIELD_REFS))?;
+                let signature =
+                    signature.ok_or_else(|| de::Error::missing_field(FIELD_SIGNATURE))?;
+                Ok(Signed {
+                    refs,
+                    signature,
+                    _verified: PhantomData,
+                })
+            }
+        }
+
+        const FIELDS: &[&str] = &[FIELD_REFS, FIELD_SIGNATURE];
+        deserializer.deserialize_struct(SIGNATURE, FIELDS, SignedVisitor)
+    }
+}
+
+impl Serialize for Signed<Verified> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        let mut state = serializer.serialize_struct("Signed", 2)?;
+        state.serialize_field("refs", &self.refs)?;
+        state.serialize_field("signature", &self.signature)?;
+        state.end()
     }
 }
