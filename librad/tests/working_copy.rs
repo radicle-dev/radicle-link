@@ -188,7 +188,8 @@ async fn can_fetch() {
             repo: radicle.urn().id,
             local_peer_id: peer2.peer_id(),
         };
-        let inc = include::Include::from_tracked_users(tmp.path(), url, tracked_users.into_iter());
+        let inc = include::Include::from_tracked_users(tmp.path(), url, tracked_users.into_iter())
+            .unwrap();
         let inc_path = inc.file_path();
         inc.save().unwrap();
 

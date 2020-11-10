@@ -28,7 +28,7 @@ use tempfile::NamedTempFile;
 use crate::{
     git::{
         local::url::LocalUrl,
-        types::{remote::Remote, AsRefspec, FlatRef, Force},
+        types::{remote::Remote, FlatRef, Force},
     },
     meta::user::User,
     peer::PeerId,
@@ -45,6 +45,9 @@ pub enum Error {
 
     #[error(transparent)]
     Git(#[from] git2::Error),
+
+    #[error("a remote must be set with a fetch refspec when creating an include entry")]
+    MissingRefspec,
 
     #[error(transparent)]
     Persist(#[from] tempfile::PersistError),
@@ -70,7 +73,7 @@ pub enum Error {
 /// ```
 pub struct Include<Path> {
     /// The list of remotes that will be generated for this include file.
-    pub remotes: Vec<Remote<LocalUrl>>,
+    remotes: Vec<Remote<LocalUrl>>,
     /// The directory path where the include file will be stored.
     pub path: Path,
     /// The namespace and `PeerId` this include file is interested in. In other
@@ -92,6 +95,12 @@ impl<Path> Include<Path> {
         }
     }
 
+    pub fn add_remote(&mut self, url: LocalUrl, peer: PeerId, handle: &str) -> Result<(), Error> {
+        let remote = Self::build_remote(url, peer, handle)?;
+        self.remotes.push(remote);
+        Ok(())
+    }
+
     /// Writes the contents of the [`git2::Config`] of the include file to disk.
     pub fn save(self) -> Result<(), Error>
     where
@@ -101,11 +110,22 @@ impl<Path> Include<Path> {
         {
             let mut config = git2::Config::open(tmp.path())?;
             for remote in &self.remotes {
-                let (key, url) = url_entry(&remote);
-                config.set_str(&key, &url.to_string())?;
+                let (url_key, url) = url_entry(&remote);
 
-                let (key, fetch) = fetch_entry(&remote)?;
-                config.set_str(&key, &fetch)?;
+                let (fetch_key, fetch) = match fetch_entry(&remote) {
+                    Err(Error::MissingRefspec) => {
+                        tracing::debug!(
+                            "`{}` is incorrectly configured: `{}` for ",
+                            remote.url,
+                            Error::MissingRefspec
+                        );
+                        continue;
+                    },
+                    result => result,
+                }?;
+
+                config.set_str(&url_key, &url.to_string())?;
+                config.set_str(&fetch_key, &fetch)?;
             }
         }
         tmp.persist(self.file_path())?;
@@ -132,17 +152,25 @@ impl<Path> Include<Path> {
     /// [`crate::git::storage::Storage`].
     pub fn from_tracked_users<S>(
         path: Path,
-        local_url: LocalUrl,
+        url: LocalUrl,
         tracked: impl Iterator<Item = (User<S>, PeerId)>,
-    ) -> Self {
+    ) -> Result<Self, Error> {
         let remotes = tracked
-            .map(|(user, peer)| Remote::new(local_url.clone(), format!("{}@{}", user.name(), peer)))
-            .collect();
-        Self {
+            .map(|(user, peer)| Self::build_remote(url.clone(), peer, user.name()))
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
             remotes,
             path,
-            local_url,
-        }
+            local_url: url,
+        })
+    }
+
+    fn build_remote(url: LocalUrl, peer: PeerId, handle: &str) -> Result<Remote<LocalUrl>, Error> {
+        let name = format!("{}@{}", handle, peer);
+        let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, peer);
+        let heads = heads.with_name(ext::RefspecPattern::try_from("heads/*").unwrap());
+        let remotes = FlatRef::heads(PhantomData, ext::RefLike::try_from(handle)?);
+        Ok(Remote::new(url, name).with_refspec(remotes.refspec(heads, Force::True).boxed()))
     }
 }
 
@@ -167,14 +195,7 @@ fn fetch_entry(remote: &Remote<LocalUrl>) -> Result<(String, String), Error> {
     let key = format!("{}.fetch", remote_prefix(&remote));
     let spec = match &remote.fetch_spec {
         Some(spec) => Ok::<_, Error>(spec.as_refspec()),
-        None => {
-            let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, remote.url.local_peer_id);
-            let heads = heads.with_name(ext::RefspecPattern::try_from("heads/*").unwrap());
-            let remotes: FlatRef<ext::RefLike, _> =
-                FlatRef::heads(PhantomData, ext::RefLike::try_from(remote.name.as_str())?);
-
-            Ok::<_, Error>(remotes.refspec(heads, Force::True).as_refspec())
-        },
+        None => Err(Error::MissingRefspec),
     }?;
 
     Ok((key, spec))
@@ -202,6 +223,9 @@ mod test {
         224, 125, 219, 106, 75, 189, 95, 155, 89, 134, 54, 202, 255, 41, 239, 234, 220, 90, 200,
         19, 199, 63, 69, 225, 97, 15, 124, 168, 168, 238, 124, 83,
     ];
+    const LYLA_HANDLE: &str = "lyla";
+    const ROVER_HANDLE: &str = "rover";
+    const LINGLING_HANDLE: &str = "lingling";
 
     lazy_static! {
         static ref LOCAL_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(LOCAL_SEED));
@@ -222,11 +246,7 @@ mod test {
         // Start with an empty config to catch corner-cases where git2::Config does not
         // create a file yet.
         let config = {
-            let include = Include {
-                path: tmp_dir.path().to_path_buf(),
-                remotes: vec![],
-                local_url: url.clone(),
-            };
+            let include = Include::new(tmp_dir.path().to_path_buf(), url.clone());
             let path = include.file_path();
             let config = git2::Config::open(&path)?;
             include.save()?;
@@ -234,13 +254,10 @@ mod test {
             config
         };
 
-        let remote_lyla = format!("lyla@{}", *LYLA_PEER_ID);
+        let remote_lyla = format!("{}@{}", LYLA_HANDLE, *LYLA_PEER_ID);
         {
-            let include = Include {
-                path: tmp_dir.path().to_path_buf(),
-                remotes: vec![Remote::new(url.clone(), remote_lyla.clone())],
-                local_url: url.clone(),
-            };
+            let mut include = Include::new(tmp_dir.path().to_path_buf(), url.clone());
+            include.add_remote(url.clone(), *LYLA_PEER_ID, LYLA_HANDLE)?;
             include.save()?;
         };
 
@@ -250,17 +267,18 @@ mod test {
                 .value(),
             Some(_)
         );
+        assert_matches!(
+            config
+                .get_entry(&format!("remote.{}.fetch", remote_lyla))?
+                .value(),
+            Some(_)
+        );
 
-        let remote_rover = format!("rover@{}", *ROVER_PEER_ID);
+        let remote_rover = format!("{}@{}", ROVER_HANDLE, *ROVER_PEER_ID);
         {
-            let include = Include {
-                path: tmp_dir.path().to_path_buf(),
-                remotes: vec![
-                    Remote::new(url.clone(), remote_lyla.clone()),
-                    Remote::new(url.clone(), remote_rover.clone()),
-                ],
-                local_url: url.clone(),
-            };
+            let mut include = Include::new(tmp_dir.path().to_path_buf(), url.clone());
+            include.add_remote(url.clone(), *LYLA_PEER_ID, "lyla")?;
+            include.add_remote(url.clone(), *ROVER_PEER_ID, ROVER_HANDLE)?;
             include.save()?;
         };
 
@@ -270,22 +288,32 @@ mod test {
                 .value(),
             Some(_)
         );
+        assert_matches!(
+            config
+                .get_entry(&format!("remote.{}.fetch", remote_lyla))?
+                .value(),
+            Some(_)
+        );
+
         assert_matches!(
             config
                 .get_entry(&format!("remote.{}.url", remote_rover))?
                 .value(),
             Some(_)
         );
+        assert_matches!(
+            config
+                .get_entry(&format!("remote.{}.fetch", remote_rover))?
+                .value(),
+            Some(_)
+        );
 
         // The tracking graph changed entirely.
-        let remote_lingling = format!("lingling@{}", *LINGLING_PEER_ID);
+        let remote_lingling = format!("{}@{}", LINGLING_HANDLE, *LINGLING_PEER_ID);
 
         {
-            let include = Include {
-                path: tmp_dir.path().to_path_buf(),
-                remotes: vec![Remote::new(url.clone(), remote_lingling.clone())],
-                local_url: url,
-            };
+            let mut include = Include::new(tmp_dir.path().to_path_buf(), url.clone());
+            include.add_remote(url, *LINGLING_PEER_ID, LINGLING_HANDLE)?;
             include.save()?;
         };
 
