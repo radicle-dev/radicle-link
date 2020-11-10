@@ -16,7 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::BTreeMap,
     convert::TryFrom,
     fmt::{self, Debug},
     hash::Hash,
@@ -52,19 +52,19 @@ pub use git_ext::Oid;
 
 /// The transitive tracking graph, up to 3 degrees
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Remotes<A: PartialEq + Eq + Hash>(HashMap<A, HashMap<A, HashSet<A>>>);
+pub struct Remotes<A: PartialEq + Eq + Ord>(BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>);
 
 impl<A> Remotes<A>
 where
-    A: PartialEq + Eq + Hash,
+    A: PartialEq + Eq + Ord + Hash,
 {
-    pub fn cutoff(self) -> HashMap<A, HashSet<A>>
+    pub fn cutoff(self) -> BTreeMap<A, BTreeMap<A, ()>>
     where
         A: Clone,
     {
         self.0
             .into_iter()
-            .map(|(k, v)| (k, v.keys().cloned().collect()))
+            .map(|(k, v)| (k, v.keys().map(|x| (x.clone(), ())).collect()))
             .collect()
     }
 
@@ -72,12 +72,12 @@ where
         self.0.iter().flat_map(|(k, v)| {
             iter::once(k).chain(
                 v.iter()
-                    .flat_map(|(k1, v1)| iter::once(k1).chain(v1.iter())),
+                    .flat_map(|(k1, v1)| iter::once(k1).chain(v1.keys())),
             )
         })
     }
 
-    pub fn from_map(map: HashMap<A, HashMap<A, HashSet<A>>>) -> Self {
+    pub fn from_map(map: BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>) -> Self {
         Self(map)
     }
 
@@ -88,9 +88,9 @@ where
 
 impl<A> Deref for Remotes<A>
 where
-    A: PartialEq + Eq + Hash,
+    A: PartialEq + Eq + Ord + Hash,
 {
-    type Target = HashMap<A, HashMap<A, HashSet<A>>>;
+    type Target = BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -99,18 +99,18 @@ where
 
 impl<A> DerefMut for Remotes<A>
 where
-    A: PartialEq + Eq + Hash,
+    A: PartialEq + Eq + Ord + Hash,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<A> From<HashMap<A, HashMap<A, HashSet<A>>>> for Remotes<A>
+impl<A> From<BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>> for Remotes<A>
 where
-    A: PartialEq + Eq + Hash,
+    A: PartialEq + Eq + Ord + Hash,
 {
-    fn from(map: HashMap<A, HashMap<A, HashSet<A>>>) -> Self {
+    fn from(map: BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>) -> Self {
         Self::from_map(map)
     }
 }
@@ -148,6 +148,9 @@ pub mod stored {
 
         #[error(transparent)]
         Refname(#[from] reference::name::Error),
+
+        #[error(transparent)]
+        Json(#[from] serde_json::Error),
 
         #[error(transparent)]
         Cjson(#[from] CjsonError),
@@ -201,8 +204,8 @@ impl Refs {
             })?;
 
         let mut remotes = tracking::tracked(storage, urn)?
-            .map(|peer| (peer, HashMap::new()))
-            .collect::<HashMap<PeerId, HashMap<PeerId, HashSet<PeerId>>>>();
+            .map(|peer| (peer, BTreeMap::new()))
+            .collect::<BTreeMap<PeerId, BTreeMap<PeerId, BTreeMap<PeerId, ()>>>>();
 
         for (peer, tracked) in remotes.iter_mut() {
             if let Some(refs) = Self::load(storage, urn, *peer)? {
@@ -276,11 +279,13 @@ impl Refs {
             .map(|r| r.peel_to_commit())
             .transpose()?;
         let tree = {
-            let canonical = Cjson(&signed_refs).canonical_form()?;
-            let blob = raw_git.blob(&canonical)?;
-            let mut builder = raw_git.treebuilder(None)?;
+            let blob_oid = {
+                let json = serde_json::to_vec(&signed_refs)?;
+                raw_git.blob(&json)?
+            };
 
-            builder.insert(stored::BLOB_PATH, blob, 0o100_644)?;
+            let mut builder = raw_git.treebuilder(None)?;
+            builder.insert(stored::BLOB_PATH, blob_oid, 0o100_644)?;
             let oid = builder.write()?;
 
             raw_git.find_tree(oid)
