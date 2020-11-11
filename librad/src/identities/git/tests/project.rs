@@ -300,6 +300,6 @@ fn current_heads_from<'a>(
         .collect()
 }
 
-fn lookup<'a>(map: &'a BTreeMap<Urn, git2::Oid>) -> impl Fn(Urn) -> Result<git2::Oid, !> + 'a {
+fn lookup(map: &BTreeMap<Urn, git2::Oid>) -> impl Fn(Urn) -> Result<git2::Oid, !> + '_ {
     move |urn| Ok(*map.get(&urn).unwrap())
 }
