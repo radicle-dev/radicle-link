@@ -413,8 +413,8 @@ impl<S> PeerStorage<S>
 where
     S: Signer + Clone,
 {
-    async fn git_fetch<'a>(
-        &'a self,
+    async fn git_fetch(
+        &self,
         from: PeerId,
         urn: Either<Urn, Originates<Urn>>,
         head: impl Into<Option<git2::Oid>>,
@@ -505,7 +505,7 @@ where
 
     #[tracing::instrument(skip(self))]
     async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult<Self::Update> {
-        let peer_id = has.origin.unwrap_or_else(|| provider);
+        let peer_id = has.origin.unwrap_or(provider);
         let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
             Ok(b) => b,
             Err(e) => {

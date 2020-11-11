@@ -1,19 +1,33 @@
 steps:
-  - label: "Build, test, doc"
+  # This step is essentially a no-op. Since it blocks all other steps, we avoid
+  # triggering `n` image builds when updating the `DOCKER_IMAGE`. Note that it
+  # still saves about 20sec to pin the image to a SHA256 after an upgrade.
+  - label: "Build container"
     commands:
-      - "ci/build-test"
-      - "ci/docs"
-    artifact_paths:
-      - "Cargo.lock"
+      - ".buildkite/env"
+      - ".buildkite/build-container"
     agents: &build-agent
       production: "true"
       platform: "linux"
     env: &build-docker
-      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-seedling-build@sha256:bbf2fa12555886b7f279bb1ba7997090611f3c23a178fd27bb06f70693acd8af"
+      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-seedling-build@sha256:b5915308b502fe0fb1da7f686129aa09a67a968f3fd2ad7514361928ce70e4f1"
       DOCKER_FILE: .buildkite/docker/rust/Dockerfile
 
-  - label: "Lint and clip"
+  - wait
+
+  - label: "Build + Test"
     commands:
+      - ".buildkite/env"
+      - "ci/build-test"
+    artifact_paths:
+      - "Cargo.lock"
+    agents: *build-agent
+    env: *build-docker
+
+  - label: "fmt + clip"
+    skip:
+    commands:
+      - ".buildkite/env"
       - "ci/clippy"
     artifact_paths:
       - "Cargo.lock"
@@ -21,23 +35,20 @@ steps:
     env: *build-docker
 
   - label: "Deny"
+    skip:
     commands:
+      - ".buildkite/env"
       - "ci/advisory"
     artifact_paths:
       - "Cargo.lock"
     agents: *build-agent
     env: *build-docker
 
-
-  - label: "Render Spec"
-    skip: "This spec is outdated. Should render new spec once complete-ish."
+  - label: "Docs"
     commands:
-      - "cd spec"
-      - "make clean all"
-      - "git diff --exit-code -- spec/out"
-    agents:
-      production: "true"
-      platform: "linux"
-    env:
-      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-pandoc@sha256:eb1d9592d83fa5edad1b626a71b53aa586c64a5a7e7bb4158256d6265e1ac1a9"
-      DOCKER_FILE: .buildkite/docker/pandoc/Dockerfile
+      - ".buildkite/env"
+      - "ci/docs"
+    artifact_paths:
+      - "Cargo.lock"
+    agents: *build-agent
+    env: *build-docker

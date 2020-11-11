@@ -228,7 +228,7 @@ where
         inc_path,
         LocalUrl::from_urn(project.urn(), peer.peer_id()),
         tracked_users,
-    );
+    )?;
     let inc_path = inc.file_path();
     inc.save()?;
 

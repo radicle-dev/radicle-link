@@ -124,6 +124,11 @@ impl<Url> Remote<Url> {
         }
     }
 
+    pub fn with_refspec(mut self, refspec: Box<dyn AsRefspec>) -> Self {
+        self.fetch_spec = Some(refspec);
+        self
+    }
+
     /// Add a series of push specs to the remote.
     pub fn add_pushes<I>(&mut self, specs: I)
     where

@@ -67,7 +67,7 @@ impl PeerId {
 
         PublicKey::from_slice(&key)
             .map(PeerId)
-            .ok_or_else(|| InvalidPublicKey)
+            .ok_or(InvalidPublicKey)
     }
 
     pub fn as_dns_name(&self) -> webpki::DNSName {

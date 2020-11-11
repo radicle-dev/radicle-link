@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+echo "--- Ensure build container is up to date"
+echo noop

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeou pipefail
+
+if [[ "${CI:-}" == "true" ]]; then
+    echo "--- Setting up CI cache directories"
+
+    export CACHE_DIR="/cache"
+    export CARGO_HOME="${CACHE_DIR}/cargo"
+    export TARGET_CACHE_DIR="${CACHE_DIR}/target"
+
+    # We (almost) always check out fresh, so file mtime is always newer
+    export CARGO_BUILD_INCREMENTAL=false
+
+    mkdir -p "$CACHE_DIR" "$CARGO_HOME" "$TARGET_CACHE_DIR"
+    ln -sf "$TARGET_CACHE_DIR" target
+fi

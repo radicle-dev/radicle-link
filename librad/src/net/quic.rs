@@ -146,7 +146,7 @@ impl LocalInfo for Endpoint {
 async fn handle_incoming<'a>(connecting: quinn::Connecting) -> Result<(Connection, Incoming<'a>)> {
     let conn = connecting.await?;
     remote_peer(&conn)?
-        .ok_or_else(|| Error::RemoteIdUnavailable)
+        .ok_or(Error::RemoteIdUnavailable)
         .map(|peer| mk_connection(peer, conn))
 }
 

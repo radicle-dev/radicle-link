@@ -335,7 +335,7 @@ where
                         let addr_hints = addr_hints.into_iter().collect::<Vec<_>>();
                         let (conn, incoming) = connect(&self.endpoint, to, addr_hints)
                             .await
-                            .ok_or_else(|| Error::NoConnection(to))?;
+                            .ok_or(Error::NoConnection(to))?;
 
                         let stream = conn.open_stream().await?;
                         upgrade(stream, upgrade::Git)
