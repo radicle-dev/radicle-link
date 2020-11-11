@@ -521,7 +521,6 @@ where
 
     async fn put(&self, provider: PeerId, mut has: Self::Update) -> PutResult<Self::Update> {
         let span = tracing::info_span!("Peer::LocalStorage::put");
-        let _guard = span.enter();
 
         match has.urn.proto {
             uri::Protocol::Git => {
@@ -537,10 +536,16 @@ where
                 let peer_id = has.origin.unwrap_or_else(|| provider);
                 has.origin = Some(peer_id);
 
-                let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
+                let is_tracked = match self
+                    .is_tracked(has.urn.clone(), peer_id)
+                    .instrument(span.clone())
+                    .await
+                {
                     Ok(b) => b,
                     Err(e) => {
-                        tracing::error!(err = %e, "Git::Storage::is_tracked error");
+                        span.in_scope(|| {
+                            tracing::error!(err = %e, "Git::Storage::is_tracked error");
+                        });
                         return PutResult::Error;
                     },
                 };
@@ -549,21 +554,25 @@ where
                     Some(Rev::Git(head)) if is_tracked => {
                         let res = {
                             let this = self.clone();
-                            this.git_fetch(provider, urn, head).await
+                            this.git_fetch(provider, urn, head)
+                                .instrument(span.clone())
+                                .await
                         };
 
                         match res {
                             Ok(()) => {
-                                if self.ask(has.clone()).await {
+                                if self.ask(has.clone()).instrument(span.clone()).await {
                                     PutResult::Applied(has.clone())
                                 } else {
-                                    tracing::warn!(
-                                        provider = %provider,
-                                        has.origin = ?has.origin,
-                                        has.urn = %has.urn,
-                                        "Provider announced non-existent rev"
-                                    );
-                                    PutResult::Stale
+                                    span.in_scope(|| {
+                                        tracing::warn!(
+                                            provider = %provider,
+                                            has.origin = ?has.origin,
+                                            has.urn = %has.urn,
+                                            "Provider announced non-existent rev"
+                                        );
+                                        PutResult::Stale
+                                    })
                                 }
                             },
                             Err(e) => match e {
@@ -571,10 +580,10 @@ where
                                 PeerStorageError::Store(storage::Error::NoSuchUrn(_)) => {
                                     PutResult::Uninteresting
                                 },
-                                e => {
+                                e => span.in_scope(|| {
                                     tracing::error!(err = %e, "Fetch error");
                                     PutResult::Error
-                                },
+                                }),
                             },
                         }
                     },
@@ -598,7 +607,6 @@ where
 
     async fn ask(&self, want: Self::Update) -> bool {
         let span = tracing::info_span!("Peer::LocalStorage::ask");
-        let _guard = span.enter();
 
         match want.urn.proto {
             uri::Protocol::Git => {
@@ -612,6 +620,7 @@ where
                     },
                     want.rev.map(|Rev::Git(head)| head),
                 )
+                .instrument(span)
                 .await
             },
         }
