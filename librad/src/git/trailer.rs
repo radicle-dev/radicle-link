@@ -227,7 +227,7 @@ pub mod parser {
     /// Parse the trailer values, which gathers the value after the separator
     /// (if any) and possible following multilined values, indented by a
     /// space.
-    fn values<'a>(s: &'a str) -> IResult<&'a str, Vec<Cow<'a, str>>> {
+    fn values(s: &str) -> IResult<&str, Vec<Cow<'_, str>>> {
         let (r, opt_inline_value) = until_eol_or_eof(s)?;
         let (r, mut values) = multiline_values(r)?;
         if !opt_inline_value.is_empty() {
@@ -236,7 +236,7 @@ pub mod parser {
         Ok((r, values))
     }
 
-    fn multiline_values<'a>(s: &'a str) -> IResult<&'a str, Vec<Cow<'a, str>>> {
+    fn multiline_values(s: &str) -> IResult<&str, Vec<Cow<'_, str>>> {
         many0(map(indented_line_contents, Cow::from))(s)
     }
 

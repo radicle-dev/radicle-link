@@ -69,7 +69,7 @@ impl Event {
             })
             .await??;
 
-        proj.ok_or_else(|| Error::NoSuchUrn(urn))
+        proj.ok_or(Error::NoSuchUrn(urn))
             .map(|proj| Event::ProjectTracked(Project::from(proj), provider))
     }
 }

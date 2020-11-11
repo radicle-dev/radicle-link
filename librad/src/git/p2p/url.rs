@@ -116,7 +116,7 @@ where
             .path_segments()
             .expect("we checked for cannot-be-a-base. qed")
             .next()
-            .ok_or_else(|| Self::Err::MissingRepo)
+            .ok_or(Self::Err::MissingRepo)
             .and_then(|path| {
                 let path = path.trim_end_matches(".git");
                 let bytes = multibase::decode(path).map(|(_base, bytes)| bytes)?;

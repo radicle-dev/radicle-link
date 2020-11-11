@@ -99,10 +99,10 @@ where
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split(|c| c == ' ' || c == '\0');
 
-        let service = parts.next().ok_or_else(|| ParseError::MissingService)?;
+        let service = parts.next().ok_or(ParseError::MissingService)?;
         let repo = parts
             .next()
-            .ok_or_else(|| ParseError::MissingRepo)
+            .ok_or(ParseError::MissingRepo)
             .and_then(|repo| {
                 repo.parse::<Urn>()
                     .map_err(|e| ParseError::InvalidRepo(Box::new(e)))
@@ -110,7 +110,7 @@ where
         let peer = parts
             .next()
             .and_then(|peer| peer.strip_prefix("host="))
-            .ok_or_else(|| ParseError::MissingHost)
+            .ok_or(ParseError::MissingHost)
             .and_then(|peer| peer.parse::<PeerId>().map_err(|e| e.into()))?;
         let mode = parts.next().unwrap_or("");
 
@@ -150,6 +150,7 @@ impl Debug for Service {
 }
 
 impl PartialEq for Service {
+    #[allow(clippy::match_like_matches_macro)]
     fn eq(&self, other: &Self) -> bool {
         match (self.0, other.0) {
             (GitService::UploadPackLs, GitService::UploadPackLs) => true,
