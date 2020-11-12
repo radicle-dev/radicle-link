@@ -17,13 +17,15 @@
 
 use std::fmt::{self, Debug};
 
+use git_ext as ext;
+
 use super::AsRefspec;
 
 pub struct Remote<Url> {
     /// The file path to the git monorepo.
     pub url: Url,
     /// Name of the remote, e.g. `"rad"`, `"origin"`.
-    pub name: String,
+    pub name: ext::RefLike,
     /// If the fetch spec is provided then the remote is created with an initial
     /// fetchspec, otherwise it is just a plain remote.
     pub fetch_spec: Option<Box<dyn AsRefspec>>,
@@ -107,7 +109,7 @@ impl<Url> Remote<Url> {
     {
         Self {
             url,
-            name: "rad".to_string(),
+            name: reflike!("rad"),
             fetch_spec: fetch_spec.into(),
             push_specs: vec![],
         }
@@ -115,10 +117,13 @@ impl<Url> Remote<Url> {
 
     /// Create a new `Remote` with the given `url` and `name`, while making the
     /// `fetch_spec` and `push_specs` empty.
-    pub fn new(url: Url, name: String) -> Self {
+    pub fn new<R>(url: Url, name: R) -> Self
+    where
+        R: Into<ext::RefLike>,
+    {
         Self {
             url,
-            name,
+            name: name.into(),
             fetch_spec: None,
             push_specs: vec![],
         }
@@ -144,20 +149,21 @@ impl<Url> Remote<Url> {
     where
         Url: ToString,
     {
+        let name = self.name.as_str();
         let _ = match &self.fetch_spec {
             Some(fetch_spec) => {
-                repo.remote_with_fetch(&self.name, &self.url.to_string(), &fetch_spec.as_refspec())
+                repo.remote_with_fetch(name, &self.url.to_string(), &fetch_spec.as_refspec())
             },
-            None => repo.remote(&self.name, &self.url.to_string()),
+            None => repo.remote(name, &self.url.to_string()),
         }?;
 
         for spec in self.push_specs.iter() {
-            repo.remote_add_push(&self.name, &spec.as_refspec())?;
+            repo.remote_add_push(name, &spec.as_refspec())?;
         }
 
         // To ensure that the push spec is persisted we need to call `find_remote` here.
         // Otherwise, `remote_add_push` doesn't affect the "loaded remotes".
-        repo.find_remote(&self.name)
+        repo.find_remote(name)
     }
 }
 
@@ -251,11 +257,10 @@ mod tests {
             urn: URN.clone(),
             local_peer_id: peer_id,
         };
-        let name = format!("lyla@{}", peer_id);
+        let name = ext::RefLike::try_from(format!("lyla@{}", peer_id)).unwrap();
         let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, peer_id);
         let heads = heads.with_name(refspec_pattern!("heads/*"));
-        let remotes: FlatRef<ext::RefLike, _> =
-            FlatRef::heads(PhantomData, ext::RefLike::try_from(name.as_str()).unwrap());
+        let remotes: FlatRef<ext::RefLike, _> = FlatRef::heads(PhantomData, name.clone());
         let remote = Remote {
             url,
             name: name.clone(),

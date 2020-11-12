@@ -106,9 +106,13 @@ async fn can_fetch() {
                             let user = identities::user::get(&store, &Urn::from(self_ref))
                                 .unwrap()
                                 .expect("tracked user should exist");
-                            (user, peer)
+                            (
+                                ext::RefLike::try_from(user.doc.payload.subject.name.as_str())
+                                    .unwrap(),
+                                peer,
+                            )
                         })
-                        .collect::<Vec<(User, PeerId)>>()
+                        .collect::<Vec<(ext::RefLike, PeerId)>>()
                 })
                 .await
                 .unwrap()
@@ -220,7 +224,7 @@ fn create_working_copy<P, S, I>(
 where
     P: AsRef<Path> + Debug,
     S: Signer + Clone,
-    I: IntoIterator<Item = (User, PeerId)> + Debug,
+    I: IntoIterator<Item = (ext::RefLike, PeerId)> + Debug,
 {
     let repo = git2::Repository::init(repo_path)?;
 
@@ -231,7 +235,7 @@ where
             local_peer_id: peer.peer_id(),
         },
         tracked_users,
-    )?;
+    );
     let inc_path = inc.file_path();
     inc.save()?;
 
