@@ -93,7 +93,7 @@ impl<Path> Include<Path> {
         }
     }
 
-    pub fn add_remote(&mut self, url: LocalUrl, peer: PeerId, handle: ext::RefLike) {
+    pub fn add_remote(&mut self, url: LocalUrl, peer: PeerId, handle: impl Into<ext::RefLike>) {
         let remote = Self::build_remote(url, peer, handle);
         self.remotes.push(remote);
     }
@@ -152,11 +152,7 @@ impl<Path> Include<Path> {
     /// The tracked users are expected to be retrieved by talking to the
     /// [`crate::git::storage::Storage`].
     #[tracing::instrument(level = "debug")]
-    pub fn from_tracked_users<R, I>(
-        path: Path,
-        local_url: LocalUrl,
-        tracked: I,
-    ) -> Result<Self, Error>
+    pub fn from_tracked_users<R, I>(path: Path, local_url: LocalUrl, tracked: I) -> Self
     where
         Path: Debug,
         R: Into<ext::RefLike>,
@@ -168,14 +164,19 @@ impl<Path> Include<Path> {
             .collect();
         tracing::trace!("computed remotes: {:?}", remotes);
 
-        Ok(Self {
+        Self {
             remotes,
             path,
             local_url,
-        })
+        }
     }
 
-    fn build_remote(url: LocalUrl, peer: PeerId, handle: ext::RefLike) -> Remote<LocalUrl> {
+    fn build_remote(
+        url: LocalUrl,
+        peer: PeerId,
+        handle: impl Into<ext::RefLike>,
+    ) -> Remote<LocalUrl> {
+        let handle = handle.into();
         let name = ext::RefLike::try_from(format!("{}@{}", handle, peer))
             .expect("handle and peer are both RefLike");
         let heads: FlatRef<PeerId, _> =

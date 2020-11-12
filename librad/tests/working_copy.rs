@@ -235,7 +235,7 @@ where
             local_peer_id: peer.peer_id(),
         },
         tracked_users,
-    )?;
+    );
     let inc_path = inc.file_path();
     inc.save()?;
 
