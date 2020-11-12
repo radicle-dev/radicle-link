@@ -36,7 +36,6 @@ use crate::{
         urn,
     },
     peer::PeerId,
-    signer::Signer,
 };
 
 pub use identities::{git::Urn, payload::ProjectPayload};
@@ -47,10 +46,7 @@ type Namespace = namespace::Namespace<Revision>;
 ///
 /// If the ref is not found, `None` is returned.
 #[tracing::instrument(level = "trace", skip(storage), err)]
-pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Project>, Error>
-where
-    S: Signer,
-{
+pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<Project>, Error> {
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
@@ -74,10 +70,7 @@ where
 /// function cannot be used to assert that the state after an [`update`] is
 /// valid.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedProject>, Error>
-where
-    S: Signer,
-{
+pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedProject>, Error> {
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
@@ -99,14 +92,13 @@ where
 
 /// Create a new [`Project`].
 #[tracing::instrument(level = "debug", skip(storage, whoami), err)]
-pub fn create<S, P>(
-    storage: &Storage<S>,
+pub fn create<P>(
+    storage: &Storage,
     whoami: LocalIdentity,
     payload: P,
     delegations: IndirectDelegation,
 ) -> Result<Project, Error>
 where
-    S: Signer,
     P: Into<ProjectPayload> + Debug,
 {
     let project = identities(storage).create(payload.into(), delegations, storage.signer())?;
@@ -118,15 +110,14 @@ where
 
 /// Update the [`Project`] at `urn`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn update<S, L, P, D>(
-    storage: &Storage<S>,
+pub fn update<L, P, D>(
+    storage: &Storage,
     urn: &Urn,
     whoami: L,
     payload: P,
     delegations: D,
 ) -> Result<Project, Error>
 where
-    S: Signer,
     L: Into<Option<LocalIdentity>> + Debug,
     P: Into<Option<ProjectPayload>> + Debug,
     D: Into<Option<IndirectDelegation>> + Debug,
@@ -145,10 +136,7 @@ where
 
 /// Merge and sign the [`Project`] state as seen by `from`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<Project, Error>
-where
-    S: Signer,
-{
+pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Project, Error> {
     let ours = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let theirs = {
         let their_urn = Urn {
@@ -173,10 +161,7 @@ enum Refs<'a> {
 }
 
 impl<'a> Refs<'a> {
-    pub fn apply<S>(&self, storage: &Storage<S>) -> Result<(), Error>
-    where
-        S: Signer,
-    {
+    pub fn apply(&self, storage: &Storage) -> Result<(), Error> {
         for symref in self.delegates() {
             symref.create(storage.as_raw())?;
         }
@@ -222,9 +207,6 @@ impl<'a> Refs<'a> {
     }
 }
 
-fn identities<S>(storage: &Storage<S>) -> Identities<Project>
-where
-    S: Signer,
-{
+fn identities(storage: &Storage) -> Identities<Project> {
     storage.identities()
 }

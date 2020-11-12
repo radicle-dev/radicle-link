@@ -26,12 +26,9 @@ use super::{
     },
     error::Error,
 };
-use crate::{
-    identities::{
-        self,
-        git::{Identities, SomeIdentity},
-    },
-    signer::Signer,
+use crate::identities::{
+    self,
+    git::{Identities, SomeIdentity},
 };
 
 pub use identities::git::Urn;
@@ -42,10 +39,7 @@ pub use identities::git::Urn;
 /// tip of the branch it resolves to. If that branch is not found, `None` is
 /// returned.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<SomeIdentity>, Error>
-where
-    S: Signer,
-{
+pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<SomeIdentity>, Error> {
     let branch = Reference::try_from(urn)?;
     tracing::trace!(
         "trying to resolve unknown identity at {} from {}",
@@ -66,12 +60,9 @@ where
 
 /// List all identities found in `storage`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn list<'a, S>(
-    storage: &'a Storage<S>,
-) -> Result<impl Iterator<Item = Result<SomeIdentity, Error>> + 'a, Error>
-where
-    S: Signer,
-{
+pub fn list<'a>(
+    storage: &'a Storage,
+) -> Result<impl Iterator<Item = Result<SomeIdentity, Error>> + 'a, Error> {
     lazy_static! {
         static ref GLOB: glob::RefspecMatcher =
             refspec_pattern!("refs/namespaces/*/refs/rad/id").into();
@@ -90,9 +81,6 @@ where
     Ok(iter)
 }
 
-fn identities<S>(storage: &Storage<S>) -> Identities<!>
-where
-    S: Signer,
-{
+fn identities(storage: &Storage) -> Identities<!> {
     storage.identities()
 }

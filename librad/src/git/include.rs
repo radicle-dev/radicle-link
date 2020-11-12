@@ -111,24 +111,24 @@ impl<Path> Include<Path> {
         {
             let mut config = git2::Config::open(tmp.path())?;
             for remote in &self.remotes {
-                let (url_key, url) = url_entry(&remote);
-                tracing::trace!("{} = {}", url_key, url);
+                if remote.fetch_specs.is_empty() {
+                    return Err(Error::MissingRefspec);
+                }
 
-                let (fetch_key, fetch) = match fetch_entry(&remote) {
-                    Err(Error::MissingRefspec) => {
-                        tracing::debug!(
-                            "`{}` is incorrectly configured: `{}` for ",
-                            remote.url,
-                            Error::MissingRefspec
-                        );
-                        continue;
-                    },
-                    result => result,
-                }?;
-                tracing::trace!("{} = {}", fetch_key, fetch);
+                {
+                    let key = url_key(remote);
+                    tracing::trace!("{} = {}", key, remote.url);
+                    config.set_str(&key, &remote.url.to_string())?;
+                }
 
-                config.set_str(&fetch_key, &fetch)?;
-                config.set_str(&url_key, &url.to_string())?;
+                {
+                    let key = fetch_key(remote);
+                    let fetch_specs = remote.fetch_specs.iter().map(|spec| spec.as_refspec());
+                    for spec in fetch_specs {
+                        tracing::trace!("{} = {}", key, spec);
+                        config.set_multivar(&key, "^$", &spec)?;
+                    }
+                }
             }
         }
         tmp.persist(self.file_path())?;
@@ -195,19 +195,12 @@ fn remote_prefix(remote: &Remote<LocalUrl>) -> String {
     format!("remote.{}", remote.name)
 }
 
-fn url_entry(remote: &Remote<LocalUrl>) -> (String, &LocalUrl) {
-    let key = remote_prefix(&remote);
-    (format!("{}.url", key), &remote.url)
+fn url_key(remote: &Remote<LocalUrl>) -> String {
+    format!("{}.url", remote_prefix(remote))
 }
 
-fn fetch_entry(remote: &Remote<LocalUrl>) -> Result<(String, String), Error> {
-    let key = format!("{}.fetch", remote_prefix(&remote));
-    let spec = match &remote.fetch_spec {
-        Some(spec) => Ok::<_, Error>(spec.as_refspec()),
-        None => Err(Error::MissingRefspec),
-    }?;
-
-    Ok((key, spec))
+fn fetch_key(remote: &Remote<LocalUrl>) -> String {
+    format!("{}.fetch", remote_prefix(remote))
 }
 
 #[cfg(test)]

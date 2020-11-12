@@ -41,7 +41,6 @@ use super::{
 use crate::{
     identities::git::{Project, SomeIdentity, User},
     peer::PeerId,
-    signer::Signer,
 };
 
 pub use crate::identities::git::Urn;
@@ -111,15 +110,14 @@ pub enum Error {
 /// [`crate::git::local::transport::LocalTransport`].
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(skip(storage, whoami, addr_hints), err)]
-pub fn replicate<S, Addrs>(
-    storage: &Storage<S>,
+pub fn replicate<Addrs>(
+    storage: &Storage,
     whoami: Option<LocalIdentity>,
     urn: Urn,
     remote_peer: PeerId,
     addr_hints: Addrs,
 ) -> Result<(), Error>
 where
-    S: Signer,
     Addrs: IntoIterator<Item = SocketAddr>,
 {
     let urn = Urn::new(urn.id);
@@ -192,14 +190,7 @@ where
 
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage), err)]
-fn ensure_setup_as_user<S>(
-    storage: &Storage<S>,
-    user: User,
-    remote_peer: PeerId,
-) -> Result<(), Error>
-where
-    S: Signer,
-{
+fn ensure_setup_as_user(storage: &Storage, user: User, remote_peer: PeerId) -> Result<(), Error> {
     let urn: Urn = NamespacedRef::rad_id(Namespace::from(user.urn()))
         .with_remote(remote_peer)
         .into();
@@ -221,14 +212,11 @@ where
 }
 
 #[tracing::instrument(level = "trace", skip(storage), err)]
-fn ensure_setup_as_project<S>(
-    storage: &Storage<S>,
+fn ensure_setup_as_project(
+    storage: &Storage,
     proj: Project,
     remote_peer: PeerId,
-) -> Result<impl Iterator<Item = Urn>, Error>
-where
-    S: Signer,
-{
+) -> Result<impl Iterator<Item = Urn>, Error> {
     let urn: Urn = NamespacedRef::rad_id(Namespace::from(proj.urn()))
         .with_remote(remote_peer)
         .into();
@@ -297,10 +285,7 @@ where
 
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage), err)]
-fn ensure_rad_id<S>(storage: &Storage<S>, urn: &Urn, tip: ext::Oid) -> Result<(), Error>
-where
-    S: Signer,
-{
+fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<(), Error> {
     identities::common::IdRef::from(urn)
         .create(storage, tip)
         .map_err(|e| Error::Store(e.into()))

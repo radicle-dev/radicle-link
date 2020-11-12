@@ -173,10 +173,7 @@ pub struct Refs {
 impl Refs {
     /// Compute the [`Refs`] from the current storage state at [`Urn`].
     #[tracing::instrument(level = "debug", skip(storage), err)]
-    pub fn compute<S>(storage: &Storage<S>, urn: &Urn) -> Result<Self, stored::Error>
-    where
-        S: Signer,
-    {
+    pub fn compute(storage: &Storage, urn: &Urn) -> Result<Self, stored::Error> {
         let namespace = Namespace::from(urn);
         let namespace_prefix = format!("refs/namespaces/{}/", namespace);
         let heads_ref = NamespacedRef::heads(namespace, None);
@@ -228,13 +225,8 @@ impl Refs {
     /// If the blob where the signed [`Refs`] are expected to be stored is not
     /// found, `None` is returned.
     #[tracing::instrument(skip(storage), err)]
-    pub fn load<S, P>(
-        storage: &Storage<S>,
-        urn: &Urn,
-        peer: P,
-    ) -> Result<Option<Self>, stored::Error>
+    pub fn load<P>(storage: &Storage, urn: &Urn, peer: P) -> Result<Option<Self>, stored::Error>
     where
-        S: Signer,
         P: Into<Option<PeerId>> + Debug,
     {
         let peer = peer.into();
@@ -263,10 +255,7 @@ impl Refs {
     /// [`Refs`], no commit is made and `None` is returned. Otherwise, the
     /// new and persisted [`Refs`] are returned in a `Some`.
     #[tracing::instrument(skip(storage), err)]
-    pub fn update<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Self>, stored::Error>
-    where
-        S: Signer,
-    {
+    pub fn update(storage: &Storage, urn: &Urn) -> Result<Option<Self>, stored::Error> {
         let branch = NamespacedRef::rad_signed_refs(Namespace::from(urn), None);
         tracing::debug!("updating signed refs for {}", branch);
 

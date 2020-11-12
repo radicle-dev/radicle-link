@@ -15,53 +15,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::{convert::TryFrom, time::Duration};
+
 use librad::{
-    git::{local::url::LocalUrl, storage::Storage, types::remote::Remote},
-    git_ext::RefLike,
-    signer::BoxedSigner,
+    git::{
+        local::{
+            transport::{self, with_local_transport, CanOpenStorage},
+            url::LocalUrl,
+        },
+        types::remote::Remote,
+    },
+    git_ext::reference::RefLike,
 };
 
-#[tracing::instrument(skip(repo, remote_callbacks), err)]
-pub fn initial_commit(
-    repo: &git2::Repository,
-    remote: Remote<LocalUrl>,
-    reference: &str,
-    remote_callbacks: Option<git2::RemoteCallbacks>,
-) -> Result<git2::Oid, git2::Error> {
-    let mut remote = remote.create(&repo)?;
-
-    let commit_id = {
-        let empty_tree = {
-            let mut index = repo.index()?;
-            let oid = index.write_tree()?;
-            repo.find_tree(oid).unwrap()
-        };
-        let author = git2::Signature::now("The Animal", "animal@muppets.com").unwrap();
-        repo.commit(
-            Some(reference),
-            &author,
-            &author,
-            "Initial commit",
-            &empty_tree,
-            &[],
-        )?
-    };
-
-    let mut opts = git2::PushOptions::new();
-    let opts = match remote_callbacks {
-        Some(cb) => opts.remote_callbacks(cb),
-        None => &mut opts,
-    };
-    remote.push(&[reference], Some(opts))?;
-
-    tracing::debug!("pushed {} to {}", commit_id, reference);
-
-    Ok(commit_id)
-}
-
+#[tracing::instrument(skip(repo), err)]
 pub fn create_commit(
     repo: &git2::Repository,
-    on_branch: &RefLike,
+    on_branch: RefLike,
 ) -> Result<git2::Oid, git2::Error> {
     let empty_tree = {
         let mut index = repo.index()?;
@@ -79,17 +49,21 @@ pub fn create_commit(
     )
 }
 
+#[tracing::instrument(skip(open_storage, repo), err)]
 pub fn push<F>(
     open_storage: F,
     repo: &git2::Repository,
     remote: Remote<LocalUrl>,
-) -> Result<Vec<(RefLike, git2::Oid)>, git2::Error>
+) -> Result<Vec<(RefLike, git2::Oid)>, transport::Error>
 where
-    F: Fn() -> Result<Storage<BoxedSigner>, Box<dyn std::error::Error + Send + Sync + 'static>>
-        + Send
-        + Sync
-        + 'static,
+    F: CanOpenStorage + 'static,
 {
+    let refspecs = remote
+        .push_specs
+        .iter()
+        .map(|spec| spec.as_refspec())
+        .collect::<Vec<_>>();
+
     with_local_transport(
         open_storage,
         repo,
@@ -101,7 +75,7 @@ where
             remote_callbacks.push_update_reference(|refname, maybe_error| match maybe_error {
                 None => {
                     let rev = repo.find_reference(refname)?.target().unwrap();
-                    let refname = ext::RefLike::try_from(refname).unwrap();
+                    let refname = RefLike::try_from(refname).unwrap();
                     updated_refs.push((refname, rev));
 
                     Ok(())
@@ -114,13 +88,61 @@ where
             });
 
             git_remote.push(
-                &remote
-                    .push_specs
-                    .iter()
-                    .map(|spec| spec.as_refspec())
-                    .collect(),
+                &refspecs,
                 Some(git2::PushOptions::new().remote_callbacks(remote_callbacks)),
             )?;
+
+            Ok(updated_refs)
         },
     )
+    .flatten()
+}
+
+#[tracing::instrument(skip(open_storage, repo), err)]
+pub fn fetch<F>(
+    open_storage: F,
+    repo: &git2::Repository,
+    remote: Remote<LocalUrl>,
+) -> Result<Vec<(RefLike, git2::Oid)>, transport::Error>
+where
+    F: CanOpenStorage + 'static,
+{
+    let refspecs = remote
+        .fetch_specs
+        .iter()
+        .map(|spec| spec.as_refspec())
+        .collect::<Vec<_>>();
+
+    with_local_transport(
+        open_storage,
+        repo,
+        remote,
+        Duration::from_secs(5),
+        |git_remote| {
+            let mut updated_refs = Vec::new();
+            let mut remote_callbacks = git2::RemoteCallbacks::new();
+            remote_callbacks.update_tips(|refname, _old, new| {
+                if let Ok(refname) = RefLike::try_from(refname) {
+                    updated_refs.push((refname, new))
+                }
+
+                true
+            });
+
+            git_remote.fetch(
+                &refspecs,
+                Some(
+                    git2::FetchOptions::new()
+                        .prune(git2::FetchPrune::On)
+                        .update_fetchhead(false)
+                        .download_tags(git2::AutotagOption::None)
+                        .remote_callbacks(remote_callbacks),
+                ),
+                None,
+            )?;
+
+            Ok(updated_refs)
+        },
+    )
+    .flatten()
 }

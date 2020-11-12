@@ -18,11 +18,10 @@
 use std::{
     convert::TryFrom,
     fmt::Debug,
-    io::{self, Cursor, Read, Write},
-    panic::{self, UnwindSafe},
-    path::PathBuf,
-    process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio},
-    sync::{Arc, Mutex},
+    io,
+    panic,
+    process::{Child, Command, ExitStatus, Stdio},
+    sync::Arc,
     time::Duration,
 };
 
@@ -57,6 +56,9 @@ pub enum Error {
     StreamLimitExceeded,
 
     #[error(transparent)]
+    OpenStorage(#[from] OpenStorageError),
+
+    #[error(transparent)]
     Storage(#[from] storage::Error),
 
     #[error("child exited unsuccessfully")]
@@ -75,6 +77,12 @@ pub enum Error {
     Io(#[from] io::Error),
 }
 
+pub type OpenStorageError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+pub trait CanOpenStorage: Send + Sync {
+    fn open_storage(&self) -> Result<Box<dyn AsRef<Storage>>, OpenStorageError>;
+}
+
 pub fn with_local_transport<F, G, A>(
     open_storage: F,
     repo: &git2::Repository,
@@ -83,10 +91,7 @@ pub fn with_local_transport<F, G, A>(
     g: G,
 ) -> Result<A, Error>
 where
-    F: Fn() -> Result<Storage<BoxedSigner>, Box<dyn std::error::Error + Send + Sync + 'static>>
-        + Send
-        + Sync
-        + 'static,
+    F: CanOpenStorage + 'static,
     G: FnOnce(&mut git2::Remote) -> A,
 {
     let (url, results) = internal::activate(open_storage, url.as_ref().clone());
@@ -117,7 +122,7 @@ where
 #[must_use = "`wait` must be called"]
 pub struct Connected {
     process: Child,
-    on_success: Option<Box<dyn FnOnce() -> Result<(), Error> + Send + UnwindSafe + 'static>>,
+    on_success: Option<Box<dyn FnOnce() -> Result<(), Error> + Send + 'static>>,
 }
 
 impl Connected {
@@ -168,6 +173,13 @@ pub struct Settings {
     pub signer: BoxedSigner,
 }
 
+impl CanOpenStorage for Settings {
+    fn open_storage(&self) -> Result<Box<dyn AsRef<Storage>>, OpenStorageError> {
+        let storage = Storage::open(&self.paths, self.signer.clone())?;
+        Ok(Box::new(storage))
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Mode {
     Stateless,
@@ -176,17 +188,24 @@ pub enum Mode {
 
 #[derive(Clone)]
 pub struct LocalTransport {
-    storage: Arc<Mutex<Storage<BoxedSigner>>>,
+    storage: Arc<Box<dyn CanOpenStorage>>,
+}
+
+impl From<Arc<Box<dyn CanOpenStorage>>> for LocalTransport {
+    fn from(storage: Arc<Box<dyn CanOpenStorage>>) -> Self {
+        Self { storage }
+    }
+}
+
+impl From<Box<dyn CanOpenStorage>> for LocalTransport {
+    fn from(storage: Box<dyn CanOpenStorage>) -> Self {
+        Self {
+            storage: Arc::new(storage),
+        }
+    }
 }
 
 impl LocalTransport {
-    pub fn new(settings: Settings) -> Result<Self, Error> {
-        let storage = Storage::open(&settings.paths, settings.signer)?;
-        Ok(LocalTransport {
-            storage: Arc::new(Mutex::new(storage)),
-        })
-    }
-
     #[tracing::instrument(level = "debug", skip(self, service, stdio), err)]
     pub fn connect(
         &mut self,
@@ -195,12 +214,15 @@ impl LocalTransport {
         mode: Mode,
         stdio: Localio,
     ) -> Result<Connected, Error> {
+        let _storage_box = self.storage.open_storage()?;
+        let storage = _storage_box.as_ref();
+
         let urn = url.into();
-        self.guard_has_urn(&urn)?;
+        guard_has_urn(storage, &urn)?;
 
         let mut git = Command::new("git");
         git.envs(::std::env::vars().filter(|(key, _)| key.starts_with("GIT_TRACE")))
-            .current_dir(self.repo_path())
+            .current_dir((*storage).as_ref().path())
             .args(&[
                 &format!("--namespace={}", Namespace::from(&urn)),
                 "-c",
@@ -214,7 +236,7 @@ impl LocalTransport {
         match service {
             Service::UploadPack | Service::UploadPackLs => {
                 // Fetching remotes is ok, pushing is not
-                self.visible_remotes(&urn)?.for_each(|remote_ref| {
+                visible_remotes(storage, &urn)?.for_each(|remote_ref| {
                     git.arg("-c")
                         .arg(format!("uploadpack.hiderefs=!^{}", remote_ref));
                 });
@@ -246,76 +268,72 @@ impl LocalTransport {
             .stderr(Stdio::inherit())
             .spawn()?;
 
-        let on_success: Option<
-            Box<dyn FnOnce() -> Result<(), Error> + Send + UnwindSafe + 'static>,
-        > = match service {
-            Service::ReceivePack => {
-                let storage = self.storage.clone();
-                let hook = move || {
-                    let storage = storage.lock().unwrap();
+        let on_success: Option<Box<dyn FnOnce() -> Result<(), Error> + Send + 'static>> =
+            match service {
+                Service::ReceivePack => {
+                    let storage = Arc::clone(&self.storage);
+                    let hook = move || {
+                        let _box = storage.open_storage()?;
+                        let _dyn = _box.as_ref();
+                        let storage = _dyn.as_ref();
 
-                    // Update `rad/signed_refs`
-                    Refs::update(&storage, &urn)?;
+                        // Update `rad/signed_refs`
+                        Refs::update(storage, &urn)?;
 
-                    // Ensure we have a `rad/self`
-                    let local_id = identities::local::load(&storage, urn.clone())
-                        .transpose()
-                        .or_else(|| identities::local::default(&storage).transpose())
-                        .transpose()?;
-                    match local_id {
-                        None => Err(Error::NoLocalIdentity),
-                        Some(local_id) => Ok(local_id.link(&storage, &urn)?),
-                    }
-                };
+                        // Ensure we have a `rad/self`
+                        let local_id = identities::local::load(storage, urn.clone())
+                            .transpose()
+                            .or_else(|| identities::local::default(storage).transpose())
+                            .transpose()?;
+                        match local_id {
+                            None => Err(Error::NoLocalIdentity),
+                            Some(local_id) => Ok(local_id.link(storage, &urn)?),
+                        }
+                    };
 
-                Some(Box::new(hook))
-            },
+                    Some(Box::new(hook))
+                },
 
-            _ => None,
-        };
+                _ => None,
+            };
 
         Ok(Connected {
             process: child,
             on_success,
         })
     }
+}
 
-    fn guard_has_urn(&self, urn: &Urn) -> Result<(), Error> {
-        let have = self
-            .storage
-            .lock()
-            .unwrap()
-            .has_urn(urn)
-            .map_err(Error::from)?;
-        if !have {
-            Err(Error::NoSuchUrn(urn.clone()))
-        } else {
-            Ok(())
-        }
+fn guard_has_urn<S>(storage: S, urn: &Urn) -> Result<(), Error>
+where
+    S: AsRef<Storage>,
+{
+    let have = storage.as_ref().has_urn(urn).map_err(Error::from)?;
+    if !have {
+        Err(Error::NoSuchUrn(urn.clone()))
+    } else {
+        Ok(())
     }
+}
 
-    fn visible_remotes(&self, urn: &Urn) -> Result<impl Iterator<Item = ext::RefLike>, Error> {
-        let remotes = self
-            .storage
-            .lock()
-            .unwrap()
-            .references_glob(visible_remotes_glob(urn))?
-            .filter_map(move |res| {
-                res.map(|reference| {
-                    reference
-                        .name()
-                        .and_then(|name| ext::RefLike::try_from(name).ok())
-                })
-                .transpose()
+fn visible_remotes<S>(storage: S, urn: &Urn) -> Result<impl Iterator<Item = ext::RefLike>, Error>
+where
+    S: AsRef<Storage>,
+{
+    let remotes = storage
+        .as_ref()
+        .references_glob(visible_remotes_glob(urn))?
+        .filter_map(move |res| {
+            res.map(|reference| {
+                reference
+                    .name()
+                    .and_then(|name| ext::RefLike::try_from(name).ok())
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .transpose()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(remotes.into_iter())
-    }
-
-    fn repo_path(&self) -> PathBuf {
-        self.storage.lock().unwrap().path().to_path_buf()
-    }
+    Ok(remotes.into_iter())
 }
 
 fn visible_remotes_glob(urn: &Urn) -> impl glob::Pattern + Debug {
@@ -327,49 +345,6 @@ fn visible_remotes_glob(urn: &Urn) -> impl glob::Pattern + Debug {
     ))
     .unwrap()
     .compile_matcher()
-}
-
-impl From<Storage<BoxedSigner>> for LocalTransport {
-    fn from(storage: Storage<BoxedSigner>) -> Self {
-        Self {
-            storage: Arc::new(Mutex::new(storage)),
-        }
-    }
-}
-
-pub struct LocalStream {
-    read: LocalRead,
-    write: ChildStdin,
-}
-
-impl Read for LocalStream {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.read.read(buf)
-    }
-}
-
-impl Write for LocalStream {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.write.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.write.flush()
-    }
-}
-
-pub struct LocalRead {
-    header: Option<Vec<u8>>,
-    inner: ChildStdout,
-}
-
-impl Read for LocalRead {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self.header.take() {
-            None => self.inner.read(buf),
-            Some(hdr) => Cursor::new(hdr).read(buf),
-        }
-    }
 }
 
 #[cfg(test)]

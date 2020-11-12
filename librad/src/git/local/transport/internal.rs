@@ -16,7 +16,9 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    io::{self, Cursor, Read, Write},
     panic,
+    process::{ChildStdin, ChildStdout},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -32,15 +34,11 @@ use git_ext::{into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 
-use super::super::{super::storage::Storage, url::LocalUrl};
-use crate::signer::BoxedSigner;
+use super::{super::url::LocalUrl, CanOpenStorage};
 
 pub(super) fn activate<F>(open_storage: F, url: LocalUrl) -> (LocalUrl, Arc<Results>)
 where
-    F: Fn() -> Result<Storage<BoxedSigner>, Box<dyn std::error::Error + Send + Sync + 'static>>
-        + Send
-        + Sync
-        + 'static,
+    F: CanOpenStorage + 'static,
 {
     let act = Active::new(open_storage);
     let res = Arc::clone(&act.results);
@@ -53,26 +51,19 @@ where
     (url, res)
 }
 
+#[derive(Clone)]
 struct Active {
-    storage: Box<
-        dyn Fn() -> Result<Storage<BoxedSigner>, Box<dyn std::error::Error + Send + Sync + 'static>>
-            + Send
-            + Sync
-            + 'static,
-    >,
+    storage: Arc<Box<dyn CanOpenStorage>>,
     results: Arc<Results>,
 }
 
 impl Active {
     pub(super) fn new<F>(open_storage: F) -> Self
     where
-        F: Fn() -> Result<Storage<BoxedSigner>, Box<dyn std::error::Error + Send + Sync + 'static>>
-            + Send
-            + Sync
-            + 'static,
+        F: CanOpenStorage + 'static,
     {
         Self {
-            storage: Box::new(open_storage),
+            storage: Arc::new(Box::new(open_storage)),
             results: Arc::new(Results::new()),
         }
     }
@@ -99,12 +90,9 @@ impl Results {
     ) -> Option<Vec<thread::Result<Result<(), super::Error>>>> {
         let mut guard = self.results.lock().unwrap();
         loop {
-            if guard.len() > 0 {
-                if self.expected.load(Ordering::SeqCst) > guard.len() {
-                    continue;
-                } else {
-                    return Some(guard.drain(0..).collect());
-                }
+            let expected = self.expected.load(Ordering::SeqCst);
+            if guard.len() >= expected {
+                return Some(guard.drain(0..).collect());
             } else {
                 let res = self.cvar.wait_timeout(guard, timeout).unwrap();
                 if res.1.timed_out() {
@@ -184,14 +172,11 @@ impl Factory {
         idx
     }
 
-    fn get(&self, idx: usize) -> Result<(Storage<BoxedSigner>, Arc<Results>), FactoryError> {
+    fn get(&self, idx: usize) -> Result<Active, FactoryError> {
         let actives = self.active.lock().unwrap();
         match actives.get(&idx) {
             None => Err(FactoryError::NoSuchActive),
-            Some(active) => {
-                let storage = (active.storage)()?;
-                Ok((storage, active.results.clone()))
-            },
+            Some(act) => Ok(act.clone()),
         }
     }
 }
@@ -229,7 +214,7 @@ impl git2::transport::SmartSubtransport for Factory {
             )
         })?;
 
-        let (storage, results) = self.get(idx)?;
+        let Active { storage, results } = self.get(idx)?;
         let mut transport = super::LocalTransport::from(storage);
         let mut child = transport
             .connect(
@@ -245,8 +230,8 @@ impl git2::transport::SmartSubtransport for Factory {
 
         results.expect();
         thread::spawn(move || {
-            let res = panic::catch_unwind(move || child.wait());
-            results.done(res)
+            let res = child.wait();
+            results.done(Ok(res))
         });
 
         let header = match service {
@@ -255,8 +240,8 @@ impl git2::transport::SmartSubtransport for Factory {
             _ => None,
         };
 
-        Ok(Box::new(super::LocalStream {
-            read: super::LocalRead {
+        Ok(Box::new(LocalStream {
+            read: LocalRead {
                 header,
                 inner: stdout,
             },
@@ -266,5 +251,40 @@ impl git2::transport::SmartSubtransport for Factory {
 
     fn close(&self) -> Result<(), git2::Error> {
         Ok(())
+    }
+}
+
+struct LocalStream {
+    read: LocalRead,
+    write: ChildStdin,
+}
+
+impl Read for LocalStream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.read.read(buf)
+    }
+}
+
+impl Write for LocalStream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.write.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.write.flush()
+    }
+}
+
+struct LocalRead {
+    header: Option<Vec<u8>>,
+    inner: ChildStdout,
+}
+
+impl Read for LocalRead {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.header.take() {
+            None => self.inner.read(buf),
+            Some(hdr) => Cursor::new(hdr).read(buf),
+        }
     }
 }

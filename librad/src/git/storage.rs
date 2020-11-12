@@ -29,7 +29,12 @@ use super::types::{
     One,
     Reference,
 };
-use crate::{identities::git::Identities, paths::Paths, peer::PeerId, signer::Signer};
+use crate::{
+    identities::git::Identities,
+    paths::Paths,
+    peer::PeerId,
+    signer::{BoxedSigner, Signer, SomeSigner},
+};
 
 pub mod config;
 pub mod glob;
@@ -62,17 +67,18 @@ pub enum Error {
 }
 
 /// Low-level operations on the link "monorepo".
-pub struct Storage<S> {
+pub struct Storage {
     backend: git2::Repository,
     peer_id: PeerId,
-    signer: S,
+    signer: BoxedSigner,
 }
 
-impl<S> Storage<S>
-where
-    S: Signer,
-{
-    pub fn open(paths: &Paths, signer: S) -> Result<Self, Error> {
+impl Storage {
+    pub fn open<S>(paths: &Paths, signer: S) -> Result<Self, Error>
+    where
+        S: Signer + Clone,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
         let backend = git2::Repository::open_bare(paths.git_dir())?;
         let peer_id = Config::try_from(&backend)?.peer_id()?;
 
@@ -83,11 +89,15 @@ where
         Ok(Self {
             backend,
             peer_id,
-            signer,
+            signer: BoxedSigner::from(SomeSigner { signer }),
         })
     }
 
-    pub fn init(paths: &Paths, signer: S) -> Result<Self, Error> {
+    pub fn init<S>(paths: &Paths, signer: S) -> Result<Self, Error>
+    where
+        S: Signer + Clone,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
         let mut backend = git2::Repository::init_opts(
             paths.git_dir(),
             git2::RepositoryInitOptions::new()
@@ -101,13 +111,14 @@ where
         Ok(Self {
             backend,
             peer_id,
-            signer,
+            signer: BoxedSigner::from(SomeSigner { signer }),
         })
     }
 
-    pub fn open_or_init(paths: &Paths, signer: S) -> Result<Self, Error>
+    pub fn open_or_init<S>(paths: &Paths, signer: S) -> Result<Self, Error>
     where
-        S: Clone,
+        S: Signer + Clone,
+        S::Error: std::error::Error + Send + Sync + 'static,
     {
         let peer_id = PeerId::from_signer(&signer);
         match Self::open(paths, signer.clone()) {
@@ -298,11 +309,11 @@ where
         .or_matches(|e| matches!(e, blob::Error::NotFound(_)), || Ok(None))
     }
 
-    pub fn config(&self) -> Result<Config<S>, Error> {
+    pub fn config(&self) -> Result<Config<BoxedSigner>, Error> {
         Ok(Config::try_from(self)?)
     }
 
-    pub(super) fn signer(&self) -> &S {
+    pub(super) fn signer(&self) -> &BoxedSigner {
         &self.signer
     }
 
@@ -315,6 +326,12 @@ where
     // model "capabilities" in terms of traits.
     pub(super) fn as_raw(&self) -> &git2::Repository {
         &self.backend
+    }
+}
+
+impl AsRef<Storage> for Storage {
+    fn as_ref(&self) -> &Self {
+        self
     }
 }
 

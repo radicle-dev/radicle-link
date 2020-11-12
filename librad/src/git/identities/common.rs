@@ -22,7 +22,7 @@ use super::super::{
     storage::Storage,
     types::{namespace::Namespace, Force, NamespacedRef},
 };
-use crate::{identities::git::Urn, signer::Signer};
+use crate::identities::git::Urn;
 
 /// Ad-hoc helper type for conveniently managing `rad/id` refs
 pub struct IdRef<'a>(&'a Urn);
@@ -34,14 +34,11 @@ impl<'a> From<&'a Urn> for IdRef<'a> {
 }
 
 impl<'a> IdRef<'a> {
-    pub fn create<S>(
+    pub fn create(
         &self,
-        storage: &Storage<S>,
+        storage: &Storage,
         target: impl AsRef<git2::Oid>,
-    ) -> Result<(), git2::Error>
-    where
-        S: Signer,
-    {
+    ) -> Result<(), git2::Error> {
         NamespacedRef::rad_id(Namespace::from(self.0))
             .create(
                 storage.as_raw(),
@@ -53,15 +50,12 @@ impl<'a> IdRef<'a> {
             .or_matches(is_exists_err, || Ok(()))
     }
 
-    pub fn update<S: Signer>(
+    pub fn update(
         &self,
-        storage: &Storage<S>,
+        storage: &Storage,
         target: impl AsRef<git2::Oid>,
         msg: &str,
-    ) -> Result<(), git2::Error>
-    where
-        S: Signer,
-    {
+    ) -> Result<(), git2::Error> {
         NamespacedRef::rad_id(Namespace::from(self.0))
             .create(storage.as_raw(), *target.as_ref(), Force::True, msg)
             .and(Ok(()))

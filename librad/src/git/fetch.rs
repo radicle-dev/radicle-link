@@ -40,7 +40,6 @@ use crate::{
         urn::{HasProtocol, Urn},
     },
     peer::PeerId,
-    signer::Signer,
 };
 
 /// Seed value to compute the fetchspecs for the desired fetch phase from.
@@ -302,10 +301,7 @@ pub trait CanFetch {
         Addrs: IntoIterator<Item = SocketAddr>;
 }
 
-impl<S> CanFetch for Storage<S>
-where
-    S: Signer,
-{
+impl CanFetch for Storage {
     type Error = storage::Error;
     type Fetcher<'a> = DefaultFetcher<'a>;
 
@@ -349,14 +345,13 @@ pub struct DefaultFetcher<'a> {
 
 impl<'a> DefaultFetcher<'a> {
     #[tracing::instrument(skip(storage, addr_hints), err)]
-    pub fn new<S, Addrs>(
-        storage: &'a Storage<S>,
+    pub fn new<Addrs>(
+        storage: &'a Storage,
         urn: git::Urn,
         remote_peer: PeerId,
         addr_hints: Addrs,
     ) -> Result<Self, git2::Error>
     where
-        S: Signer,
         Addrs: IntoIterator<Item = SocketAddr>,
     {
         let mut remote = storage.as_raw().remote_anonymous(
