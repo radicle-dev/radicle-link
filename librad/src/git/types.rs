@@ -30,7 +30,9 @@ pub mod namespace;
 pub mod reference;
 pub mod remote;
 
+pub use namespace::{AsNamespace, Namespace};
 pub use reference::{AsRemote, Many, Multiple, One, Reference, RefsCategory, Single};
+pub use remote::Remote;
 
 /// A representation of git reference that is either under:
 ///   * `refs/heads`

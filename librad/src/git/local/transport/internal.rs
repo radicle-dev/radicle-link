@@ -21,13 +21,12 @@ use std::{
     process::{ChildStdin, ChildStdout},
     sync::{
         atomic::{AtomicUsize, Ordering},
+        mpsc,
         Arc,
-        Condvar,
         Mutex,
         Once,
     },
     thread,
-    time::Duration,
 };
 
 use git_ext::{into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
@@ -36,82 +35,38 @@ use thiserror::Error;
 
 use super::{super::url::LocalUrl, CanOpenStorage};
 
-pub(super) fn activate<F>(open_storage: F, url: LocalUrl) -> (LocalUrl, Arc<Results>)
+pub(super) fn with<F, G, A>(open_storage: F, url: LocalUrl, g: G) -> Result<A, super::Error>
 where
     F: CanOpenStorage + 'static,
+    G: FnOnce(LocalUrl) -> A,
 {
-    let act = Active::new(open_storage);
-    let res = Arc::clone(&act.results);
-    let idx = Factory::new().add(act);
+    let (tx, rx) = mpsc::channel();
+    let act = Active {
+        storage: Arc::new(Box::new(open_storage)),
+        results: tx,
+    };
+    let fct = Factory::new();
+    let idx = fct.add(act);
     let url = LocalUrl {
         active_index: Some(idx),
         ..url
     };
 
-    (url, res)
+    // while `g` is running, references to `tx` maybe be obtained
+    let ret = g(url);
+    // after we're done, remove the last reference to `tx`
+    fct.remove(idx);
+    // now we can drain `rx`, as there can't be a sender anymore
+    match rx.iter().filter_map(|res| res.err()).next() {
+        Some(e) => Err(e),
+        None => Ok(ret),
+    }
 }
 
 #[derive(Clone)]
 struct Active {
     storage: Arc<Box<dyn CanOpenStorage>>,
-    results: Arc<Results>,
-}
-
-impl Active {
-    pub(super) fn new<F>(open_storage: F) -> Self
-    where
-        F: CanOpenStorage + 'static,
-    {
-        Self {
-            storage: Arc::new(Box::new(open_storage)),
-            results: Arc::new(Results::new()),
-        }
-    }
-}
-
-pub(super) struct Results {
-    expected: AtomicUsize,
-    results: Mutex<Vec<thread::Result<Result<(), super::Error>>>>,
-    cvar: Condvar,
-}
-
-impl Results {
-    fn new() -> Self {
-        Self {
-            expected: AtomicUsize::new(0),
-            results: Mutex::new(Vec::new()),
-            cvar: Condvar::new(),
-        }
-    }
-
-    pub(super) fn wait(
-        &self,
-        timeout: Duration,
-    ) -> Option<Vec<thread::Result<Result<(), super::Error>>>> {
-        let mut guard = self.results.lock().unwrap();
-        loop {
-            let expected = self.expected.load(Ordering::SeqCst);
-            if guard.len() >= expected {
-                return Some(guard.drain(0..).collect());
-            } else {
-                let res = self.cvar.wait_timeout(guard, timeout).unwrap();
-                if res.1.timed_out() {
-                    return None;
-                } else {
-                    guard = res.0;
-                }
-            }
-        }
-    }
-
-    fn expect(&self) {
-        self.expected.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn done(&self, res: thread::Result<Result<(), super::Error>>) {
-        self.results.lock().unwrap().push(res);
-        self.cvar.notify_all();
-    }
+    results: mpsc::Sender<Result<(), super::Error>>,
 }
 
 #[derive(Debug, Error)]
@@ -172,6 +127,10 @@ impl Factory {
         idx
     }
 
+    fn remove(&self, idx: usize) -> Option<Active> {
+        self.active.lock().unwrap().remove(&idx)
+    }
+
     fn get(&self, idx: usize) -> Result<Active, FactoryError> {
         let actives = self.active.lock().unwrap();
         match actives.get(&idx) {
@@ -228,11 +187,7 @@ impl git2::transport::SmartSubtransport for Factory {
         let stdin = child.process.stdin.take().unwrap();
         let stdout = child.process.stdout.take().unwrap();
 
-        results.expect();
-        thread::spawn(move || {
-            let res = child.wait();
-            results.done(Ok(res))
-        });
+        thread::spawn(move || results.send(child.wait()).ok());
 
         let header = match service {
             git2::transport::Service::UploadPackLs => Some(UPLOAD_PACK_HEADER.to_vec()),

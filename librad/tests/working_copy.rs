@@ -48,7 +48,7 @@ use librad::{
 };
 
 use librad_test::{
-    git::{create_commit, fetch, push},
+    git::create_commit,
     logging,
     rad::{
         identities::{create_test_project, TestProject},
@@ -141,7 +141,7 @@ where
     P: AsRef<Path> + Debug,
 {
     let repo = git2::Repository::init(repo_path)?;
-    let url = LocalUrl::from_urn(project.urn(), peer.peer_id());
+    let url = LocalUrl::from(project.urn());
 
     let heads = NamespacedRef::heads(Namespace::from(project.urn()), peer.peer_id());
     let remotes = FlatRef::heads(
@@ -154,28 +154,29 @@ where
         .unwrap(),
     );
     let fetchspec = remotes.refspec(heads, Force::True);
+
+    let master = reflike!("refs/heads/master");
+
     let mut remote = Remote::rad_remote(url, fetchspec.boxed());
     remote.add_pushes(Some(
         Refspec {
-            local: reflike!("refs/heads/master"),
-            remote: reflike!("refs/heads/master"),
+            local: master.clone(),
+            remote: master.clone(),
             force: Force::False,
         }
         .boxed(),
     ));
 
-    let oid = create_commit(&repo, reflike!("refs/heads/master"))?;
-    let updated_refs = push(peer.clone(), &repo, remote)?;
+    let oid = create_commit(&repo, master.clone())?;
+    remote.push(peer.clone(), &repo)?.for_each(drop);
 
-    for (path, rev) in updated_refs {
-        peer.protocol()
-            .announce(Gossip {
-                origin: None,
-                urn: project.urn().with_path(path),
-                rev: Some(Rev::Git(rev)),
-            })
-            .await
-    }
+    peer.protocol()
+        .announce(Gossip {
+            origin: None,
+            urn: project.urn().with_path(master),
+            rev: Some(Rev::Git(oid)),
+        })
+        .await;
 
     Ok(oid)
 }
@@ -197,7 +198,7 @@ where
 
     let inc = include::Include::from_tracked_users(
         inc_path,
-        LocalUrl::from_urn(project.urn(), peer.peer_id()),
+        LocalUrl::from(project.urn()),
         tracked_users,
     )?;
     let inc_path = inc.file_path();
@@ -208,9 +209,9 @@ where
 
     // Fetch from the working copy and check we have the commit in the working copy
     for remote in repo.remotes()?.iter().filter_map(identity) {
-        let remote =
+        let mut remote =
             Remote::find(&repo, remote)?.expect("should exist, because libgit told us about it");
-        fetch(peer.clone(), &repo, remote)?;
+        remote.fetch(peer.clone(), &repo)?.for_each(drop);
     }
 
     Ok(repo)

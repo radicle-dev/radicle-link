@@ -39,7 +39,7 @@ use librad::{
 };
 
 use librad_test::{
-    git::{create_commit, push},
+    git::create_commit,
     logging,
     rad::{
         identities::{create_test_project, TestProject},
@@ -176,11 +176,12 @@ async fn fetches_on_gossip_notify() {
 
         let peer2_events = peer2.subscribe().await;
 
+        let mastor = reflike!("refs/heads/master");
         // Check out a working copy on peer1, add a commit, and push it
         let commit_id = {
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
-            let url = LocalUrl::from_urn(project.urn(), peer1.peer_id());
+            let url = LocalUrl::from(project.urn());
             let heads = NamespacedRef::heads(Namespace::from(project.urn()), peer1.peer_id());
             let remotes = FlatRef::heads(
                 PhantomData,
@@ -191,7 +192,6 @@ async fn fetches_on_gossip_notify() {
                 ))
                 .unwrap(),
             );
-            let mastor = reflike!("refs/heads/master");
             let mut remote = Remote::rad_remote(url, remotes.refspec(heads, Force::True).boxed());
             remote.add_pushes(Some(
                 Refspec {
@@ -202,22 +202,18 @@ async fn fetches_on_gossip_notify() {
                 .boxed(),
             ));
 
-            let oid = create_commit(&repo, mastor).unwrap();
-            let updated_refs = push(peer1.clone(), &repo, remote).unwrap();
-            tracing::debug!("updated refs: {:?}", updated_refs);
+            let oid = create_commit(&repo, mastor.clone()).unwrap();
+            remote.push(peer1.clone(), &repo).unwrap().for_each(drop);
+            peer1
+                .protocol()
+                .announce(Gossip {
+                    origin: None,
+                    urn: project.urn().with_path(mastor.clone()),
+                    rev: Some(Rev::Git(oid)),
+                })
+                .await;
 
-            for (path, rev) in updated_refs {
-                peer1
-                    .protocol()
-                    .announce(Gossip {
-                        origin: None,
-                        urn: project.urn().with_path(path),
-                        rev: Some(Rev::Git(rev)),
-                    })
-                    .await
-            }
-
-            ext::Oid::from(oid)
+            oid
         };
 
         // Wait for peer2 to receive the gossip announcement
@@ -245,9 +241,9 @@ async fn fetches_on_gossip_notify() {
                     &project.urn().with_path(
                         reflike!("refs/remotes")
                             .join(peer1.peer_id())
-                            .join(reflike!("heads/master")),
+                            .join(mastor.strip_prefix("refs").unwrap()),
                     ),
-                    commit_id,
+                    Box::new(commit_id),
                 )
             })
             .await
@@ -404,10 +400,10 @@ async fn menage_a_troi() {
             .unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
-        {
+        let commit_id = {
             // Perform commit and push to working copy on peer1
             let repo = git2::Repository::init(tmp.path().join("peer1")).unwrap();
-            let url = LocalUrl::from_urn(project.urn(), peer1.peer_id());
+            let url = LocalUrl::from(project.urn());
             let heads = NamespacedRef::heads(Namespace::from(project.urn()), Some(peer1.peer_id()));
             let remotes = FlatRef::heads(
                 PhantomData,
@@ -430,24 +426,31 @@ async fn menage_a_troi() {
                 .boxed(),
             ));
 
-            create_commit(&repo, mastor).unwrap();
-            push(peer1.clone(), &repo, remote).unwrap();
+            let oid = create_commit(&repo, mastor).unwrap();
+            let updated = remote
+                .push(peer1.clone(), &repo)
+                .unwrap()
+                .collect::<Vec<_>>();
+            tracing::debug!("push updated refs: {:?}", updated);
+
+            oid
         };
 
-        let head = NamespacedRef::head(
-            Namespace::from(project.urn()),
-            peer1.peer_id(),
-            default_branch,
+        let expected_urn = project.urn().with_path(
+            reflike!("refs/remotes")
+                .join(peer1.peer_id())
+                .join(reflike!("heads"))
+                .join(&default_branch),
         );
+
         let peer2_has_ref = peer2
             .with_storage({
-                let head = head.clone();
-                let urn = project.urn();
                 let remote_peer = peer1.peer_id();
+                let urn = expected_urn.clone();
                 let addrs = Some(peer1.listen_addr());
                 move |storage| -> Result<bool, anyhow::Error> {
-                    replication::replicate(&storage, None, urn, remote_peer, addrs)?;
-                    Ok(storage.has_ref(&head)?)
+                    replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
+                    Ok(storage.has_commit(&urn, Box::new(commit_id))?)
                 }
             })
             .await
@@ -455,21 +458,26 @@ async fn menage_a_troi() {
             .unwrap();
         let peer3_has_ref = peer3
             .with_storage({
-                let head = head.clone();
-                let urn = project.urn();
                 let remote_peer = peer2.peer_id();
+                let urn = expected_urn.clone();
                 let addrs = Some(peer2.listen_addr());
                 move |storage| -> Result<bool, anyhow::Error> {
-                    replication::replicate(&storage, None, urn, remote_peer, addrs)?;
-                    Ok(storage.has_ref(&head)?)
+                    replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
+                    Ok(storage.has_commit(&urn, Box::new(commit_id))?)
                 }
             })
             .await
             .unwrap()
             .unwrap();
 
-        assert!(peer2_has_ref, format!("peer 2 missing ref `{}`", head));
-        assert!(peer3_has_ref, format!("peer 3 missing ref `{}`", head));
+        assert!(
+            peer2_has_ref,
+            format!("peer 2 missing commit `{}@{}`", expected_urn, commit_id)
+        );
+        assert!(
+            peer3_has_ref,
+            format!("peer 3 missing commit `{}@{}`", expected_urn, commit_id)
+        );
     })
     .await;
 }

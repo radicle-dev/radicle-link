@@ -21,10 +21,33 @@ use std::{
     str::FromStr,
 };
 
-use git_ext::error::{is_exists_err, is_not_found_err};
+use git_ext::{
+    error::{is_exists_err, is_not_found_err},
+    reference::{self, RefLike},
+};
 use std_ext::result::ResultExt as _;
+use thiserror::Error;
 
-use super::{AsRefspec, Refspec};
+use super::{
+    super::local::{self, transport::with_local_transport, url::LocalUrl},
+    AsRefspec,
+    Refspec,
+};
+
+#[derive(Debug, Error)]
+pub enum FindError {
+    #[error("missing {0}")]
+    Missing(&'static str),
+
+    #[error("failed to parse URL")]
+    ParseUrl(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
+
+    #[error("failed to parse refspec")]
+    Refspec(#[from] reference::name::Error),
+
+    #[error(transparent)]
+    Git(#[from] git2::Error),
+}
 
 pub struct Remote<Url> {
     /// The file path to the git monorepo.
@@ -86,10 +109,8 @@ impl<Url> Remote<Url> {
     ///         },
     ///         Urn,
     ///     },
-    ///     keys::SecretKey,
     /// };
     ///
-    /// let peer_id = SecretKey::new().into();
     /// let urn = Urn::new(git2::Oid::hash_object(git2::ObjectType::Commit, b"geez").unwrap().into());
     ///
     /// // The working copy heads, i.e. `refs/heads/*`.
@@ -105,8 +126,8 @@ impl<Url> Remote<Url> {
     ///         .boxed();
     /// let push = monorepo_heads.refspec(working_copy_heads, Force::False).boxed();
     ///
-    /// // We point the remote to `LocalUrl` which will be of the form `rad://<peer id>@<id>.git`.
-    /// let url = LocalUrl::from_urn(urn, peer_id);
+    /// // We point the remote to `LocalUrl` which will be of the form `rad://<id>.git`.
+    /// let url = LocalUrl::from(urn);
     ///
     /// // Setup the `Remote`.
     /// let mut remote = Remote::rad_remote(url, fetch);
@@ -156,6 +177,7 @@ impl<Url> Remote<Url> {
     /// configuration keys `url`, `fetch`, and `push` will be overwritten.
     /// Note that this means that _other_ configuration keys are left
     /// untouched, if present.
+    #[tracing::instrument(skip(self, repo), fields(name = self.name.as_str()), err)]
     pub fn save(&self, repo: &git2::Repository) -> Result<(), git2::Error>
     where
         Url: ToString,
@@ -194,34 +216,39 @@ impl<Url> Remote<Url> {
     }
 
     /// Find a persisted remote by name.
-    pub fn find<Name>(repo: &git2::Repository, name: Name) -> Result<Option<Self>, git2::Error>
+    #[tracing::instrument(skip(repo, name), fields(name = name.as_ref()), err)]
+    pub fn find<Name>(repo: &git2::Repository, name: Name) -> Result<Option<Self>, FindError>
     where
         Url: FromStr,
-        <Url as FromStr>::Err: Debug,
+        <Url as FromStr>::Err: std::error::Error + Send + Sync + 'static,
 
         Name: AsRef<str> + Into<String>,
     {
         let git_remote = repo
             .find_remote(name.as_ref())
             .map(Some)
-            .or_matches::<git2::Error, _, _>(is_not_found_err, || Ok(None))?;
+            .or_matches::<FindError, _, _>(is_not_found_err, || Ok(None))?;
 
         match git_remote {
             None => Ok(None),
             Some(remote) => {
-                let url = remote.url().unwrap().parse().unwrap();
+                let url = remote
+                    .url()
+                    .ok_or(FindError::Missing("url"))?
+                    .parse()
+                    .map_err(|e| FindError::ParseUrl(Box::new(e)))?;
                 let fetch_specs = remote
                     .fetch_refspecs()?
                     .into_iter()
                     .filter_map(identity)
-                    .filter_map(|spec| Refspec::try_from(spec).ok().map(|spec| spec.boxed()))
-                    .collect();
+                    .map(|spec| Refspec::try_from(spec).map(|spec| spec.boxed()))
+                    .collect::<Result<_, _>>()?;
                 let push_specs = remote
                     .push_refspecs()?
                     .into_iter()
                     .filter_map(identity)
-                    .filter_map(|spec| Refspec::try_from(spec).ok().map(|spec| spec.boxed()))
-                    .collect();
+                    .map(|spec| Refspec::try_from(spec).map(|spec| spec.boxed()))
+                    .collect::<Result<_, _>>()?;
 
                 Ok(Some(Self {
                     url,
@@ -231,6 +258,182 @@ impl<Url> Remote<Url> {
                 }))
             },
         }
+    }
+}
+
+impl Remote<LocalUrl> {
+    #[tracing::instrument(skip(self, repo, open_storage), err)]
+    pub fn remote_heads<F>(
+        &mut self,
+        open_storage: F,
+        repo: &git2::Repository,
+    ) -> Result<impl Iterator<Item = (RefLike, git2::Oid)>, local::transport::Error>
+    where
+        F: local::transport::CanOpenStorage + 'static,
+    {
+        let heads: Result<Vec<(RefLike, git2::Oid)>, local::transport::Error> =
+            with_local_transport(open_storage, self.url.clone(), |url| {
+                let mut git_remote = repo.remote_anonymous(&url.to_string())?;
+                git_remote.connect(git2::Direction::Fetch)?;
+                let heads = git_remote
+                    .list()?
+                    .iter()
+                    .filter_map(|remote_head| {
+                        RefLike::try_from(remote_head.name())
+                            .ok()
+                            .map(|name| (name, remote_head.oid()))
+                    })
+                    .collect::<Vec<_>>();
+                git_remote.disconnect()?;
+
+                Ok(heads)
+            })?;
+
+        Ok(heads?.into_iter())
+    }
+
+    #[tracing::instrument(skip(self, repo, open_storage), err)]
+    pub fn push<F>(
+        &mut self,
+        open_storage: F,
+        repo: &git2::Repository,
+    ) -> Result<impl Iterator<Item = RefLike>, local::transport::Error>
+    where
+        F: local::transport::CanOpenStorage + 'static,
+    {
+        let res = self.with_tmp_copy(repo, |this| this.push_internal(open_storage, repo))???;
+        Ok(res.into_iter())
+    }
+
+    fn push_internal<F>(
+        &self,
+        open_storage: F,
+        repo: &git2::Repository,
+    ) -> Result<Result<Vec<RefLike>, git2::Error>, local::transport::Error>
+    where
+        F: local::transport::CanOpenStorage + 'static,
+    {
+        let res = with_local_transport(open_storage, self.url.clone(), |url| {
+            // set indexed url
+            repo.remote_set_url(&self.name, &url.to_string())?;
+
+            let mut git_remote = repo.find_remote(&self.name)?;
+            tracing::trace!(
+                "pushspecs: {:?}",
+                git_remote.push_refspecs()?.iter().collect::<Vec<_>>()
+            );
+
+            let mut updated_refs = Vec::new();
+            let mut callbacks = git2::RemoteCallbacks::new();
+            callbacks.push_update_reference(|name, e| match e {
+                None => {
+                    tracing::trace!("push updated reference `{}`", name);
+                    let refname = RefLike::try_from(name).map_err(|e| {
+                        git2::Error::new(
+                            git2::ErrorCode::InvalidSpec,
+                            git2::ErrorClass::Net,
+                            &format!("unable to parse reference `{}`: {}", name, e),
+                        )
+                    })?;
+                    updated_refs.push(refname);
+
+                    Ok(())
+                },
+
+                Some(err) => Err(git2::Error::from_str(&format!(
+                    "remote rejected {}: {}",
+                    name, err
+                ))),
+            });
+
+            git_remote.push(
+                &[] as &[&str],
+                Some(git2::PushOptions::new().remote_callbacks(callbacks)),
+            )?;
+
+            Ok(updated_refs)
+        });
+
+        // reset original url
+        repo.remote_set_url(&self.name, &self.url.to_string())?;
+        res
+    }
+
+    #[tracing::instrument(skip(self, repo, open_storage), err)]
+    pub fn fetch<F>(
+        &mut self,
+        open_storage: F,
+        repo: &git2::Repository,
+    ) -> Result<impl Iterator<Item = (RefLike, git2::Oid)>, local::transport::Error>
+    where
+        F: local::transport::CanOpenStorage + 'static,
+    {
+        let res = self.with_tmp_copy(repo, |this| this.fetch_internal(open_storage, repo))???;
+        Ok(res.into_iter())
+    }
+
+    #[tracing::instrument(skip(self, open_storage, repo), err)]
+    fn fetch_internal<F>(
+        &self,
+        open_storage: F,
+        repo: &git2::Repository,
+    ) -> Result<Result<Vec<(RefLike, git2::Oid)>, git2::Error>, local::transport::Error>
+    where
+        F: local::transport::CanOpenStorage + 'static,
+    {
+        let res = with_local_transport(open_storage, self.url.clone(), |url| {
+            // set indexed url
+            repo.remote_set_url(&self.name, &url.to_string()).unwrap();
+
+            let mut git_remote = repo.find_remote(&self.name)?;
+            tracing::trace!(
+                "fetchspecs: {:?}",
+                git_remote.fetch_refspecs()?.iter().collect::<Vec<_>>()
+            );
+
+            let mut updated_refs = Vec::new();
+            let mut callbacks = git2::RemoteCallbacks::new();
+            callbacks.update_tips(|name, _old, new| {
+                tracing::trace!("updated tip `{} -> {}`", name, new);
+                if let Ok(refname) = RefLike::try_from(name) {
+                    updated_refs.push((refname, new))
+                }
+                true
+            });
+
+            git_remote.fetch(
+                &[] as &[&str],
+                Some(
+                    git2::FetchOptions::new()
+                        .prune(git2::FetchPrune::On)
+                        .update_fetchhead(false)
+                        .download_tags(git2::AutotagOption::None)
+                        .remote_callbacks(callbacks),
+                ),
+                None,
+            )?;
+
+            Ok(updated_refs)
+        });
+
+        // reset original url
+        repo.remote_set_url(&self.name, &self.url.to_string())?;
+        res
+    }
+
+    fn with_tmp_copy<F, A>(&mut self, repo: &git2::Repository, f: F) -> Result<A, git2::Error>
+    where
+        F: FnOnce(&mut Self) -> A,
+    {
+        let orig_name = self.name.clone();
+        self.name = format!("__tmp_{}", self.name);
+        tracing::debug!("creating temporary remote {}", self.name);
+        self.save(repo).unwrap();
+        let res = f(self);
+        let deleted = repo.remote_delete(&self.name);
+        self.name = orig_name;
+        deleted?;
+        Ok(res)
     }
 }
 
@@ -289,7 +492,7 @@ mod tests {
             let push = namespaced_heads.refspec(heads, Force::False).boxed();
 
             {
-                let url = LocalUrl::from_urn(URN.clone(), *PEER_ID);
+                let url = LocalUrl::from(URN.clone());
                 let mut remote = Remote::rad_remote(url, fetch);
                 remote.add_pushes(vec![push].into_iter());
                 remote.save(&repo).expect("failed to persist the remote");
@@ -330,7 +533,7 @@ mod tests {
 
     #[test]
     fn check_remote_fetch_spec() -> Result<(), git2::Error> {
-        let url = LocalUrl::from_urn(URN.clone(), *PEER_ID);
+        let url = LocalUrl::from(URN.clone());
         let name = format!("lyla@{}", *PEER_ID);
         let heads: FlatRef<PeerId, _> = FlatRef::heads(PhantomData, *PEER_ID);
         let heads = heads.with_name(refspec_pattern!("heads/*"));

@@ -19,10 +19,8 @@ use std::{
     convert::TryFrom,
     fmt::Debug,
     io,
-    panic,
     process::{Child, Command, ExitStatus, Stdio},
     sync::Arc,
-    time::Duration,
 };
 
 use git2::transport::Service;
@@ -34,7 +32,7 @@ use super::{
         identities,
         refs::{self, Refs},
         storage::{self, glob, Storage},
-        types::namespace::Namespace,
+        types::Namespace,
         Urn,
     },
     url::LocalUrl,
@@ -83,35 +81,12 @@ pub trait CanOpenStorage: Send + Sync {
     fn open_storage(&self) -> Result<Box<dyn AsRef<Storage>>, OpenStorageError>;
 }
 
-pub fn with_local_transport<F, G, A>(
-    open_storage: F,
-    repo: &git2::Repository,
-    url: impl AsRef<LocalUrl>,
-    timeout: Duration,
-    g: G,
-) -> Result<A, Error>
+pub fn with_local_transport<F, G, A>(open_storage: F, url: LocalUrl, g: G) -> Result<A, Error>
 where
     F: CanOpenStorage + 'static,
-    G: FnOnce(&mut git2::Remote) -> A,
+    G: FnOnce(LocalUrl) -> A,
 {
-    let (url, results) = internal::activate(open_storage, url.as_ref().clone());
-    let mut remote = repo.remote_anonymous(&url.to_string())?;
-    let ret = g(&mut remote);
-
-    match results.wait(timeout) {
-        None => panic!("a subprocess failed to terminate"),
-        Some(ress) => {
-            for res in ress {
-                match res {
-                    Err(e) => panic::resume_unwind(e),
-                    Ok(Err(inner)) => return Err(inner),
-                    Ok(Ok(())) => (),
-                }
-            }
-        },
-    }
-
-    Ok(ret)
+    internal::with(open_storage, url, g)
 }
 
 /// A running service (as per the [`Service`] argument) with it's stdio
@@ -214,15 +189,15 @@ impl LocalTransport {
         mode: Mode,
         stdio: Localio,
     ) -> Result<Connected, Error> {
-        let _storage_box = self.storage.open_storage()?;
-        let storage = _storage_box.as_ref();
+        let _box = self.storage.open_storage()?;
+        let storage = _box.as_ref();
 
         let urn = url.into();
         guard_has_urn(storage, &urn)?;
 
         let mut git = Command::new("git");
         git.envs(::std::env::vars().filter(|(key, _)| key.starts_with("GIT_TRACE")))
-            .current_dir((*storage).as_ref().path())
+            .current_dir(storage.as_ref().path())
             .args(&[
                 &format!("--namespace={}", Namespace::from(&urn)),
                 "-c",

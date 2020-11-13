@@ -18,7 +18,7 @@
 use std::{
     convert::TryFrom,
     fmt::Debug,
-    io,
+    io::{self, Write},
     marker::PhantomData,
     path::{self, PathBuf},
 };
@@ -107,31 +107,44 @@ impl<Path> Include<Path> {
     where
         Path: AsRef<path::Path>,
     {
-        let tmp = NamedTempFile::new_in(&self.path)?;
+        let mut tmp = NamedTempFile::new_in(&self.path)?;
         {
-            let mut config = git2::Config::open(tmp.path())?;
+            // **NB**: We can't use `git2::Config::set_multivar`, because
+            // `libgit2` does not realise that we have only one file (it thinks
+            // the file is included). This would limit is to a single fetchspec /
+            // pushspec respectively.
             for remote in &self.remotes {
                 if remote.fetch_specs.is_empty() {
                     return Err(Error::MissingRefspec);
                 }
 
-                {
-                    let key = url_key(remote);
-                    tracing::trace!("{} = {}", key, remote.url);
-                    config.set_str(&key, &remote.url.to_string())?;
+                tracing::debug!("writing remote {}", remote.name);
+                writeln!(tmp, "[remote \"{}\"]", remote.name)?;
+                tracing::debug!("remote.{}.url = {}", remote.name, remote.url);
+                writeln!(tmp, "\turl = {}", remote.url)?;
+
+                let fetch_specs = remote.fetch_specs.iter().map(|spec| spec.as_refspec());
+                for spec in fetch_specs {
+                    tracing::debug!("remote.{}.fetch = {}", remote.name, spec);
+                    writeln!(tmp, "\tfetch = {}", spec)?;
                 }
 
-                {
-                    let key = fetch_key(remote);
-                    let fetch_specs = remote.fetch_specs.iter().map(|spec| spec.as_refspec());
-                    for spec in fetch_specs {
-                        tracing::trace!("{} = {}", key, spec);
-                        config.set_multivar(&key, "^$", &spec)?;
-                    }
+                let push_specs = remote.push_specs.iter().map(|spec| spec.as_refspec());
+                for spec in push_specs {
+                    tracing::debug!("remote.{}.push = {}", remote.name, spec);
+                    writeln!(tmp, "\tpush = {}", spec)?;
                 }
             }
         }
+        tracing::trace!("flushing {}", tmp.path().display());
+        tmp.as_file().sync_data()?;
+        tracing::trace!(
+            "persisting {} to {}",
+            tmp.path().display(),
+            self.file_path().display()
+        );
         tmp.persist(self.file_path())?;
+        tracing::trace!("include file saved");
 
         Ok(())
     }
@@ -191,18 +204,6 @@ pub fn set_include_path(repo: &git2::Repository, include_path: PathBuf) -> Resul
         .map_err(Error::from)
 }
 
-fn remote_prefix(remote: &Remote<LocalUrl>) -> String {
-    format!("remote.{}", remote.name)
-}
-
-fn url_key(remote: &Remote<LocalUrl>) -> String {
-    format!("{}.url", remote_prefix(remote))
-}
-
-fn fetch_key(remote: &Remote<LocalUrl>) -> String {
-    format!("{}.fetch", remote_prefix(remote))
-}
-
 #[cfg(test)]
 mod test {
     use crate::{
@@ -243,7 +244,7 @@ mod test {
     #[test]
     fn can_create_and_update() -> Result<(), Error> {
         let tmp_dir = tempfile::tempdir()?;
-        let url = LocalUrl::from_urn(Urn::new(git2::Oid::zero().into()), *LOCAL_PEER_ID);
+        let url = LocalUrl::from(Urn::new(git2::Oid::zero().into()));
 
         // Start with an empty config to catch corner-cases where git2::Config does not
         // create a file yet.
