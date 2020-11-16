@@ -184,7 +184,7 @@ impl<Path> Include<Path> {
         let name = ext::RefLike::try_from(format!("{}@{}", handle, peer))
             .expect("handle and peer are reflike");
         Remote::new(url, name).with_fetch_specs(vec![Refspec {
-            src: Reference::heads(None, peer),
+            src: Reference::heads(Flat, peer),
             dst: GenericRef::heads(Flat, handle),
             force: Force::True,
         }])
