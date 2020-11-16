@@ -38,7 +38,7 @@ use librad::{
         replication,
         tracking,
         types::{
-            remote::{LocalFetchSpec, LocalPushSpec},
+            remote::{LocalFetchspec, LocalPushspec},
             Flat,
             Force,
             GenericRef,
@@ -168,7 +168,7 @@ where
         ),
         force: Force::True,
     }
-    .into_fetch_spec();
+    .into_fetchspec();
 
     let master = reflike!("refs/heads/master");
 
@@ -178,7 +178,7 @@ where
         .push(
             peer.clone(),
             &repo,
-            LocalPushSpec::Matching {
+            LocalPushspec::Matching {
                 pattern: refspec_pattern!("refs/heads/*"),
                 force: Force::True,
             },
@@ -232,7 +232,7 @@ where
         let mut remote = Remote::find(&repo, ext::RefLike::try_from(remote).unwrap())?
             .expect("should exist, because libgit told us about it");
         remote
-            .fetch(peer.clone(), &repo, LocalFetchSpec::Configured)?
+            .fetch(peer.clone(), &repo, LocalFetchspec::Configured)?
             .for_each(drop);
     }
 

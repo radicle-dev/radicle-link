@@ -30,9 +30,9 @@ use thiserror::Error;
 
 use super::{
     super::local::{self, transport::with_local_transport, url::LocalUrl},
-    FetchSpec,
+    Fetchspec,
     Force,
-    PushSpec,
+    Pushspec,
     Refspec,
 };
 
@@ -61,9 +61,9 @@ pub struct Remote<Url> {
     ///
     /// **Note**: empty fetch specs do not denote the default fetch spec
     /// (`refs/heads/*:refs/remote/<name>/*`), but ... empty fetch specs.
-    pub fetch_specs: Vec<FetchSpec>,
+    pub fetchspecs: Vec<Fetchspec>,
     /// The set of push specs to add upon creation.
-    pub push_specs: Vec<PushSpec>,
+    pub pushspecs: Vec<Pushspec>,
 }
 
 impl<Url> Remote<Url> {
@@ -71,18 +71,18 @@ impl<Url> Remote<Url> {
     pub fn rad_remote<Ref, Spec>(url: Url, fetch_spec: Ref) -> Self
     where
         Ref: Into<Option<Spec>>,
-        Spec: Into<FetchSpec>,
+        Spec: Into<Fetchspec>,
     {
         Self {
             url,
             name: reflike!("rad"),
-            fetch_specs: fetch_spec.into().into_iter().map(Into::into).collect(),
-            push_specs: vec![],
+            fetchspecs: fetch_spec.into().into_iter().map(Into::into).collect(),
+            pushspecs: vec![],
         }
     }
 
     /// Create a new `Remote` with the given `url` and `name`, while making the
-    /// `fetch_spec` and `push_specs` empty.
+    /// `fetch_spec` and `pushspecs` empty.
     pub fn new<R>(url: Url, name: R) -> Self
     where
         R: Into<RefLike>,
@@ -90,43 +90,43 @@ impl<Url> Remote<Url> {
         Self {
             url,
             name: name.into(),
-            fetch_specs: vec![],
-            push_specs: vec![],
+            fetchspecs: vec![],
+            pushspecs: vec![],
         }
     }
 
     /// Override the fetch specs.
-    pub fn with_fetch_specs<I>(self, specs: I) -> Self
+    pub fn with_fetchspecs<I>(self, specs: I) -> Self
     where
         I: IntoIterator,
-        <I as IntoIterator>::Item: Into<FetchSpec>,
+        <I as IntoIterator>::Item: Into<Fetchspec>,
     {
         Self {
-            fetch_specs: specs.into_iter().map(Into::into).collect(),
+            fetchspecs: specs.into_iter().map(Into::into).collect(),
             ..self
         }
     }
 
     /// Add a fetch spec.
-    pub fn add_fetch_spec(&mut self, spec: impl Into<FetchSpec>) {
-        self.fetch_specs.push(spec.into())
+    pub fn add_fetchspec(&mut self, spec: impl Into<Fetchspec>) {
+        self.fetchspecs.push(spec.into())
     }
 
     /// Override the push specs.
-    pub fn with_push_specs<I>(self, specs: I) -> Self
+    pub fn with_pushspecs<I>(self, specs: I) -> Self
     where
         I: IntoIterator,
-        <I as IntoIterator>::Item: Into<PushSpec>,
+        <I as IntoIterator>::Item: Into<Pushspec>,
     {
         Self {
-            push_specs: specs.into_iter().map(Into::into).collect(),
+            pushspecs: specs.into_iter().map(Into::into).collect(),
             ..self
         }
     }
 
     /// Add a push spec.
-    pub fn add_push_spec(&mut self, spec: impl Into<PushSpec>) {
-        self.push_specs.push(spec.into())
+    pub fn add_pushspec(&mut self, spec: impl Into<Pushspec>) {
+        self.pushspecs.push(spec.into())
     }
 
     /// Persist the remote in the `repo`'s config.
@@ -161,10 +161,10 @@ impl<Url> Remote<Url> {
 
         repo.remote_set_url(self.name.as_str(), &url)?;
 
-        for spec in self.fetch_specs.iter() {
+        for spec in self.fetchspecs.iter() {
             repo.remote_add_fetch(self.name.as_str(), &spec.to_string())?;
         }
-        for spec in self.push_specs.iter() {
+        for spec in self.pushspecs.iter() {
             repo.remote_add_push(self.name.as_str(), &spec.to_string())?;
         }
 
@@ -194,24 +194,24 @@ impl<Url> Remote<Url> {
                     .ok_or(FindError::Missing("url"))?
                     .parse()
                     .map_err(|e| FindError::ParseUrl(Box::new(e)))?;
-                let fetch_specs = remote
+                let fetchspecs = remote
                     .fetch_refspecs()?
                     .into_iter()
                     .filter_map(identity)
-                    .map(FetchSpec::try_from)
+                    .map(Fetchspec::try_from)
                     .collect::<Result<_, _>>()?;
-                let push_specs = remote
+                let pushspecs = remote
                     .push_refspecs()?
                     .into_iter()
                     .filter_map(identity)
-                    .map(PushSpec::try_from)
+                    .map(Pushspec::try_from)
                     .collect::<Result<_, _>>()?;
 
                 Ok(Some(Self {
                     url,
                     name,
-                    fetch_specs,
-                    push_specs,
+                    fetchspecs,
+                    pushspecs,
                 }))
             },
         }
@@ -220,14 +220,14 @@ impl<Url> Remote<Url> {
 
 /// What to push when calling `Remote::<LocalUrl>::push`.
 #[derive(Debug)]
-pub enum LocalPushSpec {
+pub enum LocalPushspec {
     /// Read the matching refs from the repo at runtime.
     Matching {
         pattern: RefspecPattern,
         force: Force,
     },
-    /// Use the provided [`PushSpec`]s.
-    Specs(NonEmpty<PushSpec>),
+    /// Use the provided [`Pushspec`]s.
+    Specs(NonEmpty<Pushspec>),
     /// Use whatever is persistently configured for the [`Remote`].
     ///
     /// It is an error if the [`Remote`] is not persisted. If the remote **is**
@@ -237,9 +237,9 @@ pub enum LocalPushSpec {
 
 /// What to fetch when calling `Remote::<LocalUrl>::fetch`.
 #[derive(Debug)]
-pub enum LocalFetchSpec {
-    /// Use the provided [`FetchSpec`]s.
-    Specs(NonEmpty<FetchSpec>),
+pub enum LocalFetchspec {
+    /// Use the provided [`Fetchspec`]s.
+    Specs(NonEmpty<Fetchspec>),
     /// Use whatever is persistently configured for the [`Remote`].
     ///
     /// It is an error if the [`Remote`] is not persisted. If the remote **is**
@@ -279,18 +279,18 @@ impl Remote<LocalUrl> {
         Ok(heads?.into_iter())
     }
 
-    /// Push the provided [`LocalPushSpec`].
+    /// Push the provided [`LocalPushspec`].
     #[tracing::instrument(skip(self, repo, open_storage), err)]
     pub fn push<F>(
         &mut self,
         open_storage: F,
         repo: &git2::Repository,
-        spec: LocalPushSpec,
+        spec: LocalPushspec,
     ) -> Result<impl Iterator<Item = RefLike>, local::transport::Error>
     where
         F: local::transport::CanOpenStorage + 'static,
     {
-        use LocalPushSpec::*;
+        use LocalPushspec::*;
 
         let res = match spec {
             Matching { pattern, force } => {
@@ -387,12 +387,12 @@ impl Remote<LocalUrl> {
         &mut self,
         open_storage: F,
         repo: &git2::Repository,
-        spec: LocalFetchSpec,
+        spec: LocalFetchspec,
     ) -> Result<impl Iterator<Item = (RefLike, git2::Oid)>, local::transport::Error>
     where
         F: local::transport::CanOpenStorage + 'static,
     {
-        use LocalFetchSpec::*;
+        use LocalFetchspec::*;
 
         let res = match spec {
             Specs(specs) => self.fetch_internal(
@@ -536,7 +536,7 @@ mod tests {
 
             {
                 let url = LocalUrl::from(URN.clone());
-                let mut remote = Remote::rad_remote(url, fetch).with_push_specs(Some(push));
+                let mut remote = Remote::rad_remote(url, fetch).with_pushspecs(Some(push));
                 remote.save(&repo).expect("failed to persist the remote");
             }
 
@@ -546,7 +546,7 @@ mod tests {
 
             assert_eq!(
                 remote
-                    .fetch_specs
+                    .fetchspecs
                     .iter()
                     .map(|spec| spec.to_string())
                     .collect::<Vec<_>>(),
@@ -558,7 +558,7 @@ mod tests {
 
             assert_eq!(
                 remote
-                    .push_specs
+                    .pushspecs
                     .iter()
                     .map(|spec| spec.to_string())
                     .collect::<Vec<_>>(),
@@ -585,13 +585,13 @@ mod tests {
         let mut remote = Remote {
             url,
             name: name.clone(),
-            fetch_specs: vec![Refspec {
+            fetchspecs: vec![Refspec {
                 src: heads,
                 dst: remotes,
                 force: Force::True,
             }
             .into()],
-            push_specs: vec![],
+            pushspecs: vec![],
         };
 
         let tmp = tempfile::tempdir().unwrap();

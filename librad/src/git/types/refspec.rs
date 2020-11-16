@@ -44,7 +44,7 @@ pub struct Refspec<S, D> {
 }
 
 impl<S, D> Refspec<S, D> {
-    pub fn into_fetch_spec(self) -> FetchSpec
+    pub fn into_fetchspec(self) -> Fetchspec
     where
         S: Into<ext::RefspecPattern>,
         D: Into<ext::RefspecPattern>,
@@ -52,7 +52,7 @@ impl<S, D> Refspec<S, D> {
         self.into()
     }
 
-    pub fn into_push_spec(self) -> PushSpec
+    pub fn into_pushspec(self) -> Pushspec
     where
         S: Into<ext::RefLike>,
         D: Into<ext::RefLike>,
@@ -135,9 +135,9 @@ impl FromStr for Refspec<ext::RefLike, ext::RefLike> {
 }
 
 #[derive(Debug)]
-pub struct FetchSpec(Refspec<ext::RefspecPattern, ext::RefspecPattern>);
+pub struct Fetchspec(Refspec<ext::RefspecPattern, ext::RefspecPattern>);
 
-impl<S, D> From<Refspec<S, D>> for FetchSpec
+impl<S, D> From<Refspec<S, D>> for Fetchspec
 where
     S: Into<ext::RefspecPattern>,
     D: Into<ext::RefspecPattern>,
@@ -151,7 +151,7 @@ where
     }
 }
 
-impl TryFrom<&str> for FetchSpec {
+impl TryFrom<&str> for Fetchspec {
     type Error = ext::reference::name::Error;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
@@ -159,7 +159,7 @@ impl TryFrom<&str> for FetchSpec {
     }
 }
 
-impl FromStr for FetchSpec {
+impl FromStr for Fetchspec {
     type Err = ext::reference::name::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -167,16 +167,16 @@ impl FromStr for FetchSpec {
     }
 }
 
-impl Display for FetchSpec {
+impl Display for Fetchspec {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
 }
 
 #[derive(Debug)]
-pub struct PushSpec(Refspec<ext::RefLike, ext::RefLike>);
+pub struct Pushspec(Refspec<ext::RefLike, ext::RefLike>);
 
-impl<S, D> From<Refspec<S, D>> for PushSpec
+impl<S, D> From<Refspec<S, D>> for Pushspec
 where
     S: Into<ext::RefLike>,
     D: Into<ext::RefLike>,
@@ -190,7 +190,7 @@ where
     }
 }
 
-impl TryFrom<&str> for PushSpec {
+impl TryFrom<&str> for Pushspec {
     type Error = ext::reference::name::Error;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
@@ -198,7 +198,7 @@ impl TryFrom<&str> for PushSpec {
     }
 }
 
-impl FromStr for PushSpec {
+impl FromStr for Pushspec {
     type Err = ext::reference::name::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -206,7 +206,7 @@ impl FromStr for PushSpec {
     }
 }
 
-impl Display for PushSpec {
+impl Display for Pushspec {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }

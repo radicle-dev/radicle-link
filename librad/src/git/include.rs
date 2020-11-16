@@ -111,7 +111,7 @@ impl<Path> Include<Path> {
             // the file is included). This would limit us to a single fetchspec /
             // pushspec respectively.
             for remote in &self.remotes {
-                if remote.fetch_specs.is_empty() {
+                if remote.fetchspecs.is_empty() {
                     return Err(Error::MissingRefspec);
                 }
 
@@ -120,12 +120,12 @@ impl<Path> Include<Path> {
                 tracing::debug!("remote.{}.url = {}", remote.name, remote.url);
                 writeln!(tmp, "\turl = {}", remote.url)?;
 
-                for spec in remote.fetch_specs.iter() {
+                for spec in remote.fetchspecs.iter() {
                     tracing::debug!("remote.{}.fetch = {}", remote.name, spec);
                     writeln!(tmp, "\tfetch = {}", spec)?;
                 }
 
-                for spec in remote.push_specs.iter() {
+                for spec in remote.pushspecs.iter() {
                     tracing::debug!("remote.{}.push = {}", remote.name, spec);
                     writeln!(tmp, "\tpush = {}", spec)?;
                 }
@@ -183,7 +183,7 @@ impl<Path> Include<Path> {
         let handle = handle.into();
         let name = ext::RefLike::try_from(format!("{}@{}", handle, peer))
             .expect("handle and peer are reflike");
-        Remote::new(url, name).with_fetch_specs(vec![Refspec {
+        Remote::new(url, name).with_fetchspecs(vec![Refspec {
             src: Reference::heads(Flat, peer),
             dst: GenericRef::heads(Flat, handle),
             force: Force::True,

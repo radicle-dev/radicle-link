@@ -32,7 +32,7 @@ use super::{
     p2p::url::GitUrl,
     refs::Refs,
     storage::{self, Storage},
-    types::{reference::Reference, AsRemote, FetchSpec, Force, Namespace, Refspec},
+    types::{reference::Reference, AsRemote, Fetchspec, Force, Namespace, Refspec},
 };
 use crate::{
     identities::{
@@ -76,7 +76,7 @@ where
         urn: &Urn<R>,
         remote_peer: P,
         remote_heads: &RemoteHeads,
-    ) -> Vec<FetchSpec> {
+    ) -> Vec<Fetchspec> {
         match self {
             Self::Peek => refspecs::peek(urn, remote_peer),
             Self::SignedRefs { tracked } => refspecs::signed_refs(urn, &remote_peer, tracked),
@@ -91,7 +91,7 @@ where
 pub mod refspecs {
     use super::*;
 
-    pub fn peek<P, R>(urn: &Urn<R>, remote_peer: P) -> Vec<FetchSpec>
+    pub fn peek<P, R>(urn: &Urn<R>, remote_peer: P) -> Vec<Fetchspec>
     where
         P: Clone + 'static,
         for<'a> &'a P: AsRemote + Into<ext::RefLike>,
@@ -111,23 +111,23 @@ pub mod refspecs {
                 dst: rad_id.with_remote(remote_peer.clone()),
                 force: Force::False,
             }
-            .into_fetch_spec(),
+            .into_fetchspec(),
             Refspec {
                 src: rad_self.clone(),
                 dst: rad_self.with_remote(remote_peer.clone()),
                 force: Force::False,
             }
-            .into_fetch_spec(),
+            .into_fetchspec(),
             Refspec {
                 src: rad_ids.clone(),
                 dst: rad_ids.with_remote(remote_peer),
                 force: Force::False,
             }
-            .into_fetch_spec(),
+            .into_fetchspec(),
         ]
     }
 
-    pub fn signed_refs<P, R>(urn: &Urn<R>, remote_peer: &P, tracked: &BTreeSet<P>) -> Vec<FetchSpec>
+    pub fn signed_refs<P, R>(urn: &Urn<R>, remote_peer: &P, tracked: &BTreeSet<P>) -> Vec<Fetchspec>
     where
         P: Clone + PartialEq + 'static,
         for<'a> &'a P: AsRemote + Into<ext::RefLike>,
@@ -161,7 +161,7 @@ pub mod refspecs {
         remote_heads: &RemoteHeads,
         tracked_sigrefs: &BTreeMap<P, Refs>,
         delegates: &BTreeSet<Urn<R>>,
-    ) -> Vec<FetchSpec>
+    ) -> Vec<Fetchspec>
     where
         P: Clone + Ord + PartialEq + 'static,
         for<'a> &'a P: AsRemote + Into<ext::RefLike>,
@@ -243,7 +243,7 @@ pub mod refspecs {
                                 dst,
                                 force: Force::True,
                             }
-                            .into_fetch_spec()
+                            .into_fetchspec()
                         })
                     })
             })

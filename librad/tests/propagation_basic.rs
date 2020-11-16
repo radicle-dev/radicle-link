@@ -192,7 +192,7 @@ async fn fetches_on_gossip_notify() {
                     ),
                     force: Force::True,
                 }
-                .into_fetch_spec(),
+                .into_fetchspec(),
             );
 
             let oid = create_commit(&repo, mastor.clone()).unwrap();
@@ -200,7 +200,7 @@ async fn fetches_on_gossip_notify() {
                 .push(
                     peer1.clone(),
                     &repo,
-                    remote::LocalPushSpec::Matching {
+                    remote::LocalPushspec::Matching {
                         pattern: refspec_pattern!("refs/heads/*"),
                         force: Force::True,
                     },
@@ -431,7 +431,7 @@ async fn menage_a_troi() {
                 .push(
                     peer1.clone(),
                     &repo,
-                    remote::LocalPushSpec::Matching {
+                    remote::LocalPushspec::Matching {
                         pattern: refspec_pattern!("refs/heads/*"),
                         force: Force::True,
                     },

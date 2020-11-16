@@ -34,7 +34,7 @@ pub use reference::{
     Single,
     SymbolicRef,
 };
-pub use refspec::{FetchSpec, PushSpec, Refspec};
+pub use refspec::{Fetchspec, Pushspec, Refspec};
 pub use remote::Remote;
 
 /// Helper to aid type inference constructing a [`Reference`] without a
