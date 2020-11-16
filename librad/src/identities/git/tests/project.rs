@@ -87,14 +87,14 @@ fn revoke() -> anyhow::Result<()> {
         let cheyenne = common::Device::new_with(
             &*CHEYENNE_DESKTOP,
             Identities::from(&*repo),
-            payload::User {
+            payload::Person {
                 name: "cheyenne".into(),
             },
         )?;
         let dylan = common::Device::new_with(
             &*DYLAN,
             Identities::from(&*repo),
-            payload::User {
+            payload::Person {
                 name: "dylan".into(),
             },
         )?;
@@ -143,7 +143,7 @@ fn revoke_indirect() -> anyhow::Result<()> {
         let cheyenne_desktop = common::Device::new_with(
             &*CHEYENNE_DESKTOP,
             Identities::from(&*repo),
-            payload::User {
+            payload::Person {
                 name: "cheyenne".into(),
             },
         )?
@@ -160,7 +160,7 @@ fn revoke_indirect() -> anyhow::Result<()> {
         let dylan = common::Device::new_with(
             &*DYLAN,
             Identities::from(&*repo),
-            payload::User {
+            payload::Person {
                 name: "dylan".into(),
             },
         )?;
@@ -187,7 +187,7 @@ fn revoke_indirect() -> anyhow::Result<()> {
         // Doesn't check out
         assert_matches!(
             cheyenne_palmtop.verify(),
-            Err(error::VerifyUser::Verification(
+            Err(error::VerifyPerson::Verification(
                 VerificationError::ParentQuorum
             ))
         );
@@ -195,8 +195,8 @@ fn revoke_indirect() -> anyhow::Result<()> {
         let heads = current_heads_from(vec![&cheyenne_palmtop, &dylan]);
         assert_matches!(
             dylan_project.verify(lookup(&heads)),
-            Err(error::VerifyProject::VerifyUser(
-                error::VerifyUser::Verification(VerificationError::ParentQuorum)
+            Err(error::VerifyProject::VerifyPerson(
+                error::VerifyPerson::Verification(VerificationError::ParentQuorum)
             ))
         );
 
@@ -211,7 +211,7 @@ fn double_vote() -> anyhow::Result<()> {
         let cheyenne_desktop = common::Device::new_with(
             &*CHEYENNE_DESKTOP,
             Identities::from(&*repo),
-            payload::User {
+            payload::Person {
                 name: "cheyenne".into(),
             },
         )?
@@ -228,7 +228,7 @@ fn double_vote() -> anyhow::Result<()> {
         let dylan = common::Device::new_with(
             &*DYLAN,
             Identities::from(&*repo),
-            payload::User {
+            payload::Person {
                 name: "dylan".into(),
             },
         )?;

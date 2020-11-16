@@ -26,7 +26,7 @@ use super::{payload, sealed, Delegations};
 
 /// [`Delegations`] which delegate directly to a set of [`PublicKey`]s.
 ///
-/// Untrusted input must be deserialised via [`payload::UserDelegations`],
+/// Untrusted input must be deserialised via [`payload::PersonDelegations`],
 /// which ensures that duplicates in the source document translate to an error.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Direct(BTreeSet<PublicKey>);
@@ -59,8 +59,8 @@ impl Delegations for Direct {
 
 impl sealed::Sealed for Direct {}
 
-impl From<payload::UserDelegations> for Direct {
-    fn from(payload: payload::UserDelegations) -> Self {
+impl From<payload::PersonDelegations> for Direct {
+    fn from(payload: payload::PersonDelegations) -> Self {
         Self(payload.into())
     }
 }

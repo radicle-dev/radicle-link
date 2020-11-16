@@ -39,15 +39,15 @@ use crate::{
 };
 
 pub use identities::{
-    git::{Urn, User, VerifiedUser},
-    payload::UserPayload,
+    git::{Person, Urn, VerifiedPerson},
+    payload::PersonPayload,
 };
 
-/// Read a [`User`] from the tip of the ref [`Urn::path`] points to.
+/// Read a [`Person`] from the tip of the ref [`Urn::path`] points to.
 ///
 /// If the ref is not found, `None` is returned.
 #[tracing::instrument(level = "trace", skip(storage), err)]
-pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<User>, Error> {
+pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<Person>, Error> {
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
@@ -60,18 +60,18 @@ pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<User>, Error> {
     }
 }
 
-/// Read and verify the [`User`] pointed to by `urn`.
+/// Read and verify the [`Person`] pointed to by `urn`.
 ///
 /// If the ref pointed to by [`Urn::path`] is not found, `None` is returned.
 ///
 /// # Caveats
 ///
-/// Keep in mind that the `content_id` of a successfully verified user may
+/// Keep in mind that the `content_id` of a successfully verified person may
 /// not be the same as the tip of the ref [`Urn::path`] points to. That is, this
 /// function cannot be used to assert that the state after an [`update`] is
 /// valid.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedUser>, Error> {
+pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedPerson>, Error> {
     let branch = Reference::try_from(urn)?;
     tracing::debug!("verifying {} from {}", urn, branch);
     match storage.reference(&branch) {
@@ -89,36 +89,36 @@ pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedUser>, Erro
     }
 }
 
-/// Create a new [`User`].
+/// Create a new [`Person`].
 ///
 /// The `delegations` must include the [`Signer`] key, such that the newly
-/// created [`User`] is also a valid [`LocalIdentity`] -- it is, in fact, its
+/// created [`Person`] is also a valid [`LocalIdentity`] -- it is, in fact, its
 /// own [`LocalIdentity`]. This can be changed via [`update`].
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn create<P>(
     storage: &Storage,
     payload: P,
     delegations: delegation::Direct,
-) -> Result<User, Error>
+) -> Result<Person, Error>
 where
-    P: Into<UserPayload> + Debug,
+    P: Into<PersonPayload> + Debug,
 {
-    let user = {
-        let user = identities(storage).create(payload.into(), delegations, storage.signer())?;
+    let person = {
+        let person = identities(storage).create(payload.into(), delegations, storage.signer())?;
         let verified = identities(storage)
-            .verify(*user.content_id)
+            .verify(*person.content_id)
             .map_err(|e| Error::Verify(e.into()))?;
         LocalIdentity::valid(verified, storage.signer())
     }?;
 
-    let urn = user.urn();
-    common::IdRef::from(&urn).create(storage, user.content_id)?;
-    user.link(storage, &urn)?;
+    let urn = person.urn();
+    common::IdRef::from(&urn).create(storage, person.content_id)?;
+    person.link(storage, &urn)?;
 
-    Ok(user.into_inner().into_inner())
+    Ok(person.into_inner().into_inner())
 }
 
-/// Update the [`User`] at `urn`.
+/// Update the [`Person`] at `urn`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn update<L, P, D>(
     storage: &Storage,
@@ -126,10 +126,10 @@ pub fn update<L, P, D>(
     whoami: L,
     payload: P,
     delegations: D,
-) -> Result<User, Error>
+) -> Result<Person, Error>
 where
     L: Into<Option<LocalIdentity>> + Debug,
-    P: Into<Option<UserPayload>> + Debug,
+    P: Into<Option<PersonPayload>> + Debug,
     D: Into<Option<delegation::Direct>> + Debug,
 {
     let prev = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
@@ -144,9 +144,9 @@ where
     Ok(next)
 }
 
-/// Merge and sign the [`User`] state as seen by `from`.
+/// Merge and sign the [`Person`] state as seen by `from`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<User, Error> {
+pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Person, Error> {
     let ours = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let theirs = {
         let their_urn = Urn {
@@ -165,6 +165,6 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<User, Error> 
     Ok(next)
 }
 
-fn identities(storage: &Storage) -> Identities<User> {
+fn identities(storage: &Storage) -> Identities<Person> {
     storage.identities()
 }

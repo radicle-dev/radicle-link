@@ -42,13 +42,13 @@ use super::{
 use proptest::prelude::*;
 
 lazy_static! {
-    /// Base [`Url`] for [`User`]
-    static ref USER_NAMESPACE_BASE: Url =
-        Url::parse("https://radicle.xyz/link/identities/user").unwrap();
+    /// Base [`Url`] for [`Person`]
+    static ref PERSON_NAMESPACE_BASE: Url =
+        Url::parse("https://radicle.xyz/link/identities/person").unwrap();
 
-    /// Versioned [`Url`] for [`User`], version 1
-    static ref USER_NAMESPACE_V1: Url = {
-        let mut base = USER_NAMESPACE_BASE.clone();
+    /// Versioned [`Url`] for [`Person`], version 1
+    static ref PERSON_NAMESPACE_V1: Url = {
+        let mut base = PERSON_NAMESPACE_BASE.clone();
         base.path_segments_mut().unwrap().extend(&["v1"]);
         base
     };
@@ -68,19 +68,19 @@ lazy_static! {
 /// Structure `radicle-link` expects to be part of a [`Payload`] describing a
 /// personal identity.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct User {
+pub struct Person {
     pub name: Cstring,
 }
 
-impl sealed::Sealed for User {}
+impl sealed::Sealed for Person {}
 
 #[cfg(test)]
-impl Arbitrary for User {
+impl Arbitrary for Person {
     type Parameters = ();
     type Strategy = prop::strategy::Map<<Cstring as Arbitrary>::Strategy, fn(Cstring) -> Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        any::<Cstring>().prop_map(|name| User { name })
+        any::<Cstring>().prop_map(|name| Person { name })
     }
 }
 
@@ -154,9 +154,9 @@ pub trait HasNamespace {
     fn namespace() -> &'static Url;
 }
 
-impl HasNamespace for User {
+impl HasNamespace for Person {
     fn namespace() -> &'static Url {
-        &USER_NAMESPACE_V1
+        &PERSON_NAMESPACE_V1
     }
 }
 
@@ -171,9 +171,9 @@ pub trait Subject: HasNamespace + sealed::Sealed {
     fn namespace_matches(url: &Url) -> bool;
 }
 
-impl Subject for User {
+impl Subject for Person {
     fn namespace_matches(url: &Url) -> bool {
-        url.as_str().starts_with(USER_NAMESPACE_BASE.as_str())
+        url.as_str().starts_with(PERSON_NAMESPACE_BASE.as_str())
     }
 }
 
@@ -183,7 +183,7 @@ impl Subject for Project {
     }
 }
 
-pub type UserPayload = Payload<User>;
+pub type PersonPayload = Payload<Person>;
 pub type ProjectPayload = Payload<Project>;
 
 /// [`Payload`] for which the type is not known statically.
@@ -191,7 +191,7 @@ pub type ProjectPayload = Payload<Project>;
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum SomePayload {
-    User(UserPayload),
+    Person(PersonPayload),
     Project(ProjectPayload),
 }
 
@@ -370,18 +370,18 @@ where
     R: Debug + Ord + HasProtocol + TryFrom<Multihash, Error = E>,
     E: std::error::Error + 'static,
 {
-    User(UserDelegations),
+    Person(PersonDelegations),
     Project(ProjectDelegations<R>),
 }
 
-/// Delegations of a [`UserPayload`] identity document.
+/// Delegations of a [`PersonPayload`] identity document.
 ///
 /// This is just a set of [`PublicKey`]s. Note that it is a deserialisation
 /// error if duplicate elements are found in the input.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
-pub struct UserDelegations(BTreeSet<PublicKey>);
+pub struct PersonDelegations(BTreeSet<PublicKey>);
 
-impl Deref for UserDelegations {
+impl Deref for PersonDelegations {
     type Target = BTreeSet<PublicKey>;
 
     fn deref(&self) -> &Self::Target {
@@ -389,25 +389,25 @@ impl Deref for UserDelegations {
     }
 }
 
-impl DerefMut for UserDelegations {
+impl DerefMut for PersonDelegations {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl From<delegation::Direct> for UserDelegations {
+impl From<delegation::Direct> for PersonDelegations {
     fn from(d: delegation::Direct) -> Self {
         Self(d.into())
     }
 }
 
-impl From<UserDelegations> for BTreeSet<PublicKey> {
-    fn from(UserDelegations(set): UserDelegations) -> Self {
+impl From<PersonDelegations> for BTreeSet<PublicKey> {
+    fn from(PersonDelegations(set): PersonDelegations) -> Self {
         set
     }
 }
 
-impl<'de> serde::Deserialize<'de> for UserDelegations {
+impl<'de> serde::Deserialize<'de> for PersonDelegations {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -415,10 +415,10 @@ impl<'de> serde::Deserialize<'de> for UserDelegations {
         struct Visitor;
 
         impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = UserDelegations;
+            type Value = PersonDelegations;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a UserDelegations set")
+                f.write_str("a PersonDelegations set")
             }
 
             fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
@@ -440,7 +440,7 @@ impl<'de> serde::Deserialize<'de> for UserDelegations {
                 if set.is_empty() {
                     Err(serde::de::Error::custom("no delegations"))
                 } else {
-                    Ok(UserDelegations(set))
+                    Ok(PersonDelegations(set))
                 }
             }
         }
@@ -655,13 +655,13 @@ mod tests {
         }
     }
 
-    fn gen_user_payload() -> impl Strategy<Value = UserPayload> {
-        (any::<User>(), proptest::option::of(any::<UpstreamUser>())).prop_map(|(user, up)| {
-            let mut u = UserPayload::new(user);
+    fn gen_person_payload() -> impl Strategy<Value = PersonPayload> {
+        (any::<Person>(), proptest::option::of(any::<UpstreamUser>())).prop_map(|(person, up)| {
+            let mut p = PersonPayload::new(person);
             if let Some(up) = up {
-                u.set_ext(up).unwrap();
+                p.set_ext(up).unwrap();
             }
-            u
+            p
         })
     }
 
@@ -681,13 +681,13 @@ mod tests {
 
     fn gen_payload() -> impl Strategy<Value = SomePayload> {
         prop_oneof![
-            gen_user_payload().prop_map(SomePayload::User),
+            gen_person_payload().prop_map(SomePayload::Person),
             gen_project_payload().prop_map(SomePayload::Project)
         ]
     }
 
-    fn gen_user_delegations() -> impl Strategy<Value = UserDelegations> {
-        proptest::collection::btree_set(gen_public_key(), 1..32).prop_map(UserDelegations)
+    fn gen_person_delegations() -> impl Strategy<Value = PersonDelegations> {
+        proptest::collection::btree_set(gen_public_key(), 1..32).prop_map(PersonDelegations)
     }
 
     fn gen_key_or_urn() -> impl Strategy<Value = KeyOrUrn<Oid>> {
@@ -707,8 +707,8 @@ mod tests {
     }
 
     #[test]
-    fn user_example() {
-        let payload = UserPayload::new(User {
+    fn person_example() {
+        let payload = PersonPayload::new(Person {
             name: "cloudhead".into(),
         })
         .with_ext(UpstreamUser {
@@ -717,7 +717,7 @@ mod tests {
         .unwrap();
 
         let json_pretty = r#"{
-  "https://radicle.xyz/link/identities/user/v1": {
+  "https://radicle.xyz/link/identities/person/v1": {
     "name": "cloudhead"
   },
   "https://radicle.xyz/upstream/user/v1": {
@@ -781,8 +781,8 @@ nom is a parser combinators library written in Rust.";
     }
 
     #[test]
-    fn duplicate_user_delegation() {
-        duplicate_delegation::<UserDelegations>()
+    fn duplicate_person_delegation() {
+        duplicate_delegation::<PersonDelegations>()
     }
 
     #[test]
@@ -802,8 +802,8 @@ nom is a parser combinators library written in Rust.";
     }
 
     #[test]
-    fn empty_user_delegations() {
-        empty_delegations::<UserDelegations>()
+    fn empty_person_delegations() {
+        empty_delegations::<PersonDelegations>()
     }
 
     #[test]
@@ -861,7 +861,7 @@ nom is a parser combinators library written in Rust.";
         }
 
         #[test]
-        fn user_delegations_roundtrip(delegations in gen_user_delegations()) {
+        fn person_delegations_roundtrip(delegations in gen_person_delegations()) {
             trippin(delegations)
         }
 

@@ -147,7 +147,7 @@ The `Doc` payload MUST include one of the following structures (but not both)
 for interpretation by the protocol:
 
 ```rust
-struct User {
+struct Person {
     /// A short name (nickname, handle), without any prefix such as the `@`
     /// character
     name: String,
@@ -260,54 +260,54 @@ project on which one or more actors collaborate. Apart from their payload types
 `T`, they differ in their delegations type `D`:
 
 Personal identities can only delegate to anonymous keys, while project
-identities MAY attach a personal identity  to a key delegation.
+identities MAY attach a personal identity to a key delegation.
 
 More formally:
 
 ```rust
-type User<T> = Identity<T, HashSet<PublicKey>>;
+type Person<T> = Identity<T, HashSet<PublicKey>>;
 
 enum ProjectDelegation<U> {
     Key(PublicKey),
-    User(User<U>),
+    Person(Person<U>),
 }
 
 type Project<T, U> = Identity<T, ProjectDelegation<U>>;
 ```
 
 Per identity document, the `PublicKeys` delegated to MUST form a set. It is, for
-example, an error if a `PublicKey` appears in both the document and a `User`
-delegations, or within two different `User` delegations.
+example, an error if a `PublicKey` appears in both the document and a `Person`
+delegations, or within two different `Person` delegations.
 
-If a `Project` delegates to a `User`, it MUST do so by including a specific
-revision of the `User` document. The replication rules ensure that the
-respective `User` histories are replicated as sibling histories [insert link].
+If a `Project` delegates to a `Person`, it MUST do so by including a specific
+revision of the `Person` document. The replication rules ensure that the
+respective `Person` histories are replicated as sibling histories [insert link].
 
 If one of these sibling histories is found to not include the delegated-to
 revision in its ancestry path, it is said to have **forked**, and signatures
-made by one of the `User`s keys after the point of inclusion in the `Project` no
-longer count towards the quorum rules. Note that this is only recoverable if a
-quorum of valid keys remains on the project, otherwise a [Key Recovery](#key-recovery)
-procedure must be invoked on the `Project`.
+made by one of the `Person`s keys after the point of inclusion in the `Project`
+no longer count towards the quorum rules. Note that this is only recoverable if
+a quorum of valid keys remains on the project, otherwise a [Key
+Recovery](#key-recovery) procedure must be invoked on the `Project`.
 
 If a sibling history is NOT **forked** (i.e. it includes the attested revision
 in its ancestry path), AND it is **verified**, its key delegations are
 considered authoritative for all `Project` attestations between the point the
-`User` was delegated to, and the currently known-good head.
+`Person` was delegated to, and the currently known-good head.
 
-> **Implementation Note**: If `User` keys are not reused (i.e. revoked and later
-> re-introduced) since the attestation point (which MUST be verified), it is
-> sufficient to check for key revocations using the latest known heads of the
+> **Implementation Note**: If `Person` keys are not reused (i.e. revoked and
+> later re-introduced) since the attestation point (which MUST be verified), it
+> is sufficient to check for key revocations using the latest known heads of the
 > respective histories.
 
 When calculating the **Quorum** or **Verifed** threshold, multiple signatures
-made by the set of keys of a `User` SHALL be counted as only one vote towards
-the quorum. This prevents unilateral decisions made by a single `User`. We
+made by the set of keys of a `Person` SHALL be counted as only one vote towards
+the quorum. This prevents unilateral decisions made by a single `Person`. We
 consider this simple scheme sufficient for the purpose, but more sophisticated
 delegations may be supported in the future, such as customising the quorum
 threshold, or key roles.
 
-Note that a key revocation event in a sibling `User` history may render the
+Note that a key revocation event in a sibling `Person` history may render the
 project unusable if the remaining keys cannot form a quorum. Also note that the
 `Project` SHOULD renew the attestation from time to time.
 
@@ -348,8 +348,8 @@ said to have **forked**. In lieu of a consensus system, it is undecidable which
 side of the fork to commit to, and so replication of the attested repository
 SHALL refuse any further updates.
 
-> **TODO** Fork detection (i.e. pairwise compare if in same ancestry path, either
-> select most recent or flag as forked)
+> **TODO** Fork detection (i.e. pairwise compare if in same ancestry path,
+> either select most recent or flag as forked)
 
 ## Git Encoding
 
@@ -402,7 +402,7 @@ let identity = Identity {
 Where:
 
 * `first_blob` finds the first `TreeEntry` which is of type `blob`.
-* `deserialize` is implemented by a standard JSON parser. `User` delegations
+* `deserialize` is implemented by a standard JSON parser. `Person` delegations
   from a `Project` are specified in the `Project`'s `Doc` as URNs, which are
   resolved by parsing a `blob` object of the same name as the URN's `id` field
   below the `tree` entry of type directory named `delegations`.
@@ -436,11 +436,11 @@ concatenating the `0` byte (as a version identifier) with the Ed25519 scalar
 (the public key) encoded as per [@rfc8032], and then wrapping in a [@multibase]
 encoding using the [@z-base32] alphabet.
 
-User delegations are serialised as a JSON array of `PublicKey` values. Duplicate
-elements MUST be a deserialisation error.
+`Person` delegations are serialised as a JSON array of `PublicKey` values.
+Duplicate elements MUST be a deserialisation error.
 
-Project delegations are serialised as a JSON array of either `PublicKey` or URN
-values without tagging. Duplicate elements MUST be a deserialisation error.
+`Project` delegations are serialised as a JSON array of either `PublicKey` or
+URN values without tagging. Duplicate elements MUST be a deserialisation error.
 
 The `payload` is encoded as a JSON object using [@whatwg-url] URLs as the keys,
 and JSON objects of the `radicle-link`- or user-specified payload objects as the
@@ -468,9 +468,9 @@ free to implement both.
 Pending self-hosting, which will allow precise versioning by content-address,
 the URLs for `radicle-link` payloads are:
 
-User
+Person
 
-: https://radicle.xyz/link/identities/user/v1
+: https://radicle.xyz/link/identities/person/v1
 
 Project
 
@@ -483,17 +483,17 @@ Radicle Core Team.
 #### Examples
 
 A simple example if an initial `Doc`, embedding a Decentralized Identifier (DID)
-document [@did-core] in a `User` payload:
+document [@did-core] in a `Person` payload:
 
 ```json
 {
     "version": 0,
     "replaces": null,
     "payload: {
-        "https://radicle.xyz/link/identities/user/v1": {
+        "https://radicle.xyz/link/identities/person/v1": {
             "name": "cloudhead"
         },
-        "https://www.w3.org/ns/did/v1": {
+        "https://www.w3.org/ns/did": {
             "@context": "https://www.w3.org/ns/did/v1",
             "id": "did:example:123456789abcdefghi",
             "authentication": [{
@@ -578,8 +578,8 @@ tree notes to reflect the new state.
   information forever. After a period of interrupted replication, the fork may
   thus prevail.
 
-* As outlined in [Delegations](#delegations), `User` and `Project` histories are
-  not causally related. This allows for censorship attacks, unless this
+* As outlined in [Delegations](#delegations), `Person` and `Project` histories
+  are not causally related. This allows for censorship attacks, unless this
   relationship is securely established by an external system.
 
 * The security of identity updates rests on the probability of an attacker to

@@ -26,12 +26,12 @@ use crate::{
         delegation,
         generic,
         payload::{
+            PersonDelegations,
+            PersonPayload,
             ProjectDelegations,
             ProjectPayload,
             SomeDelegations,
             SomePayload,
-            UserDelegations,
-            UserPayload,
         },
         sign::Signatures,
         urn::Urn,
@@ -39,14 +39,14 @@ use crate::{
     internal::canonical::Cjson,
 };
 
-use super::{error, ContentId, Doc, Identity, Project, Revision, SomeIdentity, User};
+use super::{error, ContentId, Doc, Identity, Person, Project, Revision, SomeIdentity};
 
 pub type ByOid<'a> = (&'a git2::Repository, git2::Oid);
 
 #[derive(Debug, serde::Serialize)]
 #[serde(untagged)]
 enum SomeDoc {
-    User(Doc<UserPayload, UserDelegations>),
+    Person(Doc<PersonPayload, PersonDelegations>),
     Project(Doc<ProjectPayload, ProjectDelegations<Revision>>),
 }
 
@@ -59,8 +59,8 @@ impl<'de> serde::Deserialize<'de> for SomeDoc {
             serde::Deserialize::deserialize(deserializer)?;
 
         match (doc.payload, doc.delegations) {
-            (SomePayload::User(payload), SomeDelegations::User(delegations)) => {
-                Ok(Self::User(Doc {
+            (SomePayload::Person(payload), SomeDelegations::Person(delegations)) => {
+                Ok(Self::Person(Doc {
                     version: doc.version,
                     replaces: doc.replaces,
                     payload,
@@ -88,11 +88,11 @@ struct Any<'a, Doc> {
     identity: generic::Identity<Doc, Revision, ContentId>,
 }
 
-type AnyUser<'a> = Any<'a, Doc<UserPayload, UserDelegations>>;
+type AnyPerson<'a> = Any<'a, Doc<PersonPayload, PersonDelegations>>;
 type AnyProject<'a> = Any<'a, Doc<ProjectPayload, ProjectDelegations<Revision>>>;
 
-impl<'a> From<AnyUser<'a>> for User {
-    fn from(any: AnyUser<'a>) -> Self {
+impl<'a> From<AnyPerson<'a>> for Person {
+    fn from(any: AnyPerson<'a>) -> Self {
         any.identity.map(|doc| doc.second(delegation::Direct::from))
     }
 }
@@ -115,7 +115,7 @@ impl<'a> TryFrom<AnyProject<'a>> for Project {
                         .map(|d| match d.into() {
                             Either::Left(key) => Ok(Either::Left(key)),
                             Either::Right(urn) => {
-                                resolve_inlined_user(repo, &tree, urn).map(Either::Right)
+                                resolve_inlined_person(repo, &tree, urn).map(Either::Right)
                             },
                         })
                         .collect::<Result<Vec<Either<_, _>>, _>>()?;
@@ -208,19 +208,19 @@ impl<'a> TryFrom<ByOid<'a>> for SomeIdentity {
         } = Any::<'a, SomeDoc>::try_from((repo, oid))?;
 
         match doc {
-            SomeDoc::User(user) => {
-                let user = User::from(Any {
+            SomeDoc::Person(person) => {
+                let person = Person::from(Any {
                     repo,
                     tree,
                     identity: Identity {
                         content_id,
                         root,
                         revision,
-                        doc: user,
+                        doc: person,
                         signatures,
                     },
                 });
-                Ok(SomeIdentity::User(user))
+                Ok(SomeIdentity::Person(person))
             },
 
             SomeDoc::Project(project) => {
@@ -241,11 +241,11 @@ impl<'a> TryFrom<ByOid<'a>> for SomeIdentity {
     }
 }
 
-impl<'a> TryFrom<ByOid<'a>> for User {
+impl<'a> TryFrom<ByOid<'a>> for Person {
     type Error = error::Load;
 
     fn try_from(git: ByOid<'a>) -> Result<Self, Self::Error> {
-        Ok(User::from(Any::try_from(git)?))
+        Ok(Person::from(Any::try_from(git)?))
     }
 }
 
@@ -257,14 +257,14 @@ impl<'a> TryFrom<ByOid<'a>> for Project {
     }
 }
 
-type InlinedUser = generic::Identity<Doc<UserPayload, UserDelegations>, Revision, ContentId>;
+type InlinedPerson = generic::Identity<Doc<PersonPayload, PersonDelegations>, Revision, ContentId>;
 
 #[tracing::instrument(level = "debug", skip(repo, tree), err)]
-fn resolve_inlined_user(
+fn resolve_inlined_person(
     repo: &git2::Repository,
     tree: &git2::Tree,
     urn: Urn<Revision>,
-) -> Result<User, error::Load> {
+) -> Result<Person, error::Load> {
     let path = PathBuf::from(format!("delegations/{}", urn.encode_id()));
     let blob = tree
         .get_path(&path)?
@@ -272,7 +272,7 @@ fn resolve_inlined_user(
         .into_blob()
         .map_err(|obj| error::Load::NotABlob(path, obj.kind()))?;
 
-    Ok(Cjson::<InlinedUser>::from_slice(blob.content())?
+    Ok(Cjson::<InlinedPerson>::from_slice(blob.content())?
         .into_inner()
         .map(|doc| doc.second(delegation::Direct::from)))
 }

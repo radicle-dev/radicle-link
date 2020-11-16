@@ -24,10 +24,10 @@ use super::{
         storage::{self, config, Storage},
         types::{Force, Namespace, Reference},
     },
-    user,
+    person,
 };
 use crate::{
-    identities::git::{Urn, VerifiedUser},
+    identities::git::{Urn, VerifiedPerson},
     peer::PeerId,
     signer::Signer,
 };
@@ -56,7 +56,7 @@ pub enum ValidationError {
     LocalDelegation,
 }
 
-/// A user identity used as a "user profile" in the context of projects.
+/// A personal identity used as a "user profile" in the context of projects.
 ///
 /// I.e. the `rad/self` branch.
 ///
@@ -67,10 +67,10 @@ pub enum ValidationError {
 /// * Is signed by the local key
 /// * Delegates to the local key
 #[derive(Clone, Debug)]
-pub struct LocalIdentity(VerifiedUser);
+pub struct LocalIdentity(VerifiedPerson);
 
 impl Deref for LocalIdentity {
-    type Target = VerifiedUser;
+    type Target = VerifiedPerson;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -78,17 +78,17 @@ impl Deref for LocalIdentity {
 }
 
 impl LocalIdentity {
-    pub(super) fn valid<S>(user: VerifiedUser, signer: &S) -> Result<Self, ValidationError>
+    pub(super) fn valid<S>(person: VerifiedPerson, signer: &S) -> Result<Self, ValidationError>
     where
         S: Signer,
     {
         let local_peer_id = PeerId::from_signer(signer);
-        if !user.signatures.contains_key(&local_peer_id) {
+        if !person.signatures.contains_key(&local_peer_id) {
             Err(ValidationError::LocalSignature)
-        } else if !user.delegations().contains(&local_peer_id) {
+        } else if !person.delegations().contains(&local_peer_id) {
             Err(ValidationError::LocalDelegation)
         } else {
-            Ok(Self(user))
+            Ok(Self(person))
         }
     }
 
@@ -107,7 +107,7 @@ impl LocalIdentity {
             .map_err(storage::Error::from)
     }
 
-    pub fn into_inner(self) -> VerifiedUser {
+    pub fn into_inner(self) -> VerifiedPerson {
         self.0
     }
 }
@@ -123,7 +123,7 @@ impl LocalIdentity {
 pub fn load(storage: &Storage, urn: Urn) -> Result<Option<LocalIdentity>, Error> {
     let urn = urn.with_path(reflike!("refs/rad/self"));
     tracing::debug!("loading local id from {}", urn);
-    match user::verify(storage, &urn)? {
+    match person::verify(storage, &urn)? {
         Some(verified) => Ok(Some(LocalIdentity::valid(verified, storage.signer())?)),
         None => Ok(None),
     }

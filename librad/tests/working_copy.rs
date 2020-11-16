@@ -32,7 +32,7 @@ use tempfile::tempdir;
 
 use librad::{
     git::{
-        identities::{self, Project, User},
+        identities::{self, Person, Project},
         include,
         local::url::LocalUrl,
         replication,
@@ -96,7 +96,7 @@ async fn can_fetch() {
             .unwrap()
             .unwrap();
 
-        let tracked_users = {
+        let tracked_persons = {
             let urn = project.urn();
             let peer1_id = peer1.peer_id();
             peer2
@@ -106,20 +106,20 @@ async fn can_fetch() {
                         .unwrap()
                         .map(|peer| {
                             let self_ref = Reference::rad_self(Namespace::from(&urn), peer);
-                            let user = identities::user::get(
+                            let person = identities::person::get(
                                 &store,
                                 &Urn::try_from(self_ref).expect("namespace is set"),
                             )
                             .unwrap()
-                            .expect("tracked user should exist");
-                            (user, peer)
+                            .expect("tracked person should exist");
+                            (person, peer)
                         })
-                        .collect::<Vec<(User, PeerId)>>()
+                        .collect::<Vec<(Person, PeerId)>>()
                 })
                 .await
                 .unwrap()
         };
-        assert!(!tracked_users.is_empty());
+        assert!(!tracked_persons.is_empty());
 
         let tmp = tempdir().unwrap();
         {
@@ -132,7 +132,7 @@ async fn can_fetch() {
                 tmp.path().to_path_buf(),
                 &peer2,
                 &project,
-                tracked_users,
+                tracked_persons,
             )
             .unwrap();
             assert!(peer2_repo.find_commit(commit_id).is_ok());
@@ -146,7 +146,7 @@ async fn can_fetch() {
 async fn commit_and_push<P>(
     repo_path: P,
     peer: &PeerApi,
-    owner: &User,
+    owner: &Person,
     project: &Project,
 ) -> Result<git2::Oid, anyhow::Error>
 where
@@ -198,20 +198,20 @@ fn create_working_copy<P, I>(
     inc_path: P,
     peer: &PeerApi,
     project: &Project,
-    tracked_users: I,
+    tracked_persons: I,
 ) -> Result<git2::Repository, anyhow::Error>
 where
     P: AsRef<Path> + Debug,
-    I: IntoIterator<Item = (User, PeerId)> + Debug,
+    I: IntoIterator<Item = (Person, PeerId)> + Debug,
 {
     let repo = git2::Repository::init(repo_path)?;
 
-    let inc = include::Include::from_tracked_users(
+    let inc = include::Include::from_tracked_persons(
         inc_path,
         LocalUrl::from(project.urn()),
-        tracked_users.into_iter().map(|(user, peer_id)| {
+        tracked_persons.into_iter().map(|(person, peer_id)| {
             (
-                ext::RefLike::try_from(user.doc.payload.subject.name.as_str()).unwrap(),
+                ext::RefLike::try_from(person.subject().name.as_str()).unwrap(),
                 peer_id,
             )
         }),

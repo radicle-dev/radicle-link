@@ -17,22 +17,22 @@
 
 use librad::{
     git::{
-        identities::{self, Project, User},
+        identities::{self, Person, Project},
         storage::Storage,
     },
     identities::{delegation, payload},
 };
 
 pub struct TestProject {
-    pub owner: User,
+    pub owner: Person,
     pub project: Project,
 }
 
 pub fn create_test_project(storage: &Storage) -> Result<TestProject, anyhow::Error> {
     let peer_id = storage.peer_id();
-    let alice = identities::user::create(
+    let alice = identities::person::create(
         storage,
-        payload::User {
+        payload::Person {
             name: "alice".into(),
         },
         Some(*peer_id.as_public_key()).into_iter().collect(),

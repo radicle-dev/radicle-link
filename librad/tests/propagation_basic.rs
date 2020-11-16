@@ -81,7 +81,7 @@ async fn can_clone() {
                 let urn = owner.urn();
                 assert_eq!(
                     Some(owner),
-                    identities::user::get(&storage, &urn).unwrap(),
+                    identities::person::get(&storage, &urn).unwrap(),
                     "alice should be a first class citizen"
                 )
             })
@@ -132,7 +132,7 @@ async fn can_clone_disconnected() {
                 let urn = owner.urn();
                 assert_eq!(
                     Some(owner),
-                    identities::user::get(&storage, &urn).unwrap(),
+                    identities::person::get(&storage, &urn).unwrap(),
                     "alice should be a first class citizen"
                 )
             })

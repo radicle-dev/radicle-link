@@ -45,16 +45,16 @@ pub(super) fn repo() -> anyhow::Result<TmpRepo> {
 #[derive(Clone)]
 pub(super) struct Device<'a> {
     key: &'a SecretKey,
-    git: Identities<'a, User>,
-    cur: User,
+    git: Identities<'a, Person>,
+    cur: Person,
 }
 
 impl<'a> Device<'a> {
-    pub fn new(key: &'a SecretKey, git: Identities<'a, User>) -> anyhow::Result<Self> {
+    pub fn new(key: &'a SecretKey, git: Identities<'a, Person>) -> anyhow::Result<Self> {
         Self::new_with(
             key,
             git,
-            payload::User {
+            payload::Person {
                 name: "dylan".into(),
             },
         )
@@ -62,8 +62,8 @@ impl<'a> Device<'a> {
 
     pub fn new_with(
         key: &'a SecretKey,
-        git: Identities<'a, User>,
-        payload: payload::User,
+        git: Identities<'a, Person>,
+        payload: payload::Person,
     ) -> anyhow::Result<Self> {
         let cur = git.create(
             payload.into(),
@@ -86,7 +86,7 @@ impl<'a> Device<'a> {
         })
     }
 
-    pub fn current(&self) -> &User {
+    pub fn current(&self) -> &Person {
         &self.cur
     }
 
@@ -114,7 +114,7 @@ impl<'a> Device<'a> {
         Ok(Self { cur, ..self })
     }
 
-    pub fn verify(&self) -> Result<VerifiedUser, error::VerifyUser> {
+    pub fn verify(&self) -> Result<VerifiedPerson, error::VerifyPerson> {
         Ok(self.git.verify(*self.cur.content_id)?)
     }
 

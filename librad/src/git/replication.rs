@@ -34,7 +34,7 @@ use super::{
     types::{reference, Force, Namespace, Reference},
 };
 use crate::{
-    identities::git::{Project, SomeIdentity, User},
+    identities::git::{Person, Project, SomeIdentity},
     peer::PeerId,
 };
 
@@ -131,8 +131,8 @@ where
     let delegates = match identities::any::get(storage, &remote_ident)? {
         None => Err(Error::MissingIdentity),
         Some(some_id) => match some_id {
-            SomeIdentity::User(user) => {
-                ensure_setup_as_user(storage, user, remote_peer)?;
+            SomeIdentity::Person(person) => {
+                ensure_setup_as_person(storage, person, remote_peer)?;
                 Ok(None)
             },
             SomeIdentity::Project(proj) => {
@@ -177,7 +177,7 @@ where
     }
 
     // TODO: At this point, the tracking graph may have changed, and/or we
-    // created top-level user namespaces. We will eventually converge, but
+    // created top-level person namespaces. We will eventually converge, but
     // perhaps we'd want to return some kind of continuation here, so the caller
     // could schedule a deferred task directly?
 
@@ -186,20 +186,24 @@ where
 
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage), err)]
-fn ensure_setup_as_user(storage: &Storage, user: User, remote_peer: PeerId) -> Result<(), Error> {
-    let urn: Urn = Reference::rad_id(Namespace::from(user.urn()))
+fn ensure_setup_as_person(
+    storage: &Storage,
+    person: Person,
+    remote_peer: PeerId,
+) -> Result<(), Error> {
+    let urn: Urn = Reference::rad_id(Namespace::from(person.urn()))
         .with_remote(remote_peer)
         .try_into()
         .expect("namespace is set");
 
-    match identities::user::verify(storage, &urn)? {
+    match identities::person::verify(storage, &urn)? {
         None => Err(Error::MissingIdentity),
-        Some(user) => {
+        Some(person) => {
             // Create `rad/id` here, if not exists
-            ensure_rad_id(storage, &urn, user.content_id)?;
+            ensure_rad_id(storage, &urn, person.content_id)?;
 
             // Track all delegations
-            for key in user.into_inner().doc.delegations {
+            for key in person.into_inner().doc.delegations {
                 tracking::track(storage, &urn, PeerId::from(key))?;
             }
 
@@ -228,16 +232,16 @@ fn ensure_setup_as_project(
             .with_remote(remote_peer)
             .try_into()
             .expect("namespace is set");
-        match identities::user::verify(storage, &in_rad_ids)? {
+        match identities::person::verify(storage, &in_rad_ids)? {
             None => Err(Error::Missing(in_rad_ids.into())),
-            Some(delegate_user) => {
+            Some(delegate_person) => {
                 // Ensure we have a top-level `refs/namespaces/<delegate>/rad/id`
                 //
                 // Either we fetched that before, or we take `remote_peer`s view
                 // (we just verified the identity).
-                ensure_rad_id(storage, &delegate_urn, delegate_user.content_id)?;
+                ensure_rad_id(storage, &delegate_urn, delegate_person.content_id)?;
                 // Also, track them
-                for key in delegate_user.delegations().iter() {
+                for key in delegate_person.delegations().iter() {
                     let peer_id = PeerId::from(*key);
                     // Top-level
                     tracking::track(storage, &delegate_urn, peer_id)?;

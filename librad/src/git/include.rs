@@ -151,12 +151,12 @@ impl<Path> Include<Path> {
     }
 
     /// Generate an include file by giving it a `RadUrn` for a project and the
-    /// tracked User handle/`PeerId` pairs for that project.
+    /// tracked person's handle/`PeerId` pairs for that project.
     ///
-    /// The tracked users are expected to be retrieved by talking to the
-    /// [`crate::git::storage::Storage`].
+    /// The tracked personal identities are expected to be retrieved by talking
+    /// to the [`crate::git::storage::Storage`].
     #[tracing::instrument(level = "debug", skip(tracked))]
-    pub fn from_tracked_users<R, I>(path: Path, local_url: LocalUrl, tracked: I) -> Self
+    pub fn from_tracked_persons<R, I>(path: Path, local_url: LocalUrl, tracked: I) -> Self
     where
         Path: Debug,
         R: Into<ext::RefLike>,

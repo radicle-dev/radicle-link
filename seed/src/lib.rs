@@ -31,7 +31,7 @@ use thiserror::Error;
 
 use librad::{
     git::{
-        identities::{self, SomeIdentity, Urn, User},
+        identities::{self, Person, SomeIdentity, Urn},
         replication,
         storage,
         tracking,
@@ -358,11 +358,11 @@ impl Node {
 }
 
 /// Guess a user given a peer id.
-async fn guess_user(peer: PeerId, api: &PeerApi) -> Result<Option<User>, Error> {
+async fn guess_user(peer: PeerId, api: &PeerApi) -> Result<Option<Person>, Error> {
     api.with_storage(move |s| {
         let users = identities::any::list(&s)?.filter_map(|res| {
             res.map(|id| match id {
-                SomeIdentity::User(user) => Some(user),
+                SomeIdentity::Person(user) => Some(user),
                 _ => None,
             })
             .transpose()

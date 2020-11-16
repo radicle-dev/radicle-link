@@ -79,7 +79,7 @@ fn revoke_a_deux() -> anyhow::Result<()> {
         // Cannot do that unilaterally -- laptop is now invalid
         assert_matches!(
             laptop_revokes_desktop.verify(),
-            Err(error::VerifyUser::Verification(
+            Err(error::VerifyPerson::Verification(
                 VerificationError::ParentQuorum
             ))
         );

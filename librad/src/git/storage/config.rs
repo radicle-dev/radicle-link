@@ -26,7 +26,7 @@ use thiserror::Error;
 use super::{super::identities::local::LocalIdentity, Storage};
 use crate::{
     identities::{
-        git::{Identities, Urn, VerifiedUser},
+        git::{Identities, Urn, VerifiedPerson},
         urn,
     },
     keys::SecretKey,
@@ -206,7 +206,7 @@ mod tests {
     use std::ops::{Deref, DerefMut};
 
     use crate::{
-        identities::{self, git::User},
+        identities::{self, git::Person},
         keys::SecretKey,
     };
     use librad_test::tempdir::WithTmpDir;

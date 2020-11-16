@@ -26,7 +26,7 @@ use crate::{
     identities::{
         delegation::{self, Delegations},
         generic::{self, Signed, Verified},
-        payload::{self, ProjectPayload, UserPayload},
+        payload::{self, PersonPayload, ProjectPayload},
         sign::{Signature, Signatures},
         urn,
     },
@@ -60,27 +60,27 @@ pub type Identity<T> = generic::Identity<T, Revision, ContentId>;
 pub type SignedIdentity<T> = generic::Verifying<Identity<T>, Signed>;
 pub type VerifiedIdentity<T> = generic::Verifying<Identity<T>, Verified>;
 
-pub type UserDoc = Doc<UserPayload, delegation::Direct>;
+pub type PersonDoc = Doc<PersonPayload, delegation::Direct>;
 pub type ProjectDoc = Doc<ProjectPayload, IndirectDelegation>;
 
-pub type User = Identity<UserDoc>;
+pub type Person = Identity<PersonDoc>;
 pub type Project = Identity<ProjectDoc>;
 
 #[non_exhaustive]
 pub enum SomeIdentity {
-    User(User),
+    Person(Person),
     Project(Project),
 }
 
-pub type SignedUser = SignedIdentity<UserDoc>;
+pub type SignedPerson = SignedIdentity<PersonDoc>;
 pub type SignedProject = SignedIdentity<ProjectDoc>;
 
-pub type VerifiedUser = VerifiedIdentity<UserDoc>;
+pub type VerifiedPerson = VerifiedIdentity<PersonDoc>;
 pub type VerifiedProject = VerifiedIdentity<ProjectDoc>;
 
 pub type VerificationError = generic::error::Verify<Revision, ContentId>;
 
-pub type IndirectDelegation = delegation::Indirect<UserPayload, Revision, ContentId>;
+pub type IndirectDelegation = delegation::Indirect<PersonPayload, Revision, ContentId>;
 
 #[derive(Clone)]
 pub struct Identities<'a, T> {
@@ -98,8 +98,8 @@ impl<'a, T: 'a> From<&'a git2::Repository> for Identities<'a, T> {
 }
 
 impl<'a, T: 'a> Identities<'a, T> {
-    /// Convenience to specialise `T` to [`User`].
-    pub fn as_user(&self) -> Identities<'_, User> {
+    /// Convenience to specialise `T` to [`Person`].
+    pub fn as_person(&self) -> Identities<'_, Person> {
         Identities {
             repo: self.repo,
             _marker: PhantomData,
@@ -391,30 +391,30 @@ where
     }
 }
 
-impl<'a> Identities<'a, User> {
-    /// Attempt to read a [`User`] from commit `oid`, without verification.
-    pub fn get(&self, oid: git2::Oid) -> Result<User, error::Load> {
+impl<'a> Identities<'a, Person> {
+    /// Attempt to read a [`Person`] from commit `oid`, without verification.
+    pub fn get(&self, oid: git2::Oid) -> Result<Person, error::Load> {
         self.get_generic(oid)
     }
 
-    /// Verify the user history with head commit `head`.
+    /// Verify the person history with head commit `head`.
     ///
-    /// The returned [`VerifiedUser`] is the **most recent** identity for which
-    /// the verification succeeded -- which may or may not be `head`.
-    pub fn verify(&self, head: git2::Oid) -> Result<VerifiedUser, error::VerifyUser> {
+    /// The returned [`VerifiedPerson`] is the **most recent** identity for
+    /// which the verification succeeded -- which may or may not be `head`.
+    pub fn verify(&self, head: git2::Oid) -> Result<VerifiedPerson, error::VerifyPerson> {
         Ok(self.verify_generic(head)?)
     }
 
-    /// Create a new [`User`] from a payload and delegations.
+    /// Create a new [`Person`] from a payload and delegations.
     ///
-    /// The returned [`User`] (and the underlying commit) will not have any
+    /// The returned [`Person`] (and the underlying commit) will not have any
     /// parents, and will by signed by `signer`.
     pub fn create<S>(
         &self,
-        payload: UserPayload,
+        payload: PersonPayload,
         delegations: delegation::Direct,
         signer: &S,
-    ) -> Result<User, error::Store>
+    ) -> Result<Person, error::Store>
     where
         S: Signer,
     {
@@ -422,7 +422,7 @@ impl<'a> Identities<'a, User> {
             version: 0,
             replaces: None,
             payload,
-            delegations: payload::UserDelegations::from(delegations),
+            delegations: payload::PersonDelegations::from(delegations),
         };
 
         let root: Revision = self.repo.blob(&Cjson(&doc).canonical_form()?)?.into();
@@ -435,7 +435,7 @@ impl<'a> Identities<'a, User> {
             .map_err(|e| error::Store::Signer(Box::new(e)))?
             .into();
         let content_id = self.commit(
-            &format!("Initialised user identity {}", root),
+            &format!("Initialised personal identity {}", root),
             &signatures,
             revision,
             &[],
@@ -450,20 +450,20 @@ impl<'a> Identities<'a, User> {
         })
     }
 
-    /// Update an existing [`SignedUser`] with a new payload and delegations.
+    /// Update an existing [`SignedPerson`] with a new payload and delegations.
     ///
     /// If both `payload` and `delegations` evaluate to `None`, or their values
     /// result in the same revision as `base`, no new commit is made, and
-    /// the result is the unwrapped [`User`] of the `base` argument.
+    /// the result is the unwrapped [`Person`] of the `base` argument.
     ///
-    /// Otherwise, the result is a new [`User`] whose parent is `base`.
+    /// Otherwise, the result is a new [`Person`] whose parent is `base`.
     pub fn update<S>(
         &self,
-        base: SignedUser,
-        payload: impl Into<Option<UserPayload>>,
+        base: SignedPerson,
+        payload: impl Into<Option<PersonPayload>>,
         delegations: impl Into<Option<delegation::Direct>>,
         signer: &S,
-    ) -> Result<User, error::Store>
+    ) -> Result<Person, error::Store>
     where
         S: Signer,
     {
@@ -479,7 +479,7 @@ impl<'a> Identities<'a, User> {
             version: 0,
             replaces: Some(base.revision),
             payload: payload.unwrap_or_else(|| base.payload().clone()),
-            delegations: payload::UserDelegations::from(
+            delegations: payload::PersonDelegations::from(
                 delegations.unwrap_or_else(|| base.delegations().clone()),
             ),
         };
@@ -525,11 +525,11 @@ impl<'a> Identities<'a, Project> {
     /// Verify the project history with head commit `head`.
     ///
     /// The supplied [`Fn`] shall return the latest head commit of any indirect
-    /// (user) delegations of the project. Note that this implies that project
-    /// verification should be re-run whenever new inputs are discovered:
-    /// the verification status may change due to key revocations or other
-    /// circumstances which prevent [`Self::verify`] on the indirect delegation
-    /// from succeeding.
+    /// (personal) delegations of the project. Note that this implies that
+    /// project verification should be re-run whenever new inputs are
+    /// discovered: the verification status may change due to key
+    /// revocations or other circumstances which prevent [`Self::verify`] on the
+    /// indirect delegation from succeeding.
     ///
     /// The returned [`VerifiedProject`] is the **most recent** identity for
     /// which the verification succeeded -- which may or may not be `head`.
@@ -685,7 +685,7 @@ impl<'a> Identities<'a, Project> {
         find_latest_head: &F,
     ) -> Result<IndirectDelegation, error::VerifyProject>
     where
-        I: IntoIterator<Item = Either<PublicKey, User>>,
+        I: IntoIterator<Item = Either<PublicKey, Person>>,
         F: Fn(Urn) -> Result<git2::Oid, E>,
         E: std::error::Error + Send + Sync + 'static,
     {
@@ -695,7 +695,7 @@ impl<'a> Identities<'a, Project> {
                 Right(id) => {
                     let head = find_latest_head(id.urn())
                         .map_err(|e| error::VerifyProject::Lookup(Box::new(e)))?;
-                    let verified = self.updated_user(id, head)?;
+                    let verified = self.updated_person(id, head)?;
                     updated.push(Right(verified.into_inner()))
                 },
 
@@ -706,18 +706,18 @@ impl<'a> Identities<'a, Project> {
         Ok(delegation::Indirect::try_from_iter(updated)?)
     }
 
-    fn updated_user(
+    fn updated_person(
         &self,
-        known: User,
+        known: Person,
         latest_head: git2::Oid,
-    ) -> Result<VerifiedUser, error::VerifyUser> {
-        // Nb. technically we could coerce `known` into a `VerifiedUser` if its
+    ) -> Result<VerifiedPerson, error::VerifyPerson> {
+        // Nb. technically we could coerce `known` into a `VerifiedPerson` if its
         // `content_id` equals `latest_head`. Let's not introduce an unsafe
         // coercion, but rely on caching to be implemented efficiently.
         if self.is_in_ancestry_path(latest_head, known.revision.into())? {
-            self.as_user().verify(latest_head)
+            self.as_person().verify(latest_head)
         } else {
-            Err(error::VerifyUser::NotInAncestryPath {
+            Err(error::VerifyPerson::NotInAncestryPath {
                 revision: known.revision,
                 root: known.root,
                 head: latest_head.into(),
@@ -731,12 +731,12 @@ impl<'a> Identities<'a, Project> {
         delegations: &IndirectDelegation,
     ) -> Result<(), error::Store> {
         let mut builder = self.repo.treebuilder(None)?;
-        for user_delegation in delegations.iter().filter_map(|x| x.right()) {
+        for person_delegation in delegations.iter().filter_map(|x| x.right()) {
             let inlined = self.repo.blob(
                 &Cjson(
-                    &user_delegation
+                    &person_delegation
                         .clone()
-                        .map(|doc| doc.second(payload::UserDelegations::from)),
+                        .map(|doc| doc.second(payload::PersonDelegations::from)),
                 )
                 .canonical_form()?,
             )?;
@@ -744,7 +744,7 @@ impl<'a> Identities<'a, Project> {
                 // TODO: factor out
                 multibase::encode(
                     multibase::Base::Base32Z,
-                    Multihash::from(user_delegation.root),
+                    Multihash::from(person_delegation.root),
                 ),
                 inlined,
                 0o100_644,

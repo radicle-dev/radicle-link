@@ -128,7 +128,7 @@ pub enum VerifyProject {
     Verification(#[from] generic::error::Verify<Revision, ContentId>),
 
     #[error(transparent)]
-    VerifyUser(#[from] self::VerifyUser),
+    VerifyPerson(#[from] self::VerifyPerson),
 
     #[error(transparent)]
     Delegation(#[from] DelegationsFromIterError<Revision>),
@@ -142,7 +142,7 @@ pub enum VerifyProject {
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum VerifyUser {
+pub enum VerifyPerson {
     #[error("Revision {revision} of {root} not in ancestry path of {head}")]
     NotInAncestryPath {
         revision: Revision,
@@ -164,5 +164,5 @@ pub enum Verify {
     Project(#[from] VerifyProject),
 
     #[error(transparent)]
-    User(#[from] VerifyUser),
+    Person(#[from] VerifyPerson),
 }
