@@ -25,6 +25,9 @@ use crate::{paths::Paths, signer::Signer};
 pub type Pool = deadpool::managed::Pool<Storage, Error>;
 pub type Pooled = deadpool::managed::Object<Storage, Error>;
 
+/// Wrapper so we can use [`Pooled`] as `AsRef<Storage>`.
+// TODO: may go away once https://github.com/bikeshedder/deadpool/pull/69
+// appears in a released version.
 pub struct PooledRef(Pooled);
 
 impl AsRef<Storage> for PooledRef {

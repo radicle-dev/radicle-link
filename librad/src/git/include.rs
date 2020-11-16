@@ -108,7 +108,7 @@ impl<Path> Include<Path> {
         {
             // **NB**: We can't use `git2::Config::set_multivar`, because
             // `libgit2` does not realise that we have only one file (it thinks
-            // the file is included). This would limit is to a single fetchspec /
+            // the file is included). This would limit us to a single fetchspec /
             // pushspec respectively.
             for remote in &self.remotes {
                 if remote.fetch_specs.is_empty() {
