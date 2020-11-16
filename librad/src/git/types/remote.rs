@@ -57,8 +57,10 @@ pub struct Remote<Url> {
     pub url: Url,
     /// Name of the remote, e.g. `"rad"`, `"origin"`.
     pub name: RefLike,
-    /// If the fetch spec is provided then the remote is created with an initial
-    /// fetchspec, otherwise it is just a plain remote.
+    /// The set of fetch specs to add upon creation.
+    ///
+    /// **Note**: empty fetch specs do not denote the default fetch spec
+    /// (`refs/heads/*:refs/remote/<name>/*`), but ... empty fetch specs.
     pub fetch_specs: Vec<FetchSpec>,
     /// The set of push specs to add upon creation.
     pub push_specs: Vec<PushSpec>,
@@ -216,19 +218,32 @@ impl<Url> Remote<Url> {
     }
 }
 
+/// What to push when calling `Remote::<LocalUrl>::push`.
 #[derive(Debug)]
 pub enum LocalPushSpec {
+    /// Read the matching refs from the repo at runtime.
     Matching {
         pattern: RefspecPattern,
         force: Force,
     },
+    /// Use the provided [`PushSpec`]s.
     Specs(NonEmpty<PushSpec>),
+    /// Use whatever is persistently configured for the [`Remote`].
+    ///
+    /// It is an error if the [`Remote`] is not persisted. If the remote **is**
+    /// persisted, but has no explicit push spec, nothing will be pushed.
     Configured,
 }
 
+/// What to fetch when calling `Remote::<LocalUrl>::fetch`.
 #[derive(Debug)]
 pub enum LocalFetchSpec {
+    /// Use the provided [`FetchSpec`]s.
     Specs(NonEmpty<FetchSpec>),
+    /// Use whatever is persistently configured for the [`Remote`].
+    ///
+    /// It is an error if the [`Remote`] is not persisted. If the remote **is**
+    /// persisted, but has no explicit fetch spec, nothing will be fetched.
     Configured,
 }
 
@@ -264,6 +279,7 @@ impl Remote<LocalUrl> {
         Ok(heads?.into_iter())
     }
 
+    /// Push the provided [`LocalPushSpec`].
     #[tracing::instrument(skip(self, repo, open_storage), err)]
     pub fn push<F>(
         &mut self,
@@ -438,6 +454,17 @@ impl Remote<LocalUrl> {
         })
     }
 
+    /// When using a persistent remote, we need to rewrite the URL to add the
+    /// lookup index. However, we might have read the remote from an
+    /// included config file, in which case `libgit2` bails out when trying
+    /// to modify it. We work around this by creating a temporary persistent
+    /// remote (in the local config), which we delete after we're done.
+    ///
+    /// # Safety
+    ///
+    /// This is not currently panic safe -- ie. if the closure panics, we might
+    /// leak the temporary remote. Also, no effort is made to ensure a
+    /// remote can safely be used concurrently.
     fn with_tmp_copy<F, A>(&mut self, repo: &git2::Repository, f: F) -> Result<A, git2::Error>
     where
         F: FnOnce(&mut Self) -> A,
