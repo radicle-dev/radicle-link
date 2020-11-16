@@ -50,9 +50,6 @@ pub enum Error {
     #[error("no rad/self present and no default identity configured")]
     NoLocalIdentity,
 
-    #[error("too many libgit2 transport streams")]
-    StreamLimitExceeded,
-
     #[error(transparent)]
     OpenStorage(#[from] OpenStorageError),
 
