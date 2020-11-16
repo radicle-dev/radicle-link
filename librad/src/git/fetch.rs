@@ -138,16 +138,16 @@ pub mod refspecs {
         tracked
             .iter()
             .map(|tracked_peer| {
-                let local = Reference::rad_signed_refs(Namespace::from(urn), tracked_peer.clone());
-                let remote = if tracked_peer == remote_peer {
-                    local.clone().with_remote(None)
+                let dst = Reference::rad_signed_refs(Namespace::from(urn), tracked_peer.clone());
+                let src = if tracked_peer == remote_peer {
+                    dst.clone().with_remote(None)
                 } else {
-                    local.clone()
+                    dst.clone()
                 };
 
                 Refspec {
-                    src: remote,
-                    dst: local,
+                    src,
+                    dst,
                     force: Force::False,
                 }
                 .into()
@@ -227,20 +227,20 @@ pub mod refspecs {
                         };
 
                         targets_match.then_some({
-                            let local = Reference::head(
+                            let dst = Reference::head(
                                 namespace.clone(),
                                 tracked_peer.clone(),
                                 name.clone().into(),
                             );
-                            let remote = if tracked_peer == remote_peer {
-                                local.clone().with_remote(None)
+                            let src = if tracked_peer == remote_peer {
+                                dst.clone().with_remote(None)
                             } else {
-                                local.clone()
+                                dst.clone()
                             };
 
                             Refspec {
-                                src: remote,
-                                dst: local,
+                                src,
+                                dst,
                                 force: Force::True,
                             }
                             .into_fetch_spec()
