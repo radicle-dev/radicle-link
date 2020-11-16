@@ -208,8 +208,9 @@ impl<'a> Refs<'a> {
         >,
     > + 'a {
         let source = self.project().urn();
-        (&self.project().doc.delegations)
-            .into_iter()
+        self.project()
+            .delegations()
+            .iter()
             .filter_map(Either::right)
             .map(move |id| {
                 let urn = id.urn();

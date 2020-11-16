@@ -107,8 +107,7 @@ async fn can_fetch() {
                                 .unwrap()
                                 .expect("tracked user should exist");
                             (
-                                ext::RefLike::try_from(user.doc.payload.subject.name.as_str())
-                                    .unwrap(),
+                                ext::RefLike::try_from(user.subject().name.as_str()).unwrap(),
                                 peer,
                             )
                         })
@@ -171,12 +170,7 @@ where
     let heads = NamespacedRef::heads(Namespace::from(project.urn()), peer.peer_id());
     let remotes = FlatRef::heads(
         PhantomData,
-        ext::RefLike::try_from(format!(
-            "{}@{}",
-            owner.doc.payload.subject.name,
-            peer.peer_id()
-        ))
-        .unwrap(),
+        ext::RefLike::try_from(format!("{}@{}", owner.subject().name, peer.peer_id())).unwrap(),
     );
 
     let fetchspec = remotes.refspec(heads, Force::True);

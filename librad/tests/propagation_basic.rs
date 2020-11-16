@@ -207,12 +207,8 @@ async fn fetches_on_gossip_notify() {
             let heads = NamespacedRef::heads(Namespace::from(project.urn()), Some(peer1.peer_id()));
             let remotes = FlatRef::heads(
                 PhantomData,
-                ext::RefLike::try_from(format!(
-                    "{}@{}",
-                    owner.doc.payload.subject.name,
-                    peer1.peer_id()
-                ))
-                .unwrap(),
+                ext::RefLike::try_from(format!("{}@{}", owner.subject().name, peer1.peer_id()))
+                    .unwrap(),
             );
 
             let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
@@ -432,12 +428,8 @@ async fn menage_a_troi() {
             let heads = NamespacedRef::heads(Namespace::from(project.urn()), Some(peer1.peer_id()));
             let remotes = FlatRef::heads(
                 PhantomData,
-                ext::RefLike::try_from(format!(
-                    "{}@{}",
-                    owner.doc.payload.subject.name,
-                    peer1.peer_id()
-                ))
-                .unwrap(),
+                ext::RefLike::try_from(format!("{}@{}", owner.subject().name, peer1.peer_id()))
+                    .unwrap(),
             );
 
             let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));

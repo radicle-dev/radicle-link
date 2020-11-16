@@ -25,7 +25,7 @@ use std::{
 
 use serde::ser::SerializeStruct;
 
-use super::{delegation::Delegations, sealed, sign::Signatures, urn::Urn};
+use super::{delegation::Delegations, payload::Payload, sealed, sign::Signatures, urn::Urn};
 
 pub mod error;
 
@@ -212,6 +212,25 @@ impl<T, R, C> AsRef<T> for Identity<T, R, C> {
 }
 
 impl<T, R, C> sealed::Sealed for Identity<T, R, C> {}
+
+impl<T, D, R, C> Identity<Doc<Payload<T>, D, R>, R, C> {
+    /// Shortcut to get at `self.doc.payload.subject`.
+    pub fn subject(&self) -> &T {
+        &self.doc.payload.subject
+    }
+
+    /// Shortcut to get at `self.doc.payload`.
+    pub fn payload(&self) -> &Payload<T> {
+        &self.doc.payload
+    }
+}
+
+impl<T, D, R, C> Identity<Doc<T, D, R>, R, C> {
+    /// Shortcut to get at `self.doc.delegations`.
+    pub fn delegations(&self) -> &D {
+        &self.doc.delegations
+    }
+}
 
 /// Ad-hoc trait which allows us to keep the `T` parameter of [`Identity`]
 /// polymorphic for verification.

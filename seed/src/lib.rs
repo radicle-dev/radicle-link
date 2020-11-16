@@ -370,7 +370,7 @@ async fn guess_user(peer: PeerId, api: &PeerApi<Signer>) -> Result<Option<User>,
 
         for user in users {
             let user = user?;
-            if user.doc.delegations.contains(&peer) {
+            if user.delegations().contains(&peer) {
                 return Ok(Some(user));
             }
         }

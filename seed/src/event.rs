@@ -53,7 +53,7 @@ impl Event {
         Ok(Self::PeerConnected {
             peer_id,
             urn: user.map(|u| u.urn()),
-            name: user.map(|u| u.doc.payload.subject.name.to_string()),
+            name: user.map(|u| u.subject().name.to_string()),
         })
     }
 

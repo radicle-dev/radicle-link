@@ -161,7 +161,7 @@ where
                 self.inner
                     .set_str(CONFIG_RAD_SELF, &user.urn().to_string())
                     .map_err(Error::from)?;
-                self.set_user_info(&user.doc.payload.subject.name)?;
+                self.set_user_info(&user.subject().name)?;
 
                 Ok(())
             },

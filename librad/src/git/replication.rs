@@ -234,7 +234,7 @@ where
         .into();
 
     // Verify + symref the delegates first
-    for delegate in proj.doc.delegations.iter().indirect() {
+    for delegate in proj.delegations().iter().indirect() {
         let delegate_urn = delegate.urn();
         // Find in `refs/namespaces/<urn>/refs/remotes/<remote
         // peer>/rad/ids/<delegate.urn>`
@@ -250,7 +250,7 @@ where
                 // (we just verified the identity).
                 ensure_rad_id(storage, &delegate_urn, delegate_user.content_id)?;
                 // Also, track them
-                for key in delegate_user.doc.delegations.iter() {
+                for key in delegate_user.delegations().iter() {
                     let peer_id = PeerId::from(*key);
                     // Top-level
                     tracking::track(storage, &delegate_urn, peer_id)?;
@@ -283,7 +283,7 @@ where
     ensure_rad_id(storage, &urn, proj.content_id)?;
 
     // Make sure we track any direct delegations
-    for key in proj.doc.delegations.iter().direct() {
+    for key in proj.delegations().iter().direct() {
         tracking::track(storage, &urn, PeerId::from(*key))?;
     }
 
