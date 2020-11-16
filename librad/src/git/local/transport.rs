@@ -81,7 +81,11 @@ pub trait CanOpenStorage: Send + Sync {
     fn open_storage(&self) -> Result<Box<dyn AsRef<Storage>>, OpenStorageError>;
 }
 
-pub fn with_local_transport<F, G, A>(open_storage: F, url: LocalUrl, g: G) -> Result<A, Error>
+pub(crate) fn with_local_transport<F, G, A>(
+    open_storage: F,
+    url: LocalUrl,
+    g: G,
+) -> Result<A, Error>
 where
     F: CanOpenStorage + 'static,
     G: FnOnce(LocalUrl) -> A,
