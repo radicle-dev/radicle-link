@@ -169,7 +169,7 @@ impl git2::transport::SmartSubtransport for Factory {
             git2::Error::new(
                 git2::ErrorCode::Invalid,
                 git2::ErrorClass::Invalid,
-                "invalid URL: active index is missing",
+                "invalid URL: active index is missing. Did you use git::types::Remote?",
             )
         })?;
 

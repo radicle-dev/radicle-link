@@ -39,7 +39,6 @@ use librad::{
         tracking,
         types::{
             remote::{LocalFetchSpec, LocalPushSpec},
-            FetchSpec,
             Flat,
             Force,
             GenericRef,
@@ -174,7 +173,7 @@ where
     let master = reflike!("refs/heads/master");
 
     let oid = create_commit(&repo, master.clone())?;
-    let mut remote = Remote::rad_remote(url, FetchSpec::from(fetchspec));
+    let mut remote = Remote::rad_remote(url, fetchspec);
     remote
         .push(
             peer.clone(),

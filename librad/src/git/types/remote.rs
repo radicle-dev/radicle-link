@@ -130,6 +130,7 @@ impl<Url> Remote<Url> {
     /// configuration keys `url`, `fetch`, and `push` will be overwritten.
     /// Note that this means that _other_ configuration keys are left
     /// untouched, if present.
+    #[allow(clippy::unit_arg)]
     #[tracing::instrument(skip(self, repo), fields(name = self.name.as_str()), err)]
     pub fn save(&mut self, repo: &git2::Repository) -> Result<(), git2::Error>
     where
@@ -169,6 +170,7 @@ impl<Url> Remote<Url> {
     }
 
     /// Find a persisted remote by name.
+    #[allow(clippy::unit_arg)]
     #[tracing::instrument(skip(repo, name), fields(name = name.as_ref()), err)]
     pub fn find<Name>(repo: &git2::Repository, name: Name) -> Result<Option<Self>, FindError>
     where
@@ -280,7 +282,7 @@ impl Remote<LocalUrl> {
                     let mut refs = repo.references_glob(pattern.as_str())?;
                     let mut specs = Vec::new();
                     for name in refs.names() {
-                        if let Some(refl) = RefLike::try_from(name?).ok() {
+                        if let Ok(refl) = RefLike::try_from(name?) {
                             specs.push(
                                 Refspec {
                                     src: refl.clone(),
@@ -329,7 +331,7 @@ impl Remote<LocalUrl> {
         F: local::transport::CanOpenStorage + 'static,
         G: FnOnce(LocalUrl) -> Result<git2::Remote<'a>, git2::Error>,
     {
-        let res = with_local_transport(open_storage, self.url.clone(), |url| {
+        with_local_transport(open_storage, self.url.clone(), |url| {
             let mut git_remote = open_remote(url)?;
             let mut updated_refs = Vec::new();
             let mut callbacks = git2::RemoteCallbacks::new();
@@ -361,11 +363,7 @@ impl Remote<LocalUrl> {
             )?;
 
             Ok(updated_refs)
-        });
-
-        // reset original url
-        //repo.remote_set_url(&self.name, &self.url.to_string())?;
-        res
+        })
     }
 
     #[tracing::instrument(skip(self, repo, open_storage), err)]
