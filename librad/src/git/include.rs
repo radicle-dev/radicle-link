@@ -26,7 +26,6 @@ use git_ext as ext;
 use tempfile::NamedTempFile;
 
 use super::{
-    identities::user::User,
     local::url::LocalUrl,
     types::{Flat, Force, GenericRef, Reference, Refspec, Remote},
 };
@@ -93,10 +92,9 @@ impl<Path> Include<Path> {
         }
     }
 
-    pub fn add_remote(&mut self, url: LocalUrl, peer: PeerId, handle: &str) -> Result<(), Error> {
-        let remote = Self::build_remote(url, peer, handle)?;
+    pub fn add_remote(&mut self, url: LocalUrl, peer: PeerId, handle: impl Into<ext::RefLike>) {
+        let remote = Self::build_remote(url, peer, handle);
         self.remotes.push(remote);
-        Ok(())
     }
 
     /// Writes the contents of the [`git2::Config`] of the include file to disk.
@@ -153,38 +151,43 @@ impl<Path> Include<Path> {
     }
 
     /// Generate an include file by giving it a `RadUrn` for a project and the
-    /// tracked `User`/`PeerId` pairs for that project.
+    /// tracked User handle/`PeerId` pairs for that project.
     ///
     /// The tracked users are expected to be retrieved by talking to the
     /// [`crate::git::storage::Storage`].
-    #[tracing::instrument(level = "debug")]
-    pub fn from_tracked_users<I>(path: Path, local_url: LocalUrl, tracked: I) -> Result<Self, Error>
+    #[tracing::instrument(level = "debug", skip(tracked))]
+    pub fn from_tracked_users<R, I>(path: Path, local_url: LocalUrl, tracked: I) -> Self
     where
         Path: Debug,
-        I: IntoIterator<Item = (User, PeerId)> + Debug,
+        R: Into<ext::RefLike>,
+        I: IntoIterator<Item = (R, PeerId)>,
     {
         let remotes = tracked
             .into_iter()
-            .map(|(user, peer)| {
-                Self::build_remote(local_url.clone(), peer, &user.doc.payload.subject.name)
-            })
-            .collect::<Result<_, _>>()?;
+            .map(|(handle, peer)| Self::build_remote(local_url.clone(), peer, handle.into()))
+            .collect();
         tracing::trace!("computed remotes: {:?}", remotes);
 
-        Ok(Self {
+        Self {
             remotes,
             path,
             local_url,
-        })
+        }
     }
 
-    fn build_remote(url: LocalUrl, peer: PeerId, handle: &str) -> Result<Remote<LocalUrl>, Error> {
-        let name = format!("{}@{}", handle, peer);
-        Ok(Remote::new(url, name).with_fetch_specs(vec![Refspec {
+    fn build_remote(
+        url: LocalUrl,
+        peer: PeerId,
+        handle: impl Into<ext::RefLike>,
+    ) -> Remote<LocalUrl> {
+        let handle = handle.into();
+        let name = ext::RefLike::try_from(format!("{}@{}", handle, peer))
+            .expect("handle and peer are reflike");
+        Remote::new(url, name).with_fetch_specs(vec![Refspec {
             src: Reference::heads(None, peer),
-            dst: GenericRef::heads(Flat, ext::RefLike::try_from(handle)?),
+            dst: GenericRef::heads(Flat, handle),
             force: Force::True,
-        }]))
+        }])
     }
 }
 
@@ -222,11 +225,11 @@ mod test {
         224, 125, 219, 106, 75, 189, 95, 155, 89, 134, 54, 202, 255, 41, 239, 234, 220, 90, 200,
         19, 199, 63, 69, 225, 97, 15, 124, 168, 168, 238, 124, 83,
     ];
-    const LYLA_HANDLE: &str = "lyla";
-    const ROVER_HANDLE: &str = "rover";
-    const LINGLING_HANDLE: &str = "lingling";
 
     lazy_static! {
+        static ref LYLA_HANDLE: ext::RefLike = reflike!("lyla");
+        static ref ROVER_HANDLE: ext::RefLike = reflike!("rover");
+        static ref LINGLING_HANDLE: ext::RefLike = reflike!("lingling");
         static ref LOCAL_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(LOCAL_SEED));
         static ref LYLA_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(LYLA_SEED));
         static ref ROVER_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(ROVER_SEED));
@@ -249,10 +252,10 @@ mod test {
             config
         };
 
-        let remote_lyla = format!("{}@{}", LYLA_HANDLE, *LYLA_PEER_ID);
+        let remote_lyla = format!("{}@{}", *LYLA_HANDLE, *LYLA_PEER_ID);
         {
             let mut include = Include::new(tmp_dir.path().to_path_buf(), url.clone());
-            include.add_remote(url.clone(), *LYLA_PEER_ID, LYLA_HANDLE)?;
+            include.add_remote(url.clone(), *LYLA_PEER_ID, (*LYLA_HANDLE).clone());
             include.save()?;
         };
 
@@ -269,11 +272,11 @@ mod test {
             Some(_)
         );
 
-        let remote_rover = format!("{}@{}", ROVER_HANDLE, *ROVER_PEER_ID);
+        let remote_rover = format!("{}@{}", *ROVER_HANDLE, *ROVER_PEER_ID);
         {
             let mut include = Include::new(tmp_dir.path().to_path_buf(), url.clone());
-            include.add_remote(url.clone(), *LYLA_PEER_ID, "lyla")?;
-            include.add_remote(url.clone(), *ROVER_PEER_ID, ROVER_HANDLE)?;
+            include.add_remote(url.clone(), *LYLA_PEER_ID, (*LYLA_HANDLE).clone());
+            include.add_remote(url.clone(), *ROVER_PEER_ID, (*ROVER_HANDLE).clone());
             include.save()?;
         };
 
@@ -304,11 +307,11 @@ mod test {
         );
 
         // The tracking graph changed entirely.
-        let remote_lingling = format!("{}@{}", LINGLING_HANDLE, *LINGLING_PEER_ID);
+        let remote_lingling = format!("{}@{}", *LINGLING_HANDLE, *LINGLING_PEER_ID);
 
         {
             let mut include = Include::new(tmp_dir.path().to_path_buf(), url.clone());
-            include.add_remote(url, *LINGLING_PEER_ID, LINGLING_HANDLE)?;
+            include.add_remote(url, *LINGLING_PEER_ID, (*LINGLING_HANDLE).clone());
             include.save()?;
         };
 

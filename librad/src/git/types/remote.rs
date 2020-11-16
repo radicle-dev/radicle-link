@@ -56,7 +56,7 @@ pub struct Remote<Url> {
     /// The file path to the git monorepo.
     pub url: Url,
     /// Name of the remote, e.g. `"rad"`, `"origin"`.
-    pub name: String,
+    pub name: RefLike,
     /// If the fetch spec is provided then the remote is created with an initial
     /// fetchspec, otherwise it is just a plain remote.
     pub fetch_specs: Vec<FetchSpec>,
@@ -73,18 +73,21 @@ impl<Url> Remote<Url> {
     {
         Self {
             url,
-            name: "rad".to_string(),
+            name: reflike!("rad"),
             fetch_specs: fetch_spec.into().into_iter().map(Into::into).collect(),
             push_specs: vec![],
         }
     }
 
     /// Create a new `Remote` with the given `url` and `name`, while making the
-    /// `fetch_specs` and `push_specs` empty.
-    pub fn new(url: Url, name: String) -> Self {
+    /// `fetch_spec` and `push_specs` empty.
+    pub fn new<R>(url: Url, name: R) -> Self
+    where
+        R: Into<RefLike>,
+    {
         Self {
             url,
-            name,
+            name: name.into(),
             fetch_specs: vec![],
             push_specs: vec![],
         }
@@ -137,8 +140,7 @@ impl<Url> Remote<Url> {
         Url: ToString,
     {
         let url = self.url.to_string();
-
-        repo.remote(&self.name, &url)
+        repo.remote(self.name.as_str(), &url)
             .and(Ok(()))
             .or_matches::<git2::Error, _, _>(is_exists_err, || Ok(()))?;
 
@@ -155,32 +157,30 @@ impl<Url> Remote<Url> {
                 .or_matches::<git2::Error, _, _>(is_not_found_err, || Ok(()))?;
         }
 
-        repo.remote_set_url(&self.name, &url)?;
+        repo.remote_set_url(self.name.as_str(), &url)?;
 
         for spec in self.fetch_specs.iter() {
-            repo.remote_add_fetch(&self.name, &spec.to_string())?;
+            repo.remote_add_fetch(self.name.as_str(), &spec.to_string())?;
         }
         for spec in self.push_specs.iter() {
-            repo.remote_add_push(&self.name, &spec.to_string())?;
+            repo.remote_add_push(self.name.as_str(), &spec.to_string())?;
         }
 
-        debug_assert!(repo.find_remote(&self.name).is_ok());
+        debug_assert!(repo.find_remote(self.name.as_str()).is_ok());
 
         Ok(())
     }
 
     /// Find a persisted remote by name.
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(skip(repo, name), fields(name = name.as_ref()), err)]
-    pub fn find<Name>(repo: &git2::Repository, name: Name) -> Result<Option<Self>, FindError>
+    #[tracing::instrument(skip(repo), err)]
+    pub fn find(repo: &git2::Repository, name: RefLike) -> Result<Option<Self>, FindError>
     where
         Url: FromStr,
         <Url as FromStr>::Err: std::error::Error + Send + Sync + 'static,
-
-        Name: AsRef<str> + Into<String>,
     {
         let git_remote = repo
-            .find_remote(name.as_ref())
+            .find_remote(name.as_str())
             .map(Some)
             .or_matches::<FindError, _, _>(is_not_found_err, || Ok(None))?;
 
@@ -207,7 +207,7 @@ impl<Url> Remote<Url> {
 
                 Ok(Some(Self {
                     url,
-                    name: name.into(),
+                    name,
                     fetch_specs,
                     push_specs,
                 }))
@@ -311,8 +311,8 @@ impl Remote<LocalUrl> {
 
             Configured => self.with_tmp_copy(repo, |this| {
                 this.push_internal(&[] as &[&str], open_storage, |url| {
-                    repo.remote_set_url(&this.name, &url.to_string())?;
-                    repo.find_remote(&this.name)
+                    repo.remote_set_url(this.name.as_str(), &url.to_string())?;
+                    repo.find_remote(this.name.as_str())
                 })
             })?,
         };
@@ -390,8 +390,8 @@ impl Remote<LocalUrl> {
 
             Configured => self.with_tmp_copy(repo, |this| {
                 this.fetch_internal(&[] as &[&str], open_storage, |url| {
-                    repo.remote_set_url(&this.name, &url.to_string())?;
-                    repo.find_remote(&this.name)
+                    repo.remote_set_url(this.name.as_str(), &url.to_string())?;
+                    repo.find_remote(this.name.as_str())
                 })
             })?,
         };
@@ -444,11 +444,11 @@ impl Remote<LocalUrl> {
     {
         let orig_name = self.name.clone();
         let orig_url = self.url.clone();
-        self.name = format!("__tmp_{}", self.name);
+        self.name = reflike!("__tmp_").join(&self.name);
         tracing::debug!("creating temporary remote {}", self.name);
         self.save(repo).unwrap();
         let res = f(self);
-        let deleted = repo.remote_delete(&self.name);
+        let deleted = repo.remote_delete(self.name.as_str());
         self.name = orig_name;
         self.url = orig_url;
         deleted?;
@@ -513,7 +513,7 @@ mod tests {
                 remote.save(&repo).expect("failed to persist the remote");
             }
 
-            let remote = Remote::<LocalUrl>::find(&repo, "rad")
+            let remote = Remote::<LocalUrl>::find(&repo, reflike!("rad"))
                 .unwrap()
                 .expect("should exist");
 
@@ -549,11 +549,11 @@ mod tests {
     #[test]
     fn check_remote_fetch_spec() -> Result<(), git2::Error> {
         let url = LocalUrl::from(URN.clone());
-        let name = format!("lyla@{}", *PEER_ID);
+        let name = ext::RefLike::try_from(format!("lyla@{}", *PEER_ID)).unwrap();
 
         let heads = Reference::heads(None, *PEER_ID);
         let remotes = reflike!("refs/remotes")
-            .join(ext::RefLike::try_from(name.as_str()).unwrap())
+            .join(&name)
             .with_pattern_suffix(refspec_pattern!("*"));
         let mut remote = Remote {
             url,
@@ -570,7 +570,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(tmp.path())?;
         remote.save(&repo)?;
-        let git_remote = repo.find_remote(&name)?;
+        let git_remote = repo.find_remote(name.as_str())?;
         let fetch_refspecs = git_remote.fetch_refspecs()?;
 
         assert_eq!(

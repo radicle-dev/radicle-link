@@ -214,8 +214,13 @@ where
     let inc = include::Include::from_tracked_users(
         inc_path,
         LocalUrl::from(project.urn()),
-        tracked_users,
-    )?;
+        tracked_users.into_iter().map(|(user, peer_id)| {
+            (
+                ext::RefLike::try_from(user.doc.payload.subject.name.as_str()).unwrap(),
+                peer_id,
+            )
+        }),
+    );
     let inc_path = inc.file_path();
     inc.save()?;
 
@@ -224,8 +229,8 @@ where
 
     // Fetch from the working copy and check we have the commit in the working copy
     for remote in repo.remotes()?.iter().filter_map(identity) {
-        let mut remote =
-            Remote::find(&repo, remote)?.expect("should exist, because libgit told us about it");
+        let mut remote = Remote::find(&repo, ext::RefLike::try_from(remote).unwrap())?
+            .expect("should exist, because libgit told us about it");
         remote
             .fetch(peer.clone(), &repo, LocalFetchSpec::Configured)?
             .for_each(drop);
