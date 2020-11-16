@@ -38,7 +38,7 @@ use thiserror::Error;
 use super::{
     storage::{self, Storage},
     tracking,
-    types::{namespace::Namespace, NamespacedRef},
+    types::{Namespace, Reference},
 };
 use crate::{
     internal::canonical::{Cjson, CjsonError},
@@ -176,7 +176,7 @@ impl Refs {
     pub fn compute(storage: &Storage, urn: &Urn) -> Result<Self, stored::Error> {
         let namespace = Namespace::from(urn);
         let namespace_prefix = format!("refs/namespaces/{}/", namespace);
-        let heads_ref = NamespacedRef::heads(namespace, None);
+        let heads_ref = Reference::heads(namespace, None);
 
         tracing::debug!("reading heads from {}", &heads_ref);
 
@@ -232,7 +232,7 @@ impl Refs {
         let peer = peer.into();
         let signer = peer.unwrap_or_else(|| PeerId::from_signer(storage.signer()));
 
-        let blob_ref = NamespacedRef::rad_signed_refs(Namespace::from(urn), peer);
+        let blob_ref = Reference::rad_signed_refs(Namespace::from(urn), peer);
         let blob_path = Path::new(stored::BLOB_PATH);
 
         tracing::debug!(
@@ -256,7 +256,7 @@ impl Refs {
     /// new and persisted [`Refs`] are returned in a `Some`.
     #[tracing::instrument(skip(storage), err)]
     pub fn update(storage: &Storage, urn: &Urn) -> Result<Option<Self>, stored::Error> {
-        let branch = NamespacedRef::rad_signed_refs(Namespace::from(urn), None);
+        let branch = Reference::rad_signed_refs(Namespace::from(urn), None);
         tracing::debug!("updating signed refs for {}", branch);
 
         let signed_refs = Self::compute(storage, urn)?.sign(storage.signer())?;

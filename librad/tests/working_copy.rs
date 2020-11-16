@@ -20,7 +20,6 @@
 use std::{
     convert::{identity, TryFrom},
     fmt::Debug,
-    marker::PhantomData,
     path::Path,
     time::Duration,
 };
@@ -38,13 +37,24 @@ use librad::{
         local::url::LocalUrl,
         replication,
         tracking,
-        types::{namespace::Namespace, remote::Remote, FlatRef, Force, NamespacedRef, Refspec},
+        types::{
+            remote::{LocalFetchSpec, LocalPushSpec},
+            FetchSpec,
+            Flat,
+            Force,
+            GenericRef,
+            Namespace,
+            Reference,
+            Refspec,
+            Remote,
+        },
         Urn,
     },
     git_ext as ext,
     net::peer::{FetchInfo, Gossip, PeerApi, PeerEvent, Rev},
     peer::PeerId,
     reflike,
+    refspec_pattern,
 };
 
 use librad_test::{
@@ -96,10 +106,13 @@ async fn can_fetch() {
                     tracking::tracked(&store, &urn)
                         .unwrap()
                         .map(|peer| {
-                            let self_ref = NamespacedRef::rad_self(Namespace::from(&urn), peer);
-                            let user = identities::user::get(&store, &Urn::from(self_ref))
-                                .unwrap()
-                                .expect("tracked user should exist");
+                            let self_ref = Reference::rad_self(Namespace::from(&urn), peer);
+                            let user = identities::user::get(
+                                &store,
+                                &Urn::try_from(self_ref).expect("namespace is set"),
+                            )
+                            .unwrap()
+                            .expect("tracked user should exist");
                             (user, peer)
                         })
                         .collect::<Vec<(User, PeerId)>>()
@@ -143,32 +156,35 @@ where
     let repo = git2::Repository::init(repo_path)?;
     let url = LocalUrl::from(project.urn());
 
-    let heads = NamespacedRef::heads(Namespace::from(project.urn()), peer.peer_id());
-    let remotes = FlatRef::heads(
-        PhantomData,
-        ext::RefLike::try_from(format!(
-            "{}@{}",
-            owner.doc.payload.subject.name,
-            peer.peer_id()
-        ))
-        .unwrap(),
-    );
-    let fetchspec = remotes.refspec(heads, Force::True);
+    let fetchspec = Refspec {
+        src: Reference::heads(Namespace::from(project.urn()), peer.peer_id()),
+        dst: GenericRef::heads(
+            Flat,
+            ext::RefLike::try_from(format!(
+                "{}@{}",
+                owner.doc.payload.subject.name,
+                peer.peer_id()
+            ))
+            .unwrap(),
+        ),
+        force: Force::True,
+    }
+    .into_fetch_spec();
 
     let master = reflike!("refs/heads/master");
 
-    let mut remote = Remote::rad_remote(url, fetchspec.boxed());
-    remote.add_pushes(Some(
-        Refspec {
-            local: master.clone(),
-            remote: master.clone(),
-            force: Force::False,
-        }
-        .boxed(),
-    ));
-
     let oid = create_commit(&repo, master.clone())?;
-    remote.push(peer.clone(), &repo)?.for_each(drop);
+    let mut remote = Remote::rad_remote(url, FetchSpec::from(fetchspec));
+    remote
+        .push(
+            peer.clone(),
+            &repo,
+            LocalPushSpec::Matching {
+                pattern: refspec_pattern!("refs/heads/*"),
+                force: Force::True,
+            },
+        )?
+        .for_each(drop);
 
     peer.protocol()
         .announce(Gossip {
@@ -211,7 +227,9 @@ where
     for remote in repo.remotes()?.iter().filter_map(identity) {
         let mut remote =
             Remote::find(&repo, remote)?.expect("should exist, because libgit told us about it");
-        remote.fetch(peer.clone(), &repo)?.for_each(drop);
+        remote
+            .fetch(peer.clone(), &repo, LocalFetchSpec::Configured)?
+            .for_each(drop);
     }
 
     Ok(repo)

@@ -22,7 +22,7 @@ use thiserror::Error;
 use super::{
     super::{
         storage::{self, config, Storage},
-        types::{namespace::Namespace, Force, NamespacedRef},
+        types::{Force, Namespace, Reference},
     },
     user,
 };
@@ -97,9 +97,9 @@ impl LocalIdentity {
     /// That is, create a symref from `refs/namespaces/<urn>/rad/self` to
     /// `refs/namespaces/<local id>/rad/id`.
     pub fn link(&self, storage: &Storage, from: &Urn) -> Result<(), storage::Error> {
-        NamespacedRef::rad_id(Namespace::from(self.urn()))
+        Reference::rad_id(Namespace::from(self.urn()))
             .symbolic_ref(
-                NamespacedRef::rad_self(Namespace::from(from), None),
+                Reference::rad_self(Namespace::from(from), None),
                 Force::True,
             )
             .create(storage.as_raw())

@@ -17,7 +17,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
     net::SocketAddr,
 };
 
@@ -31,12 +31,7 @@ use super::{
     refs::{self, Refs},
     storage::{self, Storage},
     tracking,
-    types::{
-        namespace::Namespace,
-        reference::{self, Reference},
-        Force,
-        NamespacedRef,
-    },
+    types::{reference, Force, Namespace, Reference},
 };
 use crate::{
     identities::git::{Project, SomeIdentity, User},
@@ -129,9 +124,10 @@ where
         .fetch(fetch::Fetchspecs::Peek)
         .map_err(|e| Error::Fetch(e.into()))?;
 
-    let remote_ident: Urn = NamespacedRef::rad_id(Namespace::from(&urn))
+    let remote_ident: Urn = Reference::rad_id(Namespace::from(&urn))
         .with_remote(remote_peer)
-        .into();
+        .try_into()
+        .expect("namespace is set");
     let delegates = match identities::any::get(storage, &remote_ident)? {
         None => Err(Error::MissingIdentity),
         Some(some_id) => match some_id {
@@ -191,9 +187,10 @@ where
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage), err)]
 fn ensure_setup_as_user(storage: &Storage, user: User, remote_peer: PeerId) -> Result<(), Error> {
-    let urn: Urn = NamespacedRef::rad_id(Namespace::from(user.urn()))
+    let urn: Urn = Reference::rad_id(Namespace::from(user.urn()))
         .with_remote(remote_peer)
-        .into();
+        .try_into()
+        .expect("namespace is set");
 
     match identities::user::verify(storage, &urn)? {
         None => Err(Error::MissingIdentity),
@@ -217,18 +214,20 @@ fn ensure_setup_as_project(
     proj: Project,
     remote_peer: PeerId,
 ) -> Result<impl Iterator<Item = Urn>, Error> {
-    let urn: Urn = NamespacedRef::rad_id(Namespace::from(proj.urn()))
+    let urn: Urn = Reference::rad_id(Namespace::from(proj.urn()))
         .with_remote(remote_peer)
-        .into();
+        .try_into()
+        .expect("namespace is set");
 
     // Verify + symref the delegates first
     for delegate in proj.doc.delegations.iter().indirect() {
         let delegate_urn = delegate.urn();
         // Find in `refs/namespaces/<urn>/refs/remotes/<remote
         // peer>/rad/ids/<delegate.urn>`
-        let in_rad_ids: Urn = NamespacedRef::rad_delegate(Namespace::from(&urn), &delegate_urn)
+        let in_rad_ids: Urn = Reference::rad_delegate(Namespace::from(&urn), &delegate_urn)
             .with_remote(remote_peer)
-            .into();
+            .try_into()
+            .expect("namespace is set");
         match identities::user::verify(storage, &in_rad_ids)? {
             None => Err(Error::Missing(in_rad_ids.into())),
             Some(delegate_user) => {

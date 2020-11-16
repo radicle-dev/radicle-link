@@ -19,7 +19,6 @@ use std::{
     convert::TryFrom,
     fmt::Debug,
     io::{self, Write},
-    marker::PhantomData,
     path::{self, PathBuf},
 };
 
@@ -29,7 +28,7 @@ use tempfile::NamedTempFile;
 use super::{
     identities::user::User,
     local::url::LocalUrl,
-    types::{remote::Remote, FlatRef, Force},
+    types::{Flat, Force, GenericRef, Reference, Refspec, Remote},
 };
 use crate::peer::PeerId;
 
@@ -123,28 +122,20 @@ impl<Path> Include<Path> {
                 tracing::debug!("remote.{}.url = {}", remote.name, remote.url);
                 writeln!(tmp, "\turl = {}", remote.url)?;
 
-                let fetch_specs = remote.fetch_specs.iter().map(|spec| spec.as_refspec());
-                for spec in fetch_specs {
+                for spec in remote.fetch_specs.iter() {
                     tracing::debug!("remote.{}.fetch = {}", remote.name, spec);
                     writeln!(tmp, "\tfetch = {}", spec)?;
                 }
 
-                let push_specs = remote.push_specs.iter().map(|spec| spec.as_refspec());
-                for spec in push_specs {
+                for spec in remote.push_specs.iter() {
                     tracing::debug!("remote.{}.push = {}", remote.name, spec);
                     writeln!(tmp, "\tpush = {}", spec)?;
                 }
             }
         }
-        tracing::trace!("flushing {}", tmp.path().display());
         tmp.as_file().sync_data()?;
-        tracing::trace!(
-            "persisting {} to {}",
-            tmp.path().display(),
-            self.file_path().display()
-        );
         tmp.persist(self.file_path())?;
-        tracing::trace!("include file saved");
+        tracing::trace!("persisted include file to {}", self.file_path().display());
 
         Ok(())
     }
@@ -189,10 +180,11 @@ impl<Path> Include<Path> {
 
     fn build_remote(url: LocalUrl, peer: PeerId, handle: &str) -> Result<Remote<LocalUrl>, Error> {
         let name = format!("{}@{}", handle, peer);
-        let heads: FlatRef<PeerId, _> =
-            FlatRef::heads(PhantomData, peer).with_name(refspec_pattern!("heads/*"));
-        let remotes = FlatRef::heads(PhantomData, ext::RefLike::try_from(handle)?);
-        Ok(Remote::new(url, name).with_refspec(remotes.refspec(heads, Force::True).boxed()))
+        Ok(Remote::new(url, name).with_fetch_specs(vec![Refspec {
+            src: Reference::heads(None, peer),
+            dst: GenericRef::heads(Flat, ext::RefLike::try_from(handle)?),
+            force: Force::True,
+        }]))
     }
 }
 

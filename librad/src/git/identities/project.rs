@@ -23,7 +23,7 @@ use git_ext::is_not_found_err;
 use super::{
     super::{
         storage::{self, Storage},
-        types::{namespace, Force, NamespacedRef, Reference, Single, SymbolicRef},
+        types::{namespace, reference, Force, Reference, Single, SymbolicRef},
     },
     common,
     error::Error,
@@ -75,7 +75,7 @@ pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedProject>, E
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
             let lookup = |urn| {
-                let refname = NamespacedRef::rad_id(Namespace::from(urn)).to_string();
+                let refname = Reference::rad_id(Namespace::from(urn)).to_string();
                 storage.as_raw().refname_to_id(&refname)
             };
             identities(storage)
@@ -188,8 +188,8 @@ impl<'a> Refs<'a> {
         &'a self,
     ) -> impl Iterator<
         Item = SymbolicRef<
-            Reference<Namespace, PeerId, Single>,
-            Reference<Namespace, PeerId, Single>,
+            reference::Reference<Namespace, PeerId, Single>,
+            reference::Reference<Namespace, PeerId, Single>,
         >,
     > + 'a {
         let source = self.project().urn();

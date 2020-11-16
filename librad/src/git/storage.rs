@@ -21,14 +21,7 @@ use git_ext::{self as ext, blob, is_not_found_err, RefLike, References, RefspecP
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
-use super::types::{
-    namespace::{AsNamespace, Namespace},
-    reference,
-    Many,
-    NamespacedRef,
-    One,
-    Reference,
-};
+use super::types::{reference, Many, Namespace, One, Reference};
 use crate::{
     identities::git::Identities,
     paths::Paths,
@@ -144,11 +137,7 @@ impl Storage {
     }
 
     #[tracing::instrument(level = "debug", skip(self), err)]
-    pub fn has_ref<'a, N>(&self, reference: &'a NamespacedRef<N, One>) -> Result<bool, Error>
-    where
-        N: Debug,
-        &'a N: AsNamespace,
-    {
+    pub fn has_ref<'a>(&self, reference: &'a Reference<One>) -> Result<bool, Error> {
         self.backend
             .find_reference(RefLike::from(reference).as_str())
             .and(Ok(true))
@@ -224,14 +213,10 @@ impl Storage {
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
-    pub fn reference<'a, N>(
+    pub fn reference<'a>(
         &'a self,
-        reference: &NamespacedRef<N, One>,
-    ) -> Result<Option<git2::Reference<'a>>, Error>
-    where
-        N: Debug,
-        for<'b> &'b N: AsNamespace,
-    {
+        reference: &Reference<One>,
+    ) -> Result<Option<git2::Reference<'a>>, Error> {
         reference
             .find(&self.backend)
             .map(Some)
@@ -239,15 +224,19 @@ impl Storage {
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
-    pub fn references<'a, N>(
+    pub fn references<'a>(
         &'a self,
-        reference: &NamespacedRef<N, Many>,
-    ) -> Result<impl Iterator<Item = Result<git2::Reference<'a>, Error>> + 'a, Error>
-    where
-        N: Debug,
-        for<'b> &'b N: AsNamespace,
-    {
+        reference: &Reference<Many>,
+    ) -> Result<impl Iterator<Item = Result<git2::Reference<'a>, Error>> + 'a, Error> {
         self.references_glob(glob::RefspecMatcher::from(RefspecPattern::from(reference)))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self), err)]
+    pub fn reference_names<'a>(
+        &'a self,
+        reference: &Reference<Many>,
+    ) -> Result<impl Iterator<Item = Result<ext::RefLike, Error>> + 'a, Error> {
+        self.reference_names_glob(glob::RefspecMatcher::from(RefspecPattern::from(reference)))
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
@@ -291,15 +280,11 @@ impl Storage {
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
-    pub fn blob<'a, N>(
+    pub fn blob<'a>(
         &'a self,
-        reference: &'a NamespacedRef<N, One>,
+        reference: &'a Reference<One>,
         path: &'a Path,
-    ) -> Result<Option<git2::Blob<'a>>, Error>
-    where
-        N: Debug,
-        for<'b> &'b N: AsNamespace,
-    {
+    ) -> Result<Option<git2::Blob<'a>>, Error> {
         ext::Blob::Tip {
             branch: reference.into(),
             path,

@@ -28,13 +28,7 @@ use crate::{
     peer::{self, PeerId},
 };
 
-use super::{
-    namespace::{AsNamespace, Namespace},
-    sealed,
-    Force,
-    Refspec,
-    SymbolicRef,
-};
+use super::{sealed, AsNamespace, Force, Namespace};
 
 use identities::git::Urn;
 
@@ -106,12 +100,12 @@ impl sealed::Sealed for &ext::RefLike {}
 pub struct Reference<Namespace, Remote, Cardinality> {
     /// The remote portion of this reference.
     pub remote: Option<Remote>,
-    /// Where this reference falls under, i.e. `rad` or `heads`.
+    /// Where this reference falls under, i.e. `heads`, `tags` or`rad`.
     pub category: RefsCategory,
-    /// The path of the reference, e.g. `feature/123`, `dev`.
+    /// The path of the reference, e.g. `feature/123`, `dev`, `heads/*`.
     pub name: Cardinality,
-
-    pub(super) _namespace: Namespace,
+    /// The namespace of this reference.
+    pub namespace: Option<Namespace>,
 }
 
 // Polymorphic definitions
@@ -121,140 +115,53 @@ where
     R: Clone,
     C: Clone,
 {
-    /// Set the remote portion of thise reference.
-    ///
-    /// Note: This is consuming.
-    pub fn with_remote(mut self, remote: impl Into<Option<R>>) -> Self {
-        self.remote = remote.into();
-        self
-    }
-
-    /// Set the remote portion of thise reference.
-    ///
-    /// Note: This is not consuming.
-    pub fn set_remote(&self, remote: impl Into<Option<R>>) -> Self {
+    pub fn with_remote(self, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
-            ..self.clone()
+            ..self
         }
+    }
+
+    pub fn set_remote(&mut self, remote: impl Into<Option<R>>) {
+        self.remote = remote.into();
+    }
+
+    pub fn remote(&mut self, remote: impl Into<Option<R>>) -> &mut Self {
+        self.set_remote(remote);
+        self
     }
 
     /// Set the namespace of this reference to another one. Note that the
     /// namespace does not have to be of the original namespace's type.
-    pub fn with_namespace<Other>(self, namespace: Other) -> Reference<Other, R, C> {
+    pub fn with_namespace<NN, Other>(self, namespace: NN) -> Reference<Other, R, C>
+    where
+        NN: Into<Option<Other>>,
+        Other: AsNamespace,
+    {
         Reference {
             name: self.name,
             remote: self.remote,
             category: self.category,
-            _namespace: namespace,
+            namespace: namespace.into(),
         }
     }
 
     /// Set the named portion of this path.
-    ///
-    /// Note: This is consuming.
-    pub fn with_name<S: Into<C>>(mut self, name: S) -> Self {
-        self.name = name.into();
-        self
-    }
-
-    /// Set the named portion of this path.
-    ///
-    /// Note: This is not consuming.
-    pub fn set_name<S: Into<C>>(&self, name: S) -> Self {
+    pub fn with_name<S: Into<C>>(self, name: S) -> Self {
         Self {
             name: name.into(),
-            ..self.clone()
+            ..self
         }
     }
 
-    /// Create the [`Refspec`] using the LHS of this call as the `local`, and
-    /// the RHS as the `remote`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::marker::PhantomData;
-    /// use librad::{
-    ///     git_ext::RefLike,
-    ///     git::{
-    ///         Urn,
-    ///         types::{
-    ///             namespace::Namespace,
-    ///             FlatRef,
-    ///             Force,
-    ///             NamespacedRef,
-    ///         },
-    ///     },
-    ///     keys::SecretKey,
-    ///     peer::PeerId
-    /// };
-    ///
-    /// let urn = Urn::new(git2::Oid::hash_object(git2::ObjectType::Commit, b"geez").unwrap().into());
-    /// let peer: PeerId = SecretKey::new().into();
-    ///
-    /// // Set up a ref to `refs/heads/*`
-    /// let flat_heads: FlatRef<RefLike, _> = FlatRef::heads(PhantomData, None);
-    ///
-    /// // Set up a ref t `refs/namespaces/<geez>/refs/remotes/<peer>/heads/*`
-    /// let namespace_heads = NamespacedRef::heads(Namespace::from(&urn), peer.clone());
-    ///
-    /// // Create a refspec between these two refs
-    /// let spec = flat_heads.refspec(namespace_heads, Force::True);
-    ///
-    /// let expected = format!(
-    ///     "+refs/namespaces/{}/refs/remotes/{}/heads/*:refs/heads/*",
-    ///     Namespace::from(&urn),
-    ///     peer
-    /// );
-    ///
-    /// assert_eq!(
-    ///     &spec.to_string(),
-    ///     &expected,
-    /// );
-    /// ```
-    ///
-    /// ```
-    /// use std::{convert::TryFrom, marker::PhantomData};
-    /// use librad::{
-    ///     git_ext::RefLike,
-    ///     git::{
-    ///         Urn,
-    ///         types::{
-    ///             namespace::Namespace,
-    ///             FlatRef,
-    ///             Force,
-    ///             NamespacedRef,
-    ///         },
-    ///     },
-    ///     keys::SecretKey,
-    ///     peer::PeerId,
-    ///     reflike,
-    /// };
-    ///
-    /// let urn = Urn::new(git2::Oid::hash_object(git2::ObjectType::Commit, b"geez").unwrap().into());
-    /// let peer: PeerId = SecretKey::new().into();
-    ///
-    /// // Set up a ref to `refs/heads/*`
-    /// let flat_heads: FlatRef<RefLike, _> = FlatRef::heads(PhantomData, None);
-    ///
-    /// // Set up a ref t `refs/namespaces/<geez>/refs/remotes/<peer>/heads/banana`
-    /// let namespace_head = NamespacedRef::head(Namespace::from(&urn), peer.clone(), reflike!("banana"));
-    ///
-    /// // The below would fail to compile because `namespace_head` is a `Single`
-    /// // reference while `flat_heads` is `Multiple`.
-    /// // let spec = flat_heads.refspec(namespace_head, Force::True);
-    /// ```
-    pub fn refspec<RN, RR, RC>(
-        self,
-        remote: Reference<RN, RR, RC>,
-        force: Force,
-    ) -> Refspec<Reference<N, R, C>, Reference<RN, RR, RC>> {
-        Refspec {
-            remote,
-            local: self,
-            force,
-        }
+    /// Set the named portion of this path.
+    pub fn set_name<S: Into<C>>(&mut self, name: S) {
+        self.name = name.into();
+    }
+
+    pub fn name<S: Into<C>>(&mut self, name: S) -> &mut Self {
+        self.set_name(name);
+        self
     }
 }
 
@@ -307,23 +214,23 @@ impl<N, R> Reference<N, R, One> {
 
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/rad/id`
-    pub fn rad_id(namespace: N) -> Self {
+    pub fn rad_id(namespace: impl Into<Option<N>>) -> Self {
         Self {
             remote: None,
             category: RefsCategory::Rad,
             name: reflike!("id"),
-            _namespace: namespace,
+            namespace: namespace.into(),
         }
     }
 
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/rad/ids/<id>`
-    pub fn rad_delegate(namespace: N, urn: &Urn) -> Self {
+    pub fn rad_delegate(namespace: impl Into<Option<N>>, urn: &Urn) -> Self {
         Self {
             remote: None,
             category: RefsCategory::Rad,
             name: reflike!("ids").join(ext::RefLike::try_from(urn.encode_id()).unwrap()),
-            _namespace: namespace,
+            namespace: namespace.into(),
         }
     }
 
@@ -331,36 +238,36 @@ impl<N, R> Reference<N, R, One> {
     ///     * `refs/namespaces/<namespace>/refs/rad/signed_refs`
     ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/rad/
     ///       signed_refs`
-    pub fn rad_signed_refs(namespace: N, remote: impl Into<Option<R>>) -> Self {
+    pub fn rad_signed_refs(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
             category: RefsCategory::Rad,
             name: reflike!("signed_refs"),
-            _namespace: namespace,
+            namespace: namespace.into(),
         }
     }
 
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/rad/self`
     ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/rad/self`
-    pub fn rad_self(namespace: N, remote: impl Into<Option<R>>) -> Self {
+    pub fn rad_self(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
             category: RefsCategory::Rad,
             name: reflike!("self"),
-            _namespace: namespace,
+            namespace: namespace.into(),
         }
     }
 
     /// Build a reference that points to:
     ///     * `refs/namespaces/<namespace>/refs/heads/<name>`
     ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/heads/<name>
-    pub fn head(namespace: N, remote: impl Into<Option<R>>, name: One) -> Self {
+    pub fn head(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>, name: One) -> Self {
         Self {
             remote: remote.into(),
             category: RefsCategory::Heads,
             name,
-            _namespace: namespace,
+            namespace: namespace.into(),
         }
     }
 }
@@ -375,22 +282,46 @@ where
     }
 }
 
+impl<N, R> From<Reference<N, R, One>> for ext::RefLike
+where
+    for<'a> &'a N: AsNamespace,
+    for<'a> &'a R: AsRemote,
+{
+    fn from(r: Reference<N, R, One>) -> Self {
+        Self::from(&r)
+    }
+}
+
 impl<'a, N, R> From<&'a Reference<N, R, One>> for ext::RefLike
 where
     &'a N: AsNamespace,
     &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, One>) -> Self {
-        let mut refl = reflike!("refs/namespaces")
-            .join(&r._namespace)
-            .join(reflike!("refs"));
+        let mut refl = reflike!("refs");
 
+        if let Some(ref namespace) = r.namespace {
+            refl = refl
+                .join(reflike!("namespaces"))
+                .join(namespace)
+                .join(reflike!("refs"));
+        }
         if let Some(ref remote) = r.remote {
             refl = refl.join(reflike!("remotes")).join(remote);
         }
 
         refl.join(r.category)
             .join(ext::OneLevel::from(r.name.to_owned()))
+    }
+}
+
+impl<N, R> From<Reference<N, R, One>> for ext::RefspecPattern
+where
+    for<'a> &'a N: AsNamespace,
+    for<'a> &'a R: AsRemote,
+{
+    fn from(r: Reference<N, R, One>) -> Self {
+        Self::from(&r)
     }
 }
 
@@ -429,23 +360,23 @@ impl<N, R> Reference<N, R, Many> {
 
     /// Build a reference that points to
     /// `refs/namespaces/<namespace>/refs/rad/ids/*`
-    pub fn rad_ids_glob(namespace: N) -> Self {
+    pub fn rad_ids_glob(namespace: impl Into<Option<N>>) -> Self {
         Self {
             remote: None,
             category: RefsCategory::Rad,
             name: refspec_pattern!("ids/*"),
-            _namespace: namespace,
+            namespace: namespace.into(),
         }
     }
 
     /// Build a reference that points to
     /// `refs/namespaces/<namespace>/refs/rad/[peer_id]/heads/*`
-    pub fn heads(namespace: N, remote: impl Into<Option<R>>) -> Self {
+    pub fn heads(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
             category: RefsCategory::Heads,
             name: refspec_pattern!("*"),
-            _namespace: namespace,
+            namespace: namespace.into(),
         }
     }
 }
@@ -460,16 +391,30 @@ where
     }
 }
 
+impl<N, R> From<Reference<N, R, Many>> for ext::RefspecPattern
+where
+    for<'a> &'a N: AsNamespace,
+    for<'a> &'a R: AsRemote,
+{
+    fn from(r: Reference<N, R, Many>) -> Self {
+        Self::from(&r)
+    }
+}
+
 impl<'a, N, R> From<&'a Reference<N, R, Many>> for ext::RefspecPattern
 where
     &'a N: AsNamespace,
     &'a R: AsRemote,
 {
     fn from(r: &'a Reference<N, R, Many>) -> Self {
-        let mut refl = reflike!("refs/namespaces")
-            .join(&r._namespace)
-            .join(reflike!("refs"));
+        let mut refl = reflike!("refs");
 
+        if let Some(ref namespace) = r.namespace {
+            refl = refl
+                .join(reflike!("namespaces"))
+                .join(namespace)
+                .join(reflike!("refs"));
+        }
         if let Some(ref remote) = r.remote {
             refl = refl.join(reflike!("remotes")).join(remote);
         }
@@ -480,17 +425,24 @@ where
 
 ////////////////////////////////////////////////////////////////////////////////
 
-impl From<Reference<Namespace<ext::Oid>, PeerId, One>> for Urn {
-    fn from(r: Reference<Namespace<ext::Oid>, PeerId, One>) -> Self {
-        let mut path = reflike!("refs");
-        if let Some(remote) = r.remote {
-            path = path.join(reflike!("remotes")).join(remote);
-        }
-        path = path.join(r.category).join(r.name);
+impl TryFrom<Reference<Namespace<ext::Oid>, PeerId, One>> for Urn {
+    type Error = &'static str;
 
-        Self {
-            path: Some(path),
-            ..Self::from(r._namespace)
+    fn try_from(r: Reference<Namespace<ext::Oid>, PeerId, One>) -> Result<Self, Self::Error> {
+        match r.namespace {
+            None => Err("missing namespace"),
+            Some(ns) => {
+                let mut path = reflike!("refs");
+                if let Some(remote) = r.remote {
+                    path = path.join(reflike!("remotes")).join(remote);
+                }
+                path = path.join(r.category).join(r.name);
+
+                Ok(Self {
+                    path: Some(path),
+                    ..Self::from(ns)
+                })
+            },
         }
     }
 }
@@ -547,7 +499,7 @@ impl TryFrom<&Urn> for Reference<Namespace<ext::Oid>, PeerId, One> {
                             remote,
                             category,
                             name,
-                            _namespace: namespace,
+                            namespace: Some(namespace),
                         })
                     },
 
@@ -555,13 +507,57 @@ impl TryFrom<&Urn> for Reference<Namespace<ext::Oid>, PeerId, One> {
                         remote: None,
                         category: RefsCategory::parse(x).unwrap_or(RefsCategory::Heads),
                         name: iter.map(|x| ext::RefLike::try_from(x).unwrap()).collect(),
-                        _namespace: namespace,
+                        namespace: Some(namespace),
                     }),
 
                     None => Err(FromUrnError::Eof),
                 }
             },
         }
+    }
+}
+
+/// The data for creating a symbolic reference in a git repository.
+pub struct SymbolicRef<S, T> {
+    /// The new symbolic reference.
+    pub source: S,
+    /// The reference that already exists and we want to create symbolic
+    /// reference of.
+    pub target: T,
+    /// Whether we should overwrite any pre-existing `source`.
+    pub force: Force,
+}
+
+impl<S, T> SymbolicRef<S, T> {
+    /// Create a symbolic reference of `target`, where the `source` is the newly
+    /// created reference.
+    ///
+    /// # Errors
+    ///
+    ///   * If the `target` does not exist we won't create the symbolic
+    ///     reference and we error early.
+    ///   * If we could not create the new symbolic reference since the name
+    ///     already exists. Note that this will not be the case if `Force::True`
+    ///     is passed.
+    pub fn create<'a>(&self, repo: &'a git2::Repository) -> Result<git2::Reference<'a>, git2::Error>
+    where
+        for<'b> &'b S: Into<ext::RefLike>,
+        for<'b> &'b T: Into<ext::RefLike>,
+    {
+        let source = Into::<ext::RefLike>::into(&self.source);
+        let target = Into::<ext::RefLike>::into(&self.target);
+
+        let reflog_msg = &format!("creating symbolic ref {} -> {}", source, target);
+        tracing::debug!("{}", reflog_msg);
+
+        repo.find_reference(target.as_str()).and_then(|_| {
+            repo.reference_symbolic(
+                source.as_str(),
+                target.as_str(),
+                self.force.as_bool(),
+                reflog_msg,
+            )
+        })
     }
 }
 
@@ -577,7 +573,7 @@ mod tests {
         let as_ref = Reference::try_from(&urn).unwrap();
         assert_eq!(
             urn.with_path(identities::urn::DEFAULT_PATH.clone()),
-            Urn::from(as_ref)
+            Urn::try_from(as_ref).unwrap()
         )
     }
 
@@ -590,14 +586,14 @@ mod tests {
                 .join(reflike!("rad/id")),
         );
         let as_ref = Reference::try_from(&urn).unwrap();
-        assert_eq!(urn, Urn::from(as_ref))
+        assert_eq!(urn, Urn::try_from(as_ref).unwrap())
     }
 
     #[test]
     fn qualified_path_urn_roundtrip() {
         let urn = Urn::new(git2::Oid::zero().into()).with_path(reflike!("refs/rad/id"));
         let as_ref = Reference::try_from(&urn).unwrap();
-        assert_eq!(urn, Urn::from(as_ref))
+        assert_eq!(urn, Urn::try_from(as_ref).unwrap())
     }
 
     #[test]
@@ -606,7 +602,7 @@ mod tests {
         let as_ref = Reference::try_from(&urn).unwrap();
         assert_eq!(
             urn.with_path(reflike!("refs/heads/rad/id")),
-            Urn::from(as_ref)
+            Urn::try_from(as_ref).unwrap()
         )
     }
 }
