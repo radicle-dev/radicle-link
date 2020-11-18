@@ -39,7 +39,7 @@ use yasna::{ASN1Error, ASN1ErrorKind, ASN1Result};
 
 /// Generate a TLS certificate.
 ///
-/// The certificate is self-signed by the given [`SecretKey`], and advertises
+/// The certificate is self-signed by the given [`sign::Signer`], and advertises
 /// the `PeerId::default_encoding` as the subject alt name.
 fn gen_cert<S>(signer: &S) -> rcgen::Certificate
 where

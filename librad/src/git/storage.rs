@@ -72,6 +72,8 @@ impl Storage {
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
+        crate::git::init();
+
         let backend = git2::Repository::open_bare(paths.git_dir())?;
         let peer_id = Config::try_from(&backend)?.peer_id()?;
 
@@ -91,6 +93,8 @@ impl Storage {
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
+        crate::git::init();
+
         let mut backend = git2::Repository::init_opts(
             paths.git_dir(),
             git2::RepositoryInitOptions::new()

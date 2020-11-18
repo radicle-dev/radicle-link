@@ -91,9 +91,10 @@ pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedPerson>, Er
 
 /// Create a new [`Person`].
 ///
-/// The `delegations` must include the [`Signer`] key, such that the newly
-/// created [`Person`] is also a valid [`LocalIdentity`] -- it is, in fact, its
-/// own [`LocalIdentity`]. This can be changed via [`update`].
+/// The `delegations` must include the [`Storage`]'s [`crate::signer::Signer`]
+/// key, such that the newly created [`Person`] is also a valid
+/// [`LocalIdentity`] -- it is, in fact, its own [`LocalIdentity`]. This can be
+/// changed via [`update`].
 #[tracing::instrument(level = "debug", skip(storage), err)]
 pub fn create<P>(
     storage: &Storage,

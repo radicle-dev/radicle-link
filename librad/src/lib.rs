@@ -16,6 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #![allow(incomplete_features)]
+#![allow(private_intra_doc_links)]
 #![warn(clippy::extra_unused_lifetimes)]
 #![feature(associated_type_bounds)]
 #![feature(backtrace)]
