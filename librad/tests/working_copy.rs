@@ -159,12 +159,7 @@ where
         src: Reference::heads(Namespace::from(project.urn()), peer.peer_id()),
         dst: GenericRef::heads(
             Flat,
-            ext::RefLike::try_from(format!(
-                "{}@{}",
-                owner.doc.payload.subject.name,
-                peer.peer_id()
-            ))
-            .unwrap(),
+            ext::RefLike::try_from(format!("{}@{}", owner.subject().name, peer.peer_id())).unwrap(),
         ),
         force: Force::True,
     }

@@ -39,7 +39,7 @@ impl From<identities::Project> for Project {
     fn from(proj: identities::Project) -> Self {
         Self {
             urn: proj.urn(),
-            name: proj.doc.payload.subject.name.to_string(),
+            name: proj.subject().name.to_string(),
             description: proj
                 .doc
                 .payload

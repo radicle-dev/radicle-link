@@ -185,7 +185,7 @@ async fn fetches_on_gossip_notify() {
                         Flat,
                         ext::RefLike::try_from(format!(
                             "{}@{}",
-                            owner.doc.payload.subject.name,
+                            owner.subject().name,
                             peer1.peer_id(),
                         ))
                         .unwrap(),
@@ -410,12 +410,8 @@ async fn menage_a_troi() {
             let heads = Reference::heads(Namespace::from(project.urn()), Some(peer1.peer_id()));
             let remotes = GenericRef::heads(
                 Flat,
-                ext::RefLike::try_from(format!(
-                    "{}@{}",
-                    owner.doc.payload.subject.name,
-                    peer1.peer_id()
-                ))
-                .unwrap(),
+                ext::RefLike::try_from(format!("{}@{}", owner.subject().name, peer1.peer_id()))
+                    .unwrap(),
             );
             let mastor = reflike!("refs/heads").join(&default_branch);
             let mut remote = Remote::rad_remote(

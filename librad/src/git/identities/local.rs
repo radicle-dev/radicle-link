@@ -85,7 +85,7 @@ impl LocalIdentity {
         let local_peer_id = PeerId::from_signer(signer);
         if !user.signatures.contains_key(&local_peer_id) {
             Err(ValidationError::LocalSignature)
-        } else if !user.doc.delegations.contains(&local_peer_id) {
+        } else if !user.delegations().contains(&local_peer_id) {
             Err(ValidationError::LocalDelegation)
         } else {
             Ok(Self(user))

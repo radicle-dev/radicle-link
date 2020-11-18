@@ -478,9 +478,9 @@ impl<'a> Identities<'a, User> {
         let doc = Doc {
             version: 0,
             replaces: Some(base.revision),
-            payload: payload.unwrap_or_else(|| base.doc.payload.clone()),
+            payload: payload.unwrap_or_else(|| base.payload().clone()),
             delegations: payload::UserDelegations::from(
-                delegations.unwrap_or_else(|| base.doc.delegations.clone()),
+                delegations.unwrap_or_else(|| base.delegations().clone()),
             ),
         };
 
@@ -634,11 +634,11 @@ impl<'a> Identities<'a, Project> {
         let doc = Doc {
             version: 0,
             replaces: Some(base.revision),
-            payload: payload.unwrap_or_else(|| base.doc.payload.clone()),
+            payload: payload.unwrap_or_else(|| base.payload().clone()),
             delegations: delegations
                 .clone()
                 .map(payload::ProjectDelegations::from)
-                .unwrap_or_else(|| base.doc.delegations.clone().into()),
+                .unwrap_or_else(|| base.delegations().clone().into()),
         };
 
         let root = base.root;
