@@ -474,6 +474,8 @@ impl Storage<NoSigner> {
     /// The `Storage` must have been initialised with [`Storage::init`] prior to
     /// calling this method.
     pub fn open(paths: &Paths) -> Result<Self, Error> {
+        crate::git::init();
+
         let backend = git2::Repository::open_bare(paths.git_dir())?;
         let peer_id = Config::try_from(&backend)?.peer_id()?;
         Ok(Self {
@@ -536,6 +538,8 @@ where
     ///
     /// Must be externally synchronised.
     pub fn init(paths: &Paths, signer: S) -> Result<Self, Error> {
+        crate::git::init();
+
         let mut backend = git2::Repository::init_opts(
             paths.git_dir(),
             git2::RepositoryInitOptions::new()
