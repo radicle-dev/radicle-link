@@ -99,7 +99,7 @@ impl<A: Ord> Remotes<A> {
         Self(BTreeMap::new())
     }
 
-    /// Build a new [`Self`] with at most `depth` levels.
+    /// Build a new `self` with at most `depth` levels.
     pub fn cutoff(self, depth: usize) -> Self {
         if depth == 0 {
             return Self(BTreeMap::default());
@@ -111,7 +111,7 @@ impl<A: Ord> Remotes<A> {
         }))
     }
 
-    /// Modify [`Self`] to contain at most `depth` levels.
+    /// Modify `self` to contain at most `depth` levels.
     pub fn cutoff_mut(&mut self, depth: usize) {
         if depth > 0 {
             let depth = depth - 1;

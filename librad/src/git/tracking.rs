@@ -50,8 +50,7 @@ pub enum Error {
 ///
 /// # Errors
 ///
-/// Attempting to track oneself (as per the public key of the [`Signer`] is an
-/// error.
+/// Attempting to track oneself (ie. [`Storage::peer_id`]) is an error.
 #[tracing::instrument(skip(storage), err)]
 pub fn track(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
     let local_peer = storage.peer_id();

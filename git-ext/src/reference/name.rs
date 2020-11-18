@@ -81,8 +81,7 @@ impl RefLike {
         RefspecPattern(self.0.join(suf.into().0))
     }
 
-    /// Returns a [`RefLike`] that, when joined onto `base` (converted into
-    /// [`Self`]), yields `self`.
+    /// Returns a [`RefLike`] that, when joined onto `base`, yields `self`.
     ///
     /// # Errors
     ///

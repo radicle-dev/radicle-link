@@ -115,7 +115,7 @@ pub enum ApiError {
 /// Upstream events.
 ///
 /// A [`Peer`] exhibits "background" behaviour as it reacts to gossip. This
-/// behaviour can be observed by using [`Peer::subscribe`].
+/// behaviour can be observed by using [`PeerApi::subscribe`].
 #[derive(Clone, Debug)]
 pub enum PeerEvent {
     GossipFetch(FetchInfo),
@@ -154,12 +154,14 @@ where
 
 #[derive(Clone, Copy)]
 pub struct StorageConfig {
-    /// Number of [`Storage`] instances to pool for [`PeerApi`] consumers.
+    /// Number of [`git::storage::Storage`] instances to pool for [`PeerApi`]
+    /// consumers.
     ///
     /// Default: the number of physical cores available
     pub user_pool_size: usize,
 
-    /// Number of [`Storage`] instances to reserve for protocol use.
+    /// Number of [`git::storage::Storage`] instances to reserve for protocol
+    /// use.
     ///
     /// Default: the number of physical cores available
     pub protocol_pool_size: usize,
@@ -223,7 +225,7 @@ impl PeerApi {
         async move { subscribers.subscribe().await }
     }
 
-    /// Query the network for providers of the given [`RadUrn`].
+    /// Query the network for providers of the given [`Urn`].
     ///
     /// This is a convenience for the special case of issuing a gossip `Want`
     /// message where we don't know a specific revision, nor an origin peer.
@@ -231,7 +233,7 @@ impl PeerApi {
     /// attempting a clone, even if it isn't a direct response to our query.
     ///
     /// Note that there is no guarantee that a peer who claims to provide the
-    /// [`RadUrn`] actually has it, nor that it is reachable using any of
+    /// [`Urn`] actually has it, nor that it is reachable using any of
     /// the addresses contained in [`PeerInfo`]. The implementation may
     /// change in the future to answer the query from a local cache first.
     ///
