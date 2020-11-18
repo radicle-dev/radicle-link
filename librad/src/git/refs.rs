@@ -16,11 +16,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::BTreeMap,
+    collections::{btree_map, BTreeMap},
     convert::TryFrom,
     fmt::{self, Debug},
-    hash::Hash,
-    iter,
+    iter::FromIterator,
     marker::PhantomData,
     ops::{Deref, DerefMut},
     path::Path,
@@ -50,68 +49,119 @@ use crate::{
 pub use crate::identities::git::Urn;
 pub use git_ext::Oid;
 
-/// The transitive tracking graph, up to 3 degrees
+/// The depth of the tracking graph (ie. [`Remotes`]) to retain per peer.
+// TODO(kim): bubble up as parameter
+pub const TRACKING_GRAPH_DEPTH: usize = 3;
+
+/// The transitive tracking graph.
+// **NOTE**: A recursion limit of 128 is imposed by `serde_json` when deserialising.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Remotes<A: PartialEq + Eq + Ord>(BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>);
+pub struct Remotes<A: Ord>(BTreeMap<A, Box<Remotes<A>>>);
 
-impl<A> Remotes<A>
+impl<A> Default for Remotes<A>
 where
-    A: PartialEq + Eq + Ord + Hash,
+    A: Default + Ord,
 {
-    pub fn cutoff(self) -> BTreeMap<A, BTreeMap<A, ()>>
-    where
-        A: Clone,
-    {
-        self.0
-            .into_iter()
-            .map(|(k, v)| (k, v.keys().map(|x| (x.clone(), ())).collect()))
-            .collect()
-    }
-
-    pub fn flatten(&self) -> impl Iterator<Item = &A> {
-        self.0.iter().flat_map(|(k, v)| {
-            iter::once(k).chain(
-                v.iter()
-                    .flat_map(|(k1, v1)| iter::once(k1).chain(v1.keys())),
-            )
-        })
-    }
-
-    pub fn from_map(map: BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>) -> Self {
-        Self(map)
-    }
-
-    pub fn boxed(self) -> Box<Self> {
-        Box::new(self)
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-impl<A> Deref for Remotes<A>
-where
-    A: PartialEq + Eq + Ord + Hash,
-{
-    type Target = BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>;
+impl<A: Ord> Deref for Remotes<A> {
+    type Target = BTreeMap<A, Box<Remotes<A>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<A> DerefMut for Remotes<A>
-where
-    A: PartialEq + Eq + Ord + Hash,
-{
+impl<A: Ord> DerefMut for Remotes<A> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<A> From<BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>> for Remotes<A>
-where
-    A: PartialEq + Eq + Ord + Hash,
-{
-    fn from(map: BTreeMap<A, BTreeMap<A, BTreeMap<A, ()>>>) -> Self {
-        Self::from_map(map)
+impl<A: Ord> FromIterator<A> for Remotes<A> {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = A>,
+    {
+        Self(
+            iter.into_iter()
+                .map(|a| (a, Box::new(Self::new())))
+                .collect(),
+        )
+    }
+}
+
+impl<A: Ord> Remotes<A> {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+
+    /// Build a new [`Self`] with at most `depth` levels.
+    pub fn cutoff(self, depth: usize) -> Self {
+        if depth == 0 {
+            return Self(BTreeMap::default());
+        }
+
+        Self(self.0.into_iter().fold(BTreeMap::new(), |mut acc, (k, v)| {
+            acc.insert(k, Box::new(v.cutoff(depth - 1)));
+            acc
+        }))
+    }
+
+    /// Modify [`Self`] to contain at most `depth` levels.
+    pub fn cutoff_mut(&mut self, depth: usize) {
+        if depth > 0 {
+            let depth = depth - 1;
+            for v in self.0.values_mut() {
+                v.cutoff_mut(depth)
+            }
+        } else {
+            self.clear()
+        }
+    }
+
+    /// Traverse the tracking graph, yielding all nodes (of type `A`).
+    ///
+    /// Note that equal values of `A` may appear in the iterator, depending on
+    /// the graph topology. To obtain the set of tracked `A`,
+    /// [`Iterator::collect`] into a set type.
+    pub fn flatten(&self) -> impl Iterator<Item = &A> {
+        Flatten {
+            outer: self.iter(),
+            inner: None,
+        }
+    }
+}
+
+/// Iterator which yields all `A`s in an unspecified order.
+struct Flatten<'a, A: Ord> {
+    outer: btree_map::Iter<'a, A, Box<Remotes<A>>>,
+    inner: Option<Box<Flatten<'a, A>>>,
+}
+
+impl<'a, A: Ord> Iterator for Flatten<'a, A> {
+    type Item = &'a A;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(mut flat) = self.inner.take() {
+            if let Some(a) = flat.next() {
+                self.inner = Some(flat);
+                return Some(a);
+            }
+        }
+
+        if let Some((k, v)) = self.outer.next() {
+            self.inner = Some(Box::new(Flatten {
+                outer: v.iter(),
+                inner: None,
+            }));
+            return Some(k);
+        }
+
+        None
     }
 }
 
@@ -200,20 +250,14 @@ impl Refs {
                 Ok::<_, stored::Error>(acc)
             })?;
 
-        let mut remotes = tracking::tracked(storage, urn)?
-            .map(|peer| (peer, BTreeMap::new()))
-            .collect::<BTreeMap<PeerId, BTreeMap<PeerId, BTreeMap<PeerId, ()>>>>();
-
+        let mut remotes = tracking::tracked(storage, urn)?.collect::<Remotes<PeerId>>();
         for (peer, tracked) in remotes.iter_mut() {
             if let Some(refs) = Self::load(storage, urn, *peer)? {
-                *tracked = refs.remotes.cutoff();
+                *tracked = Box::new(refs.remotes.cutoff(TRACKING_GRAPH_DEPTH));
             }
         }
 
-        Ok(Self {
-            heads,
-            remotes: remotes.into(),
-        })
+        Ok(Self { heads, remotes })
     }
 
     /// Load the [`Refs`] of [`Urn`] (and optionally a remote `peer`) from
@@ -467,5 +511,103 @@ impl Serialize for Signed<Verified> {
         state.serialize_field("refs", &self.refs)?;
         state.serialize_field("signature", &self.signature)?;
         state.end()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod remotes {
+        use super::*;
+
+        use pretty_assertions::assert_eq;
+        use serde_json::json;
+
+        lazy_static! {
+            static ref REMOTES: Remotes<String> = serde_json::from_value(json!({
+                "lolek": {
+                    "bolek": {
+                        "tola": {
+                            "alice": {
+                                "bob": {
+                                    "carol": {
+                                        "dylan": {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "alice": {
+                    "bob": {
+                        "carol": {
+                            "dylan": {}
+                        }
+                    }
+                }
+            }))
+            .unwrap();
+        }
+
+        #[test]
+        fn so_many_levels_of_remoteness() {
+            assert!(
+                REMOTES["lolek"]["bolek"]["tola"]["alice"]["bob"]["carol"].contains_key("dylan")
+            );
+            assert!(REMOTES["alice"]["bob"]["carol"].contains_key("dylan"))
+        }
+
+        #[test]
+        fn deep_flatten() {
+            assert_eq!(
+                vec![
+                    "alice", "bob", "carol", "dylan", "lolek", "bolek", "tola", "alice", "bob",
+                    "carol", "dylan"
+                ],
+                REMOTES.flatten().collect::<Vec<_>>()
+            )
+        }
+
+        #[test]
+        fn cutoff() {
+            assert_eq!(
+                json!({
+                    "lolek": {
+                        "bolek": {
+                            "tola": {}
+                        }
+                    },
+                    "alice": {
+                        "bob": {
+                            "carol": {}
+                        }
+                    }
+                }),
+                serde_json::to_value(REMOTES.clone().cutoff(3)).unwrap()
+            )
+        }
+
+        #[test]
+        fn cutoff_mut() {
+            let mut remotes = REMOTES.clone();
+            remotes.cutoff_mut(3);
+
+            assert_eq!(
+                json!({
+                    "lolek": {
+                        "bolek": {
+                            "tola": {}
+                        }
+                    },
+                    "alice": {
+                        "bob": {
+                            "carol": {}
+                        }
+                    }
+                }),
+                serde_json::to_value(remotes).unwrap()
+            )
+        }
     }
 }

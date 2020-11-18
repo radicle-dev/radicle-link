@@ -583,7 +583,7 @@ mod tests {
                         .iter()
                         .cloned()
                         .collect(),
-                    remotes: Remotes::from_map(BTreeMap::new()),
+                    remotes: Remotes::new(),
                 },
             ),
             (
@@ -596,7 +596,7 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
-                    remotes: Remotes::from_map(BTreeMap::new()),
+                    remotes: Remotes::new(),
                 },
             ),
         ]
