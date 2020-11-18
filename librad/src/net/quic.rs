@@ -26,15 +26,14 @@ use futures_codec::{Decoder, Encoder, Framed};
 use quinn::{self, NewConnection, TransportConfig, VarInt};
 use thiserror::Error;
 
-use keystore::sign;
-
 use crate::{
-    keys::AsPKCS8,
     net::{
         connection::{self, CloseReason, LocalInfo, RemoteInfo},
         tls,
+        x509,
     },
     peer::{self, PeerId},
+    signer::Signer,
 };
 
 /// The ALPN protocol(s) for the radicle-link protocol stack.
@@ -58,8 +57,8 @@ pub enum Error {
     #[error(transparent)]
     PeerId(#[from] peer::conversion::Error),
 
-    #[error(transparent)]
-    Cert(#[from] yasna::ASN1Error),
+    #[error("signer error")]
+    Signer(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error(transparent)]
     Endpoint(#[from] quinn::EndpointError),
@@ -80,11 +79,12 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    pub async fn bind<'a, S>(signer: &S, listen_addr: SocketAddr) -> Result<BoundEndpoint<'a>>
+    pub async fn bind<'a, S>(signer: S, listen_addr: SocketAddr) -> Result<BoundEndpoint<'a>>
     where
-        S: sign::Signer + AsPKCS8,
+        S: Signer + Clone + Send + Sync + 'static,
+        S::Error: std::error::Error + Send + Sync + 'static,
     {
-        let peer_id = PeerId::from_signer(signer);
+        let peer_id = PeerId::from_signer(&signer);
         let (endpoint, incoming) = make_endpoint(signer, listen_addr).await?;
         let endpoint = Endpoint { peer_id, endpoint };
         let incoming = incoming
@@ -169,7 +169,11 @@ fn remote_peer(conn: &NewConnection) -> Result<Option<PeerId>> {
                 .next()
                 .expect("One certificate must have been presented")
                 .as_ref();
-            tls::extract_peer_id(first).map(Some).map_err(Error::from)
+            Ok(Some(
+                x509::Certificate::from_der(first)
+                    .map(|cert| cert.peer_id())
+                    .unwrap(),
+            ))
         },
 
         None => conn
@@ -414,46 +418,50 @@ impl AsyncWrite for SendStream {
         AsyncWrite::poll_close(Pin::new(&mut self.get_mut().send), cx)
     }
 }
+
 async fn make_endpoint<S>(
-    signer: &S,
+    signer: S,
     listen_addr: SocketAddr,
-) -> std::result::Result<(quinn::Endpoint, quinn::Incoming), quinn::EndpointError>
+) -> Result<(quinn::Endpoint, quinn::Incoming)>
 where
-    S: sign::Signer + AsPKCS8,
+    S: Signer + Clone + Send + Sync + 'static,
+    S::Error: std::error::Error + Send + Sync + 'static,
 {
     let mut builder = quinn::Endpoint::builder();
-    builder.default_client_config(make_client_config(signer));
-    builder.listen(make_server_config(signer));
+    builder.default_client_config(make_client_config(signer.clone())?);
+    builder.listen(make_server_config(signer)?);
 
-    builder.bind(&listen_addr)
+    Ok(builder.bind(&listen_addr)?)
 }
 
-fn make_client_config<S>(signer: &S) -> quinn::ClientConfig
+fn make_client_config<S>(signer: S) -> Result<quinn::ClientConfig>
 where
-    S: sign::Signer + AsPKCS8,
+    S: Signer + Clone + Send + Sync + 'static,
+    S::Error: std::error::Error + Send + Sync + 'static,
 {
-    let mut tls_config = tls::make_client_config(signer);
+    let mut tls_config = tls::make_client_config(signer).map_err(|e| Error::Signer(Box::new(e)))?;
     tls_config.alpn_protocols = ALPN.iter().map(|x| x.to_vec()).collect();
 
     let mut quic_config = quinn::ClientConfigBuilder::default().build();
     quic_config.crypto = Arc::new(tls_config);
     quic_config.transport = Arc::new(make_transport_config());
 
-    quic_config
+    Ok(quic_config)
 }
 
-fn make_server_config<S>(signer: &S) -> quinn::ServerConfig
+fn make_server_config<S>(signer: S) -> Result<quinn::ServerConfig>
 where
-    S: sign::Signer + AsPKCS8,
+    S: Signer + Clone + Send + Sync + 'static,
+    S::Error: std::error::Error + Send + Sync + 'static,
 {
-    let mut tls_config = tls::make_server_config(signer);
+    let mut tls_config = tls::make_server_config(signer).map_err(|e| Error::Signer(Box::new(e)))?;
     tls_config.alpn_protocols = ALPN.iter().map(|x| x.to_vec()).collect();
 
     let mut quic_config = quinn::ServerConfigBuilder::default().build();
     quic_config.crypto = Arc::new(tls_config);
     quic_config.transport = Arc::new(make_transport_config());
 
-    quic_config
+    Ok(quic_config)
 }
 
 fn make_transport_config() -> quinn::TransportConfig {

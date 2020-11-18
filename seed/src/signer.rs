@@ -17,9 +17,8 @@
 
 use std::io;
 
-use radicle_keystore::sign::ed25519;
-
 use librad::keys;
+use radicle_keystore::sign::ed25519;
 
 #[derive(Clone)]
 pub struct Signer {
@@ -51,11 +50,5 @@ impl ed25519::Signer for Signer {
 
     async fn sign(&self, data: &[u8]) -> Result<ed25519::Signature, Self::Error> {
         <keys::SecretKey as ed25519::Signer>::sign(&self.key, data).await
-    }
-}
-
-impl keys::AsPKCS8 for Signer {
-    fn as_pkcs8(&self) -> Vec<u8> {
-        self.key.as_pkcs8()
     }
 }

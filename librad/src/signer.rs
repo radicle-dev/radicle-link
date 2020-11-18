@@ -19,6 +19,7 @@
 
 use std::error::Error;
 
+use futures::executor::block_on;
 use keystore::sign;
 
 use crate::{keys, peer::PeerId};
@@ -32,6 +33,9 @@ pub trait Signer:
     + dyn_clone::DynClone
     + 'static
 {
+    fn sign_blocking(&self, data: &[u8]) -> Result<sign::Signature, <Self as sign::Signer>::Error> {
+        block_on(self.sign(data))
+    }
 }
 
 impl<T> Signer for T
@@ -130,6 +134,38 @@ impl sign::Signer for BoxedSigner {
 impl From<keys::SecretKey> for BoxedSigner {
     fn from(key: keys::SecretKey) -> Self {
         Self::from(SomeSigner { signer: key })
+    }
+}
+
+impl rustls::sign::SigningKey for BoxedSigner {
+    fn choose_scheme(
+        &self,
+        offered: &[rustls::SignatureScheme],
+    ) -> Option<Box<dyn rustls::sign::Signer>> {
+        if offered
+            .iter()
+            .any(|s| matches!(s, rustls::SignatureScheme::ED25519))
+        {
+            Some(Box::new(self.clone()))
+        } else {
+            None
+        }
+    }
+
+    fn algorithm(&self) -> rustls::internal::msgs::enums::SignatureAlgorithm {
+        rustls::internal::msgs::enums::SignatureAlgorithm::ED25519
+    }
+}
+
+impl rustls::sign::Signer for BoxedSigner {
+    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::TLSError> {
+        self.sign_blocking(message)
+            .map(|sign::Signature(sig)| Vec::from(sig))
+            .map_err(|e| rustls::TLSError::General(e.to_string()))
+    }
+
+    fn get_scheme(&self) -> rustls::SignatureScheme {
+        rustls::SignatureScheme::ED25519
     }
 }
 

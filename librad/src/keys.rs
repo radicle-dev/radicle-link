@@ -23,7 +23,6 @@ use std::{
     ops::Deref,
 };
 
-use bit_vec::BitVec;
 use ed25519_zebra as ed25519;
 use multibase::Base;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
@@ -41,10 +40,6 @@ pub use keystore::SecStr;
 /// avoid introducing single-variant enums just now, and just serialize a
 /// version tag alongside the data.
 const VERSION: u8 = 0;
-
-pub trait AsPKCS8 {
-    fn as_pkcs8(&self) -> Vec<u8>;
-}
 
 pub trait SignError: error::Error + Send + Sync + 'static {}
 impl<T: error::Error + Send + Sync + 'static> SignError for T {}
@@ -101,38 +96,6 @@ impl SecretKey {
 
     pub fn sign(&self, data: &[u8]) -> Signature {
         Signature(self.0.sign(data))
-    }
-
-    const PKCS_ED25519_OID: &'static [u64] = &[1, 3, 101, 112];
-
-    /// Export in PKCS#8 format.
-    ///
-    /// **NOTE**: this will export private key material. Use with caution.
-    ///
-    /// Attribution: this code is stolen from the `thrussh` project.
-    pub fn as_pkcs8(&self) -> Vec<u8> {
-        yasna::construct_der(|writer| {
-            writer.write_sequence(|writer| {
-                writer.next().write_u32(1);
-                writer.next().write_sequence(|writer| {
-                    writer
-                        .next()
-                        .write_oid(&yasna::models::ObjectIdentifier::from_slice(
-                            Self::PKCS_ED25519_OID,
-                        ));
-                });
-                let seed = yasna::construct_der(|writer| writer.write_bytes(&self.0.as_ref()));
-                let vkey = ed25519::VerificationKey::from(&self.0);
-                let public = vkey.as_ref();
-
-                writer.next().write_bytes(&seed);
-                writer
-                    .next()
-                    .write_tagged(yasna::Tag::context(1), |writer| {
-                        writer.write_bitvec(&BitVec::from_bytes(&public))
-                    })
-            })
-        })
     }
 }
 
@@ -192,12 +155,6 @@ impl<'a> sign::Signer for &'a SecretKey {
     async fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
         let signature = (*self).sign(data).0;
         Ok(sign::Signature(signature.into()))
-    }
-}
-
-impl AsPKCS8 for SecretKey {
-    fn as_pkcs8(&self) -> Vec<u8> {
-        SecretKey::as_pkcs8(&self)
     }
 }
 

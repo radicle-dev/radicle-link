@@ -43,7 +43,6 @@ use crate::{
     },
     identities::{git::Urn, urn},
     internal::channel::Fanout,
-    keys::AsPKCS8,
     net::{
         connection::LocalInfo,
         discovery::Discovery,
@@ -141,7 +140,7 @@ pub struct PeerConfig<Disco, Signer> {
 
 impl<D, S> PeerConfig<D, S>
 where
-    S: Signer + Clone + AsPKCS8,
+    S: Signer + Clone,
     S::Error: std::error::Error + Send + Sync + 'static,
 
     D: Discovery<Addr = SocketAddr>,
@@ -361,7 +360,7 @@ impl Peer {
 
     async fn bootstrap<S, D>(config: PeerConfig<D, S>) -> Result<Self, BootstrapError>
     where
-        S: Signer + AsPKCS8 + Clone + 'static,
+        S: Signer + Clone + Send + Sync + 'static,
         S::Error: std::error::Error + Send + Sync + 'static,
 
         D: Discovery<Addr = SocketAddr>,
@@ -371,7 +370,7 @@ impl Peer {
 
         let git = GitServer::new(&config.paths);
 
-        let endpoint = Endpoint::bind(&config.signer, config.listen_addr)
+        let endpoint = Endpoint::bind(config.signer.clone(), config.listen_addr)
             .await
             .map_err(|e| BootstrapError::Bind {
                 addr: config.listen_addr,

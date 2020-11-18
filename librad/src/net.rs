@@ -23,5 +23,6 @@ pub mod protocol;
 pub mod quic;
 pub mod tls;
 pub mod upgrade;
+pub mod x509;
 
 mod codec;
