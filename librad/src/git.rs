@@ -27,3 +27,27 @@ pub mod types;
 pub(crate) mod header;
 
 mod sealed;
+
+/// Initialise the git backend.
+///
+/// **SHOULD** be called before all accesses to git functionality.
+pub fn init() {
+    use libc::c_int;
+    use libgit2_sys as raw_git;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    unsafe {
+        INIT.call_once(|| {
+            let ret =
+                raw_git::git_libgit2_opts(raw_git::GIT_OPT_SET_MWINDOW_FILE_LIMIT as c_int, 256);
+            if ret < 0 {
+                panic!(
+                    "error setting libgit2 option: {}",
+                    git2::Error::last_error(ret).unwrap()
+                )
+            }
+        })
+    }
+}
