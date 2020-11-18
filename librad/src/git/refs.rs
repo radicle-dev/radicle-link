@@ -37,7 +37,7 @@ use thiserror::Error;
 use super::{
     storage::{self, Storage},
     tracking,
-    types::{namespace::Namespace, NamespacedRef},
+    types::{Namespace, Reference},
 };
 use crate::{
     internal::canonical::{Cjson, CjsonError},
@@ -223,13 +223,10 @@ pub struct Refs {
 impl Refs {
     /// Compute the [`Refs`] from the current storage state at [`Urn`].
     #[tracing::instrument(level = "debug", skip(storage), err)]
-    pub fn compute<S>(storage: &Storage<S>, urn: &Urn) -> Result<Self, stored::Error>
-    where
-        S: Signer,
-    {
+    pub fn compute(storage: &Storage, urn: &Urn) -> Result<Self, stored::Error> {
         let namespace = Namespace::from(urn);
         let namespace_prefix = format!("refs/namespaces/{}/", namespace);
-        let heads_ref = NamespacedRef::heads(namespace, None);
+        let heads_ref = Reference::heads(namespace, None);
 
         tracing::debug!("reading heads from {}", &heads_ref);
 
@@ -272,19 +269,14 @@ impl Refs {
     /// If the blob where the signed [`Refs`] are expected to be stored is not
     /// found, `None` is returned.
     #[tracing::instrument(skip(storage), err)]
-    pub fn load<S, P>(
-        storage: &Storage<S>,
-        urn: &Urn,
-        peer: P,
-    ) -> Result<Option<Self>, stored::Error>
+    pub fn load<P>(storage: &Storage, urn: &Urn, peer: P) -> Result<Option<Self>, stored::Error>
     where
-        S: Signer,
         P: Into<Option<PeerId>> + Debug,
     {
         let peer = peer.into();
         let signer = peer.unwrap_or_else(|| PeerId::from_signer(storage.signer()));
 
-        let blob_ref = NamespacedRef::rad_signed_refs(Namespace::from(urn), peer);
+        let blob_ref = Reference::rad_signed_refs(Namespace::from(urn), peer);
         let blob_path = Path::new(stored::BLOB_PATH);
 
         tracing::debug!(
@@ -307,11 +299,8 @@ impl Refs {
     /// [`Refs`], no commit is made and `None` is returned. Otherwise, the
     /// new and persisted [`Refs`] are returned in a `Some`.
     #[tracing::instrument(skip(storage), err)]
-    pub fn update<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<Self>, stored::Error>
-    where
-        S: Signer,
-    {
-        let branch = NamespacedRef::rad_signed_refs(Namespace::from(urn), None);
+    pub fn update(storage: &Storage, urn: &Urn) -> Result<Option<Self>, stored::Error> {
+        let branch = Reference::rad_signed_refs(Namespace::from(urn), None);
         tracing::debug!("updating signed refs for {}", branch);
 
         let signed_refs = Self::compute(storage, urn)?.sign(storage.signer())?;

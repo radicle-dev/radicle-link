@@ -17,28 +17,29 @@
 
 #![feature(async_closure)]
 
-use std::{convert::TryFrom, marker::PhantomData, time::Duration};
+use std::{
+    convert::{TryFrom, TryInto},
+    time::Duration,
+};
 
-use assert_matches::assert_matches;
 use futures::{future, stream::StreamExt};
 use tempfile::tempdir;
-use tokio::task::block_in_place;
 
 use librad::{
     git::{
         identities::{self, SomeIdentity},
-        local::{self, transport::LocalTransportFactory, url::LocalUrl},
+        local::url::LocalUrl,
         replication,
-        types::{namespace::Namespace, remote::Remote, FlatRef, Force, NamespacedRef},
+        types::{remote, Flat, Force, GenericRef, Namespace, Reference, Refspec, Remote},
     },
     git_ext as ext,
     net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
     reflike,
-    signer::SomeSigner,
+    refspec_pattern,
 };
 
 use librad_test::{
-    git::initial_commit,
+    git::create_commit,
     logging,
     rad::{
         identities::{create_test_project, TestProject},
@@ -71,10 +72,7 @@ async fn can_clone() {
                 // check rad/self of peer1 exists
                 assert!(
                     storage
-                        .has_ref(&NamespacedRef::rad_self(
-                            Namespace::from(&urn),
-                            peer1.peer_id()
-                        ))
+                        .has_ref(&Reference::rad_self(Namespace::from(&urn), peer1.peer_id()))
                         .unwrap(),
                     "`refs/remotes/<peer1>/rad/self` should exist"
                 );
@@ -125,10 +123,7 @@ async fn can_clone_disconnected() {
                 // check rad/self of peer1 exists
                 assert!(
                     storage
-                        .has_ref(&NamespacedRef::rad_self(
-                            Namespace::from(&urn),
-                            peer1.peer_id()
-                        ))
+                        .has_ref(&Reference::rad_self(Namespace::from(&urn), peer1.peer_id()))
                         .unwrap(),
                     "`refs/remotes/<peer1>/rad/self` should exist"
                 );
@@ -155,7 +150,7 @@ async fn fetches_on_gossip_notify() {
 
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
     testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
-        let (peer1, peer1_key) = apis.pop().unwrap();
+        let (peer1, _) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
 
         let TestProject { project, owner } = peer1
@@ -175,66 +170,54 @@ async fn fetches_on_gossip_notify() {
 
         let peer2_events = peer2.subscribe().await;
 
+        let mastor = reflike!("refs/heads/master");
         // Check out a working copy on peer1, add a commit, and push it
-        let commit_id = block_in_place(|| {
-            librad::git::local::transport::register();
-            let transport_results = LocalTransportFactory::configure(local::transport::Settings {
-                paths: peer1.paths().clone(),
-                signer: SomeSigner { signer: peer1_key }.into(),
-            });
-
+        let commit_id = {
             let tmp = tempdir().unwrap();
             let repo = git2::Repository::init(tmp.path()).unwrap();
+            let url = LocalUrl::from(project.urn());
 
-            let mut updated_refs = Vec::new();
-            let mut remote_callbacks = git2::RemoteCallbacks::new();
-            remote_callbacks.push_update_reference(|refname, maybe_error| match maybe_error {
-                None => {
-                    let rev = repo.find_reference(refname)?.target().unwrap();
-                    let refname = ext::RefLike::try_from(refname).unwrap();
-                    updated_refs.push((refname, rev));
-
-                    Ok(())
-                },
-
-                Some(err) => Err(git2::Error::from_str(&format!(
-                    "Remote rejected {}: {}",
-                    refname, err
-                ))),
-            });
-
-            let url = LocalUrl::from_urn(project.urn(), peer1.peer_id());
-            let heads = NamespacedRef::heads(Namespace::from(project.urn()), Some(peer1.peer_id()));
-            let remotes = FlatRef::heads(
-                PhantomData,
-                ext::RefLike::try_from(format!(
-                    "{}@{}",
-                    owner.doc.payload.subject.name,
-                    peer1.peer_id()
-                ))
-                .unwrap(),
+            let mut remote = Remote::rad_remote(
+                url,
+                Refspec {
+                    src: Reference::heads(Namespace::from(project.urn()), peer1.peer_id()),
+                    dst: GenericRef::heads(
+                        Flat,
+                        ext::RefLike::try_from(format!(
+                            "{}@{}",
+                            owner.doc.payload.subject.name,
+                            peer1.peer_id(),
+                        ))
+                        .unwrap(),
+                    ),
+                    force: Force::True,
+                }
+                .into_fetchspec(),
             );
 
-            let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
-
-            let oid =
-                initial_commit(&repo, remote, "refs/heads/master", Some(remote_callbacks)).unwrap();
-            while let Some(results) = transport_results.wait(Duration::from_secs(1)) {
-                for res in results {
-                    assert_matches!(res, Ok(_), "push error");
-                }
-            }
-
-            for (path, rev) in updated_refs {
-                futures::executor::block_on(peer1.protocol().announce(Gossip {
+            let oid = create_commit(&repo, mastor.clone()).unwrap();
+            remote
+                .push(
+                    peer1.clone(),
+                    &repo,
+                    remote::LocalPushspec::Matching {
+                        pattern: refspec_pattern!("refs/heads/*"),
+                        force: Force::True,
+                    },
+                )
+                .unwrap()
+                .for_each(drop);
+            peer1
+                .protocol()
+                .announce(Gossip {
                     origin: None,
-                    urn: project.urn().with_path(path),
-                    rev: Some(Rev::Git(rev)),
-                }))
-            }
+                    urn: project.urn().with_path(mastor.clone()),
+                    rev: Some(Rev::Git(oid)),
+                })
+                .await;
 
-            ext::Oid::from(oid)
-        });
+            oid
+        };
 
         // Wait for peer2 to receive the gossip announcement
         {
@@ -261,9 +244,9 @@ async fn fetches_on_gossip_notify() {
                     &project.urn().with_path(
                         reflike!("refs/remotes")
                             .join(peer1.peer_id())
-                            .join(reflike!("heads/master")),
+                            .join(mastor.strip_prefix("refs").unwrap()),
                     ),
-                    commit_id,
+                    Box::new(commit_id),
                 )
             })
             .await
@@ -399,7 +382,7 @@ async fn menage_a_troi() {
 
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
     testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
-        let (peer1, peer1_key) = apis.pop().unwrap();
+        let (peer1, _) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
         let (peer3, _) = apis.pop().unwrap();
 
@@ -408,30 +391,25 @@ async fn menage_a_troi() {
             .await
             .unwrap()
             .unwrap();
-        let default_branch = project
+        let default_branch: ext::RefLike = project
             .doc
             .payload
             .subject
             .default_branch
             .as_ref()
             .map(|cstring| cstring.to_string())
-            .unwrap_or_else(|| "mistress".to_owned());
+            .unwrap_or_else(|| "mistress".to_owned())
+            .try_into()
+            .unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
-        block_in_place(|| {
-            librad::git::local::transport::register();
-            let transport_results = LocalTransportFactory::configure(local::transport::Settings {
-                paths: peer1.paths().clone(),
-                signer: SomeSigner { signer: peer1_key }.into(),
-            });
-
+        let commit_id = {
             // Perform commit and push to working copy on peer1
             let repo = git2::Repository::init(tmp.path().join("peer1")).unwrap();
-            let url = LocalUrl::from_urn(project.urn(), peer1.peer_id());
-
-            let heads = NamespacedRef::heads(Namespace::from(project.urn()), Some(peer1.peer_id()));
-            let remotes = FlatRef::heads(
-                PhantomData,
+            let url = LocalUrl::from(project.urn());
+            let heads = Reference::heads(Namespace::from(project.urn()), Some(peer1.peer_id()));
+            let remotes = GenericRef::heads(
+                Flat,
                 ext::RefLike::try_from(format!(
                     "{}@{}",
                     owner.doc.payload.subject.name,
@@ -439,38 +417,47 @@ async fn menage_a_troi() {
                 ))
                 .unwrap(),
             );
+            let mastor = reflike!("refs/heads").join(&default_branch);
+            let mut remote = Remote::rad_remote(
+                url,
+                Refspec {
+                    src: &remotes,
+                    dst: &heads,
+                    force: Force::True,
+                },
+            );
+            let oid = create_commit(&repo, mastor).unwrap();
+            let updated = remote
+                .push(
+                    peer1.clone(),
+                    &repo,
+                    remote::LocalPushspec::Matching {
+                        pattern: refspec_pattern!("refs/heads/*"),
+                        force: Force::True,
+                    },
+                )
+                .unwrap()
+                .collect::<Vec<_>>();
+            tracing::debug!("push updated refs: {:?}", updated);
 
-            let remote = Remote::rad_remote(url, Some(remotes.refspec(heads, Force::True).boxed()));
+            oid
+        };
 
-            initial_commit(
-                &repo,
-                remote,
-                &format!("refs/heads/{}", default_branch),
-                None,
-            )
-            .unwrap();
-
-            while let Some(results) = transport_results.wait(Duration::from_secs(1)) {
-                for res in results {
-                    assert_matches!(res, Ok(_), "push error");
-                }
-            }
-        });
-
-        let head = NamespacedRef::head(
-            Namespace::from(project.urn()),
-            peer1.peer_id(),
-            ext::RefLike::try_from(default_branch.as_str()).unwrap(),
+        let expected_urn = project.urn().with_path(
+            reflike!("refs/remotes")
+                .join(peer1.peer_id())
+                .join(reflike!("heads"))
+                .join(&default_branch),
         );
+
         let peer2_has_ref = peer2
             .with_storage({
-                let head = head.clone();
-                let urn = project.urn();
                 let remote_peer = peer1.peer_id();
+                let urn = expected_urn.clone();
                 let addrs = Some(peer1.listen_addr());
                 move |storage| -> Result<bool, anyhow::Error> {
-                    replication::replicate(&storage, None, urn, remote_peer, addrs)?;
-                    Ok(storage.has_ref(&head)?)
+                    replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
+                    Ok(storage.has_commit(&urn, Box::new(commit_id))?)
                 }
             })
             .await
@@ -478,21 +465,26 @@ async fn menage_a_troi() {
             .unwrap();
         let peer3_has_ref = peer3
             .with_storage({
-                let head = head.clone();
-                let urn = project.urn();
                 let remote_peer = peer2.peer_id();
+                let urn = expected_urn.clone();
                 let addrs = Some(peer2.listen_addr());
                 move |storage| -> Result<bool, anyhow::Error> {
-                    replication::replicate(&storage, None, urn, remote_peer, addrs)?;
-                    Ok(storage.has_ref(&head)?)
+                    replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
+                    Ok(storage.has_commit(&urn, Box::new(commit_id))?)
                 }
             })
             .await
             .unwrap()
             .unwrap();
 
-        assert!(peer2_has_ref, format!("peer 2 missing ref `{}`", head));
-        assert!(peer3_has_ref, format!("peer 3 missing ref `{}`", head));
+        assert!(
+            peer2_has_ref,
+            format!("peer 2 missing commit `{}@{}`", expected_urn, commit_id)
+        );
+        assert!(
+            peer3_has_ref,
+            format!("peer 3 missing commit `{}@{}`", expected_urn, commit_id)
+        );
     })
     .await;
 }

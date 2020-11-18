@@ -15,42 +15,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use librad::git::{local::url::LocalUrl, types::remote::Remote};
+use librad::git_ext::reference::RefLike;
 
-#[tracing::instrument(skip(repo, remote_callbacks), err)]
-pub fn initial_commit(
+#[tracing::instrument(skip(repo), err)]
+pub fn create_commit(
     repo: &git2::Repository,
-    remote: Remote<LocalUrl>,
-    reference: &str,
-    remote_callbacks: Option<git2::RemoteCallbacks>,
+    on_branch: RefLike,
 ) -> Result<git2::Oid, git2::Error> {
-    let mut remote = remote.create(&repo)?;
-
-    let commit_id = {
-        let empty_tree = {
-            let mut index = repo.index()?;
-            let oid = index.write_tree()?;
-            repo.find_tree(oid).unwrap()
-        };
-        let author = git2::Signature::now("The Animal", "animal@muppets.com").unwrap();
-        repo.commit(
-            Some(reference),
-            &author,
-            &author,
-            "Initial commit",
-            &empty_tree,
-            &[],
-        )?
+    let empty_tree = {
+        let mut index = repo.index()?;
+        let oid = index.write_tree()?;
+        repo.find_tree(oid).unwrap()
     };
-
-    let mut opts = git2::PushOptions::new();
-    let opts = match remote_callbacks {
-        Some(cb) => opts.remote_callbacks(cb),
-        None => &mut opts,
-    };
-    remote.push(&[reference], Some(opts))?;
-
-    tracing::debug!("pushed {} to {}", commit_id, reference);
-
-    Ok(commit_id)
+    let author = git2::Signature::now("The Animal", "animal@muppets.com").unwrap();
+    repo.commit(
+        Some(on_branch.as_str()),
+        &author,
+        &author,
+        "Initial commit",
+        &empty_tree,
+        &[],
+    )
 }

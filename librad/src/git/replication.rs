@@ -17,7 +17,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
     net::SocketAddr,
 };
 
@@ -31,17 +31,11 @@ use super::{
     refs::{self, Refs},
     storage::{self, Storage},
     tracking,
-    types::{
-        namespace::Namespace,
-        reference::{self, Reference},
-        Force,
-        NamespacedRef,
-    },
+    types::{reference, Force, Namespace, Reference},
 };
 use crate::{
     identities::git::{Project, SomeIdentity, User},
     peer::PeerId,
-    signer::Signer,
 };
 
 pub use crate::identities::git::Urn;
@@ -111,15 +105,14 @@ pub enum Error {
 /// [`crate::git::local::transport::LocalTransport`].
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(skip(storage, whoami, addr_hints), err)]
-pub fn replicate<S, Addrs>(
-    storage: &Storage<S>,
+pub fn replicate<Addrs>(
+    storage: &Storage,
     whoami: Option<LocalIdentity>,
     urn: Urn,
     remote_peer: PeerId,
     addr_hints: Addrs,
 ) -> Result<(), Error>
 where
-    S: Signer,
     Addrs: IntoIterator<Item = SocketAddr>,
 {
     let urn = Urn::new(urn.id);
@@ -131,9 +124,10 @@ where
         .fetch(fetch::Fetchspecs::Peek)
         .map_err(|e| Error::Fetch(e.into()))?;
 
-    let remote_ident: Urn = NamespacedRef::rad_id(Namespace::from(&urn))
+    let remote_ident: Urn = Reference::rad_id(Namespace::from(&urn))
         .with_remote(remote_peer)
-        .into();
+        .try_into()
+        .expect("namespace is set");
     let delegates = match identities::any::get(storage, &remote_ident)? {
         None => Err(Error::MissingIdentity),
         Some(some_id) => match some_id {
@@ -192,17 +186,11 @@ where
 
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage), err)]
-fn ensure_setup_as_user<S>(
-    storage: &Storage<S>,
-    user: User,
-    remote_peer: PeerId,
-) -> Result<(), Error>
-where
-    S: Signer,
-{
-    let urn: Urn = NamespacedRef::rad_id(Namespace::from(user.urn()))
+fn ensure_setup_as_user(storage: &Storage, user: User, remote_peer: PeerId) -> Result<(), Error> {
+    let urn: Urn = Reference::rad_id(Namespace::from(user.urn()))
         .with_remote(remote_peer)
-        .into();
+        .try_into()
+        .expect("namespace is set");
 
     match identities::user::verify(storage, &urn)? {
         None => Err(Error::MissingIdentity),
@@ -221,26 +209,25 @@ where
 }
 
 #[tracing::instrument(level = "trace", skip(storage), err)]
-fn ensure_setup_as_project<S>(
-    storage: &Storage<S>,
+fn ensure_setup_as_project(
+    storage: &Storage,
     proj: Project,
     remote_peer: PeerId,
-) -> Result<impl Iterator<Item = Urn>, Error>
-where
-    S: Signer,
-{
-    let urn: Urn = NamespacedRef::rad_id(Namespace::from(proj.urn()))
+) -> Result<impl Iterator<Item = Urn>, Error> {
+    let urn: Urn = Reference::rad_id(Namespace::from(proj.urn()))
         .with_remote(remote_peer)
-        .into();
+        .try_into()
+        .expect("namespace is set");
 
     // Verify + symref the delegates first
     for delegate in proj.doc.delegations.iter().indirect() {
         let delegate_urn = delegate.urn();
         // Find in `refs/namespaces/<urn>/refs/remotes/<remote
         // peer>/rad/ids/<delegate.urn>`
-        let in_rad_ids: Urn = NamespacedRef::rad_delegate(Namespace::from(&urn), &delegate_urn)
+        let in_rad_ids: Urn = Reference::rad_delegate(Namespace::from(&urn), &delegate_urn)
             .with_remote(remote_peer)
-            .into();
+            .try_into()
+            .expect("namespace is set");
         match identities::user::verify(storage, &in_rad_ids)? {
             None => Err(Error::Missing(in_rad_ids.into())),
             Some(delegate_user) => {
@@ -297,10 +284,7 @@ where
 
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage), err)]
-fn ensure_rad_id<S>(storage: &Storage<S>, urn: &Urn, tip: ext::Oid) -> Result<(), Error>
-where
-    S: Signer,
-{
+fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<(), Error> {
     identities::common::IdRef::from(urn)
         .create(storage, tip)
         .map_err(|e| Error::Store(e.into()))

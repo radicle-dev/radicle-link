@@ -21,7 +21,6 @@ use librad::{
         storage::Storage,
     },
     identities::{delegation, payload},
-    signer::Signer,
 };
 
 pub struct TestProject {
@@ -29,10 +28,7 @@ pub struct TestProject {
     pub project: Project,
 }
 
-pub fn create_test_project<S>(storage: &Storage<S>) -> Result<TestProject, anyhow::Error>
-where
-    S: Signer,
-{
+pub fn create_test_project(storage: &Storage) -> Result<TestProject, anyhow::Error> {
     let peer_id = storage.peer_id();
     let alice = identities::user::create(
         storage,

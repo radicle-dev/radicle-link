@@ -444,6 +444,12 @@ impl RefspecPattern {
     }
 }
 
+impl From<&RefspecPattern> for RefspecPattern {
+    fn from(pat: &RefspecPattern) -> Self {
+        pat.clone()
+    }
+}
+
 impl Deref for RefspecPattern {
     type Target = Path;
 

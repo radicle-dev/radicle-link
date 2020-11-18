@@ -225,7 +225,7 @@ impl Node {
     }
 
     /// Handle user requests.
-    async fn handle_request(request: Request, api: &PeerApi<Signer>) -> Result<(), Error> {
+    async fn handle_request(request: Request, api: &PeerApi) -> Result<(), Error> {
         match request {
             Request::GetPeers(mut reply) => {
                 let peers = api.protocol().connected_peers().await;
@@ -245,7 +245,7 @@ impl Node {
         event: ProtocolEvent<peer::types::Gossip>,
         mode: &Mode,
         transmit: &mut chan::Sender<Event>,
-        api: &PeerApi<Signer>,
+        api: &PeerApi,
     ) -> Result<(), Error> {
         match event {
             ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val })) => {
@@ -280,7 +280,7 @@ impl Node {
 
     /// Attempt to track a project.
     async fn track_project(
-        api: &PeerApi<Signer>,
+        api: &PeerApi,
         urn: &Urn,
         peer_info: &PeerInfo<std::net::IpAddr>,
     ) -> Result<(), Error> {
@@ -322,7 +322,7 @@ impl Node {
     /// Attempt to track initial URN list, if any.
     async fn initialize_tracker(
         mode: &Mode,
-        api: &PeerApi<Signer>,
+        api: &PeerApi,
         transmit: &mut chan::Sender<Event>,
     ) -> Result<(), Error> {
         // Start by tracking specified projects if we need to.
@@ -358,7 +358,7 @@ impl Node {
 }
 
 /// Guess a user given a peer id.
-async fn guess_user(peer: PeerId, api: &PeerApi<Signer>) -> Result<Option<User>, Error> {
+async fn guess_user(peer: PeerId, api: &PeerApi) -> Result<Option<User>, Error> {
     api.with_storage(move |s| {
         let users = identities::any::list(&s)?.filter_map(|res| {
             res.map(|id| match id {
