@@ -58,6 +58,15 @@ pub const TRACKING_GRAPH_DEPTH: usize = 3;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Remotes<A: Ord>(BTreeMap<A, Box<Remotes<A>>>);
 
+impl<A> Default for Remotes<A>
+where
+    A: Default + Ord,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<A: Ord> Deref for Remotes<A> {
     type Target = BTreeMap<A, Box<Remotes<A>>>;
 
@@ -114,7 +123,11 @@ impl<A: Ord> Remotes<A> {
         }
     }
 
-    /// Yield all `A` values in an unspecified order.
+    /// Traverse the tracking graph, yielding all nodes (of type `A`).
+    ///
+    /// Note that equal values of `A` may appear in the iterator, depending on
+    /// the graph topology. To obtain the set of tracked `A`,
+    /// [`Iterator::collect`] into a set type.
     pub fn flatten(&self) -> impl Iterator<Item = &A> {
         Flatten {
             outer: self.iter(),
@@ -247,10 +260,7 @@ impl Refs {
             }
         }
 
-        Ok(Self {
-            heads,
-            remotes: remotes.into(),
-        })
+        Ok(Self { heads, remotes })
     }
 
     /// Load the [`Refs`] of [`Urn`] (and optionally a remote `peer`) from
