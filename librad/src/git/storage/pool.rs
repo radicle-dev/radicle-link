@@ -22,8 +22,25 @@ use deadpool::managed::{Manager, RecycleResult};
 use super::{Error, Storage};
 use crate::{paths::Paths, signer::Signer};
 
-pub type Pool<S> = deadpool::managed::Pool<Storage<S>, Error>;
-pub type Pooled<S> = deadpool::managed::Object<Storage<S>, Error>;
+pub type Pool = deadpool::managed::Pool<Storage, Error>;
+pub type Pooled = deadpool::managed::Object<Storage, Error>;
+
+/// Wrapper so we can use [`Pooled`] as `AsRef<Storage>`.
+// TODO: may go away once https://github.com/bikeshedder/deadpool/pull/69
+// appears in a released version.
+pub struct PooledRef(Pooled);
+
+impl AsRef<Storage> for PooledRef {
+    fn as_ref(&self) -> &Storage {
+        &self.0
+    }
+}
+
+impl From<Pooled> for PooledRef {
+    fn from(pooled: Pooled) -> Self {
+        Self(pooled)
+    }
+}
 
 #[derive(Clone)]
 pub struct Config<S> {
@@ -43,11 +60,12 @@ impl<S> Config<S> {
 }
 
 #[async_trait]
-impl<S> Manager<Storage<S>, Error> for Config<S>
+impl<S> Manager<Storage, Error> for Config<S>
 where
     S: Signer + Clone,
+    S::Error: std::error::Error + Send + Sync + 'static,
 {
-    async fn create(&self) -> Result<Storage<S>, Error> {
+    async fn create(&self) -> Result<Storage, Error> {
         // FIXME(kim): we should `block_in_place` here, but that forces the
         // threaded runtime onto users
         let _lock = self.lock.lock().unwrap();
@@ -56,7 +74,7 @@ where
         }
     }
 
-    async fn recycle(&self, _: &mut Storage<S>) -> RecycleResult<Error> {
+    async fn recycle(&self, _: &mut Storage) -> RecycleResult<Error> {
         Ok(())
     }
 }

@@ -32,7 +32,7 @@ use super::{
     p2p::url::GitUrl,
     refs::Refs,
     storage::{self, Storage},
-    types::{namespace::Namespace, AsRefspec, AsRemote, Force, Reference},
+    types::{reference::Reference, AsRemote, Fetchspec, Force, Namespace, Refspec},
 };
 use crate::{
     identities::{
@@ -40,7 +40,6 @@ use crate::{
         urn::{HasProtocol, Urn},
     },
     peer::PeerId,
-    signer::Signer,
 };
 
 /// Seed value to compute the fetchspecs for the desired fetch phase from.
@@ -77,7 +76,7 @@ where
         urn: &Urn<R>,
         remote_peer: P,
         remote_heads: &RemoteHeads,
-    ) -> Vec<Box<dyn AsRefspec>> {
+    ) -> Vec<Fetchspec> {
         match self {
             Self::Peek => refspecs::peek(urn, remote_peer),
             Self::SignedRefs { tracked } => refspecs::signed_refs(urn, &remote_peer, tracked),
@@ -92,7 +91,7 @@ where
 pub mod refspecs {
     use super::*;
 
-    pub fn peek<P, R>(urn: &Urn<R>, remote_peer: P) -> Vec<Box<dyn AsRefspec>>
+    pub fn peek<P, R>(urn: &Urn<R>, remote_peer: P) -> Vec<Fetchspec>
     where
         P: Clone + 'static,
         for<'a> &'a P: AsRemote + Into<ext::RefLike>,
@@ -107,26 +106,28 @@ pub mod refspecs {
         let rad_ids = Reference::rad_ids_glob(namespace);
 
         vec![
-            rad_id
-                .set_remote(remote_peer.clone())
-                .refspec(rad_id, Force::False)
-                .boxed(),
-            rad_self
-                .set_remote(remote_peer.clone())
-                .refspec(rad_self, Force::False)
-                .boxed(),
-            rad_ids
-                .set_remote(remote_peer)
-                .refspec(rad_ids, Force::False)
-                .boxed(),
+            Refspec {
+                src: rad_id.clone(),
+                dst: rad_id.with_remote(remote_peer.clone()),
+                force: Force::False,
+            }
+            .into_fetchspec(),
+            Refspec {
+                src: rad_self.clone(),
+                dst: rad_self.with_remote(remote_peer.clone()),
+                force: Force::False,
+            }
+            .into_fetchspec(),
+            Refspec {
+                src: rad_ids.clone(),
+                dst: rad_ids.with_remote(remote_peer),
+                force: Force::False,
+            }
+            .into_fetchspec(),
         ]
     }
 
-    pub fn signed_refs<P, R>(
-        urn: &Urn<R>,
-        remote_peer: &P,
-        tracked: &BTreeSet<P>,
-    ) -> Vec<Box<dyn AsRefspec>>
+    pub fn signed_refs<P, R>(urn: &Urn<R>, remote_peer: &P, tracked: &BTreeSet<P>) -> Vec<Fetchspec>
     where
         P: Clone + PartialEq + 'static,
         for<'a> &'a P: AsRemote + Into<ext::RefLike>,
@@ -137,14 +138,19 @@ pub mod refspecs {
         tracked
             .iter()
             .map(|tracked_peer| {
-                let local = Reference::rad_signed_refs(Namespace::from(urn), tracked_peer.clone());
-                let remote = if tracked_peer == remote_peer {
-                    local.set_remote(None)
+                let dst = Reference::rad_signed_refs(Namespace::from(urn), tracked_peer.clone());
+                let src = if tracked_peer == remote_peer {
+                    dst.clone().with_remote(None)
                 } else {
-                    local.clone()
+                    dst.clone()
                 };
 
-                local.refspec(remote, Force::False).boxed()
+                Refspec {
+                    src,
+                    dst,
+                    force: Force::False,
+                }
+                .into()
             })
             .collect()
     }
@@ -155,7 +161,7 @@ pub mod refspecs {
         remote_heads: &RemoteHeads,
         tracked_sigrefs: &BTreeMap<P, Refs>,
         delegates: &BTreeSet<Urn<R>>,
-    ) -> Vec<Box<dyn AsRefspec>>
+    ) -> Vec<Fetchspec>
     where
         P: Clone + Ord + PartialEq + 'static,
         for<'a> &'a P: AsRemote + Into<ext::RefLike>,
@@ -221,18 +227,23 @@ pub mod refspecs {
                         };
 
                         targets_match.then_some({
-                            let local = Reference::head(
+                            let dst = Reference::head(
                                 namespace.clone(),
                                 tracked_peer.clone(),
                                 name.clone().into(),
                             );
-                            let remote = if tracked_peer == remote_peer {
-                                local.set_remote(None)
+                            let src = if tracked_peer == remote_peer {
+                                dst.clone().with_remote(None)
                             } else {
-                                local.clone()
+                                dst.clone()
                             };
 
-                            local.refspec(remote, Force::True).boxed()
+                            Refspec {
+                                src,
+                                dst,
+                                force: Force::True,
+                            }
+                            .into_fetchspec()
                         })
                     })
             })
@@ -302,10 +313,7 @@ pub trait CanFetch {
         Addrs: IntoIterator<Item = SocketAddr>;
 }
 
-impl<S> CanFetch for Storage<S>
-where
-    S: Signer,
-{
+impl CanFetch for Storage {
     type Error = storage::Error;
     type Fetcher<'a> = DefaultFetcher<'a>;
 
@@ -349,14 +357,13 @@ pub struct DefaultFetcher<'a> {
 
 impl<'a> DefaultFetcher<'a> {
     #[tracing::instrument(skip(storage, addr_hints), err)]
-    pub fn new<S, Addrs>(
-        storage: &'a Storage<S>,
+    pub fn new<Addrs>(
+        storage: &'a Storage,
         urn: git::Urn,
         remote_peer: PeerId,
         addr_hints: Addrs,
     ) -> Result<Self, git2::Error>
     where
-        S: Signer,
         Addrs: IntoIterator<Item = SocketAddr>,
     {
         let mut remote = storage.as_raw().remote_anonymous(
@@ -402,7 +409,7 @@ impl<'a> DefaultFetcher<'a> {
             let refspecs = fetchspecs
                 .refspecs(&self.urn, self.remote_peer, &self.remote_heads)
                 .into_iter()
-                .map(|spec| spec.as_refspec())
+                .map(|spec| spec.to_string())
                 .collect::<Vec<_>>();
             tracing::trace!("{:?}", refspecs);
 
@@ -490,7 +497,7 @@ mod tests {
         assert_eq!(
             specs
                 .iter()
-                .map(|spec| spec.as_refspec())
+                .map(|spec| spec.to_string())
                 .collect::<Vec<_>>(),
             [
                 (
@@ -531,7 +538,7 @@ mod tests {
         assert_eq!(
             specs
                 .iter()
-                .map(|spec| spec.as_refspec())
+                .map(|spec| spec.to_string())
                 .collect::<Vec<_>>(),
             [
                 (
@@ -670,7 +677,7 @@ mod tests {
         assert_eq!(
             specs
                 .into_iter()
-                .map(|spec| spec.as_refspec())
+                .map(|spec| spec.to_string())
                 .collect::<BTreeSet<String>>(),
             [
                 // First, lolek + bolek's heads (forced)

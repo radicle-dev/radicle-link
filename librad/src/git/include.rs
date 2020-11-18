@@ -18,8 +18,7 @@
 use std::{
     convert::TryFrom,
     fmt::Debug,
-    io,
-    marker::PhantomData,
+    io::{self, Write},
     path::{self, PathBuf},
 };
 
@@ -28,7 +27,7 @@ use tempfile::NamedTempFile;
 
 use super::{
     local::url::LocalUrl,
-    types::{remote::Remote, FlatRef, Force},
+    types::{Flat, Force, GenericRef, Reference, Refspec, Remote},
 };
 use crate::peer::PeerId;
 
@@ -105,31 +104,36 @@ impl<Path> Include<Path> {
     where
         Path: AsRef<path::Path>,
     {
-        let tmp = NamedTempFile::new_in(&self.path)?;
+        let mut tmp = NamedTempFile::new_in(&self.path)?;
         {
-            let mut config = git2::Config::open(tmp.path())?;
+            // **NB**: We can't use `git2::Config::set_multivar`, because
+            // `libgit2` does not realise that we have only one file (it thinks
+            // the file is included). This would limit us to a single fetchspec /
+            // pushspec respectively.
             for remote in &self.remotes {
-                let (url_key, url) = url_entry(&remote);
-                tracing::trace!("{} = {}", url_key, url);
+                if remote.fetchspecs.is_empty() {
+                    return Err(Error::MissingRefspec);
+                }
 
-                let (fetch_key, fetch) = match fetch_entry(&remote) {
-                    Err(Error::MissingRefspec) => {
-                        tracing::debug!(
-                            "`{}` is incorrectly configured: `{}` for ",
-                            remote.url,
-                            Error::MissingRefspec
-                        );
-                        continue;
-                    },
-                    result => result,
-                }?;
-                tracing::trace!("{} = {}", fetch_key, fetch);
+                tracing::debug!("writing remote {}", remote.name);
+                writeln!(tmp, "[remote \"{}\"]", remote.name)?;
+                tracing::debug!("remote.{}.url = {}", remote.name, remote.url);
+                writeln!(tmp, "\turl = {}", remote.url)?;
 
-                config.set_str(&fetch_key, &fetch)?;
-                config.set_str(&url_key, &url.to_string())?;
+                for spec in remote.fetchspecs.iter() {
+                    tracing::debug!("remote.{}.fetch = {}", remote.name, spec);
+                    writeln!(tmp, "\tfetch = {}", spec)?;
+                }
+
+                for spec in remote.pushspecs.iter() {
+                    tracing::debug!("remote.{}.push = {}", remote.name, spec);
+                    writeln!(tmp, "\tpush = {}", spec)?;
+                }
             }
         }
+        tmp.as_file().sync_data()?;
         tmp.persist(self.file_path())?;
+        tracing::trace!("persisted include file to {}", self.file_path().display());
 
         Ok(())
     }
@@ -151,12 +155,12 @@ impl<Path> Include<Path> {
     ///
     /// The tracked users are expected to be retrieved by talking to the
     /// [`crate::git::storage::Storage`].
-    #[tracing::instrument(level = "debug")]
+    #[tracing::instrument(level = "debug", skip(tracked))]
     pub fn from_tracked_users<R, I>(path: Path, local_url: LocalUrl, tracked: I) -> Self
     where
         Path: Debug,
         R: Into<ext::RefLike>,
-        I: IntoIterator<Item = (R, PeerId)> + Debug,
+        I: IntoIterator<Item = (R, PeerId)>,
     {
         let remotes = tracked
             .into_iter()
@@ -178,11 +182,12 @@ impl<Path> Include<Path> {
     ) -> Remote<LocalUrl> {
         let handle = handle.into();
         let name = ext::RefLike::try_from(format!("{}@{}", handle, peer))
-            .expect("handle and peer are both RefLike");
-        let heads: FlatRef<PeerId, _> =
-            FlatRef::heads(PhantomData, peer).with_name(refspec_pattern!("heads/*"));
-        let remotes = FlatRef::heads(PhantomData, handle);
-        Remote::new(url, name).with_refspec(remotes.refspec(heads, Force::True).boxed())
+            .expect("handle and peer are reflike");
+        Remote::new(url, name).with_fetchspecs(vec![Refspec {
+            src: Reference::heads(Flat, peer),
+            dst: GenericRef::heads(Flat, handle),
+            force: Force::True,
+        }])
     }
 }
 
@@ -192,25 +197,6 @@ pub fn set_include_path(repo: &git2::Repository, include_path: PathBuf) -> Resul
     config
         .set_str(GIT_CONFIG_PATH_KEY, &format!("{}", include_path.display()))
         .map_err(Error::from)
-}
-
-fn remote_prefix(remote: &Remote<LocalUrl>) -> String {
-    format!("remote.{}", remote.name)
-}
-
-fn url_entry(remote: &Remote<LocalUrl>) -> (String, &LocalUrl) {
-    let key = remote_prefix(&remote);
-    (format!("{}.url", key), &remote.url)
-}
-
-fn fetch_entry(remote: &Remote<LocalUrl>) -> Result<(String, String), Error> {
-    let key = format!("{}.fetch", remote_prefix(&remote));
-    let spec = match &remote.fetch_spec {
-        Some(spec) => Ok::<_, Error>(spec.as_refspec()),
-        None => Err(Error::MissingRefspec),
-    }?;
-
-    Ok((key, spec))
 }
 
 #[cfg(test)]
@@ -253,10 +239,7 @@ mod test {
     #[test]
     fn can_create_and_update() -> Result<(), Error> {
         let tmp_dir = tempfile::tempdir()?;
-        let url = LocalUrl {
-            urn: Urn::new(git2::Oid::zero().into()),
-            local_peer_id: *LOCAL_PEER_ID,
-        };
+        let url = LocalUrl::from(Urn::new(git2::Oid::zero().into()));
 
         // Start with an empty config to catch corner-cases where git2::Config does not
         // create a file yet.

@@ -21,15 +21,13 @@ use git_ext::{self as ext, blob, is_not_found_err, RefLike, References, RefspecP
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
-use super::types::{
-    namespace::{AsNamespace, Namespace},
-    reference,
-    Many,
-    NamespacedRef,
-    One,
-    Reference,
+use super::types::{reference, Many, Namespace, One, Reference};
+use crate::{
+    identities::git::Identities,
+    paths::Paths,
+    peer::PeerId,
+    signer::{BoxedSigner, Signer, SomeSigner},
 };
-use crate::{identities::git::Identities, paths::Paths, peer::PeerId, signer::Signer};
 
 pub mod config;
 pub mod glob;
@@ -62,17 +60,18 @@ pub enum Error {
 }
 
 /// Low-level operations on the link "monorepo".
-pub struct Storage<S> {
+pub struct Storage {
     backend: git2::Repository,
     peer_id: PeerId,
-    signer: S,
+    signer: BoxedSigner,
 }
 
-impl<S> Storage<S>
-where
-    S: Signer,
-{
-    pub fn open(paths: &Paths, signer: S) -> Result<Self, Error> {
+impl Storage {
+    pub fn open<S>(paths: &Paths, signer: S) -> Result<Self, Error>
+    where
+        S: Signer + Clone,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
         let backend = git2::Repository::open_bare(paths.git_dir())?;
         let peer_id = Config::try_from(&backend)?.peer_id()?;
 
@@ -83,11 +82,15 @@ where
         Ok(Self {
             backend,
             peer_id,
-            signer,
+            signer: BoxedSigner::from(SomeSigner { signer }),
         })
     }
 
-    pub fn init(paths: &Paths, signer: S) -> Result<Self, Error> {
+    pub fn init<S>(paths: &Paths, signer: S) -> Result<Self, Error>
+    where
+        S: Signer + Clone,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
         let mut backend = git2::Repository::init_opts(
             paths.git_dir(),
             git2::RepositoryInitOptions::new()
@@ -101,13 +104,14 @@ where
         Ok(Self {
             backend,
             peer_id,
-            signer,
+            signer: BoxedSigner::from(SomeSigner { signer }),
         })
     }
 
-    pub fn open_or_init(paths: &Paths, signer: S) -> Result<Self, Error>
+    pub fn open_or_init<S>(paths: &Paths, signer: S) -> Result<Self, Error>
     where
-        S: Clone,
+        S: Signer + Clone,
+        S::Error: std::error::Error + Send + Sync + 'static,
     {
         let peer_id = PeerId::from_signer(&signer);
         match Self::open(paths, signer.clone()) {
@@ -133,11 +137,7 @@ where
     }
 
     #[tracing::instrument(level = "debug", skip(self), err)]
-    pub fn has_ref<'a, N>(&self, reference: &'a NamespacedRef<N, One>) -> Result<bool, Error>
-    where
-        N: Debug,
-        &'a N: AsNamespace,
-    {
+    pub fn has_ref<'a>(&self, reference: &'a Reference<One>) -> Result<bool, Error> {
         self.backend
             .find_reference(RefLike::from(reference).as_str())
             .and(Ok(true))
@@ -213,14 +213,10 @@ where
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
-    pub fn reference<'a, N>(
+    pub fn reference<'a>(
         &'a self,
-        reference: &NamespacedRef<N, One>,
-    ) -> Result<Option<git2::Reference<'a>>, Error>
-    where
-        N: Debug,
-        for<'b> &'b N: AsNamespace,
-    {
+        reference: &Reference<One>,
+    ) -> Result<Option<git2::Reference<'a>>, Error> {
         reference
             .find(&self.backend)
             .map(Some)
@@ -228,15 +224,19 @@ where
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
-    pub fn references<'a, N>(
+    pub fn references<'a>(
         &'a self,
-        reference: &NamespacedRef<N, Many>,
-    ) -> Result<impl Iterator<Item = Result<git2::Reference<'a>, Error>> + 'a, Error>
-    where
-        N: Debug,
-        for<'b> &'b N: AsNamespace,
-    {
+        reference: &Reference<Many>,
+    ) -> Result<impl Iterator<Item = Result<git2::Reference<'a>, Error>> + 'a, Error> {
         self.references_glob(glob::RefspecMatcher::from(RefspecPattern::from(reference)))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self), err)]
+    pub fn reference_names<'a>(
+        &'a self,
+        reference: &Reference<Many>,
+    ) -> Result<impl Iterator<Item = Result<ext::RefLike, Error>> + 'a, Error> {
+        self.reference_names_glob(glob::RefspecMatcher::from(RefspecPattern::from(reference)))
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
@@ -280,15 +280,11 @@ where
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
-    pub fn blob<'a, N>(
+    pub fn blob<'a>(
         &'a self,
-        reference: &'a NamespacedRef<N, One>,
+        reference: &'a Reference<One>,
         path: &'a Path,
-    ) -> Result<Option<git2::Blob<'a>>, Error>
-    where
-        N: Debug,
-        for<'b> &'b N: AsNamespace,
-    {
+    ) -> Result<Option<git2::Blob<'a>>, Error> {
         ext::Blob::Tip {
             branch: reference.into(),
             path,
@@ -298,11 +294,11 @@ where
         .or_matches(|e| matches!(e, blob::Error::NotFound(_)), || Ok(None))
     }
 
-    pub fn config(&self) -> Result<Config<S>, Error> {
+    pub fn config(&self) -> Result<Config<BoxedSigner>, Error> {
         Ok(Config::try_from(self)?)
     }
 
-    pub(super) fn signer(&self) -> &S {
+    pub(super) fn signer(&self) -> &BoxedSigner {
         &self.signer
     }
 
@@ -315,6 +311,12 @@ where
     // model "capabilities" in terms of traits.
     pub(super) fn as_raw(&self) -> &git2::Repository {
         &self.backend
+    }
+}
+
+impl AsRef<Storage> for Storage {
+    fn as_ref(&self) -> &Self {
+        self
     }
 }
 

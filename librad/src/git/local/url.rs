@@ -26,29 +26,32 @@ use multihash::Multihash;
 use thiserror::Error;
 
 use super::Urn;
-use crate::peer::{self, PeerId};
+use crate::peer;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LocalUrl {
     pub urn: Urn,
-    pub local_peer_id: PeerId,
+    pub(super) active_index: Option<usize>,
 }
 
-impl LocalUrl {
-    pub fn from_urn(urn: Urn, local_peer_id: PeerId) -> Self {
-        Self { urn, local_peer_id }
+impl From<Urn> for LocalUrl {
+    fn from(urn: Urn) -> Self {
+        Self {
+            urn,
+            active_index: None,
+        }
     }
 }
 
 impl Display for LocalUrl {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}://{}@{}.git",
-            super::URL_SCHEME,
-            self.local_peer_id,
-            self.urn.encode_id(),
-        )
+        write!(f, "{}://{}.git", super::URL_SCHEME, self.urn.encode_id(),)?;
+
+        if let Some(idx) = self.active_index {
+            write!(f, "#{}", idx)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -63,6 +66,9 @@ pub enum ParseError {
 
     #[error("malformed URL")]
     Url(#[from] url::ParseError),
+
+    #[error("active index is not a number")]
+    Idx(#[from] std::num::ParseIntError),
 
     #[error(transparent)]
     Oid(#[from] ext::oid::FromMultihashError),
@@ -98,9 +104,9 @@ impl FromStr for LocalUrl {
         let oid = ext::Oid::try_from(mhash)?;
         let urn = Urn::new(oid);
 
-        let local_peer_id = url.username().parse()?;
+        let active_index = url.fragment().map(|s| s.parse()).transpose()?;
 
-        Ok(Self { urn, local_peer_id })
+        Ok(Self { urn, active_index })
     }
 }
 
@@ -114,16 +120,12 @@ impl Into<Urn> for LocalUrl {
 mod tests {
     use super::*;
 
-    use crate::{git::Urn, keys::SecretKey, peer::PeerId};
+    use crate::git::Urn;
     use librad_test::roundtrip::str_roundtrip;
 
     #[test]
     fn trip() {
-        let url = LocalUrl {
-            urn: Urn::new(git2::Oid::zero().into()),
-            local_peer_id: PeerId::from(SecretKey::new()),
-        };
-
+        let url = LocalUrl::from(Urn::new(git2::Oid::zero().into()));
         str_roundtrip(url)
     }
 }

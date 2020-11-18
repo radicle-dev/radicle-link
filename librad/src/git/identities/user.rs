@@ -36,7 +36,6 @@ use crate::{
         urn,
     },
     peer::PeerId,
-    signer::Signer,
 };
 
 pub use identities::{
@@ -48,10 +47,7 @@ pub use identities::{
 ///
 /// If the ref is not found, `None` is returned.
 #[tracing::instrument(level = "trace", skip(storage), err)]
-pub fn get<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<User>, Error>
-where
-    S: Signer,
-{
+pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<User>, Error> {
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
@@ -75,10 +71,7 @@ where
 /// function cannot be used to assert that the state after an [`update`] is
 /// valid.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn verify<S>(storage: &Storage<S>, urn: &Urn) -> Result<Option<VerifiedUser>, Error>
-where
-    S: Signer,
-{
+pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedUser>, Error> {
     let branch = Reference::try_from(urn)?;
     tracing::debug!("verifying {} from {}", urn, branch);
     match storage.reference(&branch) {
@@ -102,13 +95,12 @@ where
 /// created [`User`] is also a valid [`LocalIdentity`] -- it is, in fact, its
 /// own [`LocalIdentity`]. This can be changed via [`update`].
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn create<S, P>(
-    storage: &Storage<S>,
+pub fn create<P>(
+    storage: &Storage,
     payload: P,
     delegations: delegation::Direct,
 ) -> Result<User, Error>
 where
-    S: Signer,
     P: Into<UserPayload> + Debug,
 {
     let user = {
@@ -128,15 +120,14 @@ where
 
 /// Update the [`User`] at `urn`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn update<S, L, P, D>(
-    storage: &Storage<S>,
+pub fn update<L, P, D>(
+    storage: &Storage,
     urn: &Urn,
     whoami: L,
     payload: P,
     delegations: D,
 ) -> Result<User, Error>
 where
-    S: Signer,
     L: Into<Option<LocalIdentity>> + Debug,
     P: Into<Option<UserPayload>> + Debug,
     D: Into<Option<delegation::Direct>> + Debug,
@@ -155,10 +146,7 @@ where
 
 /// Merge and sign the [`User`] state as seen by `from`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn merge<S>(storage: &Storage<S>, urn: &Urn, from: PeerId) -> Result<User, Error>
-where
-    S: Signer,
-{
+pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<User, Error> {
     let ours = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let theirs = {
         let their_urn = Urn {
@@ -177,9 +165,6 @@ where
     Ok(next)
 }
 
-fn identities<S>(storage: &Storage<S>) -> Identities<User>
-where
-    S: Signer,
-{
+fn identities(storage: &Storage) -> Identities<User> {
     storage.identities()
 }

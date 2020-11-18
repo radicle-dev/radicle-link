@@ -25,7 +25,7 @@ use super::{
     p2p::url::GitUrlRef,
     storage::{self, glob, Storage},
 };
-use crate::{peer::PeerId, signer::Signer};
+use crate::peer::PeerId;
 
 pub use crate::identities::git::Urn;
 
@@ -53,10 +53,7 @@ pub enum Error {
 /// Attempting to track oneself (as per the public key of the [`Signer`] is an
 /// error.
 #[tracing::instrument(skip(storage), err)]
-pub fn track<S>(storage: &Storage<S>, urn: &Urn, peer: PeerId) -> Result<bool, Error>
-where
-    S: Signer,
-{
+pub fn track(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
     let local_peer = storage.peer_id();
 
     if &peer == local_peer {
@@ -99,10 +96,7 @@ where
 /// safe to call this function repeatedly, so as to ensure all remote tracking
 /// branches have been pruned.
 #[tracing::instrument(skip(storage), err)]
-pub fn untrack<S>(storage: &Storage<S>, urn: &Urn, peer: PeerId) -> Result<bool, Error>
-where
-    S: Signer,
-{
+pub fn untrack(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
     let remote_name = tracking_remote_name(urn, &peer);
     let was_removed = storage
         .as_raw()
@@ -128,10 +122,7 @@ where
 
 /// Determine if `peer` is tracked in the context of `urn`.
 #[tracing::instrument(level = "trace", skip(storage), err)]
-pub fn is_tracked<S>(storage: &Storage<S>, urn: &Urn, peer: PeerId) -> Result<bool, Error>
-where
-    S: Signer,
-{
+pub fn is_tracked(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
     storage
         .as_raw()
         .find_remote(&tracking_remote_name(urn, &peer))
@@ -141,10 +132,7 @@ where
 
 /// Obtain an iterator over the 1st degree tracked peers in the context of
 /// `urn`.
-pub fn tracked<S>(storage: &Storage<S>, urn: &Urn) -> Result<Tracked, Error>
-where
-    S: Signer,
-{
+pub fn tracked(storage: &Storage, urn: &Urn) -> Result<Tracked, Error> {
     Ok(Tracked::collect(storage.as_raw(), urn)?)
 }
 

@@ -142,11 +142,12 @@ pub struct PeerConfig<Disco, Signer> {
 impl<D, S> PeerConfig<D, S>
 where
     S: Signer + Clone + AsPKCS8,
+    S::Error: std::error::Error + Send + Sync + 'static,
 
     D: Discovery<Addr = SocketAddr>,
     <D as Discovery>::Stream: 'static,
 {
-    pub async fn try_into_peer(self) -> Result<Peer<S>, BootstrapError> {
+    pub async fn try_into_peer(self) -> Result<Peer, BootstrapError> {
         Peer::bootstrap(self).await
     }
 }
@@ -176,38 +177,39 @@ impl Default for StorageConfig {
 /// Main entry point for `radicle-link` applications on top of a connected
 /// [`Peer`]
 #[derive(Clone)]
-pub struct PeerApi<S> {
+pub struct PeerApi {
     listen_addr: SocketAddr,
     peer_id: PeerId,
-    protocol: Protocol<PeerStorage<S>, Gossip>,
-    storage: storage::Pool<S>,
+    protocol: Protocol<PeerStorage, Gossip>,
+    storage: storage::Pool,
     subscribers: Fanout<PeerEvent>,
     paths: Paths,
 
     _git_transport_protocol_ref: Arc<Box<dyn GitStreamFactory>>,
 }
 
-impl<S> PeerApi<S>
-where
-    S: Signer + Clone,
-{
+impl PeerApi {
     pub fn listen_addr(&self) -> SocketAddr {
         self.listen_addr
     }
 
-    pub fn protocol(&self) -> &Protocol<PeerStorage<S>, Gossip> {
+    pub fn protocol(&self) -> &Protocol<PeerStorage, Gossip> {
         &self.protocol
     }
 
     pub async fn with_storage<F, A>(&self, blocking: F) -> Result<A, ApiError>
     where
-        F: FnOnce(&storage::Storage<S>) -> A + Send + 'static,
+        F: FnOnce(&storage::Storage) -> A + Send + 'static,
         A: Send + 'static,
     {
         let storage = self.storage.get().await?;
         Ok(spawn_blocking(move || blocking(&storage))
             .await
             .expect("blocking operation on storage panicked"))
+    }
+
+    pub async fn storage(&self) -> Result<storage::Pooled, ApiError> {
+        Ok(self.storage.get().await?)
     }
 
     pub fn peer_id(&self) -> PeerId {
@@ -289,6 +291,18 @@ where
     }
 }
 
+impl crate::git::local::transport::CanOpenStorage for PeerApi {
+    fn open_storage(
+        &self,
+    ) -> Result<Box<dyn AsRef<storage::Storage>>, Box<dyn std::error::Error + Send + Sync + 'static>>
+    {
+        match futures::executor::block_on(self.storage()) {
+            Err(e) => Err(Box::new(e)),
+            Ok(s) => Ok(Box::new(storage::pool::PooledRef::from(s))),
+        }
+    }
+}
+
 /// Future driving the networking stack
 pub type RunLoop = BoxFuture<'static, ()>;
 
@@ -303,13 +317,13 @@ pub type RunLoop = BoxFuture<'static, ()>;
 /// The intermediate, bound state is mainly useful to query the [`SocketAddr`]
 /// chosen by the operating system when the [`Peer`] was bootstrapped using
 /// `0.0.0.0:0`.
-pub struct Peer<S> {
+pub struct Peer {
     paths: Paths,
     listen_addr: SocketAddr,
     peer_id: PeerId,
 
-    storage: storage::Pool<S>,
-    protocol: Protocol<PeerStorage<S>, Gossip>,
+    storage: storage::Pool,
+    protocol: Protocol<PeerStorage, Gossip>,
     run_loop: RunLoop,
     subscribers: Fanout<PeerEvent>,
 
@@ -320,10 +334,7 @@ pub struct Peer<S> {
     _git_transport_protocol_ref: Arc<Box<dyn GitStreamFactory>>,
 }
 
-impl<S> Peer<S>
-where
-    S: Signer + Clone,
-{
+impl Peer {
     pub fn listen_addr(&self) -> SocketAddr {
         self.listen_addr
     }
@@ -332,7 +343,7 @@ where
         self.peer_id
     }
 
-    pub fn accept(self) -> Result<(PeerApi<S>, RunLoop), AcceptError> {
+    pub fn accept(self) -> Result<(PeerApi, RunLoop), AcceptError> {
         let api = PeerApi {
             listen_addr: self.listen_addr,
             peer_id: self.peer_id,
@@ -346,9 +357,11 @@ where
         Ok((api, self.run_loop))
     }
 
-    async fn bootstrap<D>(config: PeerConfig<D, S>) -> Result<Self, BootstrapError>
+    async fn bootstrap<S, D>(config: PeerConfig<D, S>) -> Result<Self, BootstrapError>
     where
-        S: AsPKCS8 + 'static,
+        S: Signer + AsPKCS8 + Clone + 'static,
+        S::Error: std::error::Error + Send + Sync + 'static,
+
         D: Discovery<Addr = SocketAddr>,
         <D as Discovery>::Stream: 'static,
     {
@@ -404,15 +417,12 @@ where
 }
 
 #[derive(Clone)]
-pub struct PeerStorage<S> {
-    inner: storage::Pool<S>,
+pub struct PeerStorage {
+    inner: storage::Pool,
     subscribers: Fanout<PeerEvent>,
 }
 
-impl<S> PeerStorage<S>
-where
-    S: Signer + Clone,
-{
+impl PeerStorage {
     async fn git_fetch(
         &self,
         from: PeerId,
@@ -497,10 +507,7 @@ fn urn_context(local_peer_id: PeerId, urn: Either<Urn, Originates<Urn>>) -> Urn 
 }
 
 #[async_trait]
-impl<S> LocalStorage for PeerStorage<S>
-where
-    S: Signer + Clone,
-{
+impl LocalStorage for PeerStorage {
     type Update = Gossip;
 
     #[tracing::instrument(skip(self))]

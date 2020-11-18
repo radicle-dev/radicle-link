@@ -31,7 +31,7 @@ use crate::{
     },
     keys::SecretKey,
     peer::{self, PeerId},
-    signer::Signer,
+    signer::{BoxedSigner, Signer},
 };
 
 const CONFIG_USER_NAME: &str = "user.name";
@@ -64,13 +64,10 @@ pub struct Config<'a, S> {
     signer: &'a S,
 }
 
-impl<'a, S> TryFrom<&'a Storage<S>> for Config<'a, S>
-where
-    S: Signer,
-{
+impl<'a> TryFrom<&'a Storage> for Config<'a, BoxedSigner> {
     type Error = Error;
 
-    fn try_from(storage: &'a Storage<S>) -> Result<Self, Self::Error> {
+    fn try_from(storage: &'a Storage) -> Result<Self, Self::Error> {
         let inner = storage.as_raw().config()?;
         let this = Self {
             inner,

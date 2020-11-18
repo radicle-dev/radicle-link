@@ -22,7 +22,7 @@ use thiserror::Error;
 use super::{
     super::{
         storage::{self, config, Storage},
-        types::{namespace::Namespace, Force, NamespacedRef},
+        types::{Force, Namespace, Reference},
     },
     user,
 };
@@ -96,13 +96,10 @@ impl LocalIdentity {
     ///
     /// That is, create a symref from `refs/namespaces/<urn>/rad/self` to
     /// `refs/namespaces/<local id>/rad/id`.
-    pub fn link<S>(&self, storage: &Storage<S>, from: &Urn) -> Result<(), storage::Error>
-    where
-        S: Signer,
-    {
-        NamespacedRef::rad_id(Namespace::from(self.urn()))
+    pub fn link(&self, storage: &Storage, from: &Urn) -> Result<(), storage::Error> {
+        Reference::rad_id(Namespace::from(self.urn()))
             .symbolic_ref(
-                NamespacedRef::rad_self(Namespace::from(from), None),
+                Reference::rad_self(Namespace::from(from), None),
                 Force::True,
             )
             .create(storage.as_raw())
@@ -123,10 +120,7 @@ impl LocalIdentity {
 /// passes verification, is signed by the [`Signer`] of `storage`, and delegates
 /// to the key of the [`Signer`], the [`LocalIdentity`] is returned in a `Some`.
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn load<S>(storage: &Storage<S>, urn: Urn) -> Result<Option<LocalIdentity>, Error>
-where
-    S: Signer,
-{
+pub fn load(storage: &Storage, urn: Urn) -> Result<Option<LocalIdentity>, Error> {
     let urn = urn.with_path(reflike!("refs/rad/self"));
     tracing::debug!("loading local id from {}", urn);
     match user::verify(storage, &urn)? {
@@ -143,10 +137,7 @@ where
 /// If no default identity was configured, `None` is returned. Otherwise, the
 /// result is the result of calling [`load`] with the pre-configured [`Urn`].
 #[tracing::instrument(level = "debug", skip(storage), err)]
-pub fn default<S>(storage: &Storage<S>) -> Result<Option<LocalIdentity>, Error>
-where
-    S: Signer,
-{
+pub fn default(storage: &Storage) -> Result<Option<LocalIdentity>, Error> {
     match storage.config()?.user()? {
         Some(urn) => load(storage, urn),
         None => Ok(None),
