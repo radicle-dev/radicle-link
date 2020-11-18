@@ -24,7 +24,7 @@ use std::{
 use crate::credential;
 use librad::{
     git::local::{
-        transport::{LocalTransport, Localio, Mode::Stateful, Settings},
+        transport::{CanOpenStorage, LocalTransport, Localio, Mode::Stateful, Settings},
         url::LocalUrl,
     },
     keys::{PublicKey, SecretKey},
@@ -54,7 +54,8 @@ pub fn run() -> anyhow::Result<()> {
     let mut transport = {
         let paths = Paths::from_env()?;
         let signer = get_signer(&git_dir, paths.keys_dir(), &url)?;
-        LocalTransport::new(Settings { paths, signer })
+        let settings: Box<dyn CanOpenStorage> = Box::new(Settings { paths, signer });
+        Ok::<_, anyhow::Error>(LocalTransport::from(settings))
     }?;
 
     loop {

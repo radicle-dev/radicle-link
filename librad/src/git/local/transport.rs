@@ -16,20 +16,15 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{HashMap, VecDeque},
     convert::TryFrom,
     fmt::Debug,
-    io::{self, Cursor, Read, Write},
-    panic::{self, UnwindSafe},
-    path::PathBuf,
-    process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio},
-    sync::{Arc, Condvar, Mutex, Once, RwLock},
-    thread,
-    time::Duration,
+    io,
+    process::{Child, Command, ExitStatus, Stdio},
+    sync::Arc,
 };
 
-use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
-use git_ext::{self as ext, into_git_err, RECEIVE_PACK_HEADER, UPLOAD_PACK_HEADER};
+use git2::transport::Service;
+use git_ext::{self as ext};
 use thiserror::Error;
 
 use super::{
@@ -37,218 +32,14 @@ use super::{
         identities,
         refs::{self, Refs},
         storage::{self, glob, Storage},
-        types::namespace::Namespace,
+        types::Namespace,
         Urn,
     },
     url::LocalUrl,
 };
-use crate::{paths::Paths, peer::PeerId, signer::BoxedSigner};
+use crate::{paths::Paths, signer::BoxedSigner};
 
-lazy_static! {
-    static ref SETTINGS: Arc<RwLock<HashMap<PeerId, SettingsInternal>>> =
-        Arc::new(RwLock::new(HashMap::with_capacity(1)));
-}
-
-/// Register [`LocalTransport`] as a custom transport with `libgit2`.
-///
-/// This function should only be called once per program (it is however guarded
-/// by a [`Once`], so repeated invocations are safe).
-pub fn register() {
-    static INIT: Once = Once::new();
-    unsafe {
-        INIT.call_once(move || {
-            git2::transport::register(super::URL_SCHEME, move |remote| {
-                Transport::smart(&remote, true, LocalTransportFactory::new())
-            })
-            .unwrap()
-        });
-    }
-}
-
-/// The settings for configuring a [`LocalTransport`] instance.
-///
-/// Note that transports are keyed by the public key of the `signer`, so this
-/// can be used to configure different transports for different peers, e.g. in
-/// tests.
-#[derive(Clone)]
-pub struct Settings {
-    pub paths: Paths,
-    pub signer: BoxedSigner,
-}
-
-/// Results of instantiations of [`LocalTransport`] as a `libgit2` transport.
-///
-/// See [`Self::wait`].
-pub struct Results {
-    done: Mutex<VecDeque<thread::Result<Result<(), Error>>>>,
-    cvar: Condvar,
-}
-
-impl Results {
-    /// Wait on the results of operations on [`git2::Remote`] using the
-    /// [`LocalTransport`].
-    ///
-    /// This works around the issue of `libgit2` dropping the [`LocalTransport`]
-    /// handle prematurely in some cases (e.g. `git-receive-pack` may
-    /// trigger a `git gc`, but has sent main-band output already, so
-    /// `libgit2` thinks it's done).
-    ///
-    /// [`Results`] is internally a queue -- results will appear in the order
-    /// their corresponding child processes complete (i.e. **not**
-    /// necessarily the order in which they were initated). Repeatedly
-    /// calling [`Results::wait`] may thus yield more results.
-    ///
-    /// Normally, these results are not interesting, but users of
-    /// [`LocalTransport`] as a custom `libgit2` transport **should** make
-    /// sure to call [`Self::wait`] _at least_ before exiting the process,
-    /// in order to ensure auxiliary operations complete. Doing so in a [`Drop`]
-    /// impl would be a good choice.
-    ///
-    /// # Safety
-    ///
-    /// It is required to supply a timeout, in order to defend against the
-    /// pathological case that the child process does not terminate, in
-    /// which case we do not want to block the parent process. Note,
-    /// however, that waiting on child processes is done by spawning threads --
-    /// if an operation on [`git2::Remote`] is not [`Self::wait`]ed on, or the
-    /// wait times out, the waiting thread will continue to run until the
-    /// parent process is terminated.
-    ///
-    /// In other words, using [`LocalTransport`] as a custom `libgit2` transport
-    /// may leak threads.
-    ///
-    /// # Errors
-    ///
-    /// If the `wait` timed out, [`None`] is returned, otherwise a
-    /// [`thread::Result`]. If that is an [`Err`] value, the child process
-    /// has panicked. Otherwise, the value contained in the [`Ok`] variant
-    /// is the result of [`Connected::wait`].
-    pub fn wait(&self, timeout: Duration) -> Option<Vec<thread::Result<Result<(), Error>>>> {
-        let mut guard = self.done.lock().unwrap();
-        loop {
-            if guard.len() > 0 {
-                return Some(guard.drain(0..).collect());
-            } else {
-                let res = self.cvar.wait_timeout(guard, timeout).unwrap();
-                if res.1.timed_out() {
-                    return None;
-                } else {
-                    guard = res.0;
-                }
-            }
-        }
-    }
-
-    fn new() -> Self {
-        Self {
-            done: Mutex::new(VecDeque::new()),
-            cvar: Condvar::new(),
-        }
-    }
-
-    fn done(&self, res: thread::Result<Result<(), Error>>) {
-        self.done.lock().unwrap().push_back(res);
-        self.cvar.notify_all();
-    }
-}
-
-struct SettingsInternal {
-    settings: Settings,
-    results: Arc<Results>,
-}
-
-#[derive(Clone)]
-pub struct LocalTransportFactory {
-    settings: Arc<RwLock<HashMap<PeerId, SettingsInternal>>>,
-}
-
-impl LocalTransportFactory {
-    fn new() -> Self {
-        Self {
-            settings: SETTINGS.clone(),
-        }
-    }
-
-    /// Set up the [`LocalTransportFactory`] with some [`Settings`], and obtain
-    /// a side-channel to receive results of operations on [`git2::Remote`]
-    /// using this transport.
-    ///
-    /// This must be called before any attempt to use the local transport. It
-    /// **should** be called only once per program, and the returned
-    /// [`Results`] awaited on in an appropriate place (e.g. a `Drop`
-    /// finaliser).
-    ///
-    /// See [`Results::wait`] for more details.
-    #[must_use = "results should be inspected"]
-    pub fn configure(settings: Settings) -> Arc<Results> {
-        let peer_id = settings.signer.peer_id();
-        let results = Arc::new(Results::new());
-
-        Self::new().settings.write().unwrap().insert(
-            peer_id,
-            SettingsInternal {
-                settings,
-                results: Arc::clone(&results),
-            },
-        );
-
-        results
-    }
-}
-
-impl SmartSubtransport for LocalTransportFactory {
-    fn action(
-        &self,
-        url: &str,
-        service: Service,
-    ) -> Result<Box<dyn SmartSubtransportStream>, git2::Error> {
-        let settings = &*self.settings.read().unwrap();
-        let url = url.parse::<LocalUrl>().map_err(into_git_err)?;
-
-        match settings.get(&url.local_peer_id) {
-            None => Err(git2::Error::from_str("local transport unconfigured")),
-            Some(SettingsInternal { settings, results }) => {
-                let mut transport = LocalTransport::new(settings.clone()).map_err(into_git_err)?;
-                let mut child = transport
-                    .connect(url, service, Mode::Stateless, Localio::piped())
-                    .map_err(into_git_err)?;
-
-                let stdin = child.process.stdin.take().unwrap();
-                let stdout = child.process.stdout.take().unwrap();
-
-                let results = Arc::clone(results);
-                thread::spawn(move || {
-                    let res = panic::catch_unwind(move || child.wait());
-                    results.done(res)
-                });
-
-                let header = match service {
-                    Service::UploadPackLs => Some(UPLOAD_PACK_HEADER.to_vec()),
-                    Service::ReceivePackLs => Some(RECEIVE_PACK_HEADER.to_vec()),
-                    _ => None,
-                };
-
-                Ok(Box::new(LocalStream {
-                    read: LocalRead {
-                        header,
-                        inner: stdout,
-                    },
-                    write: stdin,
-                }))
-            },
-        }
-    }
-
-    fn close(&self) -> Result<(), git2::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum Mode {
-    Stateless,
-    Stateful,
-}
+mod internal;
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -259,8 +50,8 @@ pub enum Error {
     #[error("no rad/self present and no default identity configured")]
     NoLocalIdentity,
 
-    #[error("too many libgit2 transport streams")]
-    StreamLimitExceeded,
+    #[error(transparent)]
+    OpenStorage(#[from] OpenStorageError),
 
     #[error(transparent)]
     Storage(#[from] storage::Error),
@@ -281,6 +72,24 @@ pub enum Error {
     Io(#[from] io::Error),
 }
 
+pub type OpenStorageError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+pub trait CanOpenStorage: Send + Sync {
+    fn open_storage(&self) -> Result<Box<dyn AsRef<Storage>>, OpenStorageError>;
+}
+
+pub(crate) fn with_local_transport<F, G, A>(
+    open_storage: F,
+    url: LocalUrl,
+    g: G,
+) -> Result<A, Error>
+where
+    F: CanOpenStorage + 'static,
+    G: FnOnce(LocalUrl) -> A,
+{
+    internal::with(open_storage, url, g)
+}
+
 /// A running service (as per the [`Service`] argument) with it's stdio
 /// connected as per [`Localio`].
 ///
@@ -289,7 +98,7 @@ pub enum Error {
 #[must_use = "`wait` must be called"]
 pub struct Connected {
     process: Child,
-    on_success: Option<Box<dyn FnOnce() -> Result<(), Error> + Send + UnwindSafe + 'static>>,
+    on_success: Option<Box<dyn FnOnce() -> Result<(), Error> + Send + 'static>>,
 }
 
 impl Connected {
@@ -335,19 +144,44 @@ impl Localio {
     }
 }
 
+pub struct Settings {
+    pub paths: Paths,
+    pub signer: BoxedSigner,
+}
+
+impl CanOpenStorage for Settings {
+    fn open_storage(&self) -> Result<Box<dyn AsRef<Storage>>, OpenStorageError> {
+        let storage = Storage::open(&self.paths, self.signer.clone())?;
+        Ok(Box::new(storage))
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Mode {
+    Stateless,
+    Stateful,
+}
+
 #[derive(Clone)]
 pub struct LocalTransport {
-    storage: Arc<Mutex<Storage<BoxedSigner>>>,
+    storage: Arc<Box<dyn CanOpenStorage>>,
+}
+
+impl From<Arc<Box<dyn CanOpenStorage>>> for LocalTransport {
+    fn from(storage: Arc<Box<dyn CanOpenStorage>>) -> Self {
+        Self { storage }
+    }
+}
+
+impl From<Box<dyn CanOpenStorage>> for LocalTransport {
+    fn from(storage: Box<dyn CanOpenStorage>) -> Self {
+        Self {
+            storage: Arc::new(storage),
+        }
+    }
 }
 
 impl LocalTransport {
-    pub fn new(settings: Settings) -> Result<Self, Error> {
-        let storage = Storage::open(&settings.paths, settings.signer)?;
-        Ok(LocalTransport {
-            storage: Arc::new(Mutex::new(storage)),
-        })
-    }
-
     #[tracing::instrument(level = "debug", skip(self, service, stdio), err)]
     pub fn connect(
         &mut self,
@@ -356,12 +190,15 @@ impl LocalTransport {
         mode: Mode,
         stdio: Localio,
     ) -> Result<Connected, Error> {
+        let _box = self.storage.open_storage()?;
+        let storage = _box.as_ref();
+
         let urn = url.into();
-        self.guard_has_urn(&urn)?;
+        guard_has_urn(storage, &urn)?;
 
         let mut git = Command::new("git");
         git.envs(::std::env::vars().filter(|(key, _)| key.starts_with("GIT_TRACE")))
-            .current_dir(self.repo_path())
+            .current_dir(storage.as_ref().path())
             .args(&[
                 &format!("--namespace={}", Namespace::from(&urn)),
                 "-c",
@@ -375,7 +212,7 @@ impl LocalTransport {
         match service {
             Service::UploadPack | Service::UploadPackLs => {
                 // Fetching remotes is ok, pushing is not
-                self.visible_remotes(&urn)?.for_each(|remote_ref| {
+                visible_remotes(storage, &urn)?.for_each(|remote_ref| {
                     git.arg("-c")
                         .arg(format!("uploadpack.hiderefs=!^{}", remote_ref));
                 });
@@ -407,76 +244,72 @@ impl LocalTransport {
             .stderr(Stdio::inherit())
             .spawn()?;
 
-        let on_success: Option<
-            Box<dyn FnOnce() -> Result<(), Error> + Send + UnwindSafe + 'static>,
-        > = match service {
-            Service::ReceivePack => {
-                let storage = self.storage.clone();
-                let hook = move || {
-                    let storage = storage.lock().unwrap();
+        let on_success: Option<Box<dyn FnOnce() -> Result<(), Error> + Send + 'static>> =
+            match service {
+                Service::ReceivePack => {
+                    let storage = Arc::clone(&self.storage);
+                    let hook = move || {
+                        let _box = storage.open_storage()?;
+                        let _dyn = _box.as_ref();
+                        let storage = _dyn.as_ref();
 
-                    // Update `rad/signed_refs`
-                    Refs::update(&storage, &urn)?;
+                        // Update `rad/signed_refs`
+                        Refs::update(storage, &urn)?;
 
-                    // Ensure we have a `rad/self`
-                    let local_id = identities::local::load(&storage, urn.clone())
-                        .transpose()
-                        .or_else(|| identities::local::default(&storage).transpose())
-                        .transpose()?;
-                    match local_id {
-                        None => Err(Error::NoLocalIdentity),
-                        Some(local_id) => Ok(local_id.link(&storage, &urn)?),
-                    }
-                };
+                        // Ensure we have a `rad/self`
+                        let local_id = identities::local::load(storage, urn.clone())
+                            .transpose()
+                            .or_else(|| identities::local::default(storage).transpose())
+                            .transpose()?;
+                        match local_id {
+                            None => Err(Error::NoLocalIdentity),
+                            Some(local_id) => Ok(local_id.link(storage, &urn)?),
+                        }
+                    };
 
-                Some(Box::new(hook))
-            },
+                    Some(Box::new(hook))
+                },
 
-            _ => None,
-        };
+                _ => None,
+            };
 
         Ok(Connected {
             process: child,
             on_success,
         })
     }
+}
 
-    fn guard_has_urn(&self, urn: &Urn) -> Result<(), Error> {
-        let have = self
-            .storage
-            .lock()
-            .unwrap()
-            .has_urn(urn)
-            .map_err(Error::from)?;
-        if !have {
-            Err(Error::NoSuchUrn(urn.clone()))
-        } else {
-            Ok(())
-        }
+fn guard_has_urn<S>(storage: S, urn: &Urn) -> Result<(), Error>
+where
+    S: AsRef<Storage>,
+{
+    let have = storage.as_ref().has_urn(urn).map_err(Error::from)?;
+    if !have {
+        Err(Error::NoSuchUrn(urn.clone()))
+    } else {
+        Ok(())
     }
+}
 
-    fn visible_remotes(&self, urn: &Urn) -> Result<impl Iterator<Item = ext::RefLike>, Error> {
-        let remotes = self
-            .storage
-            .lock()
-            .unwrap()
-            .references_glob(visible_remotes_glob(urn))?
-            .filter_map(move |res| {
-                res.map(|reference| {
-                    reference
-                        .name()
-                        .and_then(|name| ext::RefLike::try_from(name).ok())
-                })
-                .transpose()
+fn visible_remotes<S>(storage: S, urn: &Urn) -> Result<impl Iterator<Item = ext::RefLike>, Error>
+where
+    S: AsRef<Storage>,
+{
+    let remotes = storage
+        .as_ref()
+        .references_glob(visible_remotes_glob(urn))?
+        .filter_map(move |res| {
+            res.map(|reference| {
+                reference
+                    .name()
+                    .and_then(|name| ext::RefLike::try_from(name).ok())
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .transpose()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(remotes.into_iter())
-    }
-
-    fn repo_path(&self) -> PathBuf {
-        self.storage.lock().unwrap().path().to_path_buf()
-    }
+    Ok(remotes.into_iter())
 }
 
 fn visible_remotes_glob(urn: &Urn) -> impl glob::Pattern + Debug {
@@ -488,41 +321,6 @@ fn visible_remotes_glob(urn: &Urn) -> impl glob::Pattern + Debug {
     ))
     .unwrap()
     .compile_matcher()
-}
-
-pub struct LocalStream {
-    read: LocalRead,
-    write: ChildStdin,
-}
-
-impl Read for LocalStream {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.read.read(buf)
-    }
-}
-
-impl Write for LocalStream {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.write.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.write.flush()
-    }
-}
-
-pub struct LocalRead {
-    header: Option<Vec<u8>>,
-    inner: ChildStdout,
-}
-
-impl Read for LocalRead {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self.header.take() {
-            None => self.inner.read(buf),
-            Some(hdr) => Cursor::new(hdr).read(buf),
-        }
-    }
 }
 
 #[cfg(test)]
