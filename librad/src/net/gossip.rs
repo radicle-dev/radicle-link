@@ -528,11 +528,21 @@ where
                 match recvd {
                     Ok(rpc) => match rpc {
                         Rpc::Membership(msg) => {
-                            self.handle_membership(remote_id, recv.remote_addr().as_addr(), msg)
-                                .await?
+                            if let Err(err) = self
+                                .handle_membership(remote_id, recv.remote_addr().as_addr(), msg)
+                                .await
+                            {
+                                self.remove_connected(remote_id).await;
+                                return Err(err);
+                            }
                         },
 
-                        Rpc::Gossip(msg) => self.handle_gossip(remote_id, msg).await?,
+                        Rpc::Gossip(msg) => {
+                            if let Err(err) = self.handle_gossip(remote_id, msg).await {
+                                self.remove_connected(remote_id).await;
+                                return Err(err);
+                            }
+                        },
                     },
 
                     Err(e) => {
