@@ -507,17 +507,17 @@ where
                 return Err(Error::SelfConnection);
             }
 
-            tracing::error!("Check peer exists for remote.id = {}", remote_id);
+            tracing::error!(msg = "Check peer exists", remote_id = %remote_id);
+            let ejected = self.add_connected(remote_id, send).await;
+            let is_ejected = ejected.is_some();
 
-            if let Some((ejected_peer, mut ejected_send)) =
-                self.add_connected(remote_id, send).await
-            {
-                tracing::error!(
-                    msg = "Ejecting connected peer",
-                    peer = %ejected_peer,
-                );
+            if let Some((ejected_peer, mut ejected_send)) = ejected {
                 let this = self.clone();
                 tokio::spawn(async move {
+                    tracing::error!(
+                        msg = "Ejecting connected peer",
+                        peer = %ejected_peer,
+                    );
                     let _ = ejected_send.close().await;
                     // Note: if the ejected peer never sent us a `Join` or
                     // `Neighbour`, it isn't behaving well, so we can forget about
@@ -529,7 +529,7 @@ where
                 });
             }
 
-            tracing::error!("Handling gossip incoming from remote.id = {}", remote_id);
+            tracing::error!(msg = "Handling incoming gossip", remote_id = %remote_id);
 
             while let Some(recvd) = recv.next().await {
                 match recvd {
@@ -553,14 +553,17 @@ where
                     },
 
                     Err(e) => {
-                        tracing::error!("Recv error: {:?} for {}", e, remote_id);
+                        tracing::error!(msg = "Recv error", error = ?e, remote_id = %remote_id);
                         break;
                     },
                 }
             }
 
-            tracing::error!(msg = "Recv stream is done, disconnecting");
-            self.remove_connected(remote_id).await;
+            tracing::error!(msg = "Recv stream is done, was ejected", ejeected = %is_ejected);
+            if !is_ejected {
+                tracing::error!(msg = "Disconnecting", remote_id = %remote_id);
+                self.remove_connected(remote_id).await;
+            }
 
             Ok(())
         }
