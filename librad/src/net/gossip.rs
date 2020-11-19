@@ -524,6 +524,8 @@ where
                     .await
             }
 
+            tracing::info!("handling message from remote.id = {}", remote_id);
+
             while let Some(recvd) = recv.next().await {
                 match recvd {
                     Ok(rpc) => match rpc {
@@ -800,8 +802,11 @@ where
 
     async fn shuffle(&self) {
         tracing::trace!("Initiating shuffle");
-        let mut connected = self.connected_peers.lock().await;
-        if let Some((recipient, recipient_send)) = connected.random() {
+        let peer = {
+            let mut peers = self.connected_peers.lock().await;
+            peers.random().clone()
+        };
+        if let Some((recipient, recipient_send)) = peer {
             // Note: we should pick from the connected peers first, padding with
             // passive ones up to `shuffle_sample_size`. However, we don't track
             // the advertised info for those, as it will be available only later
