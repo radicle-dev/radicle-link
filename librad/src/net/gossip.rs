@@ -512,7 +512,7 @@ where
             if let Some((ejected_peer, mut ejected_send)) =
                 self.add_connected(remote_id, send).await
             {
-                tracing::trace!(
+                tracing::info!(
                     msg = "Ejecting connected peer",
                     peer = %ejected_peer,
                 );
