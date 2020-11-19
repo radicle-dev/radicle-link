@@ -507,12 +507,12 @@ where
                 return Err(Error::SelfConnection);
             }
 
-            tracing::info!("Check peer exists for remote.id = {}", remote_id);
+            tracing::error!("Check peer exists for remote.id = {}", remote_id);
 
             if let Some((ejected_peer, mut ejected_send)) =
                 self.add_connected(remote_id, send).await
             {
-                tracing::info!(
+                tracing::error!(
                     msg = "Ejecting connected peer",
                     peer = %ejected_peer,
                 );
@@ -529,7 +529,7 @@ where
                 });
             }
 
-            tracing::info!("Handling gossip incoming from remote.id = {}", remote_id);
+            tracing::error!("Handling gossip incoming from remote.id = {}", remote_id);
 
             while let Some(recvd) = recv.next().await {
                 match recvd {
@@ -553,13 +553,13 @@ where
                     },
 
                     Err(e) => {
-                        tracing::warn!("Recv error: {:?} for {}", e, remote_id);
+                        tracing::error!("Recv error: {:?} for {}", e, remote_id);
                         break;
                     },
                 }
             }
 
-            tracing::trace!(msg = "Recv stream is done, disconnecting");
+            tracing::error!(msg = "Recv stream is done, disconnecting");
             self.remove_connected(remote_id).await;
 
             Ok(())
