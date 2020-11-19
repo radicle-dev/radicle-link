@@ -507,6 +507,8 @@ where
                 return Err(Error::SelfConnection);
             }
 
+            tracing::info!("Check peer exists for remote.id = {}", remote_id);
+
             if let Some((ejected_peer, mut ejected_send)) =
                 self.add_connected(remote_id, send).await
             {
@@ -524,7 +526,7 @@ where
                     .await
             }
 
-            tracing::info!("handling message from remote.id = {}", remote_id);
+            tracing::info!("Handling gossip incoming from remote.id = {}", remote_id);
 
             while let Some(recvd) = recv.next().await {
                 match recvd {
@@ -804,9 +806,12 @@ where
         tracing::trace!("Initiating shuffle");
         let peer = {
             let mut peers = self.connected_peers.lock().await;
-            peers.random().clone()
+            match peers.random() {
+                Some((recipient, _)) => Some(recipient),
+                None => None,
+            }
         };
-        if let Some((recipient, recipient_send)) = peer {
+        if let Some(recipient) = peer {
             // Note: we should pick from the connected peers first, padding with
             // passive ones up to `shuffle_sample_size`. However, we don't track
             // the advertised info for those, as it will be available only later
@@ -821,6 +826,12 @@ where
                     shuffle.sample = ?sample,
                     shuffle.recipient = %recipient,
                 );
+                let mut peers = self
+                    .connected_peers
+                    .try_lock()
+                    .expect("Unable to get connected_peers lock");
+                let recipient_send = peers.get_mut(&recipient).expect("Picked recipient is gone");
+
                 recipient_send
                     .send(
                         Membership::Shuffle {
