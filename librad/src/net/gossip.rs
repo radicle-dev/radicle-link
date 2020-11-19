@@ -516,14 +516,17 @@ where
                     msg = "Ejecting connected peer",
                     peer = %ejected_peer,
                 );
-                let _ = ejected_send.close().await;
-                // Note: if the ejected peer never sent us a `Join` or
-                // `Neighbour`, it isn't behaving well, so we can forget about
-                // it here. Otherwise, we should already have it in
-                // `known_peers`.
-                self.subscribers
-                    .emit(ProtocolEvent::Control(Control::Disconnect(ejected_peer)))
-                    .await
+                let this = self.clone();
+                tokio::spawn(async move {
+                    let _ = ejected_send.close().await;
+                    // Note: if the ejected peer never sent us a `Join` or
+                    // `Neighbour`, it isn't behaving well, so we can forget about
+                    // it here. Otherwise, we should already have it in
+                    // `known_peers`.
+                    this.subscribers
+                        .emit(ProtocolEvent::Control(Control::Disconnect(ejected_peer)))
+                        .await
+                });
             }
 
             tracing::info!("Handling gossip incoming from remote.id = {}", remote_id);
@@ -550,7 +553,7 @@ where
                     },
 
                     Err(e) => {
-                        tracing::warn!("Recv error: {:?}", e);
+                        tracing::warn!("Recv error: {:?} for {}", e, remote_id);
                         break;
                     },
                 }
