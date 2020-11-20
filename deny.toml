@@ -205,5 +205,5 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     "https://github.com/djc/quinn",
     "https://github.com/radicle-dev/radicle-keystore",
-    "https://github.com/radicle-dev/ed25519-zebra",
+    "https://github.com/kim/ed25519-zebra",
 ]

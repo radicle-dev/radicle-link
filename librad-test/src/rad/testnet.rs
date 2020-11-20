@@ -74,10 +74,10 @@ async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
     let disco = discovery::Static::new(seeds);
     let storage_config = Default::default();
 
-    git::storage::Storage::init(&paths, key)?;
+    git::storage::Storage::init(&paths, key.clone())?;
 
     let config = PeerConfig {
-        signer: key,
+        signer: key.clone(),
         paths,
         listen_addr,
         gossip_params,

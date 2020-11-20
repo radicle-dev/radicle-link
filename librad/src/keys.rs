@@ -28,6 +28,7 @@ use ed25519_zebra as ed25519;
 use multibase::Base;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
+use zeroize::Zeroize;
 
 use keystore::{sign, SecretKeyExt};
 
@@ -49,8 +50,9 @@ pub trait SignError: error::Error + Send + Sync + 'static {}
 impl<T: error::Error + Send + Sync + 'static> SignError for T {}
 
 /// A device-specific signing key
-#[derive(Copy, Clone)]
+#[derive(Clone, Zeroize)]
 #[cfg_attr(test, derive(Debug))]
+#[zeroize(drop)]
 pub struct SecretKey(ed25519::SigningKey);
 
 /// The public part of a `Key``
