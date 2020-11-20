@@ -43,6 +43,9 @@ pub use crate::identities::git::Urn;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
+    #[error("cannot replicate from self")]
+    SelfReplication,
+
     #[error("identity not found")]
     MissingIdentity,
 
@@ -89,8 +92,8 @@ pub enum Error {
 ///    information.
 ///
 /// 2. Fetch the `rad/signed_refs` of all tracked peers, and compute the
-/// eligible heads (i.e. where    the `remote_peer` advertises the same tip oid
-/// as found in the signed refs)
+///    eligible heads (i.e. where the `remote_peer` advertises the same tip
+///    oid as found in the signed refs)
 ///
 /// 3. Fetch the rest (i.e. eligible heads)
 ///
@@ -115,6 +118,10 @@ pub fn replicate<Addrs>(
 where
     Addrs: IntoIterator<Item = SocketAddr>,
 {
+    if storage.peer_id() == &remote_peer {
+        return Err(Error::SelfReplication);
+    }
+
     let urn = Urn::new(urn.id);
     let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
 
@@ -218,6 +225,8 @@ fn ensure_setup_as_project(
     proj: Project,
     remote_peer: PeerId,
 ) -> Result<impl Iterator<Item = Urn>, Error> {
+    let local_peer_id = storage.peer_id();
+
     let urn: Urn = Reference::rad_id(Namespace::from(proj.urn()))
         .with_remote(remote_peer)
         .try_into()
@@ -243,10 +252,12 @@ fn ensure_setup_as_project(
                 // Also, track them
                 for key in delegate_person.delegations().iter() {
                     let peer_id = PeerId::from(*key);
-                    // Top-level
-                    tracking::track(storage, &delegate_urn, peer_id)?;
-                    // as well as for `proj`
-                    tracking::track(storage, &proj.urn(), peer_id)?;
+                    if &peer_id != local_peer_id {
+                        // Top-level
+                        tracking::track(storage, &delegate_urn, peer_id)?;
+                        // as well as for `proj`
+                        tracking::track(storage, &proj.urn(), peer_id)?;
+                    }
                 }
                 // Now point our view to the top-level
                 Reference::try_from(&delegate_urn)
@@ -274,7 +285,12 @@ fn ensure_setup_as_project(
     ensure_rad_id(storage, &urn, proj.content_id)?;
 
     // Make sure we track any direct delegations
-    for key in proj.delegations().iter().direct() {
+    for key in proj
+        .delegations()
+        .iter()
+        .direct()
+        .filter(|&key| key != local_peer_id.as_public_key())
+    {
         tracking::track(storage, &urn, PeerId::from(*key))?;
     }
 
