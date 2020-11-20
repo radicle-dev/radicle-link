@@ -54,6 +54,9 @@ pub enum Error {
     #[error("remote PeerId could not be determined")]
     RemoteIdUnavailable,
 
+    #[error("connect to self")]
+    SelfConnect,
+
     #[error(transparent)]
     PeerId(#[from] peer::conversion::Error),
 
@@ -88,8 +91,8 @@ impl Endpoint {
         let (endpoint, incoming) = make_endpoint(signer, listen_addr).await?;
         let endpoint = Endpoint { peer_id, endpoint };
         let incoming = incoming
-            .filter_map(|connecting| async move {
-                handle_incoming(connecting).await.map_or_else(
+            .filter_map(move |connecting| async move {
+                handle_incoming(peer_id, connecting).await.map_or_else(
                     |e| {
                         tracing::warn!("Error handling incoming connection: {}", e);
                         None
@@ -107,6 +110,11 @@ impl Endpoint {
         peer: PeerId,
         addr: &SocketAddr,
     ) -> Result<(Connection, BoxStream<'a, Result<Stream>>)> {
+        // Short-circuit: the other end will reject anyway
+        if self.peer_id == peer {
+            return Err(Error::SelfConnect);
+        }
+
         let conn = self
             .endpoint
             .connect(addr, peer.as_dns_name().as_ref().into())?
@@ -143,11 +151,18 @@ impl LocalInfo for Endpoint {
     }
 }
 
-async fn handle_incoming<'a>(connecting: quinn::Connecting) -> Result<(Connection, Incoming<'a>)> {
+async fn handle_incoming<'a>(
+    local_peer: PeerId,
+    connecting: quinn::Connecting,
+) -> Result<(Connection, Incoming<'a>)> {
     let conn = connecting.await?;
-    remote_peer(&conn)?
-        .ok_or(Error::RemoteIdUnavailable)
-        .map(|peer| mk_connection(peer, conn))
+    let remote_peer = remote_peer(&conn)?.ok_or(Error::RemoteIdUnavailable)?;
+    // This should be prevented by the TLS handshake, but let's double check
+    if remote_peer == local_peer {
+        Err(Error::SelfConnect)
+    } else {
+        Ok(mk_connection(remote_peer, conn))
+    }
 }
 
 /// Try to extract the remote identity from a newly established connection

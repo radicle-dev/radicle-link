@@ -503,16 +503,13 @@ where
     {
         let remote_id = conn.remote_peer_id();
         tracing::info!(remote.id = %remote_id, "New incoming connection");
-
         {
             self.connections.lock().await.insert(remote_id, conn);
             self.subscribers
                 .emit(ProtocolEvent::Connected(remote_id))
                 .await;
         }
-
         let res = self.handle_incoming_streams(incoming).await;
-
         self.handle_disconnect(remote_id).await;
 
         res
