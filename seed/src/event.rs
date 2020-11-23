@@ -24,9 +24,9 @@ use crate::{guess_user, Error, Project, Signer};
 /// A peer with optional user metadata.
 #[derive(Clone, Debug)]
 pub struct User {
-    peer_id: PeerId,
-    urn: Option<RadUrn>,
-    name: Option<String>,
+    pub peer_id: PeerId,
+    pub urn: Option<RadUrn>,
+    pub name: Option<String>,
 }
 
 impl User {
