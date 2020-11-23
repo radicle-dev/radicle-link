@@ -74,32 +74,24 @@ impl Event {
         provider: PeerId,
         api: &PeerApi<Signer>,
     ) -> Result<Self, Error> {
-        let proj = api
-            .with_storage({
-                let urn = urn.clone();
-                move |s| s.metadata_of::<ProjectInfo, _>(&urn, provider)
+        Ok(api
+            .with_storage(move |storage| {
+                let project = storage.metadata_of::<ProjectInfo, _>(&urn, provider)?;
+                let user = storage.get_rad_self_of(&urn, provider)?;
+                Ok::<_, Error>(Event::ProjectTracked(
+                    Project {
+                        urn: urn.clone(),
+                        maintainers: project.maintainers().clone(),
+                        name: project.name().to_owned(),
+                        description: project.description().to_owned(),
+                    },
+                    User {
+                        peer_id: provider,
+                        name: Some(user.name().to_string()),
+                        urn: Some(user.urn()),
+                    },
+                ))
             })
-            .await??;
-
-        let user = api
-            .with_storage({
-                let urn = urn.clone();
-                move |storage| storage.get_rad_self_of(&urn, provider)
-            })
-            .await??;
-
-        Ok(Event::ProjectTracked(
-            Project {
-                urn: urn.clone(),
-                maintainers: proj.maintainers().clone(),
-                name: proj.name().to_owned(),
-                description: proj.description().to_owned(),
-            },
-            User {
-                peer_id: provider,
-                name: Some(user.name().to_string()),
-                urn: Some(user.urn()),
-            },
-        ))
+            .await??)
     }
 }
