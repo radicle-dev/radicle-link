@@ -81,6 +81,13 @@ impl Event {
             })
             .await??;
 
+        let user = api
+            .with_storage({
+                let urn = urn.clone();
+                move |storage| storage.get_rad_self_of(&urn, provider)
+            })
+            .await??;
+
         Ok(Event::ProjectTracked(
             Project {
                 urn: urn.clone(),
@@ -88,7 +95,11 @@ impl Event {
                 name: proj.name().to_owned(),
                 description: proj.description().to_owned(),
             },
-            User::guess_from_peer(api, provider).await?,
+            User {
+                peer_id: provider,
+                name: Some(user.name().to_string()),
+                urn: Some(user.urn()),
+            },
         ))
     }
 }
