@@ -16,6 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    convert::TryFrom,
     future::Future,
     io,
     net::{IpAddr, SocketAddr},
@@ -40,6 +41,7 @@ use crate::{
         p2p::{server::GitServer, transport::GitStreamFactory},
         storage,
     },
+    git_ext::reference,
     internal::channel::Fanout,
     keys::{self, AsPKCS8},
     net::{
@@ -119,7 +121,7 @@ pub enum PeerEvent {
 pub struct FetchInfo {
     pub provider: PeerId,
     pub gossip: Gossip,
-    pub result: PutResult,
+    pub result: PutResult<Gossip>,
 }
 
 #[derive(Clone)]
@@ -463,35 +465,49 @@ where
     }
 }
 
-/// If applicable, map the [`uri::Path`] of the given [`RadUrn`] to
-/// `refs/remotes/<origin>/<path>`
+/// If applicable:
+///   * map the [`uri::Path`] of the given [`RadUrn`] to
+///     `refs/remotes/<origin>/<path>`
+///   * qualify the [`uri::Path`] to `heads/<path>`
 fn urn_context(local_peer_id: &PeerId, urn: Either<RadUrn, Originates<RadUrn>>) -> RadUrn {
+    fn remote(urn: RadUrn, peer: PeerId) -> RadUrn {
+        let path = if urn.path.is_empty() {
+            format!("refs/{}", urn.path.deref_or_default())
+        } else {
+            urn.path.deref().to_string()
+        };
+        let qualified = reference::RefLike::from(reference::Qualified::from(
+            reference::RefLike::try_from(path).expect("path is reflike"),
+        ));
+        let path: reference::RefLike = reflike!("refs/remotes")
+            .join(peer)
+            .join(qualified.strip_prefix("refs/").unwrap());
+        RadUrn {
+            path: uri::Path::parse(path.as_str()).expect("reflike is path"),
+            ..urn
+        }
+    }
+
+    fn local(urn: RadUrn) -> RadUrn {
+        let path = if urn.path.is_empty() {
+            format!("refs/{}", urn.path.deref_or_default())
+        } else {
+            urn.path.deref().to_string()
+        };
+        let path = uri::Path::parse(
+            reference::Qualified::from(
+                reference::RefLike::try_from(path).expect("path is reflike"),
+            )
+            .as_str(),
+        )
+        .expect("reflike is path");
+        RadUrn { path, ..urn }
+    }
+
     match urn {
-        Either::Left(urn) => urn,
-        Either::Right(Originates { from, value }) => {
-            let urn = value;
-
-            if from == *local_peer_id {
-                return urn;
-            }
-
-            let path = match urn.path.strip_prefix("refs/") {
-                Some(tail) => uri::Path::parse(tail)
-                    .expect("`Path` is still valid after stripping a valid prefix"),
-                // If there's no 'refs/' we assume we need to add 'heads/' to the reference name.
-                None => uri::Path::parse(format!("heads/{}", urn.path.deref()))
-                    .expect("`Path` is valid after adding 'heads/` prefix"),
-            };
-
-            let mut remote =
-                uri::Path::parse(format!("refs/remotes/{}", from)).expect("Known valid path");
-            remote.push(path);
-
-            RadUrn {
-                path: remote,
-                ..urn
-            }
-        },
+        Either::Left(urn) => local(urn),
+        Either::Right(Originates { from, value: urn }) if from == *local_peer_id => local(urn),
+        Either::Right(Originates { from, value: urn }) => remote(urn, from),
     }
 }
 
@@ -503,17 +519,33 @@ where
 {
     type Update = Gossip;
 
-    async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult {
+    async fn put(&self, provider: PeerId, mut has: Self::Update) -> PutResult<Self::Update> {
         let span = tracing::info_span!("Peer::LocalStorage::put");
-        let _guard = span.enter();
 
         match has.urn.proto {
             uri::Protocol::Git => {
+                let urn = match has.origin.as_ref() {
+                    None => Either::Left(has.urn.clone()),
+                    Some(origin) => Either::Right(Originates {
+                        from: *origin,
+                        value: has.urn.clone(),
+                    }),
+                };
+
+                // Set the origin to which remote's changes we end up fetching.
                 let peer_id = has.origin.unwrap_or_else(|| provider);
-                let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
+                has.origin = Some(peer_id);
+
+                let is_tracked = match self
+                    .is_tracked(has.urn.clone(), peer_id)
+                    .instrument(span.clone())
+                    .await
+                {
                     Ok(b) => b,
                     Err(e) => {
-                        tracing::error!(err = %e, "Git::Storage::is_tracked error");
+                        span.in_scope(|| {
+                            tracing::error!(err = %e, "Git::Storage::is_tracked error");
+                        });
                         return PutResult::Error;
                     },
                 };
@@ -522,29 +554,25 @@ where
                     Some(Rev::Git(head)) if is_tracked => {
                         let res = {
                             let this = self.clone();
-                            let has = has.clone();
-                            let urn = match has.origin {
-                                Some(origin) => Either::Right(Originates {
-                                    from: origin,
-                                    value: has.urn,
-                                }),
-                                None => Either::Left(has.urn),
-                            };
-                            this.git_fetch(provider, urn, head).await
+                            this.git_fetch(provider, urn, head)
+                                .instrument(span.clone())
+                                .await
                         };
 
                         match res {
                             Ok(()) => {
-                                if self.ask(has.clone()).await {
-                                    PutResult::Applied
+                                if self.ask(has.clone()).instrument(span.clone()).await {
+                                    PutResult::Applied(has.clone())
                                 } else {
-                                    tracing::warn!(
-                                        provider = %provider,
-                                        has.origin = ?has.origin,
-                                        has.urn = %has.urn,
-                                        "Provider announced non-existent rev"
-                                    );
-                                    PutResult::Stale
+                                    span.in_scope(|| {
+                                        tracing::warn!(
+                                            provider = %provider,
+                                            has.origin = ?has.origin,
+                                            has.urn = %has.urn,
+                                            "Provider announced non-existent rev"
+                                        );
+                                        PutResult::Stale
+                                    })
                                 }
                             },
                             Err(e) => match e {
@@ -552,10 +580,10 @@ where
                                 PeerStorageError::Store(storage::Error::NoSuchUrn(_)) => {
                                     PutResult::Uninteresting
                                 },
-                                e => {
+                                e => span.in_scope(|| {
                                     tracing::error!(err = %e, "Fetch error");
                                     PutResult::Error
-                                },
+                                }),
                             },
                         }
                     },
@@ -568,7 +596,7 @@ where
                     .emit(PeerEvent::GossipFetch(FetchInfo {
                         provider,
                         gossip: has,
-                        result: res,
+                        result: res.clone(),
                     }))
                     .await;
 
@@ -579,7 +607,6 @@ where
 
     async fn ask(&self, want: Self::Update) -> bool {
         let span = tracing::info_span!("Peer::LocalStorage::ask");
-        let _guard = span.enter();
 
         match want.urn.proto {
             uri::Protocol::Git => {
@@ -593,8 +620,203 @@ where
                     },
                     want.rev.map(|Rev::Git(head)| head),
                 )
+                .instrument(span)
                 .await
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod urn_context {
+        use super::*;
+        use crate::{hash, keys::SecretKey};
+
+        lazy_static! {
+            static ref LOCAL_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed([
+                188, 124, 109, 100, 178, 93, 115, 53, 15, 22, 114, 181, 15, 211, 233, 104, 32, 189,
+                9, 162, 235, 148, 204, 172, 21, 117, 34, 9, 236, 247, 238, 113
+            ]));
+            static ref OTHER_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed([
+                236, 225, 197, 234, 16, 153, 83, 54, 15, 203, 86, 253, 157, 81, 144, 96, 106, 99,
+                65, 129, 8, 181, 125, 141, 120, 122, 58, 48, 22, 97, 32, 9
+            ]));
+            static ref GIT_PROTOCOL: uri::Protocol = uri::Protocol::Git;
+            static ref RAD_URN_ID: hash::Hash = hash::Hash::hash(b"le project");
+        }
+
+        #[test]
+        fn direct_empty() {
+            let urn = RadUrn::new((*RAD_URN_ID).clone(), *GIT_PROTOCOL, uri::Path::empty());
+            let ctx = urn_context(&*LOCAL_PEER_ID, Either::Left(urn.clone()));
+            assert_eq!(
+                RadUrn {
+                    path: uri::Path::parse("refs/rad/id").unwrap(),
+                    ..urn
+                },
+                ctx
+            )
+        }
+
+        #[test]
+        fn direct_onelevel() {
+            let urn = RadUrn::new(
+                (*RAD_URN_ID).clone(),
+                *GIT_PROTOCOL,
+                uri::Path::parse("ban/ana").unwrap(),
+            );
+            let ctx = urn_context(&*LOCAL_PEER_ID, Either::Left(urn.clone()));
+            assert_eq!(
+                RadUrn {
+                    path: uri::Path::parse("refs/heads/ban/ana").unwrap(),
+                    ..urn
+                },
+                ctx
+            )
+        }
+
+        #[test]
+        fn direct_qualified() {
+            let urn = RadUrn::new(
+                (*RAD_URN_ID).clone(),
+                *GIT_PROTOCOL,
+                uri::Path::parse("refs/heads/next").unwrap(),
+            );
+            let ctx = urn_context(&*LOCAL_PEER_ID, Either::Left(urn.clone()));
+            assert_eq!(urn, ctx)
+        }
+
+        #[test]
+        fn remote_empty() {
+            let urn = RadUrn::new((*RAD_URN_ID).clone(), *GIT_PROTOCOL, uri::Path::empty());
+            let ctx = urn_context(
+                &*LOCAL_PEER_ID,
+                Either::Right(Originates {
+                    from: *OTHER_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(
+                RadUrn {
+                    path: uri::Path::parse(format!("refs/remotes/{}/rad/id", *OTHER_PEER_ID))
+                        .unwrap(),
+                    ..urn
+                },
+                ctx
+            )
+        }
+
+        #[test]
+        fn remote_onelevel() {
+            let urn = RadUrn::new(
+                (*RAD_URN_ID).clone(),
+                *GIT_PROTOCOL,
+                uri::Path::parse("ban/ana").unwrap(),
+            );
+            let ctx = urn_context(
+                &*LOCAL_PEER_ID,
+                Either::Right(Originates {
+                    from: *OTHER_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(
+                RadUrn {
+                    path: uri::Path::parse(format!(
+                        "refs/remotes/{}/heads/ban/ana",
+                        *OTHER_PEER_ID
+                    ))
+                    .unwrap(),
+                    ..urn
+                },
+                ctx
+            )
+        }
+
+        #[test]
+        fn remote_qualified() {
+            let urn = RadUrn::new(
+                (*RAD_URN_ID).clone(),
+                *GIT_PROTOCOL,
+                uri::Path::parse("refs/heads/next").unwrap(),
+            );
+            let ctx = urn_context(
+                &*LOCAL_PEER_ID,
+                Either::Right(Originates {
+                    from: *OTHER_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(
+                RadUrn {
+                    path: uri::Path::parse(format!("refs/remotes/{}/heads/next", *OTHER_PEER_ID))
+                        .unwrap(),
+                    ..urn
+                },
+                ctx
+            )
+        }
+
+        #[test]
+        fn self_origin_empty() {
+            let urn = RadUrn::new((*RAD_URN_ID).clone(), *GIT_PROTOCOL, uri::Path::empty());
+            let ctx = urn_context(
+                &*LOCAL_PEER_ID,
+                Either::Right(Originates {
+                    from: *LOCAL_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(
+                RadUrn {
+                    path: uri::Path::parse("refs/rad/id").unwrap(),
+                    ..urn
+                },
+                ctx
+            )
+        }
+
+        #[test]
+        fn self_origin_onelevel() {
+            let urn = RadUrn::new(
+                (*RAD_URN_ID).clone(),
+                *GIT_PROTOCOL,
+                uri::Path::parse("refs/heads/ban/ana").unwrap(),
+            );
+            let ctx = urn_context(
+                &*LOCAL_PEER_ID,
+                Either::Right(Originates {
+                    from: *LOCAL_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(
+                RadUrn {
+                    path: uri::Path::parse("refs/heads/ban/ana").unwrap(),
+                    ..urn
+                },
+                ctx
+            )
+        }
+
+        #[test]
+        fn self_origin_qualified() {
+            let urn = RadUrn::new(
+                (*RAD_URN_ID).clone(),
+                *GIT_PROTOCOL,
+                uri::Path::parse("refs/heads/next").unwrap(),
+            );
+            let ctx = urn_context(
+                &*LOCAL_PEER_ID,
+                Either::Right(Originates {
+                    from: *LOCAL_PEER_ID,
+                    value: urn.clone(),
+                }),
+            );
+            assert_eq!(urn, ctx)
         }
     }
 }

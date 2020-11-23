@@ -528,11 +528,21 @@ where
                 match recvd {
                     Ok(rpc) => match rpc {
                         Rpc::Membership(msg) => {
-                            self.handle_membership(remote_id, recv.remote_addr().as_addr(), msg)
-                                .await?
+                            if let Err(err) = self
+                                .handle_membership(remote_id, recv.remote_addr().as_addr(), msg)
+                                .await
+                            {
+                                self.remove_connected(remote_id).await;
+                                return Err(err);
+                            }
                         },
 
-                        Rpc::Gossip(msg) => self.handle_gossip(remote_id, msg).await?,
+                        Rpc::Gossip(msg) => {
+                            if let Err(err) = self.handle_gossip(remote_id, msg).await {
+                                self.remove_connected(remote_id).await;
+                                return Err(err);
+                            }
+                        },
                     },
 
                     Err(e) => {
@@ -677,7 +687,7 @@ where
                         // `val` was new, and is now fetched to local storage.
                         // Let connected peers know they can now fetch it from
                         // us.
-                        PutResult::Applied => {
+                        PutResult::Applied(val) => {
                             tracing::info!(value = ?val, "Announcing applied value");
 
                             self.broadcast(
