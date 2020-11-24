@@ -89,9 +89,13 @@ enum Run<'a, A> {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("no connection to {0}")]
     NoConnection(PeerId),
+
+    #[error("duplicate connection")]
+    DuplicateConnection,
 
     #[error(transparent)]
     Upgrade(#[from] upgrade::ErrorSource),
@@ -334,7 +338,7 @@ where
                         let addr_hints = addr_hints.into_iter().collect::<Vec<_>>();
                         let (conn, incoming) = connect(&self.endpoint, to, addr_hints)
                             .await
-                            .ok_or_else(|| Error::NoConnection(to))?;
+                            .ok_or(Error::NoConnection(to))?;
 
                         let stream = conn.open_stream().await?;
                         upgrade(stream, upgrade::Git)
@@ -366,10 +370,12 @@ where
                     "Run::Discovered",
                 );
 
-                if !self.connections.lock().await.contains_key(&peer) {
-                    if let Some((conn, incoming)) = connect(&self.endpoint, peer, addrs).await {
-                        self.handle_connect(conn, incoming.boxed(), None).await;
-                    }
+                // XXX: needs reconsideration: we leave it to the supplier of the
+                // disco stream to initiate a re-connect by yielding an element
+                // we actually saw before. The consequence is that existing
+                // connections will be terminated.
+                if let Some((conn, incoming)) = connect(&self.endpoint, peer, addrs).await {
+                    self.handle_connect(conn, incoming.boxed(), None).await;
                 }
             },
 
@@ -416,18 +422,34 @@ where
                     gossip::Control::Connect { to } => {
                         tracing::trace!(remote.id = %to.peer_id, "Run::Rad(Connect)");
 
-                        if !self.connections.lock().await.contains_key(&to.peer_id) {
-                            let conn = connect_peer_info(&self.endpoint, to).await;
-                            if let Some((conn, incoming)) = conn {
-                                self.handle_connect(conn, incoming.boxed(), None).await
-                            }
+                        let connections = self.connections.lock().await;
+                        match connections.get(&to.peer_id) {
+                            None => {
+                                drop(connections);
+                                let conn = connect_peer_info(&self.endpoint, to).await;
+                                if let Some((conn, incoming)) = conn {
+                                    self.handle_connect(conn, incoming.boxed(), None).await
+                                }
+                            },
+
+                            Some(conn) => match conn.open_stream().await {
+                                Ok(stream) => {
+                                    drop(connections);
+                                    // The incoming future should still be running,
+                                    // so it's enough to drive an outgoing
+                                    if let Err(e) = self.outgoing(stream, None).await {
+                                        tracing::warn!("error handling outgoing stream: {}", e);
+                                    }
+                                },
+
+                                Err(e) => {
+                                    let remote_id = conn.remote_peer_id();
+                                    drop(connections);
+                                    tracing::warn!("error opening outgoing stream: {}", e);
+                                    self.handle_disconnect(remote_id).await
+                                },
+                            },
                         }
-                    },
-
-                    gossip::Control::Disconnect(peer) => {
-                        tracing::trace!(peer.id = %peer, "Run::Rad(Disconnect)");
-
-                        self.handle_disconnect(peer).await;
                     },
                 },
 
@@ -452,14 +474,29 @@ where
         tracing::info!(remote.id = %remote_id, "New outgoing connection");
 
         {
-            self.connections
-                .lock()
-                .await
-                .insert(remote_id, conn.clone());
-            self.subscribers
-                .emit(ProtocolEvent::Connected(remote_id))
-                .await;
+            let mut connections = self.connections.lock().await;
+            if let Some(prev) = connections.insert(remote_id, conn.clone()) {
+                tracing::warn!(
+                    "new outgoing ejects previous connection to {}@{}",
+                    remote_id,
+                    prev.remote_addr()
+                );
+                prev.close(CloseReason::DuplicateConnection);
+                self.subscribers
+                    .emit(ProtocolEvent::Disconnecting(remote_id))
+                    .await;
+            }
         }
+
+        self.subscribers
+            .emit(ProtocolEvent::Connected(remote_id))
+            .await;
+
+        // XXX: potential race here: we expect that, if we ejected a previous
+        // connection, all stream-processing futures associated with are done by
+        // now, and the `CONNECTION_CLOSE` is in the send buffers. There is no
+        // way we can assert this, though, so our fresh connection `conn` might
+        // be rejected by the other end.
 
         let res = futures::try_join!(
             async {
@@ -486,6 +523,7 @@ where
     async fn handle_disconnect(&self, peer: PeerId) {
         if let Some(conn) = self.connections.lock().await.remove(&peer) {
             tracing::info!(msg = "Disconnecting", remote.addr = %conn.remote_addr());
+            conn.close(CloseReason::ProtocolDisconnect);
             self.subscribers
                 .emit(ProtocolEvent::Disconnecting(peer))
                 .await
@@ -503,18 +541,32 @@ where
         let remote_id = conn.remote_peer_id();
         tracing::info!(remote.id = %remote_id, "New incoming connection");
 
-        {
-            self.connections.lock().await.insert(remote_id, conn);
+        let mut connections = self.connections.lock().await;
+        if connections.contains_key(&remote_id) {
+            tracing::warn!(remote.id = %remote_id, "rejecting duplicate incoming connection");
+
+            conn.close(CloseReason::DuplicateConnection);
+            drop(incoming);
+
+            self.subscribers
+                .emit(ProtocolEvent::Disconnecting(remote_id))
+                .await;
+            drop(connections);
+
+            Err(Error::DuplicateConnection)
+        } else {
+            let _prev = connections.insert(remote_id, conn);
+            debug_assert!(_prev.is_none());
+
             self.subscribers
                 .emit(ProtocolEvent::Connected(remote_id))
                 .await;
+            drop(connections);
+
+            let res = self.handle_incoming_streams(incoming).await;
+            self.handle_disconnect(remote_id).await;
+            res
         }
-
-        let res = self.handle_incoming_streams(incoming).await;
-
-        self.handle_disconnect(remote_id).await;
-
-        res
     }
 
     async fn handle_incoming_streams<Incoming>(&self, mut incoming: Incoming) -> Result<(), Error>
