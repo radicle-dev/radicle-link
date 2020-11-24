@@ -555,6 +555,7 @@ where
 
             Err(Error::DuplicateConnection)
         } else {
+            tracing::info!(remote.id = %remote_id, "handling incoming connection");
             let _prev = connections.insert(remote_id, conn);
             debug_assert!(_prev.is_none());
 
