@@ -394,7 +394,7 @@ where
             Run::Gossip { event } => match event {
                 gossip::ProtocolEvent::Control(ctrl) => match ctrl {
                     gossip::Control::SendAdhoc { to, rpc } => {
-                        tracing::trace!(remote.id = %to.peer_id, "Run::Rad(SendAdhoc)");
+                        tracing::info!(remote.id = %to.peer_id, "Run::Rad(SendAdhoc)");
 
                         let conn = match self.connections.lock().await.get(&to.peer_id) {
                             Some(conn) => Some(conn.clone()),
@@ -417,10 +417,11 @@ where
                                 )
                             }
                         }
+                        tracing::info!("sent adhoc message");
                     },
 
                     gossip::Control::Connect { to } => {
-                        tracing::trace!(remote.id = %to.peer_id, "Run::Rad(Connect)");
+                        tracing::info!(remote.id = %to.peer_id, "Run::Rad(Connect)");
 
                         let connections = self.connections.lock().await;
                         match connections.get(&to.peer_id) {
@@ -428,7 +429,7 @@ where
                                 let conn = connect_peer_info(&self.endpoint, to).await;
                                 if let Some((conn, incoming)) = conn {
                                     drop(connections);
-                                    self.handle_connect(conn, incoming.boxed(), None).await
+                                    self.handle_connect(conn, incoming.boxed(), None).await;
                                 }
                             },
 
@@ -440,6 +441,7 @@ where
                                     if let Err(e) = self.outgoing(stream, None).await {
                                         tracing::warn!("error handling outgoing stream: {}", e);
                                     }
+                                    tracing::info!("finished handling stream");
                                 },
 
                                 Err(e) => {
