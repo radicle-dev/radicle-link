@@ -500,6 +500,9 @@ where
         let send = FramedWrite::new(send, Codec::new());
 
         let remote_id = recv.remote_peer_id();
+
+        tracing::info!(msg = "starting gossip stream", remote_id = %remote_id);
+
         // This should not be possible, as we prevent it in the TLS handshake.
         // Leaving it here regardless as a sanity check.
         if remote_id == self.local_id {
@@ -509,12 +512,15 @@ where
         {
             let mut connected_peers = self.connected_peers.lock().await;
             if let Some((peer, mut stream)) = connected_peers.insert(remote_id, send) {
-                tracing::info!("ejecting peer {}", peer);
+                tracing::info!(msg = "ejecting peer {}", remote_id = %peer);
                 let _ = stream.close().await;
             }
         };
 
         let remote_addr = recv.remote_addr().as_addr();
+
+        tracing::info!(msg = "starting gossip recv stream", remote_id = %remote_id, remote_addr = ?remote_addr);
+
         let res = recv
             .map_err(Error::from)
             .and_then(|rpc| {
@@ -530,12 +536,13 @@ where
             })
             .try_for_each(future::ok)
             .await;
-        tracing::trace!("recv stream is done");
+
+        tracing::info!(msg = "recv stream is done", remote_id = %remote_id);
 
         {
             let mut connected_peers = self.connected_peers.lock().await;
             if let Some((_, mut stream)) = connected_peers.remove(remote_id) {
-                tracing::info!("closing recv stream from peer {}", remote_id);
+                tracing::info!(msg = "closing recv stream from peer {}", remote_id = %remote_id);
                 let _ = stream.close().await;
             }
         }
@@ -544,7 +551,7 @@ where
             // This is usually a connection close or reset. We only log upstream,
             // and it's not too interesting to get error / warn logs for this.
             Error::Cbor(CborCodecError::Io(_)) => {
-                tracing::debug!("ignoring recv IO error: {}", e);
+                tracing::info!(msg = "ignoring recv IO error", err = %e);
                 Ok(())
             },
             e => Err(e),
