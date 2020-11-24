@@ -631,10 +631,12 @@ where
     where
         U: Into<UpgradeRequest>,
     {
-        let stream = match self.connections.lock().await.get(&to) {
+        let connections = self.connections.lock().await;
+        let stream = match connections.get(&to) {
             Some(conn) => conn.open_stream().await.map_err(Error::from),
             None => Err(Error::NoConnection(to)),
         }?;
+        drop(connections);
 
         upgrade(stream, up)
             .await
