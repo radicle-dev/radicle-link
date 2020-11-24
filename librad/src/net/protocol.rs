@@ -370,10 +370,12 @@ where
                     "Run::Discovered",
                 );
 
-                if !self.connections.lock().await.contains_key(&peer) {
-                    if let Some((conn, incoming)) = connect(&self.endpoint, peer, addrs).await {
-                        self.handle_connect(conn, incoming.boxed(), None).await;
-                    }
+                // XXX: needs reconsideration: we leave it to the supplier of the
+                // disco stream to initiate a re-connect by yielding an element
+                // we actually saw before. The consequence is that existing
+                // connections will be terminated.
+                if let Some((conn, incoming)) = connect(&self.endpoint, peer, addrs).await {
+                    self.handle_connect(conn, incoming.boxed(), None).await;
                 }
             },
 
@@ -433,6 +435,8 @@ where
                             Some(conn) => match conn.open_stream().await {
                                 Ok(stream) => {
                                     drop(connections);
+                                    // The incoming future should still be running,
+                                    // so it's enough to drive an outgoing
                                     if let Err(e) = self.outgoing(stream, None).await {
                                         tracing::warn!("error handling outgoing stream: {}", e);
                                     }
@@ -471,7 +475,6 @@ where
 
         {
             let mut connections = self.connections.lock().await;
-            // Should not actually be possible, but let's handle the case
             if let Some(prev) = connections.insert(remote_id, conn.clone()) {
                 tracing::warn!(
                     "new outgoing ejects previous connection to {}@{}",
@@ -488,6 +491,12 @@ where
         self.subscribers
             .emit(ProtocolEvent::Connected(remote_id))
             .await;
+
+        // XXX: potential race here: we expect that, if we ejected a previous
+        // connection, all stream-processing futures associated with are done by
+        // now, and the `CONNECTION_CLOSE` is in the send buffers. There is no
+        // way we can assert this, though, so our fresh connection `conn` might
+        // be rejected by the other end.
 
         let res = futures::try_join!(
             async {
