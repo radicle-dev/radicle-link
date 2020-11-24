@@ -412,6 +412,8 @@ where
                                 .map(|(conn, _)| conn),
                         };
 
+                        tracing::info!("Handling AdHoc connection");
+
                         if let Some(conn) = conn {
                             if let Err(e) = conn
                                 .open_stream()
@@ -435,6 +437,7 @@ where
                         let connections = self.connections.lock().await;
                         match connections.get(&to.peer_id) {
                             None => {
+                                tracing::info!("Handling connection Control::Connect");
                                 let conn = connect_peer_info(&self.endpoint, to).await;
                                 if let Some((conn, incoming)) = conn {
                                     drop(connections);
@@ -444,6 +447,7 @@ where
 
                             Some(conn) => match conn.open_stream().await {
                                 Ok(stream) => {
+                                    tracing::info!("Handling stream Control::Connect");
                                     drop(connections);
                                     // The incoming future should still be running,
                                     // so it's enough to drive an outgoing
