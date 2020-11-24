@@ -513,8 +513,10 @@ impl LocalStorage for PeerStorage {
 
     #[tracing::instrument(skip(self))]
     async fn put(&self, provider: PeerId, has: Self::Update) -> PutResult<Self::Update> {
-        let peer_id = has.origin.unwrap_or(provider);
-        let is_tracked = match self.is_tracked(has.urn.clone(), peer_id).await {
+        // If the `has` doesn't tell us to look into a specific remote-tracking
+        // branch, assume we want the `provider`'s.
+        let origin = has.origin.unwrap_or(provider);
+        let is_tracked = match self.is_tracked(has.urn.clone(), origin).await {
             Ok(b) => b,
             Err(e) => {
                 tracing::error!(err = %e, "error determining tracking status");
@@ -522,50 +524,56 @@ impl LocalStorage for PeerStorage {
             },
         };
 
-        let res = match has.rev {
-            // TODO: may need to fetch eagerly if we tracked while offline (#141)
-            Some(Rev::Git(head)) if is_tracked => {
-                let urn = match has.origin {
-                    Some(origin) => Right(Originates {
-                        from: origin,
-                        value: has.urn.clone(),
-                    }),
-                    None => Left(has.urn.clone()),
-                };
+        let res = if is_tracked {
+            let urn = match has.origin {
+                Some(origin) => Right(Originates {
+                    from: origin,
+                    value: has.urn.clone(),
+                }),
+                None => Left(has.urn.clone()),
+            };
+            let head = has.rev.as_ref().map(|Rev::Git(head)| *head);
 
-                let this = self.clone();
-                let res = this.git_fetch(provider, urn.clone(), head).await;
+            match self.git_fetch(provider, urn.clone(), head).await {
+                Ok(()) => {
+                    if self.git_has(urn, head).await {
+                        PutResult::Applied(Gossip {
+                            // Ensure we propagate exactly the `origin` we
+                            // figured out
+                            origin: Some(origin),
+                            ..has.clone()
+                        })
+                    } else {
+                        // We didn't end up fetching a non-`None` `head` -- we
+                        // know that we are tracking the `origin`, and (thusly)
+                        // have the `urn` locally.  Also, the fetch didn't
+                        // return an error. Therefore, the `provider` must be
+                        // lying. We return `Stale` to just cause the broadcast
+                        // to terminate here.
+                        tracing::warn!(
+                            provider = %provider,
+                            origin = %origin,
+                            has.origin = %has
+                                .origin
+                                .map(|o| o.to_string())
+                                .unwrap_or_else(|| "none".into()),
+                            has.urn = %has.urn,
+                            "provider announced non-existent rev"
+                        );
+                        PutResult::Stale
+                    }
+                },
 
-                match res {
-                    Ok(()) => {
-                        if this.git_has(urn, head).await {
-                            PutResult::Applied(Gossip {
-                                origin: Some(peer_id),
-                                ..has.clone()
-                            })
-                        } else {
-                            tracing::warn!(
-                                provider = %provider,
-                                has.origin = ?has.origin,
-                                has.urn = %has.urn,
-                                "Provider announced non-existent rev"
-                            );
-                            PutResult::Stale
-                        }
+                Err(e) => match e {
+                    PeerStorageError::KnownObject(_) => PutResult::Stale,
+                    x => {
+                        tracing::error!(err = %x, "fetch error");
+                        PutResult::Error
                     },
-
-                    Err(e) => match e {
-                        PeerStorageError::KnownObject(_) => PutResult::Stale,
-                        e => {
-                            tracing::error!(err = %e, "Fetch error");
-                            PutResult::Error
-                        },
-                    },
-                }
-            },
-            // The update is uninteresting if it refers to no revision
-            // or if its originated by a peer we are not tracking.
-            _ => PutResult::Uninteresting,
+                },
+            }
+        } else {
+            PutResult::Uninteresting
         };
 
         self.subscribers
