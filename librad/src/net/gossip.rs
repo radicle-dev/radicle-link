@@ -542,7 +542,7 @@ where
         {
             let mut connected_peers = self.connected_peers.lock().await;
             if let Some((_, mut stream)) = connected_peers.remove(remote_id) {
-                tracing::info!(msg = "closing recv stream from peer {}", remote_id = %remote_id);
+                tracing::info!(msg = "closing recv stream from peer", remote_id = %remote_id);
                 let _ = stream.close().await;
             }
         }
