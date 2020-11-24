@@ -425,9 +425,9 @@ where
                         let connections = self.connections.lock().await;
                         match connections.get(&to.peer_id) {
                             None => {
+                                drop(connections);
                                 let conn = connect_peer_info(&self.endpoint, to).await;
                                 if let Some((conn, incoming)) = conn {
-                                    drop(connections);
                                     self.handle_connect(conn, incoming.boxed(), None).await
                                 }
                             },
