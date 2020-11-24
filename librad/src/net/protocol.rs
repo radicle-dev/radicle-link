@@ -286,22 +286,31 @@ where
     /// Mapping of currently connected [`PeerId`]s and their remote
     /// [`SocketAddr`]s.
     pub async fn connected_peers(&self) -> HashMap<PeerId, SocketAddr> {
-        self.connections
+        tracing::info!("Entering Protocol::connected_peers");
+        let peers = self.connections
             .lock()
             .await
             .iter()
             .map(|(peer_id, conn)| (*peer_id, conn.remote_addr()))
-            .collect()
+            .collect();
+        tracing::info!("Exiting Protocol::connected_peers");
+        peers
     }
 
     /// Returns `true` if there is at least one active connection.
     pub async fn has_connections(&self) -> bool {
-        !self.connections.lock().await.is_empty()
+        tracing::info!("Entering Protocol::has_connections");
+        let has = !self.connections.lock().await.is_empty();
+        tracing::info!("Exiting Protocol::has_connections");
+        has
     }
 
     /// Returns the number of currently active connections.
     pub async fn num_connections(&self) -> usize {
-        self.connections.lock().await.len()
+        tracing::info!("Entering Protocol::num_connections");
+        let n = self.connections.lock().await.len();
+        tracing::info!("Exiting Protocol::num_connections");
+        n
     }
 
     /// Query the network for an update
@@ -417,7 +426,7 @@ where
                                 )
                             }
                         }
-                        tracing::info!("sent adhoc message");
+                        tracing::info!("Exiting Run::Rad(SendAdhoc)");
                     },
 
                     gossip::Control::Connect { to } => {
@@ -452,6 +461,7 @@ where
                                 },
                             },
                         }
+                        tracing::info!("Exiting Run::Rad(Connect)");
                     },
                 },
 
