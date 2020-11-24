@@ -549,47 +549,41 @@ where
                         return PutResult::Error;
                     },
                 };
-                let res = match has.rev {
-                    // TODO: may need to fetch eagerly if we tracked while offline (#141)
-                    Some(Rev::Git(head)) if is_tracked => {
-                        let res = {
-                            let this = self.clone();
-                            this.git_fetch(provider, urn, head)
-                                .instrument(span.clone())
-                                .await
-                        };
+                let res = if is_tracked {
+                    let res = self
+                        .git_fetch(provider, urn, has.rev.as_ref().map(|Rev::Git(head)| *head))
+                        .instrument(span.clone())
+                        .await;
 
-                        match res {
-                            Ok(()) => {
-                                if self.ask(has.clone()).instrument(span.clone()).await {
-                                    PutResult::Applied(has.clone())
-                                } else {
-                                    span.in_scope(|| {
-                                        tracing::warn!(
-                                            provider = %provider,
-                                            has.origin = ?has.origin,
-                                            has.urn = %has.urn,
-                                            "Provider announced non-existent rev"
-                                        );
-                                        PutResult::Stale
-                                    })
-                                }
+                    match res {
+                        Ok(()) => {
+                            if self.ask(has.clone()).instrument(span.clone()).await {
+                                PutResult::Applied(has.clone())
+                            } else {
+                                span.in_scope(|| {
+                                    tracing::warn!(
+                                        provider = %provider,
+                                        has.origin = ?has.origin,
+                                        has.urn = %has.urn,
+                                        "Provider announced non-existent rev"
+                                    );
+                                    PutResult::Stale
+                                })
+                            }
+                        },
+                        Err(e) => match e {
+                            PeerStorageError::KnownObject(_) => PutResult::Stale,
+                            PeerStorageError::Store(storage::Error::NoSuchUrn(_)) => {
+                                PutResult::Uninteresting
                             },
-                            Err(e) => match e {
-                                PeerStorageError::KnownObject(_) => PutResult::Stale,
-                                PeerStorageError::Store(storage::Error::NoSuchUrn(_)) => {
-                                    PutResult::Uninteresting
-                                },
-                                e => span.in_scope(|| {
-                                    tracing::error!(err = %e, "Fetch error");
-                                    PutResult::Error
-                                }),
-                            },
-                        }
-                    },
-                    // The update is uninteresting if it refers to no revision
-                    // or if its originated by a peer we are not tracking.
-                    _ => PutResult::Uninteresting,
+                            e => span.in_scope(|| {
+                                tracing::error!(err = %e, "Fetch error");
+                                PutResult::Error
+                            }),
+                        },
+                    }
+                } else {
+                    PutResult::Uninteresting
                 };
 
                 self.subscribers
