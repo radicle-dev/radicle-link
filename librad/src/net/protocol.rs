@@ -711,20 +711,26 @@ where
         !(ip.is_unspecified() || ip.is_documentation() || ip.is_multicast())
     }
 
-    future::select_ok(addrs.into_iter().filter(routable).map(|addr| {
-        let mut endpoint = endpoint.clone();
-        tracing::info!(remote.id = %peer_id, remote.addr = %addr, "establishing connection");
-        Box::pin(async move {
-            endpoint
-                .connect(peer_id, &addr)
-                .map_err(|e| {
-                    tracing::warn!("could not connect to {} at {}: {}", peer_id, addr, e);
-                    e
-                })
-                .await
-        })
-    }))
-    .await
-    .ok()
-    .map(|(success, _pending)| success)
+    let addrs = addrs.into_iter().filter(routable).collect::<Vec<_>>();
+    if addrs.is_empty() {
+        tracing::warn!("no routable addrs for {}", peer_id);
+        None
+    } else {
+        future::select_ok(addrs.iter().map(|addr| {
+            let mut endpoint = endpoint.clone();
+            tracing::info!(remote.id = %peer_id, remote.addr = %addr, "establishing connection");
+            Box::pin(async move {
+                endpoint
+                    .connect(peer_id, &addr)
+                    .map_err(|e| {
+                        tracing::warn!("could not connect to {} at {}: {}", peer_id, addr, e);
+                        e
+                    })
+                    .await
+            })
+        }))
+        .await
+        .ok()
+        .map(|(success, _pending)| success)
+    }
 }

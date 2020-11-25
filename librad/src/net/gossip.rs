@@ -253,7 +253,13 @@ where
                 .peers
                 .entry(info.peer_id)
                 .or_insert_with(|| info.clone());
-            entry.seen_addrs = entry.seen_addrs.union(&info.seen_addrs).cloned().collect();
+            let seen_addrs = entry
+                .seen_addrs
+                .union(&info.seen_addrs)
+                .cloned()
+                .collect::<HashSet<_>>();
+            debug_assert!(!seen_addrs.is_empty());
+            entry.seen_addrs = seen_addrs;
         }
     }
 
