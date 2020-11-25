@@ -20,6 +20,7 @@
 #![feature(bool_to_option)]
 #![feature(btree_drain_filter)]
 #![feature(core_intrinsics)]
+#![feature(ip)]
 #![feature(never_type)]
 
 #[macro_use]
