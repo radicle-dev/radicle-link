@@ -509,6 +509,10 @@ where
 
         {
             let mut connected_peers = self.connected_peers.lock().await;
+            if connected_peers.contains(&remote_id) {
+                return Err(Error::DoubleGossip);
+            }
+
             if let Some((peer, mut stream)) = connected_peers.insert(remote_id, send) {
                 tracing::info!(msg = "ejecting peer", remote_id = %peer);
                 let _ = stream.close().await;
@@ -544,6 +548,8 @@ where
                 let _ = stream.close().await;
             }
         }
+
+        tracing::info!(msg = "recv stream is closed", remote_id = %remote_id);
 
         res.or_else(|e| match e {
             // This is usually a connection close or reset. We only log upstream,

@@ -23,6 +23,9 @@ use crate::net::codec::CborCodecError;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("gossip already established")]
+    DoubleGossip,
+
     #[error("connection to self")]
     SelfConnection,
 
