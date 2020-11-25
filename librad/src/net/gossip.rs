@@ -37,10 +37,11 @@ use std::{
 
 use futures::{
     channel::mpsc,
+    future,
     io::{AsyncRead, AsyncWrite},
     lock::Mutex,
     sink::SinkExt,
-    stream::StreamExt,
+    stream::{StreamExt, TryStreamExt},
 };
 use futures_codec::{Framed, FramedRead, FramedWrite};
 use futures_timer::Delay;
@@ -53,7 +54,7 @@ use tracing_futures::Instrument;
 use crate::{
     internal::channel::Fanout,
     net::{
-        codec::CborCodec,
+        codec::{CborCodec, CborCodecError},
         connection::{self, AsAddr, RemoteInfo},
         gossip::error::Error,
         upgrade::{self, Upgraded},
@@ -92,7 +93,6 @@ where
     Connect {
         to: PeerInfo<Addr>,
     },
-    Disconnect(PeerId),
 }
 
 #[derive(Clone, Debug)]
@@ -486,6 +486,8 @@ where
         self.incoming(s.release().0).await
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(skip(self, s), err)]
     pub(super) async fn incoming<Stream>(
         &self,
         s: Upgraded<upgrade::Gossip, Stream>,
@@ -493,72 +495,60 @@ where
     where
         Stream: connection::Stream<Read = R, Write = W>,
     {
-        let span = tracing::trace_span!("Protocol::incoming", local.id = %self.local_id);
+        let (recv, send) = s.into_stream().split();
+        let recv = FramedRead::new(recv, Codec::new());
+        let send = FramedWrite::new(send, Codec::new());
 
-        async move {
-            let (recv, send) = s.into_stream().split();
-            let mut recv = FramedRead::new(recv, Codec::new());
-            let send = FramedWrite::new(send, Codec::new());
-
-            let remote_id = recv.remote_peer_id();
-            // This should not be possible, as we prevent it in the TLS handshake.
-            // Leaving it here regardless as a sanity check.
-            if remote_id == self.local_id {
-                return Err(Error::SelfConnection);
-            }
-
-            if let Some((ejected_peer, mut ejected_send)) =
-                self.add_connected(remote_id, send).await
-            {
-                tracing::trace!(
-                    msg = "Ejecting connected peer",
-                    peer = %ejected_peer,
-                );
-                let _ = ejected_send.close().await;
-                // Note: if the ejected peer never sent us a `Join` or
-                // `Neighbour`, it isn't behaving well, so we can forget about
-                // it here. Otherwise, we should already have it in
-                // `known_peers`.
-                self.subscribers
-                    .emit(ProtocolEvent::Control(Control::Disconnect(ejected_peer)))
-                    .await
-            }
-
-            while let Some(recvd) = recv.next().await {
-                match recvd {
-                    Ok(rpc) => match rpc {
-                        Rpc::Membership(msg) => {
-                            if let Err(err) = self
-                                .handle_membership(remote_id, recv.remote_addr().as_addr(), msg)
-                                .await
-                            {
-                                self.remove_connected(remote_id).await;
-                                return Err(err);
-                            }
-                        },
-
-                        Rpc::Gossip(msg) => {
-                            if let Err(err) = self.handle_gossip(remote_id, msg).await {
-                                self.remove_connected(remote_id).await;
-                                return Err(err);
-                            }
-                        },
-                    },
-
-                    Err(e) => {
-                        tracing::warn!("Recv error: {:?}", e);
-                        break;
-                    },
-                }
-            }
-
-            tracing::trace!(msg = "Recv stream is done, disconnecting");
-            self.remove_connected(remote_id).await;
-
-            Ok(())
+        let remote_id = recv.remote_peer_id();
+        // This should not be possible, as we prevent it in the TLS handshake.
+        // Leaving it here regardless as a sanity check.
+        if remote_id == self.local_id {
+            return Err(Error::SelfConnection);
         }
-        .instrument(span)
-        .await
+
+        {
+            let mut connected_peers = self.connected_peers.lock().await;
+            if let Some((peer, mut stream)) = connected_peers.insert(remote_id, send) {
+                tracing::info!("ejecting peer {}", peer);
+                let _ = stream.close().await;
+            }
+        };
+
+        let remote_addr = recv.remote_addr().as_addr();
+        let res = recv
+            .map_err(Error::from)
+            .and_then(|rpc| {
+                let remote_addr = remote_addr.clone();
+                async move {
+                    match rpc {
+                        Rpc::Membership(msg) => {
+                            self.handle_membership(remote_id, remote_addr, msg).await
+                        },
+                        Rpc::Gossip(msg) => self.handle_gossip(remote_id, msg).await,
+                    }
+                }
+            })
+            .try_for_each(future::ok)
+            .await;
+        tracing::trace!("recv stream is done");
+
+        {
+            let mut connected_peers = self.connected_peers.lock().await;
+            if let Some((_, mut stream)) = connected_peers.remove(remote_id) {
+                tracing::info!("closing recv stream from peer {}", remote_id);
+                let _ = stream.close().await;
+            }
+        }
+
+        res.or_else(|e| match e {
+            // This is usually a connection close or reset. We only log upstream,
+            // and it's not too interesting to get error / warn logs for this.
+            Error::Cbor(CborCodecError::Io(_)) => {
+                tracing::debug!("ignoring recv IO error: {}", e);
+                Ok(())
+            },
+            e => Err(e),
+        })
     }
 
     async fn handle_membership(
@@ -767,20 +757,6 @@ where
         }
         .instrument(span)
         .await
-    }
-
-    async fn add_connected(
-        &self,
-        peer_id: PeerId,
-        out: FramedWrite<W, Codec<Addr, Broadcast>>,
-    ) -> Option<(PeerId, FramedWrite<W, Codec<Addr, Broadcast>>)> {
-        self.connected_peers.lock().await.insert(peer_id, out)
-    }
-
-    async fn remove_connected(&self, peer_id: PeerId) {
-        if let Some((_, mut stream)) = self.connected_peers.lock().await.remove(peer_id) {
-            let _ = stream.close().await;
-        }
     }
 
     async fn add_known<I: IntoIterator<Item = PeerInfo<Addr>>>(&self, peers: I) {

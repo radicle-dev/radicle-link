@@ -24,6 +24,7 @@
 #![feature(btree_drain_filter)]
 #![feature(core_intrinsics)]
 #![feature(generic_associated_types)]
+#![feature(ip)]
 #![feature(never_type)]
 
 #[macro_use]
