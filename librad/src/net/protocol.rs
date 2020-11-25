@@ -657,21 +657,20 @@ where
         !(ip.is_unspecified() || ip.is_documentation() || ip.is_multicast())
     }
 
-    futures::stream::iter(addrs)
-        .filter(|addr| future::ready(routable(addr)))
-        .filter_map(|addr| {
-            let mut endpoint = endpoint.clone();
-            tracing::info!(remote.id = %peer_id, "Establishing connection");
-            Box::pin(async move {
-                match endpoint.connect(peer_id, &addr).await {
-                    Ok(conn) => Some(conn),
-                    Err(e) => {
-                        tracing::warn!("Could not connect to {} at {}: {}", peer_id, addr, e);
-                        None
-                    },
-                }
-            })
+    future::select_ok(addrs.into_iter().filter(routable).map(|addr| {
+        let mut endpoint = endpoint.clone();
+        tracing::info!(remote.id = %peer_id, remote.addr = %addr, "establishing connection");
+        Box::pin(async move {
+            endpoint
+                .connect(peer_id, &addr)
+                .map_err(|e| {
+                    tracing::warn!("could not connect to {} at {}: {}", peer_id, addr, e);
+                    e
+                })
+                .await
         })
-        .next()
-        .await
+    }))
+    .await
+    .ok()
+    .map(|(success, _pending)| success)
 }
