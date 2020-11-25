@@ -629,34 +629,34 @@ where
                 tracing::trace!(msg = "Shuffle", origin = ?origin, peer.neighbours = ?peers, peer.ttl = ttl);
                 // We're supposed to only remember shuffled peers at
                 // the end of the random walk. Do it anyway for now.
-                self.add_known(peers.clone()).await;
+                // self.add_known(peers.clone()).await;
 
-                if ttl == 0 {
-                    let sample = self.sample_known().await;
-                    self.send_adhoc(&origin, ShuffleReply { peers: sample })
-                        .await
-                } else {
-                    let origin = if origin.peer_id == remote_id {
-                        make_peer_info(origin.advertised_info)
-                    } else {
-                        origin
-                    };
+                // if ttl == 0 {
+                //     let sample = self.sample_known().await;
+                //     self.send_adhoc(&origin, ShuffleReply { peers: sample })
+                //         .await
+                // } else {
+                //     let origin = if origin.peer_id == remote_id {
+                //         make_peer_info(origin.advertised_info)
+                //     } else {
+                //         origin
+                //     };
 
-                    self.broadcast(
-                        Shuffle {
-                            origin,
-                            peers,
-                            ttl: ttl.saturating_sub(1),
-                        },
-                        remote_id,
-                    )
-                    .await
-                }
+                //     self.broadcast(
+                //         Shuffle {
+                //             origin,
+                //             peers,
+                //             ttl: ttl.saturating_sub(1),
+                //         },
+                //         remote_id,
+                //     )
+                //     .await
+                // }
             },
 
             ShuffleReply { peers } => {
                 tracing::trace!(msg = "ShuffleReply", peer.neighbours = ?peers);
-                self.add_known(peers).await
+                // self.add_known(peers).await
             },
         }
 
