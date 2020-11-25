@@ -36,17 +36,26 @@ use crate::{
     signer::Signer,
 };
 
+// XXX: we _may_ want to allow runtime configuration of below consts at some
+// point
+
 /// The ALPN protocol(s) for the radicle-link protocol stack.
 ///
 /// Not currently of significance, but established in order to allow future
 /// major protocol upgrades.
 const ALPN: &[&[u8]] = &[b"rad/1"];
 
-/// Timeout duration before sending a keep alive message to a connected peer.
-const DEFAULT_PING_TIMEOUT: Duration = Duration::from_secs(1);
+/// Connection keep alive interval.
+///
+/// Only set for initiators (clients). The value of 30s is recommended for
+/// keeping middlebox UDP flows alive.
+const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(30);
 
-/// Timeout duration before a peer is considered disconnected.
-const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+/// Connection idle timeout.
+///
+/// Only has an effect for responders (servers), which we configure to not send
+/// keep alive probes. Should tolerate the loss of 1-2 keep-alive probes.
+const MAX_IDLE_TIMEOUT: Duration = Duration::from_secs(65);
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -457,9 +466,17 @@ where
     let mut tls_config = tls::make_client_config(signer).map_err(|e| Error::Signer(Box::new(e)))?;
     tls_config.alpn_protocols = ALPN.iter().map(|x| x.to_vec()).collect();
 
+    let mut transport_config = TransportConfig::default();
+    transport_config
+        .keep_alive_interval(Some(KEEP_ALIVE_INTERVAL))
+        // Set idle timeout anyway, as the default is smaller than our
+        // keep-alive
+        .max_idle_timeout(Some(MAX_IDLE_TIMEOUT))
+        .expect("idle timeout is in vetted range");
+
     let mut quic_config = quinn::ClientConfigBuilder::default().build();
     quic_config.crypto = Arc::new(tls_config);
-    quic_config.transport = Arc::new(make_transport_config());
+    quic_config.transport = Arc::new(transport_config);
 
     Ok(quic_config)
 }
@@ -472,19 +489,14 @@ where
     let mut tls_config = tls::make_server_config(signer).map_err(|e| Error::Signer(Box::new(e)))?;
     tls_config.alpn_protocols = ALPN.iter().map(|x| x.to_vec()).collect();
 
+    let mut transport_config = TransportConfig::default();
+    transport_config
+        .max_idle_timeout(Some(MAX_IDLE_TIMEOUT))
+        .expect("idle timeout is in vetted range");
+
     let mut quic_config = quinn::ServerConfigBuilder::default().build();
     quic_config.crypto = Arc::new(tls_config);
-    quic_config.transport = Arc::new(make_transport_config());
+    quic_config.transport = Arc::new(transport_config);
 
     Ok(quic_config)
-}
-
-fn make_transport_config() -> quinn::TransportConfig {
-    let mut transport_config = TransportConfig::default();
-    transport_config.keep_alive_interval(Some(DEFAULT_PING_TIMEOUT));
-    transport_config
-        .max_idle_timeout(Some(DEFAULT_IDLE_TIMEOUT))
-        .unwrap();
-
-    transport_config
 }
