@@ -394,13 +394,24 @@ where
             Run::Gossip { event } => match event {
                 gossip::ProtocolEvent::Control(ctrl) => match ctrl {
                     gossip::Control::SendAdhoc { to, rpc } => {
-                        tracing::trace!(remote.id = %to.peer_id, "Run::Rad(SendAdhoc)");
+                        let to_peer = to.peer_id;
+                        tracing::trace!(remote.id = %to_peer, "Run::Rad(SendAdhoc)");
 
-                        let conn = match self.connections.lock().await.get(&to.peer_id) {
-                            Some(conn) => Some(conn.clone()),
-                            None => connect_peer_info(&self.endpoint, to)
-                                .await
-                                .map(|(conn, _)| conn),
+                        let conn = {
+                            let connections = self.connections.lock().await;
+                            match connections.get(&to_peer) {
+                                Some(conn) => Some(conn.clone()),
+                                None => {
+                                    drop(connections);
+                                    match connect_peer_info(&self.endpoint, to).await {
+                                        Some((conn, _)) => Some(conn),
+                                        None => {
+                                            self.gossip.connect_failed(&to_peer).await;
+                                            None
+                                        },
+                                    }
+                                },
+                            }
                         };
 
                         if let Some(conn) = conn {
@@ -420,15 +431,18 @@ where
                     },
 
                     gossip::Control::Connect { to } => {
-                        tracing::trace!(remote.id = %to.peer_id, "Run::Rad(Connect)");
+                        let to_peer = to.peer_id;
+                        tracing::trace!(remote.id = %to_peer, "Run::Rad(Connect)");
 
                         let connections = self.connections.lock().await;
-                        match connections.get(&to.peer_id) {
+                        match connections.get(&to_peer) {
                             None => {
                                 drop(connections);
-                                let conn = connect_peer_info(&self.endpoint, to).await;
-                                if let Some((conn, incoming)) = conn {
-                                    self.handle_connect(conn, incoming.boxed(), None).await
+                                match connect_peer_info(&self.endpoint, to).await {
+                                    Some((conn, incoming)) => {
+                                        self.handle_connect(conn, incoming.boxed(), None).await
+                                    },
+                                    None => self.gossip.connect_failed(&to_peer).await,
                                 }
                             },
 

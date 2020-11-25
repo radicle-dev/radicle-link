@@ -41,7 +41,7 @@ use futures::{
     io::{AsyncRead, AsyncWrite},
     lock::Mutex,
     sink::SinkExt,
-    stream::{StreamExt, TryStreamExt},
+    stream::{FuturesUnordered, StreamExt, TryStreamExt},
 };
 use futures_codec::{Framed, FramedRead, FramedWrite};
 use futures_timer::Delay;
@@ -185,14 +185,14 @@ where
             let (eject, _) = self
                 .random()
                 .expect("Iterator must contain at least 1 element, as per the if condition. qed");
-            self.remove(eject)
+            self.remove(&eject)
         } else {
             self.peers.insert(peer_id, sink).map(|s| (peer_id, s))
         }
     }
 
-    fn remove(&mut self, peer_id: PeerId) -> Option<(PeerId, S)> {
-        self.peers.remove(&peer_id).map(|s| (peer_id, s))
+    fn remove(&mut self, peer_id: &PeerId) -> Option<(PeerId, S)> {
+        self.peers.remove(peer_id).map(|s| (*peer_id, s))
     }
 
     fn random(&mut self) -> Option<(PeerId, &mut S)> {
@@ -210,8 +210,8 @@ where
         self.peers.get_mut(peer_id)
     }
 
-    fn iter_mut(&mut self) -> impl Iterator<Item = (&PeerId, &mut S)> {
-        self.peers.iter_mut()
+    fn peers(&self) -> impl Iterator<Item = &PeerId> {
+        self.peers.keys()
     }
 
     fn len(&self) -> usize {
@@ -255,6 +255,10 @@ where
                 .or_insert_with(|| info.clone());
             entry.seen_addrs = entry.seen_addrs.union(&info.seen_addrs).cloned().collect();
         }
+    }
+
+    fn remove(&mut self, peer: &PeerId) {
+        self.peers.remove(peer);
     }
 
     fn random(&mut self) -> Option<PeerInfo<Addr>> {
@@ -462,6 +466,8 @@ where
         self.subscribers.subscribe().await
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(skip(self, s, hello), err)]
     pub(super) async fn outgoing<Stream>(
         &self,
         s: Upgraded<upgrade::Gossip, Stream>,
@@ -534,7 +540,7 @@ where
 
         {
             let mut connected_peers = self.connected_peers.lock().await;
-            if let Some((_, mut stream)) = connected_peers.remove(remote_id) {
+            if let Some((_, mut stream)) = connected_peers.remove(&remote_id) {
                 tracing::info!("closing recv stream from peer {}", remote_id);
                 let _ = stream.close().await;
             }
@@ -549,6 +555,10 @@ where
             },
             e => Err(e),
         })
+    }
+
+    pub(super) async fn connect_failed(&self, to: &PeerId) {
+        self.remove_known(to).await
     }
 
     async fn handle_membership(
@@ -592,7 +602,8 @@ where
             ForwardJoin { joined, ttl } => {
                 tracing::trace!(msg = "ForwardJoin", joined = ?joined, ttl = ?ttl);
                 if ttl == 0 {
-                    self.connect(&joined).await
+                    self.connect(&joined).await;
+                    self.add_known(Some(joined)).await
                 } else {
                     self.broadcast(
                         ForwardJoin {
@@ -767,6 +778,10 @@ where
         )
     }
 
+    async fn remove_known(&self, peer: &PeerId) {
+        self.known_peers.lock().await.remove(peer)
+    }
+
     async fn sample_known(&self) -> Vec<PeerInfo<Addr>> {
         self.known_peers
             .lock()
@@ -803,7 +818,8 @@ where
                     )
                     .await
                     .unwrap_or_else(|e| {
-                        tracing::warn!("Failed to send shuffle to {}: {:?}", recipient, e)
+                        tracing::warn!("Failed to send shuffle to {}: {:?}", recipient, e);
+                        connected.remove(&recipient);
                     })
             } else {
                 tracing::trace!("Nothing to shuffle");
@@ -837,28 +853,49 @@ where
         let rpc = rpc.into();
         let excluding = excluding.into();
 
-        let mut connected_peers = self.connected_peers.lock().await;
-        futures::stream::iter(
-            connected_peers
-                .iter_mut()
-                .filter(|(peer_id, _)| Some(*peer_id) != excluding.as_ref()),
-        )
-        .for_each_concurrent(None, |(peer, out)| {
-            let rpc = rpc.clone();
-            async move {
-                tracing::trace!(msg = "Broadcast", broadcast.rpc = ?rpc, broadcast.peer = %peer);
-                // If this returns an error, it is likely the receiving end has
-                // stopped working, too. Hence, we don't need to propagate
-                // errors here. This statement will need some empirical
-                // evidence.
-                if let Err(e) = out.send(rpc).await {
-                    tracing::warn!(
-                        "{}: Failed to send broadcast message to {}: {:?}",
-                        self.local_id,
-                        peer,
-                        e
-                    )
+        // We need to avoid holding the lock until all sends completed, at the
+        // price of consistency
+        let recipients = self
+            .connected_peers
+            .lock()
+            .await
+            .peers()
+            .filter_map(|peer_id| match excluding.as_ref() {
+                None => Some(peer_id),
+                Some(ex) if ex != peer_id => Some(peer_id),
+                _ => None,
+            })
+            .copied()
+            .collect::<Vec<_>>();
+
+        let fut = FuturesUnordered::new();
+        for peer in recipients {
+            fut.push({
+                let rpc = rpc.clone();
+                async move {
+                    match self.connected_peers.lock().await.get_mut(&peer) {
+                        Some(out) => {
+                            tracing::info!("sending broadcast message to {}", peer);
+                            out.send(rpc).await.map_err(|e| {
+                                tracing::warn!(
+                                    "failed to send broadcast message to {}: {}",
+                                    peer,
+                                    e
+                                );
+                                peer
+                            })
+                        },
+                        None => {
+                            tracing::warn!("peer was demoted before we could broadcast: {}", peer);
+                            Ok(())
+                        },
+                    }
                 }
+            });
+        }
+        fut.for_each(|res| async move {
+            if let Err(peer) = res {
+                self.connected_peers.lock().await.remove(&peer);
             }
         })
         .await
@@ -866,17 +903,14 @@ where
 
     async fn reply<M: Into<Rpc<Addr, Broadcast>>>(&self, to: &PeerId, rpc: M) {
         let rpc = rpc.into();
-        futures::stream::iter(self.connected_peers.lock().await.get_mut(&to))
-            .for_each(|out| {
-                let rpc = rpc.clone();
-                async move {
-                    tracing::trace!(msg= "Reply with", reply.rpc = ?rpc, reply.peer = %to);
-                    if let Err(e) = out.send(rpc).await {
-                        tracing::warn!("{}: Failed to reply to {}: {:?}", self.local_id, to, e);
-                    }
-                }
-            })
-            .await
+        let mut connected_peers = self.connected_peers.lock().await;
+        if let Some(out) = connected_peers.get_mut(to) {
+            tracing::info!("sending reply message to {}", to);
+            if let Err(e) = out.send(rpc).await {
+                tracing::warn!("failed to reply to {}: {}", to, e);
+                connected_peers.remove(to);
+            }
+        }
     }
 
     /// Try to establish an ad-hoc connection to `peer`, and send it `rpc`
