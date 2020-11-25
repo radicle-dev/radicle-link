@@ -671,7 +671,7 @@ where
         async move {
             match msg {
                 Have { origin, val } => {
-                    tracing::trace!(origin.peer.id = %origin.peer_id, origin.value=?val, "Have");
+                    tracing::info!(origin.peer.id = %origin.peer_id, origin.value=?val, "Have");
 
                     self.subscribers
                         .emit(ProtocolEvent::Info(Info::Has(Has {
