@@ -368,7 +368,7 @@ where
             NonZeroU32::new_unchecked(5)
         })));
 
-        let this = Self {
+        Self {
             local_id,
             local_ad,
 
@@ -385,39 +385,37 @@ where
             ref_count: Arc::new(AtomicUsize::new(0)),
 
             _marker: PhantomData,
-        };
+        }
 
         // Spawn periodic tasks, ensuring they complete when the last reference
         // to `this` is dropped.
-        {
-            let shuffle = this.clone();
-            let promotion = this.clone();
-            // We got two clones, so if the ref_count goes below that, we're the
-            // only ones holding on to a reference of `this`.
-            let ref_count = 2;
-            tokio::spawn(async move {
-                loop {
-                    if shuffle.ref_count.load(atomic::Ordering::Relaxed) < ref_count {
-                        tracing::trace!("Stopping periodic shuffle task");
-                        break;
-                    }
-                    Delay::new(shuffle.mparams.shuffle_interval).await;
-                    shuffle.shuffle().await;
-                }
-            });
-            tokio::spawn(async move {
-                loop {
-                    if promotion.ref_count.load(atomic::Ordering::Relaxed) < ref_count {
-                        tracing::trace!("Stopping periodic promotion task");
-                        break;
-                    }
-                    Delay::new(promotion.mparams.promote_interval).await;
-                    promotion.promote_random().await;
-                }
-            });
-        }
-
-        this
+        // {
+        //     let shuffle = this.clone();
+        //     let promotion = this.clone();
+        //     // We got two clones, so if the ref_count goes below that, we're
+        // the     // only ones holding on to a reference of `this`.
+        //     let ref_count = 2;
+        //     tokio::spawn(async move {
+        //         loop {
+        //             if shuffle.ref_count.load(atomic::Ordering::Relaxed) <
+        // ref_count {                 tracing::trace!("Stopping
+        // periodic shuffle task");                 break;
+        //             }
+        //             Delay::new(shuffle.mparams.shuffle_interval).await;
+        //             shuffle.shuffle().await;
+        //         }
+        //     });
+        //     tokio::spawn(async move {
+        //         loop {
+        //             if promotion.ref_count.load(atomic::Ordering::Relaxed) <
+        // ref_count {                 tracing::trace!("Stopping periodic
+        // promotion task");                 break;
+        //             }
+        //             Delay::new(promotion.mparams.promote_interval).await;
+        //             promotion.promote_random().await;
+        //         }
+        //     });
+        // }
     }
 
     pub fn peer_id(&self) -> PeerId {
@@ -501,7 +499,7 @@ where
 
         let remote_id = recv.remote_peer_id();
 
-        tracing::info!(msg = "starting gossip stream", remote_id = %remote_id);
+        tracing::info!(msg = "starting gossip", remote_id = %remote_id);
 
         // This should not be possible, as we prevent it in the TLS handshake.
         // Leaving it here regardless as a sanity check.
@@ -512,7 +510,7 @@ where
         {
             let mut connected_peers = self.connected_peers.lock().await;
             if let Some((peer, mut stream)) = connected_peers.insert(remote_id, send) {
-                tracing::info!(msg = "ejecting peer {}", remote_id = %peer);
+                tracing::info!(msg = "ejecting peer", remote_id = %peer);
                 let _ = stream.close().await;
             }
         };
