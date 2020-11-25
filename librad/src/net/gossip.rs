@@ -821,7 +821,7 @@ where
     }
 
     async fn promote_random(&self) {
-        tracing::trace!(msg = "Initiating random promotion",);
+        tracing::info!(msg = "Initiating random promotion",);
         if let Some(candidate) = self.known_peers.lock().await.random() {
             if !self
                 .connected_peers
@@ -829,7 +829,7 @@ where
                 .await
                 .contains(&candidate.peer_id)
             {
-                tracing::trace!(msg = "Promoting candidate", candidate.id = %candidate.peer_id);
+                tracing::info!(msg = "Promoting candidate", candidate.id = %candidate.peer_id);
                 self.connect(&candidate).await
             }
         }
