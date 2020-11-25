@@ -652,7 +652,13 @@ async fn connect<Addrs>(
 where
     Addrs: IntoIterator<Item = SocketAddr>,
 {
+    fn routable(addr: &SocketAddr) -> bool {
+        let ip = addr.ip();
+        !(ip.is_unspecified() || ip.is_documentation() || ip.is_multicast())
+    }
+
     futures::stream::iter(addrs)
+        .filter(|addr| future::ready(routable(addr)))
         .filter_map(|addr| {
             let mut endpoint = endpoint.clone();
             tracing::info!(remote.id = %peer_id, "Establishing connection");
