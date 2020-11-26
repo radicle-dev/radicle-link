@@ -11,5 +11,5 @@ futures = "0.3"
 librad = { path = "../librad" }
 radicle-keystore = "0"
 thiserror = "1"
-tokio = "0.2"
+tokio = { version = "0.2", features = ["time"] }
 tracing = "0.1"

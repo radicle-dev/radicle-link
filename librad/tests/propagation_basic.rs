@@ -10,9 +10,7 @@ use std::{
     time::Duration,
 };
 
-use futures::{future, stream::StreamExt};
-use tempfile::tempdir;
-
+use futures::StreamExt as _;
 use librad::{
     git::{
         identities::{self, SomeIdentity},
@@ -21,11 +19,13 @@ use librad::{
         types::{remote, Flat, Force, GenericRef, Namespace, Reference, Refspec, Remote},
     },
     git_ext as ext,
-    net::peer::{FetchInfo, Gossip, PeerEvent, Rev},
+    net::protocol::{
+        event::{self, upstream::predicate::gossip_from},
+        gossip::{self, Rev},
+    },
     reflike,
     refspec_pattern,
 };
-
 use librad_test::{
     git::create_commit,
     logging,
@@ -34,6 +34,7 @@ use librad_test::{
         testnet,
     },
 };
+use tempfile::tempdir;
 
 #[tokio::test]
 async fn can_clone() {
@@ -42,18 +43,18 @@ async fn can_clone() {
     const NUM_PEERS: usize = 2;
 
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
-        let (peer1, _) = apis.pop().unwrap();
-        let (peer2, _) = apis.pop().unwrap();
+    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut peers| {
+        let peer1 = peers.pop().unwrap();
+        let peer2 = peers.pop().unwrap();
 
         let TestProject { project, owner } = peer1
-            .with_storage(move |storage| create_test_project(&storage))
+            .using_storage(move |storage| create_test_project(&storage))
             .await
             .unwrap()
             .unwrap();
 
         peer2
-            .with_storage(move |storage| {
+            .using_storage(move |storage| {
                 let urn = project.urn();
                 replication::replicate(&storage, None, urn.clone(), peer1.peer_id(), None).unwrap();
 
@@ -86,25 +87,25 @@ async fn can_clone_disconnected() {
     const NUM_PEERS: usize = 2;
 
     let peers = testnet::setup_disconnected(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, 0, async move |mut apis| {
-        let (peer1, _) = apis.pop().unwrap();
-        let (peer2, _) = apis.pop().unwrap();
+    testnet::run_on_testnet(peers, 0, async move |mut peers| {
+        let peer1 = peers.pop().unwrap();
+        let peer2 = peers.pop().unwrap();
 
         let TestProject { project, owner } = peer1
-            .with_storage(move |storage| create_test_project(&storage))
+            .using_storage(move |storage| create_test_project(&storage))
             .await
             .unwrap()
             .unwrap();
 
         peer2
-            .with_storage(move |storage| {
+            .using_storage(move |storage| {
                 let urn = project.urn();
                 replication::replicate(
                     &storage,
                     None,
                     urn.clone(),
                     peer1.peer_id(),
-                    peer1.listen_addrs(),
+                    peer1.listen_addrs().iter().copied(),
                 )
                 .unwrap();
 
@@ -137,17 +138,17 @@ async fn fetches_on_gossip_notify() {
     const NUM_PEERS: usize = 2;
 
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
-        let (peer1, _) = apis.pop().unwrap();
-        let (peer2, _) = apis.pop().unwrap();
+    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut peers| {
+        let peer1 = peers.pop().unwrap();
+        let peer2 = peers.pop().unwrap();
 
         let TestProject { project, owner } = peer1
-            .with_storage(move |storage| create_test_project(&storage))
+            .using_storage(move |storage| create_test_project(&storage))
             .await
             .unwrap()
             .unwrap();
         peer2
-            .with_storage({
+            .using_storage({
                 let urn = project.urn();
                 let peer_id = peer1.peer_id();
                 move |storage| replication::replicate(&storage, None, urn, peer_id, None)
@@ -156,7 +157,7 @@ async fn fetches_on_gossip_notify() {
             .unwrap()
             .expect("should be able to replicate");
 
-        let peer2_events = peer2.subscribe().await;
+        let peer2_events = peer2.subscribe();
 
         let mastor = reflike!("refs/heads/master");
         // Check out a working copy on peer1, add a commit, and push it
@@ -196,38 +197,28 @@ async fn fetches_on_gossip_notify() {
                 .unwrap()
                 .for_each(drop);
             peer1
-                .protocol()
-                .announce(Gossip {
+                .announce(gossip::Payload {
                     origin: None,
                     urn: project.urn().with_path(mastor.clone()),
                     rev: Some(Rev::Git(oid)),
                 })
-                .await;
+                .unwrap();
 
             oid
         };
 
         // Wait for peer2 to receive the gossip announcement
-        {
-            let peer1_id = peer1.peer_id();
-            tokio::time::timeout(
-                Duration::from_secs(5),
-                peer2_events
-                    .filter(|event| match event {
-                        PeerEvent::GossipFetch(FetchInfo { provider, .. }) => {
-                            future::ready(*provider == peer1_id)
-                        },
-                    })
-                    .map(|_| ())
-                    .next(),
-            )
-            .await
-            .unwrap();
-        }
+        event::upstream::expect(
+            peer2_events,
+            gossip_from(peer1.peer_id()),
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
 
         // Check that peer2 has fetched the update
         let peer2_has_commit = peer2
-            .with_storage(move |storage| {
+            .using_storage(move |storage| {
                 storage.has_commit(
                     &project.urn().with_path(
                         reflike!("refs/remotes")
@@ -253,19 +244,19 @@ async fn list_identities_returns_only_local_projects() {
     const NUM_PEERS: usize = 3;
 
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
-        let (peer1, _) = apis.pop().unwrap();
-        let (peer2, _) = apis.pop().unwrap();
-        let (peer3, _) = apis.pop().unwrap();
+    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut peers| {
+        let peer1 = peers.pop().unwrap();
+        let peer2 = peers.pop().unwrap();
+        let peer3 = peers.pop().unwrap();
 
         let TestProject { project, .. } = peer1
-            .with_storage(move |storage| create_test_project(&storage))
+            .using_storage(move |storage| create_test_project(&storage))
             .await
             .unwrap()
             .unwrap();
 
         peer2
-            .with_storage({
+            .using_storage({
                 let urn = project.urn();
                 let remote_peer = peer1.peer_id();
                 move |storage| replication::replicate(&storage, None, urn, remote_peer, None)
@@ -275,7 +266,7 @@ async fn list_identities_returns_only_local_projects() {
             .unwrap();
 
         let all_identities = peer3
-            .with_storage({
+            .using_storage({
                 let urn = project.urn();
                 let remote_peer = peer2.peer_id();
                 move |storage| -> Result<Vec<SomeIdentity>, anyhow::Error> {
@@ -304,19 +295,18 @@ async fn ask_and_clone() {
     const NUM_PEERS: usize = 2;
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
 
-    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
-        let (peer1, _) = apis.pop().unwrap();
+    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut peers| {
+        let peer1 = peers.pop().unwrap();
 
         let TestProject { project, .. } = peer1
-            .with_storage(move |storage| create_test_project(&storage))
+            .using_storage(move |storage| create_test_project(&storage))
             .await
             .unwrap()
             .unwrap();
 
-        let (peer2, _) = apis.pop().unwrap();
+        let peer2 = peers.pop().unwrap();
         let res = peer2
             .providers(project.urn(), Duration::from_secs(5))
-            .await
             .next()
             .await;
 
@@ -327,7 +317,7 @@ async fn ask_and_clone() {
 
         let peer2_has_urn = async || {
             peer2
-                .with_storage({
+                .using_storage({
                     let urn = project.urn();
                     move |storage| storage.has_urn(&urn)
                 })
@@ -344,7 +334,7 @@ async fn ask_and_clone() {
         );
 
         peer2
-            .with_storage({
+            .using_storage({
                 let urn = project.urn();
                 move |storage| replication::replicate(&storage, None, urn, remote_peer, None)
             })
@@ -369,13 +359,13 @@ async fn menage_a_troi() {
     const NUM_PEERS: usize = 3;
 
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
-        let (peer1, _) = apis.pop().unwrap();
-        let (peer2, _) = apis.pop().unwrap();
-        let (peer3, _) = apis.pop().unwrap();
+    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut peers| {
+        let peer1 = peers.pop().unwrap();
+        let peer2 = peers.pop().unwrap();
+        let peer3 = peers.pop().unwrap();
 
         let TestProject { project, owner } = peer1
-            .with_storage(move |storage| create_test_project(&storage))
+            .using_storage(move |storage| create_test_project(&storage))
             .await
             .unwrap()
             .unwrap();
@@ -435,10 +425,10 @@ async fn menage_a_troi() {
         );
 
         let peer2_has_ref = peer2
-            .with_storage({
+            .using_storage({
                 let remote_peer = peer1.peer_id();
                 let urn = expected_urn.clone();
-                let addrs = peer1.listen_addrs().collect::<Vec<_>>();
+                let addrs = peer1.listen_addrs().iter().copied().collect::<Vec<_>>();
                 move |storage| -> Result<bool, anyhow::Error> {
                     replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
                     Ok(storage.has_commit(&urn, Box::new(commit_id))?)
@@ -448,10 +438,10 @@ async fn menage_a_troi() {
             .unwrap()
             .unwrap();
         let peer3_has_ref = peer3
-            .with_storage({
+            .using_storage({
                 let remote_peer = peer2.peer_id();
                 let urn = expected_urn.clone();
-                let addrs = peer2.listen_addrs().collect::<Vec<_>>();
+                let addrs = peer2.listen_addrs().iter().copied().collect::<Vec<_>>();
                 move |storage| -> Result<bool, anyhow::Error> {
                     replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
                     Ok(storage.has_commit(&urn, Box::new(commit_id))?)

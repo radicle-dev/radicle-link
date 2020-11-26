@@ -176,6 +176,7 @@ where
     // perhaps we'd want to return some kind of continuation here, so the caller
     // could schedule a deferred task directly?
 
+    tracing::info!("replicate done");
     Ok(())
 }
 

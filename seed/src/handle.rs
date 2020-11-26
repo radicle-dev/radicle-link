@@ -3,8 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::HashMap, net::SocketAddr};
-
 use futures::{channel::mpsc as chan, sink::SinkExt as _, stream::StreamExt as _};
 use thiserror::Error;
 
@@ -42,7 +40,7 @@ impl NodeHandle {
     }
 
     /// Get currently connected peers.
-    pub async fn get_peers(&mut self) -> Result<HashMap<PeerId, SocketAddr>, NodeError> {
+    pub async fn get_peers(&mut self) -> Result<Vec<PeerId>, NodeError> {
         let (tx, mut rx) = chan::channel(1);
         self.channel
             .send(Request::GetPeers(tx))
@@ -58,5 +56,5 @@ pub enum Request {
     /// Get local projects.
     GetProjects(chan::Sender<Vec<Project>>),
     /// Get connected peers.
-    GetPeers(chan::Sender<HashMap<PeerId, SocketAddr>>),
+    GetPeers(chan::Sender<Vec<PeerId>>),
 }

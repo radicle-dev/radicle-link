@@ -13,7 +13,7 @@ use std::{
 
 use directories::ProjectDirs;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Paths {
     keys_dir: PathBuf,
     git_dir: PathBuf,

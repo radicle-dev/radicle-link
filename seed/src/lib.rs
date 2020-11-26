@@ -12,27 +12,24 @@ pub mod handle;
 pub mod project;
 pub mod signer;
 
-use std::{collections::HashSet, net::SocketAddr, path::PathBuf, time::Duration, vec};
+use std::{collections::HashSet, net::SocketAddr, path::PathBuf, time::Duration};
 
 use futures::{channel::mpsc as chan, select, sink::SinkExt as _, stream::StreamExt as _};
 use thiserror::Error;
 
 use librad::{
     git::{
-        identities::{self, Person, SomeIdentity, Urn},
+        identities::{self, Urn},
         replication,
-        storage,
         tracking,
     },
     net::{
-        discovery,
-        gossip,
-        gossip::types::PeerInfo,
-        peer::{self, Peer, PeerApi, PeerConfig},
-        protocol::ProtocolEvent,
+        discovery::{self, Discovery as _},
+        peer::{self, Peer, ProtocolEvent},
+        protocol::{self, PeerInfo},
     },
     paths,
-    peer::PeerId,
+    PeerId,
 };
 
 pub use crate::{
@@ -49,10 +46,7 @@ pub enum Error {
     NoSuchUrn(Urn),
 
     #[error(transparent)]
-    Api(#[from] peer::ApiError),
-
-    #[error(transparent)]
-    Storage(#[from] storage::Error),
+    Storage(#[from] peer::StorageError),
 
     #[error(transparent)]
     Tracking(#[from] tracking::Error),
@@ -65,12 +59,6 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
-
-    #[error(transparent)]
-    Bootstrap(#[from] peer::BootstrapError),
-
-    #[error(transparent)]
-    Accept(#[from] peer::AcceptError),
 
     #[error(transparent)]
     Node(#[from] NodeError),
@@ -126,7 +114,7 @@ pub struct Node {
     /// Node configuration.
     config: NodeConfig,
     /// Peer configuration.
-    peer_config: PeerConfig<Signer>,
+    peer_config: peer::Config<Signer>,
     /// Receiver end of user requests.
     requests: chan::UnboundedReceiver<Request>,
     /// Sender end of user requests.
@@ -142,14 +130,14 @@ impl Node {
         } else {
             paths::Paths::new()?
         };
-        let gossip_params = Default::default();
-        let storage_config = Default::default();
-        let peer_config = PeerConfig {
+        let peer_config = peer::Config {
             signer,
-            paths,
-            listen_addr: config.listen_addr,
-            gossip_params,
-            storage_config,
+            protocol: protocol::Config {
+                paths,
+                listen_addr: config.listen_addr,
+                membership: Default::default(),
+            },
+            storage_pools: Default::default(),
         };
 
         Ok(Node {
@@ -173,31 +161,56 @@ impl Node {
     /// Run the seed node. This function runs indefinitely until a fatal error
     /// occurs.
     pub async fn run(self, mut transmit: chan::Sender<Event>) -> Result<(), Error> {
-        let peer = Peer::bootstrap(self.peer_config, discovery::Static::from(vec![])).await?;
-        let (api, future) = peer.accept()?;
-        let mut events = api.protocol().subscribe().await.fuse();
+        let peer = Peer::new(self.peer_config);
+        let mut events = peer.subscribe().fuse();
         let mut requests = self.requests;
         let mode = &self.config.mode;
 
         // Spawn the background peer thread.
-        tokio::spawn(future);
+        tokio::spawn({
+            let peer = peer.clone();
+            let disco = discovery::Static::default();
+            async move {
+                loop {
+                    match peer.bind().await {
+                        Ok(bound) => {
+                            if let Err(e) = bound.accept(disco.clone().discover()).await {
+                                tracing::error!(err = ?e, "Accept error")
+                            }
+                        },
+                        Err(e) => {
+                            tracing::error!(err = ?e, "Bind error");
+                            tokio::time::delay_for(Duration::from_secs(2)).await
+                        },
+                    }
+                }
+            }
+        });
 
         // Track already-known URNs.
-        Node::initialize_tracker(mode, &api, &mut transmit).await?;
+        Node::initialize_tracker(mode, &peer, &mut transmit).await?;
 
         loop {
             select! {
                 event = events.next() => {
-                    if let Some(e) = event {
-                        Node::handle_event(e, mode, &mut transmit, &api).await?;
-                    } else {
-                        // If the Peer API isn't closed its end of the channel, we're done.
-                        break;
+                    match event {
+                        Some(Ok(evt)) => {
+                            Node::handle_event(evt, mode, &mut transmit, &peer).await?;
+                        },
+                        // There might be intermittent errors due to restarting.
+                        // We can just ignore them.
+                        Some(Err(_)) => {
+                            continue;
+                        },
+                        // We're done when you're done.
+                        None => {
+                            break;
+                        }
                     }
                 }
                 request = requests.next() => {
                     if let Some(r) = request {
-                        Node::handle_request(r, &api).await?;
+                        Node::handle_request(r, &peer).await?;
                     }
                 }
             }
@@ -207,10 +220,10 @@ impl Node {
     }
 
     /// Handle user requests.
-    async fn handle_request(request: Request, api: &PeerApi) -> Result<(), Error> {
+    async fn handle_request(request: Request, api: &Peer<Signer>) -> Result<(), Error> {
         match request {
             Request::GetPeers(mut reply) => {
-                let peers = api.protocol().connected_peers().await;
+                let peers = api.connected_peers().await;
                 reply.send(peers).await?;
             },
             Request::GetProjects(mut reply) => {
@@ -224,36 +237,47 @@ impl Node {
     /// Handle gossip events. As soon as a peer announces something of interest,
     /// we check if we should track it.
     async fn handle_event(
-        event: ProtocolEvent<peer::types::Gossip>,
+        event: ProtocolEvent,
         mode: &Mode,
         transmit: &mut chan::Sender<Event>,
-        api: &PeerApi,
+        api: &Peer<Signer>,
     ) -> Result<(), Error> {
+        use protocol::{
+            broadcast::PutResult::Uninteresting,
+            event::upstream::{Endpoint, Gossip},
+        };
+
         match event {
-            ProtocolEvent::Gossip(gossip::Info::Has(gossip::Has { provider, val })) => {
-                let urn = &val.urn;
-                let peer_id = &provider.peer_id;
+            ProtocolEvent::Gossip(bx) => {
+                let Gossip::Put {
+                    provider,
+                    payload,
+                    result,
+                } = bx.as_ref();
 
-                tracing::info!("Discovered new URN {} from peer {}", urn, peer_id);
+                // Only if the gossip message was considered uninteresting, is
+                // it interesting: we are not yet tracking the peer / URN
+                if *result == Uninteresting {
+                    let urn = &payload.urn;
+                    let peer_id = &provider.peer_id;
 
-                if mode.is_trackable(peer_id, urn) {
-                    // Attempt to track, but keep going if it fails.
-                    if Node::track_project(&api, urn, &provider).await.is_ok() {
-                        let event = Event::project_tracked(urn.clone(), *peer_id, &api).await?;
-                        transmit.send(event).await.ok();
+                    tracing::info!("Discovered new URN {} from peer {}", urn, peer_id);
+
+                    if mode.is_trackable(peer_id, urn) {
+                        // Attempt to track, but keep going if it fails.
+                        if Node::track_project(&api, urn, &provider).await.is_ok() {
+                            let event = Event::project_tracked(urn.clone(), *peer_id, &api).await?;
+                            transmit.send(event).await.ok();
+                        }
                     }
                 }
             },
-            ProtocolEvent::Connected(id) => {
-                let event = Event::peer_connected(id, &api).await?;
-
+            ProtocolEvent::Endpoint(e) => {
+                let event = match e {
+                    Endpoint::Up { listen_addrs } => Event::Listening(listen_addrs),
+                    Endpoint::Down => Event::Disconnected,
+                };
                 transmit.send(event).await.ok();
-            },
-            ProtocolEvent::Disconnecting(id) => {
-                transmit.send(Event::PeerDisconnected(id)).await.ok();
-            },
-            ProtocolEvent::Listening(addr) => {
-                transmit.send(Event::Listening(addr)).await.ok();
             },
             ProtocolEvent::Membership(_) => {},
         }
@@ -262,21 +286,16 @@ impl Node {
 
     /// Attempt to track a project.
     async fn track_project(
-        api: &PeerApi,
+        api: &Peer<Signer>,
         urn: &Urn,
-        peer_info: &PeerInfo<std::net::IpAddr>,
+        peer_info: &PeerInfo<std::net::SocketAddr>,
     ) -> Result<(), Error> {
         let peer_id = peer_info.peer_id;
-        let port = peer_info.advertised_info.listen_port;
-        let addr_hints = peer_info
-            .seen_addrs
-            .iter()
-            .map(|a: &std::net::IpAddr| (*a, port).into())
-            .collect::<Vec<_>>();
+        let addr_hints = peer_info.seen_addrs.iter().copied().collect::<Vec<_>>();
 
         let result = {
             let urn = urn.clone();
-            api.with_storage(move |storage| {
+            api.using_storage(move |storage| {
                 replication::replicate(&storage, None, urn.clone(), peer_id, addr_hints)?;
                 tracking::track(&storage, &urn, peer_id)?;
 
@@ -304,7 +323,7 @@ impl Node {
     /// Attempt to track initial URN list, if any.
     async fn initialize_tracker(
         mode: &Mode,
-        api: &PeerApi,
+        api: &Peer<Signer>,
         transmit: &mut chan::Sender<Event>,
     ) -> Result<(), Error> {
         // Start by tracking specified projects if we need to.
@@ -313,7 +332,7 @@ impl Node {
                 tracing::info!("Initializing tracker with {} URNs..", urns.len());
 
                 for urn in urns {
-                    let mut peers = api.providers(urn.clone(), Duration::from_secs(30)).await;
+                    let mut peers = api.providers(urn.clone(), Duration::from_secs(30));
                     // Attempt to track until we succeed.
                     while let Some(peer) = peers.next().await {
                         if Node::track_project(&api, urn, &peer).await.is_ok() {
@@ -337,27 +356,4 @@ impl Node {
         }
         Ok(())
     }
-}
-
-/// Guess a user given a peer id.
-async fn guess_user(peer: PeerId, api: &PeerApi) -> Result<Option<Person>, Error> {
-    api.with_storage(move |s| {
-        let users = identities::any::list(&s)?.filter_map(|res| {
-            res.map(|id| match id {
-                SomeIdentity::Person(user) => Some(user),
-                _ => None,
-            })
-            .transpose()
-        });
-
-        for user in users {
-            let user = user?;
-            if user.delegations().contains(&peer) {
-                return Ok(Some(user));
-            }
-        }
-
-        Ok(None)
-    })
-    .await?
 }

@@ -12,10 +12,6 @@ use std::{
     time::Duration,
 };
 
-use futures::{
-    future,
-    stream::{Stream, StreamExt},
-};
 use tempfile::tempdir;
 
 use librad::{
@@ -38,10 +34,17 @@ use librad::{
         Urn,
     },
     git_ext as ext,
-    net::peer::{FetchInfo, Gossip, PeerApi, PeerEvent, Rev},
+    net::{
+        peer::Peer,
+        protocol::{
+            event::{self, upstream::predicate::gossip_from},
+            gossip::{self, Rev},
+        },
+    },
     peer::PeerId,
     reflike,
     refspec_pattern,
+    signer::Signer,
 };
 
 use librad_test::{
@@ -72,14 +75,14 @@ async fn can_fetch() {
     const NUM_PEERS: usize = 2;
 
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
-        let (peer1, _) = apis.pop().unwrap();
-        let (peer2, _) = apis.pop().unwrap();
+    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut peers| {
+        let peer1 = peers.pop().unwrap();
+        let peer2 = peers.pop().unwrap();
 
-        let peer2_events = peer2.subscribe().await;
+        let peer2_events = peer2.subscribe();
 
         let TestProject { project, owner } = peer1
-            .with_storage(move |store| create_test_project(&store))
+            .using_storage(move |store| create_test_project(&store))
             .await
             .unwrap()
             .unwrap();
@@ -88,7 +91,7 @@ async fn can_fetch() {
             let urn = project.urn();
             let peer1_id = peer1.peer_id();
             peer2
-                .with_storage(move |store| {
+                .using_storage(move |store| {
                     replication::replicate(&store, None, urn.clone(), peer1_id, None).unwrap();
                     tracking::tracked(&store, &urn)
                         .unwrap()
@@ -114,7 +117,13 @@ async fn can_fetch() {
             let commit_id = commit_and_push(tmp.path().join("peer1"), &peer1, &owner, &project)
                 .await
                 .unwrap();
-            wait_for_event(peer2_events, peer1.peer_id()).await;
+            event::upstream::expect(
+                peer2_events,
+                gossip_from(peer1.peer_id()),
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
             let peer2_repo = create_working_copy(
                 tmp.path().join("peer2"),
                 tmp.path().to_path_buf(),
@@ -131,14 +140,15 @@ async fn can_fetch() {
 
 // Perform commit and push to working copy on peer1
 #[tracing::instrument(skip(peer), err)]
-async fn commit_and_push<P>(
+async fn commit_and_push<P, S>(
     repo_path: P,
-    peer: &PeerApi,
+    peer: &Peer<S>,
     owner: &Person,
     project: &Project,
 ) -> Result<git2::Oid, anyhow::Error>
 where
     P: AsRef<Path> + Debug,
+    S: Signer + Clone,
 {
     let repo = git2::Repository::init(repo_path)?;
     let url = LocalUrl::from(project.urn());
@@ -168,28 +178,28 @@ where
         )?
         .for_each(drop);
 
-    peer.protocol()
-        .announce(Gossip {
-            origin: None,
-            urn: project.urn().with_path(master),
-            rev: Some(Rev::Git(oid)),
-        })
-        .await;
+    peer.announce(gossip::Payload {
+        origin: None,
+        urn: project.urn().with_path(master),
+        rev: Some(Rev::Git(oid)),
+    })
+    .unwrap();
 
     Ok(oid)
 }
 
 // Create working copy of project
 #[tracing::instrument(skip(peer), err)]
-fn create_working_copy<P, I>(
+fn create_working_copy<P, S, I>(
     repo_path: P,
     inc_path: P,
-    peer: &PeerApi,
+    peer: &Peer<S>,
     project: &Project,
     tracked_persons: I,
 ) -> Result<git2::Repository, anyhow::Error>
 where
     P: AsRef<Path> + Debug,
+    S: Signer + Clone,
     I: IntoIterator<Item = (Person, PeerId)> + Debug,
 {
     let repo = git2::Repository::init(repo_path)?;
@@ -220,25 +230,4 @@ where
     }
 
     Ok(repo)
-}
-
-// Wait for peer2 to receive the gossip announcement
-#[tracing::instrument(skip(peer_events))]
-async fn wait_for_event<S>(peer_events: S, remote: PeerId)
-where
-    S: Stream<Item = PeerEvent> + std::marker::Unpin,
-{
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        peer_events
-            .filter(|event| match event {
-                PeerEvent::GossipFetch(FetchInfo { provider, .. }) => {
-                    future::ready(*provider == remote)
-                },
-            })
-            .map(|_| ())
-            .next(),
-    )
-    .await
-    .unwrap();
 }

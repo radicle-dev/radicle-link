@@ -26,6 +26,7 @@ pub trait Discovery {
     fn discover(self) -> Self::Stream;
 }
 
+#[derive(Clone, Default)]
 pub struct Static {
     peers: BTreeMap<PeerId, Vec<SocketAddr>>,
 }

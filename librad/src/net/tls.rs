@@ -14,6 +14,7 @@ use rustls::{
     ClientCertVerifier,
     ClientHello,
     DistinguishedNames,
+    NoServerSessionStorage,
     ResolvesClientCert,
     ResolvesServerCert,
     RootCertStore,
@@ -58,6 +59,10 @@ where
     let mut cfg = rustls::ServerConfig::new(Arc::new(RadClientCertVerifier::new(peer_id)));
     cfg.versions = vec![rustls::ProtocolVersion::TLSv1_3];
     cfg.cert_resolver = Arc::new(CertResolver::new(signer, cert));
+    // FIXME: session resumption is broken in rustls < 0.19 -- we can't get at
+    // the client certs when resuming. Disable until we can upgrade (depends on
+    // https://github.com/quinn-rs/quinn/pull/873)
+    cfg.session_storage = Arc::new(NoServerSessionStorage {});
 
     Ok(cfg)
 }

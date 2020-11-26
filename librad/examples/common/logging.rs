@@ -8,16 +8,10 @@ use std::env;
 use log::{log_enabled, Level};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
-/// Initialise logging / tracing
-///
-/// Note that this will capture logs, so they can be output as part of the test
-/// output. Use `RUST_LOG` with care, as this may create unwanted memory
-/// pressure. Note, however, that if `RUST_LOG` is not set, we set the level to
-/// `error` by default in order to surface errors on CI.
 pub fn init() {
-    if env_logger::builder().is_test(true).try_init().is_ok() {
+    if env_logger::builder().try_init().is_ok() {
         if env::var("RUST_LOG").is_err() {
-            env::set_var("RUST_LOG", "error");
+            env::set_var("RUST_LOG", "info");
         }
 
         if log_enabled!(target: "librad", Level::Trace) {

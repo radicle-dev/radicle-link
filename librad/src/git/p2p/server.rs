@@ -69,14 +69,20 @@ impl GitServer {
         match hdr_buf.parse::<Header<Urn>>() {
             Ok(Header { service, repo, .. }) => match *service {
                 Service::UploadPack => {
+                    tracing::info!("upload pack");
                     UploadPack::upload_pack(&self.monorepo)?
                         .run(recv, send)
-                        .await
+                        .await?;
+                    tracing::info!("upload pack done");
+                    Ok(())
                 },
                 Service::UploadPackLs => {
+                    tracing::info!("upload pack ls");
                     UploadPack::advertise(&self.monorepo, Namespace::from(repo))?
                         .run(recv, send)
-                        .await
+                        .await?;
+                    tracing::info!("upload pack ls done");
+                    Ok(())
                 },
                 service => {
                     tracing::error!("Invalid git service: {:?}", header::Service(service));
@@ -144,6 +150,7 @@ impl UploadPack {
         .current_dir(repo_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
+        .kill_on_drop(true)
         .spawn()
         .map(Self::AdvertiseRefs)
     }
@@ -163,6 +170,7 @@ impl UploadPack {
         .stdout(Stdio::piped())
         .stdin(Stdio::piped())
         .stderr(Stdio::inherit())
+        .kill_on_drop(true)
         .spawn()
         .map(Self::UploadPack)
     }
@@ -178,23 +186,40 @@ impl UploadPack {
             Self::AdvertiseRefs(mut child) => {
                 let mut stdout = child.stdout.take().unwrap().compat();
 
-                spawn_child(child);
-
                 send.write_all(UPLOAD_PACK_HEADER).await?;
-                futures::io::copy(&mut stdout, &mut send).await.map(|_| ())
+                futures::try_join!(futures::io::copy(&mut stdout, &mut send), child).and_then(
+                    |(_, status)| {
+                        if !status.success() {
+                            Err(io::Error::new(
+                                io::ErrorKind::Other,
+                                format!("upload-pack ls exited non-zero: {:?}", status),
+                            ))
+                        } else {
+                            Ok(())
+                        }
+                    },
+                )
             },
 
             Self::UploadPack(mut child) => {
                 let mut stdin = child.stdin.take().unwrap().compat_write();
                 let mut stdout = child.stdout.take().unwrap().compat();
 
-                spawn_child(child);
-
                 futures::try_join!(
                     futures::io::copy(&mut recv, &mut stdin),
                     futures::io::copy(&mut stdout, &mut send),
+                    child,
                 )
-                .map(|_| ())
+                .and_then(|(_, _, status)| {
+                    if !status.success() {
+                        Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            format!("upload-pack exited non-zero: {:?}", status),
+                        ))
+                    } else {
+                        Ok(())
+                    }
+                })
             },
         }
     }
@@ -211,19 +236,6 @@ where
     writer
         .write_all(pkt_line(&format!("ERR {}", msg)).as_bytes())
         .await
-}
-
-fn spawn_child(child: process::Child) {
-    tokio::spawn(async {
-        let _ = child
-            .await
-            .map(|status| {
-                if !status.success() {
-                    tracing::error!("upload-pack exited non-zero: {:?}", status)
-                }
-            })
-            .map_err(|e| tracing::error!("upload-pack error: {}", e));
-    });
 }
 
 fn pkt_line(msg: &str) -> String {

@@ -3,6 +3,11 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#![feature(extend_one)]
-pub mod iter;
-pub mod result;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum Error {
+    #[error("already connected peer sent join")]
+    JoinWhileConnected,
+}
