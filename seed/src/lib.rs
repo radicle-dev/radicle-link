@@ -210,7 +210,7 @@ impl Node {
     async fn handle_request(request: Request, api: &PeerApi) -> Result<(), Error> {
         match request {
             Request::GetPeers(mut reply) => {
-                let peers = api.protocol().connected_peers().await;
+                let peers = api.protocol().connected_peers();
                 reply.send(peers).await?;
             },
             Request::GetProjects(mut reply) => {

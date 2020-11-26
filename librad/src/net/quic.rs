@@ -304,6 +304,10 @@ impl Connection {
         let code = VarInt::from_u32(reason as u32);
         self.conn.close(code, reason.reason_phrase())
     }
+
+    pub fn stable_id(&self) -> usize {
+        self.conn.stable_id()
+    }
 }
 
 impl RemoteInfo for Connection {
@@ -341,6 +345,12 @@ impl BidiStream {
     pub fn close(self, reason: CloseReason) {
         self.send.close(reason);
         self.recv.close(reason);
+    }
+
+    pub fn id(&self) -> quinn::StreamId {
+        let (x, y) = (self.recv.id(), self.send.id());
+        debug_assert!(x == y);
+        x
     }
 }
 
@@ -404,6 +414,10 @@ impl RecvStream {
     pub fn close(mut self, reason: CloseReason) {
         let _ = self.recv.stop(VarInt::from_u32(reason as u32));
     }
+
+    pub fn id(&self) -> quinn::StreamId {
+        self.recv.id()
+    }
 }
 
 impl RemoteInfo for RecvStream {
@@ -442,6 +456,10 @@ pub struct SendStream {
 impl SendStream {
     pub fn close(mut self, reason: CloseReason) {
         let _ = self.send.reset(VarInt::from_u32(reason as u32));
+    }
+
+    pub fn id(&self) -> quinn::StreamId {
+        self.send.id()
     }
 }
 

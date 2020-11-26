@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 pub mod connection;
+pub mod conntrack;
 pub mod discovery;
 pub mod gossip;
 pub mod peer;

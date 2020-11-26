@@ -17,6 +17,7 @@ use std::{
     sync::{
         atomic::{self, AtomicUsize},
         Arc,
+        RwLock,
     },
     task::{Context, Poll},
 };
@@ -24,7 +25,6 @@ use std::{
 use futures::{
     future::{self, BoxFuture, FutureExt, TryFutureExt},
     io::AsyncWrite,
-    lock::Mutex,
     stream::{StreamExt, TryStreamExt},
 };
 use minicbor::{Decode, Encode};
@@ -40,6 +40,7 @@ use crate::{
     net::{
         codec::CborCodecError,
         connection::{Closable, CloseReason, LocalInfo, RemoteInfo, Stream},
+        conntrack,
         gossip,
         quic,
         upgrade::{self, upgrade, with_upgraded, SomeUpgraded, UpgradeRequest, Upgraded},
@@ -116,7 +117,7 @@ pub struct Protocol<S, A> {
 
     endpoint: quic::Endpoint,
 
-    connections: Arc<Mutex<HashMap<PeerId, quic::Connection>>>,
+    connections: Arc<RwLock<conntrack::Connections>>,
     subscribers: Fanout<ProtocolEvent<A>>,
 
     ref_count: Arc<AtomicUsize>,
@@ -185,7 +186,7 @@ where
             gossip,
             git,
             endpoint: endpoint.clone(),
-            connections: Arc::new(Mutex::new(HashMap::default())),
+            connections: Arc::new(RwLock::new(conntrack::Connections::default())),
             subscribers: Fanout::new(),
             ref_count: Arc::new(AtomicUsize::new(0)),
         };
@@ -277,10 +278,10 @@ where
 
     /// Mapping of currently connected [`PeerId`]s and their remote
     /// [`SocketAddr`]s.
-    pub async fn connected_peers(&self) -> HashMap<PeerId, SocketAddr> {
+    pub fn connected_peers(&self) -> HashMap<PeerId, SocketAddr> {
         self.connections
-            .lock()
-            .await
+            .read()
+            .unwrap()
             .iter()
             .map(|(peer_id, conn)| (*peer_id, conn.remote_addr()))
             .collect()
@@ -288,12 +289,12 @@ where
 
     /// Returns `true` if there is at least one active connection.
     pub async fn has_connections(&self) -> bool {
-        !self.connections.lock().await.is_empty()
+        !self.connections.read().unwrap().is_empty()
     }
 
     /// Returns the number of currently active connections.
-    pub async fn num_connections(&self) -> usize {
-        self.connections.lock().await.len()
+    pub fn num_connections(&self) -> usize {
+        self.connections.read().unwrap().len()
     }
 
     /// Query the network for an update
@@ -386,18 +387,20 @@ where
                         tracing::trace!(remote.id = %to_peer, "Run::Rad(SendAdhoc)");
 
                         let conn = {
-                            let connections = self.connections.lock().await;
-                            match connections.get(&to_peer) {
-                                Some(conn) => Some(conn.clone()),
-                                None => {
-                                    drop(connections);
-                                    // TODO: track connection once conntrack is sane
-                                    connect_peer_info(&self.endpoint, to)
-                                        .await
-                                        .map(|(conn, _)| conn)
-                                },
-                            }
+                            let connections = self.connections.read().unwrap();
+                            connections.get(&to_peer).map(Clone::clone)
                         };
+                        let conn = match conn {
+                            Some(conn) => Some(conn),
+                            None =>
+                            // TODO: track connection once conntrack is sane
+                            {
+                                connect_peer_info(&self.endpoint, to)
+                                    .await
+                                    .map(|(conn, _)| conn)
+                            },
+                        };
+
                         match conn {
                             None => tracing::warn!("failed to obtain connection for adhoc rpc"),
                             Some(conn) => async {
@@ -418,32 +421,34 @@ where
                     gossip::Control::Connect { to } => {
                         tracing::trace!(remote.id = %to.peer_id, "Run::Rad(Connect)");
 
-                        let connections = self.connections.lock().await;
-                        match connections.get(&to.peer_id) {
+                        let conn = {
+                            let connections = self.connections.read().unwrap();
+                            connections.get(&to.peer_id).map(Clone::clone)
+                        };
+                        match conn {
                             None => {
-                                drop(connections);
                                 let conn = connect_peer_info(&self.endpoint, to).await;
                                 if let Some((conn, incoming)) = conn {
                                     self.handle_connect(conn, incoming, None).await
                                 }
                             },
 
-                            Some(conn) => match conn.open_bidi().await {
-                                Ok(stream) => {
-                                    drop(connections);
-                                    // The incoming future should still be running, so it's enough
-                                    // to drive an outgoing
-                                    if let Err(e) = self.outgoing_bidi(stream, None).await {
-                                        tracing::warn!("error handling outgoing stream: {}", e);
-                                    }
-                                },
+                            Some(conn) => {
+                                match conn.open_bidi().await {
+                                    Ok(stream) => {
+                                        // The incoming future should still be
+                                        // running, so it's enough to drive an
+                                        // outgoing
+                                        if let Err(e) = self.outgoing_bidi(stream, None).await {
+                                            tracing::warn!("error handling outgoing stream: {}", e);
+                                        }
+                                    },
 
-                                Err(e) => {
-                                    let remote_id = conn.remote_peer_id();
-                                    drop(connections);
-                                    tracing::warn!("error opening outgoing stream: {}", e);
-                                    self.handle_disconnect(remote_id).await
-                                },
+                                    Err(e) => {
+                                        tracing::warn!("error opening outgoing stream: {}", e);
+                                        self.disconnect(conn, CloseReason::ConnectionError).await
+                                    },
+                                }
                             },
                         }
                     },
@@ -463,24 +468,22 @@ where
     async fn handle_connect<'a>(
         &'a self,
         conn: quic::Connection,
-        quic::IncomingStreams { mut bidi, .. }: quic::IncomingStreams<'a>,
+        incoming: quic::IncomingStreams<'a>,
         hello: impl Into<Option<gossip::Rpc<IpAddr, A>>>,
     ) {
         let remote_id = conn.remote_peer_id();
-        tracing::info!(remote.id = %remote_id, "New outgoing connection");
+        tracing::info!(remote.id = %remote_id, "new outgoing connection");
 
         {
-            let mut connections = self.connections.lock().await;
-            if let Some(prev) = connections.insert(remote_id, conn.clone()) {
+            let mut connections = self.connections.write().unwrap();
+            if let Some(prev) = connections.insert(conn.clone()) {
                 tracing::warn!(
-                    "new outgoing ejects previous connection to {}@{}",
+                    "new outgoing ejects previous connection to {} @ {}",
                     remote_id,
                     prev.remote_addr()
                 );
+                drop(connections);
                 prev.close(CloseReason::DuplicateConnection);
-                self.subscribers
-                    .emit(ProtocolEvent::Disconnecting(remote_id))
-                    .await;
             }
         }
 
@@ -499,31 +502,43 @@ where
                 let outgoing = conn.open_bidi().await?;
                 self.outgoing_bidi(outgoing, hello).await
             },
-            async {
-                while let Some(stream) = bidi.try_next().await? {
-                    self.incoming_bidi(stream).await?
-                }
-
-                Ok(())
-            }
+            self.handle_incoming_streams(incoming)
         );
 
-        if let Err(e) = res {
-            tracing::warn!("Closing connection with {}, because: {}", remote_id, e);
-            conn.close(CloseReason::InternalError);
-        };
-
-        self.handle_disconnect(remote_id).await;
+        self.disconnect(
+            conn,
+            res.ok().and(None).or(Some(CloseReason::InternalError)),
+        )
+        .await
     }
 
-    async fn handle_disconnect(&self, peer: PeerId) {
-        if let Some(conn) = self.connections.lock().await.remove(&peer) {
-            tracing::info!(msg = "Disconnecting", remote.addr = %conn.remote_addr());
-            conn.close(CloseReason::ProtocolDisconnect);
-            self.subscribers
-                .emit(ProtocolEvent::Disconnecting(peer))
-                .await
+    #[tracing::instrument(
+        skip(self, conn, reason),
+        fields(
+            remote_peer = %conn.remote_peer_id(),
+            remote_addr = %conn.remote_addr(),
+        )
+    )]
+    async fn disconnect<R>(&self, conn: quic::Connection, reason: R)
+    where
+        R: Into<Option<CloseReason>>,
+    {
+        let remote_peer = conn.remote_peer_id();
+        tracing::info!("disconnecting");
+        {
+            let was_removed = {
+                let mut connections = self.connections.write().unwrap();
+                connections.remove(&conn)
+            };
+            if was_removed {
+                self.subscribers
+                    .emit(ProtocolEvent::Disconnecting(remote_peer))
+                    .await
+            } else {
+                tracing::info!("already gone")
+            }
         }
+        conn.close(reason.into().unwrap_or(CloseReason::ProtocolDisconnect))
     }
 
     async fn handle_incoming(
@@ -534,30 +549,24 @@ where
         let remote_id = conn.remote_peer_id();
         tracing::info!(remote.id = %remote_id, "new incoming connection");
 
-        let mut connections = self.connections.lock().await;
-        if connections.contains_key(&remote_id) {
+        if self.connections.read().unwrap().has_connection(&remote_id) {
             tracing::warn!(remote.id = %remote_id, "rejecting duplicate incoming connection");
 
-            conn.close(CloseReason::DuplicateConnection);
+            self.connections.write().unwrap().remove(&conn);
             drop(incoming);
-
-            self.subscribers
-                .emit(ProtocolEvent::Disconnecting(remote_id))
-                .await;
-            drop(connections);
+            conn.close(CloseReason::DuplicateConnection);
 
             Err(Error::DuplicateConnection)
         } else {
-            let _prev = connections.insert(remote_id, conn);
+            let _prev = self.connections.write().unwrap().insert(conn.clone());
             debug_assert!(_prev.is_none());
 
             self.subscribers
                 .emit(ProtocolEvent::Connected(remote_id))
                 .await;
-            drop(connections);
 
             let res = self.handle_incoming_streams(incoming).await;
-            self.handle_disconnect(remote_id).await;
+            self.disconnect(conn, None).await;
             res
         }
     }
@@ -662,10 +671,14 @@ where
     where
         U: Into<UpgradeRequest>,
     {
-        let stream = match self.connections.lock().await.get(&to) {
-            Some(conn) => conn.open_bidi().await.map_err(Error::from),
-            None => Err(Error::NoConnection(to)),
-        }?;
+        let conn = self
+            .connections
+            .read()
+            .unwrap()
+            .get(&to)
+            .map(Clone::clone)
+            .ok_or(Error::NoConnection(to))?;
+        let stream = conn.open_bidi().await?;
         upgrade_stream(stream, up).await
     }
 }
