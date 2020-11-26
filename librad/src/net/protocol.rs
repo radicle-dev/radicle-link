@@ -23,8 +23,9 @@ use std::{
 
 use futures::{
     future::{self, BoxFuture, FutureExt, TryFutureExt},
+    io::AsyncWrite,
     lock::Mutex,
-    stream::{BoxStream, StreamExt, TryStreamExt},
+    stream::{StreamExt, TryStreamExt},
 };
 use minicbor::{Decode, Encode};
 use thiserror::Error;
@@ -38,7 +39,7 @@ use crate::{
     internal::channel::Fanout,
     net::{
         codec::CborCodecError,
-        connection::{CloseReason, LocalInfo, RemoteInfo, Stream},
+        connection::{Closable, CloseReason, LocalInfo, RemoteInfo, Stream},
         gossip,
         quic,
         upgrade::{self, upgrade, with_upgraded, SomeUpgraded, UpgradeRequest, Upgraded},
@@ -68,7 +69,7 @@ enum Run<'a, A> {
 
     Incoming {
         conn: quic::Connection,
-        incoming: BoxStream<'a, quic::Result<quic::Stream>>,
+        incoming: quic::IncomingStreams<'a>,
     },
 
     Gossip {
@@ -84,6 +85,9 @@ pub enum Error {
 
     #[error("duplicate connection")]
     DuplicateConnection,
+
+    #[error("unsupported upgrade requested")]
+    UnsupportedUpgrade,
 
     #[error(transparent)]
     Upgrade(#[from] upgrade::ErrorSource),
@@ -314,39 +318,35 @@ where
         &self,
         to: PeerId,
         addr_hints: Addrs,
-    ) -> Result<Upgraded<upgrade::Git, quic::Stream>, Error>
+    ) -> Result<Upgraded<upgrade::Git, quic::BidiStream>, Error>
     where
         Addrs: IntoIterator<Item = SocketAddr>,
     {
-        self.open_stream(to, upgrade::Git)
-            .or_else(|e| async move {
-                match e {
-                    Error::NoConnection(_) => {
-                        // Ensure `addr_hints` has the same lifetime as `incoming`
-                        let addr_hints = addr_hints.into_iter().collect::<Vec<_>>();
-                        let (conn, incoming) = connect(&self.endpoint, to, addr_hints)
-                            .await
-                            .ok_or(Error::NoConnection(to))?;
+        match self.open_bidi(to, upgrade::Git).await {
+            Ok(upgraded) => Ok(upgraded),
+            Err(e) => match e {
+                Error::NoConnection(_) => {
+                    // Ensure `addr_hints` has the same lifetime as `incoming`
+                    let addr_hints = addr_hints.into_iter().collect::<Vec<_>>();
+                    let (conn, incoming) = connect(&self.endpoint, to, addr_hints)
+                        .await
+                        .ok_or(Error::NoConnection(to))?;
 
-                        let stream = conn.open_stream().await?;
-                        upgrade(stream, upgrade::Git)
-                            .await
-                            .map_err(|upgrade::Error { stream, source }| {
-                                stream.close(CloseReason::InvalidUpgrade);
-                                Error::from(source)
-                            })
-                            .map(|upgraded| {
-                                let this = self.clone();
-                                tokio::spawn(async move {
-                                    this.handle_connect(conn, incoming.boxed(), None).await
-                                });
-                                upgraded
-                            })
-                    },
-                    _ => Err(e),
-                }
-            })
-            .await
+                    let stream = conn.open_bidi().await?;
+                    let upgraded = upgrade(stream, upgrade::Git).await.map_err(
+                        |upgrade::Error { stream, source }| {
+                            stream.close(CloseReason::InvalidUpgrade);
+                            Error::from(source)
+                        },
+                    )?;
+                    let this = self.clone();
+                    tokio::spawn(async move { this.handle_connect(conn, incoming, None).await });
+                    Ok(upgraded)
+                },
+
+                _ => Err(e),
+            },
+        }
     }
 
     async fn eval_run(&self, run: Run<'_, A>) {
@@ -363,7 +363,7 @@ where
                 // we actually saw before. The consequence is that existing
                 // connections will be terminated.
                 if let Some((conn, incoming)) = connect(&self.endpoint, peer, addrs).await {
-                    self.handle_connect(conn, incoming.boxed(), None).await;
+                    self.handle_connect(conn, incoming, None).await;
                 }
             },
 
@@ -382,28 +382,36 @@ where
             Run::Gossip { event } => match event {
                 gossip::ProtocolEvent::Control(ctrl) => match ctrl {
                     gossip::Control::SendAdhoc { to, rpc } => {
-                        tracing::trace!(remote.id = %to.peer_id, "Run::Rad(SendAdhoc)");
+                        let to_peer = to.peer_id;
+                        tracing::trace!(remote.id = %to_peer, "Run::Rad(SendAdhoc)");
 
-                        let conn = match self.connections.lock().await.get(&to.peer_id) {
-                            Some(conn) => Some(conn.clone()),
-                            None => connect_peer_info(&self.endpoint, to)
-                                .await
-                                .map(|(conn, _)| conn),
-                        };
-
-                        if let Some(conn) = conn {
-                            if let Err(e) = conn
-                                .open_stream()
-                                .map_err(Error::from)
-                                .and_then(|stream| self.outgoing(stream, rpc))
-                                .await
-                            {
-                                tracing::warn!(
-                                    "Error handling ad-hoc outgoing stream to {}: {}",
-                                    conn.remote_addr(),
-                                    e
-                                )
+                        let conn = {
+                            let connections = self.connections.lock().await;
+                            match connections.get(&to_peer) {
+                                Some(conn) => Some(conn.clone()),
+                                None => {
+                                    drop(connections);
+                                    // TODO: track connection once conntrack is sane
+                                    connect_peer_info(&self.endpoint, to)
+                                        .await
+                                        .map(|(conn, _)| conn)
+                                },
                             }
+                        };
+                        match conn {
+                            None => tracing::warn!("failed to obtain connection for adhoc rpc"),
+                            Some(conn) => async {
+                                let stream = conn.open_uni().await.map_err(Error::from)?;
+                                let upgraded = upgrade_stream(stream, upgrade::Gossip).await?;
+                                self.gossip
+                                    .outgoing_uni(upgraded, rpc)
+                                    .await
+                                    .map_err(Error::from)
+                            }
+                            .await
+                            .unwrap_or_else(|e| {
+                                tracing::warn!("error delivering adhoc rpc to {}: {}", to_peer, e)
+                            }),
                         }
                     },
 
@@ -416,16 +424,16 @@ where
                                 drop(connections);
                                 let conn = connect_peer_info(&self.endpoint, to).await;
                                 if let Some((conn, incoming)) = conn {
-                                    self.handle_connect(conn, incoming.boxed(), None).await
+                                    self.handle_connect(conn, incoming, None).await
                                 }
                             },
 
-                            Some(conn) => match conn.open_stream().await {
+                            Some(conn) => match conn.open_bidi().await {
                                 Ok(stream) => {
                                     drop(connections);
-                                    // The incoming future should still be running,
-                                    // so it's enough to drive an outgoing
-                                    if let Err(e) = self.outgoing(stream, None).await {
+                                    // The incoming future should still be running, so it's enough
+                                    // to drive an outgoing
+                                    if let Err(e) = self.outgoing_bidi(stream, None).await {
                                         tracing::warn!("error handling outgoing stream: {}", e);
                                     }
                                 },
@@ -452,10 +460,10 @@ where
         }
     }
 
-    async fn handle_connect(
-        &self,
+    async fn handle_connect<'a>(
+        &'a self,
         conn: quic::Connection,
-        mut incoming: BoxStream<'_, quic::Result<quic::Stream>>,
+        quic::IncomingStreams { mut bidi, .. }: quic::IncomingStreams<'a>,
         hello: impl Into<Option<gossip::Rpc<IpAddr, A>>>,
     ) {
         let remote_id = conn.remote_peer_id();
@@ -488,12 +496,12 @@ where
 
         let res = futures::try_join!(
             async {
-                let outgoing = conn.open_stream().await?;
-                self.outgoing(outgoing, hello).await
+                let outgoing = conn.open_bidi().await?;
+                self.outgoing_bidi(outgoing, hello).await
             },
             async {
-                while let Some(stream) = incoming.try_next().await? {
-                    self.incoming(stream).await?
+                while let Some(stream) = bidi.try_next().await? {
+                    self.incoming_bidi(stream).await?
                 }
 
                 Ok(())
@@ -518,14 +526,11 @@ where
         }
     }
 
-    async fn handle_incoming<Incoming>(
+    async fn handle_incoming(
         &self,
         conn: quic::Connection,
-        incoming: Incoming,
-    ) -> Result<(), Error>
-    where
-        Incoming: futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
-    {
+        incoming: quic::IncomingStreams<'_>,
+    ) -> Result<(), Error> {
         let remote_id = conn.remote_peer_id();
         tracing::info!(remote.id = %remote_id, "new incoming connection");
 
@@ -557,26 +562,45 @@ where
         }
     }
 
-    async fn handle_incoming_streams<Incoming>(&self, mut incoming: Incoming) -> Result<(), Error>
-    where
-        Incoming: futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
-    {
-        while let Some(stream) = incoming.try_next().await? {
-            tracing::trace!("New incoming stream");
-            let this = self.clone();
-            tokio::spawn(async move {
-                if let Err(e) = this.incoming(stream).await {
-                    tracing::warn!("Incoming stream error: {}", e);
+    async fn handle_incoming_streams(
+        &self,
+        quic::IncomingStreams { mut bidi, mut uni }: quic::IncomingStreams<'_>,
+    ) -> Result<(), Error> {
+        future::try_join(
+            async {
+                while let Some(stream) = bidi.try_next().await? {
+                    tracing::info!("new incoming bidi stream");
+                    let this = self.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = this.incoming_bidi(stream).await {
+                            tracing::warn!("incoming bidi stream error: {}", e);
+                        }
+                    });
                 }
-            });
-        }
 
-        Ok(())
+                Ok(())
+            },
+            async {
+                while let Some(stream) = uni.try_next().await? {
+                    tracing::info!("new incoming uni stream");
+                    let this = self.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = this.incoming_uni(stream).await {
+                            tracing::warn!("incoming uni stream error: {}", e);
+                        }
+                    });
+                }
+
+                Ok(())
+            },
+        )
+        .await
+        .map(|((), ())| ())
     }
 
-    async fn outgoing(
+    async fn outgoing_bidi(
         &self,
-        stream: quic::Stream,
+        stream: quic::BidiStream,
         hello: impl Into<Option<gossip::Rpc<IpAddr, A>>>,
     ) -> Result<(), Error> {
         match upgrade(stream, upgrade::Gossip).await {
@@ -587,13 +611,13 @@ where
 
             Ok(upgraded) => self
                 .gossip
-                .outgoing(upgraded, hello)
+                .outgoing_bidi(upgraded, hello)
                 .await
                 .map_err(|e| e.into()),
         }
     }
 
-    async fn incoming(&self, stream: quic::Stream) -> Result<(), Error> {
+    async fn incoming_bidi(&self, stream: quic::BidiStream) -> Result<(), Error> {
         match with_upgraded(stream).await {
             Err(upgrade::Error { stream, source }) => {
                 stream.close(CloseReason::InvalidUpgrade);
@@ -601,9 +625,11 @@ where
             },
 
             Ok(upgraded) => match upgraded {
-                SomeUpgraded::Gossip(upgraded) => {
-                    self.gossip.incoming(upgraded).await.map_err(Error::Gossip)
-                },
+                SomeUpgraded::Gossip(upgraded) => self
+                    .gossip
+                    .incoming_bidi(upgraded)
+                    .await
+                    .map_err(Error::Gossip),
 
                 SomeUpgraded::Git(upgraded) => self
                     .git
@@ -614,21 +640,33 @@ where
         }
     }
 
-    async fn open_stream<U>(&self, to: PeerId, up: U) -> Result<Upgraded<U, quic::Stream>, Error>
+    async fn incoming_uni(&self, stream: quic::RecvStream) -> Result<(), Error> {
+        match with_upgraded(stream).await {
+            Err(upgrade::Error { stream, source }) => {
+                stream.close(CloseReason::InvalidUpgrade);
+                Err(Error::from(source))
+            },
+
+            Ok(upgraded) => match upgraded {
+                SomeUpgraded::Gossip(upgraded) => Ok(self.gossip.incoming_uni(upgraded).await?),
+
+                SomeUpgraded::Git(upgraded) => {
+                    upgraded.into_stream().close(CloseReason::InvalidUpgrade);
+                    Err(Error::UnsupportedUpgrade)
+                },
+            },
+        }
+    }
+
+    async fn open_bidi<U>(&self, to: PeerId, up: U) -> Result<Upgraded<U, quic::BidiStream>, Error>
     where
         U: Into<UpgradeRequest>,
     {
         let stream = match self.connections.lock().await.get(&to) {
-            Some(conn) => conn.open_stream().await.map_err(Error::from),
+            Some(conn) => conn.open_bidi().await.map_err(Error::from),
             None => Err(Error::NoConnection(to)),
         }?;
-
-        upgrade(stream, up)
-            .await
-            .map_err(|upgrade::Error { stream, source }| {
-                stream.close(CloseReason::InvalidUpgrade);
-                Error::from(source)
-            })
+        upgrade_stream(stream, up).await
     }
 }
 
@@ -669,13 +707,10 @@ where
     }
 }
 
-async fn connect_peer_info(
+async fn connect_peer_info<'a>(
     endpoint: &quic::Endpoint,
     peer_info: gossip::PeerInfo<IpAddr>,
-) -> Option<(
-    quic::Connection,
-    impl futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
-)> {
+) -> Option<(quic::Connection, quic::IncomingStreams<'a>)> {
     let advertised_port = peer_info.advertised_info.listen_port;
     let addrs = iter::once(peer_info.advertised_info.listen_addr)
         .chain(peer_info.seen_addrs)
@@ -683,14 +718,11 @@ async fn connect_peer_info(
     connect(endpoint, peer_info.peer_id, addrs).await
 }
 
-async fn connect<Addrs>(
+async fn connect<'a, Addrs>(
     endpoint: &quic::Endpoint,
     peer_id: PeerId,
     addrs: Addrs,
-) -> Option<(
-    quic::Connection,
-    impl futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
-)>
+) -> Option<(quic::Connection, quic::IncomingStreams<'a>)>
 where
     Addrs: IntoIterator<Item = SocketAddr>,
 {
@@ -721,4 +753,17 @@ where
         .ok()
         .map(|(success, _pending)| success)
     }
+}
+
+async fn upgrade_stream<S, U>(stream: S, up: U) -> Result<Upgraded<U, S>, Error>
+where
+    S: Closable + AsyncWrite + Unpin + Send + Sync,
+    U: Into<UpgradeRequest>,
+{
+    upgrade(stream, up)
+        .await
+        .map_err(|upgrade::Error { stream, source }| {
+            stream.close(CloseReason::InvalidUpgrade);
+            Error::from(source)
+        })
 }

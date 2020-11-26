@@ -106,12 +106,7 @@ impl Endpoint {
         &mut self,
         peer: PeerId,
         addr: &SocketAddr,
-    ) -> Result<(Connection, BoxStream<'a, Result<Stream>>)> {
-        // Short-circuit: the other end will reject anyway
-        if self.peer_id == peer {
-            return Err(Error::SelfConnect);
-        }
-
+    ) -> Result<(Connection, IncomingStreams<'a>)> {
         let conn = self
             .endpoint
             .connect(addr, peer.as_dns_name().as_ref().into())?
@@ -151,7 +146,8 @@ impl LocalInfo for Endpoint {
 async fn handle_incoming<'a>(
     local_peer: PeerId,
     connecting: quinn::Connecting,
-) -> Result<(Connection, Incoming<'a>)> {
+    connecting: quinn::Connecting,
+) -> Result<(Connection, IncomingStreams<'a>)> {
     let conn = connecting.await?;
     let remote_peer = remote_peer(&conn)?.ok_or(Error::RemoteIdUnavailable)?;
     // This should be prevented by the TLS handshake, but let's double check
@@ -202,35 +198,53 @@ fn mk_connection<'a>(
     NewConnection {
         connection,
         bi_streams,
+        uni_streams,
         ..
     }: NewConnection,
-) -> (Connection, Incoming<'a>) {
+) -> (Connection, IncomingStreams<'a>) {
     let conn = Connection::new(remote_peer, connection);
-    (
-        conn.clone(),
-        Box::pin(
-            bi_streams
-                .map_ok(move |(send, recv)| Stream {
+    let bidi = {
+        let conn = conn.clone();
+        bi_streams
+            .map_ok(move |(send, recv)| BidiStream {
+                conn: conn.clone(),
+                send: SendStream {
                     conn: conn.clone(),
-                    send: SendStream {
-                        conn: conn.clone(),
-                        send,
-                    },
-                    recv: RecvStream {
-                        conn: conn.clone(),
-                        recv,
-                    },
-                })
-                .map_err(|e| e.into()),
-        ),
-    )
+                    send,
+                },
+                recv: RecvStream {
+                    conn: conn.clone(),
+                    recv,
+                },
+            })
+            .map_err(Error::from)
+    };
+    let uni = {
+        let conn = conn.clone();
+        uni_streams
+            .map_ok(move |recv| RecvStream {
+                conn: conn.clone(),
+                recv,
+            })
+            .map_err(Error::from)
+    };
+
+    let incoming = IncomingStreams {
+        bidi: Box::pin(bidi),
+        uni: Box::pin(uni),
+    };
+
+    (conn, incoming)
 }
 
-pub type Incoming<'a> = BoxStream<'a, Result<Stream>>;
+pub struct IncomingStreams<'a> {
+    pub bidi: BoxStream<'a, Result<BidiStream>>,
+    pub uni: BoxStream<'a, Result<RecvStream>>,
+}
 
 pub struct BoundEndpoint<'a> {
     pub endpoint: Endpoint,
-    pub incoming: BoxStream<'a, (Connection, Incoming<'a>)>,
+    pub incoming: BoxStream<'a, (Connection, IncomingStreams<'a>)>,
 }
 
 impl<'a> LocalInfo for BoundEndpoint<'a> {
@@ -263,9 +277,9 @@ impl Connection {
         Self { peer, conn }
     }
 
-    pub async fn open_stream(&self) -> Result<Stream> {
+    pub async fn open_bidi(&self) -> Result<BidiStream> {
         let (send, recv) = self.conn.open_bi().await?;
-        Ok(Stream {
+        Ok(BidiStream {
             conn: self.clone(),
             recv: RecvStream {
                 conn: self.clone(),
@@ -275,6 +289,14 @@ impl Connection {
                 conn: self.clone(),
                 send,
             },
+        })
+    }
+
+    pub async fn open_uni(&self) -> Result<SendStream> {
+        let send = self.conn.open_uni().await?;
+        Ok(SendStream {
+            conn: self.clone(),
+            send,
         })
     }
 
@@ -296,13 +318,19 @@ impl RemoteInfo for Connection {
     }
 }
 
-pub struct Stream {
+impl connection::Closable for Connection {
+    fn close(self, reason: CloseReason) {
+        self.close(reason)
+    }
+}
+
+pub struct BidiStream {
     conn: Connection,
     recv: RecvStream,
     send: SendStream,
 }
 
-impl Stream {
+impl BidiStream {
     pub fn framed<C>(self, codec: C) -> Framed<Self, C>
     where
         C: Decoder + Encoder,
@@ -316,7 +344,7 @@ impl Stream {
     }
 }
 
-impl RemoteInfo for Stream {
+impl RemoteInfo for BidiStream {
     type Addr = SocketAddr;
 
     fn remote_peer_id(&self) -> PeerId {
@@ -328,7 +356,7 @@ impl RemoteInfo for Stream {
     }
 }
 
-impl connection::Stream for Stream {
+impl connection::Stream for BidiStream {
     type Read = RecvStream;
     type Write = SendStream;
 
@@ -337,17 +365,23 @@ impl connection::Stream for Stream {
     }
 }
 
-impl AsyncRead for Stream {
+impl connection::Closable for BidiStream {
+    fn close(self, reason: CloseReason) {
+        self.close(reason)
+    }
+}
+
+impl AsyncRead for BidiStream {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context,
         buf: &mut [u8],
-    ) -> Poll<std::result::Result<usize, io::Error>> {
+    ) -> Poll<io::Result<usize>> {
         AsyncRead::poll_read(Pin::new(&mut self.get_mut().recv), cx, buf)
     }
 }
 
-impl AsyncWrite for Stream {
+impl AsyncWrite for BidiStream {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
         AsyncWrite::poll_write(Pin::new(&mut self.get_mut().send), cx, buf)
     }
@@ -384,6 +418,12 @@ impl RemoteInfo for RecvStream {
     }
 }
 
+impl connection::Closable for RecvStream {
+    fn close(self, reason: CloseReason) {
+        self.close(reason)
+    }
+}
+
 impl AsyncRead for RecvStream {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -414,6 +454,12 @@ impl RemoteInfo for SendStream {
 
     fn remote_addr(&self) -> SocketAddr {
         self.conn.remote_addr()
+    }
+}
+
+impl connection::Closable for SendStream {
+    fn close(self, reason: CloseReason) {
+        self.close(reason)
     }
 }
 

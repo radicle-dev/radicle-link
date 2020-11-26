@@ -18,6 +18,9 @@ pub enum Error {
     #[error("too many storage errors")]
     StorageErrorRateLimitExceeded,
 
+    #[error("protocol violation: {0}")]
+    ProtocolViolation(&'static str),
+
     #[error(transparent)]
     Cbor(#[from] CborCodecError),
 

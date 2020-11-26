@@ -227,7 +227,7 @@ impl<S> SomeUpgraded<S> {
 pub async fn upgrade<U, S>(mut stream: S, upgrade: U) -> Result<Upgraded<U, S>, Error<S>>
 where
     U: Into<UpgradeRequest>,
-    S: AsyncRead + AsyncWrite + Unpin + Send + Sync,
+    S: AsyncWrite + Unpin + Send + Sync,
 {
     let send = async {
         let cbor = minicbor::to_vec(&upgrade.into())?;
@@ -242,7 +242,7 @@ where
 
 pub async fn with_upgraded<'a, S>(mut incoming: S) -> Result<SomeUpgraded<S>, Error<S>>
 where
-    S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'a,
+    S: AsyncRead + Unpin + Send + Sync + 'a,
 {
     let recv = async {
         let mut buf = [0u8; UPGRADE_REQUEST_ENCODING_LEN];

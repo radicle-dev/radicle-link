@@ -456,7 +456,9 @@ where
         self.subscribers.subscribe().await
     }
 
-    pub(super) async fn outgoing<Stream>(
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(skip(self, s, hello), err)]
+    pub(super) async fn outgoing_bidi<Stream>(
         &self,
         s: Upgraded<upgrade::Gossip, Stream>,
         hello: impl Into<Option<Rpc<Addr, Broadcast>>>,
@@ -477,12 +479,22 @@ where
         let mut s = Framed::new(s, Codec::new());
         s.send(hello).await?;
 
-        self.incoming(s.release().0).await
+        self.incoming_bidi(s.release().0).await
+    }
+
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(skip(self, s, rpc), err)]
+    pub(super) async fn outgoing_uni(
+        &self,
+        s: Upgraded<upgrade::Gossip, W>,
+        rpc: Rpc<Addr, Broadcast>,
+    ) -> Result<(), Error> {
+        Ok(FramedWrite::new(s, Codec::new()).send(rpc).await?)
     }
 
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(skip(self, s), err)]
-    pub(super) async fn incoming<Stream>(
+    pub(super) async fn incoming_bidi<Stream>(
         &self,
         s: Upgraded<upgrade::Gossip, Stream>,
     ) -> Result<(), Error>
@@ -545,6 +557,49 @@ where
         })
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(skip(self, s), err)]
+    pub(super) async fn incoming_uni(&self, s: Upgraded<upgrade::Gossip, R>) -> Result<(), Error> {
+        let recv = FramedRead::new(s.into_stream(), Codec::<Addr, Broadcast>::new());
+
+        let remote_id = recv.remote_peer_id();
+        if remote_id == self.local_id {
+            return Err(Error::SelfConnection);
+        }
+        let remote_addr = recv.remote_addr().as_addr();
+
+        recv.map_err(Error::from)
+            .and_then(|rpc| {
+                let remote_addr = remote_addr.clone();
+                async move {
+                    match rpc {
+                        Rpc::Membership(msg) => match msg {
+                            Membership::ShuffleReply { .. } => {
+                                self.handle_membership(remote_id, remote_addr, msg).await
+                            },
+                            _ => Err(Error::ProtocolViolation(
+                                "only shuffle reply messages are legal over uni streams",
+                            )),
+                        },
+
+                        _ => Err(Error::ProtocolViolation(
+                            "gossip can not be send over a unidirectional stream",
+                        )),
+                    }
+                }
+            })
+            .try_for_each(future::ok)
+            .await
+            .or_else(|e| match e {
+                // This is usually a connection close or reset. We only log upstream,
+                // and it's not too interesting to get error / warn logs for this.
+                Error::Cbor(CborCodecError::Io(_)) => {
+                    tracing::debug!("ignoring recv IO error: {}", e);
+                    Ok(())
+                },
+                e => Err(e),
+            })
+    }
     async fn handle_membership(
         &self,
         remote_id: PeerId,

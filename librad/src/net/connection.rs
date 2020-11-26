@@ -66,6 +66,10 @@ impl CloseReason {
     }
 }
 
+pub trait Closable {
+    fn close(self, reason: CloseReason);
+}
+
 #[cfg(test)]
 pub(crate) mod mock {
     use super::*;
