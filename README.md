@@ -35,4 +35,8 @@ To compile, run `cargo build`.
 ## License
 
 Unless otherwise noted, all source code in this repository is licensed under the
-[GPLv3](https://www.gnu.org/licenses/gpl-3.0.txt).
+[GPLv3](https://www.gnu.org/licenses/gpl-3.0.txt) with Radicle Linking Exception.
+See the [LICENSE](./LICENSE) file for details.
+
+If you are considering to contribute to this project, please review the
+[contributing guidelines](./CONTRIBUTING.md).
