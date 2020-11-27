@@ -169,7 +169,7 @@ impl<Path> Include<Path> {
         let name = format!("{}@{}", handle, peer);
         let heads: FlatRef<PeerId, _> =
             FlatRef::heads(PhantomData, peer).with_name(refspec_pattern!("heads/*"));
-        let remotes = FlatRef::heads(PhantomData, ext::RefLike::try_from(handle)?);
+        let remotes = FlatRef::heads(PhantomData, ext::RefLike::try_from(name.clone())?);
         Ok(Remote::new(url, name).with_refspec(remotes.refspec(heads, Force::True).boxed()))
     }
 }
