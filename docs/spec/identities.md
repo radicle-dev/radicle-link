@@ -489,7 +489,7 @@ document [@did-core] in a `User` payload:
 {
     "version": 0,
     "replaces": null,
-    "payload: {
+    "payload": {
         "https://radicle.xyz/link/identities/user/v1": {
             "name": "cloudhead"
         },
