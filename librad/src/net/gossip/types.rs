@@ -3,58 +3,107 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::HashSet, hash::Hash};
+use std::{collections::BTreeSet, convert::TryFrom, option::NoneError};
 
 use minicbor::{Decode, Encode};
 
 use crate::peer::PeerId;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Encode, Decode)]
 #[repr(u8)]
 pub enum Capability {
     #[n(0)]
     Reserved = 0,
 }
 
+pub type PeerInfo<Addr> = GenericPeerInfo<Addr, PeerAdvertisement<Addr>>;
+pub type PartialPeerInfo<Addr> = GenericPeerInfo<Addr, Option<PeerAdvertisement<Addr>>>;
+
+impl<Addr> PartialPeerInfo<Addr>
+where
+    Addr: Clone + Ord,
+{
+    pub fn sequence(self) -> Option<PeerInfo<Addr>> {
+        let PartialPeerInfo {
+            peer_id,
+            advertised_info,
+            seen_addrs,
+        } = self;
+        advertised_info.map(|advertised_info| PeerInfo {
+            peer_id,
+            advertised_info,
+            seen_addrs,
+        })
+    }
+}
+
+impl<Addr> TryFrom<PartialPeerInfo<Addr>> for PeerInfo<Addr>
+where
+    Addr: Clone + Ord,
+{
+    type Error = NoneError;
+
+    fn try_from(part: PartialPeerInfo<Addr>) -> Result<Self, Self::Error> {
+        Ok(part.sequence()?)
+    }
+}
+
+impl<Addr> From<PeerInfo<Addr>> for PartialPeerInfo<Addr>
+where
+    Addr: Clone + Ord,
+{
+    fn from(
+        PeerInfo {
+            peer_id,
+            advertised_info,
+            seen_addrs,
+        }: PeerInfo<Addr>,
+    ) -> Self {
+        Self {
+            peer_id,
+            advertised_info: Some(advertised_info),
+            seen_addrs,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 #[cbor(array)]
-pub struct PeerInfo<Addr>
+pub struct GenericPeerInfo<Addr, T>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
 {
     #[n(0)]
     pub peer_id: PeerId,
+
     #[n(1)]
-    pub advertised_info: PeerAdvertisement<Addr>,
+    pub advertised_info: T,
+
     #[n(2)]
-    pub seen_addrs: HashSet<Addr>,
+    pub seen_addrs: BTreeSet<Addr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 #[cbor(array)]
 pub struct PeerAdvertisement<Addr>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
 {
     #[n(0)]
     pub listen_addr: Addr,
 
-    #[n(1)]
-    pub listen_port: u16,
-
     #[n(2)]
-    pub capabilities: HashSet<Capability>,
+    pub capabilities: BTreeSet<Capability>,
 }
 
 impl<Addr> PeerAdvertisement<Addr>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
 {
-    pub fn new(listen_addr: Addr, listen_port: u16) -> Self {
+    pub fn new(listen_addr: Addr) -> Self {
         Self {
             listen_addr,
-            listen_port,
-            capabilities: HashSet::default(),
+            capabilities: BTreeSet::default(),
         }
     }
 }

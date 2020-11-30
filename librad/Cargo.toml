@@ -130,13 +130,16 @@ features = ["zeroize_derive"]
 
 [dev-dependencies]
 anyhow = "1"
+argh = "0"
 assert_matches = "1"
+env_logger = "0"
 fnv = "1"
 futures-await-test = "0"
 futures_ringbuf = "0"
 nonempty = "0.6"
 pretty_assertions = "0"
 proptest = "0"
+tracing-subscriber = ">= 0.2"
 
 [dev-dependencies.librad-test]
 path = "../librad-test"

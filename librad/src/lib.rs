@@ -14,6 +14,7 @@
 #![feature(generic_associated_types)]
 #![feature(ip)]
 #![feature(never_type)]
+#![feature(try_trait)]
 
 #[macro_use]
 extern crate async_trait;
@@ -36,6 +37,7 @@ pub mod peer;
 pub mod signer;
 
 // Re-exports
+pub use peer::PeerId;
 pub use radicle_macros::*;
 
 #[cfg(test)]

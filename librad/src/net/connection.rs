@@ -6,22 +6,40 @@
 use std::{
     io,
     net::{IpAddr, SocketAddr},
+    ops::Deref,
 };
 
-use crate::peer::PeerId;
 use futures::io::{AsyncRead, AsyncWrite};
+use futures_codec::FramedWrite;
 
-pub trait LocalInfo {
+use crate::PeerId;
+
+pub trait LocalPeer {
+    fn local_peer_id(&self) -> PeerId;
+}
+
+pub trait LocalInfo: LocalPeer {
     type Addr;
 
-    fn local_peer_id(&self) -> PeerId;
     fn local_addr(&self) -> io::Result<Self::Addr>;
 }
 
-pub trait RemoteInfo {
+pub trait RemotePeer {
+    fn remote_peer_id(&self) -> PeerId;
+}
+
+impl<T, E> RemotePeer for FramedWrite<T, E>
+where
+    T: RemotePeer,
+{
+    fn remote_peer_id(&self) -> PeerId {
+        self.deref().remote_peer_id()
+    }
+}
+
+pub trait RemoteInfo: RemotePeer {
     type Addr;
 
-    fn remote_peer_id(&self) -> PeerId;
     fn remote_addr(&self) -> Self::Addr;
 }
 
@@ -35,7 +53,30 @@ impl AsAddr<IpAddr> for SocketAddr {
     }
 }
 
-pub trait Stream: RemoteInfo + AsyncRead + AsyncWrite + Unpin + Send + Sync + Sized {
+impl AsAddr<SocketAddr> for SocketAddr {
+    fn as_addr(&self) -> SocketAddr {
+        *self
+    }
+}
+
+pub trait HasStableId {
+    type Id: Copy + PartialEq;
+
+    fn stable_id(&self) -> Self::Id;
+}
+
+impl<T, E> HasStableId for FramedWrite<T, E>
+where
+    T: HasStableId,
+{
+    type Id = T::Id;
+
+    fn stable_id(&self) -> Self::Id {
+        self.deref().stable_id()
+    }
+}
+
+pub trait Duplex: RemoteInfo + AsyncRead + AsyncWrite + Unpin + Send + Sync + Sized {
     type Read;
     type Write;
 
@@ -97,19 +138,21 @@ pub(crate) mod mock {
         }
     }
 
-    impl RemoteInfo for MockStream {
-        type Addr = PeerId;
-
+    impl RemotePeer for MockStream {
         fn remote_peer_id(&self) -> PeerId {
             self.id
         }
+    }
+
+    impl RemoteInfo for MockStream {
+        type Addr = PeerId;
 
         fn remote_addr(&self) -> Self::Addr {
             self.id
         }
     }
 
-    impl Stream for MockStream {
+    impl Duplex for MockStream {
         type Read = ReadHalf<Endpoint>;
         type Write = WriteHalf<Endpoint>;
 

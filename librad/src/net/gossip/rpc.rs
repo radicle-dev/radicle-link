@@ -3,8 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::hash::Hash;
-
 use minicbor::{Decode, Encode};
 
 use crate::net::gossip::types::{PeerAdvertisement, PeerInfo};
@@ -13,7 +11,7 @@ use crate::net::gossip::types::{PeerAdvertisement, PeerInfo};
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub enum Rpc<Addr, Payload>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
 {
     #[n(0)]
     Membership(#[n(0)] Membership<Addr>),
@@ -24,7 +22,7 @@ where
 
 impl<A, P> From<Membership<A>> for Rpc<A, P>
 where
-    A: Clone + PartialEq + Eq + Hash,
+    A: Clone + Ord,
 {
     fn from(m: Membership<A>) -> Self {
         Self::Membership(m)
@@ -33,7 +31,7 @@ where
 
 impl<A, P> From<Gossip<A, P>> for Rpc<A, P>
 where
-    A: Clone + PartialEq + Eq + Hash,
+    A: Clone + Ord,
 {
     fn from(g: Gossip<A, P>) -> Self {
         Self::Gossip(g)
@@ -43,7 +41,7 @@ where
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub enum Membership<Addr>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
 {
     #[n(0)]
     Join(#[n(0)] PeerAdvertisement<Addr>),
@@ -58,7 +56,12 @@ where
     },
 
     #[n(2)]
-    Neighbour(#[n(0)] PeerAdvertisement<Addr>),
+    Neighbour {
+        #[n(0)]
+        info: PeerAdvertisement<Addr>,
+        #[n(1)]
+        need_friends: Option<()>,
+    },
 
     #[n(3)]
     #[cbor(array)]
@@ -85,7 +88,7 @@ where
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub enum Gossip<Addr, Payload>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
 {
     #[n(0)]
     #[cbor(array)]

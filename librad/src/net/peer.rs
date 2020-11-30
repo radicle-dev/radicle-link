@@ -3,13 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    future::Future,
-    io,
-    net::{IpAddr, SocketAddr},
-    sync::Arc,
-    time::Duration,
-};
+use std::{future::Future, io, net::SocketAddr, ops::Deref, sync::Arc, time::Duration};
 
 use either::Either::{self, Left, Right};
 use futures::{
@@ -220,7 +214,7 @@ impl PeerApi {
         &self,
         urn: Urn,
         timeout: Duration,
-    ) -> impl futures::Stream<Item = PeerInfo<IpAddr>> {
+    ) -> impl Future<Output = impl futures::Stream<Item = PeerInfo<SocketAddr>>> {
         let protocol = self.protocol.clone();
 
         let urn2 = urn.clone();
@@ -383,7 +377,7 @@ impl Peer {
 
         let gossip = gossip::Protocol::new(
             peer_id,
-            gossip::PeerAdvertisement::new(listen_addr.ip(), listen_addr.port()),
+            gossip::PeerAdvertisement::new(listen_addr),
             config.gossip_params,
             peer_storage,
         );

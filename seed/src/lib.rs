@@ -27,8 +27,8 @@ use librad::{
     net::{
         discovery,
         gossip,
-        gossip::types::PeerInfo,
-        peer::{self, Peer, PeerApi, PeerConfig},
+        gossip::PeerInfo,
+        peer::{self, PeerApi, PeerConfig},
         protocol::ProtocolEvent,
     },
     paths,
@@ -255,7 +255,6 @@ impl Node {
             ProtocolEvent::Listening(addr) => {
                 transmit.send(Event::Listening(addr)).await.ok();
             },
-            ProtocolEvent::Membership(_) => {},
         }
         Ok(())
     }

@@ -10,12 +10,11 @@
 //! [HyParView]: http://asc.di.fct.unl.pt/~jleitao/pdf/dsn07-leitao.pdf
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     fmt::Debug,
-    hash::Hash,
-    iter,
     marker::PhantomData,
     num::NonZeroU32,
+    ops::Deref as _,
     sync::{
         atomic::{self, AtomicUsize},
         Arc,
@@ -25,25 +24,24 @@ use std::{
 
 use futures::{
     channel::mpsc,
-    future,
+    future::{self, BoxFuture, FutureExt as _},
     io::{AsyncRead, AsyncWrite},
-    lock::Mutex,
-    sink::SinkExt,
-    stream::{StreamExt, TryStreamExt},
+    sink::SinkExt as _,
+    stream::{FuturesUnordered, StreamExt as _, TryStreamExt as _},
 };
 use futures_codec::{Framed, FramedRead, FramedWrite};
 use futures_timer::Delay;
 use governor::{Quota, RateLimiter};
 use minicbor::{Decode, Encode};
-use rand::{seq::IteratorRandom, Rng};
+use rand::Rng as _;
 use rand_pcg::Pcg64Mcg;
-use tracing_futures::Instrument;
 
 use crate::{
     internal::channel::Fanout,
     net::{
         codec::{CborCodec, CborCodecError},
-        connection::{self, AsAddr, RemoteInfo},
+        connection::{AsAddr, Duplex, HasStableId, RemoteInfo, RemotePeer as _},
+        conntrack::{self, SyncStream},
         gossip::error::Error,
         upgrade::{self, Upgraded},
     },
@@ -51,28 +49,32 @@ use crate::{
 };
 
 pub mod error;
-pub mod rpc;
-pub mod storage;
-pub mod types;
 
-pub use rpc::*;
-pub use storage::*;
-pub use types::*;
+mod rpc;
+pub use rpc::{Gossip, Membership, Rpc};
+
+mod storage;
+pub use storage::{LocalStorage, PutResult};
+
+mod types;
+pub use types::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
+
+mod membership;
+pub use membership::MembershipParams;
 
 #[derive(Clone)]
 pub enum ProtocolEvent<Addr, Payload>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
 {
     Control(Control<Addr, Payload>),
     Info(Info<Addr, Payload>),
-    Membership(MembershipInfo<Addr>),
 }
 
 #[derive(Clone)]
 pub enum Control<Addr, Payload>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
 {
     SendAdhoc {
         to: PeerInfo<Addr>,
@@ -81,12 +83,15 @@ where
     Connect {
         to: PeerInfo<Addr>,
     },
+    Disconnect {
+        peer: PeerId,
+    },
 }
 
 #[derive(Clone, Debug)]
 pub enum Info<Addr, A>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
 {
     Has(Has<Addr, A>),
 }
@@ -94,214 +99,49 @@ where
 #[derive(Clone, Debug)]
 pub struct Has<Addr, A>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
 {
     pub provider: PeerInfo<Addr>,
     pub val: A,
 }
 
-#[derive(Clone, Debug)]
-pub enum MembershipInfo<Addr>
-where
-    Addr: Clone + Eq + Hash,
-{
-    Join(PeerAdvertisement<Addr>),
-    Neighbour(PeerAdvertisement<Addr>),
-}
-
-#[derive(Debug, Clone)]
-pub struct MembershipParams {
-    /// Maximum number of active connections.
-    pub max_active: usize,
-    /// The number of hops a [`Membership::ForwardJoin`] or
-    /// [`Membership::Shuffle`] should be propageted.
-    pub random_walk_length: usize,
-    /// The maximum number of peers to include in a shuffle.
-    pub shuffle_sample_size: usize,
-    /// Interval in which to perform a shuffle.
-    pub shuffle_interval: Duration,
-    /// Interval in which to attempt to promote a passive peer.
-    pub promote_interval: Duration,
-}
-
-impl Default for MembershipParams {
-    fn default() -> Self {
-        Self {
-            max_active: 23,
-            random_walk_length: 3,
-            shuffle_sample_size: 7,
-            shuffle_interval: Duration::from_secs(30),
-            promote_interval: Duration::from_secs(20),
-        }
-    }
-}
-
-/// Placeholder for a datastructure representing the currently connected-to
-/// peers
-///
-/// The number of peers is bounded -- when `insert`ing into an already full
-/// `ConnectedPeers`, an existing connection is chosen at random, its write
-/// stream is closed, and the corresponding `PeerId` is returned for upstream
-/// connection management.
-///
-/// The random choice should be replaced by a weighted selection, which takes
-/// metrics such as uptime, bandwidth, etc. into account.
-#[derive(Clone, Default)]
-struct ConnectedPeers<S, R> {
-    max_peers: usize,
-    rng: R,
-    peers: HashMap<PeerId, S>,
-}
-
-impl<S, R> ConnectedPeers<S, R>
-where
-    S: Unpin,
-    R: Rng,
-{
-    fn new(max_peers: usize, rng: R) -> Self {
-        Self {
-            max_peers,
-            rng,
-            peers: HashMap::default(),
-        }
-    }
-
-    fn insert(&mut self, peer_id: PeerId, sink: S) -> Option<(PeerId, S)> {
-        if !self.peers.contains_key(&peer_id) && self.peers.len() + 1 > self.max_peers {
-            self.peers.insert(peer_id, sink);
-
-            let (eject, _) = self
-                .random()
-                .expect("Iterator must contain at least 1 element, as per the if condition. qed");
-            self.remove(eject)
-        } else {
-            self.peers.insert(peer_id, sink).map(|s| (peer_id, s))
-        }
-    }
-
-    fn remove(&mut self, peer_id: PeerId) -> Option<(PeerId, S)> {
-        self.peers.remove(&peer_id).map(|s| (peer_id, s))
-    }
-
-    fn random(&mut self) -> Option<(PeerId, &mut S)> {
-        self.peers
-            .iter_mut()
-            .choose(&mut self.rng)
-            .map(|(k, s)| (*k, s))
-    }
-
-    fn contains(&self, peer_id: &PeerId) -> bool {
-        self.peers.contains_key(peer_id)
-    }
-
-    fn get_mut(&mut self, peer_id: &PeerId) -> Option<&mut S> {
-        self.peers.get_mut(peer_id)
-    }
-
-    fn iter_mut(&mut self) -> impl Iterator<Item = (&PeerId, &mut S)> {
-        self.peers.iter_mut()
-    }
-
-    fn len(&self) -> usize {
-        self.peers.len()
-    }
-}
-
-/// Placeholder for a datastructure with the following properties:
-///
-/// * Keeps a bounded number of `(PeerId, [SocketAddr])` pairs
-/// * The list of addresses is itself bounded, and keeps track of the `n` most
-///   recently seen "good" IP/port tuples
-/// * The list is prioritised by recently-seen, and treats peer info relayed by
-///   other peers (`Shuffle`d) with the least priority
-#[derive(Clone, Default)]
-struct KnownPeers<Addr, Rng>
-where
-    Addr: Clone + PartialEq + Eq + Hash,
-{
-    peers: HashMap<PeerId, PeerInfo<Addr>>,
-    rng: Rng,
-}
-
-impl<Addr, R> KnownPeers<Addr, R>
-where
-    Addr: Clone + PartialEq + Eq + Hash,
-    R: Rng,
-{
-    fn new(rng: R) -> Self {
-        Self {
-            peers: HashMap::default(),
-            rng,
-        }
-    }
-
-    fn insert<I: IntoIterator<Item = PeerInfo<Addr>>>(&mut self, peers: I) {
-        for info in peers {
-            let entry = self
-                .peers
-                .entry(info.peer_id)
-                .or_insert_with(|| info.clone());
-            let seen_addrs = entry
-                .seen_addrs
-                .union(&info.seen_addrs)
-                .cloned()
-                .collect::<HashSet<_>>();
-            debug_assert!(!seen_addrs.is_empty());
-            entry.seen_addrs = seen_addrs;
-        }
-    }
-
-    fn random(&mut self) -> Option<PeerInfo<Addr>> {
-        self.peers.values().cloned().choose(&mut self.rng)
-    }
-
-    fn sample(&mut self, n: usize) -> Vec<PeerInfo<Addr>> {
-        self.peers
-            .values()
-            .cloned()
-            .choose_multiple(&mut self.rng, n)
-    }
-}
-
 pub type Codec<A, P> = CborCodec<Rpc<A, P>, Rpc<A, P>>;
 type WriteStream<W, A, P> = FramedWrite<W, Codec<A, P>>;
-type ConnectedPeersImpl<W, A, P, R> = ConnectedPeers<WriteStream<W, A, P>, R>;
 type StorageErrorLimiter = RateLimiter<
     governor::state::direct::NotKeyed,
     governor::state::InMemoryState,
     governor::clock::DefaultClock,
 >;
 
-pub struct Protocol<Storage, Broadcast, Addr, R, W>
+pub struct Protocol<Storage, Broadcast, Addr, Stream>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
+    Stream: Duplex + HasStableId,
+    Stream::Write: HasStableId,
 {
     local_id: PeerId,
     local_ad: PeerAdvertisement<Addr>,
-
-    mparams: MembershipParams,
 
     storage: Storage,
     storage_error_lim: Arc<StorageErrorLimiter>,
 
     subscribers: Fanout<ProtocolEvent<Addr, Broadcast>>,
 
-    connected_peers: Arc<Mutex<ConnectedPeersImpl<W, Addr, Broadcast, Pcg64Mcg>>>,
-    known_peers: Arc<Mutex<KnownPeers<Addr, Pcg64Mcg>>>,
+    streams: conntrack::Streams<WriteStream<Stream::Write, Addr, Broadcast>>,
+    membership: membership::Hpv<Pcg64Mcg, Stream::Id, Addr>,
 
     ref_count: Arc<AtomicUsize>,
 
-    _marker: PhantomData<R>,
+    _read_stream: PhantomData<Stream::Read>,
 }
 
-// `Clone` cannot be auto-derived, because the compiler can't see that `R` is
-// only `PhantomData`, and `W` is behind an `Arc`. It places `Clone` constraints
-// on `R` and `W`, which we can't (and don't want to) satisfy.
-impl<Storage, Broadcast, Addr, R, W> Clone for Protocol<Storage, Broadcast, Addr, R, W>
+impl<Storage, Broadcast, Addr, Stream> Clone for Protocol<Storage, Broadcast, Addr, Stream>
 where
     Storage: Clone,
     Broadcast: Clone,
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
+    Stream: Duplex + HasStableId,
+    Stream::Write: HasStableId,
 {
     fn clone(&self) -> Self {
         const MAX_REFCOUNT: usize = (isize::MAX) as usize;
@@ -316,31 +156,44 @@ where
         Self {
             local_id: self.local_id,
             local_ad: self.local_ad.clone(),
-            mparams: self.mparams.clone(),
             storage: self.storage.clone(),
             storage_error_lim: self.storage_error_lim.clone(),
             subscribers: self.subscribers.clone(),
-            connected_peers: self.connected_peers.clone(),
-            known_peers: self.known_peers.clone(),
+            streams: self.streams.clone(),
+            membership: self.membership.clone(),
             ref_count: self.ref_count.clone(),
-            _marker: self._marker,
+            _read_stream: self._read_stream,
         }
     }
 }
 
-impl<Storage, Broadcast, Addr, R, W> Protocol<Storage, Broadcast, Addr, R, W>
+impl<Storage, Broadcast, Addr, Stream> Protocol<Storage, Broadcast, Addr, Stream>
 where
     Storage: LocalStorage<Update = Broadcast> + 'static,
 
-    for<'de> Broadcast: Encode + Decode<'de> + Clone + Debug + Send + Sync + 'static,
-    for<'de> Addr:
-        Encode + Decode<'de> + Clone + Debug + Hash + PartialEq + Eq + Send + Sync + 'static,
+    for<'de> Broadcast: Decode<'de>,
+    for<'de> Addr: Decode<'de>,
 
-    R: AsyncRead + RemoteInfo + Unpin + Send + Sync + 'static,
-    W: AsyncWrite + RemoteInfo + Unpin + Send + Sync + 'static,
+    Broadcast: Encode + Clone + Debug + Send + Sync + 'static,
+    Addr: Encode + Clone + Debug + Ord + Send + Sync + 'static,
 
-    <R as RemoteInfo>::Addr: AsAddr<Addr>,
-    <W as RemoteInfo>::Addr: AsAddr<Addr>,
+    Stream: Duplex + HasStableId + 'static,
+    Stream::Read: AsyncRead
+        + HasStableId<Id = Stream::Id>
+        + RemoteInfo<Addr = Stream::Addr>
+        + Unpin
+        + Send
+        + Sync
+        + 'static,
+    Stream::Write: AsyncWrite
+        + HasStableId<Id = Stream::Id>
+        + RemoteInfo<Addr = Stream::Addr>
+        + Unpin
+        + Send
+        + Sync
+        + 'static,
+    Stream::Addr: AsAddr<Addr>,
+    Stream::Id: Clone + Debug + Ord + Send + Sync + 'static,
 {
     pub fn new(
         local_id: PeerId,
@@ -348,37 +201,27 @@ where
         mparams: MembershipParams,
         storage: Storage,
     ) -> Self {
-        let span = tracing::trace_span!("Protocol", local.id = %local_id);
-        let _guard = span.enter();
-
         let prng = Pcg64Mcg::new(rand::random());
-        let connected_peers = Arc::new(Mutex::new(ConnectedPeers::new(
-            mparams.max_active,
-            prng.clone(),
-        )));
-        let known_peers = Arc::new(Mutex::new(KnownPeers::new(prng)));
-
         let storage_error_lim = Arc::new(RateLimiter::direct(Quota::per_second(unsafe {
             NonZeroU32::new_unchecked(5)
         })));
 
+        let shuffle_interval = mparams.shuffle_interval;
+        let promote_interval = mparams.promote_interval;
+
+        let streams = conntrack::Streams::default();
+        let membership = membership::Hpv::new(local_id, prng, mparams);
+
         let this = Self {
             local_id,
             local_ad,
-
-            mparams,
-
             storage,
             storage_error_lim,
-
             subscribers: Fanout::new(),
-
-            connected_peers,
-            known_peers,
-
+            streams,
+            membership,
             ref_count: Arc::new(AtomicUsize::new(0)),
-
-            _marker: PhantomData,
+            _read_stream: PhantomData,
         };
 
         // Spawn periodic tasks, ensuring they complete when the last reference
@@ -389,24 +232,38 @@ where
             // We got two clones, so if the ref_count goes below that, we're the
             // only ones holding on to a reference of `this`.
             let ref_count = 2;
-            tokio::spawn(async move {
-                loop {
-                    if shuffle.ref_count.load(atomic::Ordering::Relaxed) < ref_count {
-                        tracing::trace!("Stopping periodic shuffle task");
-                        break;
+            tokio::spawn({
+                async move {
+                    let holdoff = {
+                        let mut rng = rand::thread_rng();
+                        rng.gen_range(0, shuffle_interval.as_secs())
+                    };
+                    Delay::new(Duration::from_secs(holdoff)).await;
+                    loop {
+                        if shuffle.ref_count.load(atomic::Ordering::Relaxed) < ref_count {
+                            tracing::trace!("stopping periodic shuffle task");
+                            break;
+                        }
+                        Delay::new(shuffle_interval).await;
+                        shuffle.shuffle().await;
                     }
-                    Delay::new(shuffle.mparams.shuffle_interval).await;
-                    shuffle.shuffle().await;
                 }
             });
-            tokio::spawn(async move {
-                loop {
-                    if promotion.ref_count.load(atomic::Ordering::Relaxed) < ref_count {
-                        tracing::trace!("Stopping periodic promotion task");
-                        break;
+            tokio::spawn({
+                async move {
+                    let holdoff = {
+                        let mut rng = rand::thread_rng();
+                        rng.gen_range(0, promote_interval.as_secs())
+                    };
+                    Delay::new(Duration::from_secs(holdoff)).await;
+                    loop {
+                        if promotion.ref_count.load(atomic::Ordering::Relaxed) < ref_count {
+                            tracing::trace!("stopping periodic promotion task");
+                            break;
+                        }
+                        Delay::new(promote_interval).await;
+                        promotion.promote_random().await;
                     }
-                    Delay::new(promotion.mparams.promote_interval).await;
-                    promotion.promote_random().await;
                 }
             });
         }
@@ -418,13 +275,8 @@ where
         self.local_id
     }
 
-    pub async fn is_connected(&self) -> bool {
-        self.connected_peers.lock().await.len() > 0
-    }
-
+    #[tracing::instrument(skip(self, have))]
     pub async fn announce(&self, have: Broadcast) {
-        let span = tracing::trace_span!("Protocol::announce", local.id = %self.local_id);
-
         self.broadcast(
             Gossip::Have {
                 origin: self.local_peer_info(),
@@ -432,13 +284,11 @@ where
             },
             None,
         )
-        .instrument(span)
         .await
     }
 
+    #[tracing::instrument(skip(self, want))]
     pub async fn query(&self, want: Broadcast) {
-        let span = tracing::trace_span!("Protocol::query", local.id = %self.local_id);
-
         self.broadcast(
             Gossip::Want {
                 origin: self.local_peer_info(),
@@ -446,7 +296,6 @@ where
             },
             None,
         )
-        .instrument(span)
         .await
     }
 
@@ -456,54 +305,76 @@ where
         self.subscribers.subscribe().await
     }
 
+    fn is_connected(&self) -> bool {
+        !self.streams.is_empty()
+    }
+
+    fn has_active(&self) -> bool {
+        self.membership.num_active() > 0
+    }
+
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(skip(self, s, hello), err)]
-    pub(super) async fn outgoing_bidi<Stream>(
+    #[tracing::instrument(level = "debug", skip(self, s, hello), err)]
+    pub(super) async fn outgoing_bidi(
         &self,
         s: Upgraded<upgrade::Gossip, Stream>,
         hello: impl Into<Option<Rpc<Addr, Broadcast>>>,
-    ) -> Result<(), Error>
-    where
-        Stream: connection::Stream<Read = R, Write = W>,
-    {
+    ) -> Result<(), Error> {
         let hello = match hello.into() {
             Some(rpc) => rpc,
-            None => if self.is_connected().await {
-                Membership::Neighbour(self.local_ad.clone())
-            } else {
-                Membership::Join(self.local_ad.clone())
-            }
-            .into(),
+            None => {
+                let local_ad = self.local_ad.clone();
+                if self.is_connected() {
+                    Membership::Neighbour {
+                        info: local_ad,
+                        need_friends: self.has_active().then_some(()),
+                    }
+                } else {
+                    Membership::Join(local_ad)
+                }
+                .into()
+            },
         };
 
         let mut s = Framed::new(s, Codec::new());
         s.send(hello).await?;
 
+        let tick = self.membership.connection_established(
+            PartialPeerInfo {
+                peer_id: s.remote_peer_id(),
+                advertised_info: None,
+                seen_addrs: Some(s.remote_addr().as_addr()).into_iter().collect(),
+            },
+            s.stable_id(),
+        );
+        if let Some(tock) = tick {
+            self.clone().handle_membership_tick(tock).await
+        }
+
         self.incoming_bidi(s.release().0).await
     }
 
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(skip(self, s, rpc), err)]
+    #[tracing::instrument(level = "debug", skip(self, s, rpc), err)]
     pub(super) async fn outgoing_uni(
         &self,
-        s: Upgraded<upgrade::Gossip, W>,
+        s: Upgraded<upgrade::Gossip, Stream::Write>,
         rpc: Rpc<Addr, Broadcast>,
     ) -> Result<(), Error> {
         Ok(FramedWrite::new(s, Codec::new()).send(rpc).await?)
     }
 
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(skip(self, s), err)]
-    pub(super) async fn incoming_bidi<Stream>(
+    #[tracing::instrument(level = "debug", skip(self, s), err)]
+    pub(super) async fn incoming_bidi(
         &self,
         s: Upgraded<upgrade::Gossip, Stream>,
-    ) -> Result<(), Error>
-    where
-        Stream: connection::Stream<Read = R, Write = W>,
-    {
-        let (recv, send) = s.into_stream().split();
+    ) -> Result<(), Error> {
+        let s = s.into_stream();
+        let stream_id = s.stable_id();
+        let (recv, send) = s.split();
         let recv = FramedRead::new(recv, Codec::new());
-        let send = FramedWrite::new(send, Codec::new());
+        let send = SyncStream::from(FramedWrite::new(send, Codec::new()));
 
         let remote_id = recv.remote_peer_id();
         // This should not be possible, as we prevent it in the TLS handshake.
@@ -512,13 +383,14 @@ where
             return Err(Error::SelfConnection);
         }
 
-        {
-            let mut connected_peers = self.connected_peers.lock().await;
-            if let Some((peer, mut stream)) = connected_peers.insert(remote_id, send) {
-                tracing::info!("ejecting peer {}", peer);
-                let _ = stream.close().await;
-            }
-        };
+        if let Some(prev) = self.streams.insert(send.clone()) {
+            tracing::warn!(
+                "incoming ejects previous stream {}: {:?}",
+                remote_id,
+                prev.stable_id()
+            );
+            let _ = prev.lock().await.close().await;
+        }
 
         let remote_addr = recv.remote_addr().as_addr();
         let res = recv
@@ -528,21 +400,29 @@ where
                 async move {
                     match rpc {
                         Rpc::Membership(msg) => {
-                            self.handle_membership(remote_id, remote_addr, msg).await
+                            self.handle_membership(remote_id, remote_addr, stream_id, msg)
+                                .await
                         },
-                        Rpc::Gossip(msg) => self.handle_gossip(remote_id, msg).await,
+                        Rpc::Gossip(msg) => self.handle_gossip(remote_id, stream_id, msg).await,
                     }
                 }
             })
             .try_for_each(future::ok)
             .await;
-        tracing::trace!("recv stream is done");
+        tracing::info!(peer = %remote_id, "recv stream is done");
 
-        {
-            let mut connected_peers = self.connected_peers.lock().await;
-            if let Some((_, mut stream)) = connected_peers.remove(remote_id) {
-                tracing::info!("closing recv stream from peer {}", remote_id);
-                let _ = stream.close().await;
+        if res.is_err() {
+            let was_removed = self.streams.remove(&send);
+            let tick = if was_removed {
+                let stream_id = send.stable_id();
+                tracing::info!(peer = %remote_id, stream = ?stream_id, "closing send stream");
+                let _ = send.lock().await.close().await;
+                self.membership.connection_lost(remote_id, stream_id)
+            } else {
+                None
+            };
+            if let Some(tock) = tick {
+                self.clone().handle_membership_tick(tock).await;
             }
         }
 
@@ -558,9 +438,13 @@ where
     }
 
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(skip(self, s), err)]
-    pub(super) async fn incoming_uni(&self, s: Upgraded<upgrade::Gossip, R>) -> Result<(), Error> {
+    #[tracing::instrument(level = "debug", skip(self, s), err)]
+    pub(super) async fn incoming_uni(
+        &self,
+        s: Upgraded<upgrade::Gossip, Stream::Read>,
+    ) -> Result<(), Error> {
         let recv = FramedRead::new(s.into_stream(), Codec::<Addr, Broadcast>::new());
+        let stream_id = recv.deref().stable_id();
 
         let remote_id = recv.remote_peer_id();
         if remote_id == self.local_id {
@@ -575,7 +459,8 @@ where
                     match rpc {
                         Rpc::Membership(msg) => match msg {
                             Membership::ShuffleReply { .. } => {
-                                self.handle_membership(remote_id, remote_addr, msg).await
+                                self.handle_membership(remote_id, remote_addr, stream_id, msg)
+                                    .await
                             },
                             _ => Err(Error::ProtocolViolation(
                                 "only shuffle reply messages are legal over uni streams",
@@ -583,7 +468,7 @@ where
                         },
 
                         _ => Err(Error::ProtocolViolation(
-                            "gossip can not be send over a unidirectional stream",
+                            "gossip can not be sent over a unidirectional stream",
                         )),
                     }
                 }
@@ -600,339 +485,325 @@ where
                 e => Err(e),
             })
     }
+
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "debug", skip(self, remote_id, msg), fields(remote_id = %remote_id), err)]
     async fn handle_membership(
         &self,
         remote_id: PeerId,
         remote_addr: Addr,
+        stream_id: Stream::Id,
         msg: Membership<Addr>,
     ) -> Result<(), Error> {
-        use Membership::*;
+        let tick = self
+            .membership
+            .apply(remote_id, remote_addr, stream_id, msg)
+            .map_err(|e| {
+                tracing::warn!("membership error: {}", e);
+                Error::ProtocolViolation("membership protocol violation")
+            })?;
 
-        let make_peer_info = |ad: PeerAdvertisement<Addr>| PeerInfo {
-            peer_id: remote_id,
-            advertised_info: ad,
-            seen_addrs: vec![remote_addr].into_iter().collect(),
+        if let Some(tock) = tick {
+            self.clone().handle_membership_tick(tock).await;
+        }
+
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    // boxing due to recursion, see:
+    // https://rust-lang.github.io/async-book/07_workarounds/04_recursion.html
+    fn handle_membership_tick(
+        self,
+        tick: membership::Tick<Stream::Id, Addr>,
+    ) -> BoxFuture<'static, ()> {
+        use membership::Tick::*;
+
+        tracing::trace!("tick");
+        async move {
+            match tick {
+                Ticks { ticks } => {
+                    ticks
+                        .into_iter()
+                        .map(|tick| self.clone().handle_membership_tick(tick))
+                        .collect::<FuturesUnordered<_>>()
+                        .for_each(future::ready)
+                        .await
+                },
+                Demote { peer, stream } => self.demote_stream(&peer, &stream).await,
+                Forget { peer } => self.forget(peer).await,
+                Connect { to } => self.connect(&to).await,
+                Reply { to, message } => self.send_adhoc(to, message).await,
+                Broadcast {
+                    recipients,
+                    message,
+                } => self.send(recipients, Rpc::Membership(message)).await,
+            }
+        }
+        .boxed()
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    async fn demote_stream(&self, peer: &PeerId, id: &Stream::Id) {
+        let demoted = self.streams.remove_id(peer, id);
+        match demoted {
+            None => tracing::warn!("stream not found"),
+            Some(stream) => {
+                tracing::info!("demoting");
+                let _ = stream.lock().await.close().await;
+            },
+        }
+    }
+
+    async fn forget(&self, peer: PeerId) {
+        self.subscribers
+            .emit(ProtocolEvent::Control(Control::Disconnect { peer }))
+            .await
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, recipients))]
+    async fn send<R>(&self, recipients: R, message: Rpc<Addr, Broadcast>)
+    where
+        R: IntoIterator<Item = (PeerId, Stream::Id)>,
+    {
+        let recipients = recipients.into_iter().collect::<BTreeMap<_, _>>();
+        if recipients.is_empty() {
+            tracing::warn!("empty recipients list");
+            return;
+        }
+
+        let streams = {
+            self.streams
+                .as_vec()
+                .iter()
+                .filter_map(|(peer_id, stream)| {
+                    recipients.get(peer_id).map(|expected_stream_id| {
+                        // FIXME: understand how there is an inconsistency window
+                        let actual_stream_id = stream.stable_id();
+                        if *expected_stream_id != actual_stream_id {
+                            tracing::warn!(
+                                peer = %peer_id,
+                                stream.expected = ?expected_stream_id,
+                                stream.actual = ?actual_stream_id,
+                                "destination stream changed"
+                            );
+                        }
+                        stream.clone()
+                    })
+                })
+                .collect::<Vec<_>>()
         };
 
+        if streams.is_empty() {
+            tracing::warn!("no send streams")
+        } else {
+            streams
+                .into_iter()
+                .map(|stream| {
+                    let message = message.clone();
+                    async move {
+                        let peer = stream.remote_peer_id();
+                        let id = stream.stable_id();
+                        tracing::info!(peer = %peer, stream = ?id, "stream send");
+                        stream
+                            .lock()
+                            .await
+                            .send(message)
+                            .await
+                            .map_err(|e| (peer, id, e))
+                    }
+                })
+                .collect::<FuturesUnordered<_>>()
+                .for_each_concurrent(None, |res| async {
+                    if let Err((peer, stream, err)) = res {
+                        self.on_send_error(peer, stream, err).await
+                    }
+                })
+                .await
+        }
+    }
+
+    async fn on_send_error(&self, peer: PeerId, stream: Stream::Id, err: CborCodecError) {
+        tracing::warn!(err = %err, peer = %peer, stream = ?stream, "stream send error");
+        future::join(
+            async move { self.demote_stream(&peer, &stream).await },
+            async {
+                let cont_tick = self.membership.connection_lost(peer, stream);
+                if let Some(tick) = cont_tick {
+                    self.clone().handle_membership_tick(tick).await
+                }
+            },
+        )
+        .map(|_| ())
+        .await
+    }
+
+    #[tracing::instrument(skip(self, message, exclude))]
+    async fn broadcast(
+        &self,
+        message: Gossip<Addr, Broadcast>,
+        exclude: impl Into<Option<PeerId>>,
+    ) {
+        let exclude = exclude.into();
+        let recipients = self.membership.broadcast_recipients(exclude);
+        self.send(recipients, message.into()).await
+    }
+
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(skip(self, msg), err)]
+    async fn handle_gossip(
+        &self,
+        remote_id: PeerId,
+        stream_id: Stream::Id,
+        msg: Gossip<Addr, Broadcast>,
+    ) -> Result<(), Error> {
+        use Gossip::*;
+
         match msg {
-            Join(ad) => {
-                let peer_info = make_peer_info(ad.clone());
-                tracing::trace!(
-                    msg = "Join with peer information",
-                    peer.info.advertised = ?peer_info.advertised_info,
-                    peer.info.addrs = ?peer_info.seen_addrs,
-                );
-
-                self.add_known(iter::once(peer_info.clone())).await;
-                self.broadcast(
-                    ForwardJoin {
-                        joined: peer_info,
-                        ttl: self.mparams.random_walk_length,
-                    },
-                    remote_id,
-                )
-                .await;
+            Have { origin, val } => {
+                tracing::trace!(origin = %origin.peer_id, value = ?val, "Have");
 
                 self.subscribers
-                    .emit(ProtocolEvent::Membership(MembershipInfo::Join(ad)))
+                    .emit(ProtocolEvent::Info(Info::Has(Has {
+                        provider: origin.clone(),
+                        val: val.clone(),
+                    })))
                     .await;
-            },
 
-            ForwardJoin { joined, ttl } => {
-                tracing::trace!(msg = "ForwardJoin", joined = ?joined, ttl = ?ttl);
-                if ttl == 0 {
-                    self.connect(&joined).await
-                } else {
-                    self.broadcast(
-                        ForwardJoin {
-                            joined,
-                            ttl: ttl.saturating_sub(1),
-                        },
-                        remote_id,
-                    )
-                    .await
-                }
-            },
+                match self.storage.put(remote_id, val.clone()).await {
+                    // `val` was new, and is now fetched to local storage.
+                    // Let connected peers know they can now fetch it from
+                    // us.
+                    PutResult::Applied(val) => {
+                        tracing::info!(value = ?val, "announcing applied value");
 
-            Neighbour(ad) => {
-                tracing::trace!(msg = "Neighbour advertisement", peer.info.advertised = ?ad);
-                self.add_known(iter::once(make_peer_info(ad.clone()))).await;
-
-                self.subscribers
-                    .emit(ProtocolEvent::Membership(MembershipInfo::Neighbour(ad)))
-                    .await;
-            },
-
-            Shuffle { origin, peers, ttl } => {
-                tracing::trace!(msg = "Shuffle", origin = ?origin, peer.neighbours = ?peers, peer.ttl = ttl);
-                // We're supposed to only remember shuffled peers at
-                // the end of the random walk. Do it anyway for now.
-                self.add_known(peers.clone()).await;
-
-                if ttl == 0 {
-                    let sample = self.sample_known().await;
-                    self.send_adhoc(&origin, ShuffleReply { peers: sample })
+                        self.broadcast(
+                            Have {
+                                origin: self.local_peer_info(),
+                                val,
+                            },
+                            remote_id,
+                        )
                         .await
-                } else {
-                    let origin = if origin.peer_id == remote_id {
-                        make_peer_info(origin.advertised_info)
-                    } else {
-                        origin
-                    };
+                    },
 
-                    self.broadcast(
-                        Shuffle {
-                            origin,
-                            peers,
-                            ttl: ttl.saturating_sub(1),
-                        },
-                        remote_id,
-                    )
-                    .await
+                    // Meh. Request retransmission.
+                    PutResult::Error => {
+                        tracing::info!(value = ?val, "error applying value");
+
+                        // Forward in any case
+                        self.broadcast(
+                            Have {
+                                origin,
+                                val: val.clone(),
+                            },
+                            remote_id,
+                        )
+                        .await;
+                        // Exit if we're getting too many errors
+                        self.storage_error_lim
+                            .check()
+                            .map_err(|_| Error::StorageErrorRateLimitExceeded)?;
+                        // Request retransmission
+                        // This could be optimised be enqueuing `val`s and
+                        // sending them in batch later (deduplicating)
+                        self.broadcast(
+                            Want {
+                                origin: self.local_peer_info(),
+                                val,
+                            },
+                            None,
+                        )
+                        .await
+                    },
+
+                    // Not interesting, forward to others
+                    PutResult::Uninteresting => {
+                        tracing::info!(value = ?val, "value is uninteresting");
+                        self.broadcast(Have { origin, val }, remote_id).await
+                    },
+
+                    // We are up-to-date, don't do anything
+                    PutResult::Stale => {
+                        tracing::info!(value = ?val, "value is up to date");
+                    },
                 }
             },
 
-            ShuffleReply { peers } => {
-                tracing::trace!(msg = "ShuffleReply", peer.neighbours = ?peers);
-                self.add_known(peers).await
+            Want { origin, val } => {
+                tracing::trace!(origin = %origin.peer_id, value = ?val, "Want");
+
+                let have = self.storage.ask(val.clone()).await;
+                if have {
+                    self.send(
+                        Some((remote_id, stream_id)),
+                        Have {
+                            origin: self.local_peer_info(),
+                            val,
+                        }
+                        .into(),
+                    )
+                    .await
+                } else {
+                    self.broadcast(Want { origin, val }, remote_id).await
+                }
             },
         }
 
         Ok(())
     }
 
-    async fn handle_gossip(
-        &self,
-        remote_id: PeerId,
-        msg: Gossip<Addr, Broadcast>,
-    ) -> Result<(), Error> {
-        use Gossip::*;
-
-        let span = tracing::trace_span!("Protocol::handle_gossip");
-
-        async move {
-            match msg {
-                Have { origin, val } => {
-                    tracing::trace!(origin.peer.id = %origin.peer_id, origin.value=?val, "Have");
-
-                    self.subscribers
-                        .emit(ProtocolEvent::Info(Info::Has(Has {
-                            provider: origin.clone(),
-                            val: val.clone(),
-                        })))
-                        .await;
-
-                    match self.storage.put(remote_id, val.clone()).await {
-                        // `val` was new, and is now fetched to local storage.
-                        // Let connected peers know they can now fetch it from
-                        // us.
-                        PutResult::Applied(val) => {
-                            tracing::info!(value = ?val, "Announcing applied value");
-
-                            self.broadcast(
-                                Have {
-                                    origin: self.local_peer_info(),
-                                    val,
-                                },
-                                remote_id,
-                            )
-                            .await
-                        },
-
-                        // Meh. Request retransmission.
-                        PutResult::Error => {
-                            tracing::info!(value = ?val, "Error applying value");
-
-                            // Forward in any case
-                            self.broadcast(
-                                Have {
-                                    origin,
-                                    val: val.clone(),
-                                },
-                                remote_id,
-                            )
-                            .await;
-                            // Exit if we're getting too many errors
-                            self.storage_error_lim
-                                .check()
-                                .map_err(|_| Error::StorageErrorRateLimitExceeded)?;
-                            // Request retransmission
-                            // This could be optimised be enqueuing `val`s and
-                            // sending them in batch later (deduplicating)
-                            self.broadcast(
-                                Want {
-                                    origin: self.local_peer_info(),
-                                    val,
-                                },
-                                None,
-                            )
-                            .await
-                        },
-
-                        // Not interesting, forward to others
-                        PutResult::Uninteresting => {
-                            tracing::info!(value = ?val, "Value is uninteresting");
-
-                            self.broadcast(Have { origin, val }, remote_id).await
-                        },
-
-                        // We are up-to-date, don't do anything
-                        PutResult::Stale => {
-                            tracing::info!(value = ?val, "Value is up to date");
-                        },
-                    }
-                },
-
-                Want { origin, val } => {
-                    tracing::trace!(origin.peer.id = %origin.peer_id, origin.value = ?val, "Want");
-
-                    let have = self.storage.ask(val.clone()).await;
-                    if have {
-                        self.reply(
-                            &remote_id,
-                            Have {
-                                origin: self.local_peer_info(),
-                                val,
-                            },
-                        )
-                        .await
-                    } else {
-                        self.broadcast(Want { origin, val }, remote_id).await
-                    }
-                },
-            }
-
-            Ok(())
-        }
-        .instrument(span)
-        .await
-    }
-
-    async fn add_known<I: IntoIterator<Item = PeerInfo<Addr>>>(&self, peers: I) {
-        self.known_peers.lock().await.insert(
-            peers
-                .into_iter()
-                .filter(|info| info.peer_id != self.peer_id()),
-        )
-    }
-
-    async fn sample_known(&self) -> Vec<PeerInfo<Addr>> {
-        self.known_peers
-            .lock()
-            .await
-            .sample(self.mparams.shuffle_sample_size)
-    }
-
+    #[tracing::instrument(skip(self))]
     async fn shuffle(&self) {
-        tracing::trace!("Initiating shuffle");
-        let mut connected = self.connected_peers.lock().await;
-        if let Some((recipient, recipient_send)) = connected.random() {
-            // Note: we should pick from the connected peers first, padding with
-            // passive ones up to `shuffle_sample_size`. However, we don't track
-            // the advertised info for those, as it will be available only later
-            // (if and when they send it to us). Since in the latter case we
-            // _will_ insert into `known_peers`, it doesn't really matter. The
-            // `KnownPeers` type should make a weighted random choice
-            // eventually.
-            let sample = self.sample_known().await;
-            if !sample.is_empty() {
-                tracing::trace!(
-                    msg = "Shuffling sample",
-                    shuffle.sample = ?sample,
-                    shuffle.recipient = %recipient,
-                );
-                recipient_send
-                    .send(
-                        Membership::Shuffle {
-                            origin: self.local_peer_info(),
-                            peers: sample,
-                            ttl: self.mparams.random_walk_length,
-                        }
-                        .into(),
-                    )
-                    .await
-                    .unwrap_or_else(|e| {
-                        tracing::warn!("Failed to send shuffle to {}: {:?}", recipient, e)
-                    })
-            } else {
-                tracing::trace!("Nothing to shuffle");
-            }
-        } else {
-            tracing::trace!("No connected peers to shuffle with");
-        }
-    }
-
-    async fn promote_random(&self) {
-        tracing::trace!(msg = "Initiating random promotion",);
-        if let Some(candidate) = self.known_peers.lock().await.random() {
-            if !self
-                .connected_peers
-                .lock()
-                .await
-                .contains(&candidate.peer_id)
-            {
-                tracing::trace!(msg = "Promoting candidate", candidate.id = %candidate.peer_id);
-                self.connect(&candidate).await
-            }
-        }
-    }
-
-    /// Send an [`Rpc`] to all currently connected peers, except `excluding`
-    async fn broadcast<M, X>(&self, rpc: M, excluding: X)
-    where
-        M: Into<Rpc<Addr, Broadcast>>,
-        X: Into<Option<PeerId>>,
-    {
-        let rpc = rpc.into();
-        let excluding = excluding.into();
-
-        let mut connected_peers = self.connected_peers.lock().await;
-        futures::stream::iter(
-            connected_peers
-                .iter_mut()
-                .filter(|(peer_id, _)| Some(*peer_id) != excluding.as_ref()),
-        )
-        .for_each_concurrent(None, |(peer, out)| {
-            let rpc = rpc.clone();
-            async move {
-                tracing::trace!(msg = "Broadcast", broadcast.rpc = ?rpc, broadcast.peer = %peer);
-                // If this returns an error, it is likely the receiving end has
-                // stopped working, too. Hence, we don't need to propagate
-                // errors here. This statement will need some empirical
-                // evidence.
-                if let Err(e) = out.send(rpc).await {
-                    tracing::warn!(
-                        "{}: Failed to send broadcast message to {}: {:?}",
-                        self.local_id,
-                        peer,
-                        e
-                    )
-                }
-            }
-        })
-        .await
-    }
-
-    async fn reply<M: Into<Rpc<Addr, Broadcast>>>(&self, to: &PeerId, rpc: M) {
-        let rpc = rpc.into();
-        futures::stream::iter(self.connected_peers.lock().await.get_mut(&to))
-            .for_each(|out| {
-                let rpc = rpc.clone();
-                async move {
-                    tracing::trace!(msg= "Reply with", reply.rpc = ?rpc, reply.peer = %to);
-                    if let Err(e) = out.send(rpc).await {
-                        tracing::warn!("{}: Failed to reply to {}: {:?}", self.local_id, to, e);
+        let (active, passive) = self.membership.view_stats();
+        tracing::info!(active, passive, "initiating shuffle");
+        match self.membership.shuffle() {
+            None => tracing::info!("nothing to shuffle"),
+            Some(shuf) => {
+                self.send(
+                    Some(shuf.recipient),
+                    Membership::Shuffle {
+                        origin: self.local_peer_info(),
+                        peers: shuf.sample,
+                        ttl: shuf.ttl,
                     }
-                }
-            })
-            .await
+                    .into(),
+                )
+                .await
+            },
+        }
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn promote_random(&self) {
+        let (active, passive) = self.membership.view_stats();
+        tracing::info!(active, passive, "initiating random promotion");
+        let candidates = self.membership.choose_passive_to_promote();
+        match candidates {
+            None => tracing::info!("no promotion candidates found"),
+            Some(candidates) => {
+                tracing::info!(
+                    "requesting promotion for {:?}",
+                    candidates
+                        .iter()
+                        .map(|info| info.peer_id)
+                        .collect::<Vec<_>>()
+                );
+                candidates
+                    .into_iter()
+                    .map(|info| async move { self.connect(&info).await })
+                    .collect::<FuturesUnordered<_>>()
+                    .for_each(future::ready)
+                    .await
+            },
+        }
     }
 
     /// Try to establish an ad-hoc connection to `peer`, and send it `rpc`
-    async fn send_adhoc<M: Into<Rpc<Addr, Broadcast>>>(&self, peer: &PeerInfo<Addr>, rpc: M) {
+    async fn send_adhoc<M: Into<Rpc<Addr, Broadcast>>>(&self, peer: PeerInfo<Addr>, rpc: M) {
         self.subscribers
             .emit(ProtocolEvent::Control(Control::SendAdhoc {
-                to: peer.clone(),
+                to: peer,
                 rpc: rpc.into(),
             }))
             .await
@@ -951,14 +822,16 @@ where
         PeerInfo {
             peer_id: self.local_id,
             advertised_info: self.local_ad.clone(),
-            seen_addrs: HashSet::with_capacity(0),
+            seen_addrs: BTreeSet::default(),
         }
     }
 }
 
-impl<Storage, Broadcast, Addr, R, W> Drop for Protocol<Storage, Broadcast, Addr, R, W>
+impl<Storage, Broadcast, Addr, Stream> Drop for Protocol<Storage, Broadcast, Addr, Stream>
 where
-    Addr: Clone + PartialEq + Eq + Hash,
+    Addr: Clone + Ord,
+    Stream: Duplex + HasStableId,
+    Stream::Write: HasStableId,
 {
     fn drop(&mut self) {
         // `Relaxed` is presumably ok here, because all we want is to not wrap
