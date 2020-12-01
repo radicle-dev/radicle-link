@@ -426,15 +426,7 @@ where
             }
         }
 
-        res.or_else(|e| match e {
-            // This is usually a connection close or reset. We only log upstream,
-            // and it's not too interesting to get error / warn logs for this.
-            Error::Cbor(CborCodecError::Io(_)) => {
-                tracing::debug!("ignoring recv IO error: {}", e);
-                Ok(())
-            },
-            e => Err(e),
-        })
+        res
     }
 
     #[allow(clippy::unit_arg)]
@@ -475,15 +467,6 @@ where
             })
             .try_for_each(future::ok)
             .await
-            .or_else(|e| match e {
-                // This is usually a connection close or reset. We only log upstream,
-                // and it's not too interesting to get error / warn logs for this.
-                Error::Cbor(CborCodecError::Io(_)) => {
-                    tracing::debug!("ignoring recv IO error: {}", e);
-                    Ok(())
-                },
-                e => Err(e),
-            })
     }
 
     #[allow(clippy::unit_arg)]

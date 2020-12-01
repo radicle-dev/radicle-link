@@ -7,7 +7,7 @@ use std::io;
 
 use thiserror::Error;
 
-use crate::net::codec::CborCodecError;
+use crate::net::codec::{CborCodecError, CborError};
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -21,9 +21,18 @@ pub enum Error {
     #[error("protocol violation: {0}")]
     ProtocolViolation(&'static str),
 
-    #[error(transparent)]
-    Cbor(#[from] CborCodecError),
+    #[error("CBOR encoding/decoding error")]
+    Cbor(#[source] CborError),
 
     #[error(transparent)]
     Io(#[from] io::Error),
+}
+
+impl From<CborCodecError> for Error {
+    fn from(e: CborCodecError) -> Self {
+        match e {
+            CborCodecError::Cbor(e) => Self::Cbor(e),
+            CborCodecError::Io(e) => Self::Io(e),
+        }
+    }
 }
