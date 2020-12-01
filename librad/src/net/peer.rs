@@ -117,26 +117,12 @@ pub struct FetchInfo {
 }
 
 #[derive(Clone)]
-pub struct PeerConfig<Disco, Signer> {
+pub struct PeerConfig<Signer> {
     pub signer: Signer,
     pub paths: Paths,
     pub listen_addr: SocketAddr,
     pub gossip_params: gossip::MembershipParams,
-    pub disco: Disco,
     pub storage_config: StorageConfig,
-}
-
-impl<D, S> PeerConfig<D, S>
-where
-    S: Signer + Clone,
-    S::Error: std::error::Error + Send + Sync + 'static,
-
-    D: Discovery<Addr = SocketAddr>,
-    <D as Discovery>::Stream: 'static,
-{
-    pub async fn try_into_peer(self) -> Result<Peer, BootstrapError> {
-        Peer::bootstrap(self).await
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -167,7 +153,7 @@ impl Default for StorageConfig {
 /// [`Peer`]
 #[derive(Clone)]
 pub struct PeerApi {
-    listen_addr: SocketAddr,
+    listen_addrs: Vec<SocketAddr>,
     peer_id: PeerId,
     protocol: Protocol<PeerStorage, Gossip>,
     storage: storage::Pool,
@@ -178,8 +164,8 @@ pub struct PeerApi {
 }
 
 impl PeerApi {
-    pub fn listen_addr(&self) -> SocketAddr {
-        self.listen_addr
+    pub fn listen_addrs(&self) -> impl Iterator<Item = SocketAddr> + '_ {
+        self.listen_addrs.iter().copied()
     }
 
     pub fn protocol(&self) -> &Protocol<PeerStorage, Gossip> {
@@ -308,7 +294,7 @@ pub type RunLoop = BoxFuture<'static, ()>;
 /// `0.0.0.0:0`.
 pub struct Peer {
     paths: Paths,
-    listen_addr: SocketAddr,
+    listen_addrs: Vec<SocketAddr>,
     peer_id: PeerId,
 
     storage: storage::Pool,
@@ -324,8 +310,8 @@ pub struct Peer {
 }
 
 impl Peer {
-    pub fn listen_addr(&self) -> SocketAddr {
-        self.listen_addr
+    pub fn listen_addrs(&self) -> impl Iterator<Item = SocketAddr> + '_ {
+        self.listen_addrs.iter().copied()
     }
 
     pub fn peer_id(&self) -> PeerId {
@@ -334,7 +320,7 @@ impl Peer {
 
     pub fn accept(self) -> Result<(PeerApi, RunLoop), AcceptError> {
         let api = PeerApi {
-            listen_addr: self.listen_addr,
+            listen_addrs: self.listen_addrs,
             peer_id: self.peer_id,
             storage: self.storage,
             protocol: self.protocol,
@@ -346,7 +332,7 @@ impl Peer {
         Ok((api, self.run_loop))
     }
 
-    async fn bootstrap<S, D>(config: PeerConfig<D, S>) -> Result<Self, BootstrapError>
+    pub async fn bootstrap<S, D>(config: PeerConfig<S>, disco: D) -> Result<Self, BootstrapError>
     where
         S: Signer + Clone + Send + Sync + 'static,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -354,6 +340,8 @@ impl Peer {
         D: Discovery<Addr = SocketAddr>,
         <D as Discovery>::Stream: 'static,
     {
+        use pnet_datalink::interfaces as network_interfaces;
+
         let peer_id = PeerId::from_signer(&config.signer);
 
         let git = GitServer::new(&config.paths);
@@ -365,6 +353,20 @@ impl Peer {
                 source: e,
             })?;
         let listen_addr = endpoint.local_addr()?;
+        let listen_addrs = if listen_addr.ip().is_unspecified() {
+            network_interfaces()
+                .iter()
+                .filter(|iface| iface.is_up())
+                .flat_map(|iface| {
+                    iface
+                        .ips
+                        .iter()
+                        .map(|net| SocketAddr::new(net.ip(), listen_addr.port()))
+                })
+                .collect()
+        } else {
+            vec![listen_addr]
+        };
 
         let subscribers = Fanout::new();
         let user_storage = storage::Pool::new(
@@ -386,7 +388,7 @@ impl Peer {
             peer_storage,
         );
 
-        let (protocol, run_loop) = Protocol::new(gossip, git, endpoint, config.disco.discover());
+        let (protocol, run_loop) = Protocol::new(gossip, git, endpoint, disco.discover());
         let _git_transport_protocol_ref =
             Arc::new(Box::new(protocol.clone()) as Box<dyn GitStreamFactory>);
         git::p2p::transport::register()
@@ -394,7 +396,7 @@ impl Peer {
 
         Ok(Self {
             paths: config.paths,
-            listen_addr,
+            listen_addrs,
             peer_id,
             storage: user_storage,
             protocol,

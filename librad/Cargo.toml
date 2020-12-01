@@ -5,6 +5,10 @@ authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 
+[features]
+default = []
+disco-mdns = ["mdns", "madness"]
+
 [dependencies]
 async-trait = "0.1"
 bit-vec = "0.6"
@@ -17,6 +21,7 @@ globset = "0.4"
 governor = "0.3"
 lazy_static = "1"
 libc = "0.2"
+mdns = { version = "1", optional = true }
 multibase = "0.9"
 multihash = "0.11"
 nom = "5"
@@ -26,6 +31,7 @@ percent-encoding = "2"
 picky-asn1 = "0.3"
 picky-asn1-der = "0.2"
 picky-asn1-x509 = "0.4"
+pnet_datalink = "0.27"
 radicle-keystore = "0"
 rand = "0.7"
 rand_pcg = "0.2"
@@ -73,6 +79,11 @@ version = "0.12"
 default-features = false
 features = []
 
+[dependencies.madness]
+git = "https://github.com/meilisearch/madness"
+rev = "cb12159a06f3698d0ba4ea078e95f8a915a9a9d3"
+optional = true
+
 [dependencies.minicbor]
 version = ">= 0.5, 0"
 features = ["std", "derive"]
@@ -116,6 +127,7 @@ features = ["serde"]
 [dependencies.zeroize]
 version = "1.1"
 features = ["zeroize_derive"]
+
 [dev-dependencies]
 anyhow = "1"
 assert_matches = "1"

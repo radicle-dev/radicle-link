@@ -2,4 +2,4 @@
 set -eou pipefail
 
 echo "--- Docs"
-cargo doc --no-deps --workspace --document-private-items
+cargo doc --no-deps --workspace --document-private-items --all-features
