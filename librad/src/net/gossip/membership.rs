@@ -560,13 +560,14 @@ where
             return None;
         }
 
-        let eject = self
+        let ejected = self
             .is_passive_full()
             .then(|| self.passive.keys().choose(&mut self.rng).copied())
-            .flatten();
+            .flatten()
+            .and_then(|peer| self.passive.remove(&peer));
 
-        let ejected = eject.and_then(|peer| self.passive.remove(&peer));
         self.passive.insert(info.peer_id, info);
+
         ejected
     }
 
