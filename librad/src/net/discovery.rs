@@ -6,11 +6,18 @@
 //! Discovery of peers during bootstrap, or out-of-band
 
 use std::{
-    marker::PhantomData,
+    collections::{btree_map, BTreeMap},
+    io,
+    iter::FromIterator,
     net::{SocketAddr, ToSocketAddrs},
 };
 
 use crate::peer::PeerId;
+
+#[cfg(feature = "disco-mdns")]
+mod mdns;
+#[cfg(feature = "disco-mdns")]
+pub use self::mdns::Mdns;
 
 pub trait Discovery {
     type Addr;
@@ -19,57 +26,93 @@ pub trait Discovery {
     fn discover(self) -> Self::Stream;
 }
 
-pub struct Static<I, S> {
-    iter: I,
-    _marker: PhantomData<S>,
+pub struct Static {
+    peers: BTreeMap<PeerId, Vec<SocketAddr>>,
 }
 
-impl<I, S> Static<I, S>
-where
-    I: Iterator<Item = (PeerId, S)>,
-    S: ToSocketAddrs,
-{
-    pub fn new<P>(peers: P) -> Self
+impl Static {
+    pub fn resolve<I, J>(peers: I) -> Result<Self, io::Error>
     where
-        P: IntoIterator<IntoIter = I, Item = (PeerId, S)>,
+        I: IntoIterator<Item = (PeerId, J)>,
+        J: ToSocketAddrs,
     {
-        Self {
-            iter: peers.into_iter(),
-            _marker: PhantomData,
-        }
-    }
+        use btree_map::Entry::*;
 
-    pub fn into_stream(self) -> futures::stream::Iter<Self> {
-        futures::stream::iter(self)
+        let peers = peers
+            .into_iter()
+            .map(|(peer, to_addrs)| {
+                let addrs = to_addrs.to_socket_addrs()?;
+                Ok((peer, addrs.collect::<Vec<_>>()))
+            })
+            .fold(
+                Ok(BTreeMap::new()),
+                |acc: Result<BTreeMap<_, _>, io::Error>, res: Result<_, io::Error>| {
+                    let (peer, addrs) = res?;
+                    let mut acc = acc?;
+                    match acc.entry(peer) {
+                        Vacant(entry) => {
+                            entry.insert(addrs);
+                        },
+                        Occupied(mut entry) => {
+                            entry.get_mut().extend(addrs);
+                        },
+                    }
+                    Ok(acc)
+                },
+            )?;
+
+        Ok(Self::from(peers))
     }
 }
 
-impl<I, S> Iterator for Static<I, S>
-where
-    I: Iterator<Item = (PeerId, S)>,
-    S: ToSocketAddrs,
-{
-    type Item = (PeerId, Vec<SocketAddr>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.find_map(|(peer_id, addrs)| {
-            // TODO: we might want to log resolver errors somewhere
-            addrs
-                .to_socket_addrs()
-                .ok()
-                .map(|resolved| (peer_id, resolved.collect()))
-        })
+impl From<BTreeMap<PeerId, Vec<SocketAddr>>> for Static {
+    fn from(peers: BTreeMap<PeerId, Vec<SocketAddr>>) -> Self {
+        Self { peers }
     }
 }
 
-impl<I> Discovery for Static<I, SocketAddr>
+// Better inference than `FromIterator`
+impl From<Vec<(PeerId, Vec<SocketAddr>)>> for Static {
+    fn from(v: Vec<(PeerId, Vec<SocketAddr>)>) -> Self {
+        v.into_iter().collect()
+    }
+}
+
+impl<I> FromIterator<(PeerId, I)> for Static
 where
-    I: Iterator<Item = (PeerId, SocketAddr)> + Send,
+    I: IntoIterator<Item = SocketAddr>,
 {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (PeerId, I)>,
+    {
+        use btree_map::Entry::*;
+
+        iter.into_iter()
+            .map(|(peer, addrs)| (peer, addrs.into_iter().collect()))
+            .fold(
+                BTreeMap::<PeerId, Vec<SocketAddr>>::new(),
+                |mut acc, (peer, addrs)| {
+                    match acc.entry(peer) {
+                        Vacant(entry) => {
+                            entry.insert(addrs);
+                        },
+                        Occupied(mut entry) => {
+                            entry.get_mut().extend(addrs);
+                        },
+                    }
+                    acc
+                },
+            )
+            .into()
+    }
+}
+
+impl Discovery for Static {
     type Addr = SocketAddr;
-    type Stream = futures::stream::Iter<Self>;
+    type Stream = futures::stream::Iter<btree_map::IntoIter<PeerId, Vec<SocketAddr>>>;
 
     fn discover(self) -> Self::Stream {
-        self.into_stream()
+        futures::stream::iter(self.peers.into_iter())
     }
 }

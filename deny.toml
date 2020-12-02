@@ -204,6 +204,6 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # List of URLs for allowed Git repositories
 allow-git = [
     "https://github.com/djc/quinn",
-    "https://github.com/radicle-dev/radicle-keystore",
     "https://github.com/kim/ed25519-zebra",
+    "https://github.com/meilisearch/madness",
 ]

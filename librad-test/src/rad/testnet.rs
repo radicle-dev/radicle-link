@@ -53,13 +53,16 @@ impl AsRef<Peer> for TestPeer {
     }
 }
 
-async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
+async fn boot<I>(seeds: I) -> anyhow::Result<TestPeer>
+where
+    I: IntoIterator<Item = (PeerId, Vec<SocketAddr>)>,
+{
     let tmp = tempdir()?;
     let paths = Paths::from_root(tmp.path())?;
     let key = SecretKey::new();
     let listen_addr = *LOCALHOST_ANY;
     let gossip_params = Default::default();
-    let disco = discovery::Static::new(seeds);
+    let disco = seeds.into_iter().collect::<discovery::Static>();
     let storage_config = Default::default();
 
     git::storage::Storage::init(&paths, key.clone())?;
@@ -69,12 +72,10 @@ async fn boot(seeds: Vec<(PeerId, SocketAddr)>) -> anyhow::Result<TestPeer> {
         paths,
         listen_addr,
         gossip_params,
-        disco,
         storage_config,
     };
 
-    config
-        .try_into_peer()
+    Peer::bootstrap(config, disco)
         .await
         .map(|peer| TestPeer {
             _tmp: tmp,
@@ -94,8 +95,8 @@ pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
     let mut peers = Vec::with_capacity(num_peers);
     let mut seed_addrs = None;
     for _ in 0..num_peers {
-        let peer = boot(seed_addrs.take().into_iter().collect()).await?;
-        seed_addrs = Some((peer.peer_id(), peer.listen_addr()));
+        let peer = boot(seed_addrs.take()).await?;
+        seed_addrs = Some((peer.peer_id(), peer.listen_addrs().collect()));
         peers.push(peer)
     }
 

@@ -104,7 +104,7 @@ async fn can_clone_disconnected() {
                     None,
                     urn.clone(),
                     peer1.peer_id(),
-                    Some(peer1.listen_addr()),
+                    peer1.listen_addrs(),
                 )
                 .unwrap();
 
@@ -438,7 +438,7 @@ async fn menage_a_troi() {
             .with_storage({
                 let remote_peer = peer1.peer_id();
                 let urn = expected_urn.clone();
-                let addrs = Some(peer1.listen_addr());
+                let addrs = peer1.listen_addrs().collect::<Vec<_>>();
                 move |storage| -> Result<bool, anyhow::Error> {
                     replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
                     Ok(storage.has_commit(&urn, Box::new(commit_id))?)
@@ -451,7 +451,7 @@ async fn menage_a_troi() {
             .with_storage({
                 let remote_peer = peer2.peer_id();
                 let urn = expected_urn.clone();
-                let addrs = Some(peer2.listen_addr());
+                let addrs = peer2.listen_addrs().collect::<Vec<_>>();
                 move |storage| -> Result<bool, anyhow::Error> {
                     replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
                     Ok(storage.has_commit(&urn, Box::new(commit_id))?)
