@@ -34,7 +34,7 @@ lazy_static! {
 
 pub struct TestPeer {
     pub _tmp: TempDir,
-    pub peer: Peer<SecretKey>,
+    pub peer: Peer,
     pub key: SecretKey,
 }
 
@@ -52,9 +52,10 @@ impl AsRef<Peer> for TestPeer {
     }
 }
 
-async fn boot<I>(seeds: I) -> anyhow::Result<TestPeer>
+pub async fn boot<I, J>(seeds: I) -> anyhow::Result<TestPeer>
 where
-    I: IntoIterator<Item = (PeerId, Vec<SocketAddr>)>,
+    I: IntoIterator<Item = (PeerId, J)>,
+    J: IntoIterator<Item = SocketAddr>,
 {
     let tmp = tempdir()?;
     let paths = Paths::from_root(tmp.path())?;
@@ -92,7 +93,7 @@ pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
     }
 
     let mut peers = Vec::with_capacity(num_peers);
-    let mut seed_addrs = None;
+    let mut seed_addrs: Option<(PeerId, Vec<SocketAddr>)> = None;
     for _ in 0..num_peers {
         let peer = boot(seed_addrs.take()).await?;
         seed_addrs = Some((peer.peer_id(), peer.listen_addrs().collect()));
@@ -109,7 +110,7 @@ pub async fn setup_disconnected(num_peers: usize) -> anyhow::Result<Vec<TestPeer
 
     let mut peers = Vec::with_capacity(num_peers);
     for _ in 0..num_peers {
-        let peer = boot(vec![]).await?;
+        let peer = boot::<Option<_>, Option<_>>(None).await?;
         peers.push(peer)
     }
 

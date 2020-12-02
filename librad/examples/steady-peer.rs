@@ -40,12 +40,15 @@ async fn run(Options { bootstrap }: Options) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn parse_bootstrap<S: AsRef<str>>(s: S) -> anyhow::Result<(PeerId, SocketAddr)> {
+fn parse_bootstrap<S>(s: S) -> anyhow::Result<(PeerId, impl IntoIterator<Item = SocketAddr>)>
+where
+    S: AsRef<str>,
+{
     match s.as_ref().split(',').collect::<Vec<_>>().as_slice() {
         [peerid, addr, ..] => {
             let peerid = peerid.parse()?;
             let addr = addr.parse()?;
-            Ok((peerid, addr))
+            Ok((peerid, Some(addr)))
         },
 
         _ => Err(anyhow!("couldn't parse {}", s.as_ref())),

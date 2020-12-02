@@ -28,7 +28,7 @@ use librad::{
         discovery,
         gossip,
         gossip::PeerInfo,
-        peer::{self, PeerApi, PeerConfig},
+        peer::{self, Peer, PeerApi, PeerConfig},
         protocol::ProtocolEvent,
     },
     paths,
@@ -263,15 +263,10 @@ impl Node {
     async fn track_project(
         api: &PeerApi,
         urn: &Urn,
-        peer_info: &PeerInfo<std::net::IpAddr>,
+        peer_info: &PeerInfo<std::net::SocketAddr>,
     ) -> Result<(), Error> {
         let peer_id = peer_info.peer_id;
-        let port = peer_info.advertised_info.listen_port;
-        let addr_hints = peer_info
-            .seen_addrs
-            .iter()
-            .map(|a: &std::net::IpAddr| (*a, port).into())
-            .collect::<Vec<_>>();
+        let addr_hints = peer_info.seen_addrs.iter().copied().collect::<Vec<_>>();
 
         let result = {
             let urn = urn.clone();
