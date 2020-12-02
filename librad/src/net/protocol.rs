@@ -46,7 +46,6 @@ use crate::{
 pub mod error;
 pub use error::Error;
 
-mod handler;
 mod io;
 
 #[derive(Clone, Debug)]
@@ -507,6 +506,7 @@ where
         conn.close(reason.into().unwrap_or(CloseReason::ProtocolDisconnect))
     }
 
+    #[allow(clippy::unit_arg)]
     #[tracing::instrument(
         skip(self, conn, incoming),
         fields(

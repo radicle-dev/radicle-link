@@ -536,18 +536,19 @@ where
     fn add_active(&mut self, active: Active<StreamId, Addr>) -> Option<Active<StreamId, Addr>> {
         if active.info.peer_id == self.local_id {
             None
-        } else if self.active.contains_key(&active.info.peer_id) {
-            self.active.insert(active.info.peer_id, active);
-            None
         } else {
-            let eject = self
-                .is_active_full()
-                .then(|| self.active.keys().choose(&mut self.rng).copied())
-                .flatten();
+            let ejected = if self.active.contains_key(&active.info.peer_id) {
+                None
+            } else {
+                self.is_active_full()
+                    .then(|| self.active.keys().choose(&mut self.rng).copied())
+                    .flatten()
+                    .and_then(|peer| self.active.remove(&peer))
+            };
 
-            let ejected = eject.and_then(|peer| self.active.remove(&peer));
             self.passive.remove(&active.info.peer_id);
             self.active.insert(active.info.peer_id, active);
+
             ejected
         }
     }
@@ -590,15 +591,13 @@ where
             vec![]
         };
 
-        let ejected = eject
-            .into_iter()
-            .filter_map(|peer| self.passive.remove(&peer))
-            .collect::<Vec<_>>();
         for info in infos {
             self.passive.insert(info.peer_id, info);
         }
 
-        ejected.into_iter()
+        eject
+            .into_iter()
+            .filter_map(move |peer| self.passive.remove(&peer))
     }
 }
 
