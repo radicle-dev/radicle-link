@@ -181,7 +181,7 @@ mod tests {
     fn track_is_tracked() {
         let tmp = tempfile::tempdir().unwrap();
         {
-            let paths = Paths::from_root(tmp).unwrap();
+            let paths = Paths::from_root(&tmp).unwrap();
             let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
             let remote_peer = PeerId::from(SecretKey::new());
             let urn = Urn::new(git2::Oid::zero().into());
@@ -195,7 +195,7 @@ mod tests {
     fn track_untrack_is_not_tracked() {
         let tmp = tempfile::tempdir().unwrap();
         {
-            let paths = Paths::from_root(tmp).unwrap();
+            let paths = Paths::from_root(&tmp).unwrap();
             let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
             let remote_peer = PeerId::from(SecretKey::new());
             let urn = Urn::new(git2::Oid::zero().into());
@@ -211,7 +211,7 @@ mod tests {
     fn track_track_is_tracked() {
         let tmp = tempfile::tempdir().unwrap();
         {
-            let paths = Paths::from_root(tmp).unwrap();
+            let paths = Paths::from_root(&tmp).unwrap();
             let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
             let remote_peer = PeerId::from(SecretKey::new());
             let urn = Urn::new(git2::Oid::zero().into());
@@ -227,7 +227,7 @@ mod tests {
     fn untrack_nonexistent_is_not_tracked() {
         let tmp = tempfile::tempdir().unwrap();
         {
-            let paths = Paths::from_root(tmp).unwrap();
+            let paths = Paths::from_root(&tmp).unwrap();
             let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
             let remote_peer = PeerId::from(SecretKey::new());
             let urn = Urn::new(git2::Oid::zero().into());
@@ -241,7 +241,7 @@ mod tests {
     fn track_yields_tracked() {
         let tmp = tempfile::tempdir().unwrap();
         {
-            let paths = Paths::from_root(tmp).unwrap();
+            let paths = Paths::from_root(&tmp).unwrap();
             let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
             let peer1 = PeerId::from(SecretKey::new());
             let peer2 = PeerId::from(SecretKey::new());
