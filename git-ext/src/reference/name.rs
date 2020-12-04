@@ -9,7 +9,6 @@ use std::{
     fmt::{self, Display},
     iter::FromIterator,
     ops::Deref,
-    path::{self, Path, PathBuf},
     str::{self, FromStr},
 };
 
@@ -39,7 +38,7 @@ pub enum StripPrefixError {
     ImproperPrefix,
 
     #[error("not prefixed by given path")]
-    NotPrefix(#[from] path::StripPrefixError),
+    NotPrefix,
 }
 
 /// An owned path-like value which is a valid git refname.
@@ -55,18 +54,18 @@ pub enum StripPrefixError {
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
 )]
-#[serde(into = "PathBuf", try_from = "PathBuf")]
-pub struct RefLike(PathBuf);
+#[serde(into = "String", try_from = "String")]
+pub struct RefLike(String);
 
 impl RefLike {
     /// Append the path in `Other` to `self.
     pub fn join<Other: Into<Self>>(&self, other: Other) -> Self {
-        Self(self.0.join(other.into().0))
+        Self(format!("{}/{}", self.0, other.into().0))
     }
 
     /// Append a [`RefspecPattern`], yielding a [`RefspecPattern`]
     pub fn with_pattern_suffix<Suf: Into<RefspecPattern>>(&self, suf: Suf) -> RefspecPattern {
-        RefspecPattern(self.0.join(suf.into().0))
+        RefspecPattern(format!("{}/{}", self.0, suf.into().0))
     }
 
     /// Returns a [`RefLike`] that, when joined onto `base`, yields `self`.
@@ -76,15 +75,15 @@ impl RefLike {
     /// If `base` is not a prefix of `self`, or `base` equals the path in `self`
     /// (ie. the result would be the empty path, which is not a valid
     /// [`RefLike`]).
-    pub fn strip_prefix<P: AsRef<Path>>(&self, base: P) -> Result<Self, StripPrefixError> {
+    pub fn strip_prefix<P: AsRef<str>>(&self, base: P) -> Result<Self, StripPrefixError> {
         self.0
-            .strip_prefix(base)
-            .map_err(StripPrefixError::from)
+            .strip_prefix(base.as_ref())
+            .ok_or(StripPrefixError::NotPrefix)
             .and_then(|path| {
-                if path.as_os_str().is_empty() {
+                if path.is_empty() {
                     Err(StripPrefixError::ImproperPrefix)
                 } else {
-                    Ok(Self(path.to_path_buf()))
+                    Ok(Self(path.into()))
                 }
             })
     }
@@ -115,24 +114,16 @@ impl RefLike {
 }
 
 impl Deref for RefLike {
-    type Target = Path;
+    type Target = str;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl AsRef<Path> for RefLike {
-    fn as_ref(&self) -> &Path {
-        self
-    }
-}
-
 impl AsRef<str> for RefLike {
     fn as_ref(&self) -> &str {
-        self.0
-            .to_str()
-            .expect("cannot be constructed from invalid utf8")
+        &self.0
     }
 }
 
@@ -174,29 +165,13 @@ impl TryFrom<String> for RefLike {
     }
 }
 
-impl TryFrom<PathBuf> for RefLike {
-    type Error = Error;
-
-    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
-        path.to_str().ok_or(Error::Utf8).and_then(Self::try_from)
-    }
-}
-
-impl TryFrom<&Path> for RefLike {
-    type Error = Error;
-
-    fn try_from(path: &Path) -> Result<Self, Self::Error> {
-        path.to_str().ok_or(Error::Utf8).and_then(Self::try_from)
-    }
-}
-
 impl From<&RefLike> for RefLike {
     fn from(me: &RefLike) -> Self {
         me.clone()
     }
 }
 
-impl From<RefLike> for PathBuf {
+impl From<RefLike> for String {
     fn from(RefLike(path): RefLike) -> Self {
         path
     }
@@ -207,7 +182,7 @@ impl FromIterator<Self> for RefLike {
     where
         T: IntoIterator<Item = Self>,
     {
-        Self(iter.into_iter().map(|x| x.0).collect())
+        Self(iter.into_iter().map(|x| x.0).collect::<Vec<_>>().join("/"))
     }
 }
 
@@ -228,22 +203,22 @@ impl Display for RefLike {
 /// # Examples
 ///
 /// ```rust
-/// use std::{convert::TryFrom, path::Path};
+/// use std::convert::TryFrom;
 /// use radicle_git_ext::reference::name::*;
 ///
 /// assert_eq!(
 ///     &*OneLevel::from(RefLike::try_from("refs/heads/next").unwrap()),
-///     Path::new("next")
+///     "next"
 /// );
 ///
 /// assert_eq!(
 ///     &*OneLevel::from(RefLike::try_from("refs/remotes/origin/it").unwrap()),
-///     Path::new("origin/it")
+///     "origin/it"
 /// );
 ///
 /// assert_eq!(
 ///     &*OneLevel::from(RefLike::try_from("mistress").unwrap()),
-///     Path::new("mistress")
+///     "mistress"
 /// );
 ///
 /// assert_eq!(
@@ -277,8 +252,8 @@ impl Display for RefLike {
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
 )]
-#[serde(into = "PathBuf", try_from = "RefLike")]
-pub struct OneLevel(PathBuf);
+#[serde(into = "String", try_from = "RefLike")]
+pub struct OneLevel(String);
 
 impl OneLevel {
     pub fn as_str(&self) -> &str {
@@ -310,31 +285,23 @@ impl OneLevel {
 }
 
 impl Deref for OneLevel {
-    type Target = Path;
+    type Target = str;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl AsRef<Path> for OneLevel {
-    fn as_ref(&self) -> &Path {
-        self
-    }
-}
-
 impl AsRef<str> for OneLevel {
     fn as_ref(&self) -> &str {
-        self.0
-            .to_str()
-            .expect("cannot be constructed from invalid utf8")
+        self
     }
 }
 
 impl From<RefLike> for OneLevel {
     fn from(RefLike(path): RefLike) -> Self {
         if path.starts_with("refs/") {
-            Self(path.iter().skip(2).collect())
+            Self(path.split("/").skip(2).collect::<Vec<_>>().join("/"))
         } else {
             Self(path)
         }
@@ -353,7 +320,7 @@ impl From<OneLevel> for RefLike {
     }
 }
 
-impl From<OneLevel> for PathBuf {
+impl From<OneLevel> for String {
     fn from(OneLevel(path): OneLevel) -> Self {
         path
     }
@@ -376,55 +343,47 @@ impl Display for OneLevel {
 /// # Examples
 ///
 /// ```rust
-/// use std::{convert::TryFrom, path::Path};
+/// use std::convert::TryFrom;
 /// use radicle_git_ext::reference::name::*;
 ///
 /// assert_eq!(
 ///     &*Qualified::from(RefLike::try_from("laplace").unwrap()),
-///     Path::new("refs/heads/laplace")
+///     "refs/heads/laplace"
 /// );
 ///
 /// assert_eq!(
 ///     &*Qualified::from(RefLike::try_from("refs/heads/pu").unwrap()),
-///     Path::new("refs/heads/pu")
+///     "refs/heads/pu"
 /// );
 ///
 /// assert_eq!(
 ///     &*Qualified::from(RefLike::try_from("refs/tags/v6.6.6").unwrap()),
-///     Path::new("refs/tags/v6.6.6")
+///     "refs/tags/v6.6.6"
 /// );
 /// ```
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
 )]
-#[serde(into = "PathBuf", try_from = "RefLike")]
-pub struct Qualified(PathBuf);
+#[serde(into = "String", try_from = "RefLike")]
+pub struct Qualified(String);
 
 impl Qualified {
     pub fn as_str(&self) -> &str {
-        self.as_ref()
+        &self.0
     }
 }
 
 impl Deref for Qualified {
-    type Target = Path;
+    type Target = str;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl AsRef<Path> for Qualified {
-    fn as_ref(&self) -> &Path {
-        self
-    }
-}
-
 impl AsRef<str> for Qualified {
     fn as_ref(&self) -> &str {
-        self.0
-            .to_str()
-            .expect("cannot be constructed from invalid utf8")
+        &self.0
     }
 }
 
@@ -433,7 +392,7 @@ impl From<RefLike> for Qualified {
         if path.starts_with("refs/") {
             Self(path)
         } else {
-            Self(Path::new("refs/heads").join(path))
+            Self(format!("refs/heads/{}", path))
         }
     }
 }
@@ -450,7 +409,7 @@ impl From<Qualified> for RefLike {
     }
 }
 
-impl From<Qualified> for PathBuf {
+impl From<Qualified> for String {
     fn from(Qualified(path): Qualified) -> Self {
         path
     }
@@ -458,7 +417,7 @@ impl From<Qualified> for PathBuf {
 
 impl Display for Qualified {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(self.as_str())
+        f.write_str(&self)
     }
 }
 
@@ -473,8 +432,8 @@ impl Display for Qualified {
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
 )]
-#[serde(into = "PathBuf", try_from = "PathBuf")]
-pub struct RefspecPattern(PathBuf);
+#[serde(into = "String", try_from = "String")]
+pub struct RefspecPattern(String);
 
 impl RefspecPattern {
     /// Append the `RefLike` to the `RefspecPattern`. This allows the creation
@@ -496,24 +455,16 @@ impl From<&RefspecPattern> for RefspecPattern {
 }
 
 impl Deref for RefspecPattern {
-    type Target = Path;
+    type Target = str;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl AsRef<Path> for RefspecPattern {
-    fn as_ref(&self) -> &Path {
-        self
-    }
-}
-
 impl AsRef<str> for RefspecPattern {
     fn as_ref(&self) -> &str {
-        self.0
-            .to_str()
-            .expect("cannot be constructed from invalid utf8")
+        self
     }
 }
 
@@ -557,23 +508,7 @@ impl TryFrom<String> for RefspecPattern {
     }
 }
 
-impl TryFrom<PathBuf> for RefspecPattern {
-    type Error = Error;
-
-    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
-        path.to_str().ok_or(Error::Utf8).and_then(Self::try_from)
-    }
-}
-
-impl TryFrom<&Path> for RefspecPattern {
-    type Error = Error;
-
-    fn try_from(path: &Path) -> Result<Self, Self::Error> {
-        path.to_str().ok_or(Error::Utf8).and_then(Self::try_from)
-    }
-}
-
-impl From<RefspecPattern> for PathBuf {
+impl From<RefspecPattern> for String {
     fn from(RefspecPattern(path): RefspecPattern) -> Self {
         path
     }
@@ -625,7 +560,7 @@ impl From<&Qualified> for RefspecPattern {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-fn normalize_name(s: &str, flags: git2::ReferenceFormat) -> Result<PathBuf, Error> {
+fn normalize_name(s: &str, flags: git2::ReferenceFormat) -> Result<String, Error> {
     // FIXME(kim): libgit2 disagrees with git-check-ref-format on this one.
     // Submit patch upstream!
     if s == "@" {
@@ -637,12 +572,10 @@ fn normalize_name(s: &str, flags: git2::ReferenceFormat) -> Result<PathBuf, Erro
         .into_string()
         .map_err(|_| Error::Utf8)?;
 
-    git2::Reference::normalize_name(&nulsafe, flags)
-        .map(PathBuf::from)
-        .map_err(|e| match e.code() {
-            git2::ErrorCode::InvalidSpec => Error::RefFormat,
-            _ => Error::Git(e),
-        })
+    git2::Reference::normalize_name(&nulsafe, flags).map_err(|e| match e.code() {
+        git2::ErrorCode::InvalidSpec => Error::RefFormat,
+        _ => Error::Git(e),
+    })
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -771,7 +704,7 @@ mod tests {
         fn into_onelevel() {
             assert_eq!(
                 &*OneLevel::from(RefLike::try_from("refs/heads/next").unwrap()),
-                Path::new("next")
+                "next"
             )
         }
 
@@ -779,7 +712,7 @@ mod tests {
         fn into_heads() {
             assert_eq!(
                 &*Qualified::from(RefLike::try_from("pu").unwrap()),
-                Path::new("refs/heads/pu")
+                "refs/heads/pu"
             )
         }
 
@@ -793,7 +726,7 @@ mod tests {
 
         #[test]
         fn serde_invalid() {
-            let json = serde_json::to_string(Path::new("HEAD^")).unwrap();
+            let json = serde_json::to_string("HEAD^").unwrap();
             assert!(serde_json::from_str::<RefLike>(&json).is_err());
             assert!(serde_json::from_str::<OneLevel>(&json).is_err());
             assert!(serde_json::from_str::<Qualified>(&json).is_err())
@@ -854,7 +787,7 @@ mod tests {
 
         #[test]
         fn serde_invalid() {
-            let json = serde_json::to_string(Path::new("HEAD^")).unwrap();
+            let json = serde_json::to_string("HEAD^").unwrap();
             assert!(serde_json::from_str::<RefspecPattern>(&json).is_err())
         }
     }
