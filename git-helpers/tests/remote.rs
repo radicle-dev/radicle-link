@@ -131,7 +131,7 @@ fn credential_helper() -> String {
 
 fn setup_path() -> anyhow::Result<PathBuf> {
     let helper_path = env!("CARGO_BIN_EXE_git-remote-rad");
-    let helper_path = Path::new(helper_path.strip_suffix("git-remote-rad").unwrap());
+    let helper_path = Path::new(helper_path).parent().unwrap();
     let path = match env::var_os("PATH") {
         None => env::join_paths(Some(helper_path)),
         Some(path) => {
