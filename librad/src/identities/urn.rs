@@ -150,20 +150,19 @@ impl TryFrom<ext::RefLike> for Urn<ext::Oid> {
     type Error = FromRefLikeError;
 
     fn try_from(refl: ext::RefLike) -> Result<Self, Self::Error> {
-        let refl = refl.strip_prefix("refs/namespaces")?;
-        let mut suf = refl.iter();
+        let refl = refl.strip_prefix("refs/namespaces/")?;
+        let mut suf = refl.split("/");
         let id = suf
             .next()
             .ok_or(Self::Error::Missing("namespace"))
             .and_then(|ns| {
-                let ns = ns.to_str().ok_or(Self::Error::Utf8)?;
                 let bytes = multibase::decode(ns).map(|(_base, bytes)| bytes)?;
                 let mhash = Multihash::from_bytes(bytes)?;
                 Ok(ext::Oid::try_from(mhash)?)
             })?;
         let path = {
-            let path = suf.as_path();
-            if path.as_os_str().is_empty() {
+            let path = suf.collect::<Vec<_>>().join("/");
+            if path.is_empty() {
                 Ok(None)
             } else {
                 ext::RefLike::try_from(path).map(Some)

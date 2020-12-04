@@ -28,13 +28,11 @@ pub fn reflike(input: TokenStream) -> TokenStream {
     let lit = parse_macro_input!(input as LitStr);
 
     match RefLike::try_from(lit.value()) {
-        Ok(safe) => {
-            let safe_str = safe.as_str();
+        Ok(_) => {
             let expand = quote! {
-                unsafe {
-                    ::std::mem::transmute::<::std::path::PathBuf, ::radicle_git_ext::RefLike>(
-                        ::std::convert::From::from(#safe_str)
-                    )
+                {
+                    use ::std::convert::TryFrom;
+                    ::radicle_git_ext::RefLike::try_from(#lit).unwrap()
                 }
             };
 

@@ -498,9 +498,8 @@ impl TryFrom<&Urn> for Reference<Namespace<ext::Oid>, PeerId, One> {
             Some(path) => {
                 let path = ext::reference::Qualified::from(path.clone());
                 let mut iter = path
-                    .iter()
-                    .map(|x| x.to_str().expect("RefLike ensures utf8"))
-                    .skip_while(|x| x == &"refs");
+                    .split("/")
+                    .skip_while(|&x| x == "refs");
 
                 match iter.next() {
                     Some("remotes") => {
