@@ -257,7 +257,7 @@ impl Storage {
             iter: self.backend.references()?,
         };
         Ok(iter.filter_map(move |refname| match refname {
-            Ok(reflike) if glob.matches(&reflike) => Some(Ok(reflike)),
+            Ok(reflike) if glob.matches(Path::new(reflike.as_str())) => Some(Ok(reflike)),
             Ok(_) => None,
 
             Err(e) => Some(Err(e)),

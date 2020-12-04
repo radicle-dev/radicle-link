@@ -345,8 +345,11 @@ mod tests {
             prop_assert_eq!(result, Elapsed::Months(-n));
         }
 
+        // TODO: Define a proper max age
+        // Windows + SystemTimes panic on overflow
+        // https://github.com/rust-lang/rust/issues/48980
         #[test]
-        fn elapsed_year_bucket(days in SECONDS_IN_YEAR + 1..SECONDS_IN_YEAR * SECONDS_IN_YEAR) {
+        fn elapsed_year_bucket(days in SECONDS_IN_YEAR + 1..SECONDS_IN_YEAR * SECONDS_IN_HOUR) {
             let (result, n) = caclulate_elapsed(days, SECONDS_IN_YEAR);
             prop_assert_eq!(result, Elapsed::Years(-n));
         }

@@ -327,11 +327,13 @@ mod tests {
             reflike!("refs/namespaces")
                 .join(Namespace::from(&urn))
                 .join(reflike!("refs/remotes/lolek/heads/next"))
+                .as_str()
         ));
         assert!(glob.matches(
             reflike!("refs/namespaces")
                 .join(Namespace::from(&urn))
                 .join(reflike!("refs/remotes/bolek/tags/v0.99"))
+                .as_str()
         ));
         assert!(!glob.matches("refs/heads/master"));
         assert!(!glob.matches("refs/namespaces/othernamespace/refs/remotes/tola/heads/next"));
@@ -339,6 +341,7 @@ mod tests {
             reflike!("refs/namespaces")
                 .join(Namespace::from(&urn))
                 .join(reflike!("refs/heads/hidden"))
+                .as_str()
         ));
     }
 }

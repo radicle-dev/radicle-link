@@ -29,15 +29,8 @@ pub fn reflike(input: TokenStream) -> TokenStream {
 
     match RefLike::try_from(lit.value()) {
         Ok(safe) => {
-            let safe_str = safe.as_str();
-            let expand = quote! {
-                unsafe {
-                    ::std::mem::transmute::<::std::path::PathBuf, ::radicle_git_ext::RefLike>(
-                        ::std::convert::From::from(#safe_str)
-                    )
-                }
-            };
-
+            let safe: &str = &*safe;
+            let expand = quote! { unsafe { ::std::mem::transmute::<_, ::radicle_git_ext::RefLike>(#safe.to_owned()) }};
             TokenStream::from(expand)
         },
 
@@ -68,15 +61,8 @@ pub fn refspec_pattern(input: TokenStream) -> TokenStream {
 
     match RefspecPattern::try_from(lit.value()) {
         Ok(safe) => {
-            let safe_str = safe.as_str();
-            let expand = quote! {
-                unsafe {
-                    ::std::mem::transmute::<::std::path::PathBuf, ::radicle_git_ext::RefspecPattern>(
-                        ::std::convert::From::from(#safe_str)
-                    )
-                }
-            };
-
+            let safe: &str = &*safe;
+            let expand = quote! { unsafe { ::std::mem::transmute::<_, ::radicle_git_ext::RefspecPattern>(#safe.to_owned()) }};
             TokenStream::from(expand)
         },
 
