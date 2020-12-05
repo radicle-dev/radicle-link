@@ -303,7 +303,7 @@ impl AsRef<str> for OneLevel {
 impl From<RefLike> for OneLevel {
     fn from(RefLike(path): RefLike) -> Self {
         if path.starts_with("refs/") {
-            Self(path.split("/").skip(2).collect::<Vec<_>>().join("/"))
+            Self(path.split('/').skip(2).collect::<Vec<_>>().join("/"))
         } else {
             Self(path)
         }

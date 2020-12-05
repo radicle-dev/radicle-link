@@ -151,7 +151,7 @@ impl TryFrom<ext::RefLike> for Urn<ext::Oid> {
 
     fn try_from(refl: ext::RefLike) -> Result<Self, Self::Error> {
         let refl = refl.strip_prefix("refs/namespaces/")?;
-        let mut suf = refl.split("/");
+        let mut suf = refl.split('/');
         let id = suf
             .next()
             .ok_or(Self::Error::Missing("namespace"))
