@@ -53,9 +53,8 @@ default-features = false
 features = ["managed"]
 
 [dependencies.ed25519-zebra]
-git = "https://github.com/kim/ed25519-zebra"
-branch = "zeroize"
-features = ["zeroize"]
+git = "https://github.com/ZcashFoundation/ed25519-zebra"
+rev = "0e7a96a267a756e642e102a28a44dd79b9c7df69"
 
 [dependencies.either]
 version = ">= 1.3, 1"
