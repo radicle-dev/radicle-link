@@ -125,7 +125,7 @@ impl<Url> Remote<Url> {
     /// untouched, if present.
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(skip(self, repo), fields(name = self.name.as_str()), err)]
-    pub fn save(&mut self, repo: &git2::Repository) -> Result<(), git2::Error>
+    pub fn save<'a>(&mut self, repo: &'a git2::Repository) -> Result<git2::Remote<'a>, git2::Error>
     where
         Url: ToString,
     {
@@ -156,9 +156,7 @@ impl<Url> Remote<Url> {
             repo.remote_add_push(self.name.as_str(), &spec.to_string())?;
         }
 
-        debug_assert!(repo.find_remote(self.name.as_str()).is_ok());
-
-        Ok(())
+        repo.find_remote(self.name.as_str())
     }
 
     /// Find a persisted remote by name.
