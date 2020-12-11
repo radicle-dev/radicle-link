@@ -10,6 +10,8 @@ code collaboration protocol and stack.
 While `radicle-link` is currently being used in the `Upstream` application it is
 under heavy development.
 
+Note that [`Upstream`](https://github.com/radicle-dev/radicle-upstream) currently tracks the `maint` branch, while development happens on `next`.
+
 Pop into [#general on our Matrix server](https://matrix.radicle.community/#/room/#general:radicle.community)
 for development updates.
 
