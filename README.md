@@ -7,9 +7,10 @@ code collaboration protocol and stack.
 
 **🚨 WORK IN PROGRESS 🚨**
 
-_In fact, there is nothing substantial to see here yet_
+While `radicle-link` is currently being used in the `Upstream` application it is
+under heavy development.
 
-Join our [#radicle](https://webchat.freenode.net/?channels=radicle) IRC channel
+Pop into [#general on our Matrix server](https://matrix.radicle.community/#/room/#general:radicle.community)
 for development updates.
 
 ## Build
