@@ -132,6 +132,7 @@ impl Localio {
     }
 }
 
+#[derive(Clone)]
 pub struct Settings {
     pub paths: Paths,
     pub signer: BoxedSigner,
