@@ -66,7 +66,7 @@ where
         remote_heads: &RemoteHeads,
     ) -> Vec<Fetchspec> {
         match self {
-            Self::Peek => refspecs::peek(urn, remote_peer),
+            Self::Peek => refspecs::peek(urn, remote_peer, None),
             Self::SignedRefs { tracked } => refspecs::signed_refs(urn, &remote_peer, tracked),
             Self::Replicate {
                 tracked_sigrefs,
@@ -79,7 +79,11 @@ where
 pub mod refspecs {
     use super::*;
 
-    pub fn peek<P, R>(urn: &Urn<R>, remote_peer: P) -> Vec<Fetchspec>
+    pub fn peek<P, R>(
+        urn: &Urn<R>,
+        remote_peer: P,
+        local_mapping: impl Into<Option<P>>,
+    ) -> Vec<Fetchspec>
     where
         P: Clone + 'static,
         for<'a> &'a P: AsRemote + Into<ext::RefLike>,
@@ -88,6 +92,7 @@ pub mod refspecs {
         for<'a> &'a R: Into<Multihash>,
     {
         let namespace: Namespace<R> = Namespace::from(urn);
+        let local_mapping = local_mapping.into();
 
         let rad_id = Reference::rad_id(namespace.clone());
         let rad_self = Reference::rad_self(namespace.clone(), None);
@@ -95,55 +100,19 @@ pub mod refspecs {
 
         vec![
             Refspec {
-                src: rad_id.clone(),
+                src: rad_id.clone().with_remote(local_mapping.clone()),
                 dst: rad_id.with_remote(remote_peer.clone()),
                 force: Force::False,
             }
             .into_fetchspec(),
             Refspec {
-                src: rad_self.clone(),
+                src: rad_self.clone().with_remote(local_mapping.clone()),
                 dst: rad_self.with_remote(remote_peer.clone()),
                 force: Force::False,
             }
             .into_fetchspec(),
             Refspec {
-                src: rad_ids.clone(),
-                dst: rad_ids.with_remote(remote_peer),
-                force: Force::False,
-            }
-            .into_fetchspec(),
-        ]
-    }
-
-    pub fn peek_of<P, R>(urn: &Urn<R>, remote_peer: P) -> Vec<Fetchspec>
-    where
-        P: Clone + 'static,
-        for<'a> &'a P: AsRemote + Into<ext::RefLike>,
-
-        R: HasProtocol + Clone + 'static,
-        for<'a> &'a R: Into<Multihash>,
-    {
-        let namespace: Namespace<R> = Namespace::from(urn);
-
-        let rad_id = Reference::rad_id(namespace.clone());
-        let rad_self = Reference::rad_self(namespace.clone(), None);
-        let rad_ids = Reference::rad_ids_glob(namespace);
-
-        vec![
-            Refspec {
-                src: rad_id.clone().with_remote(remote_peer.clone()),
-                dst: rad_id.with_remote(remote_peer.clone()),
-                force: Force::False,
-            }
-            .into_fetchspec(),
-            Refspec {
-                src: rad_self.clone().with_remote(remote_peer.clone()),
-                dst: rad_self.with_remote(remote_peer.clone()),
-                force: Force::False,
-            }
-            .into_fetchspec(),
-            Refspec {
-                src: rad_ids.clone().with_remote(remote_peer.clone()),
+                src: rad_ids.clone().with_remote(local_mapping.clone()),
                 dst: rad_ids.with_remote(remote_peer),
                 force: Force::False,
             }
@@ -275,7 +244,7 @@ pub mod refspecs {
             .collect::<Vec<_>>();
 
         // Peek at the remote peer
-        let mut peek_remote = peek(urn, remote_peer.clone());
+        let mut peek_remote = peek(urn, remote_peer.clone(), None);
 
         // Get id + signed_refs branches of top-level delegates.
         // **Note**: we don't know at this point whom we should track in the
@@ -284,7 +253,7 @@ pub mod refspecs {
         let mut delegates = delegates
             .iter()
             .map(|delegate_urn| {
-                let mut peek = peek(delegate_urn, remote_peer.clone());
+                let mut peek = peek(delegate_urn, remote_peer.clone(), None);
                 peek.extend(signed_refs(
                     delegate_urn,
                     remote_peer,
@@ -299,7 +268,7 @@ pub mod refspecs {
         // Get the identities of the tracked remotes
         let mut tracked_identities = tracked_sigrefs
             .keys()
-            .flat_map(|remote| peek_of(urn, remote.clone()))
+            .flat_map(|remote| peek(urn, remote.clone(), remote.clone()))
             .collect();
 
         signed.append(&mut tracked_identities);
