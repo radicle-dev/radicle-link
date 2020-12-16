@@ -115,6 +115,42 @@ pub mod refspecs {
         ]
     }
 
+    pub fn peek_of<P, R>(urn: &Urn<R>, remote_peer: P) -> Vec<Fetchspec>
+    where
+        P: Clone + 'static,
+        for<'a> &'a P: AsRemote + Into<ext::RefLike>,
+
+        R: HasProtocol + Clone + 'static,
+        for<'a> &'a R: Into<Multihash>,
+    {
+        let namespace: Namespace<R> = Namespace::from(urn);
+
+        let rad_id = Reference::rad_id(namespace.clone());
+        let rad_self = Reference::rad_self(namespace.clone(), None);
+        let rad_ids = Reference::rad_ids_glob(namespace);
+
+        vec![
+            Refspec {
+                src: rad_id.clone().with_remote(remote_peer.clone()),
+                dst: rad_id.with_remote(remote_peer.clone()),
+                force: Force::False,
+            }
+            .into_fetchspec(),
+            Refspec {
+                src: rad_self.clone().with_remote(remote_peer.clone()),
+                dst: rad_self.with_remote(remote_peer.clone()),
+                force: Force::False,
+            }
+            .into_fetchspec(),
+            Refspec {
+                src: rad_ids.clone().with_remote(remote_peer.clone()),
+                dst: rad_ids.with_remote(remote_peer),
+                force: Force::False,
+            }
+            .into_fetchspec(),
+        ]
+    }
+
     pub fn signed_refs<P, R>(urn: &Urn<R>, remote_peer: &P, tracked: &BTreeSet<P>) -> Vec<Fetchspec>
     where
         P: Clone + PartialEq + 'static,
@@ -260,6 +296,13 @@ pub mod refspecs {
             .flatten()
             .collect::<Vec<_>>();
 
+        // Get the identities of the tracked remotes
+        let mut tracked_identities = tracked_sigrefs
+            .keys()
+            .flat_map(|remote| peek_of(urn, remote.clone()))
+            .collect();
+
+        signed.append(&mut tracked_identities);
         signed.append(&mut peek_remote);
         signed.append(&mut delegates);
         signed

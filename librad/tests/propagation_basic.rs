@@ -445,7 +445,8 @@ async fn menage_a_troi() {
                 let remote_peer = peer1.peer_id();
                 let urn = expected_urn.clone();
                 let rad_self = Reference::rad_self(Namespace::from(urn.clone()), peer1.peer_id());
-                let rad_id = Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
+                let rad_id =
+                    Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
                 let addrs = peer1.listen_addrs().collect::<Vec<_>>();
                 move |storage| -> Result<ExpectedReferences, anyhow::Error> {
                     replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
@@ -464,7 +465,8 @@ async fn menage_a_troi() {
                 let remote_peer = peer2.peer_id();
                 let urn = expected_urn.clone();
                 let rad_self = Reference::rad_self(Namespace::from(urn.clone()), peer1.peer_id());
-                let rad_id = Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
+                let rad_id =
+                    Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
                 let addrs = peer2.listen_addrs().collect::<Vec<_>>();
                 move |storage| -> Result<ExpectedReferences, anyhow::Error> {
                     replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
@@ -483,27 +485,15 @@ async fn menage_a_troi() {
             peer2_expected.has_commit,
             format!("peer 2 missing commit `{}@{}`", expected_urn, commit_id)
         );
-        assert!(
-            peer2_expected.has_rad_id,
-            format!("peer 2 missing `rad/id`")
-        );
-        assert!(
-            peer2_expected.has_rad_self,
-            format!("peer 2 missing `rad/self``")
-        );
+        assert!(peer2_expected.has_rad_id, "peer 2 missing `rad/id`");
+        assert!(peer2_expected.has_rad_self, "peer 2 missing `rad/self``");
 
         assert!(
             peer3_expected.has_commit,
             format!("peer 3 missing commit `{}@{}`", expected_urn, commit_id)
         );
-        assert!(
-            peer3_expected.has_rad_id,
-            format!("peer 3 missing `rad/id`")
-        );
-        assert!(
-            peer3_expected.has_rad_self,
-            format!("peer 3 missing `rad/self``")
-        );
+        assert!(peer3_expected.has_rad_id, "peer 3 missing `rad/id`");
+        assert!(peer3_expected.has_rad_self, "peer 3 missing `rad/self``");
     })
     .await;
 }
