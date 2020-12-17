@@ -70,6 +70,14 @@ pub type VerificationError = generic::error::Verify<Revision, ContentId>;
 
 pub type IndirectDelegation = delegation::Indirect<PersonPayload, Revision, ContentId>;
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum Fork {
+    Left,
+    Right,
+    Both,
+    Parity,
+}
+
 #[derive(Clone)]
 pub struct Identities<'a, T> {
     repo: &'a git2::Repository,
@@ -172,6 +180,29 @@ impl<'a, T: 'a> Identities<'a, T> {
             .verified(None)?;
 
         root.verify(progeny)
+    }
+
+    pub fn is_fork_generic(
+        &self,
+        left: git2::Oid,
+        right: git2::Oid,
+    ) -> Result<Fork, git2::Error> {
+        if left == right {
+            return Ok(Fork::Parity);
+        }
+
+        let left_path = self.is_in_ancestry_path(left, right)?;
+        let right_path = self.is_in_ancestry_path(right, left)?;
+
+        if left_path && right_path {
+            Ok(Fork::Parity)
+        } else if left_path && !right_path {
+            Ok(Fork::Right)
+        } else if !left_path && right_path {
+            Ok(Fork::Left)
+        } else {
+            Ok(Fork::Both)
+        }
     }
 
     //// Helpers ////
@@ -544,6 +575,10 @@ impl<'a> Identities<'a, Project> {
             .signed()?
             .quorum()?
             .verified(parent.as_ref())?)
+    }
+
+    pub fn is_fork(&self, left: git2::Oid, right: git2::Oid) -> Result<Fork, error::Store> {
+        Ok(self.is_fork_generic(left, right)?)
     }
 
     /// Create a new [`Project`] from a payload and delegations.

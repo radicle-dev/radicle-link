@@ -450,6 +450,8 @@ async fn menage_a_troi() {
                 let addrs = peer1.listen_addrs().collect::<Vec<_>>();
                 move |storage| -> Result<ExpectedReferences, anyhow::Error> {
                     replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
+                    println!("REPO: {}", storage.path().display());
+                    // std::thread::sleep(std::time::Duration::from_secs(60));
                     Ok(ExpectedReferences {
                         has_commit: storage.has_commit(&urn, Box::new(commit_id))?,
                         has_rad_id: storage.has_ref(&rad_self)?,

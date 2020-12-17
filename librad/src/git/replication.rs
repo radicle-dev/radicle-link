@@ -22,7 +22,7 @@ use super::{
     types::{reference, Force, Namespace, Reference},
 };
 use crate::{
-    identities::git::{Person, Project, SomeIdentity},
+    identities::git::{Person, Project, SomeIdentity, Fork},
     peer::PeerId,
 };
 
@@ -45,6 +45,9 @@ pub enum Error {
         urn: Urn,
         source: reference::FromUrnError,
     },
+
+    #[error("fork detected")]
+    Fork,
 
     #[error(transparent)]
     Refs(#[from] refs::stored::Error),
@@ -106,6 +109,13 @@ pub fn replicate<Addrs>(
 where
     Addrs: IntoIterator<Item = SocketAddr>,
 {
+    // 1. Local has connection remote
+    // 2. Peek at remote's view of rad/id to validate it
+    // 3. Learn delegates of rad/id, this could be remote and others, or just others
+    // 4. Fetch delegates rad/id from remote
+    // 5. Do they describe the same history? i.e. they're not forks
+    // 6. If they're not forks alice can create rad/id based off of one of the delegates
+
     if storage.peer_id() == &remote_peer {
         return Err(Error::SelfReplication);
     }
@@ -116,7 +126,7 @@ where
     // Update identity branches first
     tracing::debug!("updating identity branches");
     let _ = fetcher
-        .fetch(fetch::Fetchspecs::Peek)
+        .fetch(fetch::Fetchspecs::Peek { remotes: vec![remote_peer].into_iter().collect() })
         .map_err(|e| Error::Fetch(e.into()))?;
 
     let remote_ident: Urn = Reference::rad_id(Namespace::from(&urn))
@@ -131,13 +141,26 @@ where
                 Ok(None)
             },
             SomeIdentity::Project(proj) => {
+                // TODO(finto): This is adopting the rad/id too early -- I commented out the
+                // adoption
+                // TODO(finto): However, it's also adopting the rad/ids, but maybe this is ok?
                 let delegates = ensure_setup_as_project(storage, proj, remote_peer)?;
                 Ok(Some(delegates.collect()))
             },
         },
     }?;
 
+    println!("REPO: {}", storage.path().display());
+    // std::thread::sleep(std::time::Duration::from_secs(60));
     let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
+
+    // We have fetched the remote's identities, now we fetch the tracked identities
+    let _ = fetcher
+        .fetch(fetch::Fetchspecs::Peek { remotes: tracked.clone() })
+        .map_err(|e| Error::Fetch(e.into()))?;
+
+    ensure_no_forking(&storage, &urn, remote_peer, delegates.clone().unwrap_or_default())?;
+
     // Fetch `signed_refs` for every peer we track now
     tracing::debug!("fetching signed refs");
     fetcher
@@ -270,7 +293,8 @@ fn ensure_setup_as_project(
         .into_inner();
 
     // Create `rad/id` here, if not exists
-    ensure_rad_id(storage, &urn, proj.content_id)?;
+    // TODO(finto): this happens to early we still need to detect forking and what not
+    // ensure_rad_id(storage, &urn, proj.content_id)?;
 
     // Make sure we track any direct delegations
     for key in proj
@@ -296,4 +320,31 @@ fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<(), Erro
     identities::common::IdRef::from(urn)
         .create(storage, tip)
         .map_err(|e| Error::Store(e.into()))
+}
+
+#[tracing::instrument(level = "trace", skip(storage), err)]
+fn ensure_no_forking(storage: &Storage, urn: &Urn, remote_peer: PeerId, delegates: BTreeSet<Urn>) -> Result<(), Error> {
+    // Get the remote's view
+    // Get the delegates' views
+    // Validate their histories
+    let remote: Urn = Reference::rad_id(Namespace::from(urn.clone())).with_remote(remote_peer).try_into().expect("namespace is set");
+
+    let delegate_views = delegates.into_iter().filter_map(|delegate| {
+        let person = identities::person::get(&storage, &delegate).ok()??;
+        let delegations = person.delegations();
+        Some(delegations.iter().map(|pk| Reference::rad_id(Namespace::from(urn.clone())).with_remote(PeerId::from(*pk)).try_into().expect("namespace is set")).collect::<Vec<_>>())
+    }).flatten().collect::<Vec<Urn>>();
+
+    for delegate in delegate_views {
+        match identities::project::is_fork(&storage, &remote, &delegate) {
+            Ok(Fork::Parity) => { /* all good */ },
+            Ok(Fork::Left) | Ok(Fork::Right) | Ok(Fork::Both) => return Err(Error::Fork),
+            Err(identities::error::Error::NotFound(urn)) => {
+                tracing::debug!("`{}` not found when checking for fork", urn);
+            },
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    Ok(())
 }

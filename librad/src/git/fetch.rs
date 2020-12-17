@@ -36,7 +36,7 @@ use crate::{
 #[derive(Debug)]
 pub enum Fetchspecs<P, R> {
     /// Only request the branches necessary for identity verification.
-    Peek,
+    Peek { remotes: BTreeSet<P> },
 
     /// Request the `rad/signed_refs` branches of the given set of tracked
     /// peers.
@@ -66,7 +66,7 @@ where
         remote_heads: &RemoteHeads,
     ) -> Vec<Fetchspec> {
         match self {
-            Self::Peek => refspecs::peek(urn, remote_peer, None),
+            Self::Peek { remotes } => refspecs::peek(urn, &remote_peer, remotes),
             Self::SignedRefs { tracked } => refspecs::signed_refs(urn, &remote_peer, tracked),
             Self::Replicate {
                 tracked_sigrefs,
@@ -81,43 +81,53 @@ pub mod refspecs {
 
     pub fn peek<P, R>(
         urn: &Urn<R>,
-        remote_peer: P,
-        local_mapping: impl Into<Option<P>>,
+        remote_peer: &P,
+        remotes: &BTreeSet<P>,
     ) -> Vec<Fetchspec>
     where
-        P: Clone + 'static,
+        P: Clone + PartialEq + 'static,
         for<'a> &'a P: AsRemote + Into<ext::RefLike>,
 
         R: HasProtocol + Clone + 'static,
         for<'a> &'a R: Into<Multihash>,
     {
         let namespace: Namespace<R> = Namespace::from(urn);
-        let local_mapping = local_mapping.into();
 
         let rad_id = Reference::rad_id(namespace.clone());
         let rad_self = Reference::rad_self(namespace.clone(), None);
         let rad_ids = Reference::rad_ids_glob(namespace);
 
-        vec![
+        let is_remote = |src: Reference<Namespace<R>, P, _>, remote: P| {
+            if remote_peer == &remote {
+                src
+            } else {
+                src.with_remote(remote)
+            }
+        };
+
+        remotes.into_iter().flat_map(|remote| {
+            vec![
             Refspec {
-                src: rad_id.clone().with_remote(local_mapping.clone()),
-                dst: rad_id.with_remote(remote_peer.clone()),
+                src: is_remote(rad_id.clone(), remote.clone()),
+                dst: rad_id.clone().with_remote(remote.clone()),
                 force: Force::False,
             }
             .into_fetchspec(),
             Refspec {
-                src: rad_self.clone().with_remote(local_mapping.clone()),
-                dst: rad_self.with_remote(remote_peer.clone()),
+                src: is_remote(rad_self.clone(), remote.clone()),
+                dst: rad_self.clone().with_remote(remote.clone()),
                 force: Force::False,
             }
             .into_fetchspec(),
             Refspec {
-                src: rad_ids.clone().with_remote(local_mapping.clone()),
-                dst: rad_ids.with_remote(remote_peer),
+                src: if remote == remote_peer { rad_ids.clone() } else { rad_ids.clone().with_remote(remote.clone()) },
+                dst: rad_ids.clone().with_remote(remote.clone()),
                 force: Force::False,
             }
             .into_fetchspec(),
-        ]
+            ]
+        })
+        .collect()
     }
 
     pub fn signed_refs<P, R>(urn: &Urn<R>, remote_peer: &P, tracked: &BTreeSet<P>) -> Vec<Fetchspec>
@@ -244,7 +254,7 @@ pub mod refspecs {
             .collect::<Vec<_>>();
 
         // Peek at the remote peer
-        let mut peek_remote = peek(urn, remote_peer.clone(), None);
+        let mut peek_remote = peek(urn, remote_peer, &vec![remote_peer.clone()].into_iter().collect());
 
         // Get id + signed_refs branches of top-level delegates.
         // **Note**: we don't know at this point whom we should track in the
@@ -253,7 +263,7 @@ pub mod refspecs {
         let mut delegates = delegates
             .iter()
             .map(|delegate_urn| {
-                let mut peek = peek(delegate_urn, remote_peer.clone(), None);
+                let mut peek = peek(delegate_urn, remote_peer, &vec![remote_peer.clone()].into_iter().collect());
                 peek.extend(signed_refs(
                     delegate_urn,
                     remote_peer,
@@ -265,13 +275,6 @@ pub mod refspecs {
             .flatten()
             .collect::<Vec<_>>();
 
-        // Get the identities of the tracked remotes
-        let mut tracked_identities = tracked_sigrefs
-            .keys()
-            .flat_map(|remote| peek(urn, remote.clone(), remote.clone()))
-            .collect();
-
-        signed.append(&mut tracked_identities);
         signed.append(&mut peek_remote);
         signed.append(&mut delegates);
         signed
@@ -493,7 +496,7 @@ mod tests {
 
     #[test]
     fn peek_looks_legit() {
-        let specs = Fetchspecs::Peek.refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
+        let specs = Fetchspecs::Peek { remotes: BTreeSet::new () }.refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
         assert_eq!(
             specs
                 .iter()

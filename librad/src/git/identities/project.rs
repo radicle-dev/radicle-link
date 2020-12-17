@@ -20,7 +20,7 @@ use super::{
 use crate::{
     identities::{
         self,
-        git::{Identities, IndirectDelegation, Project, Revision, VerifiedProject, Verifying},
+        git::{Identities, IndirectDelegation, Project, Revision, VerifiedProject, Verifying, Fork},
         urn,
     },
     peer::PeerId,
@@ -141,6 +141,12 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Project, Erro
     Refs::Update(&next, &format!("merge from {}", from)).apply(storage)?;
 
     Ok(next)
+}
+
+pub fn is_fork(storage: &Storage, left: &Urn, right: &Urn) -> Result<Fork, Error> {
+    let left = get(storage, left)?.ok_or_else(|| Error::NotFound(left.clone()))?;
+    let right = get(storage, right)?.ok_or_else(|| Error::NotFound(right.clone()))?;
+    Ok(identities(&storage).is_fork(left.revision.into(), right.revision.into())?)
 }
 
 enum Refs<'a> {
