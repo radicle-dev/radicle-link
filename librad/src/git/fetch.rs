@@ -259,7 +259,7 @@ pub mod refspecs {
         let mut peek_remote = peek(
             urn,
             remote_peer,
-            &vec![remote_peer.clone()].into_iter().collect(),
+            &Some(remote_peer.clone()).into_iter().collect(),
         );
 
         // Get id + signed_refs branches of top-level delegates.
@@ -272,7 +272,7 @@ pub mod refspecs {
                 let mut peek = peek(
                     delegate_urn,
                     remote_peer,
-                    &vec![remote_peer.clone()].into_iter().collect(),
+                    &Some(remote_peer.clone()).into_iter().collect(),
                 );
                 peek.extend(signed_refs(
                     delegate_urn,
@@ -507,7 +507,7 @@ mod tests {
     #[test]
     fn peek_looks_legit() {
         let specs = Fetchspecs::Peek {
-            remotes: vec![TOLA.clone()].into_iter().collect(),
+            remotes: Some(TOLA.clone()).into_iter().collect(),
         }
         .refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
         assert_eq!(
