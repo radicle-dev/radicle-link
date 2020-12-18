@@ -79,11 +79,7 @@ where
 pub mod refspecs {
     use super::*;
 
-    pub fn peek<P, R>(
-        urn: &Urn<R>,
-        remote_peer: &P,
-        remotes: &BTreeSet<P>,
-    ) -> Vec<Fetchspec>
+    pub fn peek<P, R>(urn: &Urn<R>, remote_peer: &P, remotes: &BTreeSet<P>) -> Vec<Fetchspec>
     where
         P: Clone + PartialEq + 'static,
         for<'a> &'a P: AsRemote + Into<ext::RefLike>,
@@ -105,29 +101,35 @@ pub mod refspecs {
             }
         };
 
-        remotes.into_iter().flat_map(|remote| {
-            vec![
-            Refspec {
-                src: is_remote(rad_id.clone(), remote.clone()),
-                dst: rad_id.clone().with_remote(remote.clone()),
-                force: Force::False,
-            }
-            .into_fetchspec(),
-            Refspec {
-                src: is_remote(rad_self.clone(), remote.clone()),
-                dst: rad_self.clone().with_remote(remote.clone()),
-                force: Force::False,
-            }
-            .into_fetchspec(),
-            Refspec {
-                src: if remote == remote_peer { rad_ids.clone() } else { rad_ids.clone().with_remote(remote.clone()) },
-                dst: rad_ids.clone().with_remote(remote.clone()),
-                force: Force::False,
-            }
-            .into_fetchspec(),
-            ]
-        })
-        .collect()
+        remotes
+            .into_iter()
+            .flat_map(|remote| {
+                vec![
+                    Refspec {
+                        src: is_remote(rad_id.clone(), remote.clone()),
+                        dst: rad_id.clone().with_remote(remote.clone()),
+                        force: Force::False,
+                    }
+                    .into_fetchspec(),
+                    Refspec {
+                        src: is_remote(rad_self.clone(), remote.clone()),
+                        dst: rad_self.clone().with_remote(remote.clone()),
+                        force: Force::False,
+                    }
+                    .into_fetchspec(),
+                    Refspec {
+                        src: if remote == remote_peer {
+                            rad_ids.clone()
+                        } else {
+                            rad_ids.clone().with_remote(remote.clone())
+                        },
+                        dst: rad_ids.clone().with_remote(remote.clone()),
+                        force: Force::False,
+                    }
+                    .into_fetchspec(),
+                ]
+            })
+            .collect()
     }
 
     pub fn signed_refs<P, R>(urn: &Urn<R>, remote_peer: &P, tracked: &BTreeSet<P>) -> Vec<Fetchspec>
@@ -254,7 +256,11 @@ pub mod refspecs {
             .collect::<Vec<_>>();
 
         // Peek at the remote peer
-        let mut peek_remote = peek(urn, remote_peer, &vec![remote_peer.clone()].into_iter().collect());
+        let mut peek_remote = peek(
+            urn,
+            remote_peer,
+            &vec![remote_peer.clone()].into_iter().collect(),
+        );
 
         // Get id + signed_refs branches of top-level delegates.
         // **Note**: we don't know at this point whom we should track in the
@@ -263,7 +269,11 @@ pub mod refspecs {
         let mut delegates = delegates
             .iter()
             .map(|delegate_urn| {
-                let mut peek = peek(delegate_urn, remote_peer, &vec![remote_peer.clone()].into_iter().collect());
+                let mut peek = peek(
+                    delegate_urn,
+                    remote_peer,
+                    &vec![remote_peer.clone()].into_iter().collect(),
+                );
                 peek.extend(signed_refs(
                     delegate_urn,
                     remote_peer,
@@ -496,7 +506,10 @@ mod tests {
 
     #[test]
     fn peek_looks_legit() {
-        let specs = Fetchspecs::Peek { remotes: BTreeSet::new () }.refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
+        let specs = Fetchspecs::Peek {
+            remotes: vec![TOLA.clone()].into_iter().collect(),
+        }
+        .refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
         assert_eq!(
             specs
                 .iter()

@@ -182,11 +182,7 @@ impl<'a, T: 'a> Identities<'a, T> {
         root.verify(progeny)
     }
 
-    pub fn is_fork_generic(
-        &self,
-        left: git2::Oid,
-        right: git2::Oid,
-    ) -> Result<Fork, git2::Error> {
+    pub fn is_fork_generic(&self, left: git2::Oid, right: git2::Oid) -> Result<Fork, git2::Error> {
         if left == right {
             return Ok(Fork::Parity);
         }

@@ -22,7 +22,7 @@ use super::{
     types::{reference, Force, Namespace, Reference},
 };
 use crate::{
-    identities::git::{Person, Project, SomeIdentity, Fork},
+    identities::git::{Fork, Person, Project, SomeIdentity, VerifiedProject},
     peer::PeerId,
 };
 
@@ -109,13 +109,6 @@ pub fn replicate<Addrs>(
 where
     Addrs: IntoIterator<Item = SocketAddr>,
 {
-    // 1. Local has connection remote
-    // 2. Peek at remote's view of rad/id to validate it
-    // 3. Learn delegates of rad/id, this could be remote and others, or just others
-    // 4. Fetch delegates rad/id from remote
-    // 5. Do they describe the same history? i.e. they're not forks
-    // 6. If they're not forks alice can create rad/id based off of one of the delegates
-
     if storage.peer_id() == &remote_peer {
         return Err(Error::SelfReplication);
     }
@@ -126,7 +119,9 @@ where
     // Update identity branches first
     tracing::debug!("updating identity branches");
     let _ = fetcher
-        .fetch(fetch::Fetchspecs::Peek { remotes: vec![remote_peer].into_iter().collect() })
+        .fetch(fetch::Fetchspecs::Peek {
+            remotes: vec![remote_peer].into_iter().collect(),
+        })
         .map_err(|e| Error::Fetch(e.into()))?;
 
     let remote_ident: Urn = Reference::rad_id(Namespace::from(&urn))
@@ -137,29 +132,50 @@ where
         None => Err(Error::MissingIdentity),
         Some(some_id) => match some_id {
             SomeIdentity::Person(person) => {
-                ensure_setup_as_person(storage, person, remote_peer)?;
+                person::ensure_setup(storage, person, remote_peer)?;
                 Ok(None)
             },
             SomeIdentity::Project(proj) => {
-                // TODO(finto): This is adopting the rad/id too early -- I commented out the
-                // adoption
-                // TODO(finto): However, it's also adopting the rad/ids, but maybe this is ok?
-                let delegates = ensure_setup_as_project(storage, proj, remote_peer)?;
-                Ok(Some(delegates.collect()))
+                let proj = project::ensure_setup(storage, proj, remote_peer)?;
+                Ok(Some(project::delegates(storage, proj)?))
             },
         },
     }?;
 
-    println!("REPO: {}", storage.path().display());
-    // std::thread::sleep(std::time::Duration::from_secs(60));
     let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
 
-    // We have fetched the remote's identities, now we fetch the tracked identities
+    // We have fetched the remote's identities, now we fetch the delegate identities
     let _ = fetcher
-        .fetch(fetch::Fetchspecs::Peek { remotes: tracked.clone() })
+        .fetch(fetch::Fetchspecs::Peek {
+            remotes: delegates
+                .clone()
+                .unwrap_or_default()
+                .keys()
+                .copied()
+                .collect(),
+        })
         .map_err(|e| Error::Fetch(e.into()))?;
 
-    ensure_no_forking(&storage, &urn, remote_peer, delegates.clone().unwrap_or_default())?;
+    let delegates = delegates
+        .map(|delegates| project::verify_delegates(storage, urn.clone(), delegates))
+        .transpose()?;
+
+    project::ensure_no_forking(
+        &storage,
+        &urn,
+        remote_peer,
+        delegates
+            .clone()
+            .unwrap_or_default()
+            .keys()
+            .copied()
+            .collect(),
+    )?;
+
+    delegates
+        .as_ref()
+        .map(|delegates| project::adopt_delegate(storage, &urn, delegates))
+        .transpose()?;
 
     // Fetch `signed_refs` for every peer we track now
     tracing::debug!("fetching signed refs");
@@ -183,7 +199,11 @@ where
     fetcher
         .fetch(fetch::Fetchspecs::Replicate {
             tracked_sigrefs,
-            delegates: delegates.unwrap_or_default(),
+            delegates: delegates
+                .unwrap_or_default()
+                .values()
+                .map(|delegate| delegate.urn.clone())
+                .collect(),
         })
         .map_err(|e| Error::Fetch(e.into()))?;
 
@@ -204,147 +224,248 @@ where
 
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage), err)]
-fn ensure_setup_as_person(
-    storage: &Storage,
-    person: Person,
-    remote_peer: PeerId,
-) -> Result<(), Error> {
-    let urn: Urn = Reference::rad_id(Namespace::from(person.urn()))
-        .with_remote(remote_peer)
-        .try_into()
-        .expect("namespace is set");
-
-    match identities::person::verify(storage, &urn)? {
-        None => Err(Error::MissingIdentity),
-        Some(person) => {
-            // Create `rad/id` here, if not exists
-            ensure_rad_id(storage, &urn, person.content_id)?;
-
-            // Track all delegations
-            for key in person.into_inner().doc.delegations {
-                tracking::track(storage, &urn, PeerId::from(key))?;
-            }
-
-            Ok(())
-        },
-    }
-}
-
-#[tracing::instrument(level = "trace", skip(storage), err)]
-fn ensure_setup_as_project(
-    storage: &Storage,
-    proj: Project,
-    remote_peer: PeerId,
-) -> Result<impl Iterator<Item = Urn>, Error> {
-    let local_peer_id = storage.peer_id();
-
-    let urn: Urn = Reference::rad_id(Namespace::from(proj.urn()))
-        .with_remote(remote_peer)
-        .try_into()
-        .expect("namespace is set");
-
-    // Verify + symref the delegates first
-    for delegate in proj.delegations().iter().indirect() {
-        let delegate_urn = delegate.urn();
-        // Find in `refs/namespaces/<urn>/refs/remotes/<remote
-        // peer>/rad/ids/<delegate.urn>`
-        let in_rad_ids: Urn = Reference::rad_delegate(Namespace::from(&urn), &delegate_urn)
-            .with_remote(remote_peer)
-            .try_into()
-            .expect("namespace is set");
-        match identities::person::verify(storage, &in_rad_ids)? {
-            None => Err(Error::Missing(in_rad_ids.into())),
-            Some(delegate_person) => {
-                // Ensure we have a top-level `refs/namespaces/<delegate>/rad/id`
-                //
-                // Either we fetched that before, or we take `remote_peer`s view
-                // (we just verified the identity).
-                ensure_rad_id(storage, &delegate_urn, delegate_person.content_id)?;
-                // Also, track them
-                for key in delegate_person.delegations().iter() {
-                    let peer_id = PeerId::from(*key);
-                    if &peer_id != local_peer_id {
-                        // Top-level
-                        tracking::track(storage, &delegate_urn, peer_id)?;
-                        // as well as for `proj`
-                        tracking::track(storage, &proj.urn(), peer_id)?;
-                    }
-                }
-                // Now point our view to the top-level
-                Reference::try_from(&delegate_urn)
-                    .map_err(|e| Error::RefFromUrn {
-                        urn: delegate_urn.clone(),
-                        source: e,
-                    })?
-                    .symbolic_ref::<_, PeerId>(
-                        Reference::rad_delegate(Namespace::from(&urn), &delegate_urn),
-                        Force::False,
-                    )
-                    .create(storage.as_raw())
-                    .and(Ok(()))
-                    .or_matches(is_exists_err, || Ok(()))
-                    .map_err(|e: git2::Error| Error::Store(e.into()))
-            },
-        }?;
-    }
-
-    let proj = identities::project::verify(storage, &urn)?
-        .ok_or(Error::MissingIdentity)?
-        .into_inner();
-
-    // Create `rad/id` here, if not exists
-    // TODO(finto): this happens to early we still need to detect forking and what not
-    // ensure_rad_id(storage, &urn, proj.content_id)?;
-
-    // Make sure we track any direct delegations
-    for key in proj
-        .delegations()
-        .iter()
-        .direct()
-        .filter(|&key| key != local_peer_id.as_public_key())
-    {
-        tracking::track(storage, &urn, PeerId::from(*key))?;
-    }
-
-    Ok(proj
-        .doc
-        .delegations
-        .into_iter()
-        .indirect()
-        .map(|id| id.urn()))
-}
-
-#[allow(clippy::unit_arg)]
-#[tracing::instrument(level = "trace", skip(storage), err)]
 fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<(), Error> {
     identities::common::IdRef::from(urn)
         .create(storage, tip)
         .map_err(|e| Error::Store(e.into()))
 }
 
-#[tracing::instrument(level = "trace", skip(storage), err)]
-fn ensure_no_forking(storage: &Storage, urn: &Urn, remote_peer: PeerId, delegates: BTreeSet<Urn>) -> Result<(), Error> {
-    // Get the remote's view
-    // Get the delegates' views
-    // Validate their histories
-    let remote: Urn = Reference::rad_id(Namespace::from(urn.clone())).with_remote(remote_peer).try_into().expect("namespace is set");
+mod person {
+    use super::*;
 
-    let delegate_views = delegates.into_iter().filter_map(|delegate| {
-        let person = identities::person::get(&storage, &delegate).ok()??;
-        let delegations = person.delegations();
-        Some(delegations.iter().map(|pk| Reference::rad_id(Namespace::from(urn.clone())).with_remote(PeerId::from(*pk)).try_into().expect("namespace is set")).collect::<Vec<_>>())
-    }).flatten().collect::<Vec<Urn>>();
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "trace", skip(storage), err)]
+    pub fn ensure_setup(
+        storage: &Storage,
+        person: Person,
+        remote_peer: PeerId,
+    ) -> Result<(), Error> {
+        let urn: Urn = Reference::rad_id(Namespace::from(person.urn()))
+            .with_remote(remote_peer)
+            .try_into()
+            .expect("namespace is set");
 
-    for delegate in delegate_views {
-        match identities::project::is_fork(&storage, &remote, &delegate) {
-            Ok(Fork::Parity) => { /* all good */ },
-            Ok(Fork::Left) | Ok(Fork::Right) | Ok(Fork::Both) => return Err(Error::Fork),
-            Err(identities::error::Error::NotFound(urn)) => {
-                tracing::debug!("`{}` not found when checking for fork", urn);
+        match identities::person::verify(storage, &urn)? {
+            None => Err(Error::MissingIdentity),
+            Some(person) => {
+                // Create `rad/id` here, if not exists
+                ensure_rad_id(storage, &urn, person.content_id)?;
+
+                // Track all delegations
+                for key in person.into_inner().doc.delegations {
+                    tracking::track(storage, &urn, PeerId::from(key))?;
+                }
+
+                Ok(())
             },
-            Err(err) => return Err(err.into()),
         }
     }
+}
 
-    Ok(())
+mod project {
+    use super::*;
+
+    #[derive(Clone, Debug)]
+    pub struct DelegateProject {
+        pub urn: Urn,
+        pub project: VerifiedProject,
+    }
+
+    pub fn verify(storage: &Storage, urn: Urn, remote: PeerId) -> Result<VerifiedProject, Error> {
+        let urn: Urn = Reference::rad_id(Namespace::from(urn.clone()))
+            .with_remote(remote)
+            .try_into()
+            .expect("namespace is set");
+
+        Ok(identities::project::verify(storage, &urn)?.ok_or(Error::MissingIdentity)?)
+    }
+
+    pub fn verify_delegates(
+        storage: &Storage,
+        urn: Urn,
+        delegates: BTreeMap<PeerId, Urn>,
+    ) -> Result<BTreeMap<PeerId, DelegateProject>, Error> {
+        let mut confirmed_delegates = BTreeMap::new();
+        for remote in delegates.keys() {
+            match verify(&storage, urn.clone(), *remote) {
+                // It's possible that this PeerId for the delegate didn't live on the machine we
+                // fetched from
+                Err(Error::MissingIdentity) => {
+                    tracing::trace!("we did not fetch a project for `{}`", remote);
+                },
+                Ok(proj) => {
+                    confirmed_delegates.insert(
+                        *remote,
+                        DelegateProject {
+                            urn: urn.clone(),
+                            project: proj,
+                        },
+                    );
+                },
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(confirmed_delegates)
+    }
+
+    #[tracing::instrument(level = "trace", skip(storage), err)]
+    pub fn adopt_delegate(
+        storage: &Storage,
+        urn: &Urn,
+        delegates: &BTreeMap<PeerId, DelegateProject>,
+    ) -> Result<(), Error> {
+        let (_, proj) = delegates.iter().next().unwrap();
+        ensure_rad_id(storage, urn, proj.project.content_id)
+    }
+
+    #[tracing::instrument(level = "trace", skip(storage), err)]
+    pub fn ensure_no_forking(
+        storage: &Storage,
+        urn: &Urn,
+        remote_peer: PeerId,
+        delegates: BTreeSet<PeerId>,
+    ) -> Result<(), Error> {
+        // Get the remote's view
+        // Get the delegates' views
+        // Validate their histories
+        let remote: Urn = Reference::rad_id(Namespace::from(urn.clone()))
+            .with_remote(remote_peer)
+            .try_into()
+            .expect("namespace is set");
+
+        let delegate_views = delegates
+            .into_iter()
+            .map(|remote| {
+                Reference::rad_id(Namespace::from(urn.clone()))
+                    .with_remote(remote)
+                    .try_into()
+                    .expect("namespace is set")
+            })
+            .collect::<Vec<_>>();
+
+        for delegate in delegate_views {
+            match identities::project::is_fork(&storage, &remote, &delegate) {
+                Ok(Fork::Parity) => { /* all good */ },
+                Ok(Fork::Left) | Ok(Fork::Right) | Ok(Fork::Both) => return Err(Error::Fork),
+                Err(identities::error::Error::NotFound(urn)) => {
+                    tracing::debug!("`{}` not found when checking for fork", urn);
+                },
+                Err(err) => return Err(err.into()),
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn delegates(
+        storage: &Storage,
+        proj: VerifiedProject,
+    ) -> Result<BTreeMap<PeerId, Urn>, Error> {
+        let delegates = proj
+            .into_inner()
+            .doc
+            .delegations
+            .into_iter()
+            .indirect()
+            .map(|id| id.urn());
+
+        let mut keyed_delegates = BTreeMap::new();
+
+        for delegate in delegates {
+            match identities::person::get(storage, &delegate)? {
+                None => return Err(Error::Missing(delegate.into())),
+                Some(person) => keyed_delegates.append(
+                    &mut person
+                        .delegations()
+                        .iter()
+                        .map(|pk| (PeerId::from(*pk), delegate.clone()))
+                        .collect(),
+                ),
+            }
+        }
+
+        Ok(keyed_delegates)
+    }
+
+    #[tracing::instrument(level = "trace", skip(storage), err)]
+    pub fn ensure_setup(
+        storage: &Storage,
+        proj: Project,
+        remote_peer: PeerId,
+    ) -> Result<VerifiedProject, Error> {
+        let local_peer_id = storage.peer_id();
+
+        let urn: Urn = Reference::rad_id(Namespace::from(proj.urn()))
+            .with_remote(remote_peer)
+            .try_into()
+            .expect("namespace is set");
+
+        // Verify + symref the delegates first
+        for delegate in proj.delegations().iter().indirect() {
+            let delegate_urn = delegate.urn();
+            // Find in `refs/namespaces/<urn>/refs/remotes/<remote
+            // peer>/rad/ids/<delegate.urn>`
+            let in_rad_ids: Urn = Reference::rad_delegate(Namespace::from(&urn), &delegate_urn)
+                .with_remote(remote_peer)
+                .try_into()
+                .expect("namespace is set");
+            match identities::person::verify(storage, &in_rad_ids)? {
+                None => Err(Error::Missing(in_rad_ids.into())),
+                Some(delegate_person) => {
+                    // Ensure we have a top-level `refs/namespaces/<delegate>/rad/id`
+                    //
+                    // Either we fetched that before, or we take `remote_peer`s view
+                    // (we just verified the identity).
+                    ensure_rad_id(storage, &delegate_urn, delegate_person.content_id)?;
+                    // Also, track them
+                    for key in delegate_person.delegations().iter() {
+                        let peer_id = PeerId::from(*key);
+                        if &peer_id != local_peer_id {
+                            // Top-level
+                            tracking::track(storage, &delegate_urn, peer_id)?;
+                            // as well as for `proj`
+                            tracking::track(storage, &proj.urn(), peer_id)?;
+                        }
+                    }
+                    // Now point our view to the top-level
+                    Reference::try_from(&delegate_urn)
+                        .map_err(|e| Error::RefFromUrn {
+                            urn: delegate_urn.clone(),
+                            source: e,
+                        })?
+                        .symbolic_ref::<_, PeerId>(
+                            Reference::rad_delegate(Namespace::from(&urn), &delegate_urn),
+                            Force::False,
+                        )
+                        .create(storage.as_raw())
+                        .and(Ok(()))
+                        .or_matches(is_exists_err, || Ok(()))
+                        .map_err(|e: git2::Error| Error::Store(e.into()))
+                },
+            }?;
+        }
+
+        let proj = project::verify(storage, proj.urn(), remote_peer)?;
+
+        // Make sure we track any direct delegations
+        track_direct(storage, &proj)?;
+
+        Ok(proj)
+    }
+
+    #[tracing::instrument(level = "trace", skip(storage), err)]
+    fn track_direct(storage: &Storage, proj: &VerifiedProject) -> Result<(), Error> {
+        let local_peer_id = storage.peer_id();
+
+        for key in proj
+            .delegations()
+            .iter()
+            .direct()
+            .filter(|&key| key != local_peer_id.as_public_key())
+        {
+            tracking::track(storage, &proj.urn(), PeerId::from(*key))?;
+        }
+
+        Ok(())
+    }
 }

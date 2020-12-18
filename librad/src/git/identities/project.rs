@@ -20,7 +20,15 @@ use super::{
 use crate::{
     identities::{
         self,
-        git::{Identities, IndirectDelegation, Project, Revision, VerifiedProject, Verifying, Fork},
+        git::{
+            Fork,
+            Identities,
+            IndirectDelegation,
+            Project,
+            Revision,
+            VerifiedProject,
+            Verifying,
+        },
         urn,
     },
     peer::PeerId,
