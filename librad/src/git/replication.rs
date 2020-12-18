@@ -266,7 +266,7 @@ mod project {
     use super::*;
 
     #[derive(Clone, Debug)]
-    pub struct DelegateProject {
+    pub struct DelegateView {
         pub urn: Urn,
         pub project: VerifiedProject,
     }
@@ -288,7 +288,7 @@ mod project {
         storage: &Storage,
         urn: Urn,
         delegates: BTreeMap<PeerId, Urn>,
-    ) -> Result<BTreeMap<PeerId, DelegateProject>, Error> {
+    ) -> Result<BTreeMap<PeerId, DelegateView>, Error> {
         let mut confirmed_delegates = BTreeMap::new();
         for remote in delegates.keys() {
             match verify(&storage, urn.clone(), *remote) {
@@ -300,7 +300,7 @@ mod project {
                 Ok(proj) => {
                     confirmed_delegates.insert(
                         *remote,
-                        DelegateProject {
+                        DelegateView {
                             urn: urn.clone(),
                             project: proj,
                         },
@@ -317,7 +317,7 @@ mod project {
     pub fn adopt_delegate(
         storage: &Storage,
         urn: &Urn,
-        delegates: &BTreeMap<PeerId, DelegateProject>,
+        delegates: &BTreeMap<PeerId, DelegateView>,
     ) -> Result<(), Error> {
         let (_, proj) = delegates.iter().next().unwrap();
         ensure_rad_id(storage, urn, proj.project.content_id)
