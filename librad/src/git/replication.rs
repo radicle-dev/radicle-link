@@ -271,8 +271,10 @@ mod project {
         pub project: VerifiedProject,
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn verify(storage: &Storage, urn: Urn, remote: PeerId) -> Result<VerifiedProject, Error> {
-        let urn: Urn = Reference::rad_id(Namespace::from(urn.clone()))
+        let urn: Urn = Reference::rad_id(Namespace::from(urn))
             .with_remote(remote)
             .try_into()
             .expect("namespace is set");
@@ -280,6 +282,8 @@ mod project {
         Ok(identities::project::verify(storage, &urn)?.ok_or(Error::MissingIdentity)?)
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn verify_delegates(
         storage: &Storage,
         urn: Urn,
@@ -308,6 +312,7 @@ mod project {
         Ok(confirmed_delegates)
     }
 
+    #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn adopt_delegate(
         storage: &Storage,
@@ -318,6 +323,7 @@ mod project {
         ensure_rad_id(storage, urn, proj.project.content_id)
     }
 
+    #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn ensure_no_forking(
         storage: &Storage,
@@ -357,6 +363,8 @@ mod project {
         Ok(())
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn delegates(
         storage: &Storage,
         proj: VerifiedProject,
@@ -453,6 +461,7 @@ mod project {
         Ok(proj)
     }
 
+    #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
     fn track_direct(storage: &Storage, proj: &VerifiedProject) -> Result<(), Error> {
         let local_peer_id = storage.peer_id();

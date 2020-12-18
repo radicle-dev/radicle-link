@@ -102,7 +102,7 @@ pub mod refspecs {
         };
 
         remotes
-            .into_iter()
+            .iter()
             .flat_map(|remote| {
                 vec![
                     Refspec {
