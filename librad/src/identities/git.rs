@@ -70,14 +70,6 @@ pub type VerificationError = generic::error::Verify<Revision, ContentId>;
 
 pub type IndirectDelegation = delegation::Indirect<PersonPayload, Revision, ContentId>;
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum Fork {
-    Left,
-    Right,
-    Both,
-    Parity,
-}
-
 #[derive(Clone)]
 pub struct Identities<'a, T> {
     repo: &'a git2::Repository,
@@ -182,26 +174,38 @@ impl<'a, T: 'a> Identities<'a, T> {
         root.verify(progeny)
     }
 
-    pub fn is_fork_generic(&self, left: git2::Oid, right: git2::Oid) -> Result<Fork, git2::Error> {
+    pub fn is_fork_generic(&self, left: git2::Oid, right: git2::Oid) -> Result<bool, git2::Error> {
         if left == right {
-            return Ok(Fork::Parity);
+            return Ok(false);
         }
 
-        let left_path = self.is_in_ancestry_path(left, right)?;
-        let right_path = self.is_in_ancestry_path(right, left)?;
-
-        if left_path && right_path {
-            Ok(Fork::Parity)
-        } else if left_path && !right_path {
-            Ok(Fork::Right)
-        } else if !left_path && right_path {
-            Ok(Fork::Left)
+        Ok(if self.is_in_ancestry_path(left, right)? {
+            false
+        } else if self.is_in_ancestry_path(right, left)? {
+            false
         } else {
-            Ok(Fork::Both)
-        }
+            true
+        })
     }
 
     //// Helpers ////
+
+    /// Assumes that the bag of commits are in a related history.
+    fn latest_generic(&self, bag: impl Iterator<Item = git2::Oid>) -> Result<Option<git2::Oid>, git2::Error> {
+        let mut oid = None;
+        for commit in bag {
+            match oid {
+                None => oid = Some(commit),
+                Some(ref mut other) => {
+                    if self.repo.graph_descendant_of(*other, commit)? {
+                        *other = commit
+                    }
+                }
+            }
+        }
+
+        Ok(oid)
+    }
 
     fn by_oid(&self, oid: git2::Oid) -> ByOid<'a> {
         (self.repo, oid)
@@ -573,8 +577,12 @@ impl<'a> Identities<'a, Project> {
             .verified(parent.as_ref())?)
     }
 
-    pub fn is_fork(&self, left: git2::Oid, right: git2::Oid) -> Result<Fork, error::Store> {
+    pub fn is_fork(&self, left: git2::Oid, right: git2::Oid) -> Result<bool, error::Store> {
         Ok(self.is_fork_generic(left, right)?)
+    }
+
+    pub fn latest_tip(&self, projects: impl Iterator<Item = Project>) -> Result<Option<git2::Oid>, error::Store> {
+        Ok(self.latest_generic(projects.map(|proj| proj.content_id.into()))?)
     }
 
     /// Create a new [`Project`] from a payload and delegations.

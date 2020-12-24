@@ -21,7 +21,6 @@ use crate::{
     identities::{
         self,
         git::{
-            Fork,
             Identities,
             IndirectDelegation,
             Project,
@@ -151,10 +150,20 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Project, Erro
     Ok(next)
 }
 
-pub fn is_fork(storage: &Storage, left: &Urn, right: &Urn) -> Result<Fork, Error> {
+pub fn is_fork(storage: &Storage, left: &Urn, right: &Urn) -> Result<bool, Error> {
     let left = get(storage, left)?.ok_or_else(|| Error::NotFound(left.clone()))?;
     let right = get(storage, right)?.ok_or_else(|| Error::NotFound(right.clone()))?;
-    Ok(identities(&storage).is_fork(left.revision.into(), right.revision.into())?)
+    let identities = identities(&storage);
+
+    println!("Left");
+    let left_fork = identities.is_fork(left.content_id.into(), right.revision.into())?;
+    println!("Right");
+    let right_fork  = identities.is_fork(right.content_id.into(), left.revision.into())?;
+    Ok(left_fork || right_fork)
+}
+
+pub fn latest_tip(storage: &Storage, projects: impl Iterator<Item = Project>) -> Result<Option<git2::Oid>, Error> {
+    Ok(identities(storage).latest_tip(projects)?)
 }
 
 enum Refs<'a> {

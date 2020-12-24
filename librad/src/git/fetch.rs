@@ -35,6 +35,9 @@ use crate::{
 /// See also: [`super::replication::replicate`]
 #[derive(Debug)]
 pub enum Fetchspecs<P, R> {
+    /// Request all identity documents
+    All,
+
     /// Only request the branches necessary for identity verification.
     Peek { remotes: BTreeSet<P> },
 
@@ -66,6 +69,14 @@ where
         remote_heads: &RemoteHeads,
     ) -> Vec<Fetchspec> {
         match self {
+            Self::All => {
+                // TODO(finto): Might not actually need rad/self, but isntead signed_refs
+                // FIXME(finto): This could potentially fetch _a lot_ of data. Need to limit it.
+                let mut all = refspecs::all(urn);
+                let mut remotes = refspecs::peek(urn, &remote_peer.clone(), &Some(remote_peer).into_iter().collect());
+                all.append(&mut remotes);
+                all
+            },
             Self::Peek { remotes } => refspecs::peek(urn, &remote_peer, remotes),
             Self::SignedRefs { tracked } => refspecs::signed_refs(urn, &remote_peer, tracked),
             Self::Replicate {
@@ -79,6 +90,55 @@ where
 pub mod refspecs {
     use super::*;
 
+    pub fn remote_glob<R>(r: Reference<Namespace<R>, ext::RefspecPattern, ext::RefLike>) -> ext::RefspecPattern
+    where R: HasProtocol + Clone + 'static, for<'a> &'a R: Into<Multihash>
+    {
+            let mut refl = reflike!("refs");
+
+            if let Some(ref namespace) = r.namespace {
+                refl = refl
+                    .join(reflike!("namespaces"))
+                    .join(namespace)
+                    .join(reflike!("refs"));
+            }
+
+            let suffix: ext::RefLike = ext::RefLike::from(r.category).join(r.name.to_owned());
+            let remote = r.remote.unwrap_or(refspec_pattern!("*"));
+            refl.join(reflike!("remotes")).glob_path(remote, suffix)
+    }
+
+    pub fn all<P, R>(urn: &Urn<R>) -> Vec<Fetchspec>
+    where
+        P: Clone + PartialEq + 'static,
+        for<'a> &'a P: AsRemote + Into<ext::RefLike>,
+
+        R: HasProtocol + Clone + 'static,
+        for<'a> &'a R: Into<Multihash>,
+    {
+        let namespace: Namespace<R> = Namespace::from(urn);
+        let rad_id = Reference::rad_id(namespace.clone());
+        let rad_self = Reference::rad_self(namespace.clone(), None);
+        let rad_signed_refs = Reference::rad_signed_refs(namespace.clone(), None);
+
+        vec![
+            Refspec {
+                src: remote_glob(rad_id.clone().with_remote(refspec_pattern!("*"))),
+                dst: remote_glob(rad_id.with_remote(refspec_pattern!("*"))),
+                force: Force::False,
+            }.into_fetchspec(),
+            Refspec {
+                src: remote_glob(rad_self.clone().with_remote(refspec_pattern!("*"))),
+                dst: remote_glob(rad_self.with_remote(refspec_pattern!("*"))),
+                force: Force::False,
+            }.into_fetchspec(),
+            Refspec {
+                src: remote_glob(rad_signed_refs.clone().with_remote(refspec_pattern!("*"))),
+                dst: remote_glob(rad_signed_refs.with_remote(refspec_pattern!("*"))),
+                force: Force::False,
+            }.into_fetchspec(),
+        ]
+    }
+
     pub fn peek<P, R>(urn: &Urn<R>, remote_peer: &P, remotes: &BTreeSet<P>) -> Vec<Fetchspec>
     where
         P: Clone + PartialEq + 'static,
@@ -91,6 +151,7 @@ pub mod refspecs {
 
         let rad_id = Reference::rad_id(namespace.clone());
         let rad_self = Reference::rad_self(namespace.clone(), None);
+        let rad_signed_refs = Reference::rad_signed_refs(namespace.clone(), None);
         let rad_ids = Reference::rad_ids_glob(namespace);
 
         let is_remote = |src: Reference<Namespace<R>, P, _>, remote: P| {
@@ -117,6 +178,11 @@ pub mod refspecs {
                         force: Force::False,
                     }
                     .into_fetchspec(),
+                    Refspec {
+                        src: is_remote(rad_signed_refs.clone(), remote.clone()),
+                        dst: rad_signed_refs.clone().with_remote(remote.clone()),
+                        force: Force::False,
+                    }.into_fetchspec(),
                     Refspec {
                         src: if remote == remote_peer {
                             rad_ids.clone()
@@ -525,6 +591,10 @@ mod tests {
                     refspec_pattern!("refs/remotes/tola/rad/self")
                 ),
                 (
+                    refspec_pattern!("refs/rad/signed_refs"),
+                    refspec_pattern!("refs/remotes/tola/rad/signed_refs")
+                ),
+                (
                     refspec_pattern!("refs/rad/ids/*"),
                     refspec_pattern!("refs/remotes/tola/rad/ids/*")
                 )
@@ -729,6 +799,11 @@ mod tests {
                     PROJECT_NAMESPACE
                         .with_pattern_suffix(refspec_pattern!("refs/remotes/tola/rad/ids/*"))
                 ),
+                format!(
+                    "{}:{}",
+                    PROJECT_NAMESPACE.join(reflike!("refs/rad/signed_refs")),
+                    PROJECT_NAMESPACE.join(reflike!("refs/remotes/tola/rad/signed_refs")),
+                ),
                 // Tola's view of rad/* of lolek + bolek's top-level namespaces
                 format!(
                     "{}:{}",
@@ -748,6 +823,11 @@ mod tests {
                 ),
                 format!(
                     "{}:{}",
+                    BOLEK_NAMESPACE.join(reflike!("refs/rad/signed_refs")),
+                    BOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/signed_refs")),
+                ),
+                format!(
+                    "{}:{}",
                     LOLEK_NAMESPACE.join(reflike!("refs/rad/id")),
                     LOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/id"))
                 ),
@@ -755,6 +835,11 @@ mod tests {
                     "{}:{}",
                     LOLEK_NAMESPACE.join(reflike!("refs/rad/self")),
                     LOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/self"))
+                ),
+                format!(
+                    "{}:{}",
+                    LOLEK_NAMESPACE.join(reflike!("refs/rad/signed_refs")),
+                    LOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/signed_refs"))
                 ),
                 format!(
                     "{}:{}",
@@ -773,6 +858,11 @@ mod tests {
                     "{}:{}",
                     BOLEK_NAMESPACE.join(reflike!("refs/remotes/lolek/rad/signed_refs")),
                     BOLEK_NAMESPACE.join(reflike!("refs/remotes/lolek/rad/signed_refs"))
+                ),
+                format!(
+                    "{}:{}",
+                    BOLEK_NAMESPACE.join(reflike!("refs/rad/signed_refs")),
+                    BOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/signed_refs"))
                 ),
                 // Lolek's signed_refs for LOLEK_URN
                 format!(
