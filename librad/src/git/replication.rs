@@ -112,9 +112,8 @@ fn replication(
         })
     } else {
         Ok(Replication::Fetch {
-            urn,
-            identity: identities::any::get(storage, &remote_ident)?
-                .ok_or(Error::MissingIdentity)?,
+            urn: urn.clone(),
+            identity: identities::any::get(storage, &urn)?.ok_or(Error::MissingIdentity)?,
         })
     }
 }
@@ -208,7 +207,10 @@ where
             // 2. Prune old delegations
             match identity {
                 SomeIdentity::Project(proj) => {
-                    let delegations = project::all_delegates(&proj);
+                    let mut delegations = project::all_delegates(&proj);
+                    // TODO(xla): Stop-gap should be addressed properly.
+                    delegations.insert(remote_peer);
+
                     let _ = fetcher
                         .fetch(fetch::Fetchspecs::Peek {
                             remotes: delegations.clone(),
