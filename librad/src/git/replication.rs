@@ -38,6 +38,9 @@ pub enum Error {
     #[error("identity not found")]
     MissingIdentity,
 
+    #[error("no reference tip found for: {0}")]
+    MissingTip(Urn),
+
     #[error("missing required ref: {0}")]
     Missing(ext::RefLike),
 
@@ -220,19 +223,7 @@ where
             // 2. Prune old delegations
             match setup {
                 Setup::Project(proj) => {
-                    let delegations: BTreeSet<PeerId> = proj
-                        .delegations()
-                        .iter()
-                        .flat_map(|delegate| match delegate {
-                            Either::Left(pk) => vec![PeerId::from(*pk)],
-                            Either::Right(person) => person
-                                .delegations()
-                                .iter()
-                                .map(|pk| PeerId::from(*pk))
-                                .collect(),
-                        })
-                        .into_iter()
-                        .collect();
+                    let delegations = project::all_delegates(&proj);
                     let _ = fetcher
                         .fetch(fetch::Fetchspecs::Peek {
                             remotes: delegations.clone(),
@@ -240,20 +231,7 @@ where
                         .map_err(|e| Error::Fetch(e.into()))?;
                     let proj = identities::project::verify(storage, &urn)?
                         .ok_or(Error::MissingIdentity)?;
-                    let updated_delegations: BTreeSet<PeerId> = proj
-                        .delegations()
-                        .iter()
-                        .flat_map(|delegate| match delegate {
-                            Either::Left(pk) => vec![PeerId::from(*pk)],
-                            Either::Right(person) => person
-                                .delegations()
-                                .iter()
-                                .map(|pk| PeerId::from(*pk))
-                                .collect(),
-                        })
-                        .into_iter()
-                        .collect();
-                    let (removed, _) = disjoint_difference(&delegations, &updated_delegations);
+                    let updated_delegations = project::all_delegates(&proj);
                     let delegate_views =
                         project::delegate_views(storage, proj.into_inner(), remote_peer)?;
                     project::replicate_signed_refs(
@@ -265,6 +243,8 @@ where
                             .map(|view| view.urn.clone())
                             .collect(),
                     )?;
+
+                    let (removed, _) = disjoint_difference(&delegations, &updated_delegations);
                     prune(storage, &urn, removed.iter());
                 },
                 Setup::Person(person) => {
@@ -582,7 +562,7 @@ mod project {
             .map(|view| view.project.clone().into_inner());
         let commit = identities::project::latest_tip(storage, projects)?;
         match commit {
-            None => panic!("uhoh"),
+            None => Err(Error::MissingTip(urn.clone())),
             Some(tip) => ensure_rad_id(storage, urn, tip.into()),
         }
     }
@@ -614,5 +594,19 @@ mod project {
         }
 
         Ok(peers)
+    }
+
+    pub fn all_delegates(proj: &Project) -> BTreeSet<PeerId> {
+        proj.delegations()
+            .iter()
+            .flat_map(|delegate| match delegate {
+                Either::Left(pk) => vec![PeerId::from(*pk)],
+                Either::Right(person) => person
+                    .delegations()
+                    .iter()
+                    .map(|pk| PeerId::from(*pk))
+                    .collect(),
+            })
+            .collect()
     }
 }
