@@ -74,11 +74,7 @@ where
                 // FIXME(finto): This could potentially fetch _a lot_ of data. Need to limit it.
                 let mut all = refspecs::all(urn);
                 let remote = Some(remote_peer.clone()).into_iter().collect();
-                let mut remotes = refspecs::peek(
-                    urn,
-                    &remote_peer,
-                    &remote
-                );
+                let mut remotes = refspecs::peek(urn, &remote_peer, &remote);
                 all.append(&mut remotes);
                 all
             },

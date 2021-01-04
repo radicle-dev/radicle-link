@@ -72,20 +72,15 @@ pub enum Error {
     Store(#[from] storage::Error),
 }
 
-pub enum Setup {
-    Project(Project),
-    Person(Person),
-}
-
 pub enum Replication {
     Clone {
         urn: Urn,
-        setup: Setup,
+        identity: SomeIdentity,
         fetched_peers: BTreeSet<PeerId>,
     },
     Fetch {
         urn: Urn,
-        setup: Setup,
+        identity: SomeIdentity,
     },
 }
 
@@ -109,28 +104,18 @@ fn replication(
             .map_err(|e| Error::Fetch(e.into()))
             .and_then(project::fetched_peers)?;
 
-        let setup = match identities::any::get(storage, &remote_ident)? {
-            None => return Err(Error::MissingIdentity),
-            Some(some_id) => match some_id {
-                SomeIdentity::Person(person) => Setup::Person(person),
-                SomeIdentity::Project(project) => Setup::Project(project),
-            },
-        };
-
         Ok(Replication::Clone {
             urn,
             fetched_peers,
-            setup,
+            identity: identities::any::get(storage, &remote_ident)?
+                .ok_or(Error::MissingIdentity)?,
         })
     } else {
-        let setup = match identities::any::get(storage, &remote_ident)? {
-            None => return Err(Error::MissingIdentity),
-            Some(some_id) => match some_id {
-                SomeIdentity::Person(person) => Setup::Person(person),
-                SomeIdentity::Project(project) => Setup::Project(project),
-            },
-        };
-        Ok(Replication::Fetch { urn, setup })
+        Ok(Replication::Fetch {
+            urn,
+            identity: identities::any::get(storage, &remote_ident)?
+                .ok_or(Error::MissingIdentity)?,
+        })
     }
 }
 
@@ -184,17 +169,17 @@ where
     match replication(storage, &mut fetcher, urn, remote_peer)? {
         Replication::Clone {
             urn,
-            setup,
+            identity,
             fetched_peers,
         } => {
-            let allowed = match setup {
-                Setup::Project(proj) => {
+            let allowed = match identity {
+                SomeIdentity::Project(proj) => {
                     let delegates = project::delegate_views(storage, proj, remote_peer)?;
                     let allowed = delegates.keys().copied().collect();
                     project::ensure_setup(storage, &mut fetcher, delegates, &urn, remote_peer)?;
                     allowed
                 },
-                Setup::Person(person) => {
+                SomeIdentity::Person(person) => {
                     person::ensure_setup(storage, person.clone(), remote_peer)?;
                     person
                         .delegations()
@@ -216,13 +201,13 @@ where
 
             Ok(())
         },
-        Replication::Fetch { urn, setup } => {
+        Replication::Fetch { urn, identity } => {
             // Fetch what we know
             // Check delegations of old identity
             // 1. Track new delegations + fetch them
             // 2. Prune old delegations
-            match setup {
-                Setup::Project(proj) => {
+            match identity {
+                SomeIdentity::Project(proj) => {
                     let delegations = project::all_delegates(&proj);
                     let _ = fetcher
                         .fetch(fetch::Fetchspecs::Peek {
@@ -247,7 +232,7 @@ where
                     let (removed, _) = disjoint_difference(&delegations, &updated_delegations);
                     prune(storage, &urn, removed.iter());
                 },
-                Setup::Person(person) => {
+                SomeIdentity::Person(person) => {
                     // FIXME: Probably need to do more than this
                     person::ensure_setup(storage, person, remote_peer)?;
                 },
