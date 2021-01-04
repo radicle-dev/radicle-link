@@ -107,7 +107,7 @@ fn replication(
         let fetched_peers = fetcher
             .fetch(fetch::Fetchspecs::All)
             .map_err(|e| Error::Fetch(e.into()))
-            .and_then(|result| project::fetched_peers(result))?;
+            .and_then(project::fetched_peers)?;
 
         let setup = match identities::any::get(storage, &remote_ident)? {
             None => return Err(Error::MissingIdentity),
@@ -249,7 +249,7 @@ where
                 },
                 Setup::Person(person) => {
                     // FIXME: Probably need to do more than this
-                    person::ensure_setup(storage, person.clone(), remote_peer)?;
+                    person::ensure_setup(storage, person, remote_peer)?;
                 },
             }
 

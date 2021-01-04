@@ -73,10 +73,11 @@ where
                 // TODO(finto): Might not actually need rad/self, but isntead signed_refs
                 // FIXME(finto): This could potentially fetch _a lot_ of data. Need to limit it.
                 let mut all = refspecs::all(urn);
+                let remote = Some(remote_peer.clone()).into_iter().collect();
                 let mut remotes = refspecs::peek(
                     urn,
-                    &remote_peer.clone(),
-                    &Some(remote_peer).into_iter().collect(),
+                    &remote_peer,
+                    &remote
                 );
                 all.append(&mut remotes);
                 all
@@ -126,7 +127,7 @@ pub mod refspecs {
         let namespace: Namespace<R> = Namespace::from(urn);
         let rad_id = Reference::rad_id(namespace.clone());
         let rad_self = Reference::rad_self(namespace.clone(), None);
-        let rad_signed_refs = Reference::rad_signed_refs(namespace.clone(), None);
+        let rad_signed_refs = Reference::rad_signed_refs(namespace, None);
 
         vec![
             Refspec {

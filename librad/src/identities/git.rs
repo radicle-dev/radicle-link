@@ -181,10 +181,8 @@ impl<'a, T: 'a> Identities<'a, T> {
 
         Ok(if self.is_in_ancestry_path(left, right)? {
             false
-        } else if self.is_in_ancestry_path(right, left)? {
-            false
         } else {
-            true
+            !(self.is_in_ancestry_path(right, left)?)
         })
     }
 
