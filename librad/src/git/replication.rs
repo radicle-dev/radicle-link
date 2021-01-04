@@ -355,7 +355,6 @@ mod project {
 
         // Fetch all the rest
         tracing::debug!("fetching heads: {:?}, {:?}", tracked_sigrefs, delegates);
-        println!("fetching heads: {:?}", tracked_sigrefs);
         fetcher
             .fetch(fetch::Fetchspecs::Replicate {
                 tracked_sigrefs,

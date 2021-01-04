@@ -155,9 +155,7 @@ pub fn is_fork(storage: &Storage, left: &Urn, right: &Urn) -> Result<bool, Error
     let right = get(storage, right)?.ok_or_else(|| Error::NotFound(right.clone()))?;
     let identities = identities(&storage);
 
-    println!("Left");
     let left_fork = identities.is_fork(left.content_id.into(), right.revision.into())?;
-    println!("Right");
     let right_fork  = identities.is_fork(right.content_id.into(), left.revision.into())?;
     Ok(left_fork || right_fork)
 }
