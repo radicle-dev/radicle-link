@@ -69,6 +69,7 @@ impl RefLike {
         RefspecPattern(self.0.join(suf.into().0))
     }
 
+    /// Prepend a [`RefspecPattern`], yielding a [`RefspecPattern`]
     pub fn glob_path<Glob: Into<RefspecPattern>>(
         &self,
         glob: Glob,
