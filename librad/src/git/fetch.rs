@@ -91,30 +91,9 @@ where
 pub mod refspecs {
     use super::*;
 
-    pub fn remote_glob<R>(
-        r: Reference<Namespace<R>, ext::RefspecPattern, ext::RefLike>,
-    ) -> ext::RefspecPattern
-    where
-        R: HasProtocol + Clone + 'static,
-        for<'a> &'a R: Into<Multihash>,
-    {
-        let mut refl = reflike!("refs");
-
-        if let Some(ref namespace) = r.namespace {
-            refl = refl
-                .join(reflike!("namespaces"))
-                .join(namespace)
-                .join(reflike!("refs"));
-        }
-
-        let suffix: ext::RefLike = ext::RefLike::from(r.category).join(r.name.to_owned());
-        let remote = r.remote.unwrap_or(refspec_pattern!("*"));
-        refl.join(reflike!("remotes")).glob_path(remote, suffix)
-    }
-
     pub fn all<P, R>(urn: &Urn<R>) -> Vec<Fetchspec>
     where
-        P: Clone + PartialEq + 'static,
+        P: Clone + 'static,
         for<'a> &'a P: AsRemote + Into<ext::RefLike>,
 
         R: HasProtocol + Clone + 'static,
@@ -363,6 +342,27 @@ pub mod refspecs {
         signed.append(&mut peek_remote);
         signed.append(&mut delegates);
         signed
+    }
+
+    fn remote_glob<R>(
+        r: Reference<Namespace<R>, ext::RefspecPattern, ext::RefLike>,
+    ) -> ext::RefspecPattern
+    where
+        R: HasProtocol + Clone + 'static,
+        for<'a> &'a R: Into<Multihash>,
+    {
+        let mut refl = reflike!("refs");
+
+        if let Some(ref namespace) = r.namespace {
+            refl = refl
+                .join(reflike!("namespaces"))
+                .join(namespace)
+                .join(reflike!("refs"));
+        }
+
+        let suffix: ext::RefLike = ext::RefLike::from(r.category).join(r.name.to_owned());
+        let remote = r.remote.unwrap_or(refspec_pattern!("*"));
+        refl.join(reflike!("remotes")).glob_path(remote, suffix)
     }
 }
 
