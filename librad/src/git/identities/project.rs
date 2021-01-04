@@ -20,14 +20,7 @@ use super::{
 use crate::{
     identities::{
         self,
-        git::{
-            Identities,
-            IndirectDelegation,
-            Project,
-            Revision,
-            VerifiedProject,
-            Verifying,
-        },
+        git::{Identities, IndirectDelegation, Project, Revision, VerifiedProject, Verifying},
         urn,
     },
     peer::PeerId,
@@ -156,11 +149,14 @@ pub fn is_fork(storage: &Storage, left: &Urn, right: &Urn) -> Result<bool, Error
     let identities = identities(&storage);
 
     let left_fork = identities.is_fork(left.content_id.into(), right.revision.into())?;
-    let right_fork  = identities.is_fork(right.content_id.into(), left.revision.into())?;
+    let right_fork = identities.is_fork(right.content_id.into(), left.revision.into())?;
     Ok(left_fork || right_fork)
 }
 
-pub fn latest_tip(storage: &Storage, projects: impl Iterator<Item = Project>) -> Result<Option<git2::Oid>, Error> {
+pub fn latest_tip(
+    storage: &Storage,
+    projects: impl Iterator<Item = Project>,
+) -> Result<Option<git2::Oid>, Error> {
     Ok(identities(storage).latest_tip(projects)?)
 }
 

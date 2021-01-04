@@ -73,7 +73,11 @@ where
                 // TODO(finto): Might not actually need rad/self, but isntead signed_refs
                 // FIXME(finto): This could potentially fetch _a lot_ of data. Need to limit it.
                 let mut all = refspecs::all(urn);
-                let mut remotes = refspecs::peek(urn, &remote_peer.clone(), &Some(remote_peer).into_iter().collect());
+                let mut remotes = refspecs::peek(
+                    urn,
+                    &remote_peer.clone(),
+                    &Some(remote_peer).into_iter().collect(),
+                );
                 all.append(&mut remotes);
                 all
             },
@@ -90,21 +94,25 @@ where
 pub mod refspecs {
     use super::*;
 
-    pub fn remote_glob<R>(r: Reference<Namespace<R>, ext::RefspecPattern, ext::RefLike>) -> ext::RefspecPattern
-    where R: HasProtocol + Clone + 'static, for<'a> &'a R: Into<Multihash>
+    pub fn remote_glob<R>(
+        r: Reference<Namespace<R>, ext::RefspecPattern, ext::RefLike>,
+    ) -> ext::RefspecPattern
+    where
+        R: HasProtocol + Clone + 'static,
+        for<'a> &'a R: Into<Multihash>,
     {
-            let mut refl = reflike!("refs");
+        let mut refl = reflike!("refs");
 
-            if let Some(ref namespace) = r.namespace {
-                refl = refl
-                    .join(reflike!("namespaces"))
-                    .join(namespace)
-                    .join(reflike!("refs"));
-            }
+        if let Some(ref namespace) = r.namespace {
+            refl = refl
+                .join(reflike!("namespaces"))
+                .join(namespace)
+                .join(reflike!("refs"));
+        }
 
-            let suffix: ext::RefLike = ext::RefLike::from(r.category).join(r.name.to_owned());
-            let remote = r.remote.unwrap_or(refspec_pattern!("*"));
-            refl.join(reflike!("remotes")).glob_path(remote, suffix)
+        let suffix: ext::RefLike = ext::RefLike::from(r.category).join(r.name.to_owned());
+        let remote = r.remote.unwrap_or(refspec_pattern!("*"));
+        refl.join(reflike!("remotes")).glob_path(remote, suffix)
     }
 
     pub fn all<P, R>(urn: &Urn<R>) -> Vec<Fetchspec>
@@ -125,17 +133,20 @@ pub mod refspecs {
                 src: remote_glob(rad_id.clone().with_remote(refspec_pattern!("*"))),
                 dst: remote_glob(rad_id.with_remote(refspec_pattern!("*"))),
                 force: Force::False,
-            }.into_fetchspec(),
+            }
+            .into_fetchspec(),
             Refspec {
                 src: remote_glob(rad_self.clone().with_remote(refspec_pattern!("*"))),
                 dst: remote_glob(rad_self.with_remote(refspec_pattern!("*"))),
                 force: Force::False,
-            }.into_fetchspec(),
+            }
+            .into_fetchspec(),
             Refspec {
                 src: remote_glob(rad_signed_refs.clone().with_remote(refspec_pattern!("*"))),
                 dst: remote_glob(rad_signed_refs.with_remote(refspec_pattern!("*"))),
                 force: Force::False,
-            }.into_fetchspec(),
+            }
+            .into_fetchspec(),
         ]
     }
 
@@ -182,7 +193,8 @@ pub mod refspecs {
                         src: is_remote(rad_signed_refs.clone(), remote.clone()),
                         dst: rad_signed_refs.clone().with_remote(remote.clone()),
                         force: Force::False,
-                    }.into_fetchspec(),
+                    }
+                    .into_fetchspec(),
                     Refspec {
                         src: if remote == remote_peer {
                             rad_ids.clone()

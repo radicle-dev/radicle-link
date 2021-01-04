@@ -191,7 +191,10 @@ impl<'a, T: 'a> Identities<'a, T> {
     //// Helpers ////
 
     /// Assumes that the bag of commits are in a related history.
-    fn latest_generic(&self, bag: impl Iterator<Item = git2::Oid>) -> Result<Option<git2::Oid>, git2::Error> {
+    fn latest_generic(
+        &self,
+        bag: impl Iterator<Item = git2::Oid>,
+    ) -> Result<Option<git2::Oid>, git2::Error> {
         let mut oid = None;
         for commit in bag {
             match oid {
@@ -200,7 +203,7 @@ impl<'a, T: 'a> Identities<'a, T> {
                     if self.repo.graph_descendant_of(*other, commit)? {
                         *other = commit
                     }
-                }
+                },
             }
         }
 
@@ -581,7 +584,10 @@ impl<'a> Identities<'a, Project> {
         Ok(self.is_fork_generic(left, right)?)
     }
 
-    pub fn latest_tip(&self, projects: impl Iterator<Item = Project>) -> Result<Option<git2::Oid>, error::Store> {
+    pub fn latest_tip(
+        &self,
+        projects: impl Iterator<Item = Project>,
+    ) -> Result<Option<git2::Oid>, error::Store> {
         Ok(self.latest_generic(projects.map(|proj| proj.content_id.into()))?)
     }
 

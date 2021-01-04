@@ -23,7 +23,7 @@ use super::{
     types::{reference, Force, Namespace, Reference},
 };
 use crate::{
-    identities::git::{Person, Project, SomeIdentity, VerifiedProject, VerifiedPerson},
+    identities::git::{Person, Project, SomeIdentity, VerifiedPerson, VerifiedProject},
     peer::PeerId,
 };
 
@@ -82,11 +82,16 @@ pub enum Replication {
     },
     Fetch {
         urn: Urn,
-        setup: Setup
+        setup: Setup,
     },
 }
 
-fn replication(storage: &Storage, fetcher: &mut fetch::DefaultFetcher, urn: Urn, remote_peer: PeerId) -> Result<Replication, Error> {
+fn replication(
+    storage: &Storage,
+    fetcher: &mut fetch::DefaultFetcher,
+    urn: Urn,
+    remote_peer: PeerId,
+) -> Result<Replication, Error> {
     let remote_ident: Urn = Reference::rad_id(Namespace::from(&urn))
         .with_remote(remote_peer)
         .try_into()
@@ -94,7 +99,8 @@ fn replication(storage: &Storage, fetcher: &mut fetch::DefaultFetcher, urn: Urn,
 
     if !storage.has_urn(&urn)? {
         // TODO(finto): If we do a shotgun fetch we might fetch our own remote?
-        // TODO(finto): We can shotgun fetch but we can't fetch rad/ids/\* because of one-level
+        // TODO(finto): We can shotgun fetch but we can't fetch rad/ids/\* because of
+        // one-level
         let fetched_peers = fetcher
             .fetch(fetch::Fetchspecs::All)
             .map_err(|e| Error::Fetch(e.into()))
@@ -105,17 +111,21 @@ fn replication(storage: &Storage, fetcher: &mut fetch::DefaultFetcher, urn: Urn,
             Some(some_id) => match some_id {
                 SomeIdentity::Person(person) => Setup::Person(person),
                 SomeIdentity::Project(project) => Setup::Project(project),
-            }
+            },
         };
 
-        Ok(Replication::Clone { urn, fetched_peers, setup })
+        Ok(Replication::Clone {
+            urn,
+            fetched_peers,
+            setup,
+        })
     } else {
         let setup = match identities::any::get(storage, &remote_ident)? {
             None => return Err(Error::MissingIdentity),
             Some(some_id) => match some_id {
                 SomeIdentity::Person(person) => Setup::Person(person),
                 SomeIdentity::Project(project) => Setup::Project(project),
-            }
+            },
         };
         Ok(Replication::Fetch { urn, setup })
     }
@@ -172,7 +182,7 @@ where
         Replication::Clone {
             urn,
             setup,
-            fetched_peers
+            fetched_peers,
         } => {
             let allowed = match setup {
                 Setup::Project(proj) => {
@@ -183,8 +193,13 @@ where
                 },
                 Setup::Person(person) => {
                     person::ensure_setup(storage, person.clone(), remote_peer)?;
-                    person.delegations().iter().copied().map(PeerId::from).collect()
-                }
+                    person
+                        .delegations()
+                        .iter()
+                        .copied()
+                        .map(PeerId::from)
+                        .collect()
+                },
             };
 
             // Symref `rad/self` if a `LocalIdentity` was given
@@ -198,33 +213,58 @@ where
 
             Ok(())
         },
-        Replication::Fetch {
-            urn,
-            setup,
-        } => {
+        Replication::Fetch { urn, setup } => {
             // Fetch what we know
             // Check delegations of old identity
             // 1. Track new delegations + fetch them
             // 2. Prune old delegations
             match setup {
                 Setup::Project(proj) => {
-                    let delegations: BTreeSet<PeerId> = proj.delegations().iter().flat_map(|delegate| match delegate {
-                        Either::Left(pk) => vec![PeerId::from(*pk)],
-                        Either::Right(person) => person.delegations().iter().map(|pk| PeerId::from(*pk)).collect()
-                    })
-                    .into_iter()
-                    .collect();
-                    let _ = fetcher.fetch(fetch::Fetchspecs::Peek { remotes: delegations.clone() }).map_err(|e| Error::Fetch(e.into()))?;
-                    let proj = identities::project::verify(storage, &urn)?.ok_or(Error::MissingIdentity)?;
-                    let updated_delegations: BTreeSet<PeerId> = proj.delegations().iter().flat_map(|delegate| match delegate {
-                        Either::Left(pk) => vec![PeerId::from(*pk)],
-                        Either::Right(person) => person.delegations().iter().map(|pk| PeerId::from(*pk)).collect()
-                    })
-                    .into_iter()
-                    .collect();
+                    let delegations: BTreeSet<PeerId> = proj
+                        .delegations()
+                        .iter()
+                        .flat_map(|delegate| match delegate {
+                            Either::Left(pk) => vec![PeerId::from(*pk)],
+                            Either::Right(person) => person
+                                .delegations()
+                                .iter()
+                                .map(|pk| PeerId::from(*pk))
+                                .collect(),
+                        })
+                        .into_iter()
+                        .collect();
+                    let _ = fetcher
+                        .fetch(fetch::Fetchspecs::Peek {
+                            remotes: delegations.clone(),
+                        })
+                        .map_err(|e| Error::Fetch(e.into()))?;
+                    let proj = identities::project::verify(storage, &urn)?
+                        .ok_or(Error::MissingIdentity)?;
+                    let updated_delegations: BTreeSet<PeerId> = proj
+                        .delegations()
+                        .iter()
+                        .flat_map(|delegate| match delegate {
+                            Either::Left(pk) => vec![PeerId::from(*pk)],
+                            Either::Right(person) => person
+                                .delegations()
+                                .iter()
+                                .map(|pk| PeerId::from(*pk))
+                                .collect(),
+                        })
+                        .into_iter()
+                        .collect();
                     let (removed, _) = disjoint_difference(&delegations, &updated_delegations);
-                    let delegate_views = project::delegate_views(storage, proj.into_inner(), remote_peer)?;
-                    project::replicate_signed_refs(storage, &mut fetcher, &urn, delegate_views.values().map(|view| view.urn.clone()).collect())?;
+                    let delegate_views =
+                        project::delegate_views(storage, proj.into_inner(), remote_peer)?;
+                    project::replicate_signed_refs(
+                        storage,
+                        &mut fetcher,
+                        &urn,
+                        delegate_views
+                            .values()
+                            .map(|view| view.urn.clone())
+                            .collect(),
+                    )?;
                     prune(storage, &urn, removed.iter());
                 },
                 Setup::Person(person) => {
@@ -234,7 +274,7 @@ where
             }
 
             Ok(())
-        }
+        },
     }
 
     // TODO: At this point, the tracking graph may have changed, and/or we
@@ -257,24 +297,29 @@ fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<(), Erro
 pub fn prune<'a>(storage: &Storage, urn: &Urn, prune_list: impl Iterator<Item = &'a PeerId>) {
     for peer in prune_list {
         match tracking::untrack(storage, urn, *peer) {
-            Ok(removed) => if removed {
-                tracing::trace!("pruned `{}`", peer);
-            } else {
-                tracing::trace!("attempted to prune `{}` but it did not exist", peer);
+            Ok(removed) => {
+                if removed {
+                    tracing::trace!("pruned `{}`", peer);
+                } else {
+                    tracing::trace!("attempted to prune `{}` but it did not exist", peer);
+                }
             },
             Err(err) => {
                 tracing::warn!("failed to prune `{}`\nreason: {}", peer, err);
-            }
+            },
         }
     }
 }
 
-// Return two sets where the first consists of elements in `ys` but not in `xs` and the second
-// vice-versa.
+// Return two sets where the first consists of elements in `ys` but not in `xs`
+// and the second vice-versa.
 //
-// If `ys` represents an "updated" set of `xs` then the first set will be all elements that were
-// removed and the second set will be all the elements added.
-fn disjoint_difference<'a, A: Clone + Ord>(xs: &'a BTreeSet<A>, ys: &'a BTreeSet<A>) -> (BTreeSet<A>, BTreeSet<A>) {
+// If `ys` represents an "updated" set of `xs` then the first set will be all
+// elements that were removed and the second set will be all the elements added.
+fn disjoint_difference<'a, A: Clone + Ord>(
+    xs: &'a BTreeSet<A>,
+    ys: &'a BTreeSet<A>,
+) -> (BTreeSet<A>, BTreeSet<A>) {
     let mut left = BTreeSet::new();
     let mut right = BTreeSet::new();
 
@@ -331,16 +376,40 @@ mod project {
         pub project: VerifiedProject,
     }
 
-    pub fn ensure_setup(storage: &Storage, fetcher: &mut fetch::DefaultFetcher, delegates: BTreeMap<PeerId, project::DelegateView>, urn: &Urn, remote_peer: PeerId) -> Result<(), Error> {
+    pub fn ensure_setup(
+        storage: &Storage,
+        fetcher: &mut fetch::DefaultFetcher,
+        delegates: BTreeMap<PeerId, project::DelegateView>,
+        urn: &Urn,
+        remote_peer: PeerId,
+    ) -> Result<(), Error> {
         let proj = project::verify(storage, urn.clone(), remote_peer)?;
-        project::ensure_no_forking(storage, &urn, remote_peer, delegates.values().map(|view| view.urn.clone()).collect())?;
+        project::ensure_no_forking(
+            storage,
+            &urn,
+            remote_peer,
+            delegates.values().map(|view| view.urn.clone()).collect(),
+        )?;
         project::track_direct(storage, &proj)?;
-        replicate_signed_refs(storage, fetcher, urn, delegates.values().map(|delegate| delegate.urn.clone()).collect())?;
+        replicate_signed_refs(
+            storage,
+            fetcher,
+            urn,
+            delegates
+                .values()
+                .map(|delegate| delegate.urn.clone())
+                .collect(),
+        )?;
         project::adopt_latest(storage, &urn, delegates)?;
         Ok(())
     }
 
-    pub fn replicate_signed_refs(storage: &Storage, fetcher: &mut fetch::DefaultFetcher, urn: &Urn, delegates: BTreeSet<Urn>) -> Result<(), Error> {
+    pub fn replicate_signed_refs(
+        storage: &Storage,
+        fetcher: &mut fetch::DefaultFetcher,
+        urn: &Urn,
+        delegates: BTreeSet<Urn>,
+    ) -> Result<(), Error> {
         // Read `signed_refs` for all tracked
         let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
         let tracked_sigrefs = tracked
@@ -407,47 +476,64 @@ mod project {
         Ok(())
     }
 
-    /// For each delegate in `remotes/<remote_peer>/rad/ids/*` get the view for that delegate that
-    /// _should_ be local the `storage` after a fetch.
-    pub fn delegate_views(storage: &Storage, proj: Project, remote_peer: PeerId) -> Result<BTreeMap<PeerId, DelegateView>, Error> {
+    /// For each delegate in `remotes/<remote_peer>/rad/ids/*` get the view for
+    /// that delegate that _should_ be local the `storage` after a fetch.
+    pub fn delegate_views(
+        storage: &Storage,
+        proj: Project,
+        remote_peer: PeerId,
+    ) -> Result<BTreeMap<PeerId, DelegateView>, Error> {
         let mut delegate_views = BTreeMap::new();
         let local_peer_id = storage.peer_id();
         for delegate in proj.delegations().iter().indirect() {
-            let in_rad_ids: Urn = Reference::rad_delegate(Namespace::from(&proj.urn()), &delegate.urn()).with_remote(remote_peer).try_into().expect("namespace is set");
+            let in_rad_ids: Urn =
+                Reference::rad_delegate(Namespace::from(&proj.urn()), &delegate.urn())
+                    .with_remote(remote_peer)
+                    .try_into()
+                    .expect("namespace is set");
             match identities::person::verify(storage, &in_rad_ids)? {
                 None => return Err(Error::Missing(in_rad_ids.into())),
                 Some(delegate_person) => {
                     let person = delegate_person.clone();
-                    for key in  delegate_person.delegations().iter() {
+                    for key in delegate_person.delegations().iter() {
                         let peer_id = PeerId::from(*key);
                         if &peer_id == local_peer_id {
                             continue;
                         } else {
-                            let remote_urn: Urn = Reference::rad_id(Namespace::from(&proj.urn())).with_remote(peer_id).try_into().expect("namespace is set");
+                            let remote_urn: Urn = Reference::rad_id(Namespace::from(&proj.urn()))
+                                .with_remote(peer_id)
+                                .try_into()
+                                .expect("namespace is set");
                             adopt_delegate_person(storage, peer_id, &person, &proj.urn())?;
                             let verified = identities::project::verify(storage, &remote_urn)?;
                             match verified {
                                 None => continue,
                                 Some(verified) => {
-                                    delegate_views.insert(peer_id,
+                                    delegate_views.insert(
+                                        peer_id,
                                         DelegateView {
                                             urn: remote_urn,
                                             delegate: person.clone(),
                                             project: verified,
-                                        }
+                                        },
                                     );
-                                }
+                                },
                             }
                         }
                     }
-                }
+                },
             }
         }
 
         Ok(delegate_views)
     }
 
-    pub fn adopt_delegate_person(storage: &Storage, peer: PeerId, person: &VerifiedPerson, project_urn: &Urn) -> Result<(), Error> {
+    pub fn adopt_delegate_person(
+        storage: &Storage,
+        peer: PeerId,
+        person: &VerifiedPerson,
+        project_urn: &Urn,
+    ) -> Result<(), Error> {
         let delegate_urn = person.urn();
         ensure_rad_id(storage, &delegate_urn, person.content_id)?;
         tracking::track(storage, &delegate_urn, peer)?;
@@ -486,8 +572,14 @@ mod project {
         Ok(())
     }
 
-    pub fn adopt_latest(storage: &Storage, urn: &Urn, delegates: BTreeMap<PeerId, DelegateView>) -> Result<(), Error> {
-        let projects = delegates.values().map(|view| view.project.clone().into_inner());
+    pub fn adopt_latest(
+        storage: &Storage,
+        urn: &Urn,
+        delegates: BTreeMap<PeerId, DelegateView>,
+    ) -> Result<(), Error> {
+        let projects = delegates
+            .values()
+            .map(|view| view.project.clone().into_inner());
         let commit = identities::project::latest_tip(storage, projects)?;
         match commit {
             None => panic!("uhoh"),
@@ -505,7 +597,7 @@ mod project {
                 Ok(None) | Err(_) => {
                     /* prune reference */
                     continue;
-                }
+                },
             };
             let suffix = match path.strip_prefix(reflike!("refs/remotes")) {
                 Ok(suffix) => suffix,
