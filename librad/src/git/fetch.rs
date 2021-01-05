@@ -30,6 +30,9 @@ use crate::{
     peer::PeerId,
 };
 
+// 1GB of data upper limit
+const MAX_FETCH: usize = 1024 * 1024 * 1024;
+
 /// Seed value to compute the fetchspecs for the desired fetch phase from.
 ///
 /// See also: [`super::replication::replicate`]
@@ -503,8 +506,14 @@ impl<'a> DefaultFetcher<'a> {
 
             let mut callbacks = git2::RemoteCallbacks::new();
             callbacks.transfer_progress(|prog| {
-                tracing::trace!("Fetch: received {} bytes", prog.received_bytes());
-                true
+                let received_bytes = prog.received_bytes();
+                tracing::trace!("Fetch: received {} bytes", received_bytes);
+                if received_bytes < MAX_FETCH {
+                    true
+                } else {
+                    tracing::error!("Fetch: exceeded {} bytes", MAX_FETCH);
+                    false
+                }
             });
 
             self.remote.download(
