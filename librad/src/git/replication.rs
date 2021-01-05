@@ -90,11 +90,6 @@ fn replication(
     urn: Urn,
     remote_peer: PeerId,
 ) -> Result<Replication, Error> {
-    let remote_ident: Urn = Reference::rad_id(Namespace::from(&urn))
-        .with_remote(remote_peer)
-        .try_into()
-        .expect("namespace is set");
-
     if !storage.has_urn(&urn)? {
         // TODO(finto): If we do a shotgun fetch we might fetch our own remote?
         // TODO(finto): We can shotgun fetch but we can't fetch rad/ids/\* because of
@@ -103,6 +98,11 @@ fn replication(
             .fetch(fetch::Fetchspecs::All)
             .map_err(|e| Error::Fetch(e.into()))
             .and_then(project::fetched_peers)?;
+
+        let remote_ident: Urn = Reference::rad_id(Namespace::from(&urn))
+            .with_remote(remote_peer)
+            .try_into()
+            .expect("namespace is set");
 
         Ok(Replication::Clone {
             urn,
