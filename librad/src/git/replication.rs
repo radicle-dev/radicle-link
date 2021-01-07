@@ -349,6 +349,11 @@ fn partition<'a, A: Clone + Ord>(
 mod person {
     use super::*;
 
+    /// Process the `Person` that was replicated by:
+    ///   * Verifying the identity
+    ///   * Tracking the delegations
+    ///   * Ensuring we have a top-level `rad/id` that points to the latest
+    ///     version
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn ensure_setup(
@@ -360,25 +365,33 @@ mod person {
             Reference::rad_id(Namespace::from(person.urn())).with_remote(remote_peer),
         );
 
-        match identities::person::verify(storage, &urn)? {
+        let delegations = match identities::person::verify(storage, &urn)? {
             None => Err(Error::MissingIdentity),
             Some(person) => {
-                // Create `rad/id` here, if not exists
-                ensure_rad_id(storage, &urn, person.content_id)?;
+                let delegations = person
+                    .into_inner()
+                    .doc
+                    .delegations
+                    .into_iter()
+                    .map(PeerId::from)
+                    .collect::<BTreeSet<_>>();
 
                 // Track all delegations
-                for key in person.into_inner().doc.delegations {
-                    tracking::track(storage, &urn, PeerId::from(key))?;
+                for peer_id in delegations.iter() {
+                    tracking::track(storage, &urn, *peer_id)?;
                 }
 
-                Ok(())
+                Ok(delegations)
             },
         }?;
 
-        adopt_latest(storage, &urn, tracking::tracked(storage, &urn)?.collect())?;
+        // Create `rad/id` here, if not exists
+        adopt_latest(storage, &urn, delegations)?;
         Ok(())
     }
 
+    /// Adopt the `rad/id` that has the most up-to-date commit from the set of
+    /// `Person` delegates.
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn adopt_latest(
@@ -388,7 +401,6 @@ mod person {
     ) -> Result<(), Error> {
         let persons = delegates.into_iter().flat_map(|peer| {
             let urn = unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(peer));
-
             identities::person::get(storage, &urn).ok().flatten()
         });
         let commit = identities::person::latest_tip(storage, persons)?;
@@ -409,8 +421,18 @@ mod project {
         pub project: VerifiedProject,
     }
 
+    /// Process the setup of a `Project` by:
+    ///   * Verifying the identity
+    ///   * Ensuring there are no forks between the remote we are replicating
+    ///     from and the
+    ///   delegates
+    ///   * Tracking the delegates
+    ///   * Replicating the `rad/signed_refs`
+    ///   * Tracking the remotes of the delegates
+    ///   * Ensuring we have a top-level `rad/id` that points to the latest
+    ///     version
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage ,fetcher), err)]
+    #[tracing::instrument(level = "trace", skip(storage, fetcher), err)]
     pub fn ensure_setup(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,
@@ -442,6 +464,8 @@ mod project {
         Ok(proj)
     }
 
+    /// Fetch `rad/signed_refs` and `refs/heads` of the delegates and our
+    /// tracked graph, returning the set of tracked peers.
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage, fetcher), err)]
     pub fn replicate_signed_refs(
@@ -482,10 +506,14 @@ mod project {
     #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn verify(storage: &Storage, urn: Urn, remote: PeerId) -> Result<VerifiedProject, Error> {
         let urn = unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(remote));
-
         Ok(identities::project::verify(storage, &urn)?.ok_or(Error::MissingIdentity)?)
     }
 
+    /// Compare the remotes view of the project against each delegate and ensure
+    /// there are no forks.
+    ///
+    /// # Errors
+    ///   * If there is a fork
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn ensure_no_forking(
@@ -494,9 +522,6 @@ mod project {
         remote_peer: PeerId,
         delegates: BTreeSet<Urn>,
     ) -> Result<(), Error> {
-        // Get the remote's view
-        // Get the delegates' views
-        // Validate their histories
         let remote = unsafe_into_urn(
             Reference::rad_id(Namespace::from(urn.clone())).with_remote(remote_peer),
         );
@@ -568,6 +593,7 @@ mod project {
         Ok(delegate_views)
     }
 
+    /// Persist a delegate identity in our storage.
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn adopt_delegate_person(
@@ -597,6 +623,7 @@ mod project {
             .map_err(|e: git2::Error| Error::Store(e.into()))
     }
 
+    /// Track all direct delegations of a `Project`.
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
     fn track_direct(storage: &Storage, proj: &VerifiedProject) -> Result<(), Error> {
@@ -614,6 +641,8 @@ mod project {
         Ok(())
     }
 
+    /// Adopt the `rad/id` that has the most up-to-date commit from the set of
+    /// `Project` delegates.
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn adopt_latest(
@@ -631,6 +660,8 @@ mod project {
         }
     }
 
+    /// Using the fetched references we parse out the set of `PeerId`s that were
+    /// fetched.
     pub fn fetched_peers(result: fetch::FetchResult) -> Result<BTreeSet<PeerId>, Error> {
         use std::str::FromStr;
 
@@ -639,7 +670,7 @@ mod project {
             let path: ext::RefLike = match Urn::try_from(reference.clone()).map(|urn| urn.path) {
                 Ok(Some(path)) => path,
                 Ok(None) | Err(_) => {
-                    /* prune reference */
+                    /* FIXME: prune reference */
                     continue;
                 },
             };
@@ -649,7 +680,7 @@ mod project {
             };
             let peer = match suffix.as_str().split('/').next().map(PeerId::from_str) {
                 None | Some(Err(_)) => {
-                    /* prune reference */
+                    /* FIXME: prune reference */
                     continue;
                 },
                 Some(Ok(remote)) => remote,
