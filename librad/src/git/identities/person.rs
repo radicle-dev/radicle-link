@@ -154,6 +154,16 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Person, Error
     Ok(next)
 }
 
+/// Given a list persons -- assumed to be the same person -- return the latest
+/// revision tip.
+pub fn latest_tip(
+    storage: &Storage,
+    persons: impl Iterator<Item = Person>,
+) -> Result<Option<git2::Oid>, Error> {
+    // FIXME: Should we ensure that all the projects have the same URN?
+    Ok(identities(storage).latest_tip(persons)?)
+}
+
 fn identities(storage: &Storage) -> Identities<Person> {
     storage.identities()
 }

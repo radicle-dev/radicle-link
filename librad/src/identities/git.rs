@@ -425,6 +425,13 @@ impl<'a> Identities<'a, Person> {
         Ok(self.verify_generic(head)?)
     }
 
+    pub fn latest_tip(
+        &self,
+        persons: impl Iterator<Item = Person>,
+    ) -> Result<Option<git2::Oid>, error::Store> {
+        Ok(self.latest_generic(persons.map(|person| person.content_id.into()))?)
+    }
+
     /// Create a new [`Person`] from a payload and delegations.
     ///
     /// The returned [`Person`] (and the underlying commit) will not have any

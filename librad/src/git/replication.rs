@@ -6,6 +6,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     convert::{TryFrom, TryInto},
+    iter,
     net::SocketAddr,
 };
 
@@ -81,41 +82,8 @@ pub enum Replication {
     Fetch {
         urn: Urn,
         identity: SomeIdentity,
+        existing: BTreeSet<PeerId>,
     },
-}
-
-fn replication(
-    storage: &Storage,
-    fetcher: &mut fetch::DefaultFetcher,
-    urn: Urn,
-    remote_peer: PeerId,
-) -> Result<Replication, Error> {
-    if !storage.has_urn(&urn)? {
-        // TODO(finto): If we do a shotgun fetch we might fetch our own remote?
-        // TODO(finto): We can shotgun fetch but we can't fetch rad/ids/\* because of
-        // one-level
-        let fetched_peers = fetcher
-            .fetch(fetch::Fetchspecs::All)
-            .map_err(|e| Error::Fetch(e.into()))
-            .and_then(project::fetched_peers)?;
-
-        let remote_ident: Urn = Reference::rad_id(Namespace::from(&urn))
-            .with_remote(remote_peer)
-            .try_into()
-            .expect("namespace is set");
-
-        Ok(Replication::Clone {
-            urn,
-            fetched_peers,
-            identity: identities::any::get(storage, &remote_ident)?
-                .ok_or(Error::MissingIdentity)?,
-        })
-    } else {
-        Ok(Replication::Fetch {
-            urn: urn.clone(),
-            identity: identities::any::get(storage, &urn)?.ok_or(Error::MissingIdentity)?,
-        })
-    }
 }
 
 /// Attempt to fetch `urn` from `remote_peer`, optionally supplying
@@ -159,13 +127,15 @@ pub fn replicate<Addrs>(
 where
     Addrs: IntoIterator<Item = SocketAddr>,
 {
-    if storage.peer_id() == &remote_peer {
+    let urn = Urn::new(urn.id);
+    let local_peer_id = storage.peer_id();
+
+    if local_peer_id == &remote_peer {
         return Err(Error::SelfReplication);
     }
 
-    let urn = Urn::new(urn.id);
     let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
-    match replication(storage, &mut fetcher, urn, remote_peer)? {
+    let mut remove = match replication(storage, &mut fetcher, urn.clone(), remote_peer)? {
         Replication::Clone {
             urn,
             identity,
@@ -194,60 +164,128 @@ where
                 local_id.link(storage, &urn)?;
             }
 
-            // Remove any remote tracking branches we don't need
-            let prune_list = fetched_peers.difference(&allowed);
-            prune(storage, &urn, prune_list);
-
-            Ok(())
+            Ok::<_, Error>(fetched_peers.difference(&allowed).copied().collect())
         },
-        Replication::Fetch { urn, identity } => {
-            // Fetch what we know
-            // Check delegations of old identity
-            // 1. Track new delegations + fetch them
-            // 2. Prune old delegations
-            match identity {
+        Replication::Fetch {
+            urn,
+            identity,
+            existing,
+        } => {
+            let (mut removed, added, kept) = match identity {
                 SomeIdentity::Project(proj) => {
-                    let mut delegations = project::all_delegates(&proj);
-                    // TODO(xla): Stop-gap should be addressed properly.
-                    delegations.insert(remote_peer);
-
-                    let _ = fetcher
-                        .fetch(fetch::Fetchspecs::Peek {
-                            remotes: delegations.clone(),
-                        })
-                        .map_err(|e| Error::Fetch(e.into()))?;
-                    let proj = identities::project::verify(storage, &urn)?
-                        .ok_or(Error::MissingIdentity)?;
-                    let updated_delegations = project::all_delegates(&proj);
-                    let delegate_views =
-                        project::delegate_views(storage, proj.into_inner(), remote_peer)?;
-                    project::replicate_signed_refs(
-                        storage,
+                    let delegate_views = project::delegate_views(storage, proj, remote_peer)?;
+                    let proj = project::ensure_setup(
+                        &storage,
                         &mut fetcher,
+                        delegate_views,
                         &urn,
-                        delegate_views
-                            .values()
-                            .map(|view| view.urn.clone())
-                            .collect(),
+                        remote_peer,
                     )?;
 
-                    let (removed, _) = disjoint_difference(&delegations, &updated_delegations);
-                    prune(storage, &urn, removed.iter());
+                    let mut updated_tracked =
+                        tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
+                    let mut updated_delegations = project::all_delegates(&proj);
+                    updated_tracked.append(&mut updated_delegations);
+
+                    partition(&existing, &updated_tracked)
                 },
                 SomeIdentity::Person(person) => {
-                    // FIXME: Probably need to do more than this
                     person::ensure_setup(storage, person, remote_peer)?;
+                    partition(
+                        &existing,
+                        &tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>(),
+                    )
                 },
+            };
+
+            // We fetched the remote peer, but we don't track them unless they're in the
+            // added or kept set
+            if !(added.contains(&remote_peer) || kept.contains(&remote_peer)) {
+                removed.insert(remote_peer);
             }
 
-            Ok(())
+            Ok(removed)
         },
-    }
+    }?;
+
+    // Ensure we're not tracking ourselves
+    remove.insert(*local_peer_id);
+
+    // Remove any remote tracking branches we don't need
+    prune(storage, &urn, remove.iter());
 
     // TODO: At this point, the tracking graph may have changed, and/or we
     // created top-level person namespaces. We will eventually converge, but
     // perhaps we'd want to return some kind of continuation here, so the caller
     // could schedule a deferred task directly?
+    Ok(())
+}
+
+/// Identify the type of replication case we're in -- whether it's a new
+/// identity which we're cloning onto our machine or an existing identity that
+/// we are updating.
+///
+/// # Clone
+///
+/// If we are cloning then we pre-fetch all the references to kick-off the
+/// adoption of the progress.
+///
+/// # Fetch
+///
+/// If we are fetching updates then we only fetch the relevant remotes that we
+/// already know about.
+fn replication(
+    storage: &Storage,
+    fetcher: &mut fetch::DefaultFetcher,
+    urn: Urn,
+    remote_peer: PeerId,
+) -> Result<Replication, Error> {
+    if !storage.has_urn(&urn)? {
+        let fetched_peers = fetcher
+            .fetch(fetch::Fetchspecs::All)
+            .map_err(|e| Error::Fetch(e.into()))
+            .and_then(project::fetched_peers)?;
+
+        let remote_ident: Urn = Reference::rad_id(Namespace::from(&urn))
+            .with_remote(remote_peer)
+            .try_into()
+            .expect("namespace is set");
+
+        Ok(Replication::Clone {
+            urn,
+            fetched_peers,
+            identity: identities::any::get(storage, &remote_ident)?
+                .ok_or(Error::MissingIdentity)?,
+        })
+    } else {
+        let identity = identities::any::get(storage, &urn)?.ok_or(Error::MissingIdentity)?;
+        let existing = match identity {
+            SomeIdentity::Project(ref proj) => {
+                let mut remotes = project::all_delegates(&proj);
+                let mut tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
+                remotes.append(&mut tracked);
+
+                // We insert the remote peer so that we can look at their view of the project,
+                // even if we don't track them.
+                remotes.insert(remote_peer);
+
+                remotes
+            },
+            SomeIdentity::Person(_) => tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>(),
+        };
+
+        let _ = fetcher
+            .fetch(fetch::Fetchspecs::Peek {
+                remotes: existing.clone(),
+            })
+            .map_err(|e| Error::Fetch(e.into()))?;
+
+        Ok(Replication::Fetch {
+            urn: urn.clone(),
+            identity,
+            existing,
+        })
+    }
 }
 
 #[allow(clippy::unit_arg)]
@@ -261,7 +299,7 @@ fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<(), Erro
 // TODO(finto): Should this raise an error?
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage, prune_list))]
-pub fn prune<'a>(storage: &Storage, urn: &Urn, prune_list: impl Iterator<Item = &'a PeerId>) {
+fn prune<'a>(storage: &Storage, urn: &Urn, prune_list: impl Iterator<Item = &'a PeerId>) {
     for peer in prune_list {
         match tracking::untrack(storage, urn, *peer) {
             Ok(removed) => {
@@ -278,27 +316,30 @@ pub fn prune<'a>(storage: &Storage, urn: &Urn, prune_list: impl Iterator<Item = 
     }
 }
 
-// Return two sets where the first consists of elements in `ys` but not in `xs`
-// and the second vice-versa.
+// Return three sets where the first consists of elements in `ys` but not in
+// `xs` and the second vice-versa, and the final set contains the elements they
+// both share.
 //
 // If `ys` represents an "updated" set of `xs` then the first set will be all
-// elements that were removed and the second set will be all the elements added.
-fn disjoint_difference<'a, A: Clone + Ord>(
+// elements that were removed, the second set will be all the elements added,
+// and the third set all the elements that stayed the same.
+fn partition<'a, A: Clone + Ord>(
     xs: &'a BTreeSet<A>,
     ys: &'a BTreeSet<A>,
-) -> (BTreeSet<A>, BTreeSet<A>) {
-    let mut left = BTreeSet::new();
-    let mut right = BTreeSet::new();
+) -> (BTreeSet<A>, BTreeSet<A>, BTreeSet<A>) {
+    let mut removed = BTreeSet::new();
+    let mut added = BTreeSet::new();
+    let kept = xs.intersection(ys).cloned().collect();
 
     for e in xs.symmetric_difference(ys) {
         if xs.contains(e) {
-            right.insert(e.clone());
+            added.insert(e.clone());
         } else {
-            left.insert(e.clone());
+            removed.insert(e.clone());
         }
     }
 
-    (left, right)
+    (removed, added, kept)
 }
 
 mod person {
@@ -329,6 +370,29 @@ mod person {
 
                 Ok(())
             },
+        }?;
+
+        adopt_latest(storage, &urn, tracking::tracked(storage, &urn)?.collect())?;
+        Ok(())
+    }
+
+    pub fn adopt_latest(
+        storage: &Storage,
+        urn: &Urn,
+        delegates: BTreeSet<PeerId>,
+    ) -> Result<(), Error> {
+        let persons = delegates.into_iter().flat_map(|peer| {
+            let urn: Urn = Reference::rad_id(Namespace::from(urn))
+                .with_remote(peer)
+                .try_into()
+                .expect("namespace is set");
+
+            identities::person::get(storage, &urn).ok().flatten()
+        });
+        let commit = identities::person::latest_tip(storage, persons)?;
+        match commit {
+            None => Err(Error::MissingTip(urn.clone())),
+            Some(tip) => ensure_rad_id(storage, urn, tip.into()),
         }
     }
 }
@@ -349,7 +413,7 @@ mod project {
         delegates: BTreeMap<PeerId, project::DelegateView>,
         urn: &Urn,
         remote_peer: PeerId,
-    ) -> Result<(), Error> {
+    ) -> Result<VerifiedProject, Error> {
         let proj = project::verify(storage, urn.clone(), remote_peer)?;
         project::ensure_no_forking(
             storage,
@@ -358,7 +422,7 @@ mod project {
             delegates.values().map(|view| view.urn.clone()).collect(),
         )?;
         project::track_direct(storage, &proj)?;
-        replicate_signed_refs(
+        let tracked = replicate_signed_refs(
             storage,
             fetcher,
             urn,
@@ -367,16 +431,21 @@ mod project {
                 .map(|delegate| delegate.urn.clone())
                 .collect(),
         )?;
+        for peer in tracked {
+            tracking::track(&storage, &urn, peer)?;
+        }
         project::adopt_latest(storage, &urn, delegates)?;
-        Ok(())
+        Ok(proj)
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "trace", skip(storage, fetcher), err)]
     pub fn replicate_signed_refs(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,
         urn: &Urn,
         delegates: BTreeSet<Urn>,
-    ) -> Result<(), Error> {
+    ) -> Result<BTreeSet<PeerId>, Error> {
         // Read `signed_refs` for all tracked
         let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
         let tracked_sigrefs = tracked
@@ -393,13 +462,16 @@ mod project {
         tracing::debug!("fetching heads: {:?}, {:?}", tracked_sigrefs, delegates);
         fetcher
             .fetch(fetch::Fetchspecs::Replicate {
-                tracked_sigrefs,
+                tracked_sigrefs: tracked_sigrefs.clone(),
                 delegates,
             })
             .map_err(|e| Error::Fetch(e.into()))?;
 
         Refs::update(storage, &urn)?;
-        Ok(())
+        Ok(tracked_sigrefs
+            .iter()
+            .flat_map(|(peer, refs)| iter::once(*peer).chain(refs.remotes.flatten().copied()))
+            .collect())
     }
 
     #[allow(clippy::unit_arg)]
