@@ -73,8 +73,6 @@ where
     ) -> Vec<Fetchspec> {
         match self {
             Self::All => {
-                // TODO(finto): Might not actually need rad/self, but isntead signed_refs
-                // FIXME(finto): This could potentially fetch _a lot_ of data. Need to limit it.
                 let mut all = refspecs::all(urn);
                 let remote = Some(remote_peer.clone()).into_iter().collect();
                 let mut remotes = refspecs::peek(urn, &remote_peer, &remote);
