@@ -246,10 +246,8 @@ fn replication(
             .map_err(|e| Error::Fetch(e.into()))
             .and_then(project::fetched_peers)?;
 
-        let remote_ident: Urn = Reference::rad_id(Namespace::from(&urn))
-            .with_remote(remote_peer)
-            .try_into()
-            .expect("namespace is set");
+        let remote_ident =
+            unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)).with_remote(remote_peer));
 
         Ok(Replication::Clone {
             urn,
@@ -286,6 +284,10 @@ fn replication(
             existing,
         })
     }
+}
+
+fn unsafe_into_urn(reference: Reference<git_ext::RefLike>) -> Urn {
+    reference.try_into().expect("namespace is set")
 }
 
 #[allow(clippy::unit_arg)]
@@ -352,10 +354,9 @@ mod person {
         person: Person,
         remote_peer: PeerId,
     ) -> Result<(), Error> {
-        let urn: Urn = Reference::rad_id(Namespace::from(person.urn()))
-            .with_remote(remote_peer)
-            .try_into()
-            .expect("namespace is set");
+        let urn = unsafe_into_urn(
+            Reference::rad_id(Namespace::from(person.urn())).with_remote(remote_peer),
+        );
 
         match identities::person::verify(storage, &urn)? {
             None => Err(Error::MissingIdentity),
@@ -382,10 +383,7 @@ mod person {
         delegates: BTreeSet<PeerId>,
     ) -> Result<(), Error> {
         let persons = delegates.into_iter().flat_map(|peer| {
-            let urn: Urn = Reference::rad_id(Namespace::from(urn))
-                .with_remote(peer)
-                .try_into()
-                .expect("namespace is set");
+            let urn = unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(peer));
 
             identities::person::get(storage, &urn).ok().flatten()
         });
@@ -477,10 +475,7 @@ mod project {
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn verify(storage: &Storage, urn: Urn, remote: PeerId) -> Result<VerifiedProject, Error> {
-        let urn: Urn = Reference::rad_id(Namespace::from(urn))
-            .with_remote(remote)
-            .try_into()
-            .expect("namespace is set");
+        let urn = unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(remote));
 
         Ok(identities::project::verify(storage, &urn)?.ok_or(Error::MissingIdentity)?)
     }
@@ -496,10 +491,9 @@ mod project {
         // Get the remote's view
         // Get the delegates' views
         // Validate their histories
-        let remote: Urn = Reference::rad_id(Namespace::from(urn.clone()))
-            .with_remote(remote_peer)
-            .try_into()
-            .expect("namespace is set");
+        let remote = unsafe_into_urn(
+            Reference::rad_id(Namespace::from(urn.clone())).with_remote(remote_peer),
+        );
 
         for delegate in delegates.iter() {
             match identities::project::is_fork(&storage, &remote, &delegate) {
@@ -525,11 +519,10 @@ mod project {
         let mut delegate_views = BTreeMap::new();
         let local_peer_id = storage.peer_id();
         for delegate in proj.delegations().iter().indirect() {
-            let in_rad_ids: Urn =
+            let in_rad_ids = unsafe_into_urn(
                 Reference::rad_delegate(Namespace::from(&proj.urn()), &delegate.urn())
-                    .with_remote(remote_peer)
-                    .try_into()
-                    .expect("namespace is set");
+                    .with_remote(remote_peer),
+            );
             match identities::person::verify(storage, &in_rad_ids)? {
                 None => return Err(Error::Missing(in_rad_ids.into())),
                 Some(delegate_person) => {
@@ -539,10 +532,10 @@ mod project {
                         if &peer_id == local_peer_id {
                             continue;
                         } else {
-                            let remote_urn: Urn = Reference::rad_id(Namespace::from(&proj.urn()))
-                                .with_remote(peer_id)
-                                .try_into()
-                                .expect("namespace is set");
+                            let remote_urn = unsafe_into_urn(
+                                Reference::rad_id(Namespace::from(&proj.urn()))
+                                    .with_remote(peer_id),
+                            );
                             adopt_delegate_person(storage, peer_id, &person, &proj.urn())?;
                             let verified = identities::project::verify(storage, &remote_urn)?;
                             match verified {
