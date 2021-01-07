@@ -234,6 +234,8 @@ where
 ///
 /// If we are fetching updates then we only fetch the relevant remotes that we
 /// already know about.
+#[allow(clippy::unit_arg)]
+#[tracing::instrument(skip(storage, fetcher), err)]
 fn replication(
     storage: &Storage,
     fetcher: &mut fetch::DefaultFetcher,
@@ -377,6 +379,8 @@ mod person {
         Ok(())
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn adopt_latest(
         storage: &Storage,
         urn: &Urn,
@@ -405,6 +409,8 @@ mod project {
         pub project: VerifiedProject,
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "trace", skip(storage ,fetcher), err)]
     pub fn ensure_setup(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,
@@ -511,6 +517,8 @@ mod project {
 
     /// For each delegate in `remotes/<remote_peer>/rad/ids/*` get the view for
     /// that delegate that _should_ be local the `storage` after a fetch.
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn delegate_views(
         storage: &Storage,
         proj: Project,
@@ -560,6 +568,8 @@ mod project {
         Ok(delegate_views)
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn adopt_delegate_person(
         storage: &Storage,
         peer: PeerId,
@@ -604,6 +614,8 @@ mod project {
         Ok(())
     }
 
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn adopt_latest(
         storage: &Storage,
         urn: &Urn,
