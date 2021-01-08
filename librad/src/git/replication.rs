@@ -361,6 +361,7 @@ mod person {
         person: Person,
         remote_peer: PeerId,
     ) -> Result<(), Error> {
+        let local_peer = storage.peer_id();
         let urn = unsafe_into_urn(
             Reference::rad_id(Namespace::from(person.urn())).with_remote(remote_peer),
         );
@@ -378,7 +379,9 @@ mod person {
 
                 // Track all delegations
                 for peer_id in delegations.iter() {
-                    tracking::track(storage, &urn, *peer_id)?;
+                    if peer_id != local_peer {
+                        tracking::track(storage, &urn, *peer_id)?;
+                    }
                 }
 
                 Ok(delegations)
@@ -440,6 +443,7 @@ mod project {
         urn: &Urn,
         remote_peer: PeerId,
     ) -> Result<VerifiedProject, Error> {
+        let local_peer = storage.peer_id();
         let proj = project::verify(storage, urn.clone(), remote_peer)?;
         project::ensure_no_forking(
             storage,
@@ -458,7 +462,9 @@ mod project {
                 .collect(),
         )?;
         for peer in tracked {
-            tracking::track(&storage, &urn, peer)?;
+            if peer != *local_peer {
+                tracking::track(&storage, &urn, peer)?;
+            }
         }
         project::adopt_latest(storage, &urn, delegates)?;
         Ok(proj)
