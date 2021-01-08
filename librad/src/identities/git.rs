@@ -9,6 +9,7 @@ use either::*;
 use futures::executor::block_on;
 use git_ext as ext;
 use multihash::Multihash;
+use nonempty::NonEmpty;
 
 use crate::{
     identities::{
@@ -189,23 +190,16 @@ impl<'a, T: 'a> Identities<'a, T> {
     //// Helpers ////
 
     /// Assumes that the bag of commits are in a related history.
-    fn latest_generic(
-        &self,
-        bag: impl Iterator<Item = git2::Oid>,
-    ) -> Result<Option<git2::Oid>, git2::Error> {
-        let mut oid = None;
-        for commit in bag {
-            match oid {
-                None => oid = Some(commit),
-                Some(ref mut other) => {
-                    if self.repo.graph_descendant_of(*other, commit)? {
-                        *other = commit
-                    }
-                },
+    fn latest_generic(&self, bag: NonEmpty<git2::Oid>) -> Result<git2::Oid, git2::Error> {
+        let mut latest = bag.head;
+
+        for commit in bag.into_iter() {
+            if self.repo.graph_descendant_of(latest, commit)? {
+                latest = commit
             }
         }
 
-        Ok(oid)
+        Ok(latest)
     }
 
     fn by_oid(&self, oid: git2::Oid) -> ByOid<'a> {
@@ -425,10 +419,7 @@ impl<'a> Identities<'a, Person> {
         Ok(self.verify_generic(head)?)
     }
 
-    pub fn latest_tip(
-        &self,
-        persons: impl Iterator<Item = Person>,
-    ) -> Result<Option<git2::Oid>, error::Store> {
+    pub fn latest_tip(&self, persons: NonEmpty<Person>) -> Result<git2::Oid, error::Store> {
         Ok(self.latest_generic(persons.map(|person| person.content_id.into()))?)
     }
 
@@ -589,10 +580,7 @@ impl<'a> Identities<'a, Project> {
         Ok(self.is_fork_generic(left, right)?)
     }
 
-    pub fn latest_tip(
-        &self,
-        projects: impl Iterator<Item = Project>,
-    ) -> Result<Option<git2::Oid>, error::Store> {
+    pub fn latest_tip(&self, projects: NonEmpty<Project>) -> Result<git2::Oid, error::Store> {
         Ok(self.latest_generic(projects.map(|proj| proj.content_id.into()))?)
     }
 

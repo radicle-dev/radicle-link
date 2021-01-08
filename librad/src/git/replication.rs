@@ -12,6 +12,7 @@ use std::{
 
 use either::Either;
 use git_ext::{self as ext, is_exists_err};
+use nonempty::NonEmpty;
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
@@ -39,8 +40,8 @@ pub enum Error {
     #[error("identity not found")]
     MissingIdentity,
 
-    #[error("no reference tip found for: {0}")]
-    MissingTip(Urn),
+    #[error("no identity was found for `{0}`, leading to not being able to adopt a `rad/id`")]
+    MissingIdentities(Urn),
 
     #[error("missing required ref: {0}")]
     Missing(ext::RefLike),
@@ -402,15 +403,21 @@ mod person {
         urn: &Urn,
         delegates: BTreeSet<PeerId>,
     ) -> Result<(), Error> {
-        let persons = delegates.into_iter().flat_map(|peer| {
-            let urn = unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(peer));
-            identities::person::get(storage, &urn).ok().flatten()
-        });
-        let commit = identities::person::latest_tip(storage, persons)?;
-        match commit {
-            None => Err(Error::MissingTip(urn.clone())),
-            Some(tip) => ensure_rad_id(storage, urn, tip.into()),
-        }
+        let persons = NonEmpty::from_vec(
+            delegates
+                .into_iter()
+                .flat_map(|peer| {
+                    let urn =
+                        unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(peer));
+                    identities::person::get(storage, &urn).ok().flatten()
+                })
+                .collect(),
+        );
+        let tip = match persons {
+            Some(persons) => identities::person::latest_tip(storage, persons).map_err(Error::from),
+            None => Err(Error::MissingIdentities(urn.clone())),
+        }?;
+        ensure_rad_id(storage, urn, tip.into())
     }
 }
 
@@ -568,29 +575,29 @@ mod project {
                     let person = delegate_person.clone();
                     for key in delegate_person.delegations().iter() {
                         let peer_id = PeerId::from(*key);
-                        if &peer_id == local_peer_id {
-                            continue;
+                        let (urn, project) = if &peer_id == local_peer_id {
+                            let urn = proj.urn();
+                            let verified = identities::project::verify(storage, &urn)?
+                                .ok_or(Error::MissingIdentity)?;
+                            (urn, verified)
                         } else {
                             let remote_urn = unsafe_into_urn(
                                 Reference::rad_id(Namespace::from(&proj.urn()))
                                     .with_remote(peer_id),
                             );
                             adopt_delegate_person(storage, peer_id, &person, &proj.urn())?;
-                            let verified = identities::project::verify(storage, &remote_urn)?;
-                            match verified {
-                                None => continue,
-                                Some(verified) => {
-                                    delegate_views.insert(
-                                        peer_id,
-                                        DelegateView {
-                                            urn: remote_urn,
-                                            delegate: person.clone(),
-                                            project: verified,
-                                        },
-                                    );
-                                },
-                            }
-                        }
+                            let verified = identities::project::verify(storage, &remote_urn)?
+                                .ok_or(Error::MissingIdentity)?;
+                            (remote_urn, verified)
+                        };
+                        delegate_views.insert(
+                            peer_id,
+                            DelegateView {
+                                urn,
+                                delegate: person.clone(),
+                                project,
+                            },
+                        );
                     }
                 },
             }
@@ -656,14 +663,20 @@ mod project {
         urn: &Urn,
         delegates: BTreeMap<PeerId, DelegateView>,
     ) -> Result<(), Error> {
-        let projects = delegates
-            .values()
-            .map(|view| view.project.clone().into_inner());
-        let commit = identities::project::latest_tip(storage, projects)?;
-        match commit {
-            None => Err(Error::MissingTip(urn.clone())),
-            Some(tip) => ensure_rad_id(storage, urn, tip.into()),
-        }
+        let projects = NonEmpty::from_vec(
+            delegates
+                .values()
+                .map(|view| view.project.clone().into_inner())
+                .collect::<Vec<_>>(),
+        );
+
+        let tip = match projects {
+            Some(projects) => {
+                identities::project::latest_tip(storage, projects).map_err(Error::from)
+            },
+            None => Err(Error::MissingIdentities(urn.clone())),
+        }?;
+        ensure_rad_id(storage, urn, tip.into())
     }
 
     /// Using the fetched references we parse out the set of `PeerId`s that were
