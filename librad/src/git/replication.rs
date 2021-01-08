@@ -281,7 +281,7 @@ fn replication(
             .map_err(|e| Error::Fetch(e.into()))?;
 
         Ok(Replication::Fetch {
-            urn: urn.clone(),
+            urn,
             identity,
             existing,
         })
