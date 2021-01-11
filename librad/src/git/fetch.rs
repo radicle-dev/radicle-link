@@ -31,7 +31,7 @@ use crate::{
 };
 
 // 1GB of data upper limit
-const MAX_FETCH: usize = 1024 * 1024 * 1024;
+pub const ONE_GB: usize = 1024 * 1024 * 1024;
 
 /// Seed value to compute the fetchspecs for the desired fetch phase from.
 ///
@@ -39,7 +39,7 @@ const MAX_FETCH: usize = 1024 * 1024 * 1024;
 #[derive(Debug)]
 pub enum Fetchspecs<P, R> {
     /// Request all identity documents
-    All,
+    All { max_fetch: usize },
 
     /// Only request the branches necessary for identity verification.
     Peek { remotes: BTreeSet<P> },
@@ -72,7 +72,7 @@ where
         remote_heads: &RemoteHeads,
     ) -> Vec<Fetchspec> {
         match self {
-            Self::All => {
+            Self::All { .. } => {
                 let mut all = refspecs::all(urn);
                 let remote = Some(remote_peer.clone()).into_iter().collect();
                 let mut remotes = refspecs::peek(urn, &remote_peer, &remote);
@@ -85,6 +85,15 @@ where
                 tracked_sigrefs,
                 delegates,
             } => refspecs::replicate(urn, &remote_peer, remote_heads, tracked_sigrefs, delegates),
+        }
+    }
+
+    pub fn fetch_limit(&self) -> Option<usize> {
+        match self {
+            Fetchspecs::All { max_fetch } => Some(*max_fetch),
+            Fetchspecs::Peek { .. }
+            | Fetchspecs::SignedRefs { .. }
+            | Fetchspecs::Replicate { .. } => None,
         }
     }
 }
@@ -497,6 +506,7 @@ impl<'a> DefaultFetcher<'a> {
         fetchspecs: Fetchspecs<PeerId, git::Revision>,
     ) -> Result<FetchResult, git2::Error> {
         {
+            let max_fetch = fetchspecs.fetch_limit();
             let refspecs = fetchspecs
                 .refspecs(&self.urn, self.remote_peer, &self.remote_heads)
                 .into_iter()
@@ -508,11 +518,12 @@ impl<'a> DefaultFetcher<'a> {
             callbacks.transfer_progress(|prog| {
                 let received_bytes = prog.received_bytes();
                 tracing::trace!("Fetch: received {} bytes", received_bytes);
-                if received_bytes < MAX_FETCH {
-                    true
-                } else {
-                    tracing::error!("Fetch: exceeded {} bytes", MAX_FETCH);
-                    false
+                match max_fetch {
+                    Some(limit) if received_bytes > limit => {
+                        tracing::error!("Fetch: exceeded {} bytes", limit);
+                        false
+                    },
+                    Some(_) | None => true,
                 }
             });
 
