@@ -69,15 +69,6 @@ impl RefLike {
         RefspecPattern(self.0.join(suf.into().0))
     }
 
-    /// Prepend a [`RefspecPattern`], yielding a [`RefspecPattern`]
-    pub fn glob_path<Glob: Into<RefspecPattern>>(
-        &self,
-        glob: Glob,
-        suffix: Self,
-    ) -> RefspecPattern {
-        RefspecPattern(self.with_pattern_suffix(glob).0.join(suffix))
-    }
-
     /// Returns a [`RefLike`] that, when joined onto `base`, yields `self`.
     ///
     /// # Errors
@@ -435,6 +426,13 @@ impl Display for Qualified {
 pub struct RefspecPattern(PathBuf);
 
 impl RefspecPattern {
+    /// Append the `RefLike` to the `RefspecPattern`. This allows the creation
+    /// of patterns where the `*` appears in the middle of the path, e.g.
+    /// `refs/remotes/*/mfdoom`
+    pub fn append(&self, refl: impl Into<RefLike>) -> Self {
+        RefspecPattern(self.0.join(refl.into()))
+    }
+
     pub fn as_str(&self) -> &str {
         self.as_ref()
     }

@@ -363,7 +363,9 @@ pub mod refspecs {
 
         let suffix: ext::RefLike = ext::RefLike::from(r.category).join(r.name.to_owned());
         let remote = r.remote.unwrap_or(refspec_pattern!("*"));
-        refl.join(reflike!("remotes")).glob_path(remote, suffix)
+        refl.join(reflike!("remotes"))
+            .with_pattern_suffix(remote)
+            .append(suffix)
     }
 }
 
