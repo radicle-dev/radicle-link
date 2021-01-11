@@ -301,24 +301,37 @@ fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<(), Erro
         .map_err(|e| Error::Store(e.into()))
 }
 
-// TODO(finto): Should this raise an error?
+/// Untrack the list of `PeerId`s, which also has the side-effect of removing
+/// that peer's remote references in the storage.
+///
+/// In the case of an error occurring during the untrack call we emit a warning
+/// and append it to a `Vec` of unpruned peers. The unpruned peers are returned.
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage, prune_list))]
-fn prune<'a>(storage: &Storage, urn: &Urn, prune_list: impl Iterator<Item = &'a PeerId>) {
+fn prune<'a>(
+    storage: &Storage,
+    urn: &Urn,
+    prune_list: impl Iterator<Item = &'a PeerId>,
+) -> Vec<PeerId> {
+    let mut unpruned = vec![];
+
     for peer in prune_list {
         match tracking::untrack(storage, urn, *peer) {
             Ok(removed) => {
                 if removed {
-                    tracing::trace!("pruned `{}`", peer);
+                    tracing::info!("pruned `{}`", peer);
                 } else {
                     tracing::trace!("attempted to prune `{}` but it did not exist", peer);
                 }
             },
             Err(err) => {
                 tracing::warn!("failed to prune `{}`\nreason: {}", peer, err);
+                unpruned.push(*peer);
             },
         }
     }
+
+    unpruned
 }
 
 // Return three sets where the first consists of elements in `ys` but not in
