@@ -157,8 +157,7 @@ pub fn is_fork(storage: &Storage, left: &Urn, right: &Urn) -> Result<bool, Error
     let identities = identities(&storage);
 
     let left_fork = identities.is_fork(left.content_id.into(), right.revision.into())?;
-    let right_fork = identities.is_fork(right.content_id.into(), left.revision.into())?;
-    Ok(left_fork || right_fork)
+    Ok(left_fork || identities.is_fork(right.content_id.into(), left.revision.into())?)
 }
 
 /// Given a list projects -- assumed to be the same project -- return the latest
