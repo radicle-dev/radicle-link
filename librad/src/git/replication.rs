@@ -46,6 +46,9 @@ pub enum Error {
     #[error("missing required ref: {0}")]
     Missing(ext::RefLike),
 
+    #[error("the identity did not have any delegates or tracked peers")]
+    NoTrustee,
+
     #[error("failed to convert {urn} to reference")]
     RefFromUrn {
         urn: Urn,
@@ -146,7 +149,12 @@ where
                 SomeIdentity::Project(proj) => {
                     let delegates = project::delegate_views(storage, proj, remote_peer)?;
                     let allowed = delegates.keys().copied().collect();
-                    project::ensure_setup(storage, &mut fetcher, delegates, &urn, remote_peer)?;
+                    let rad_id = unsafe_into_urn(
+                        Reference::rad_id(Namespace::from(&urn)).with_remote(remote_peer),
+                    );
+                    let proj = identities::project::verify(storage, &rad_id)?
+                        .ok_or(Error::MissingIdentity)?;
+                    project::ensure_setup(storage, &mut fetcher, delegates, &rad_id, proj)?;
                     allowed
                 },
                 SomeIdentity::Person(person) => {
@@ -172,15 +180,19 @@ where
             identity,
             existing,
         } => {
-            let (mut removed, added, kept) = match identity {
+            let (removed, _, _) = match identity {
                 SomeIdentity::Project(proj) => {
-                    let delegate_views = project::delegate_views(storage, proj, remote_peer)?;
+                    let trustee = existing.iter().next().ok_or(Error::NoTrustee)?;
+                    let delegate_views = project::delegate_views(storage, proj, *trustee)?;
+                    let proj = identities::project::verify(storage, &urn)?
+                        .ok_or(Error::MissingIdentity)?;
+                    let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)));
                     let proj = project::ensure_setup(
                         &storage,
                         &mut fetcher,
                         delegate_views,
-                        &urn,
-                        remote_peer,
+                        &rad_id,
+                        proj,
                     )?;
 
                     let mut updated_tracked =
@@ -198,12 +210,6 @@ where
                     )
                 },
             };
-
-            // We fetched the remote peer, but we don't track them unless they're in the
-            // added or kept set
-            if !(added.contains(&remote_peer) || kept.contains(&remote_peer)) {
-                removed.insert(remote_peer);
-            }
 
             Ok(removed)
         },
@@ -267,10 +273,6 @@ fn replication(
                 let mut remotes = project::all_delegates(&proj);
                 let mut tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
                 remotes.append(&mut tracked);
-
-                // We insert the remote peer so that we can look at their view of the project,
-                // even if we don't track them.
-                remotes.insert(remote_peer);
 
                 remotes
             },
@@ -447,10 +449,10 @@ mod project {
     }
 
     /// Process the setup of a `Project` by:
-    ///   * Verifying the identity
-    ///   * Ensuring there are no forks between the remote we are replicating
-    ///     from and the
-    ///   delegates
+    ///   * Ensuring there are no forks between the given `rad/id` and the
+    ///     delegates. In the case of a clone, the `rad/id` will point to the
+    ///     remote. In the case of a fetch, the `rad/id` will point to the
+    ///     already replicated identity.
     ///   * Tracking the delegates
     ///   * Replicating the `rad/signed_refs`
     ///   * Tracking the remotes of the delegates
@@ -462,22 +464,22 @@ mod project {
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,
         delegates: BTreeMap<PeerId, project::DelegateView>,
-        urn: &Urn,
-        remote_peer: PeerId,
+        rad_id: &Urn,
+        proj: VerifiedProject,
     ) -> Result<VerifiedProject, Error> {
         let local_peer = storage.peer_id();
-        let proj = project::verify(storage, urn.clone(), remote_peer)?;
         project::ensure_no_forking(
             storage,
-            &urn,
-            remote_peer,
+            rad_id,
             delegates.values().map(|view| view.urn.clone()).collect(),
         )?;
+
+        let urn = proj.urn();
         project::track_direct(storage, &proj)?;
         let tracked = replicate_signed_refs(
             storage,
             fetcher,
-            urn,
+            &urn,
             delegates
                 .values()
                 .map(|delegate| delegate.urn.clone())
@@ -488,6 +490,7 @@ mod project {
                 tracking::track(&storage, &urn, peer)?;
             }
         }
+
         project::adopt_latest(storage, &urn, delegates)?;
         Ok(proj)
     }
@@ -530,13 +533,6 @@ mod project {
             .collect())
     }
 
-    #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage), err)]
-    pub fn verify(storage: &Storage, urn: Urn, remote: PeerId) -> Result<VerifiedProject, Error> {
-        let urn = unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(remote));
-        Ok(identities::project::verify(storage, &urn)?.ok_or(Error::MissingIdentity)?)
-    }
-
     /// Compare the remotes view of the project against each delegate and ensure
     /// there are no forks.
     ///
@@ -546,16 +542,11 @@ mod project {
     #[tracing::instrument(level = "trace", skip(storage), err)]
     pub fn ensure_no_forking(
         storage: &Storage,
-        urn: &Urn,
-        remote_peer: PeerId,
+        rad_id: &Urn,
         delegates: BTreeSet<Urn>,
     ) -> Result<(), Error> {
-        let remote = unsafe_into_urn(
-            Reference::rad_id(Namespace::from(urn.clone())).with_remote(remote_peer),
-        );
-
         for delegate in delegates.iter() {
-            match identities::project::is_fork(&storage, &remote, &delegate) {
+            match identities::project::is_fork(&storage, &rad_id, &delegate) {
                 Ok(false) => { /* all good */ },
                 Ok(true) => return Err(Error::Fork),
                 Err(identities::error::Error::NotFound(urn)) => {
