@@ -194,7 +194,8 @@ impl<'a, T: 'a> Identities<'a, T> {
         let mut latest = bag.head;
 
         for commit in bag.into_iter() {
-            if self.repo.graph_descendant_of(latest, commit)? {
+            // Is `latest` the ancestor of `commit`? If so, `commit` is newer.
+            if self.repo.graph_descendant_of(commit, latest)? {
                 latest = commit
             }
         }
