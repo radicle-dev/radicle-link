@@ -30,8 +30,12 @@ use crate::{
     peer::PeerId,
 };
 
-// 1GB of data upper limit
+/// Upper bound of 1GB for fetching data. This upper bound is useful for when
+/// fetching from an unknown (and possibly untrusted) peer.
 pub const ONE_GB: usize = 1024 * 1024 * 1024;
+/// Upper bound of 1MB for fetching data. This upper bound is an estimate for
+/// limiting the fetch of the `rad/*` references.
+pub const ONE_MB: usize = 1024 * 1024;
 
 /// Seed value to compute the fetchspecs for the desired fetch phase from.
 ///
@@ -42,7 +46,10 @@ pub enum Fetchspecs<P, R> {
     All { max_fetch: usize },
 
     /// Only request the branches necessary for identity verification.
-    Peek { remotes: BTreeSet<P> },
+    Peek {
+        remotes: BTreeSet<P>,
+        max_fetch: usize,
+    },
 
     /// Request the `rad/signed_refs` branches of the given set of tracked
     /// peers.
@@ -79,7 +86,7 @@ where
                 all.append(&mut remotes);
                 all
             },
-            Self::Peek { remotes } => refspecs::peek(urn, &remote_peer, remotes),
+            Self::Peek { remotes, .. } => refspecs::peek(urn, &remote_peer, remotes),
             Self::SignedRefs { tracked } => refspecs::signed_refs(urn, &remote_peer, tracked),
             Self::Replicate {
                 tracked_sigrefs,
@@ -91,9 +98,8 @@ where
     pub fn fetch_limit(&self) -> Option<usize> {
         match self {
             Fetchspecs::All { max_fetch } => Some(*max_fetch),
-            Fetchspecs::Peek { .. }
-            | Fetchspecs::SignedRefs { .. }
-            | Fetchspecs::Replicate { .. } => None,
+            Fetchspecs::Peek { max_fetch, .. } => Some(*max_fetch),
+            Fetchspecs::SignedRefs { .. } | Fetchspecs::Replicate { .. } => None,
         }
     }
 }
@@ -603,6 +609,7 @@ mod tests {
     fn peek_looks_legit() {
         let specs = Fetchspecs::Peek {
             remotes: Some(TOLA.clone()).into_iter().collect(),
+            max_fetch: ONE_MB,
         }
         .refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
         assert_eq!(

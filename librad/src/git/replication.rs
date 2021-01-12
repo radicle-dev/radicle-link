@@ -282,6 +282,7 @@ fn replication(
         let _ = fetcher
             .fetch(fetch::Fetchspecs::Peek {
                 remotes: existing.clone(),
+                max_fetch: fetch::ONE_MB * existing.len(),
             })
             .map_err(|e| Error::Fetch(e.into()))?;
 
