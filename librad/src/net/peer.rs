@@ -25,7 +25,7 @@ use crate::{
     git::{
         self,
         p2p::{server::GitServer, transport::GitStreamFactory},
-        replication,
+        replication::{self, ReplicateResult},
         storage,
         tracking,
     },
@@ -419,7 +419,7 @@ impl PeerStorage {
         from: PeerId,
         urn: Either<Urn, Originates<Urn>>,
         head: impl Into<Option<git2::Oid>>,
-    ) -> Result<(), PeerStorageError> {
+    ) -> Result<ReplicateResult, PeerStorageError> {
         let git = self.inner.get().await?;
         let urn = urn_context(*git.peer_id(), urn);
         let head = head.into().map(ext::Oid::from);
@@ -525,7 +525,9 @@ impl LocalStorage for PeerStorage {
             let head = has.rev.as_ref().map(|Rev::Git(head)| *head);
 
             match self.git_fetch(provider, urn.clone(), head).await {
-                Ok(()) => {
+                // FIXME(fintohaps): Do we want to tell the malkovich when we are behind in the
+                // gossip message?
+                Ok(ReplicateResult::Latest) | Ok(ReplicateResult::Behind) => {
                     if self.git_has(urn, head).await {
                         PutResult::Applied(Gossip {
                             // Ensure we propagate exactly the `origin` we

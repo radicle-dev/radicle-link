@@ -90,6 +90,14 @@ pub enum Replication {
     },
 }
 
+/// The result of replicating an identity will tell us if we are at the latest
+/// tip or, in the case of our peer being a delegate, if we are behind and
+/// require updating the document.
+pub enum ReplicateResult {
+    Latest,
+    Behind,
+}
+
 /// Attempt to fetch `urn` from `remote_peer`, optionally supplying
 /// `addr_hints`. `urn` may or may not already exist locally.
 ///
@@ -127,7 +135,7 @@ pub fn replicate<Addrs>(
     urn: Urn,
     remote_peer: PeerId,
     addr_hints: Addrs,
-) -> Result<(), Error>
+) -> Result<ReplicateResult, Error>
 where
     Addrs: IntoIterator<Item = SocketAddr>,
 {
@@ -139,7 +147,7 @@ where
     }
 
     let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
-    let mut remove = match replication(storage, &mut fetcher, urn.clone(), remote_peer)? {
+    let (result, mut remove) = match replication(storage, &mut fetcher, urn.clone(), remote_peer)? {
         Replication::Clone {
             urn,
             identity,
@@ -147,7 +155,7 @@ where
         } => {
             let allowed = match identity {
                 SomeIdentity::Project(proj) => {
-                    let delegates = project::delegate_views(storage, proj, remote_peer)?;
+                    let delegates = project::delegate_views(storage, proj, Some(remote_peer))?;
                     let allowed = delegates.keys().copied().collect();
                     let rad_id = unsafe_into_urn(
                         Reference::rad_id(Namespace::from(&urn)).with_remote(remote_peer),
@@ -173,21 +181,24 @@ where
                 local_id.link(storage, &urn)?;
             }
 
-            Ok::<_, Error>(fetched_peers.difference(&allowed).copied().collect())
+            Ok::<_, Error>((
+                ReplicateResult::Latest,
+                fetched_peers.difference(&allowed).copied().collect(),
+            ))
         },
         Replication::Fetch {
             urn,
             identity,
             existing,
         } => {
-            let (removed, _, _) = match identity {
+            let (result, updated) = match identity {
                 SomeIdentity::Project(proj) => {
-                    let trustee = existing.iter().next().ok_or(Error::NoTrustee)?;
-                    let delegate_views = project::delegate_views(storage, proj, *trustee)?;
+                    let delegate_views = project::delegate_views(storage, proj, None)?;
                     let proj = identities::project::verify(storage, &urn)?
                         .ok_or(Error::MissingIdentity)?;
+                    let mut updated_delegations = project::all_delegates(&proj);
                     let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)));
-                    let proj = project::ensure_setup(
+                    let result = project::ensure_setup(
                         &storage,
                         &mut fetcher,
                         delegate_views,
@@ -197,21 +208,20 @@ where
 
                     let mut updated_tracked =
                         tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
-                    let mut updated_delegations = project::all_delegates(&proj);
                     updated_tracked.append(&mut updated_delegations);
-
-                    partition(&existing, &updated_tracked)
+                    (result, updated_tracked)
                 },
                 SomeIdentity::Person(person) => {
                     person::ensure_setup(storage, person, remote_peer)?;
-                    partition(
-                        &existing,
-                        &tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>(),
+                    (
+                        ReplicateResult::Latest,
+                        tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>(),
                     )
                 },
             };
 
-            Ok(removed)
+            let (removed, _, _) = partition(&existing, &updated);
+            Ok((result, removed))
         },
     }?;
 
@@ -225,7 +235,7 @@ where
     // created top-level person namespaces. We will eventually converge, but
     // perhaps we'd want to return some kind of continuation here, so the caller
     // could schedule a deferred task directly?
-    Ok(())
+    Ok(result)
 }
 
 /// Identify the type of replication case we're in -- whether it's a new
@@ -467,7 +477,7 @@ mod project {
         delegates: BTreeMap<PeerId, project::DelegateView>,
         rad_id: &Urn,
         proj: VerifiedProject,
-    ) -> Result<VerifiedProject, Error> {
+    ) -> Result<ReplicateResult, Error> {
         let local_peer = storage.peer_id();
         project::ensure_no_forking(
             storage,
@@ -492,8 +502,7 @@ mod project {
             }
         }
 
-        project::adopt_latest(storage, &urn, delegates)?;
-        Ok(proj)
+        project::adopt_latest(storage, &urn, delegates)
     }
 
     /// Fetch `rad/signed_refs` and `refs/heads` of the delegates and our
@@ -567,7 +576,7 @@ mod project {
     pub fn delegate_views(
         storage: &Storage,
         proj: Project,
-        remote_peer: PeerId,
+        remote_peer: Option<PeerId>,
     ) -> Result<BTreeMap<PeerId, DelegateView>, Error> {
         let mut delegate_views = BTreeMap::new();
         let local_peer_id = storage.peer_id();
@@ -669,7 +678,8 @@ mod project {
         storage: &Storage,
         urn: &Urn,
         delegates: BTreeMap<PeerId, DelegateView>,
-    ) -> Result<(), Error> {
+    ) -> Result<ReplicateResult, Error> {
+        let local_peer = storage.peer_id();
         let projects = NonEmpty::from_vec(
             delegates
                 .values()
@@ -683,7 +693,22 @@ mod project {
             },
             None => Err(Error::MissingIdentities(urn.clone())),
         }?;
-        ensure_rad_id(storage, urn, tip.into())
+
+        // Are we a delegate?
+        match delegates.get(local_peer) {
+            None => {
+                ensure_rad_id(storage, urn, tip.into())?;
+                Ok(ReplicateResult::Latest)
+            },
+            Some(view) => {
+                Ok(if view.project.content_id == tip.into() {
+                    ReplicateResult::Latest
+                } else {
+                    // FIXME: We could be ahead
+                    ReplicateResult::Behind
+                })
+            },
+        }
     }
 
     /// Using the fetched references we parse out the set of `PeerId`s that were
