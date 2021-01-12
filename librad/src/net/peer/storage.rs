@@ -3,8 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use either::Either::{self, Left, Right};
+use std::net::SocketAddr;
 
+use either::Either::{self, Left, Right};
 use git_ext::{self as ext, reference};
 use tokio::task::spawn_blocking;
 
@@ -30,13 +31,14 @@ impl Storage {
 
     async fn git_fetch(
         &self,
-        from: PeerId,
+        from: impl Into<(PeerId, Vec<SocketAddr>)>,
         urn: Either<Urn, Originates<Urn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> Result<(), Error> {
         let git = self.inner.get().await?;
         let urn = urn_context(*git.peer_id(), urn);
         let head = head.into().map(ext::Oid::from);
+        let (remote_peer, addr_hints) = from.into();
 
         spawn_blocking(move || {
             if let Some(head) = head {
@@ -45,7 +47,13 @@ impl Storage {
                 }
             }
 
-            Ok(replication::replicate(&git, None, urn, from, None)?)
+            Ok(replication::replicate(
+                &git,
+                None,
+                urn,
+                remote_peer,
+                addr_hints,
+            )?)
         })
         .await
         .expect("`Storage::git_fetch` panicked")
@@ -114,12 +122,17 @@ fn urn_context(local_peer_id: PeerId, urn: Either<Urn, Originates<Urn>>) -> Urn 
 }
 
 #[async_trait]
-impl broadcast::LocalStorage for Storage {
+impl broadcast::LocalStorage<SocketAddr> for Storage {
     type Update = gossip::Payload;
 
-    #[tracing::instrument(skip(self))]
-    async fn put(&self, provider: PeerId, has: Self::Update) -> broadcast::PutResult<Self::Update> {
+    #[tracing::instrument(skip(self, provider))]
+    async fn put<P>(&self, provider: P, has: Self::Update) -> broadcast::PutResult<Self::Update>
+    where
+        P: Into<(PeerId, Vec<SocketAddr>)> + Send,
+    {
         use broadcast::PutResult;
+
+        let (provider, addr_hints) = provider.into();
 
         // If the `has` doesn't tell us to look into a specific remote-tracking
         // branch, assume we want the `provider`'s.
@@ -133,39 +146,36 @@ impl broadcast::LocalStorage for Storage {
         };
 
         if is_tracked {
-            let urn = match has.origin {
-                Some(origin) => Right(Originates {
-                    from: origin,
-                    value: has.urn.clone(),
-                }),
-                None => Left(has.urn.clone()),
-            };
+            let urn = Right(Originates {
+                from: origin,
+                value: has.urn.clone(),
+            });
             let head = has.rev.as_ref().map(|gossip::Rev::Git(head)| *head);
 
-            match self.git_fetch(provider, urn.clone(), head).await {
+            match self
+                .git_fetch((provider, addr_hints), urn.clone(), head)
+                .await
+            {
                 Ok(()) => {
+                    // Verify that the announced data is stored locally now.
+                    //
+                    // If it is, rewrite the gossip message to use the `origin`
+                    // we determined -- everyone down the line may now fetch
+                    // the that remote from us.
+                    //
+                    // Otherwise, the `provider` must be lying -- we are
+                    // tracking them, and there was no error, but the data is
+                    // still not there. In this case, returning `Stale` will
+                    // just terminate the broadcast here.
                     if self.git_has(urn, head).await {
                         PutResult::Applied(gossip::Payload {
-                            // Ensure we propagate exactly the `origin` we
-                            // figured out
                             origin: Some(origin),
-                            ..has.clone()
+                            ..has
                         })
                     } else {
-                        // We didn't end up fetching a non-`None` `head` -- we
-                        // know that we are tracking the `origin`, and (thusly)
-                        // have the `urn` locally.  Also, the fetch didn't
-                        // return an error. Therefore, the `provider` must be
-                        // lying. We return `Stale` to just cause the broadcast
-                        // to terminate here.
                         tracing::warn!(
                             provider = %provider,
-                            origin = %origin,
-                            has.origin = %has
-                                .origin
-                                .map(|o| o.to_string())
-                                .unwrap_or_else(|| "none".into()),
-                            has.urn = %has.urn,
+                            announced = ?has,
                             "provider announced non-existent rev"
                         );
                         PutResult::Stale

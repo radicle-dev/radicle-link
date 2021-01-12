@@ -81,7 +81,11 @@ impl<S> Bound<S> {
 
     pub async fn accept<D>(self, disco: D) -> Result<!, quic::Error>
     where
-        S: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+        S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
         D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
     {
         accept(self, disco).await
@@ -196,7 +200,11 @@ pub async fn bind<Sign, Store>(
 ) -> Result<Bound<Store>, error::Bootstrap>
 where
     Sign: Signer + Clone + Send + Sync + 'static,
-    Store: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+    Store: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     let local_id = PeerId::from_signer(&signer);
     let git = GitServer::new(&config.paths);
@@ -236,7 +244,11 @@ pub fn accept<Store, Disco>(
     disco: Disco,
 ) -> impl Future<Output = Result<!, quic::Error>>
 where
-    Store: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+    Store: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     Disco: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
 {
     let _git_factory = Arc::new(Box::new(state.clone()) as Box<dyn GitStreamFactory>);
@@ -330,14 +342,18 @@ impl<S> Deref for Storage<S> {
 }
 
 #[async_trait]
-impl<S> broadcast::LocalStorage for Storage<S>
+impl<A, S> broadcast::LocalStorage<A> for Storage<S>
 where
-    S: broadcast::LocalStorage,
+    A: 'static,
+    S: broadcast::LocalStorage<A>,
     S::Update: Send,
 {
     type Update = S::Update;
 
-    async fn put(&self, provider: PeerId, has: Self::Update) -> broadcast::PutResult<Self::Update> {
+    async fn put<P>(&self, provider: P, has: Self::Update) -> broadcast::PutResult<Self::Update>
+    where
+        P: Into<(PeerId, Vec<A>)> + Send,
+    {
         self.inner.put(provider, has).await
     }
 
@@ -365,7 +381,11 @@ struct State<S> {
 #[async_trait]
 impl<S> GitStreamFactory for State<S>
 where
-    S: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     async fn open_stream(
         &self,

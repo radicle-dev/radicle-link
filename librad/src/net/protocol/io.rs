@@ -40,7 +40,11 @@ type MembershipCodec = Codec<membership::Message<SocketAddr>>;
 #[tracing::instrument(skip(state, peer, addrs), fields(remote_id = %peer))]
 pub(super) async fn discovered<S>(state: State<S>, peer: PeerId, addrs: Vec<SocketAddr>)
 where
-    S: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     if state.endpoint.get_connection(peer).is_some() {
         return;
@@ -83,7 +87,11 @@ pub(super) async fn ingress_connections<S, I>(
     mut ingress: I,
 ) -> Result<!, quic::Error>
 where
-    S: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     I: futures::Stream<Item = quic::Result<(quic::Connection, quic::IncomingStreams<'static>)>>
         + Unpin,
 {
@@ -103,7 +111,11 @@ pub(super) async fn ingress_streams<S>(
     state: State<S>,
     quic::IncomingStreams { bidi, uni }: quic::IncomingStreams<'static>,
 ) where
-    S: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     let mut bidi = bidi
         .inspect_ok(|stream| {
@@ -158,7 +170,11 @@ pub(super) async fn ingress_streams<S>(
 
 pub(super) async fn ingress_bidi<S>(state: State<S>, stream: quic::BidiStream)
 where
-    S: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     use upgrade::SomeUpgraded::*;
 
@@ -181,7 +197,11 @@ where
 
 pub(super) async fn ingress_uni<S>(state: State<S>, stream: quic::RecvStream)
 where
-    S: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     use upgrade::SomeUpgraded::*;
 
@@ -203,7 +223,11 @@ where
 
 async fn ingress_gossip<S, T>(state: State<S>, stream: Upgraded<upgrade::Gossip, T>)
 where
-    S: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     T: RemotePeer + AsyncRead + Unpin,
 {
     let mut recv = FramedRead::new(stream.into_stream(), GossipCodec::new());
@@ -263,7 +287,7 @@ where
 
 async fn ingress_membership<S, T>(state: State<S>, stream: Upgraded<upgrade::Membership, T>)
 where
-    S: broadcast::LocalStorage<Update = gossip::Payload> + Clone + 'static,
+    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     T: RemoteInfo<Addr = SocketAddr> + AsyncRead + Unpin,
 {
     let mut recv = FramedRead::new(stream.into_stream(), MembershipCodec::new());

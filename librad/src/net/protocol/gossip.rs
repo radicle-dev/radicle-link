@@ -61,7 +61,7 @@ pub struct Payload {
     /// The origin of the update.
     ///
     /// If `Some`, this refers to the `PeerId`'s view of `urn` and `rev`. That
-    /// is, it may map to `remotes/<PeerId>/<urn>`.
+    /// is, it may map to `remotes/<origin>/<urn.path@rev>`.
     #[n(2)]
     pub origin: Option<PeerId>,
 }

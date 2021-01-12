@@ -67,6 +67,38 @@ where
     }
 }
 
+impl<Addr> From<PartialPeerInfo<Addr>> for (PeerId, Vec<Addr>)
+where
+    Addr: Clone + Ord,
+{
+    fn from(info: PartialPeerInfo<Addr>) -> Self {
+        (
+            info.peer_id,
+            info.advertised_info
+                .into_iter()
+                .flat_map(|ad| ad.listen_addrs.into_iter())
+                .chain(info.seen_addrs)
+                .collect(),
+        )
+    }
+}
+
+impl<Addr> From<PeerInfo<Addr>> for (PeerId, Vec<Addr>)
+where
+    Addr: Clone + Ord,
+{
+    fn from(info: PeerInfo<Addr>) -> Self {
+        (
+            info.peer_id,
+            info.advertised_info
+                .listen_addrs
+                .into_iter()
+                .chain(info.seen_addrs)
+                .collect(),
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 #[cbor(array)]
 pub struct GenericPeerInfo<Addr, T>

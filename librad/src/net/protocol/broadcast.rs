@@ -69,9 +69,9 @@ pub(super) async fn apply<M, S, F, A, P>(
 ) -> Result<(Option<event::Gossip<A, P>>, Vec<tick::Tock<A, P>>), Error<A, P>>
 where
     M: Membership,
-    S: LocalStorage<Update = P> + ErrorRateLimited,
+    S: LocalStorage<A, Update = P> + ErrorRateLimited,
     F: Fn() -> PeerInfo<A>,
-    A: Clone + Debug + Ord,
+    A: Clone + Debug + Ord + Send + 'static,
     P: Clone + Debug,
 {
     use tick::Tock::*;
@@ -95,7 +95,7 @@ where
 
     match message {
         Have { origin, val } => {
-            let res = (*storage).put(remote_id, val.clone()).await;
+            let res = (*storage).put(origin.clone(), val.clone()).await;
             let event = event::Gossip::Put {
                 provider: origin.clone(),
                 payload: val.clone(),

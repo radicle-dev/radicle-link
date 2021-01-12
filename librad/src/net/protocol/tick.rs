@@ -34,7 +34,11 @@ where
 #[tracing::instrument(level = "debug", skip(state))]
 pub(super) async fn tock<S>(state: State<S>, tock: Tock<SocketAddr, gossip::Payload>)
 where
-    S: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     let mut mcfly = FuturesOrdered::new();
     mcfly.push(one_tock(state.clone(), tock));
@@ -67,7 +71,11 @@ fn one_tock<S>(
     tock: Tock<SocketAddr, gossip::Payload>,
 ) -> BoxFuture<'static, Result<(), error::Tock<SocketAddr>>>
 where
-    S: broadcast::LocalStorage<Update = gossip::Payload> + Clone + Send + Sync + 'static,
+    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     use Tock::*;
 

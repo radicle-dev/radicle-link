@@ -5,7 +5,7 @@
 
 use std::{convert::TryFrom, fmt::Debug, path::Path};
 
-use git_ext::{self as ext, blob, is_not_found_err, RefLike, References, RefspecPattern};
+use git_ext::{self as ext, blob, is_not_found_err, RefLike, RefspecPattern};
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
@@ -143,11 +143,14 @@ impl Storage {
     {
         let oid = oid.as_ref();
         if oid.is_zero() {
+            // XXX: should this be a panic or error?
+            tracing::warn!("zero oid");
             return Ok(false);
         }
 
-        match self.backend.find_commit(*oid) {
-            Ok(commit) => {
+        self.backend
+            .find_commit(*oid)
+            .and_then(|commit| {
                 let namespace = Namespace::from(urn);
                 let branch = {
                     let path = match &urn.path {
@@ -156,25 +159,15 @@ impl Storage {
                     };
                     path.strip_prefix("refs/").unwrap_or(path)
                 };
-
-                // FIXME: use references_glob
-                let refs = References::from_globs(
-                    &self.backend,
-                    &[format!("refs/namespaces/{}/refs/{}", namespace, branch)],
-                )?;
-
-                for (_, oid) in refs.peeled() {
-                    if oid == commit.id() || self.backend.graph_descendant_of(oid, commit.id())? {
-                        return Ok(true);
-                    }
-                }
-
-                Ok(false)
-            },
-
-            Err(e) if is_not_found_err(&e) => Ok(false),
-            Err(e) => Err(e.into()),
-        }
+                self.backend
+                    .refname_to_id(&format!("refs/namespaces/{}/refs/{}", namespace, branch))
+                    .and_then(|tip| {
+                        Ok(tip == commit.id()
+                            || self.backend.graph_descendant_of(tip, commit.id())?)
+                    })
+                    .or_matches(is_not_found_err, || Ok(false))
+            })
+            .or_matches(is_not_found_err, || Ok(false))
     }
 
     #[tracing::instrument(level = "debug", skip(self), err)]
