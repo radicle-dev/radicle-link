@@ -350,8 +350,7 @@ impl<N, R> Reference<N, R, Many> {
     }
 
     /// Build a reference that points to:
-    ///
-    ///     refs/namespaces/<namespace>/refs/rad/ids/*
+    ///     * `refs[/namespaces/<namespace>]/refs/rad/ids/*`
     pub fn rad_ids_glob(namespace: impl Into<Option<N>>) -> Self {
         Self {
             remote: None,
@@ -362,8 +361,7 @@ impl<N, R> Reference<N, R, Many> {
     }
 
     /// Build a reference that points to:
-    ///
-    ///     refs/namespaces/<namespace>/refs/rad/[peer_id]/heads/*
+    ///     * `refs[/namespaces/<namespace>]/refs[/remotes/<remote>]/heads/*`
     pub fn heads(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
@@ -373,6 +371,8 @@ impl<N, R> Reference<N, R, Many> {
         }
     }
 
+    /// Build a reference that points to:
+    ///     * `refs[/namespaces/<namespace>]/refs[/remotes/<remote>]/rad/*`
     pub fn rads(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
@@ -382,6 +382,8 @@ impl<N, R> Reference<N, R, Many> {
         }
     }
 
+    /// Build a reference that points to:
+    ///     * `refs[/namespaces/<namespace>]/refs[/remotes/<remote>]/tags/*`
     pub fn tags(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
@@ -391,6 +393,8 @@ impl<N, R> Reference<N, R, Many> {
         }
     }
 
+    /// Build a reference that points to:
+    ///     * `refs[/namespaces/<namespace>]/refs[/remotes/<remote>]/notes/*`
     pub fn notes(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
