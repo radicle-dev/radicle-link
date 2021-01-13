@@ -138,9 +138,10 @@ where
 pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Person, Error> {
     let ours = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let theirs = {
+        let rad_id = urn::DEFAULT_PATH.strip_prefix("refs").unwrap();
         let their_urn = Urn {
             id: urn.id,
-            path: Some(reflike!("remotes").join(from).join(&*urn::DEFAULT_PATH)),
+            path: Some(reflike!("remotes").join(from).join(rad_id)),
         };
         get(storage, &their_urn)?.ok_or(Error::NotFound(their_urn))?
     };
