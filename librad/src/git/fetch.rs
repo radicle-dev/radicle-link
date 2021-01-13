@@ -210,13 +210,7 @@ pub mod refspecs {
         remote_peer: &'a P,
         remote_heads: &'a RemoteHeads,
         tracked_peer: &'a P,
-        Refs {
-            heads,
-            rad,
-            tags,
-            notes,
-            remotes: _,
-        }: &'a Refs,
+        refs: &'a Refs,
     ) -> impl Iterator<Item = Fetchspec> + 'a
     where
         P: Clone + PartialEq,
@@ -225,12 +219,7 @@ pub mod refspecs {
         R: HasProtocol + Clone + 'a,
         for<'b> &'b R: Into<Multihash>,
     {
-        heads
-            .iter()
-            .map(move |x| (x, RefsCategory::Heads))
-            .chain(rad.iter().map(move |x| (x, RefsCategory::Rad)))
-            .chain(tags.iter().map(move |x| (x, RefsCategory::Tags)))
-            .chain(notes.iter().map(move |x| (x, RefsCategory::Notes)))
+        refs.iter_categorised()
             .map({
                 let namespace = namespace.clone();
                 move |(x, category)| {

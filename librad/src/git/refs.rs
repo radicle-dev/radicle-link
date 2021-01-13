@@ -25,7 +25,7 @@ use thiserror::Error;
 use super::{
     storage::{self, Storage},
     tracking,
-    types::{Namespace, Reference},
+    types::{Namespace, Reference, RefsCategory},
 };
 use crate::{
     internal::canonical::{Cjson, CjsonError},
@@ -387,6 +387,26 @@ impl Refs {
             signature: signature.into(),
             _verified: PhantomData,
         })
+    }
+
+    /// Iterator over all non-remote refs and their targets, paired with their
+    /// corresponding `RefsCategory`.
+    pub fn iter_categorised(
+        &self,
+    ) -> impl Iterator<Item = ((&reference::OneLevel, &Oid), RefsCategory)> {
+        let Refs {
+            heads,
+            rad,
+            tags,
+            notes,
+            remotes: _,
+        } = self;
+        heads
+            .iter()
+            .map(|x| (x, RefsCategory::Heads))
+            .chain(rad.iter().map(|x| (x, RefsCategory::Rad)))
+            .chain(tags.iter().map(|x| (x, RefsCategory::Tags)))
+            .chain(notes.iter().map(|x| (x, RefsCategory::Notes)))
     }
 
     fn canonical_form(&self) -> Result<Vec<u8>, CjsonError> {
