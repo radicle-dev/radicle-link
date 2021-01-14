@@ -141,7 +141,7 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Person, Error
         let rad_id = urn::DEFAULT_PATH.strip_prefix("refs").unwrap();
         let their_urn = Urn {
             id: urn.id,
-            path: Some(reflike!("remotes").join(from).join(rad_id)),
+            path: Some(reflike!("refs/remotes").join(from).join(rad_id)),
         };
         get(storage, &their_urn)?.ok_or(Error::NotFound(their_urn))?
     };
