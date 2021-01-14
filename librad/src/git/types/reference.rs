@@ -350,7 +350,7 @@ impl<N, R> Reference<N, R, Many> {
     }
 
     /// Build a reference that points to:
-    ///     * `refs[/namespaces/<namespace>]/refs/rad/ids/*`
+    ///     * `refs[/namespaces/<namespace>/refs]/rad/ids/*`
     pub fn rad_ids_glob(namespace: impl Into<Option<N>>) -> Self {
         Self {
             remote: None,
