@@ -228,7 +228,7 @@ where
                     timestamp: now,
                     inner: key.clone(),
                 });
-                New((key.clone(), v))
+                New((key, v))
             },
         }
     }
@@ -239,7 +239,7 @@ where
                 return;
             }
 
-            let key = self.hip.pop().expect("we peeked, therefore we pop").inner;
+            let key = self.hip.pop().expect("I peeked, therefore I pop").inner;
             let value_timestamp = self.all[&key].0;
             if value_timestamp > deadline {
                 self.hip.push(Timestamped {
