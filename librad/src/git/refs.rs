@@ -207,7 +207,7 @@ pub struct Refs {
     /// `refs/heads/*`
     pub heads: BTreeMap<reference::OneLevel, Oid>,
 
-    /// `refs/rad/*`, exluding `refs/rad/signed_refs`
+    /// `refs/rad/*`, excluding `refs/rad/signed_refs`
     pub rad: BTreeMap<reference::OneLevel, Oid>,
 
     /// `refs/tags/*`
