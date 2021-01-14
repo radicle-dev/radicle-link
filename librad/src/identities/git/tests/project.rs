@@ -277,6 +277,46 @@ fn double_vote() -> anyhow::Result<()> {
     }
 }
 
+#[test]
+fn fork() -> anyhow::Result<()> {
+    let repo = common::repo()?;
+    {
+        let cheyenne = common::Device::new(&*CHEYENNE_DESKTOP, Identities::from(&*repo))?;
+        let dylan = common::Device::new(&*DYLAN, Identities::from(&*repo))?;
+
+        let project = {
+            let update = IndirectDelegation::try_from_iter(vec![
+                Right(cheyenne.current().clone()),
+                Right(dylan.current().clone()),
+            ])?;
+            common::Project::new(cheyenne.clone())?.update(update)
+        }?;
+        let project = project.change_description()?;
+        let project = {
+            common::Project::create_from(
+                cheyenne.clone(),
+                &common::Project::create_from(dylan.clone(), &project)?,
+            )
+        }?;
+
+        let other = {
+            let update = IndirectDelegation::try_from_iter(vec![
+                Right(cheyenne.current().clone()),
+                Right(dylan.current().clone()),
+            ])?;
+            common::Project::new(cheyenne.clone())?.update(update)
+        }?;
+        let other = {
+            common::Project::create_from(
+                cheyenne.clone(),
+                &common::Project::create_from(dylan.clone(), &other)?,
+            )
+        }?;
+
+        project.assert_forks(&other)
+    }
+}
+
 fn current_heads_from<'a>(
     devs: impl IntoIterator<Item = &'a common::Device<'a>>,
 ) -> BTreeMap<Urn, git2::Oid> {
