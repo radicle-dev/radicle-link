@@ -155,9 +155,7 @@ pub fn is_fork(storage: &Storage, left: &Urn, right: &Urn) -> Result<bool, Error
     let left = get(storage, left)?.ok_or_else(|| Error::NotFound(left.clone()))?;
     let right = get(storage, right)?.ok_or_else(|| Error::NotFound(right.clone()))?;
     let identities = identities(&storage);
-
-    let left_fork = identities.is_fork(left.content_id.into(), right.revision.into())?;
-    Ok(left_fork || identities.is_fork(right.content_id.into(), left.revision.into())?)
+    Ok(identities.is_fork(&left, &right)?)
 }
 
 /// Given a list projects -- assumed to be the same project -- return the latest

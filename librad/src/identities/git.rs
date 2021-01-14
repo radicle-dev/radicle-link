@@ -175,18 +175,6 @@ impl<'a, T: 'a> Identities<'a, T> {
         root.verify(progeny)
     }
 
-    pub fn is_fork_generic(&self, left: git2::Oid, right: git2::Oid) -> Result<bool, git2::Error> {
-        if left == right {
-            return Ok(false);
-        }
-
-        Ok(if self.is_in_ancestry_path(left, right)? {
-            false
-        } else {
-            !(self.is_in_ancestry_path(right, left)?)
-        })
-    }
-
     //// Helpers ////
 
     /// Assumes that the bag of commits are in a related history.
@@ -424,6 +412,13 @@ impl<'a> Identities<'a, Person> {
         Ok(self.latest_generic(persons.map(|person| person.content_id.into()))?)
     }
 
+    pub fn is_fork(&self, left: &Person, right: &Person) -> Result<bool, error::Store> {
+        let forked_left =
+            !self.is_in_ancestry_path(left.content_id.into(), right.revision.into())?;
+        Ok(forked_left
+            || !self.is_in_ancestry_path(right.content_id.into(), left.revision.into())?)
+    }
+
     /// Create a new [`Person`] from a payload and delegations.
     ///
     /// The returned [`Person`] (and the underlying commit) will not have any
@@ -577,8 +572,11 @@ impl<'a> Identities<'a, Project> {
             .verified(parent.as_ref())?)
     }
 
-    pub fn is_fork(&self, left: git2::Oid, right: git2::Oid) -> Result<bool, error::Store> {
-        Ok(self.is_fork_generic(left, right)?)
+    pub fn is_fork(&self, left: &Project, right: &Project) -> Result<bool, error::Store> {
+        let forked_left =
+            !self.is_in_ancestry_path(left.content_id.into(), right.revision.into())?;
+        Ok(forked_left
+            || !self.is_in_ancestry_path(right.content_id.into(), left.revision.into())?)
     }
 
     pub fn latest_tip(&self, projects: NonEmpty<Project>) -> Result<git2::Oid, error::Store> {
