@@ -120,9 +120,7 @@ async fn run(
                         match discovered {
                             Discovered::New((peer, _)) | Discovered::Refreshed((peer, _)) => {
                                 tracing::debug!("{} is new or refreshed", peer);
-                                if let Err(e) = tx.send((peer, addrs)).await {
-                                    tracing::warn!(err = ?e, "channel send error");
-                                }
+                                tx.send((peer, addrs)).await.ok();
                             },
 
                             Discovered::Known => {
