@@ -74,10 +74,10 @@ impl Mdns {
         use futures::Stream as _;
 
         let waker = futures::task::noop_waker();
-        match Pin::new(&mut self.chan).poll_next(&mut Context::from_waker(&waker)) {
-            Poll::Pending => true,
-            _ => false,
-        }
+        matches!(
+            Pin::new(&mut self.chan).poll_next(&mut Context::from_waker(&waker)),
+            Poll::Pending
+        )
     }
 }
 
