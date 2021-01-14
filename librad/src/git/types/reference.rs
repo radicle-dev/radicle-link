@@ -560,7 +560,7 @@ mod tests {
         let urn = Urn::new(git2::Oid::zero().into());
         let as_ref = Reference::try_from(&urn).unwrap();
         assert_eq!(
-            urn.with_path(identities::urn::DEFAULT_PATH.clone()),
+            urn.with_path(ext::RefLike::from(identities::urn::DEFAULT_PATH.clone())),
             Urn::try_from(as_ref).unwrap()
         )
     }

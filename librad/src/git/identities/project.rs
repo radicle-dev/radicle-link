@@ -6,7 +6,7 @@
 use std::{convert::TryFrom, fmt::Debug};
 
 use either::Either;
-use git_ext::is_not_found_err;
+use git_ext::{is_not_found_err, OneLevel};
 
 use super::{
     super::{
@@ -127,10 +127,11 @@ where
 pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Project, Error> {
     let ours = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let theirs = {
-        let rad_id = urn::DEFAULT_PATH.strip_prefix("refs").unwrap();
+        let (path, rad) = OneLevel::from_qualified(urn::DEFAULT_PATH.clone());
+        let rad = rad.expect("default path should be refs/rad/id");
         let their_urn = Urn {
             id: urn.id,
-            path: Some(reflike!("refs/remotes").join(from).join(rad_id)),
+            path: Some(reflike!("refs/remotes").join(from).join(rad).join(path)),
         };
         get(storage, &their_urn)?.ok_or(Error::NotFound(their_urn))?
     };
