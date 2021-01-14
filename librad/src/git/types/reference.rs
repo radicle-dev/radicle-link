@@ -361,7 +361,7 @@ impl<N, R> Reference<N, R, Many> {
     }
 
     /// Build a reference that points to:
-    ///     * `refs[/namespaces/<namespace>]/refs[/remotes/<remote>]/heads/*`
+    ///     * `refs[/namespaces/<namespace>/refs][/remotes/<remote>]/heads/*`
     pub fn heads(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
