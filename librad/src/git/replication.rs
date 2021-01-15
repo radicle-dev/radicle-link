@@ -93,6 +93,7 @@ pub enum Replication {
 /// The result of replicating an identity will tell us if we are at the latest
 /// tip or, in the case of our peer being a delegate, if we are behind and
 /// require updating the document.
+#[derive(Debug)]
 pub enum ReplicateResult {
     Latest,
     Behind,
@@ -269,7 +270,6 @@ fn replication(
 
         let remote_ident =
             unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)).with_remote(remote_peer));
-
         Ok(Replication::Clone {
             urn,
             fetched_peers,
