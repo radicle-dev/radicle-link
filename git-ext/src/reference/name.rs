@@ -281,18 +281,14 @@ impl OneLevel {
     }
 
     pub fn from_qualified(Qualified(path): Qualified) -> (Self, Option<RefLike>) {
-        if path.starts_with("refs/") {
-            let mut path = path.iter().skip(1);
-            match path.next() {
-                Some(category) => {
-                    let mut cat = PathBuf::new();
-                    cat.push(category);
-                    (Self(path.collect()), Some(RefLike(cat)))
-                },
-                None => (Self(path.collect()), None),
-            }
-        } else {
-            (Self(path), None)
+        // skip "refs/"
+        let mut path = path.iter().skip(1);
+        match path.next() {
+            Some(category) => {
+                let category = Path::new(category).to_path_buf();
+                (Self(path.collect()), Some(RefLike(category)))
+            },
+            None => (Self(path.collect()), None),
         }
     }
 
