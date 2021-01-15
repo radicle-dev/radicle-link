@@ -123,7 +123,7 @@ async fn run(
                                 tx.send((peer, addrs)).await.ok();
                             },
 
-                            Discovered::Known => {
+                            Discovered::Known((peer, _)) => {
                                 tracing::trace!("ignoring known peer {}", peer);
                             },
                         }
@@ -151,41 +151,33 @@ impl Discovery for Mdns {
     }
 }
 
-struct Timestamped<T> {
-    timestamp: Instant,
-    inner: T,
-}
-
-impl<T> PartialOrd for Timestamped<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.timestamp.cmp(&other.timestamp).reverse())
-    }
-}
-
-impl<T> Ord for Timestamped<T> {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.timestamp.cmp(&other.timestamp).reverse()
-    }
-}
-
-impl<T> PartialEq for Timestamped<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.timestamp.eq(&other.timestamp)
-    }
-}
-
-impl<T> Eq for Timestamped<T> {}
-
 #[derive(Debug)]
+#[must_use]
 enum Discovered<T> {
-    Known,
+    Known(T),
     New(T),
     Refreshed(T),
 }
 
+/// A simple key-value cache with time-based eviction.
+///
+/// The eviction policy is maintained on insertion with the following
+/// properties:
+///
+/// * Entries with a timestamp smaller than the current time are removed from
+///   the cache.
+/// * If the key is not in the cache, it is inserted along with the current
+///   time. The cache entry is considered [`Discovered::New`].
+/// * If the key is found, but the associated value is different from the one
+///   given, then the value is replaced by the given one, along with a timestamp
+///   equal to the current time. The cache entry is considered
+///   [`Discovered::Refreshed`].
+/// * If the key is found, and the associated value is equal to the one given,
+///   the entry is considered [`Discovered::Known`], and the cache is left
+///   unchanged.
 struct Discoveries<K, V> {
-    all: FxHashMap<K, (Instant, V)>,
-    hip: BinaryHeap<Timestamped<K>>,
+    all: FxHashMap<K, Timestamped<V>>,
+    hip: BinaryHeap<Oldest<K>>,
     ttl: Duration,
 }
 
@@ -210,21 +202,30 @@ where
         self.evict(now - self.ttl);
         match self.all.entry(k) {
             Occupied(mut entry) => {
+                let key = entry.key().clone();
                 let prev = entry.get_mut();
-                if prev.1 != v {
-                    *prev = (now, v.clone());
-                    Refreshed((entry.key().clone(), v))
+                if prev.inner != v {
+                    *prev = Timestamped {
+                        timestamp: now,
+                        inner: v.clone(),
+                    };
+                    Refreshed((key, v))
                 } else {
-                    Known
+                    Known((key, v))
                 }
             },
 
             Vacant(entry) => {
                 let key = entry.key().clone();
-                entry.insert((now, v.clone()));
-                self.hip.push(Timestamped {
+                entry.insert(Timestamped {
                     timestamp: now,
-                    inner: key.clone(),
+                    inner: v.clone(),
+                });
+                self.hip.push(Oldest {
+                    inner: Timestamped {
+                        timestamp: now,
+                        inner: key.clone(),
+                    },
                 });
                 New((key, v))
             },
@@ -232,17 +233,27 @@ where
     }
 
     fn evict(&mut self, deadline: Instant) {
-        while let Some(Timestamped { timestamp, .. }) = self.hip.peek() {
+        while let Some(Oldest {
+            inner: Timestamped { timestamp, .. },
+        }) = self.hip.peek()
+        {
             if *timestamp > deadline {
                 return;
             }
 
-            let key = self.hip.pop().expect("I peeked, therefore I pop").inner;
-            let value_timestamp = self.all[&key].0;
+            let key: K = self
+                .hip
+                .pop()
+                .expect("I peeked, therefore I pop")
+                .inner
+                .inner;
+            let value_timestamp = self.all[&key].timestamp;
             if value_timestamp > deadline {
-                self.hip.push(Timestamped {
-                    timestamp: value_timestamp,
-                    inner: key,
+                self.hip.push(Oldest {
+                    inner: Timestamped {
+                        timestamp: value_timestamp,
+                        inner: key,
+                    },
                 });
             } else {
                 self.all.remove(&key);
@@ -250,6 +261,37 @@ where
         }
     }
 }
+
+struct Timestamped<T> {
+    timestamp: Instant,
+    inner: T,
+}
+
+/// Compares [`Timestamped`] values by time, such that the smaller timestamp is
+/// [`cmp::Ordering::Greater`].
+struct Oldest<T> {
+    inner: Timestamped<T>,
+}
+
+impl<T> PartialOrd for Oldest<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.inner.timestamp.cmp(&other.inner.timestamp).reverse())
+    }
+}
+
+impl<T> Ord for Oldest<T> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.inner.timestamp.cmp(&other.inner.timestamp).reverse()
+    }
+}
+
+impl<T> PartialEq for Oldest<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.timestamp.eq(&other.inner.timestamp)
+    }
+}
+
+impl<T> Eq for Oldest<T> {}
 
 fn respond(
     ptr: &str,
