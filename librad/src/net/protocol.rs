@@ -25,7 +25,7 @@ use rand_pcg::Pcg64Mcg;
 use tokio::sync::broadcast as tincan;
 use tracing::Instrument as _;
 
-use super::{quic, upgrade};
+use super::{quic, upgrade, Network};
 use crate::{
     git::{
         self,
@@ -60,6 +60,7 @@ pub struct Config {
     pub paths: Paths,
     pub listen_addr: SocketAddr,
     pub membership: membership::Params,
+    pub network: Network,
     // TODO: transport, ...
 }
 
@@ -209,7 +210,7 @@ where
     let local_id = PeerId::from_signer(&signer);
     let git = GitServer::new(&config.paths);
     let quic::BoundEndpoint { endpoint, incoming } =
-        quic::Endpoint::bind(signer, config.listen_addr).await?;
+        quic::Endpoint::bind(signer, config.listen_addr, config.network).await?;
     let (membership, periodic) = membership::Hpv::<_, SocketAddr>::new(
         local_id,
         Pcg64Mcg::new(rand::random()),

@@ -17,14 +17,10 @@ pub use error::{Error, Result};
 mod stream;
 pub use stream::{BidiStream, RecvStream, SendStream};
 
+const ALPN_PREFIX: &[u8] = b"rad";
+
 // XXX: we _may_ want to allow runtime configuration of below consts at some
 // point
-
-/// The ALPN protocol(s) for the radicle-link protocol stack.
-///
-/// Not currently of significance, but established in order to allow future
-/// major protocol upgrades.
-const ALPN: &[&[u8]] = &[b"rad/1"];
 
 /// Connection keep alive interval.
 ///

@@ -27,6 +27,7 @@ use librad::{
         discovery::{self, Discovery as _},
         peer::{self, Peer, ProtocolEvent},
         protocol::{self, PeerInfo},
+        Network,
     },
     paths,
     PeerId,
@@ -97,6 +98,8 @@ pub struct NodeConfig {
     pub mode: Mode,
     /// Radicle root path.
     pub root: Option<PathBuf>,
+    /// The radicle network to connect to.
+    pub network: Network,
 }
 
 impl Default for NodeConfig {
@@ -105,6 +108,7 @@ impl Default for NodeConfig {
             listen_addr: ([0, 0, 0, 0], 0).into(),
             mode: Mode::TrackEverything,
             root: None,
+            network: Network::default(),
         }
     }
 }
@@ -136,6 +140,7 @@ impl Node {
                 paths,
                 listen_addr: config.listen_addr,
                 membership: Default::default(),
+                network: config.network,
             },
             storage_pools: Default::default(),
         };

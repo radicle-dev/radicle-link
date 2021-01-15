@@ -83,6 +83,7 @@ where
         paths,
         listen_addr,
         membership: Default::default(),
+        network: Default::default(),
     };
     let disco = seeds.into_iter().collect::<discovery::Static>();
     let storage_pools = peer::PoolSizes::default();
