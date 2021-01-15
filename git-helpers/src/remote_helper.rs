@@ -79,11 +79,15 @@ pub fn run() -> anyhow::Result<()> {
 }
 
 fn get_signer(git_dir: &Path, keys_dir: &Path, url: &LocalUrl) -> anyhow::Result<BoxedSigner> {
-    let pass = credential::Git::new(git_dir).get(url)?;
+    let mut cred = credential::Git::new(git_dir);
+    let pass = cred.get(url)?;
     let file = keys_dir.join(SECRET_KEY_FILE);
-    let keystore =
-        FileStorage::<_, PublicKey, _, _>::new(&file, Pwhash::new(pass, *crypto::KDF_PARAMS_PROD));
+    let keystore = FileStorage::<_, PublicKey, _, _>::new(
+        &file,
+        Pwhash::new(pass.clone(), *crypto::KDF_PARAMS_PROD),
+    );
     let key: SecretKey = keystore.get_key().map(|keypair| keypair.secret_key)?;
+    cred.put(url, pass)?;
 
     Ok(SomeSigner { signer: key }.into())
 }
