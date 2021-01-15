@@ -245,6 +245,34 @@ impl Display for RefLike {
 ///     &*OneLevel::from(RefLike::try_from("mistress").unwrap()),
 ///     Path::new("mistress")
 /// );
+///
+/// assert_eq!(
+///     OneLevel::from_qualified(Qualified::from(RefLike::try_from("refs/tags/grace").unwrap())),
+///     (
+///         OneLevel::from(RefLike::try_from("grace").unwrap()),
+///         Some(RefLike::try_from("tags").unwrap())
+///     ),
+/// );
+///
+/// assert_eq!(
+///     OneLevel::from_qualified(Qualified::from(RefLike::try_from("refs/remotes/origin/hopper").unwrap())),
+///     (
+///         OneLevel::from(RefLike::try_from("origin/hopper").unwrap()),
+///         Some(RefLike::try_from("remotes").unwrap())
+///     ),
+/// );
+///
+/// assert_eq!(
+///     OneLevel::from_qualified(Qualified::from(RefLike::try_from("refs/HEAD").unwrap())),
+///     (OneLevel::from(RefLike::try_from("HEAD").unwrap()), None)
+/// );
+///
+/// assert_eq!(
+///     &*OneLevel::from(RefLike::try_from("origin/hopper").unwrap()).into_qualified(
+///         RefLike::try_from("remotes").unwrap()
+///     ),
+///     Path::new("refs/remotes/origin/hopper"),
+/// );
 /// ```
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
@@ -255,6 +283,29 @@ pub struct OneLevel(PathBuf);
 impl OneLevel {
     pub fn as_str(&self) -> &str {
         self.as_ref()
+    }
+
+    pub fn from_qualified(Qualified(path): Qualified) -> (Self, Option<RefLike>) {
+        // skip "refs/"
+        let mut path = path.iter().skip(1);
+        match path.next() {
+            Some(category) => {
+                let category = RefLike(Path::new(category).to_path_buf());
+                // check that the "category" is not the only component of the path
+                match path.next() {
+                    Some(head) => (
+                        Self(std::iter::once(head).chain(path).collect()),
+                        Some(category),
+                    ),
+                    None => (Self::from(category), None),
+                }
+            },
+            None => unreachable!(),
+        }
+    }
+
+    pub fn into_qualified(self, category: RefLike) -> Qualified {
+        Qualified(Path::new("refs").join(category).join(self))
     }
 }
 
