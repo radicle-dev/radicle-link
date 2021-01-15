@@ -469,9 +469,11 @@ impl PeerStorage {
 fn urn_context(local_peer_id: PeerId, urn: Either<Urn, Originates<Urn>>) -> Urn {
     fn remote(urn: Urn, peer: PeerId) -> Urn {
         let path = reflike!("refs/remotes").join(peer).join(
-            ext::RefLike::from(reference::Qualified::from(
-                urn.path.unwrap_or_else(|| urn::DEFAULT_PATH.clone()),
-            ))
+            ext::RefLike::from(
+                urn.path
+                    .map(reference::Qualified::from)
+                    .unwrap_or_else(|| urn::DEFAULT_PATH.clone()),
+            )
             .strip_prefix("refs")
             .unwrap(),
         );
@@ -484,8 +486,8 @@ fn urn_context(local_peer_id: PeerId, urn: Either<Urn, Originates<Urn>>) -> Urn 
 
     fn local(urn: Urn) -> Urn {
         urn.map_path(|path| {
-            path.or_else(|| Some(urn::DEFAULT_PATH.clone()))
-                .map(reference::Qualified::from)
+            path.map(reference::Qualified::from)
+                .or_else(|| Some(urn::DEFAULT_PATH.clone()))
                 .map(ext::RefLike::from)
         })
     }
@@ -619,7 +621,10 @@ mod tests {
         fn direct_empty() {
             let urn = Urn::new(*ZERO_OID);
             let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
-            assert_eq!(urn.with_path(urn::DEFAULT_PATH.clone()), ctx)
+            assert_eq!(
+                urn.with_path(ext::RefLike::from(urn::DEFAULT_PATH.clone())),
+                ctx
+            )
         }
 
         #[test]
@@ -648,9 +653,11 @@ mod tests {
             );
             assert_eq!(
                 urn.with_path(
-                    reflike!("refs/remotes")
-                        .join(*OTHER_PEER_ID)
-                        .join(urn::DEFAULT_PATH.strip_prefix("refs").unwrap())
+                    reflike!("refs/remotes").join(*OTHER_PEER_ID).join(
+                        ext::RefLike::from(urn::DEFAULT_PATH.clone())
+                            .strip_prefix("refs")
+                            .unwrap()
+                    )
                 ),
                 ctx
             )
@@ -706,7 +713,10 @@ mod tests {
                     value: urn.clone(),
                 }),
             );
-            assert_eq!(urn.with_path(urn::DEFAULT_PATH.clone()), ctx)
+            assert_eq!(
+                urn.with_path(ext::RefLike::from(urn::DEFAULT_PATH.clone())),
+                ctx
+            )
         }
 
         #[test]
