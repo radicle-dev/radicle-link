@@ -263,6 +263,11 @@ impl Display for RefLike {
 /// );
 ///
 /// assert_eq!(
+///     OneLevel::from_qualified(Qualified::from(RefLike::try_from("refs/HEAD").unwrap())),
+///     (OneLevel::from(RefLike::try_from("HEAD").unwrap()), None)
+/// );
+///
+/// assert_eq!(
 ///     &*OneLevel::from(RefLike::try_from("origin/hopper").unwrap()).into_qualified(
 ///         RefLike::try_from("remotes").unwrap()
 ///     ),
@@ -285,10 +290,17 @@ impl OneLevel {
         let mut path = path.iter().skip(1);
         match path.next() {
             Some(category) => {
-                let category = Path::new(category).to_path_buf();
-                (Self(path.collect()), Some(RefLike(category)))
+                let category = RefLike(Path::new(category).to_path_buf());
+                // check that the "category" is not the only component of the path
+                match path.next() {
+                    Some(head) => (
+                        Self(std::iter::once(head).chain(path).collect()),
+                        Some(category),
+                    ),
+                    None => (Self::from(category), None),
+                }
             },
-            None => (Self(path.collect()), None),
+            None => unreachable!(),
         }
     }
 
