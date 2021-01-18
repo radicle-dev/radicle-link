@@ -55,9 +55,26 @@ pub type Person = Identity<PersonDoc>;
 pub type Project = Identity<ProjectDoc>;
 
 #[non_exhaustive]
+#[derive(Clone)]
 pub enum SomeIdentity {
     Person(Person),
     Project(Project),
+}
+
+impl SomeIdentity {
+    pub fn person(self) -> Option<Person> {
+        match self {
+            Self::Person(person) => Some(person),
+            _ => None,
+        }
+    }
+
+    pub fn project(self) -> Option<Project> {
+        match self {
+            Self::Project(project) => Some(project),
+            _ => None,
+        }
+    }
 }
 
 pub type SignedPerson = SignedIdentity<PersonDoc>;
