@@ -230,7 +230,7 @@ where
     remove.insert(*local_peer_id);
 
     // Remove any remote tracking branches we don't need
-    prune(storage, &urn, remove.iter());
+    prune(storage, &urn, remove.iter())?;
 
     // TODO: At this point, the tracking graph may have changed, and/or we
     // created top-level person namespaces. We will eventually converge, but
@@ -327,26 +327,23 @@ fn prune<'a>(
     storage: &Storage,
     urn: &Urn,
     prune_list: impl Iterator<Item = &'a PeerId>,
-) -> Vec<PeerId> {
-    let mut unpruned = vec![];
-
+) -> Result<(), Error> {
     for peer in prune_list {
         match tracking::untrack(storage, urn, *peer) {
             Ok(removed) => {
                 if removed {
-                    tracing::info!("pruned `{}`", peer);
+                    tracing::info!(peer = %peer, "pruned");
                 } else {
-                    tracing::trace!("attempted to prune `{}` but it did not exist", peer);
+                    tracing::trace!(peer = %peer, "peer did not exist for pruning");
                 }
             },
             Err(err) => {
-                tracing::warn!("failed to prune `{}`\nreason: {}", peer, err);
-                unpruned.push(*peer);
+                tracing::warn!(peer = %peer, err = %err, "failed to prune");
+                return Err(err.into());
             },
         }
     }
-
-    unpruned
+    Ok(())
 }
 
 // Return three sets where the first consists of elements in `ys` but not in
