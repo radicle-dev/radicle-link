@@ -262,7 +262,7 @@ fn replication(
 ) -> Result<Replication, Error> {
     if !storage.has_urn(&urn)? {
         let fetched_peers = fetcher
-            .fetch(fetch::Fetchspecs::All {
+            .fetch(fetch::Fetchspecs::PeekAll {
                 max_fetch: fetch::ONE_GB,
             })
             .map_err(|e| Error::Fetch(e.into()))

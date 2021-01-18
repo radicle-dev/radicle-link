@@ -43,7 +43,7 @@ pub const ONE_MB: usize = 1024 * 1024;
 #[derive(Debug)]
 pub enum Fetchspecs<P, R> {
     /// Request all identity documents
-    All { max_fetch: usize },
+    PeekAll { max_fetch: usize },
 
     /// Only request the branches necessary for identity verification.
     Peek {
@@ -79,7 +79,7 @@ where
         remote_heads: &RemoteHeads,
     ) -> Vec<Fetchspec> {
         match self {
-            Self::All { .. } => {
+            Self::PeekAll { .. } => {
                 let mut all = refspecs::all(urn);
                 let remote = Some(remote_peer.clone()).into_iter().collect();
                 let mut remotes = refspecs::peek(urn, &remote_peer, &remote);
@@ -97,7 +97,7 @@ where
 
     pub fn fetch_limit(&self) -> Option<usize> {
         match self {
-            Fetchspecs::All { max_fetch } => Some(*max_fetch),
+            Fetchspecs::PeekAll { max_fetch } => Some(*max_fetch),
             Fetchspecs::Peek { max_fetch, .. } => Some(*max_fetch),
             Fetchspecs::SignedRefs { .. } | Fetchspecs::Replicate { .. } => None,
         }
