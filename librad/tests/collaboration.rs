@@ -26,19 +26,6 @@ async fn can_add_maintainer() {
         let (peer1, _) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
 
-        peer1
-            .with_storage(move |storage| {
-                println!("PATH: {}", storage.path().display());
-            })
-            .await
-            .unwrap();
-        peer2
-            .with_storage(move |storage| {
-                println!("PATH: {}", storage.path().display());
-            })
-            .await
-            .unwrap();
-
         let TestProject { project, owner } = peer1
             .with_storage(move |storage| create_test_project(&storage))
             .await
@@ -77,7 +64,7 @@ async fn can_add_maintainer() {
                         )
                         .unwrap(),
                     )?;
-                    identities::project::verify(storage, &urn)?.expect("Should be there like");
+                    identities::project::verify(storage, &urn)?;
                     Ok(())
                 }
             })
@@ -94,7 +81,7 @@ async fn can_add_maintainer() {
                     librad::git::tracking::track(&storage, &urn, peer_id)?;
                     replication::replicate(&storage, None, urn.clone(), peer_id, addrs)?;
                     identities::project::merge(storage, &urn, peer_id)?;
-                    identities::project::verify(storage, &urn)?.expect("Should be there like");
+                    identities::project::verify(storage, &urn)?;
                     Ok(())
                 }
             })
@@ -116,7 +103,6 @@ async fn can_add_maintainer() {
             .await
             .unwrap()
             .unwrap();
-        // std::thread::sleep(std::time::Duration::from_secs(60));
 
         assert!(verified.is_some());
     })
@@ -133,19 +119,6 @@ async fn adding_maintainers_commutes() {
     testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
         let (peer1, _) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
-
-        peer1
-            .with_storage(move |storage| {
-                println!("PATH: {}", storage.path().display());
-            })
-            .await
-            .unwrap();
-        peer2
-            .with_storage(move |storage| {
-                println!("PATH: {}", storage.path().display());
-            })
-            .await
-            .unwrap();
 
         let TestProject { project, owner } = peer1
             .with_storage(move |storage| create_test_project(&storage))
