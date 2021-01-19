@@ -70,7 +70,18 @@ where
             },
         })
         .for_each(|tock| tick::tock(state.clone(), tock))
-        .await
+        .await;
+
+    // Tickle connections in the partial view.
+    //
+    // This is mostly to keep passive connections from being collected. Note
+    // that we're not checking actual liveness, nor interfering with the
+    // membership protocol.
+    for peer in state.membership.known() {
+        if let Some(conn) = state.endpoint.get_connection(peer) {
+            conn.tickle()
+        }
+    }
 }
 
 #[tracing::instrument(skip(state, rx))]

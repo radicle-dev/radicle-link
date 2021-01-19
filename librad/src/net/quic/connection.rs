@@ -153,7 +153,7 @@ impl Connection {
             .disconnect(&self.id(), CloseReason::ConnectionError);
     }
 
-    pub(super) fn tickle(&self) {
+    pub fn tickle(&self) {
         self.track.tickle(&self.id())
     }
 
