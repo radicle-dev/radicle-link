@@ -6,7 +6,7 @@
 use thiserror::Error;
 
 use super::{
-    super::{storage, types::reference},
+    super::{refs, storage, types::reference},
     local,
 };
 use crate::identities::{
@@ -22,6 +22,9 @@ pub enum Error {
 
     #[error("malformed URN")]
     Ref(#[from] reference::FromUrnError),
+
+    #[error("update of signed_refs failed")]
+    Sigrefs(#[from] refs::stored::Error),
 
     #[error(transparent)]
     LocalId(#[from] local::ValidationError),

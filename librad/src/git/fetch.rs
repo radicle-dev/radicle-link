@@ -20,7 +20,14 @@ use super::{
     p2p::url::GitUrl,
     refs::Refs,
     storage::{self, Storage},
-    types::{reference::Reference, AsRemote, Fetchspec, Force, Namespace, Refspec},
+    types::{
+        reference::{Reference, RefsCategory},
+        AsRemote,
+        Fetchspec,
+        Force,
+        Namespace,
+        Refspec,
+    },
 };
 use crate::{
     identities::{
@@ -157,85 +164,18 @@ pub mod refspecs {
         R: HasProtocol + Clone + 'static,
         for<'a> &'a R: Into<Multihash>,
     {
+        let namespace = Namespace::from(urn);
         let mut signed = tracked_sigrefs
             .iter()
-            .map(|(tracked_peer, tracked_sigrefs)| {
-                let namespace = Namespace::from(urn);
-                tracked_sigrefs
-                    .heads
-                    .iter()
-                    .filter_map(move |(name, target)| {
-                        let name_namespaced =
-                        // Either the signed ref is in the "owned" section of
-                        // `remote_peer`'s repo...
-                        if tracked_peer == remote_peer {
-                            reflike!("refs/namespaces")
-                            .join(&namespace)
-                            .join(ext::Qualified::from(name.clone()))
-                        // .. or `remote_peer` is tracking `tracked_peer`, in
-                        // which case it is in the remotes section.
-                        } else {
-                            reflike!("refs/namespaces")
-                                .join(&namespace)
-                                .join(reflike!("refs/remotes"))
-                                .join(tracked_peer)
-                                // Nb.: `name` is `OneLevel`, but we are in the
-                                // remote tracking branches, so we need `heads`
-                                // Like `Qualified::from(name).strip_prefix("refs")`
-                                .join(reflike!("heads")).join(name.clone())
-                        };
-
-                        // Only include the advertised ref if its target OID
-                        // is the same as the signed one.
-                        let targets_match = {
-                            let found = remote_heads.get(&name_namespaced);
-                            match found {
-                                None => {
-                                    tracing::debug!(
-                                        "{} not found in remote heads",
-                                        name_namespaced
-                                    );
-                                    false
-                                },
-
-                                Some(remote_target) => {
-                                    if remote_target == &*target {
-                                        true
-                                    } else {
-                                        tracing::warn!(
-                                            "{} target mismatch: expected {}, got {}",
-                                            name_namespaced,
-                                            target,
-                                            remote_target
-                                        );
-                                        false
-                                    }
-                                },
-                            }
-                        };
-
-                        targets_match.then_some({
-                            let dst = Reference::head(
-                                namespace.clone(),
-                                tracked_peer.clone(),
-                                name.clone().into(),
-                            );
-                            let src = if tracked_peer == remote_peer {
-                                dst.clone().with_remote(None)
-                            } else {
-                                dst.clone()
-                            };
-
-                            Refspec {
-                                src,
-                                dst,
-                                force: Force::True,
-                            }
-                            .into_fetchspec()
-                        })
-                    })
+            .flat_map(|(tracked_peer, refs)| {
+                sigrefs(
+                    namespace.clone(),
+                    remote_peer,
+                    remote_heads,
+                    tracked_peer,
+                    refs,
+                )
             })
-            .flatten()
             .collect::<Vec<_>>();
 
         // Peek at the remote peer
@@ -263,6 +203,114 @@ pub mod refspecs {
         signed.append(&mut peek_remote);
         signed.append(&mut delegates);
         signed
+    }
+
+    fn sigrefs<'a, P, R>(
+        namespace: Namespace<R>,
+        remote_peer: &'a P,
+        remote_heads: &'a RemoteHeads,
+        tracked_peer: &'a P,
+        refs: &'a Refs,
+    ) -> impl Iterator<Item = Fetchspec> + 'a
+    where
+        P: Clone + PartialEq,
+        for<'b> &'b P: AsRemote + Into<ext::RefLike>,
+
+        R: HasProtocol + Clone + 'a,
+        for<'b> &'b R: Into<Multihash>,
+    {
+        refs.iter_categorised()
+            .map({
+                let namespace = namespace.clone();
+                move |(x, category)| {
+                    (
+                        x,
+                        namespaced(&namespace, remote_peer, tracked_peer, x.0, category),
+                    )
+                }
+            })
+            .filter_map(move |((name, target), namespaced_name)| {
+                // Only include the advertised ref if its target OID
+                // is the same as the signed one.
+                let targets_match = {
+                    let found = remote_heads.get(&namespaced_name);
+                    match found {
+                        None => {
+                            tracing::debug!("{} not found in remote heads", namespaced_name);
+                            false
+                        },
+
+                        Some(remote_target) => {
+                            if remote_target == &*target {
+                                true
+                            } else {
+                                tracing::warn!(
+                                    "{} target mismatch: expected {}, got {}",
+                                    namespaced_name,
+                                    target,
+                                    remote_target
+                                );
+                                false
+                            }
+                        },
+                    }
+                };
+
+                targets_match.then_some({
+                    let dst = Reference::head(
+                        namespace.clone(),
+                        tracked_peer.clone(),
+                        name.clone().into(),
+                    );
+                    let src = if tracked_peer == remote_peer {
+                        dst.clone().with_remote(None)
+                    } else {
+                        dst.clone()
+                    };
+
+                    Refspec {
+                        src,
+                        dst,
+                        force: Force::True,
+                    }
+                    .into_fetchspec()
+                })
+            })
+    }
+
+    fn namespaced<'a, P, R>(
+        namespace: &'a Namespace<R>,
+        remote_peer: &'a P,
+        tracked_peer: &'a P,
+        name: &'a ext::OneLevel,
+        cat: RefsCategory,
+    ) -> ext::RefLike
+    where
+        P: PartialEq,
+        for<'b> &'b P: AsRemote + Into<ext::RefLike>,
+
+        R: HasProtocol,
+        for<'b> &'b R: Into<Multihash>,
+    {
+        // Either the signed ref is in the "owned" section of
+        // `remote_peer`'s repo...
+        if tracked_peer == remote_peer {
+            reflike!("refs/namespaces")
+                .join(namespace)
+                .join(ext::Qualified::from(name.clone()))
+        // .. or `remote_peer` is tracking `tracked_peer`, in
+        // which case it is in the remotes section.
+        } else {
+            reflike!("refs/namespaces")
+                .join(namespace)
+                .join(reflike!("refs/remotes"))
+                .join(tracked_peer)
+                // Nb.: `name` is `OneLevel`, but we are in the
+                // remote tracking branches, so we need `heads`
+                // Like `Qualified::from(name).strip_prefix("refs")`
+                .join(ext::RefLike::from(cat))
+                .join(name.clone())
+        }
     }
 }
 
@@ -571,6 +619,9 @@ mod tests {
                         .iter()
                         .cloned()
                         .collect(),
+                    rad: Default::default(),
+                    tags: Default::default(),
+                    notes: Default::default(),
                     remotes: Remotes::new(),
                 },
             ),
@@ -584,6 +635,9 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
+                    rad: Default::default(),
+                    tags: Default::default(),
+                    notes: Default::default(),
                     remotes: Remotes::new(),
                 },
             ),
