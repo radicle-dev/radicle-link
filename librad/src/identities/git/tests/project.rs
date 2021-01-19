@@ -286,42 +286,33 @@ fn fork() -> anyhow::Result<()> {
 
         let heads = current_heads_from(vec![&cheyenne, &dylan]);
 
-        let project = {
+        let cheyenne_project = {
             let update = IndirectDelegation::try_from_iter(vec![
                 Right(cheyenne.current().clone()),
                 Right(dylan.current().clone()),
             ])?;
             common::Project::new(cheyenne.clone())?.update(update)
         }?;
-        let project = common::Project::create_from(dylan.clone(), &project)?;
-        project.assert_verifies(lookup(&heads))?;
+        let dylan_project = common::Project::create_from(dylan.clone(), &cheyenne_project)?;
+        dylan_project.assert_verifies(lookup(&heads))?;
 
-        let project = project.change_description()?;
-        let project = {
-            common::Project::create_from(
-                cheyenne.clone(),
-                &common::Project::create_from(dylan.clone(), &project)?,
-            )
-        }?;
-        project.assert_verifies(lookup(&heads))?;
+        // Change the description of the project
+        let cheyenne_project = cheyenne_project.change_description()?;
+        let dylan_project = dylan_project.update_from(&cheyenne_project)?;
 
-        let other = {
+        // Same project, different day
+        let cheyenne_other = {
             let update = IndirectDelegation::try_from_iter(vec![
                 Right(cheyenne.current().clone()),
                 Right(dylan.current().clone()),
             ])?;
             common::Project::new(cheyenne.clone())?.update(update)
         }?;
-        let other = {
-            common::Project::create_from(
-                cheyenne.clone(),
-                &common::Project::create_from(dylan.clone(), &other)?,
-            )
-        }?;
+        let dylan_other = common::Project::create_from(dylan.clone(), &cheyenne_other)?;
 
-        let mine = project.verify(lookup(&heads))?;
-        let theirs = other.verify(lookup(&heads))?;
-        project.assert_forks(&mine, &theirs)
+        let mine = dylan_project.verify(lookup(&heads))?;
+        let theirs = dylan_other.verify(lookup(&heads))?;
+        cheyenne_project.assert_forks(&mine, &theirs)
     }
 }
 
