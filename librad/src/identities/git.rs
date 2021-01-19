@@ -411,20 +411,19 @@ where
 }
 
 impl<'a, T: 'a> Identities<'a, VerifiedIdentity<T>> {
-    #[tracing::instrument(level = "debug", skip(self, mine, theirs), err)]
+    #[tracing::instrument(level = "debug", skip(self, mine, theirs), err, fields(mine.content_id = %mine.content_id, mine.revision = %mine.revision, theirs.content_id = %theirs.content_id, theirs.revision = %theirs.revision))]
     pub fn is_fork(
         &self,
         mine: &VerifiedIdentity<T>,
         theirs: &VerifiedIdentity<T>,
     ) -> Result<bool, error::Store> {
-        tracing::debug!(mine.content_id = %mine.content_id, theirs.revision_id = %theirs.revision, "checking mine against theirs");
+        tracing::debug!("checking mine against theirs");
         let forked_left =
             !self.is_in_ancestry_path(mine.content_id.into(), theirs.revision.into())?;
-        Ok(forked_left
-            || {
-                tracing::debug!(theirs.content_id = %theirs.content_id, mine.revision_id = %mine.revision, "checking theirs against mine");
-                !self.is_in_ancestry_path(theirs.content_id.into(), mine.revision.into())?
-            })
+        Ok(forked_left || {
+            tracing::debug!("checking theirs against mine");
+            !self.is_in_ancestry_path(theirs.content_id.into(), mine.revision.into())?
+        })
     }
 }
 
