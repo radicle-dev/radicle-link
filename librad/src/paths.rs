@@ -4,8 +4,6 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    collections::HashMap,
-    env,
     fs,
     io,
     path::{Path, PathBuf},
@@ -13,7 +11,12 @@ use std::{
 
 use directories::ProjectDirs;
 
-#[derive(Clone)]
+/// A set of paths to store application data.
+///
+/// The paths are either based on system specific directories when created
+/// with [`crate::profile::Profile::paths`] or all contained in a given
+/// directory when created with [`Paths::from_root`].
+#[derive(Debug, Clone)]
 pub struct Paths {
     keys_dir: PathBuf,
     git_dir: PathBuf,
@@ -21,16 +24,14 @@ pub struct Paths {
 }
 
 impl Paths {
-    pub fn new() -> Result<Self, io::Error> {
-        let proj = ProjectDirs::from("xyz", "radicle", "radicle").ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "Couldn't determine application directories.",
-            )
-        })?;
-
-        let config_dir = proj.config_dir();
-        let data_dir = proj.data_dir();
+    /// Returns based on [`ProjectDirs`] and scoped to `profile_id`.
+    ///
+    /// On Linux, all paths start with
+    /// `$XDG_{CONFIG|DATA}_HOME/radicle-link/<profile_id>`.
+    pub(crate) fn new(profile_id: &str) -> Result<Self, io::Error> {
+        let proj = project_dirs()?;
+        let config_dir = proj.config_dir().join(profile_id);
+        let data_dir = proj.data_dir().join(profile_id);
 
         Self {
             keys_dir: config_dir.join("keys"),
@@ -40,9 +41,7 @@ impl Paths {
         .init()
     }
 
-    // Don't use system paths, but the supplied directory as a root.
-    //
-    // For testing, you know.
+    /// All paths are contained in the given directory.
     pub fn from_root(root: impl AsRef<Path>) -> Result<Self, io::Error> {
         let root = root.as_ref();
         Self {
@@ -51,13 +50,6 @@ impl Paths {
             git_includes_dir: root.join("git-includes"),
         }
         .init()
-    }
-
-    pub fn from_env() -> Result<Self, io::Error> {
-        match env::var_os("RAD_HOME") {
-            None => Self::new(),
-            Some(root) => Self::from_root(root),
-        }
     }
 
     pub fn keys_dir(&self) -> &Path {
@@ -72,7 +64,7 @@ impl Paths {
         &self.git_includes_dir
     }
 
-    pub fn all_dirs(&self) -> HashMap<&str, &Path> {
+    fn all_dirs(&self) -> impl Iterator<Item = &Path> {
         // Nb. this pattern match is here to keep the map consistent with the
         // struct fields
         let Self {
@@ -81,20 +73,31 @@ impl Paths {
             git_includes_dir,
         } = self;
 
-        [
-            ("keys_dir", keys_dir.as_path()),
-            ("git_dir", git_dir.as_path()),
-            ("git_includes_dir", git_includes_dir.as_path()),
+        vec![
+            keys_dir.as_path(),
+            git_dir.as_path(),
+            git_includes_dir.as_path(),
         ]
-        .iter()
-        .cloned()
-        .collect()
+        .into_iter()
     }
 
     fn init(self) -> Result<Self, io::Error> {
-        self.all_dirs().values().try_for_each(fs::create_dir_all)?;
+        self.all_dirs().try_for_each(fs::create_dir_all)?;
         Ok(self)
     }
+}
+
+/// Returns [`ProjectDirs`] for this specific project (`radicle`).
+///
+/// Returns [`io::Error`] if the project directories could not be determined,
+/// most likely due to the `$HOME` environment variable missing
+pub(crate) fn project_dirs() -> Result<ProjectDirs, io::Error> {
+    ProjectDirs::from("xyz", "radicle", "radicle-link").ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "Couldn't determine application directories.",
+        )
+    })
 }
 
 #[cfg(test)]
@@ -108,7 +111,7 @@ mod tests {
     fn test_initialises_paths() {
         let tmp = tempdir().unwrap();
         let paths = Paths::from_root(tmp.path()).unwrap();
-        assert!(paths.all_dirs().values().all(|path| path.exists()))
+        assert!(paths.all_dirs().all(|path| path.exists()))
     }
 
     /// Test we indeed create everything under the root dir -
@@ -119,7 +122,6 @@ mod tests {
         let paths = Paths::from_root(tmp.path()).unwrap();
         assert!(paths
             .all_dirs()
-            .values()
             .all(|path| { path.ancestors().any(|parent| parent == tmp.path()) }))
     }
 }

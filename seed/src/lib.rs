@@ -34,6 +34,7 @@ use librad::{
     },
     paths,
     peer::PeerId,
+    profile,
 };
 
 pub use crate::{
@@ -78,6 +79,9 @@ pub enum Error {
 
     #[error(transparent)]
     Channel(#[from] chan::SendError),
+
+    #[error(transparent)]
+    Profile(#[from] profile::Error),
 }
 
 /// Seed operational mode.
@@ -144,7 +148,7 @@ impl Node {
         let paths = if let Some(root) = &config.root {
             paths::Paths::from_root(root)?
         } else {
-            paths::Paths::new()?
+            profile::Profile::load()?.paths().to_owned()
         };
         let gossip_params = Default::default();
         let storage_config = Default::default();

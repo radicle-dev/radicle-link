@@ -18,6 +18,7 @@ use librad::{
     git::{local::url::LocalUrl, storage::Storage, Urn},
     keys::{PublicKey, SecretKey},
     paths::Paths,
+    profile::Profile,
 };
 use librad_test::{logging, rad::identities::create_test_project};
 
@@ -28,7 +29,8 @@ fn smoke() {
     logging::init();
 
     let rad_dir = tempdir().unwrap();
-    let rad_paths = Paths::from_root(rad_dir.path()).unwrap();
+    let profile = Profile::from_root(rad_dir.path(), None).unwrap();
+    let rad_paths = profile.paths();
     let key = SecretKey::new();
 
     let urn = setup_project(&rad_paths, key.clone()).unwrap();
