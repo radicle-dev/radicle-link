@@ -65,6 +65,15 @@ impl<'de> serde::Deserialize<'de> for SomeDoc {
                 }))
             },
 
+            (SomePayload::Project(payload), SomeDelegations::Person(delegations)) => {
+                Ok(Self::Project(Doc {
+                    version: doc.version,
+                    replaces: doc.replaces,
+                    payload,
+                    delegations: (*delegations).iter().copied().map(Either::Left).collect(),
+                }))
+            },
+
             _ => Err(serde::de::Error::custom("payload <-> delegations mismatch")),
         }
     }
