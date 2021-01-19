@@ -47,12 +47,11 @@ async fn can_add_maintainer() {
             .unwrap()
             .unwrap();
 
-        peer2
+        peer1
             .with_storage({
                 let urn = project.urn();
                 let peer_id = peer2.peer_id();
                 let key = *peer_id.as_public_key();
-                let owner = owner.clone();
                 move |storage| -> Result<(), anyhow::Error> {
                     identities::project::update(
                         storage,
@@ -73,24 +72,6 @@ async fn can_add_maintainer() {
             .unwrap()
             .unwrap();
 
-        peer1
-            .with_storage({
-                let urn = project.urn();
-                let peer_id = peer2.peer_id();
-                let addrs = peer2.listen_addrs().collect::<Vec<_>>();
-                let limit = peer1.fetch_limit();
-                move |storage| -> Result<(), anyhow::Error> {
-                    librad::git::tracking::track(&storage, &urn, peer_id)?;
-                    replication::replicate(&storage, None, urn.clone(), peer_id, addrs, limit)?;
-                    identities::project::merge(storage, &urn, peer_id)?;
-                    identities::project::verify(storage, &urn)?;
-                    Ok(())
-                }
-            })
-            .await
-            .unwrap()
-            .unwrap();
-
         let verified = peer2
             .with_storage({
                 let urn = project.urn();
@@ -99,7 +80,7 @@ async fn can_add_maintainer() {
                 let limit = peer2.fetch_limit();
                 move |storage| -> Result<Option<identities::VerifiedProject>, anyhow::Error> {
                     replication::replicate(&storage, None, urn.clone(), peer_id, addrs, limit)?;
-                    identities::project::merge(storage, &urn, peer_id)?;
+                    identities::project::merge(&storage, &urn, peer_id)?;
                     Ok(identities::project::verify(storage, &urn)?)
                 }
             })
@@ -108,6 +89,10 @@ async fn can_add_maintainer() {
             .unwrap();
 
         assert!(verified.is_some());
+        {
+            let peer_id = peer2.peer_id();
+            assert_eq!(Some(peer_id.as_public_key()), verified.unwrap().delegations().iter().direct().next());
+        }
     })
     .await;
 }
