@@ -17,7 +17,7 @@ use thiserror::Error;
 use super::sealed;
 
 lazy_static! {
-    pub static ref DEFAULT_PATH: ext::RefLike = reflike!("refs/rad/id");
+    pub static ref DEFAULT_PATH: ext::Qualified = ext::Qualified::from(reflike!("refs/rad/id"));
 }
 
 pub trait HasProtocol: sealed::Sealed {
