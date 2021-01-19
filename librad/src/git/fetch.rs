@@ -30,12 +30,33 @@ use crate::{
     peer::PeerId,
 };
 
-/// Upper bound of 1GB for fetching data. This upper bound is useful for when
+/// Upper bound of 500KB for fetching data. This upper bound is useful for when
 /// fetching from an unknown (and possibly untrusted) peer.
-pub const ONE_GB: usize = 1024 * 1024 * 1024;
-/// Upper bound of 1MB for fetching data. This upper bound is an estimate for
-/// limiting the fetch of the `rad/*` references.
-pub const ONE_MB: usize = 1024 * 1024;
+pub const FIVE_HUNDRED_KB: usize = 1024 * 500;
+/// Relative upper bound of 1KB for fetching data. This bound is used in tandem
+/// with the number references that it will be fetching.
+pub const ONE_KB: usize = 1024;
+
+/// Limits used for guarding against fetching large amounts of data from the
+/// network.
+#[derive(Clone, Copy, Debug)]
+pub struct Limit {
+    /// The `relative` limit will be used when we are aware of how many
+    /// references we will be fetching, i.e. `relative * # of references`.
+    pub relative: usize,
+    /// The `absolute` limit will be used when we are unaware of how many
+    /// references the peer is storing on the other side of the fetch.
+    pub absolute: usize,
+}
+
+impl Default for Limit {
+    fn default() -> Self {
+        Self {
+            relative: ONE_KB,
+            absolute: FIVE_HUNDRED_KB,
+        }
+    }
+}
 
 /// Seed value to compute the fetchspecs for the desired fetch phase from.
 ///
@@ -43,17 +64,14 @@ pub const ONE_MB: usize = 1024 * 1024;
 #[derive(Debug)]
 pub enum Fetchspecs<P, R> {
     /// Request all identity documents
-    PeekAll { max_fetch: usize },
+    PeekAll { limit: Limit },
 
     /// Only request the branches necessary for identity verification.
-    Peek {
-        remotes: BTreeSet<P>,
-        max_fetch: usize,
-    },
+    Peek { remotes: BTreeSet<P>, limit: Limit },
 
     /// Request the `rad/signed_refs` branches of the given set of tracked
     /// peers.
-    SignedRefs { tracked: BTreeSet<P> },
+    SignedRefs { tracked: BTreeSet<P>, limit: Limit },
 
     /// Request the remote heads matching the signed refs of the respective
     /// tracked peers, as well as top-level delegates found in the identity
@@ -61,6 +79,7 @@ pub enum Fetchspecs<P, R> {
     Replicate {
         tracked_sigrefs: BTreeMap<P, Refs>,
         delegates: BTreeSet<Urn<R>>,
+        limit: Limit,
     },
 }
 
@@ -87,19 +106,25 @@ where
                 all
             },
             Self::Peek { remotes, .. } => refspecs::peek(urn, &remote_peer, remotes),
-            Self::SignedRefs { tracked } => refspecs::signed_refs(urn, &remote_peer, tracked),
+            Self::SignedRefs { tracked, .. } => refspecs::signed_refs(urn, &remote_peer, tracked),
             Self::Replicate {
                 tracked_sigrefs,
                 delegates,
+                ..
             } => refspecs::replicate(urn, &remote_peer, remote_heads, tracked_sigrefs, delegates),
         }
     }
 
-    pub fn fetch_limit(&self) -> Option<usize> {
+    pub fn fetch_limit(&self) -> usize {
         match self {
-            Fetchspecs::PeekAll { max_fetch } => Some(*max_fetch),
-            Fetchspecs::Peek { max_fetch, .. } => Some(*max_fetch),
-            Fetchspecs::SignedRefs { .. } | Fetchspecs::Replicate { .. } => None,
+            Fetchspecs::PeekAll { limit } => limit.absolute,
+            Fetchspecs::Peek { limit, remotes } => limit.relative * remotes.len(),
+            Fetchspecs::SignedRefs { limit, tracked } => limit.relative * tracked.len(),
+            Fetchspecs::Replicate {
+                limit,
+                tracked_sigrefs,
+                delegates,
+            } => limit.relative * tracked_sigrefs.len() * delegates.len(),
         }
     }
 }
@@ -512,7 +537,7 @@ impl<'a> DefaultFetcher<'a> {
         fetchspecs: Fetchspecs<PeerId, git::Revision>,
     ) -> Result<FetchResult, git2::Error> {
         {
-            let max_fetch = fetchspecs.fetch_limit();
+            let limit = fetchspecs.fetch_limit();
             let refspecs = fetchspecs
                 .refspecs(&self.urn, self.remote_peer, &self.remote_heads)
                 .into_iter()
@@ -524,12 +549,11 @@ impl<'a> DefaultFetcher<'a> {
             callbacks.transfer_progress(|prog| {
                 let received_bytes = prog.received_bytes();
                 tracing::trace!("Fetch: received {} bytes", received_bytes);
-                match max_fetch {
-                    Some(limit) if received_bytes > limit => {
-                        tracing::error!("Fetch: exceeded {} bytes", limit);
-                        false
-                    },
-                    Some(_) | None => true,
+                if received_bytes > limit {
+                    tracing::error!("Fetch: exceeded {} bytes", limit);
+                    false
+                } else {
+                    true
                 }
             });
 
@@ -609,7 +633,7 @@ mod tests {
     fn peek_looks_legit() {
         let specs = Fetchspecs::Peek {
             remotes: Some(TOLA.clone()).into_iter().collect(),
-            max_fetch: ONE_MB,
+            limit: Default::default(),
         }
         .refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
         assert_eq!(
@@ -654,6 +678,7 @@ mod tests {
                 .cloned()
                 .cloned()
                 .collect::<BTreeSet<ext::RefLike>>(),
+            limit: Default::default(),
         }
         .refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
 
@@ -793,6 +818,7 @@ mod tests {
         let specs = Fetchspecs::Replicate {
             tracked_sigrefs,
             delegates,
+            limit: Default::default(),
         }
         .refspecs(&*PROJECT_URN, TOLA.clone(), &remote_heads);
 

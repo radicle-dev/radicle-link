@@ -45,6 +45,7 @@ async fn can_clone() {
     testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
         let (peer1, _) = apis.pop().unwrap();
         let (peer2, _) = apis.pop().unwrap();
+        let limit = peer1.fetch_limit();
 
         let TestProject { project, owner } = peer1
             .with_storage(move |storage| create_test_project(&storage))
@@ -55,7 +56,8 @@ async fn can_clone() {
         peer2
             .with_storage(move |storage| {
                 let urn = project.urn();
-                replication::replicate(&storage, None, urn.clone(), peer1.peer_id(), None).unwrap();
+                replication::replicate(&storage, None, urn.clone(), peer1.peer_id(), None, limit)
+                    .unwrap();
 
                 // check rad/self of peer1 exists
                 assert!(
@@ -97,32 +99,36 @@ async fn can_clone_disconnected() {
             .unwrap();
 
         peer2
-            .with_storage(move |storage| {
+            .with_storage({
                 let urn = project.urn();
-                replication::replicate(
-                    &storage,
-                    None,
-                    urn.clone(),
-                    peer1.peer_id(),
-                    peer1.listen_addrs(),
-                )
-                .unwrap();
+                let limit = peer2.fetch_limit();
+                move |storage| {
+                    replication::replicate(
+                        &storage,
+                        None,
+                        urn.clone(),
+                        peer1.peer_id(),
+                        peer1.listen_addrs(),
+                        limit,
+                    )
+                    .unwrap();
 
-                // check rad/self of peer1 exists
-                assert!(
-                    storage
-                        .has_ref(&Reference::rad_self(Namespace::from(&urn), peer1.peer_id()))
-                        .unwrap(),
-                    "`refs/remotes/<peer1>/rad/self` should exist"
-                );
+                    // check rad/self of peer1 exists
+                    assert!(
+                        storage
+                            .has_ref(&Reference::rad_self(Namespace::from(&urn), peer1.peer_id()))
+                            .unwrap(),
+                        "`refs/remotes/<peer1>/rad/self` should exist"
+                    );
 
-                // check we have a top-level namespace for `owner`
-                let urn = owner.urn();
-                assert_eq!(
-                    Some(owner),
-                    identities::person::get(&storage, &urn).unwrap(),
-                    "alice should be a first class citizen"
-                )
+                    // check we have a top-level namespace for `owner`
+                    let urn = owner.urn();
+                    assert_eq!(
+                        Some(owner),
+                        identities::person::get(&storage, &urn).unwrap(),
+                        "alice should be a first class citizen"
+                    )
+                }
             })
             .await
             .unwrap();
@@ -150,7 +156,8 @@ async fn fetches_on_gossip_notify() {
             .with_storage({
                 let urn = project.urn();
                 let peer_id = peer1.peer_id();
-                move |storage| replication::replicate(&storage, None, urn, peer_id, None)
+                let limit = peer2.fetch_limit();
+                move |storage| replication::replicate(&storage, None, urn, peer_id, None, limit)
             })
             .await
             .unwrap()
@@ -268,7 +275,8 @@ async fn list_identities_returns_only_local_projects() {
             .with_storage({
                 let urn = project.urn();
                 let remote_peer = peer1.peer_id();
-                move |storage| replication::replicate(&storage, None, urn, remote_peer, None)
+                let limit = peer2.fetch_limit();
+                move |storage| replication::replicate(&storage, None, urn, remote_peer, None, limit)
             })
             .await
             .unwrap()
@@ -278,8 +286,9 @@ async fn list_identities_returns_only_local_projects() {
             .with_storage({
                 let urn = project.urn();
                 let remote_peer = peer2.peer_id();
+                let limit = peer3.fetch_limit();
                 move |storage| -> Result<Vec<SomeIdentity>, anyhow::Error> {
-                    replication::replicate(&storage, None, urn, remote_peer, None)?;
+                    replication::replicate(&storage, None, urn, remote_peer, None, limit)?;
                     Ok(identities::any::list(&storage)?.collect::<Result<Vec<_>, _>>()?)
                 }
             })
@@ -346,7 +355,8 @@ async fn ask_and_clone() {
         peer2
             .with_storage({
                 let urn = project.urn();
-                move |storage| replication::replicate(&storage, None, urn, remote_peer, None)
+                let limit = peer2.fetch_limit();
+                move |storage| replication::replicate(&storage, None, urn, remote_peer, None, limit)
             })
             .await
             .unwrap()
@@ -448,8 +458,9 @@ async fn menage_a_troi() {
                 let rad_id =
                     Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
                 let addrs = peer1.listen_addrs().collect::<Vec<_>>();
+                let limit = peer2.fetch_limit();
                 move |storage| -> Result<ExpectedReferences, anyhow::Error> {
-                    replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
+                    replication::replicate(&storage, None, urn.clone(), remote_peer, addrs, limit)?;
                     Ok(ExpectedReferences {
                         has_commit: storage.has_commit(&urn, Box::new(commit_id))?,
                         has_rad_id: storage.has_ref(&rad_self)?,
@@ -468,8 +479,9 @@ async fn menage_a_troi() {
                 let rad_id =
                     Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
                 let addrs = peer2.listen_addrs().collect::<Vec<_>>();
+                let limit = peer3.fetch_limit();
                 move |storage| -> Result<ExpectedReferences, anyhow::Error> {
-                    replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
+                    replication::replicate(&storage, None, urn.clone(), remote_peer, addrs, limit)?;
                     Ok(ExpectedReferences {
                         has_commit: storage.has_commit(&urn, Box::new(commit_id))?,
                         has_rad_id: storage.has_ref(&rad_self)?,

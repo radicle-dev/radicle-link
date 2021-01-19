@@ -37,8 +37,9 @@ async fn can_add_maintainer() {
                 let remote_peer = peer1.peer_id();
                 let urn = project.urn();
                 let addrs = peer1.listen_addrs().collect::<Vec<_>>();
+                let limit = peer2.fetch_limit();
                 move |storage| -> Result<(), anyhow::Error> {
-                    replication::replicate(&storage, None, urn, remote_peer, addrs)?;
+                    replication::replicate(&storage, None, urn, remote_peer, addrs, limit)?;
                     Ok(())
                 }
             })
@@ -77,9 +78,10 @@ async fn can_add_maintainer() {
                 let urn = project.urn();
                 let peer_id = peer2.peer_id();
                 let addrs = peer2.listen_addrs().collect::<Vec<_>>();
+                let limit = peer1.fetch_limit();
                 move |storage| -> Result<(), anyhow::Error> {
                     librad::git::tracking::track(&storage, &urn, peer_id)?;
-                    replication::replicate(&storage, None, urn.clone(), peer_id, addrs)?;
+                    replication::replicate(&storage, None, urn.clone(), peer_id, addrs, limit)?;
                     identities::project::merge(storage, &urn, peer_id)?;
                     identities::project::verify(storage, &urn)?;
                     Ok(())
@@ -94,8 +96,9 @@ async fn can_add_maintainer() {
                 let urn = project.urn();
                 let peer_id = peer1.peer_id();
                 let addrs = peer2.listen_addrs().collect::<Vec<_>>();
+                let limit = peer2.fetch_limit();
                 move |storage| -> Result<Option<identities::VerifiedProject>, anyhow::Error> {
-                    replication::replicate(&storage, None, urn.clone(), peer_id, addrs)?;
+                    replication::replicate(&storage, None, urn.clone(), peer_id, addrs, limit)?;
                     identities::project::merge(storage, &urn, peer_id)?;
                     Ok(identities::project::verify(storage, &urn)?)
                 }
@@ -131,8 +134,9 @@ async fn adding_maintainers_commutes() {
                 let remote_peer = peer1.peer_id();
                 let urn = project.urn();
                 let addrs = peer1.listen_addrs().collect::<Vec<_>>();
+                let limit = peer2.fetch_limit();
                 move |storage| -> Result<(), anyhow::Error> {
-                    replication::replicate(&storage, None, urn, remote_peer, addrs)?;
+                    replication::replicate(&storage, None, urn, remote_peer, addrs, limit)?;
                     Ok(())
                 }
             })
@@ -197,9 +201,10 @@ async fn adding_maintainers_commutes() {
                 let urn = project.urn();
                 let peer_id = peer2.peer_id();
                 let addrs = peer2.listen_addrs().collect::<Vec<_>>();
+                let limit = peer2.fetch_limit();
                 move |storage| -> Result<identities::VerifiedProject, anyhow::Error> {
                     librad::git::tracking::track(&storage, &urn, peer_id)?;
-                    replication::replicate(&storage, None, urn.clone(), peer_id, addrs)?;
+                    replication::replicate(&storage, None, urn.clone(), peer_id, addrs, limit)?;
                     identities::project::merge(storage, &urn, peer_id)?;
                     Ok(identities::project::verify(storage, &urn)?.expect("project went missing"))
                 }
@@ -213,8 +218,9 @@ async fn adding_maintainers_commutes() {
                 let urn = project.urn();
                 let peer_id = peer1.peer_id();
                 let addrs = peer2.listen_addrs().collect::<Vec<_>>();
+                let limit = peer2.fetch_limit();
                 move |storage| -> Result<identities::VerifiedProject, anyhow::Error> {
-                    replication::replicate(&storage, None, urn.clone(), peer_id, addrs)?;
+                    replication::replicate(&storage, None, urn.clone(), peer_id, addrs, limit)?;
                     identities::project::merge(storage, &urn, peer_id)?;
                     Ok(identities::project::verify(storage, &urn)?.expect("project went missing"))
                 }

@@ -24,6 +24,7 @@ use tokio::task::spawn_blocking;
 use crate::{
     git::{
         self,
+        fetch,
         p2p::{server::GitServer, transport::GitStreamFactory},
         replication::{self, ReplicateResult},
         storage,
@@ -123,6 +124,7 @@ pub struct PeerConfig<Signer> {
     pub listen_addr: SocketAddr,
     pub gossip_params: gossip::MembershipParams,
     pub storage_config: StorageConfig,
+    pub fetch_limit: fetch::Limit,
 }
 
 #[derive(Clone, Copy)]
@@ -159,6 +161,7 @@ pub struct PeerApi {
     storage: storage::Pool,
     subscribers: Fanout<PeerEvent>,
     paths: Paths,
+    fetch_limit: fetch::Limit,
 
     _git_transport_protocol_ref: Arc<Box<dyn GitStreamFactory>>,
 }
@@ -196,6 +199,10 @@ impl PeerApi {
         // define on it can never be `await`ed.
         let subscribers = self.subscribers.clone();
         async move { subscribers.subscribe().await }
+    }
+
+    pub fn fetch_limit(&self) -> fetch::Limit {
+        self.fetch_limit
     }
 
     /// Query the network for providers of the given [`Urn`].
@@ -301,6 +308,7 @@ pub struct Peer {
     protocol: Protocol<PeerStorage, Gossip>,
     run_loop: RunLoop,
     subscribers: Fanout<PeerEvent>,
+    fetch_limit: fetch::Limit,
 
     // We cannot cast `Arc<Box<Protocol<A, B>>>` to `Arc<Box<dyn GitStreamFactory>>`
     // apparenty, so need to keep an `Arc` of the trait object here in order to
@@ -326,6 +334,7 @@ impl Peer {
             protocol: self.protocol,
             subscribers: self.subscribers,
             paths: self.paths,
+            fetch_limit: self.fetch_limit,
 
             _git_transport_protocol_ref: self._git_transport_protocol_ref,
         };
@@ -368,6 +377,7 @@ impl Peer {
             vec![listen_addr]
         };
 
+        let limit = config.fetch_limit;
         let subscribers = Fanout::new();
         let user_storage = storage::Pool::new(
             storage::pool::Config::new(config.paths.clone(), config.signer.clone()),
@@ -379,6 +389,7 @@ impl Peer {
                 config.storage_config.protocol_pool_size,
             ),
             subscribers: subscribers.clone(),
+            limit,
         };
 
         let gossip = gossip::Protocol::new(
@@ -402,6 +413,7 @@ impl Peer {
             protocol,
             run_loop,
             subscribers,
+            fetch_limit: limit,
             _git_transport_protocol_ref,
         })
     }
@@ -411,6 +423,7 @@ impl Peer {
 pub struct PeerStorage {
     inner: storage::Pool,
     subscribers: Fanout<PeerEvent>,
+    limit: fetch::Limit,
 }
 
 impl PeerStorage {
@@ -423,6 +436,7 @@ impl PeerStorage {
         let git = self.inner.get().await?;
         let urn = urn_context(*git.peer_id(), urn);
         let head = head.into().map(ext::Oid::from);
+        let limit = self.limit;
 
         spawn_blocking(move || {
             if let Some(head) = head {
@@ -431,7 +445,7 @@ impl PeerStorage {
                 }
             }
 
-            Ok(replication::replicate(&git, None, urn, from, None)?)
+            Ok(replication::replicate(&git, None, urn, from, None, limit)?)
         })
         .await
         .expect("`PeerStorage::git_fetch` panicked")

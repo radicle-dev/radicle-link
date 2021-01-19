@@ -144,12 +144,14 @@ impl Node {
         };
         let gossip_params = Default::default();
         let storage_config = Default::default();
+        let fetch_limit = Default::default();
         let peer_config = PeerConfig {
             signer,
             paths,
             listen_addr: config.listen_addr,
             gossip_params,
             storage_config,
+            fetch_limit,
         };
 
         Ok(Node {
@@ -273,11 +275,12 @@ impl Node {
             .iter()
             .map(|a: &std::net::IpAddr| (*a, port).into())
             .collect::<Vec<_>>();
+        let limit = api.fetch_limit();
 
         let result = {
             let urn = urn.clone();
             api.with_storage(move |storage| {
-                replication::replicate(&storage, None, urn.clone(), peer_id, addr_hints)?;
+                replication::replicate(&storage, None, urn.clone(), peer_id, addr_hints, limit)?;
                 tracking::track(&storage, &urn, peer_id)?;
 
                 Ok::<_, Error>(())
