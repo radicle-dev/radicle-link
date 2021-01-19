@@ -103,6 +103,22 @@ impl<'a, T: 'a> Identities<'a, T> {
         }
     }
 
+    /// Convenience to specialise `T` to [`VerifiedPerson`].
+    pub fn as_verified_person(&self) -> Identities<'_, VerifiedPerson> {
+        Identities {
+            repo: self.repo,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Convenience to specialise `T` to [`VerifiedProject`].
+    pub fn as_verified_project(&self) -> Identities<'_, VerifiedProject> {
+        Identities {
+            repo: self.repo,
+            _marker: PhantomData,
+        }
+    }
+
     /// Read an identity whose type is not statically known from commit `oid`.
     ///
     /// The only guarantee about the returned value is that it is well-formed --
@@ -394,6 +410,24 @@ where
     }
 }
 
+impl<'a, T: 'a> Identities<'a, VerifiedIdentity<T>> {
+    #[tracing::instrument(level = "debug", skip(self, mine, theirs), err)]
+    pub fn is_fork(
+        &self,
+        mine: &VerifiedIdentity<T>,
+        theirs: &VerifiedIdentity<T>,
+    ) -> Result<bool, error::Store> {
+        tracing::debug!(mine.content_id = %mine.content_id, theirs.revision_id = %theirs.revision, "checking mine against theirs");
+        let forked_left =
+            !self.is_in_ancestry_path(mine.content_id.into(), theirs.revision.into())?;
+        Ok(forked_left
+            || {
+                tracing::debug!(theirs.content_id = %theirs.content_id, mine.revision_id = %mine.revision, "checking theirs against mine");
+                !self.is_in_ancestry_path(theirs.content_id.into(), mine.revision.into())?
+            })
+    }
+}
+
 impl<'a> Identities<'a, Person> {
     /// Attempt to read a [`Person`] from commit `oid`, without verification.
     pub fn get(&self, oid: git2::Oid) -> Result<Person, error::Load> {
@@ -410,13 +444,6 @@ impl<'a> Identities<'a, Person> {
 
     pub fn latest_tip(&self, persons: NonEmpty<Person>) -> Result<git2::Oid, error::Store> {
         Ok(self.latest_generic(persons.map(|person| person.content_id.into()))?)
-    }
-
-    pub fn is_fork(&self, left: &Person, right: &Person) -> Result<bool, error::Store> {
-        let forked_left =
-            !self.is_in_ancestry_path(left.content_id.into(), right.revision.into())?;
-        Ok(forked_left
-            || !self.is_in_ancestry_path(right.content_id.into(), left.revision.into())?)
     }
 
     /// Create a new [`Person`] from a payload and delegations.
@@ -570,13 +597,6 @@ impl<'a> Identities<'a, Project> {
             .signed()?
             .quorum()?
             .verified(parent.as_ref())?)
-    }
-
-    pub fn is_fork(&self, left: &Project, right: &Project) -> Result<bool, error::Store> {
-        let forked_left =
-            !self.is_in_ancestry_path(left.content_id.into(), right.revision.into())?;
-        Ok(forked_left
-            || !self.is_in_ancestry_path(right.content_id.into(), left.revision.into())?)
     }
 
     pub fn latest_tip(&self, projects: NonEmpty<Project>) -> Result<git2::Oid, error::Store> {

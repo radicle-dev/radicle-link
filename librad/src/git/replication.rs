@@ -55,8 +55,8 @@ pub enum Error {
         source: reference::FromUrnError,
     },
 
-    #[error("fork detected")]
-    Fork,
+    #[error("fork detected between `{mine}` and `{theirs}`")]
+    Fork { mine: Urn, theirs: Urn },
 
     #[error(transparent)]
     Refs(#[from] refs::stored::Error),
@@ -553,11 +553,17 @@ mod project {
         delegates: BTreeSet<Urn>,
     ) -> Result<(), Error> {
         for delegate in delegates.iter() {
+            tracing::debug!(mine = %rad_id, theirs = %delegate, "checking for a fork");
             match identities::project::is_fork(&storage, &rad_id, &delegate) {
                 Ok(false) => { /* all good */ },
-                Ok(true) => return Err(Error::Fork),
+                Ok(true) => {
+                    return Err(Error::Fork {
+                        mine: rad_id.clone(),
+                        theirs: delegate.clone(),
+                    })
+                },
                 Err(identities::error::Error::NotFound(urn)) => {
-                    tracing::debug!("`{}` not found when checking for fork", urn);
+                    tracing::debug!(urn = %urn, "URN not found when checking for fork");
                 },
                 Err(err) => return Err(err.into()),
             }

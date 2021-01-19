@@ -284,6 +284,8 @@ fn fork() -> anyhow::Result<()> {
         let cheyenne = common::Device::new(&*CHEYENNE_DESKTOP, Identities::from(&*repo))?;
         let dylan = common::Device::new(&*DYLAN, Identities::from(&*repo))?;
 
+        let heads = current_heads_from(vec![&cheyenne, &dylan]);
+
         let project = {
             let update = IndirectDelegation::try_from_iter(vec![
                 Right(cheyenne.current().clone()),
@@ -291,6 +293,9 @@ fn fork() -> anyhow::Result<()> {
             ])?;
             common::Project::new(cheyenne.clone())?.update(update)
         }?;
+        let project = common::Project::create_from(dylan.clone(), &project)?;
+        project.assert_verifies(lookup(&heads))?;
+
         let project = project.change_description()?;
         let project = {
             common::Project::create_from(
@@ -298,6 +303,7 @@ fn fork() -> anyhow::Result<()> {
                 &common::Project::create_from(dylan.clone(), &project)?,
             )
         }?;
+        project.assert_verifies(lookup(&heads))?;
 
         let other = {
             let update = IndirectDelegation::try_from_iter(vec![
@@ -313,7 +319,9 @@ fn fork() -> anyhow::Result<()> {
             )
         }?;
 
-        project.assert_forks(&other)
+        let mine = project.verify(lookup(&heads))?;
+        let theirs = other.verify(lookup(&heads))?;
+        project.assert_forks(&mine, &theirs)
     }
 }
 

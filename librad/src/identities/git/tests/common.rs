@@ -255,8 +255,12 @@ impl<'a> Project<'a> {
         Ok(())
     }
 
-    pub fn assert_forks(&self, other: &Project<'a>) -> anyhow::Result<()> {
-        let is_fork = self.dev.git.as_project().is_fork(&self.cur, &other.cur)?;
+    pub fn assert_forks(
+        &self,
+        mine: &VerifiedProject,
+        theirs: &VerifiedProject,
+    ) -> anyhow::Result<()> {
+        let is_fork = self.dev.git.as_verified_project().is_fork(&mine, &theirs)?;
         anyhow::ensure!(
             is_fork,
             anyhow!(

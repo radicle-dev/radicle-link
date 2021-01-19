@@ -154,10 +154,10 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Project, Erro
 ///   * If the `left` project could not be found
 ///   * If the `right` project could not be found
 pub fn is_fork(storage: &Storage, left: &Urn, right: &Urn) -> Result<bool, Error> {
-    let left = get(storage, left)?.ok_or_else(|| Error::NotFound(left.clone()))?;
-    let right = get(storage, right)?.ok_or_else(|| Error::NotFound(right.clone()))?;
-    let identities = identities(&storage);
-    Ok(identities.is_fork(&left, &right)?)
+    let left = verify(storage, left)?.ok_or_else(|| Error::NotFound(left.clone()))?;
+    let right = verify(storage, right)?.ok_or_else(|| Error::NotFound(right.clone()))?;
+    let verified = verified(&storage);
+    Ok(verified.is_fork(&left, &right)?)
 }
 
 /// Given a list projects -- assumed to be the same project -- return the latest
@@ -221,5 +221,9 @@ impl<'a> Refs<'a> {
 }
 
 fn identities(storage: &Storage) -> Identities<Project> {
+    storage.identities()
+}
+
+fn verified(storage: &Storage) -> Identities<VerifiedProject> {
     storage.identities()
 }
