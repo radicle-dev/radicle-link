@@ -30,30 +30,33 @@ use crate::{
     peer::PeerId,
 };
 
-/// Upper bound of 500KB for fetching data. This upper bound is useful for when
-/// fetching from an unknown (and possibly untrusted) peer.
-pub const FIVE_HUNDRED_KB: usize = 1024 * 500;
-/// Relative upper bound of 1KB for fetching data. This bound is used in tandem
-/// with the number references that it will be fetching.
+/// 1KiB for use in [`Limit`] combinations.
 pub const ONE_KB: usize = 1024;
+/// 5KiB for use in [`Limit`], specifically for the `peek` field, when we would
+/// like to fetch `rad/id` , `rad/self`, `rad/ids/*` references.
+pub const FIVE_KB: usize = ONE_KB * 5;
+/// 5GB for use in [`Limit`], specifically for the `data` field, when we would
+/// like to fetch `rad/*` as well as `refs/heads/*` references.
+pub const FIVE_GB: usize = ONE_KB * ONE_KB * ONE_KB * 5;
 
 /// Limits used for guarding against fetching large amounts of data from the
 /// network.
+///
+/// The default values are [`FIVE_KB`], [`FIVE_GB`], respectively.
 #[derive(Clone, Copy, Debug)]
 pub struct Limit {
-    /// The `relative` limit will be used when we are aware of how many
-    /// references we will be fetching, i.e. `relative * # of references`.
-    pub relative: usize,
-    /// The `absolute` limit will be used when we are unaware of how many
-    /// references the peer is storing on the other side of the fetch.
-    pub absolute: usize,
+    /// Limit the amount of data we fetch using [`Fetchspecs::PeekAll`] and
+    /// [`Fetchspecs::Peek`].
+    pub peek: usize,
+    /// Limit the amount of data we fetch using [`Fetchspecs::Replicate`].
+    pub data: usize,
 }
 
 impl Default for Limit {
     fn default() -> Self {
         Self {
-            relative: ONE_KB,
-            absolute: FIVE_HUNDRED_KB,
+            peek: FIVE_KB,
+            data: FIVE_GB,
         }
     }
 }
@@ -68,10 +71,6 @@ pub enum Fetchspecs<P, R> {
 
     /// Only request the branches necessary for identity verification.
     Peek { remotes: BTreeSet<P>, limit: Limit },
-
-    /// Request the `rad/signed_refs` branches of the given set of tracked
-    /// peers.
-    SignedRefs { tracked: BTreeSet<P>, limit: Limit },
 
     /// Request the remote heads matching the signed refs of the respective
     /// tracked peers, as well as top-level delegates found in the identity
@@ -106,7 +105,6 @@ where
                 all
             },
             Self::Peek { remotes, .. } => refspecs::peek(urn, &remote_peer, remotes),
-            Self::SignedRefs { tracked, .. } => refspecs::signed_refs(urn, &remote_peer, tracked),
             Self::Replicate {
                 tracked_sigrefs,
                 delegates,
@@ -117,14 +115,9 @@ where
 
     pub fn fetch_limit(&self) -> usize {
         match self {
-            Fetchspecs::PeekAll { limit } => limit.absolute,
-            Fetchspecs::Peek { limit, remotes } => limit.relative * remotes.len(),
-            Fetchspecs::SignedRefs { limit, tracked } => limit.relative * tracked.len(),
-            Fetchspecs::Replicate {
-                limit,
-                tracked_sigrefs,
-                delegates,
-            } => limit.relative * tracked_sigrefs.len() * delegates.len(),
+            Fetchspecs::PeekAll { limit } => limit.peek,
+            Fetchspecs::Peek { limit, .. } => limit.peek,
+            Fetchspecs::Replicate { limit, .. } => limit.data,
         }
     }
 }
@@ -665,44 +658,6 @@ mod tests {
                 "{}:{}",
                 PROJECT_NAMESPACE.with_pattern_suffix(remote),
                 PROJECT_NAMESPACE.with_pattern_suffix(local),
-            ))
-            .collect::<Vec<_>>()
-        )
-    }
-
-    #[test]
-    fn signed_refs_looks_legit() {
-        let specs = Fetchspecs::SignedRefs {
-            tracked: [&*LOLEK, &*BOLEK]
-                .iter()
-                .cloned()
-                .cloned()
-                .collect::<BTreeSet<ext::RefLike>>(),
-            limit: Default::default(),
-        }
-        .refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
-
-        assert_eq!(
-            specs
-                .iter()
-                .map(|spec| spec.to_string())
-                .collect::<Vec<_>>(),
-            [
-                (
-                    reflike!("refs/remotes/bolek/rad/signed_refs"),
-                    reflike!("refs/remotes/bolek/rad/signed_refs")
-                ),
-                (
-                    reflike!("refs/remotes/lolek/rad/signed_refs"),
-                    reflike!("refs/remotes/lolek/rad/signed_refs")
-                )
-            ]
-            .iter()
-            .cloned()
-            .map(|(remote, local)| format!(
-                "{}:{}",
-                PROJECT_NAMESPACE.join(remote),
-                PROJECT_NAMESPACE.join(local),
             ))
             .collect::<Vec<_>>()
         )
