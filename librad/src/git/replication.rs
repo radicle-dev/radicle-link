@@ -713,14 +713,17 @@ mod project {
         // Are we a delegate?
         match delegates.get(local_peer) {
             None => {
+                tracing::debug!(tip = %tip, "adopting latest tip");
                 ensure_rad_id(storage, urn, tip.into())?;
                 Ok(ReplicateResult::Latest)
             },
             Some(view) => {
                 Ok(if view.project.content_id == tip.into() {
+                    tracing::debug!("we are at the latest tip");
                     ReplicateResult::Latest
                 } else {
                     // FIXME: We could be ahead
+                    tracing::debug!("we need to update the project");
                     ReplicateResult::Behind
                 })
             },
