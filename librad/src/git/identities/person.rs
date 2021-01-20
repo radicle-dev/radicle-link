@@ -161,6 +161,20 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Person, Error
     Ok(next)
 }
 
+/// Returns `true` if the `left` or the `right` projects do not share the same
+/// commit history.
+///
+/// # Errors
+///
+///   * If the `left` project could not be found
+///   * If the `right` project could not be found
+pub fn is_fork(storage: &Storage, left: &Urn, right: &Urn) -> Result<bool, Error> {
+    let left = verify(storage, left)?.ok_or_else(|| Error::NotFound(left.clone()))?;
+    let right = verify(storage, right)?.ok_or_else(|| Error::NotFound(right.clone()))?;
+    let verified = verified(&storage);
+    Ok(verified.is_fork(&left, &right)?)
+}
+
 /// Given a list persons -- assumed to be the same person -- return the latest
 /// revision tip.
 pub fn latest_tip(storage: &Storage, persons: NonEmpty<Person>) -> Result<git2::Oid, Error> {
@@ -169,5 +183,9 @@ pub fn latest_tip(storage: &Storage, persons: NonEmpty<Person>) -> Result<git2::
 }
 
 fn identities(storage: &Storage) -> Identities<Person> {
+    storage.identities()
+}
+
+fn verified(storage: &Storage) -> Identities<VerifiedPerson> {
     storage.identities()
 }

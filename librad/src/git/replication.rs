@@ -176,7 +176,11 @@ where
                         allowed
                     },
                     SomeIdentity::Person(person) => {
-                        person::ensure_setup(storage, person.clone(), remote_peer)?;
+                        let rad_id = unsafe_into_urn(
+                            Reference::rad_id(Namespace::from(&person.urn()))
+                                .with_remote(remote_peer),
+                        );
+                        person::ensure_setup(storage, &rad_id, person.clone())?;
                         person
                             .delegations()
                             .iter()
@@ -223,7 +227,9 @@ where
                         (result, updated_tracked)
                     },
                     SomeIdentity::Person(person) => {
-                        person::ensure_setup(storage, person, remote_peer)?;
+                        let rad_id =
+                            unsafe_into_urn(Reference::rad_id(Namespace::from(&person.urn())));
+                        person::ensure_setup(storage, &rad_id, person)?;
                         (
                             ReplicateResult::Latest,
                             tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>(),
@@ -391,17 +397,11 @@ mod person {
     ///     version
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
-    pub fn ensure_setup(
-        storage: &Storage,
-        person: Person,
-        remote_peer: PeerId,
-    ) -> Result<(), Error> {
+    pub fn ensure_setup(storage: &Storage, rad_id: &Urn, person: Person) -> Result<(), Error> {
         let local_peer = storage.peer_id();
-        let urn = unsafe_into_urn(
-            Reference::rad_id(Namespace::from(person.urn())).with_remote(remote_peer),
-        );
+        let urn = person.urn();
 
-        let delegations = match identities::person::verify(storage, &urn)? {
+        let delegations = match identities::person::verify(storage, &rad_id)? {
             None => Err(Error::MissingIdentity),
             Some(person) => {
                 let delegations = person
@@ -423,8 +423,44 @@ mod person {
             },
         }?;
 
+        ensure_no_forking(storage, &rad_id, &delegations)?;
+
         // Create `rad/id` here, if not exists
-        adopt_latest(storage, &urn, delegations)?;
+        adopt_latest(storage, &person.urn(), delegations)?;
+        Ok(())
+    }
+
+    /// Compare the given `rad_id` of the person against each delegate and
+    /// ensure there are no forks.
+    ///
+    /// # Errors
+    ///   * If there is a fork
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(level = "trace", skip(storage), err)]
+    pub fn ensure_no_forking(
+        storage: &Storage,
+        rad_id: &Urn,
+        delegates: &BTreeSet<PeerId>,
+    ) -> Result<(), Error> {
+        for delegate in delegates.iter() {
+            let delegate =
+                unsafe_into_urn(Reference::rad_id(Namespace::from(rad_id)).with_remote(*delegate));
+            tracing::debug!(mine = %rad_id, theirs = %delegate, "checking for a fork");
+            match identities::person::is_fork(&storage, &rad_id, &delegate) {
+                Ok(false) => { /* all good */ },
+                Ok(true) => {
+                    return Err(Error::Fork {
+                        mine: rad_id.clone(),
+                        theirs: delegate.clone(),
+                    })
+                },
+                Err(identities::error::Error::NotFound(urn)) => {
+                    tracing::debug!(urn = %urn, "URN not found when checking for fork");
+                },
+                Err(err) => return Err(err.into()),
+            }
+        }
+
         Ok(())
     }
 
@@ -553,8 +589,8 @@ mod project {
             .collect())
     }
 
-    /// Compare the remotes view of the project against each delegate and ensure
-    /// there are no forks.
+    /// Compare the given `rad_id` of the project against each delegate and
+    /// ensure there are no forks.
     ///
     /// # Errors
     ///   * If there is a fork
