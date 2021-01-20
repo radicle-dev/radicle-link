@@ -79,10 +79,13 @@ where
 
     Peer::bootstrap(config, disco)
         .await
-        .map(|peer| TestPeer {
-            _tmp: tmp,
-            peer,
-            key,
+        .map(|peer| {
+            tracing::debug!(path = %tmp.path().display(), peer_id = %peer.peer_id(), "setting up peer");
+            TestPeer {
+                _tmp: tmp,
+                peer,
+                key,
+            }
         })
         .map_err(|e| e.into())
 }
