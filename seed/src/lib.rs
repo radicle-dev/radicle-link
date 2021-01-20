@@ -30,6 +30,7 @@ use librad::{
         gossip::types::PeerInfo,
         peer::{self, Peer, PeerApi, PeerConfig},
         protocol::ProtocolEvent,
+        Network,
     },
     paths,
     peer::PeerId,
@@ -109,6 +110,8 @@ pub struct NodeConfig {
     pub mode: Mode,
     /// Radicle root path.
     pub root: Option<PathBuf>,
+    /// The radicle network to connect to.
+    pub network: Network,
 }
 
 impl Default for NodeConfig {
@@ -117,6 +120,7 @@ impl Default for NodeConfig {
             listen_addr: ([0, 0, 0, 0], 0).into(),
             mode: Mode::TrackEverything,
             root: None,
+            network: Network::default(),
         }
     }
 }
@@ -150,6 +154,7 @@ impl Node {
             listen_addr: config.listen_addr,
             gossip_params,
             storage_config,
+            network: config.network,
         };
 
         Ok(Node {

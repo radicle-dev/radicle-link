@@ -64,6 +64,7 @@ where
     let gossip_params = Default::default();
     let disco = seeds.into_iter().collect::<discovery::Static>();
     let storage_config = Default::default();
+    let network = Default::default();
 
     git::storage::Storage::init(&paths, key.clone())?;
 
@@ -73,6 +74,7 @@ where
         listen_addr,
         gossip_params,
         storage_config,
+        network,
     };
 
     Peer::bootstrap(config, disco)
