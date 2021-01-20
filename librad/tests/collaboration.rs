@@ -5,7 +5,14 @@
 
 #![feature(async_closure)]
 
-use librad::git::{identities, replication};
+use std::convert::TryFrom as _;
+
+use librad::git::{
+    identities,
+    replication,
+    types::{Namespace, Reference},
+    Urn,
+};
 
 use librad_test::{
     logging,
@@ -19,7 +26,7 @@ use librad_test::{
 async fn can_add_maintainer() {
     logging::init();
 
-    const NUM_PEERS: usize = 3;
+    const NUM_PEERS: usize = 2;
 
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
     testnet::run_on_testnet(peers, NUM_PEERS, async move |mut apis| {
@@ -78,8 +85,19 @@ async fn can_add_maintainer() {
                 let peer_id = peer1.peer_id();
                 let addrs = peer2.listen_addrs().collect::<Vec<_>>();
                 let limit = peer2.fetch_limit();
+                let rad =
+                    Urn::try_from(Reference::rad_id(Namespace::from(&urn)).with_remote(peer_id))
+                        .unwrap();
                 move |storage| -> Result<Option<identities::VerifiedProject>, anyhow::Error> {
                     replication::replicate(&storage, None, urn.clone(), peer_id, addrs, limit)?;
+                    let project = identities::project::get(&storage, &rad)?.unwrap();
+                    identities::project::update(
+                        &storage,
+                        &urn,
+                        None,
+                        None,
+                        project.delegations().clone(),
+                    )?;
                     identities::project::merge(&storage, &urn, peer_id)?;
                     Ok(identities::project::verify(storage, &urn)?)
                 }
@@ -91,7 +109,10 @@ async fn can_add_maintainer() {
         assert!(verified.is_some());
         {
             let peer_id = peer2.peer_id();
-            assert_eq!(Some(peer_id.as_public_key()), verified.unwrap().delegations().iter().direct().next());
+            assert_eq!(
+                Some(peer_id.as_public_key()),
+                verified.unwrap().delegations().iter().direct().next()
+            );
         }
     })
     .await;
