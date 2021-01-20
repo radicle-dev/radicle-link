@@ -11,6 +11,7 @@ use nonempty::NonEmpty;
 
 use super::{
     super::{
+        refs::Refs as Sigrefs,
         storage::{self, Storage},
         types::{namespace, reference, Force, Reference, Single, SymbolicRef},
     },
@@ -91,8 +92,10 @@ where
     P: Into<ProjectPayload> + Debug,
 {
     let project = identities(storage).create(payload.into(), delegations, storage.signer())?;
-    Refs::Create(&project).apply(storage)?;
-    whoami.link(storage, &project.urn())?;
+    let urn = project.urn();
+    ProjectRefs::Create(&project).apply(storage)?;
+    whoami.link(storage, &urn)?;
+    Sigrefs::update(storage, &urn)?;
 
     Ok(project)
 }
@@ -115,10 +118,11 @@ where
     let prev = Verifying::from(prev).signed()?;
     let next = identities(storage).update(prev, payload, delegations, storage.signer())?;
 
-    Refs::Update(&next, "update").apply(storage)?;
+    ProjectRefs::Update(&next, "update").apply(storage)?;
     if let Some(local_id) = whoami.into() {
         local_id.link(storage, urn)?;
     }
+    Sigrefs::update(storage, urn)?;
 
     Ok(next)
 }
@@ -141,7 +145,8 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Project, Erro
     let theirs = Verifying::from(theirs).signed()?;
     let next = identities(storage).update_from(ours, theirs, storage.signer())?;
 
-    Refs::Update(&next, &format!("merge from {}", from)).apply(storage)?;
+    ProjectRefs::Update(&next, &format!("merge from {}", from)).apply(storage)?;
+    Sigrefs::update(storage, urn)?;
 
     Ok(next)
 }
@@ -167,12 +172,12 @@ pub fn latest_tip(storage: &Storage, projects: NonEmpty<Project>) -> Result<git2
     Ok(identities(storage).latest_tip(projects)?)
 }
 
-enum Refs<'a> {
+enum ProjectRefs<'a> {
     Create(&'a Project),
     Update(&'a Project, &'a str),
 }
 
-impl<'a> Refs<'a> {
+impl<'a> ProjectRefs<'a> {
     pub fn apply(&self, storage: &Storage) -> Result<(), Error> {
         for symref in self.delegates() {
             symref.create(storage.as_raw())?;

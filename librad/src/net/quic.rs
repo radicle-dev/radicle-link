@@ -19,19 +19,17 @@ use crate::{
         connection::{self, CloseReason, LocalInfo, RemoteInfo},
         tls,
         x509,
+        Network,
+        PROTOCOL_VERSION,
     },
     peer::{self, PeerId},
     signer::Signer,
 };
 
+const ALPN_PREFIX: &[u8] = b"rad";
+
 // XXX: we _may_ want to allow runtime configuration of below consts at some
 // point
-
-/// The ALPN protocol(s) for the radicle-link protocol stack.
-///
-/// Not currently of significance, but established in order to allow future
-/// major protocol upgrades.
-const ALPN: &[&[u8]] = &[b"rad/1"];
 
 /// Connection keep alive interval.
 ///
@@ -79,13 +77,17 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    pub async fn bind<'a, S>(signer: S, listen_addr: SocketAddr) -> Result<BoundEndpoint<'a>>
+    pub async fn bind<'a, S>(
+        signer: S,
+        listen_addr: SocketAddr,
+        network: Network,
+    ) -> Result<BoundEndpoint<'a>>
     where
         S: Signer + Clone + Send + Sync + 'static,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
         let peer_id = PeerId::from_signer(&signer);
-        let (endpoint, incoming) = make_endpoint(signer, listen_addr).await?;
+        let (endpoint, incoming) = make_endpoint(signer, listen_addr, alpn(network)).await?;
         let endpoint = Endpoint { peer_id, endpoint };
         let incoming = incoming
             .filter_map(move |connecting| async move {
@@ -431,28 +433,45 @@ impl AsyncWrite for SendStream {
     }
 }
 
+type Alpn = Vec<u8>;
+
+fn alpn(network: Network) -> Alpn {
+    let mut alpn = ALPN_PREFIX.to_vec();
+    alpn.push(b'/');
+    alpn.push(PROTOCOL_VERSION);
+    match network {
+        Network::Main => alpn,
+        Network::Custom(id) => {
+            alpn.push(b'/');
+            alpn.extend(id);
+            alpn
+        },
+    }
+}
+
 async fn make_endpoint<S>(
     signer: S,
     listen_addr: SocketAddr,
+    alpn: Alpn,
 ) -> Result<(quinn::Endpoint, quinn::Incoming)>
 where
     S: Signer + Clone + Send + Sync + 'static,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     let mut builder = quinn::Endpoint::builder();
-    builder.default_client_config(make_client_config(signer.clone())?);
-    builder.listen(make_server_config(signer)?);
+    builder.default_client_config(make_client_config(signer.clone(), alpn.clone())?);
+    builder.listen(make_server_config(signer, alpn)?);
 
     Ok(builder.bind(&listen_addr)?)
 }
 
-fn make_client_config<S>(signer: S) -> Result<quinn::ClientConfig>
+fn make_client_config<S>(signer: S, alpn: Alpn) -> Result<quinn::ClientConfig>
 where
     S: Signer + Clone + Send + Sync + 'static,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     let mut tls_config = tls::make_client_config(signer).map_err(|e| Error::Signer(Box::new(e)))?;
-    tls_config.alpn_protocols = ALPN.iter().map(|x| x.to_vec()).collect();
+    tls_config.alpn_protocols = vec![alpn];
 
     let mut transport_config = TransportConfig::default();
     transport_config
@@ -469,13 +488,13 @@ where
     Ok(quic_config)
 }
 
-fn make_server_config<S>(signer: S) -> Result<quinn::ServerConfig>
+fn make_server_config<S>(signer: S, alpn: Alpn) -> Result<quinn::ServerConfig>
 where
     S: Signer + Clone + Send + Sync + 'static,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     let mut tls_config = tls::make_server_config(signer).map_err(|e| Error::Signer(Box::new(e)))?;
-    tls_config.alpn_protocols = ALPN.iter().map(|x| x.to_vec()).collect();
+    tls_config.alpn_protocols = vec![alpn];
 
     let mut transport_config = TransportConfig::default();
     transport_config

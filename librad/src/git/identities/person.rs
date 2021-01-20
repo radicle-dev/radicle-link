@@ -10,6 +10,7 @@ use radicle_git_ext::{is_not_found_err, OneLevel};
 
 use super::{
     super::{
+        refs::Refs,
         storage::{self, Storage},
         types::Reference,
     },
@@ -104,6 +105,7 @@ where
     let urn = person.urn();
     common::IdRef::from(&urn).create(storage, person.content_id)?;
     person.link(storage, &urn)?;
+    Refs::update(storage, &urn)?;
 
     Ok(person.into_inner().into_inner())
 }
@@ -130,6 +132,7 @@ where
     if let Some(local_id) = whoami.into() {
         local_id.link(storage, urn)?;
     }
+    Refs::update(storage, urn)?;
 
     Ok(next)
 }
@@ -153,6 +156,7 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Person, Error
     let next = identities(storage).update_from(ours, theirs, storage.signer())?;
 
     common::IdRef::from(urn).update(storage, next.content_id, &format!("merge from {}", from))?;
+    Refs::update(storage, urn)?;
 
     Ok(next)
 }

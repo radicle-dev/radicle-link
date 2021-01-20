@@ -38,6 +38,7 @@ use crate::{
         gossip::{self, LocalStorage, PeerInfo, PutResult},
         protocol::{Protocol, ProtocolEvent},
         quic::{self, Endpoint},
+        Network,
     },
     paths::Paths,
     peer::{Originates, PeerId},
@@ -125,6 +126,7 @@ pub struct PeerConfig<Signer> {
     pub gossip_params: gossip::MembershipParams,
     pub storage_config: StorageConfig,
     pub fetch_limit: fetch::Limit,
+    pub network: Network,
 }
 
 #[derive(Clone, Copy)]
@@ -355,7 +357,7 @@ impl Peer {
 
         let git = GitServer::new(&config.paths);
 
-        let endpoint = Endpoint::bind(config.signer.clone(), config.listen_addr)
+        let endpoint = Endpoint::bind(config.signer.clone(), config.listen_addr, config.network)
             .await
             .map_err(|e| BootstrapError::Bind {
                 addr: config.listen_addr,

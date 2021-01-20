@@ -65,6 +65,7 @@ where
     let disco = seeds.into_iter().collect::<discovery::Static>();
     let storage_config = Default::default();
     let fetch_limit = Default::default();
+    let network = Default::default();
 
     git::storage::Storage::init(&paths, key.clone())?;
 
@@ -75,6 +76,7 @@ where
         gossip_params,
         storage_config,
         fetch_limit,
+        network,
     };
 
     Peer::bootstrap(config, disco)
