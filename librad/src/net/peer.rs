@@ -17,7 +17,10 @@ use crate::{
     PeerId,
 };
 
-pub use super::protocol::{event::Upstream as ProtocolEvent, PeerInfo};
+pub use super::protocol::{
+    event::{downstream::Stats, Upstream as ProtocolEvent},
+    PeerInfo,
+};
 pub use deadpool::managed::PoolError;
 
 mod storage;
@@ -169,6 +172,10 @@ where
 
     pub async fn connected_peers(&self) -> Vec<PeerId> {
         self.phone.connected_peers().await
+    }
+
+    pub async fn stats(&self) -> Stats {
+        self.phone.stats().await
     }
 
     pub fn subscribe(
