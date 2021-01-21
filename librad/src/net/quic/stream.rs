@@ -196,8 +196,11 @@ impl AsyncWrite for SendStream {
         let this = self.get_mut();
         let res = AsyncWrite::poll_close(Pin::new(&mut this.send), cx);
 
-        if let Poll::Ready(Err(e)) = &res {
-            this.conn.on_stream_error(e)
+        if let Poll::Ready(ready) = &res {
+            match ready {
+                Err(e) => this.conn.on_stream_error(e),
+                Ok(()) => this.conn.tickle(),
+            }
         }
 
         res
