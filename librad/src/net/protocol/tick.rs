@@ -10,7 +10,7 @@ use futures::{
     stream::{FuturesOrdered, StreamExt as _},
 };
 
-use super::{broadcast, error, gossip, io, membership, PeerInfo, State};
+use super::{error, gossip, io, membership, PeerInfo, ProtocolStorage, State};
 use crate::PeerId;
 
 #[derive(Debug)]
@@ -34,11 +34,7 @@ where
 #[tracing::instrument(level = "debug", skip(state))]
 pub(super) async fn tock<S>(state: State<S>, tock: Tock<SocketAddr, gossip::Payload>)
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     let mut mcfly = FuturesOrdered::new();
     mcfly.push(one_tock(state.clone(), tock));
@@ -71,11 +67,7 @@ fn one_tock<S>(
     tock: Tock<SocketAddr, gossip::Payload>,
 ) -> BoxFuture<'static, Result<(), error::Tock<SocketAddr>>>
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     use Tock::*;
 
@@ -115,6 +107,11 @@ where
                         let (conn, ingress) = io::connect_peer_info(&state.endpoint, to.clone())
                             .await
                             .ok_or(error::BestEffortSend::CouldNotConnect { to })?;
+
+                        if state.sync.within_sync_period() {
+                            tokio::spawn(io::initiate_sync(state.clone(), conn.clone()));
+                        }
+
                         tokio::spawn(io::ingress_streams(state, ingress));
 
                         Ok(conn)

@@ -7,8 +7,9 @@ use std::{fmt::Debug, io};
 
 use thiserror::Error;
 
-use super::{membership, PeerInfo};
+use super::{membership, syn, PeerInfo};
 use crate::{
+    git::{identities, storage::pool::PoolError},
     net::{
         codec::{CborCodecError, CborError},
         quic,
@@ -20,6 +21,12 @@ use crate::{
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Bootstrap {
+    #[error(transparent)]
+    Identities(#[from] identities::Error),
+
+    #[error(transparent)]
+    Pool(#[from] PoolError),
+
     #[error(transparent)]
     Quic(#[from] quic::Error),
 }
@@ -95,6 +102,36 @@ pub(super) enum SendGossip {
 }
 
 impl From<CborCodecError> for SendGossip {
+    fn from(e: CborCodecError) -> Self {
+        match e {
+            CborCodecError::Cbor(e) => Self::Cbor(e),
+            CborCodecError::Io(e) => Self::Io(e),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub(super) enum InitiateSync {
+    #[error(transparent)]
+    Syn(#[from] syn::error::Response),
+
+    #[error("invalid bloom filter: {0}")]
+    Bloom(&'static str),
+
+    #[error(transparent)]
+    Upgrade(#[from] upgrade::Error<quic::BidiStream>),
+
+    #[error(transparent)]
+    Quic(#[from] quic::Error),
+
+    #[error("CBOR encoding / decoding error")]
+    Cbor(#[source] CborError),
+
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+impl From<CborCodecError> for InitiateSync {
     fn from(e: CborCodecError) -> Self {
         match e {
             CborCodecError::Cbor(e) => Self::Cbor(e),

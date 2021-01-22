@@ -3,15 +3,16 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeSet, net::SocketAddr};
+use std::{cmp, collections::BTreeSet, convert::TryFrom, io, net::SocketAddr, ops::Deref};
 
 use futures::{
     future::{self, TryFutureExt as _},
-    io::AsyncRead,
+    io::{AsyncRead, AsyncWrite},
     sink::SinkExt as _,
     stream::{self, StreamExt as _, TryStreamExt as _},
 };
-use futures_codec::{FramedRead, FramedWrite};
+use futures_codec::{Framed, FramedRead, FramedWrite};
+use thiserror::Error;
 
 use super::{
     broadcast,
@@ -20,12 +21,16 @@ use super::{
     gossip,
     info::{PartialPeerInfo, PeerAdvertisement, PeerInfo},
     membership,
+    syn,
     tick,
+    ProtocolStorage,
     State,
 };
 use crate::{
+    git::storage::pool::{PoolError, PooledStorage},
+    identities::SomeUrn,
     net::{
-        codec::CborCodec,
+        codec::{CborCodec, CborCodecError, CborError},
         connection::{CloseReason, Duplex as _, RemoteAddr as _, RemoteInfo, RemotePeer},
         quic,
         upgrade::{self, Upgraded},
@@ -36,15 +41,13 @@ use crate::{
 type Codec<T> = CborCodec<T, T>;
 type GossipCodec<T> = Codec<broadcast::Message<SocketAddr, T>>;
 type MembershipCodec = Codec<membership::Message<SocketAddr>>;
+type IngressSynCodec = CborCodec<syn::Response, syn::Request>;
+type EgressSynCodec = CborCodec<syn::Request, syn::Response>;
 
 #[tracing::instrument(skip(state, peer, addrs), fields(remote_id = %peer))]
 pub(super) async fn discovered<S>(state: State<S>, peer: PeerId, addrs: Vec<SocketAddr>)
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     if state.endpoint.get_connection(peer).is_some() {
         return;
@@ -75,9 +78,11 @@ where
                         .await
                 }
 
-                tokio::spawn(ingress_streams(state, ingress));
+                tokio::spawn(ingress_streams(state.clone(), ingress));
             },
         }
+
+        tokio::spawn(initiate_sync(state, conn));
     }
 }
 
@@ -87,11 +92,7 @@ pub(super) async fn ingress_connections<S, I>(
     mut ingress: I,
 ) -> Result<!, quic::Error>
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     I: futures::Stream<Item = quic::Result<(quic::Connection, quic::IncomingStreams<'static>)>>
         + Unpin,
 {
@@ -111,11 +112,7 @@ pub(super) async fn ingress_streams<S>(
     state: State<S>,
     quic::IncomingStreams { bidi, uni }: quic::IncomingStreams<'static>,
 ) where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     let mut bidi = bidi
         .inspect_ok(|stream| {
@@ -170,11 +167,7 @@ pub(super) async fn ingress_streams<S>(
 
 pub(super) async fn ingress_bidi<S>(state: State<S>, stream: quic::BidiStream)
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     use upgrade::SomeUpgraded::*;
 
@@ -192,16 +185,13 @@ where
 
         Ok(Gossip(up)) => ingress_gossip(state, up).await,
         Ok(Membership(up)) => ingress_membership(state, up).await,
+        Ok(Syn(up)) => ingress_syn(state, up).await,
     }
 }
 
 pub(super) async fn ingress_uni<S>(state: State<S>, stream: quic::RecvStream)
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     use upgrade::SomeUpgraded::*;
 
@@ -215,6 +205,10 @@ where
             tracing::warn!("unidirectional git requested");
             up.into_stream().close(CloseReason::InvalidUpgrade);
         },
+        Ok(Syn(up)) => {
+            tracing::warn!("unidirectional syn requested");
+            up.into_stream().close(CloseReason::InvalidUpgrade);
+        },
 
         Ok(Gossip(up)) => ingress_gossip(state, up).await,
         Ok(Membership(up)) => ingress_membership(state, up).await,
@@ -223,11 +217,7 @@ where
 
 async fn ingress_gossip<S, T>(state: State<S>, stream: Upgraded<upgrade::Gossip, T>)
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     T: RemotePeer + AsyncRead + Unpin,
 {
     let mut recv = FramedRead::new(stream.into_stream(), GossipCodec::new());
@@ -287,7 +277,7 @@ where
 
 async fn ingress_membership<S, T>(state: State<S>, stream: Upgraded<upgrade::Membership, T>)
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     T: RemoteInfo<Addr = SocketAddr> + AsyncRead + Unpin,
 {
     let mut recv = FramedRead::new(stream.into_stream(), MembershipCodec::new());
@@ -328,6 +318,56 @@ where
                 }
             },
         }
+    }
+}
+
+async fn ingress_syn<S, T>(state: State<S>, stream: Upgraded<upgrade::Syn, T>)
+where
+    S: PooledStorage,
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    #[derive(Debug, Error)]
+    enum Error {
+        #[error("error handling request")]
+        Handler(#[from] syn::error::Request),
+
+        #[error("unable to borrow pooled storage")]
+        Pool(#[from] PoolError),
+
+        #[error(transparent)]
+        Cbor(#[from] CborError),
+
+        #[error(transparent)]
+        Io(#[from] io::Error),
+    }
+
+    impl From<CborCodecError> for Error {
+        fn from(e: CborCodecError) -> Self {
+            match e {
+                CborCodecError::Cbor(e) => Self::Cbor(e),
+                CborCodecError::Io(e) => Self::Io(e),
+            }
+        }
+    }
+
+    async fn go<S, T>(state: State<S>, mut framing: Framed<T, IngressSynCodec>) -> Result<(), Error>
+    where
+        S: PooledStorage,
+        T: AsyncRead + AsyncWrite + Unpin,
+    {
+        if let Some(req) = framing.try_next().await? {
+            let storage = state.storage.get().await?;
+            for resp in syn::handle_request(storage, req).await? {
+                framing.send(resp).await?
+            }
+        }
+
+        Ok(())
+    }
+
+    let framing = Framed::new(stream.into_stream(), IngressSynCodec::new());
+    if let Err(e) = go(state, framing).await {
+        tracing::error!(err = ?e, "{}", e)
     }
 }
 
@@ -453,4 +493,65 @@ where
             Ok(())
         },
     }
+}
+
+#[allow(clippy::unit_arg)]
+#[tracing::instrument(
+    skip(state, conn),
+    fields(
+        remote_id = %conn.remote_peer_id(),
+        remote_addr = %conn.remote_addr()
+    ),
+    err
+)]
+pub(super) async fn initiate_sync<S>(
+    state: State<S>,
+    conn: quic::Connection,
+) -> Result<(), error::InitiateSync>
+where
+    S: PooledStorage + Send + Sync + 'static,
+{
+    let remote_id = conn.remote_peer_id();
+    let remote_addr = conn.remote_addr();
+
+    let mut framing = {
+        let bi = conn.open_bidi().await?;
+        let stream = upgrade::upgrade(bi, upgrade::Syn).await?.into_stream();
+        Framed::new(stream, EgressSynCodec::new())
+    };
+
+    let (num_requested, filter) = {
+        match state.sync.filter().deref() {
+            None => Ok((0, None)),
+            Some(bloom) => {
+                let n = cmp::min(bloom.approx_elements(), syn::MAX_OFFER_TOTAL);
+                let f =
+                    syn::rpc::BloomFilter::try_from(bloom).map_err(error::InitiateSync::Bloom)?;
+                Ok::<_, error::InitiateSync>((n, Some(f)))
+            },
+        }
+    }?;
+    if num_requested == 0 {
+        tracing::info!("zero filter, not syncing");
+        return Ok(());
+    }
+
+    tracing::info!(num_requested, "requesting sync info");
+    framing
+        .send(syn::Request::ListNamespaces { filter })
+        .await?;
+
+    // TODO: timeout
+    framing
+        .take(num_requested / syn::rpc::MAX_OFFER_BATCH_SIZE)
+        .map_ok(|resp| {
+            syn::handle_response(&state.storage, resp, remote_id, remote_addr)
+                .map_err(error::InitiateSync::from)
+        })
+        .try_flatten()
+        .try_for_each(|SomeUrn::Git(urn)| {
+            tracing::info!("synced {}", urn);
+            future::ok(())
+        })
+        .await
 }

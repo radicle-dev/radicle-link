@@ -5,13 +5,26 @@
 
 use std::sync::{Arc, Mutex};
 
-use deadpool::managed::{Manager, RecycleResult};
+use deadpool::managed::{self, Manager, RecycleResult};
 
 use super::{Error, Storage};
 use crate::{paths::Paths, signer::Signer};
 
 pub type Pool = deadpool::managed::Pool<Storage, Error>;
 pub type Pooled = deadpool::managed::Object<Storage, Error>;
+pub type PoolError = managed::PoolError<Error>;
+
+#[async_trait]
+pub trait PooledStorage {
+    async fn get(&self) -> Result<PooledRef, PoolError>;
+}
+
+#[async_trait]
+impl PooledStorage for Pool {
+    async fn get(&self) -> Result<PooledRef, PoolError> {
+        self.get().await.map(PooledRef::from)
+    }
+}
 
 /// Wrapper so we can use [`Pooled`] as `AsRef<Storage>`.
 // TODO: may go away once https://github.com/bikeshedder/deadpool/pull/69

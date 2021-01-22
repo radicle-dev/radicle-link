@@ -33,6 +33,7 @@ use crate::{
             server::GitServer,
             transport::{GitStream, GitStreamFactory},
         },
+        storage::pool::{PoolError, PooledRef, PooledStorage},
     },
     paths::Paths,
     signer::Signer,
@@ -48,6 +49,7 @@ pub mod error;
 pub mod event;
 pub mod gossip;
 pub mod membership;
+pub mod syn;
 
 mod info;
 pub use info::{PartialPeerInfo, PeerAdvertisement, PeerInfo};
@@ -61,6 +63,7 @@ pub struct Config {
     pub listen_addr: SocketAddr,
     pub membership: membership::Params,
     pub network: Network,
+    pub sync: syn::Config,
     // TODO: transport, ...
 }
 
@@ -82,11 +85,7 @@ impl<S> Bound<S> {
 
     pub async fn accept<D>(self, disco: D) -> Result<!, quic::Error>
     where
-        S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
         D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
     {
         accept(self, disco).await
@@ -201,11 +200,7 @@ pub async fn bind<Sign, Store>(
 ) -> Result<Bound<Store>, error::Bootstrap>
 where
     Sign: Signer + Clone + Send + Sync + 'static,
-    Store: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     let local_id = PeerId::from_signer(&signer);
     let git = GitServer::new(&config.paths);
@@ -218,6 +213,10 @@ where
     );
     let storage = Storage::from(storage);
     let events = phone.upstream.clone().into();
+    let sync = {
+        let git = storage.get().await?;
+        syn::State::new(git.as_ref(), config.sync)?
+    };
     let state = State {
         local_id,
         endpoint,
@@ -225,6 +224,7 @@ where
         membership,
         storage,
         events,
+        sync,
     };
 
     Ok(Bound {
@@ -245,11 +245,7 @@ pub fn accept<Store, Disco>(
     disco: Disco,
 ) -> impl Future<Output = Result<!, quic::Error>>
 where
-    Store: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     Disco: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
 {
     let _git_factory = Arc::new(Box::new(state.clone()) as Box<dyn GitStreamFactory>);
@@ -310,6 +306,10 @@ impl Drop for Accept {
     }
 }
 
+pub trait ProtocolStorage<A>: broadcast::LocalStorage<A> + PooledStorage + Send + Sync {}
+impl<A, T> ProtocolStorage<A> for T where T: broadcast::LocalStorage<A> + PooledStorage + Send + Sync
+{}
+
 type Limiter = governor::RateLimiter<
     governor::state::direct::NotKeyed,
     governor::state::InMemoryState,
@@ -369,6 +369,16 @@ impl<S> broadcast::ErrorRateLimited for Storage<S> {
     }
 }
 
+#[async_trait]
+impl<S> PooledStorage for Storage<S>
+where
+    S: PooledStorage + Send + Sync,
+{
+    async fn get(&self) -> Result<PooledRef, PoolError> {
+        self.inner.get().await
+    }
+}
+
 #[derive(Clone)]
 struct State<S> {
     local_id: PeerId,
@@ -377,16 +387,13 @@ struct State<S> {
     membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     storage: Storage<S>,
     events: EventSink,
+    sync: syn::State,
 }
 
 #[async_trait]
 impl<S> GitStreamFactory for State<S>
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     async fn open_stream(
         &self,

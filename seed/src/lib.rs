@@ -141,6 +141,7 @@ impl Node {
                 listen_addr: config.listen_addr,
                 membership: Default::default(),
                 network: config.network,
+                sync: Default::default(),
             },
             storage_pools: Default::default(),
         };

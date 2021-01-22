@@ -14,9 +14,13 @@ use super::{
     },
     error::Error,
 };
-use crate::identities::{
-    self,
-    git::{Identities, SomeIdentity},
+use crate::{
+    bloom::BloomFilter,
+    identities::{
+        self,
+        git::{Identities, SomeIdentity},
+        SomeUrn,
+    },
 };
 
 pub use identities::git::Urn;
@@ -51,6 +55,38 @@ pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<SomeIdentity>, Error> 
 pub fn list<'a>(
     storage: &'a Storage,
 ) -> Result<impl Iterator<Item = Result<SomeIdentity, Error>> + 'a, Error> {
+    let iter = self::list_urns(storage)?.filter_map(move |urn| match urn {
+        Ok(urn) => self::get(storage, &urn).transpose(),
+        Err(e) => Some(Err(e)),
+    });
+
+    Ok(iter)
+}
+
+/// Construct a [`BloomFilter`] containing the [`Urn`]s of all identities
+/// found in `storage`.
+pub fn bloom(storage: &Storage, fp_rate: f64) -> Result<Option<BloomFilter<SomeUrn>>, Error> {
+    let urns = self::list_urns(storage)?.collect::<Result<Vec<_>, _>>()?;
+    let sz = urns.len();
+    Ok(urns
+        .into_iter()
+        .map(SomeUrn::Git)
+        .fold(BloomFilter::new(sz, fp_rate), |mut bloom, urn| {
+            if let Some(b) = bloom.as_mut() {
+                b.insert(&urn);
+            }
+            bloom
+        }))
+}
+
+/// List only the [`Urn`]s of all identities found in `storage.
+///
+/// Note that this means that only the namespace must successfully parse as a
+/// [`Urn`], but neither the existence nor the validity of the identity
+/// histories is guaranteed.
+pub fn list_urns(
+    storage: &Storage,
+) -> Result<impl Iterator<Item = Result<Urn, Error>> + '_, Error> {
     lazy_static! {
         static ref GLOB: glob::RefspecMatcher =
             refspec_pattern!("refs/namespaces/*/refs/rad/id").into();
@@ -59,10 +95,7 @@ pub fn list<'a>(
     let iter = storage
         .reference_names_glob(GLOB.clone())?
         .filter_map(move |name| match name {
-            Ok(name) => {
-                Urn::try_from(name).map_or(None, |urn| self::get(storage, &urn).transpose())
-            },
-
+            Ok(name) => Urn::try_from(name).map(Ok).ok(),
             Err(e) => Some(Err(e.into())),
         });
 

@@ -323,7 +323,7 @@ where
 #[cbor(array)]
 struct AsCbor<'a> {
     #[b(0)]
-    #[cbor(with = "bytes")]
+    #[cbor(with = "minicbor::bytes")]
     id: &'a [u8],
 
     #[n(1)]
@@ -331,24 +331,6 @@ struct AsCbor<'a> {
 
     #[b(2)]
     path: Option<&'a str>,
-}
-
-// Need to force minicbor to treat our slice as bytes, not array (the `Encode` /
-// `Decode` impls disagree).
-mod bytes {
-    use minicbor::*;
-
-    pub(super) fn encode<W: encode::Write>(
-        x: &[u8],
-        e: &mut Encoder<W>,
-    ) -> Result<(), encode::Error<W::Error>> {
-        e.bytes(x)?;
-        Ok(())
-    }
-
-    pub(super) fn decode<'a>(d: &mut Decoder<'a>) -> Result<&'a [u8], decode::Error> {
-        d.bytes()
-    }
 }
 
 impl<R> minicbor::Encode for Urn<R>

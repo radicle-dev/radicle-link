@@ -206,5 +206,6 @@ allow-git = [
     "https://github.com/ctz/rustls",
     "https://github.com/meilisearch/madness",
     "https://github.com/quinn-rs/quinn",
+    "https://github.com/radicle-dev/bloom_filter_simple",
     "https://github.com/ZcashFoundation/ed25519-zebra",
 ]
