@@ -334,8 +334,9 @@ fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<(), Erro
 /// Untrack the list of `PeerId`s, which also has the side-effect of removing
 /// that peer's remote references in the storage.
 ///
-/// In the case of an error occurring during the untrack call we emit a warning
-/// and append it to a `Vec` of unpruned peers. The unpruned peers are returned.
+/// **Note**: this function will return early on failure. This could mean that
+/// remotes which were meant for pruning might not have been removed, resulting
+/// in unnecessary remote references.
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(level = "trace", skip(storage, prune_list))]
 fn prune<'a>(
