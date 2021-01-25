@@ -9,6 +9,7 @@ use either::*;
 use futures::executor::block_on;
 use git_ext as ext;
 use multihash::Multihash;
+use nonempty::NonEmpty;
 
 use crate::{
     identities::{
@@ -119,6 +120,22 @@ impl<'a, T: 'a> Identities<'a, T> {
         }
     }
 
+    /// Convenience to specialise `T` to [`VerifiedPerson`].
+    pub fn as_verified_person(&self) -> Identities<'_, VerifiedPerson> {
+        Identities {
+            repo: self.repo,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Convenience to specialise `T` to [`VerifiedProject`].
+    pub fn as_verified_project(&self) -> Identities<'_, VerifiedProject> {
+        Identities {
+            repo: self.repo,
+            _marker: PhantomData,
+        }
+    }
+
     /// Read an identity whose type is not statically known from commit `oid`.
     ///
     /// The only guarantee about the returned value is that it is well-formed --
@@ -192,6 +209,20 @@ impl<'a, T: 'a> Identities<'a, T> {
     }
 
     //// Helpers ////
+
+    /// Assumes that the bag of commits are in a related history.
+    fn latest_generic(&self, bag: NonEmpty<git2::Oid>) -> Result<git2::Oid, git2::Error> {
+        let mut latest = bag.head;
+
+        for commit in bag.into_iter() {
+            // Is `latest` the ancestor of `commit`? If so, `commit` is newer.
+            if self.repo.graph_descendant_of(commit, latest)? {
+                latest = commit
+            }
+        }
+
+        Ok(latest)
+    }
 
     fn by_oid(&self, oid: git2::Oid) -> ByOid<'a> {
         (self.repo, oid)
@@ -396,6 +427,23 @@ where
     }
 }
 
+impl<'a, T: 'a> Identities<'a, VerifiedIdentity<T>> {
+    #[tracing::instrument(level = "debug", skip(self, mine, theirs), err, fields(mine.content_id = %mine.content_id, mine.revision = %mine.revision, theirs.content_id = %theirs.content_id, theirs.revision = %theirs.revision))]
+    pub fn is_fork(
+        &self,
+        mine: &VerifiedIdentity<T>,
+        theirs: &VerifiedIdentity<T>,
+    ) -> Result<bool, error::Store> {
+        tracing::debug!("checking mine against theirs");
+        let forked_left =
+            !self.is_in_ancestry_path(mine.content_id.into(), theirs.revision.into())?;
+        Ok(forked_left || {
+            tracing::debug!("checking theirs against mine");
+            !self.is_in_ancestry_path(theirs.content_id.into(), mine.revision.into())?
+        })
+    }
+}
+
 impl<'a> Identities<'a, Person> {
     /// Attempt to read a [`Person`] from commit `oid`, without verification.
     pub fn get(&self, oid: git2::Oid) -> Result<Person, error::Load> {
@@ -408,6 +456,10 @@ impl<'a> Identities<'a, Person> {
     /// which the verification succeeded -- which may or may not be `head`.
     pub fn verify(&self, head: git2::Oid) -> Result<VerifiedPerson, error::VerifyPerson> {
         Ok(self.verify_generic(head)?)
+    }
+
+    pub fn latest_tip(&self, persons: NonEmpty<Person>) -> Result<git2::Oid, error::Store> {
+        Ok(self.latest_generic(persons.map(|person| person.content_id.into()))?)
     }
 
     /// Create a new [`Person`] from a payload and delegations.
@@ -561,6 +613,10 @@ impl<'a> Identities<'a, Project> {
             .signed()?
             .quorum()?
             .verified(parent.as_ref())?)
+    }
+
+    pub fn latest_tip(&self, projects: NonEmpty<Project>) -> Result<git2::Oid, error::Store> {
+        Ok(self.latest_generic(projects.map(|proj| proj.content_id.into()))?)
     }
 
     /// Create a new [`Project`] from a payload and delegations.

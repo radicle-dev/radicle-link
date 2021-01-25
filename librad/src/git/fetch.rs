@@ -37,17 +37,47 @@ use crate::{
     peer::PeerId,
 };
 
+/// 1KiB for use in [`Limit`] combinations.
+pub const ONE_KB: usize = 1024;
+/// 5KiB for use in [`Limit`], specifically for the `peek` field, when we would
+/// like to fetch `rad/id` , `rad/self`, `rad/ids/*` references.
+pub const FIVE_KB: usize = ONE_KB * 5;
+/// 5GB for use in [`Limit`], specifically for the `data` field, when we would
+/// like to fetch `rad/*` as well as `refs/heads/*` references.
+pub const FIVE_GB: usize = ONE_KB * ONE_KB * ONE_KB * 5;
+
+/// Limits used for guarding against fetching large amounts of data from the
+/// network.
+///
+/// The default values are [`FIVE_KB`], [`FIVE_GB`], respectively.
+#[derive(Clone, Copy, Debug)]
+pub struct Limit {
+    /// Limit the amount of data we fetch using [`Fetchspecs::PeekAll`] and
+    /// [`Fetchspecs::Peek`].
+    pub peek: usize,
+    /// Limit the amount of data we fetch using [`Fetchspecs::Replicate`].
+    pub data: usize,
+}
+
+impl Default for Limit {
+    fn default() -> Self {
+        Self {
+            peek: FIVE_KB,
+            data: FIVE_GB,
+        }
+    }
+}
+
 /// Seed value to compute the fetchspecs for the desired fetch phase from.
 ///
 /// See also: [`super::replication::replicate`]
 #[derive(Debug)]
 pub enum Fetchspecs<P, R> {
-    /// Only request the branches necessary for identity verification.
-    Peek,
+    /// Request all identity documents
+    PeekAll { limit: Limit },
 
-    /// Request the `rad/signed_refs` branches of the given set of tracked
-    /// peers.
-    SignedRefs { tracked: BTreeSet<P> },
+    /// Only request the branches necessary for identity verification.
+    Peek { remotes: BTreeSet<P>, limit: Limit },
 
     /// Request the remote heads matching the signed refs of the respective
     /// tracked peers, as well as top-level delegates found in the identity
@@ -55,6 +85,7 @@ pub enum Fetchspecs<P, R> {
     Replicate {
         tracked_sigrefs: BTreeMap<P, Refs>,
         delegates: BTreeSet<Urn<R>>,
+        limit: Limit,
     },
 }
 
@@ -73,12 +104,27 @@ where
         remote_heads: &RemoteHeads,
     ) -> Vec<Fetchspec> {
         match self {
-            Self::Peek => refspecs::peek(urn, remote_peer),
-            Self::SignedRefs { tracked } => refspecs::signed_refs(urn, &remote_peer, tracked),
+            Self::PeekAll { .. } => {
+                let mut all = refspecs::all(urn);
+                let remote = Some(remote_peer.clone()).into_iter().collect();
+                let mut remotes = refspecs::peek(urn, &remote_peer, &remote);
+                all.append(&mut remotes);
+                all
+            },
+            Self::Peek { remotes, .. } => refspecs::peek(urn, &remote_peer, remotes),
             Self::Replicate {
                 tracked_sigrefs,
                 delegates,
+                ..
             } => refspecs::replicate(urn, &remote_peer, remote_heads, tracked_sigrefs, delegates),
+        }
+    }
+
+    pub fn fetch_limit(&self) -> usize {
+        match self {
+            Fetchspecs::PeekAll { limit } => limit.peek,
+            Fetchspecs::Peek { limit, .. } => limit.peek,
+            Fetchspecs::Replicate { limit, .. } => limit.data,
         }
     }
 }
@@ -86,9 +132,44 @@ where
 pub mod refspecs {
     use super::*;
 
-    pub fn peek<P, R>(urn: &Urn<R>, remote_peer: P) -> Vec<Fetchspec>
+    pub fn all<P, R>(urn: &Urn<R>) -> Vec<Fetchspec>
     where
         P: Clone + 'static,
+        for<'a> &'a P: AsRemote + Into<ext::RefLike>,
+
+        R: HasProtocol + Clone + 'static,
+        for<'a> &'a R: Into<Multihash>,
+    {
+        let namespace: Namespace<R> = Namespace::from(urn);
+        let rad_id = Reference::rad_id(namespace.clone());
+        let rad_self = Reference::rad_self(namespace.clone(), None);
+        let rad_signed_refs = Reference::rad_signed_refs(namespace, None);
+
+        vec![
+            Refspec {
+                src: remote_glob(rad_id.clone().with_remote(refspec_pattern!("*"))),
+                dst: remote_glob(rad_id.with_remote(refspec_pattern!("*"))),
+                force: Force::False,
+            }
+            .into_fetchspec(),
+            Refspec {
+                src: remote_glob(rad_self.clone().with_remote(refspec_pattern!("*"))),
+                dst: remote_glob(rad_self.with_remote(refspec_pattern!("*"))),
+                force: Force::False,
+            }
+            .into_fetchspec(),
+            Refspec {
+                src: remote_glob(rad_signed_refs.clone().with_remote(refspec_pattern!("*"))),
+                dst: remote_glob(rad_signed_refs.with_remote(refspec_pattern!("*"))),
+                force: Force::False,
+            }
+            .into_fetchspec(),
+        ]
+    }
+
+    pub fn peek<P, R>(urn: &Urn<R>, remote_peer: &P, remotes: &BTreeSet<P>) -> Vec<Fetchspec>
+    where
+        P: Clone + PartialEq + 'static,
         for<'a> &'a P: AsRemote + Into<ext::RefLike>,
 
         R: HasProtocol + Clone + 'static,
@@ -98,28 +179,52 @@ pub mod refspecs {
 
         let rad_id = Reference::rad_id(namespace.clone());
         let rad_self = Reference::rad_self(namespace.clone(), None);
+        let rad_signed_refs = Reference::rad_signed_refs(namespace.clone(), None);
         let rad_ids = Reference::rad_ids_glob(namespace);
 
-        vec![
-            Refspec {
-                src: rad_id.clone(),
-                dst: rad_id.with_remote(remote_peer.clone()),
-                force: Force::False,
+        let is_remote = |src: Reference<Namespace<R>, P, _>, remote: P| {
+            if remote_peer == &remote {
+                src
+            } else {
+                src.with_remote(remote)
             }
-            .into_fetchspec(),
-            Refspec {
-                src: rad_self.clone(),
-                dst: rad_self.with_remote(remote_peer.clone()),
-                force: Force::False,
-            }
-            .into_fetchspec(),
-            Refspec {
-                src: rad_ids.clone(),
-                dst: rad_ids.with_remote(remote_peer),
-                force: Force::False,
-            }
-            .into_fetchspec(),
-        ]
+        };
+
+        remotes
+            .iter()
+            .flat_map(|remote| {
+                vec![
+                    Refspec {
+                        src: is_remote(rad_id.clone(), remote.clone()),
+                        dst: rad_id.clone().with_remote(remote.clone()),
+                        force: Force::False,
+                    }
+                    .into_fetchspec(),
+                    Refspec {
+                        src: is_remote(rad_self.clone(), remote.clone()),
+                        dst: rad_self.clone().with_remote(remote.clone()),
+                        force: Force::False,
+                    }
+                    .into_fetchspec(),
+                    Refspec {
+                        src: is_remote(rad_signed_refs.clone(), remote.clone()),
+                        dst: rad_signed_refs.clone().with_remote(remote.clone()),
+                        force: Force::False,
+                    }
+                    .into_fetchspec(),
+                    Refspec {
+                        src: if remote == remote_peer {
+                            rad_ids.clone()
+                        } else {
+                            rad_ids.clone().with_remote(remote.clone())
+                        },
+                        dst: rad_ids.clone().with_remote(remote.clone()),
+                        force: Force::False,
+                    }
+                    .into_fetchspec(),
+                ]
+            })
+            .collect()
     }
 
     pub fn signed_refs<P, R>(urn: &Urn<R>, remote_peer: &P, tracked: &BTreeSet<P>) -> Vec<Fetchspec>
@@ -179,7 +284,11 @@ pub mod refspecs {
             .collect::<Vec<_>>();
 
         // Peek at the remote peer
-        let mut peek_remote = peek(urn, remote_peer.clone());
+        let mut peek_remote = peek(
+            urn,
+            remote_peer,
+            &Some(remote_peer.clone()).into_iter().collect(),
+        );
 
         // Get id + signed_refs branches of top-level delegates.
         // **Note**: we don't know at this point whom we should track in the
@@ -188,7 +297,11 @@ pub mod refspecs {
         let mut delegates = delegates
             .iter()
             .map(|delegate_urn| {
-                let mut peek = peek(delegate_urn, remote_peer.clone());
+                let mut peek = peek(
+                    delegate_urn,
+                    remote_peer,
+                    &Some(remote_peer.clone()).into_iter().collect(),
+                );
                 peek.extend(signed_refs(
                     delegate_urn,
                     remote_peer,
@@ -203,6 +316,29 @@ pub mod refspecs {
         signed.append(&mut peek_remote);
         signed.append(&mut delegates);
         signed
+    }
+
+    fn remote_glob<R>(
+        r: Reference<Namespace<R>, ext::RefspecPattern, ext::RefLike>,
+    ) -> ext::RefspecPattern
+    where
+        R: HasProtocol + Clone + 'static,
+        for<'a> &'a R: Into<Multihash>,
+    {
+        let mut refl = reflike!("refs");
+
+        if let Some(ref namespace) = r.namespace {
+            refl = refl
+                .join(reflike!("namespaces"))
+                .join(namespace)
+                .join(reflike!("refs"));
+        }
+
+        let suffix: ext::RefLike = ext::RefLike::from(r.category).join(r.name.to_owned());
+        let remote = r.remote.unwrap_or(refspec_pattern!("*"));
+        refl.join(reflike!("remotes"))
+            .with_pattern_suffix(remote)
+            .append(suffix)
     }
 
     fn sigrefs<'a, P, R>(
@@ -442,6 +578,7 @@ impl<'a> DefaultFetcher<'a> {
         fetchspecs: Fetchspecs<PeerId, git::Revision>,
     ) -> Result<FetchResult, git2::Error> {
         {
+            let limit = fetchspecs.fetch_limit();
             let refspecs = fetchspecs
                 .refspecs(&self.urn, self.remote_peer, &self.remote_heads)
                 .into_iter()
@@ -451,8 +588,14 @@ impl<'a> DefaultFetcher<'a> {
 
             let mut callbacks = git2::RemoteCallbacks::new();
             callbacks.transfer_progress(|prog| {
-                tracing::trace!("Fetch: received {} bytes", prog.received_bytes());
-                true
+                let received_bytes = prog.received_bytes();
+                tracing::trace!("Fetch: received {} bytes", received_bytes);
+                if received_bytes > limit {
+                    tracing::error!("Fetch: exceeded {} bytes", limit);
+                    false
+                } else {
+                    true
+                }
             });
 
             self.remote.download(
@@ -529,7 +672,11 @@ mod tests {
 
     #[test]
     fn peek_looks_legit() {
-        let specs = Fetchspecs::Peek.refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
+        let specs = Fetchspecs::Peek {
+            remotes: Some(TOLA.clone()).into_iter().collect(),
+            limit: Default::default(),
+        }
+        .refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
         assert_eq!(
             specs
                 .iter()
@@ -545,6 +692,10 @@ mod tests {
                     refspec_pattern!("refs/remotes/tola/rad/self")
                 ),
                 (
+                    refspec_pattern!("refs/rad/signed_refs"),
+                    refspec_pattern!("refs/remotes/tola/rad/signed_refs")
+                ),
+                (
                     refspec_pattern!("refs/rad/ids/*"),
                     refspec_pattern!("refs/remotes/tola/rad/ids/*")
                 )
@@ -555,43 +706,6 @@ mod tests {
                 "{}:{}",
                 PROJECT_NAMESPACE.with_pattern_suffix(remote),
                 PROJECT_NAMESPACE.with_pattern_suffix(local),
-            ))
-            .collect::<Vec<_>>()
-        )
-    }
-
-    #[test]
-    fn signed_refs_looks_legit() {
-        let specs = Fetchspecs::SignedRefs {
-            tracked: [&*LOLEK, &*BOLEK]
-                .iter()
-                .cloned()
-                .cloned()
-                .collect::<BTreeSet<ext::RefLike>>(),
-        }
-        .refspecs(&*PROJECT_URN, TOLA.clone(), &Default::default());
-
-        assert_eq!(
-            specs
-                .iter()
-                .map(|spec| spec.to_string())
-                .collect::<Vec<_>>(),
-            [
-                (
-                    reflike!("refs/remotes/bolek/rad/signed_refs"),
-                    reflike!("refs/remotes/bolek/rad/signed_refs")
-                ),
-                (
-                    reflike!("refs/remotes/lolek/rad/signed_refs"),
-                    reflike!("refs/remotes/lolek/rad/signed_refs")
-                )
-            ]
-            .iter()
-            .cloned()
-            .map(|(remote, local)| format!(
-                "{}:{}",
-                PROJECT_NAMESPACE.join(remote),
-                PROJECT_NAMESPACE.join(local),
             ))
             .collect::<Vec<_>>()
         )
@@ -713,6 +827,7 @@ mod tests {
         let specs = Fetchspecs::Replicate {
             tracked_sigrefs,
             delegates,
+            limit: Default::default(),
         }
         .refspecs(&*PROJECT_URN, TOLA.clone(), &remote_heads);
 
@@ -755,6 +870,11 @@ mod tests {
                     PROJECT_NAMESPACE
                         .with_pattern_suffix(refspec_pattern!("refs/remotes/tola/rad/ids/*"))
                 ),
+                format!(
+                    "{}:{}",
+                    PROJECT_NAMESPACE.join(reflike!("refs/rad/signed_refs")),
+                    PROJECT_NAMESPACE.join(reflike!("refs/remotes/tola/rad/signed_refs")),
+                ),
                 // Tola's view of rad/* of lolek + bolek's top-level namespaces
                 format!(
                     "{}:{}",
@@ -774,6 +894,11 @@ mod tests {
                 ),
                 format!(
                     "{}:{}",
+                    BOLEK_NAMESPACE.join(reflike!("refs/rad/signed_refs")),
+                    BOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/signed_refs")),
+                ),
+                format!(
+                    "{}:{}",
                     LOLEK_NAMESPACE.join(reflike!("refs/rad/id")),
                     LOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/id"))
                 ),
@@ -781,6 +906,11 @@ mod tests {
                     "{}:{}",
                     LOLEK_NAMESPACE.join(reflike!("refs/rad/self")),
                     LOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/self"))
+                ),
+                format!(
+                    "{}:{}",
+                    LOLEK_NAMESPACE.join(reflike!("refs/rad/signed_refs")),
+                    LOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/signed_refs"))
                 ),
                 format!(
                     "{}:{}",
@@ -799,6 +929,11 @@ mod tests {
                     "{}:{}",
                     BOLEK_NAMESPACE.join(reflike!("refs/remotes/lolek/rad/signed_refs")),
                     BOLEK_NAMESPACE.join(reflike!("refs/remotes/lolek/rad/signed_refs"))
+                ),
+                format!(
+                    "{}:{}",
+                    BOLEK_NAMESPACE.join(reflike!("refs/rad/signed_refs")),
+                    BOLEK_NAMESPACE.join(reflike!("refs/remotes/tola/rad/signed_refs"))
                 ),
                 // Lolek's signed_refs for LOLEK_URN
                 format!(

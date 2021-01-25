@@ -277,6 +277,45 @@ fn double_vote() -> anyhow::Result<()> {
     }
 }
 
+#[test]
+fn fork() -> anyhow::Result<()> {
+    let repo = common::repo()?;
+    {
+        let cheyenne = common::Device::new(&*CHEYENNE_DESKTOP, Identities::from(&*repo))?;
+        let dylan = common::Device::new(&*DYLAN, Identities::from(&*repo))?;
+
+        let heads = current_heads_from(vec![&cheyenne, &dylan]);
+
+        let cheyenne_project = {
+            let update = IndirectDelegation::try_from_iter(vec![
+                Right(cheyenne.current().clone()),
+                Right(dylan.current().clone()),
+            ])?;
+            common::Project::new(cheyenne.clone())?.update(update)
+        }?;
+        let dylan_project = common::Project::create_from(dylan.clone(), &cheyenne_project)?;
+        dylan_project.assert_verifies(lookup(&heads))?;
+
+        // Change the description of the project
+        let cheyenne_project = cheyenne_project.change_description()?;
+        let dylan_project = dylan_project.update_from(&cheyenne_project)?;
+
+        // Same project, different day
+        let cheyenne_other = {
+            let update = IndirectDelegation::try_from_iter(vec![
+                Right(cheyenne.current().clone()),
+                Right(dylan.current().clone()),
+            ])?;
+            common::Project::new(cheyenne.clone())?.update(update)
+        }?;
+        let dylan_other = common::Project::create_from(dylan.clone(), &cheyenne_other)?;
+
+        let mine = dylan_project.verify(lookup(&heads))?;
+        let theirs = dylan_other.verify(lookup(&heads))?;
+        cheyenne_project.assert_forks(&mine, &theirs)
+    }
+}
+
 fn current_heads_from<'a>(
     devs: impl IntoIterator<Item = &'a common::Device<'a>>,
 ) -> BTreeMap<Urn, git2::Oid> {

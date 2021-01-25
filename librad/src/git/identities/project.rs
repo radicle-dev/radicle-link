@@ -7,6 +7,7 @@ use std::{convert::TryFrom, fmt::Debug};
 
 use either::Either;
 use git_ext::{is_not_found_err, OneLevel};
+use nonempty::NonEmpty;
 
 use super::{
     super::{
@@ -150,6 +151,27 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Project, Erro
     Ok(next)
 }
 
+/// Returns `true` if the `left` or the `right` projects do not share the same
+/// commit history.
+///
+/// # Errors
+///
+///   * If the `left` project could not be found
+///   * If the `right` project could not be found
+pub fn is_fork(storage: &Storage, left: &Urn, right: &Urn) -> Result<bool, Error> {
+    let left = verify(storage, left)?.ok_or_else(|| Error::NotFound(left.clone()))?;
+    let right = verify(storage, right)?.ok_or_else(|| Error::NotFound(right.clone()))?;
+    let verified = verified(&storage);
+    Ok(verified.is_fork(&left, &right)?)
+}
+
+/// Given a list projects -- assumed to be the same project -- return the latest
+/// revision tip.
+pub fn latest_tip(storage: &Storage, projects: NonEmpty<Project>) -> Result<git2::Oid, Error> {
+    // FIXME: Should we ensure that all the projects have the same URN?
+    Ok(identities(storage).latest_tip(projects)?)
+}
+
 enum ProjectRefs<'a> {
     Create(&'a Project),
     Update(&'a Project, &'a str),
@@ -204,5 +226,9 @@ impl<'a> ProjectRefs<'a> {
 }
 
 fn identities(storage: &Storage) -> Identities<Project> {
+    storage.identities()
+}
+
+fn verified(storage: &Storage) -> Identities<VerifiedProject> {
     storage.identities()
 }
