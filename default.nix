@@ -10,6 +10,7 @@ in
     name = "clang-env-with-nightly-rust";
     buildInputs = [
       (pkgs.rustChannelOf { rustToolchain = ./rust-toolchain; }).rust
+      cargo-deny
       clang
       llvmPackages.libclang
       olm
