@@ -52,7 +52,7 @@ pub mod membership;
 pub mod syn;
 
 mod info;
-pub use info::{PartialPeerInfo, PeerAdvertisement, PeerInfo};
+pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
 
 mod io;
 mod tick;

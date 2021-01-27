@@ -25,8 +25,8 @@ mod codec;
 /// permits gradual rollout scenarios of major network upgrades.
 ///
 /// For the negotiation of optional (compatible _per definitionem_) protocol
-/// features, the [`PeerAdvertisement`] reserves space for advertising
-/// [`info::Capability`]s.
+/// features, the [`protocol::PeerAdvertisement`] reserves space for advertising
+/// [`protocol::Capability`]s.
 ///
 /// [ALPN]: https://tools.ietf.org/html/rfc7301
 pub const PROTOCOL_VERSION: u8 = 2;
