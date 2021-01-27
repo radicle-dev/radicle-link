@@ -65,6 +65,8 @@ pub fn list<'a>(
 
 /// Construct a [`BloomFilter`] containing the [`Urn`]s of all identities
 /// found in `storage`.
+///
+/// If the operation would result in an empty bloom filter, `None` is returned.
 pub fn bloom(storage: &Storage, fp_rate: f64) -> Result<Option<BloomFilter<SomeUrn>>, Error> {
     let urns = self::list_urns(storage)?.collect::<Result<Vec<_>, _>>()?;
     let sz = urns.len();
