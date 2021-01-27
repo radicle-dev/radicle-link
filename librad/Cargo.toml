@@ -114,8 +114,10 @@ features = ["derive"]
 # Note: this is not a direct dependency. governor depends on
 # parking_lot, which depends on smallvec. There is vulnerability
 # in v1.0 and so we're forcing cargo to use this version instead.
+#
+# Tracking issue in governor: https://github.com/antifuchs/governor/issues/60
 [dependencies.smallvec]
-version = "1.6.1"
+version = ">=1.6.1"
 
 [dependencies.tokio]
 version = "0.2"
