@@ -108,8 +108,12 @@ where
                             .await
                             .ok_or(error::BestEffortSend::CouldNotConnect { to })?;
 
-                        if state.sync.within_sync_period() {
-                            tokio::spawn(io::initiate_sync(state.clone(), conn.clone()));
+                        if state.sync.read().should_sync() {
+                            tokio::spawn({
+                                let state = state.clone();
+                                let conn = conn.clone();
+                                async move { io::initiate_sync(&state, conn).await }
+                            });
                         }
 
                         tokio::spawn(io::ingress_streams(state, ingress));

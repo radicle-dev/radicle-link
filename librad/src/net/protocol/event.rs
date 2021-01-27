@@ -5,13 +5,14 @@
 
 use std::net::SocketAddr;
 
-use super::{broadcast, gossip, membership};
+use super::{broadcast, error, gossip, membership};
 use crate::PeerId;
 
 #[derive(Clone)]
 pub enum Downstream {
     Gossip(downstream::Gossip),
     Info(downstream::Info),
+    State(downstream::State),
 }
 
 pub mod downstream {
@@ -51,6 +52,19 @@ pub mod downstream {
         pub connected_peers: usize,
         pub membership_active: usize,
         pub membership_passive: usize,
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum State {
+        ResetSyncPeriod {
+            force: bool,
+            reply: Reply<Result<(), error::ResetSyncPeriod>>,
+        },
+        InitiateSync {
+            remote_id: PeerId,
+            addr_hints: Vec<SocketAddr>,
+            reply: Reply<Result<(), error::InitiateSync>>,
+        },
     }
 }
 

@@ -7,22 +7,24 @@ use std::{fmt::Debug, io};
 
 use thiserror::Error;
 
-use super::{membership, syn, PeerInfo};
+use super::syn;
 use crate::{
-    git::{identities, storage::pool::PoolError},
+    git::storage::pool::PoolError,
     net::{
         codec::{CborCodecError, CborError},
         quic,
         upgrade,
     },
-    PeerId,
 };
+
+mod internal;
+pub(super) use internal::*;
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Bootstrap {
     #[error(transparent)]
-    Identities(#[from] identities::Error),
+    Syn(#[from] syn::error::State),
 
     #[error(transparent)]
     Pool(#[from] PoolError),
@@ -32,86 +34,11 @@ pub enum Bootstrap {
 }
 
 #[derive(Debug, Error)]
-pub(super) enum Gossip {
-    #[error(transparent)]
-    Membership(#[from] membership::Error),
+#[non_exhaustive]
+pub enum InitiateSync {
+    #[error("lost contact to deep space 9")]
+    Unavailable,
 
-    #[error("CBOR encoding / decoding error")]
-    Cbor(#[source] CborError),
-
-    #[error(transparent)]
-    Io(#[from] io::Error),
-}
-
-impl From<CborCodecError> for Gossip {
-    fn from(e: CborCodecError) -> Self {
-        match e {
-            CborCodecError::Cbor(e) => Self::Cbor(e),
-            CborCodecError::Io(e) => Self::Io(e),
-        }
-    }
-}
-
-#[derive(Debug, Error)]
-pub(super) enum Tock<A: Clone + Ord + Debug + 'static> {
-    #[error(transparent)]
-    Reliable(#[from] ReliableSend<A>),
-
-    #[error(transparent)]
-    Unreliable(#[from] BestEffortSend<A>),
-}
-
-#[derive(Debug, Error)]
-#[error("reliable send failed")]
-pub(super) struct ReliableSend<A: Clone + Ord + Debug + 'static> {
-    pub cont: Vec<membership::Tick<A>>,
-    pub source: ReliableSendSource,
-}
-
-#[derive(Debug, Error)]
-pub(super) enum ReliableSendSource {
-    #[error("no connection to {to}")]
-    NotConnected { to: PeerId },
-
-    #[error(transparent)]
-    SendGossip(#[from] SendGossip),
-}
-
-#[derive(Debug, Error)]
-pub(super) enum BestEffortSend<A: Clone + Ord + Debug + 'static> {
-    #[error("could not connect to {}", to.peer_id)]
-    CouldNotConnect { to: PeerInfo<A> },
-
-    #[error(transparent)]
-    SendGossip(#[from] SendGossip),
-}
-
-#[derive(Debug, Error)]
-pub(super) enum SendGossip {
-    #[error(transparent)]
-    Upgrade(#[from] upgrade::Error<quic::SendStream>),
-
-    #[error(transparent)]
-    Quic(#[from] quic::Error),
-
-    #[error("CBOR encoding / decoding error")]
-    Cbor(#[source] CborError),
-
-    #[error(transparent)]
-    Io(#[from] io::Error),
-}
-
-impl From<CborCodecError> for SendGossip {
-    fn from(e: CborCodecError) -> Self {
-        match e {
-            CborCodecError::Cbor(e) => Self::Cbor(e),
-            CborCodecError::Io(e) => Self::Io(e),
-        }
-    }
-}
-
-#[derive(Debug, Error)]
-pub(super) enum InitiateSync {
     #[error(transparent)]
     Syn(#[from] syn::error::Response),
 
@@ -124,8 +51,8 @@ pub(super) enum InitiateSync {
     #[error(transparent)]
     Quic(#[from] quic::Error),
 
-    #[error("CBOR encoding / decoding error")]
-    Cbor(#[source] CborError),
+    #[error(transparent)]
+    Cbor(#[from] CborError),
 
     #[error(transparent)]
     Io(#[from] io::Error),
@@ -138,4 +65,17 @@ impl From<CborCodecError> for InitiateSync {
             CborCodecError::Io(e) => Self::Io(e),
         }
     }
+}
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum ResetSyncPeriod {
+    #[error("lost contact to deep space 9")]
+    Unavailable,
+
+    #[error(transparent)]
+    SynState(#[from] syn::error::State),
+
+    #[error(transparent)]
+    Pool(#[from] PoolError),
 }

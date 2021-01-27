@@ -6,14 +6,11 @@
 use std::{
     convert::TryFrom as _,
     net::SocketAddr,
-    ops::Deref,
     panic,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
 use futures::stream::FuturesUnordered;
-use parking_lot::RwLock;
 
 use crate::{
     bloom,
@@ -47,46 +44,40 @@ impl Default for Config {
     }
 }
 
-#[derive(Clone)]
 pub struct State {
-    deadline: Arc<RwLock<Instant>>,
-    filter: Arc<RwLock<Option<bloom::BloomFilter<SomeUrn>>>>,
+    config: Config,
+    deadline: Instant,
+    snapshot: Option<bloom::BloomFilter<SomeUrn>>,
 }
 
 impl State {
-    pub fn new(storage: &Storage, config: Config) -> Result<Self, identities::Error> {
+    pub fn new(storage: &Storage, config: Config) -> Result<Self, error::State> {
+        let snapshot = identities::any::bloom(storage, config.bloom_filter_accuracy)?;
         let deadline = Instant::now() + config.sync_period;
-        let filter = identities::any::bloom(storage, config.bloom_filter_accuracy)?;
         Ok(Self {
-            deadline: Arc::new(RwLock::new(deadline)),
-            filter: Arc::new(RwLock::new(filter)),
+            config,
+            deadline,
+            snapshot,
         })
     }
 
-    pub fn within_sync_period(&self) -> bool {
-        let deadline = self.deadline.read();
-        Instant::now() > *deadline
-    }
-
-    pub fn reset_sync_period(&self, dur: Duration) {
-        let mut deadline = self.deadline.write();
-        *deadline = Instant::now() + dur;
-    }
-
-    pub fn filter(&self) -> impl Deref<Target = Option<bloom::BloomFilter<SomeUrn>>> + '_ {
-        self.filter.read()
-    }
-
-    pub fn rebuild_bloom_filter(
-        &self,
-        storage: &Storage,
-        accuracy: f64,
-    ) -> Result<(), identities::Error> {
-        let fresh = identities::any::bloom(storage, accuracy)?;
-        let mut filter = self.filter.write();
-        *filter = fresh;
+    pub fn reset(&mut self, storage: &Storage) -> Result<(), error::State> {
+        self.snapshot = identities::any::bloom(storage, self.config.bloom_filter_accuracy)?;
+        self.deadline = Instant::now() + self.config.sync_period;
 
         Ok(())
+    }
+
+    pub fn should_sync(&self) -> bool {
+        self.snapshot.is_some() && Instant::now() > self.deadline
+    }
+
+    pub fn deadline(&self) -> Instant {
+        self.deadline
+    }
+
+    pub fn snapshot(&self) -> Option<&bloom::BloomFilter<SomeUrn>> {
+        self.snapshot.as_ref()
     }
 }
 

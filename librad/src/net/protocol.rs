@@ -20,7 +20,7 @@ use futures::{
 };
 use governor::{Quota, RateLimiter};
 use nonzero_ext::nonzero;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use rand_pcg::Pcg64Mcg;
 use tokio::sync::broadcast as tincan;
 use tracing::Instrument as _;
@@ -42,8 +42,6 @@ use crate::{
 
 pub use tokio::sync::broadcast::RecvError;
 
-mod accept;
-
 pub mod broadcast;
 pub mod error;
 pub mod event;
@@ -54,6 +52,8 @@ pub mod syn;
 mod info;
 pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
 
+mod accept;
+mod control;
 mod io;
 mod tick;
 
@@ -181,6 +181,41 @@ impl TinCans {
         rx.await.unwrap_or_default()
     }
 
+    pub async fn initiate_sync<Addrs>(
+        &self,
+        remote_id: PeerId,
+        addr_hints: Addrs,
+    ) -> Result<(), error::InitiateSync>
+    where
+        Addrs: IntoIterator<Item = SocketAddr>,
+    {
+        use event::{downstream::State::InitiateSync, Downstream};
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let reply = Arc::new(Mutex::new(Some(tx)));
+        self.downstream
+            .send(Downstream::State(InitiateSync {
+                remote_id,
+                addr_hints: addr_hints.into_iter().collect(),
+                reply,
+            }))
+            .or(Err(error::InitiateSync::Unavailable))?;
+
+        rx.await.or(Err(error::InitiateSync::Unavailable))?
+    }
+
+    pub async fn reset_sync_period(&self, force: bool) -> Result<(), error::ResetSyncPeriod> {
+        use event::{downstream::State::ResetSyncPeriod, Downstream};
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let reply = Arc::new(Mutex::new(Some(tx)));
+        self.downstream
+            .send(Downstream::State(ResetSyncPeriod { force, reply }))
+            .or(Err(error::ResetSyncPeriod::Unavailable))?;
+
+        rx.await.or(Err(error::ResetSyncPeriod::Unavailable))?
+    }
+
     pub fn subscribe(&self) -> impl futures::Stream<Item = Result<event::Upstream, RecvError>> {
         self.upstream.subscribe()
     }
@@ -215,7 +250,7 @@ where
     let events = phone.upstream.clone().into();
     let sync = {
         let git = storage.get().await?;
-        syn::State::new(git.as_ref(), config.sync)?
+        Arc::new(RwLock::new(syn::State::new(git.as_ref(), config.sync)?))
     };
     let state = State {
         local_id,
@@ -387,7 +422,7 @@ struct State<S> {
     membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     storage: Storage<S>,
     events: EventSink,
-    sync: syn::State,
+    sync: Arc<RwLock<syn::State>>,
 }
 
 #[async_trait]

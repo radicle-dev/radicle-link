@@ -34,3 +34,10 @@ pub enum Offer {
     #[error(transparent)]
     Git(#[from] identities::Error),
 }
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum State {
+    #[error(transparent)]
+    Git(#[from] identities::Error),
+}

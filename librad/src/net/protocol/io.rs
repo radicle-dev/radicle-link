@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{cmp, collections::BTreeSet, convert::TryFrom, io, net::SocketAddr, ops::Deref};
+use std::{cmp, collections::BTreeSet, convert::TryFrom, io, net::SocketAddr};
 
 use futures::{
     future::{self, TryFutureExt as _},
@@ -82,7 +82,10 @@ where
             },
         }
 
-        tokio::spawn(initiate_sync(state, conn));
+        tokio::spawn(async {
+            let state_here = state;
+            initiate_sync(&state_here, conn).await
+        });
     }
 }
 
@@ -505,7 +508,7 @@ where
     err
 )]
 pub(super) async fn initiate_sync<S>(
-    state: State<S>,
+    state: &State<S>,
     conn: quic::Connection,
 ) -> Result<(), error::InitiateSync>
 where
@@ -521,7 +524,8 @@ where
     };
 
     let (num_requested, filter) = {
-        match state.sync.filter().deref() {
+        let sync = state.sync.read();
+        match sync.snapshot() {
             None => Ok((0, None)),
             Some(bloom) => {
                 let n = cmp::min(bloom.approx_elements(), syn::MAX_OFFER_TOTAL);
