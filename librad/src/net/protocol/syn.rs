@@ -219,9 +219,8 @@ where
                 Ok(it) => {
                     self.buf.push(it);
                     if self.buf.len() == self.sz {
-                        let mut out = Vec::with_capacity(self.sz);
-                        out.append(&mut self.buf);
-                        return Some(Ok(out));
+                        let chunk = mem::replace(&mut self.buf, Vec::with_capacity(self.sz));
+                        return Some(Ok(chunk));
                     }
                 },
             }
