@@ -100,10 +100,10 @@ impl State {
 }
 
 #[tracing::instrument(skip(storage), err)]
-pub fn handle_request<'a>(
-    storage: &'a Storage,
+pub fn handle_request(
+    storage: &Storage,
     request: Request,
-) -> Result<impl Iterator<Item = Result<Response, error::Request>> + 'a, error::Request> {
+) -> Result<impl Iterator<Item = Result<Response, error::Request>> + '_, error::Request> {
     let Request::ListNamespaces { filter } = request;
     let bloom = filter
         .map(bloom::BloomFilter::try_from)
