@@ -12,6 +12,7 @@ use super::{
 use crate::identities::{
     self,
     git::{Urn, VerificationError},
+    urn,
 };
 
 #[derive(Debug, Error)]
@@ -20,8 +21,11 @@ pub enum Error {
     #[error("the URN {0} does not exist")]
     NotFound(Urn),
 
-    #[error("malformed URN")]
-    Ref(#[from] reference::FromUrnError),
+    #[error("failed to build ref from URN")]
+    RefFromUrn(#[from] reference::FromUrnError),
+
+    #[error("failed to build URN from ref")]
+    UrnFromRef(#[from] urn::FromRefLikeError),
 
     #[error(transparent)]
     LocalId(#[from] local::ValidationError),

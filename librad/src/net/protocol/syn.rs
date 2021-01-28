@@ -5,12 +5,15 @@
 
 use std::{
     convert::TryFrom as _,
+    mem,
     net::SocketAddr,
+    ops::Try,
     panic,
     time::{Duration, Instant},
 };
 
 use futures::stream::FuturesUnordered;
+use itertools::Itertools as _;
 
 use crate::{
     bloom,
@@ -33,6 +36,7 @@ pub const MAX_OFFER_TOTAL: usize = 10_000;
 pub struct Config {
     pub sync_period: Duration,
     pub bloom_filter_accuracy: f64,
+    pub mutual: MutualSyncPolicy,
 }
 
 impl Default for Config {
@@ -40,7 +44,21 @@ impl Default for Config {
         Self {
             sync_period: Duration::from_secs(5 * 60),
             bloom_filter_accuracy: 0.0001,
+            mutual: MutualSyncPolicy::default(),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum MutualSyncPolicy {
+    Always,
+    Never,
+    WithinSyncPeriod,
+}
+
+impl Default for MutualSyncPolicy {
+    fn default() -> Self {
+        Self::WithinSyncPeriod
     }
 }
 
@@ -82,20 +100,21 @@ impl State {
 }
 
 #[tracing::instrument(skip(storage), err)]
-pub async fn handle_request(
-    storage: impl AsRef<Storage>,
+pub fn handle_request<'a>(
+    storage: &'a Storage,
     request: Request,
-) -> Result<impl Iterator<Item = Response>, error::Request> {
+) -> Result<impl Iterator<Item = Result<Response, error::Request>> + 'a, error::Request> {
     let Request::ListNamespaces { filter } = request;
     let bloom = filter
         .map(bloom::BloomFilter::try_from)
         .transpose()
         .map_err(error::Request::Bloom)?;
-    let offers = self::offer_namespaces(storage, bloom).await?;
+    let offers = self::offers(storage, bloom)?.map(|of| {
+        of.map(|batch| Response::OfferNamespaces { batch })
+            .map_err(error::Request::from)
+    });
 
-    Ok(offers
-        .into_iter()
-        .map(|batch| Response::OfferNamespaces { batch }))
+    Ok(offers)
 }
 
 #[tracing::instrument(skip(storage))]
@@ -133,33 +152,85 @@ where
         .collect::<FuturesUnordered<_>>()
 }
 
-// FIXME: There is no chunking method on iterators, due to lifetime issues.
-// Since we have owned items, that shouldn't actually bother us, but we need to
-// roll our own iterator to make this function stream (which we want!)
-async fn offer_namespaces(
-    storage: impl AsRef<Storage>,
+fn offers(
+    storage: &Storage,
     filter: Option<bloom::BloomFilter<SomeUrn>>,
-) -> Result<Vec<rpc::Offer>, error::Offer> {
-    let urns = identities::any::list_urns(storage.as_ref())?
-        .filter_map(|res| match res {
-            Err(e) => Some(Err(e)),
-            Ok(urn) => {
-                let urn = SomeUrn::Git(urn);
-                filter
-                    .as_ref()
-                    .map(|bloom| bloom.contains(&urn))
-                    .unwrap_or(true)
-                    .then_some(Ok(urn))
-            },
+) -> Result<impl Iterator<Item = Result<rpc::Offer, error::Offer>> + '_, error::Offer> {
+    let offers = identities::any::list_urns(storage)?
+        .map(|x| x.map_err(error::Offer::from))
+        .filter_map_ok(move |urn| {
+            let urn = SomeUrn::Git(urn);
+            match filter.as_ref() {
+                None => Some(urn),
+                Some(bloom) => bloom.contains(&urn).then_some(urn),
+            }
         })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let offers = urns
-        .chunks(rpc::MAX_OFFER_BATCH_SIZE)
-        .map(|chunk| {
-            rpc::Offer::try_from(chunk.to_vec()).expect("chunk size equals batch size. qed")
-        })
-        .collect::<Vec<_>>();
+        .try_chunked(rpc::MAX_OFFER_BATCH_SIZE)
+        .map_ok(|chunk| rpc::Offer::try_from(chunk).expect("chunk size == batch size. qed"));
 
     Ok(offers)
+}
+
+// FIXME: We can't have a non-allocating chunker, because we can't put the bytes
+// on the wire "zero-copy".
+trait TryChunkedExt
+where
+    Self: Iterator + Sized,
+    <Self as Iterator>::Item: Try,
+{
+    fn try_chunked(self, sz: usize) -> TryChunked<Self> {
+        TryChunked {
+            inner: self,
+            sz,
+            buf: Vec::with_capacity(sz),
+        }
+    }
+}
+impl<T> TryChunkedExt for T
+where
+    T: Iterator,
+    <T as Iterator>::Item: Try,
+{
+}
+
+#[must_use]
+struct TryChunked<I>
+where
+    I: Iterator,
+    I::Item: Try,
+{
+    inner: I,
+    sz: usize,
+    buf: Vec<<<I as Iterator>::Item as Try>::Ok>,
+}
+
+impl<I> Iterator for TryChunked<I>
+where
+    I: Iterator,
+    I::Item: Try,
+{
+    type Item =
+        Result<Vec<<<I as Iterator>::Item as Try>::Ok>, <<I as Iterator>::Item as Try>::Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(i) = self.inner.next() {
+            match i.into_result() {
+                Err(e) => return Some(Err(e)),
+                Ok(it) => {
+                    self.buf.push(it);
+                    if self.buf.len() == self.sz {
+                        let mut out = Vec::with_capacity(self.sz);
+                        out.append(&mut self.buf);
+                        return Some(Ok(out));
+                    }
+                },
+            }
+        }
+
+        if !self.buf.is_empty() {
+            Some(Ok(mem::take(&mut self.buf)))
+        } else {
+            None
+        }
+    }
 }

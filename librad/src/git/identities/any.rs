@@ -96,10 +96,7 @@ pub fn list_urns(
 
     let iter = storage
         .reference_names_glob(GLOB.clone())?
-        .filter_map(move |name| match name {
-            Ok(name) => Urn::try_from(name).map(Ok).ok(),
-            Err(e) => Some(Err(e.into())),
-        });
+        .map(|name| Ok(Urn::try_from(name?)?));
 
     Ok(iter)
 }

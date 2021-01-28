@@ -20,6 +20,7 @@ dyn-clone = "1.0"
 futures-timer = "3.0"
 globset = "0.4"
 governor = "0.3"
+itertools = "0.10"
 lazy_static = "1"
 libc = "0.2"
 mdns = { version = "1", optional = true }

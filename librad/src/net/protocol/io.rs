@@ -27,7 +27,10 @@ use super::{
     State,
 };
 use crate::{
-    git::storage::pool::{PoolError, PooledStorage},
+    git::{
+        self,
+        storage::pool::{PoolError, PooledStorage},
+    },
     identities::SomeUrn,
     net::{
         codec::{CborCodec, CborCodecError, CborError},
@@ -353,25 +356,36 @@ where
         }
     }
 
-    async fn go<S, T>(state: State<S>, mut framing: Framed<T, IngressSynCodec>) -> Result<(), Error>
+    async fn go<T>(
+        storage: impl AsRef<git::storage::Storage>,
+        mut framing: Framed<T, IngressSynCodec>,
+    ) -> Result<(), Error>
     where
-        S: PooledStorage,
         T: AsyncRead + AsyncWrite + Unpin,
     {
         if let Some(req) = framing.try_next().await? {
-            let storage = state.storage.get().await?;
-            for resp in syn::handle_request(storage, req).await? {
-                framing.send(resp).await?
+            for resp in syn::handle_request(storage.as_ref(), req)? {
+                framing.start_send_unpin(resp?)?;
             }
+            framing.flush().await?;
         }
 
         Ok(())
     }
 
-    let framing = Framed::new(stream.into_stream(), IngressSynCodec::new());
-    if let Err(e) = go(state, framing).await {
-        tracing::error!(err = ?e, "{}", e)
-    }
+    state
+        .storage
+        .get()
+        .map_err(Error::from)
+        .and_then(|storage| {
+            go(
+                storage,
+                Framed::new(stream.into_stream(), IngressSynCodec::new()),
+            )
+        })
+        .inspect_err(|e| tracing::error!(err = ?e, "{}", e))
+        .unwrap_or_else(|_| ())
+        .await
 }
 
 pub(super) async fn connect_peer_info<'a>(
@@ -526,6 +540,7 @@ where
     let (num_requested, filter) = {
         let sync = state.sync.read();
         match sync.snapshot() {
+            // no snapshot, no sync
             None => Ok((0, None)),
             Some(bloom) => {
                 let n = cmp::min(bloom.approx_elements(), syn::MAX_OFFER_TOTAL);
