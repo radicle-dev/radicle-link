@@ -18,7 +18,7 @@ directories = "3.0"
 dyn-clone = "1.0"
 futures-timer = "3.0"
 globset = "0.4"
-governor = "0.3"
+governor = ">=0.3.2"
 lazy_static = "1"
 libc = "0.2"
 mdns = { version = "1", optional = true }
@@ -110,14 +110,6 @@ features = ["logging", "dangerous_configuration"]
 [dependencies.serde]
 version = "1.0"
 features = ["derive"]
-
-# Note: this is not a direct dependency. governor depends on
-# parking_lot, which depends on smallvec. There is vulnerability
-# in v1.0 and so we're forcing cargo to use this version instead.
-#
-# Tracking issue in governor: https://github.com/antifuchs/governor/issues/60
-[dependencies.smallvec]
-version = ">=1.6.1"
 
 [dependencies.tokio]
 version = "0.2"
