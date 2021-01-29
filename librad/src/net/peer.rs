@@ -546,6 +546,11 @@ impl LocalStorage for PeerStorage {
                 // FIXME(fintohaps): Do we want to tell the malkovich when we are behind in the
                 // gossip message?
                 Ok(ReplicateResult::Latest) | Ok(ReplicateResult::Behind) => {
+                    // The peer we fetch from is always the `origin` we figured out.
+                    let urn = Right(Originates {
+                        from: origin,
+                        value: has.urn.clone(),
+                    });
                     if self.git_has(urn, head).await {
                         PutResult::Applied(Gossip {
                             // Ensure we propagate exactly the `origin` we
