@@ -112,16 +112,16 @@ async fn reset_sync_period<S>(state: State<S>, force: bool) -> Result<(), error:
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
 {
-    let delay = force
-        .then(|| {
-            state
-                .sync
-                .read()
-                .deadline()
-                .checked_duration_since(Instant::now())
-                .map(Delay::new)
-        })
-        .flatten();
+    let delay = if force {
+        None
+    } else {
+        state
+            .sync
+            .read()
+            .deadline()
+            .checked_duration_since(Instant::now())
+            .map(Delay::new)
+    };
     if let Some(wait) = delay {
         wait.await
     }
