@@ -122,7 +122,7 @@ where
     loop {
         futures::select! {
             incoming = ingress.try_next() => match incoming {
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(e),
                 Ok(Some((_, streams))) => {
                     tasks.push(tokio::spawn(ingress_streams(state.clone(), streams)));
                 },
@@ -472,11 +472,11 @@ where
         move || {
             for resp in rx {
                 futures::executor::block_on(
-                    syn::handle_response(&pool, resp, remote_id, None).for_each(|res| {
-                        future::ready(res.map_or_else(
+                    syn::handle_response(&pool, resp, remote_id, None).for_each(|res| async {
+                        res.map_or_else(
                             |e| tracing::error!(err = ?e, "mutual sync error"),
                             |SomeUrn::Git(urn)| tracing::info!(urn = %urn, "sync succeeded"),
-                        ))
+                        )
                     }),
                 )
             }
