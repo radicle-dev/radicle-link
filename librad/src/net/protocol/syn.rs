@@ -36,7 +36,6 @@ pub const MAX_OFFER_TOTAL: usize = 10_000;
 pub struct Config {
     pub sync_period: Duration,
     pub bloom_filter_accuracy: f64,
-    pub mutual: MutualSyncPolicy,
 }
 
 impl Default for Config {
@@ -44,21 +43,7 @@ impl Default for Config {
         Self {
             sync_period: Duration::from_secs(5 * 60),
             bloom_filter_accuracy: 0.0001,
-            mutual: MutualSyncPolicy::default(),
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum MutualSyncPolicy {
-    Always,
-    Never,
-    WithinSyncPeriod,
-}
-
-impl Default for MutualSyncPolicy {
-    fn default() -> Self {
-        Self::WithinSyncPeriod
     }
 }
 
@@ -122,7 +107,7 @@ pub fn handle_response<S>(
     storage: &S,
     response: Response,
     remote_id: PeerId,
-    remote_addr: SocketAddr,
+    remote_addr: Option<SocketAddr>,
 ) -> impl futures::Stream<Item = Result<SomeUrn, error::Response>> + '_
 where
     S: PooledStorage + Send + Sync + 'static,
@@ -134,13 +119,13 @@ where
             let SomeUrn::Git(gurn) = urn.clone();
             let storage = storage.get().await?;
             let task = tokio::task::spawn_blocking(move || {
-                replication::replicate(storage.as_ref(), None, gurn, remote_id, Some(remote_addr))
+                replication::replicate(storage.as_ref(), None, gurn, remote_id, remote_addr)
             });
 
             match task.await {
                 Err(e) => {
-                    if let Ok(panicked) = e.try_into_panic() {
-                        panic::resume_unwind(panicked)
+                    if let Ok(panik) = e.try_into_panic() {
+                        panic::resume_unwind(panik)
                     } else {
                         Err(error::Response::Cancelled)
                     }

@@ -3,13 +3,13 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{cmp, collections::BTreeSet, convert::TryFrom, io, net::SocketAddr};
+use std::{cmp, collections::BTreeSet, convert::TryFrom, io, net::SocketAddr, panic};
 
 use futures::{
     future::{self, TryFutureExt as _},
     io::{AsyncRead, AsyncWrite},
     sink::SinkExt as _,
-    stream::{self, StreamExt as _, TryStreamExt as _},
+    stream::{self, FuturesUnordered, StreamExt as _, TryStreamExt as _},
 };
 use futures_codec::{Framed, FramedRead, FramedWrite};
 use thiserror::Error;
@@ -92,11 +92,23 @@ where
     }
 }
 
+/// Handle incoming [`quic::Connection`]s.
+///
+/// This function does not terminate, unless the `ingress` stream yields an
+/// error (which is returned), or the stream terminates, in which case
+/// [`quic::Error::Shutdown`] is returned. Before an error is retuned, a
+/// [`event::Endpoint::Down`] event is emitted.
+///
+/// # Panics
+///
+/// If a task handling an incoming stream panics, the panic is resumed on the
+/// current thread. The [`event::Endpoint::Down`] event is emitted just before
+/// the panic is resumed.
+///
+/// See also https://github.com/radicle-dev/radicle-link/issues/505 for why this
+/// may not be sufficient in all cases.
 #[tracing::instrument(skip(state, ingress), err)]
-pub(super) async fn ingress_connections<S, I>(
-    state: State<S>,
-    mut ingress: I,
-) -> Result<!, quic::Error>
+pub(super) async fn ingress_connections<S, I>(state: State<S>, ingress: I) -> Result<!, quic::Error>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     I: futures::Stream<Item = quic::Result<(quic::Connection, quic::IncomingStreams<'static>)>>
@@ -105,11 +117,43 @@ where
     let listen_addrs = state.endpoint.listen_addrs()?.collect();
     state.events.emit(event::Endpoint::Up { listen_addrs });
 
-    while let Some((_, streams)) = ingress.try_next().await? {
-        tokio::spawn(ingress_streams(state.clone(), streams));
+    let mut ingress = ingress.fuse();
+    let mut tasks = FuturesUnordered::new();
+    loop {
+        futures::select! {
+            incoming = ingress.try_next() => match incoming {
+                Err(e) => return Err(e.into()),
+                Ok(Some((_, streams))) => {
+                    tasks.push(tokio::spawn(ingress_streams(state.clone(), streams)));
+                },
+                Ok(None) => break,
+            },
+
+            res = tasks.next() => {
+                if let Some(res) = res {
+                    if let Err(e) = res {
+                        if let Ok(panik) = e.try_into_panic() {
+                            state.events.emit(event::Endpoint::Down);
+                            panic::resume_unwind(panik)
+                        }
+                    }
+                }
+            },
+
+            complete => break
+        }
     }
 
     state.events.emit(event::Endpoint::Down);
+
+    while let Some(res) = tasks.next().await {
+        if let Err(e) = res {
+            if let Ok(panik) = e.try_into_panic() {
+                panic::resume_unwind(panik)
+            }
+        }
+    }
+
     Err(quic::Error::Shutdown)
 }
 
@@ -139,11 +183,12 @@ pub(super) async fn ingress_streams<S>(
         })
         .fuse();
 
+    let mut tasks = FuturesUnordered::new();
     loop {
         futures::select! {
             stream = bidi.next() => match stream {
                 Some(item) => match item {
-                    Ok(stream) => ingress_bidi(state.clone(), stream).await,
+                    Ok(stream) => tasks.push(tokio::spawn(ingress_bidi(state.clone(), stream))),
                     Err(e) => {
                         tracing::warn!(err = ?e, "ingress bidi error");
                         break
@@ -155,7 +200,7 @@ pub(super) async fn ingress_streams<S>(
             },
             stream = uni.next() => match stream {
                 Some(item) => match item {
-                    Ok(stream) => ingress_uni(state.clone(), stream).await,
+                    Ok(stream) => tasks.push(tokio::spawn(ingress_uni(state.clone(), stream))),
                     Err(e) => {
                         tracing::warn!(err = ?e, "ingress uni error");
                         break
@@ -165,10 +210,27 @@ pub(super) async fn ingress_streams<S>(
                     break
                 }
             },
+            res = tasks.next() => {
+                if let Some(res) = res {
+                    if let Err(e) = res {
+                        if let Ok(panik) = e.try_into_panic() {
+                            panic::resume_unwind(panik)
+                        }
+                    }
+                }
+            },
             complete => break
         }
     }
-    tracing::debug!("ingress_streams done");
+    tracing::debug!("ingress_streams done, draining tasks");
+    while let Some(res) = tasks.next().await {
+        if let Err(e) = res {
+            if let Ok(panik) = e.try_into_panic() {
+                panic::resume_unwind(panik)
+            }
+        }
+    }
+    tracing::debug!("tasks drained");
 }
 
 pub(super) async fn ingress_bidi<S>(state: State<S>, stream: quic::BidiStream)
@@ -329,8 +391,8 @@ where
 
 async fn ingress_syn<S, T>(state: State<S>, stream: Upgraded<upgrade::Syn, T>)
 where
-    S: PooledStorage,
-    T: AsyncRead + AsyncWrite + Unpin,
+    S: PooledStorage + Clone + Send + Sync + 'static,
+    T: RemotePeer + AsyncRead + AsyncWrite + Unpin,
 {
     #[derive(Debug, Error)]
     enum Error {
@@ -359,13 +421,22 @@ where
     async fn go<T>(
         storage: impl AsRef<git::storage::Storage>,
         mut framing: Framed<T, IngressSynCodec>,
+        chan: std::sync::mpsc::SyncSender<syn::Response>,
     ) -> Result<(), Error>
     where
         T: AsyncRead + AsyncWrite + Unpin,
     {
         if let Some(req) = framing.try_next().await? {
+            let is_unconstrained = {
+                let syn::Request::ListNamespaces { filter } = &req;
+                filter.is_none()
+            };
             for resp in syn::handle_request(storage.as_ref(), req)? {
-                framing.start_send_unpin(resp?)?;
+                let resp = resp?;
+                framing.start_send_unpin(resp.clone())?;
+                if !is_unconstrained {
+                    chan.send(resp).ok();
+                }
             }
             framing.flush().await?;
         }
@@ -373,19 +444,59 @@ where
         Ok(())
     }
 
+    // Mutually sync every Urn we sent out (unless the request was unconstrained).
+    // This is not ideal: we'd actually want to tag git fetches as being
+    // syncing, in which case we would initiate a fetch from the "server" side,
+    // too. This way, if a peer already knows what the remote has, it can
+    // selectively sync repos. Funneling this through our libgit2 shenanigans is
+    // not entirely trivial, though.
+    //
+    // Note that we are using a sync channel here. This is because we cannot
+    // have an await point in the loop over the responses above, but we want to
+    // throttle the remote peer while we (and them) are syncing a batch of repos.
+    //
+    // # Liveness
+    //
+    // * Every stream handler is spawned as a separate task
+    // * The receiver is spawned as a separate (blocking) task
+    // * Both the receiver and sender terminate after the last batch has been
+    //   processed
+    //
+    // That is, we may block two threads for the duration of the request. While
+    // both are blocked, the runtime can still make progress, unless the entire
+    // thread budget is exhausted.
+    let (tx, rx) = std::sync::mpsc::sync_channel(4);
+    let mutual = tokio::task::spawn_blocking({
+        let remote_id = stream.remote_peer_id();
+        let pool = state.storage.clone();
+        move || {
+            for resp in rx {
+                futures::executor::block_on(
+                    syn::handle_response(&pool, resp, remote_id, None).for_each(|res| {
+                        future::ready(res.map_or_else(
+                            |e| tracing::error!(err = ?e, "mutual sync error"),
+                            |SomeUrn::Git(urn)| tracing::info!(urn = %urn, "sync succeeded"),
+                        ))
+                    }),
+                )
+            }
+        }
+    });
+
+    let framing = Framed::new(stream.into_stream(), IngressSynCodec::new());
     state
         .storage
         .get()
         .map_err(Error::from)
-        .and_then(|storage| {
-            go(
-                storage,
-                Framed::new(stream.into_stream(), IngressSynCodec::new()),
-            )
-        })
+        .and_then(|storage| go(storage, framing, tx))
         .inspect_err(|e| tracing::error!(err = ?e, "{}", e))
         .unwrap_or_else(|_| ())
-        .await
+        .await;
+    if let Err(e) = mutual.await {
+        if let Ok(panik) = e.try_into_panic() {
+            panic::resume_unwind(panik)
+        }
+    }
 }
 
 pub(super) async fn connect_peer_info<'a>(
@@ -564,7 +675,7 @@ where
     framing
         .take(num_requested / syn::rpc::MAX_OFFER_BATCH_SIZE)
         .map_ok(|resp| {
-            syn::handle_response(&state.storage, resp, remote_id, remote_addr)
+            syn::handle_response(&state.storage, resp, remote_id, Some(remote_addr))
                 .map_err(error::InitiateSync::from)
         })
         .try_flatten()
