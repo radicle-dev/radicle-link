@@ -49,7 +49,7 @@ impl Event {
     ) -> Result<Self, Error> {
         let proj = api
             .with_storage({
-                let urn = urn.clone();
+                let urn = Urn::new(urn.id);
                 move |s| identities::project::get(&s, &urn)
             })
             .await??;
