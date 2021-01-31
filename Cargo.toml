@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "copy",
   "git-ext",
   "git-helpers",
   "librad",
