@@ -7,6 +7,7 @@ pub mod delegation;
 pub mod generic;
 pub mod git;
 pub mod payload;
+pub mod relations;
 pub mod sign;
 pub mod urn;
 
