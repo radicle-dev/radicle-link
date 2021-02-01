@@ -12,7 +12,7 @@ use crate::PeerId;
 pub enum Downstream {
     Gossip(downstream::Gossip),
     Info(downstream::Info),
-    State(downstream::State),
+    Graft(downstream::Graft),
 }
 
 pub mod downstream {
@@ -67,12 +67,12 @@ pub mod downstream {
     }
 
     #[derive(Clone, Debug)]
-    pub enum State {
-        GraftReset {
+    pub enum Graft {
+        Reset {
             when: GraftResetPolicy,
             reply: Reply<Result<(), error::GraftReset>>,
         },
-        GraftInitiate {
+        Initiate {
             remote_id: PeerId,
             addr_hints: Vec<SocketAddr>,
             reply: Reply<Result<(), error::GraftInitiate>>,

@@ -77,14 +77,14 @@ where
     }
 }
 
-pub(super) async fn state<S>(state: State<S>, evt: event::downstream::State)
+pub(super) async fn graft<S>(state: State<S>, evt: event::downstream::Graft)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
 {
-    use event::downstream::State;
+    use event::downstream::Graft;
 
     match evt {
-        State::GraftReset { when, reply } => {
+        Graft::Reset { when, reply } => {
             let chan = reply.lock().take();
             if let Some(tx) = chan {
                 tokio::spawn(async move {
@@ -94,7 +94,7 @@ where
             }
         },
 
-        State::GraftInitiate {
+        Graft::Initiate {
             remote_id,
             addr_hints,
             reply,

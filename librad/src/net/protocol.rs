@@ -207,12 +207,12 @@ impl Graft {
     where
         Addrs: IntoIterator<Item = SocketAddr>,
     {
-        use event::{downstream::State::GraftInitiate, Downstream};
+        use event::{downstream::Graft::Initiate, Downstream};
 
         let (tx, rx) = tokio::sync::oneshot::channel();
         let reply = Arc::new(Mutex::new(Some(tx)));
         self.0
-            .send(Downstream::State(GraftInitiate {
+            .send(Downstream::Graft(Initiate {
                 remote_id,
                 addr_hints: addr_hints.into_iter().collect(),
                 reply,
@@ -226,12 +226,12 @@ impl Graft {
         &self,
         when: event::downstream::GraftResetPolicy,
     ) -> Result<(), error::GraftReset> {
-        use event::{downstream::State::GraftReset, Downstream};
+        use event::{downstream::Graft::Reset, Downstream};
 
         let (tx, rx) = tokio::sync::oneshot::channel();
         let reply = Arc::new(Mutex::new(Some(tx)));
         self.0
-            .send(Downstream::State(GraftReset { when, reply }))
+            .send(Downstream::Graft(Reset { when, reply }))
             .or(Err(error::GraftReset::Unavailable))?;
 
         rx.await.or(Err(error::GraftReset::Unavailable))?

@@ -118,7 +118,7 @@ where
                 match evt {
                     Downstream::Gossip(gossip) => control::gossip(&state, gossip).await,
                     Downstream::Info(info) => control::info(&state, info),
-                    Downstream::State(cmd) => control::state(state.clone(), cmd).await,
+                    Downstream::Graft(cmd) => control::graft(state.clone(), cmd).await,
                 };
             },
         }
