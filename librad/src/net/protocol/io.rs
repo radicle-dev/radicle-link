@@ -253,7 +253,7 @@ where
 
         Ok(Gossip(up)) => ingress_gossip(state, up).await,
         Ok(Membership(up)) => ingress_membership(state, up).await,
-        Ok(Graft(up)) => ingress_syn(state, up).await,
+        Ok(Graft(up)) => ingress_graft(state, up).await,
     }
 }
 
@@ -389,7 +389,7 @@ where
     }
 }
 
-async fn ingress_syn<S, T>(state: State<S>, stream: Upgraded<upgrade::Graft, T>)
+async fn ingress_graft<S, T>(state: State<S>, stream: Upgraded<upgrade::Graft, T>)
 where
     S: storage::Pooled + Clone + Send + Sync + 'static,
     T: RemotePeer + AsyncRead + AsyncWrite + Unpin,
