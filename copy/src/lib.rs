@@ -5,6 +5,10 @@
 
 #![feature(never_type)]
 
+use std::{convert::TryFrom as _, path::PathBuf};
+
+use either::Either;
+
 use librad::{
     self,
     git::{
@@ -14,9 +18,12 @@ use librad::{
             url::LocalUrl,
         },
         storage::Storage,
+        types::{Namespace, Reference},
+        Urn,
     },
     identities::{delegation::Indirect, payload},
     paths::Paths,
+    peer::PeerId,
     signer::BoxedSigner,
 };
 
@@ -24,6 +31,7 @@ pub mod error;
 use error::Error;
 
 pub mod existing;
+pub mod fork;
 pub mod include;
 pub mod new;
 
@@ -79,4 +87,42 @@ where
     librad::git::include::set_include_path(&repo, path).map_err(include::Error::from)?;
 
     Ok(project)
+}
+
+pub fn fork(
+    paths: Paths,
+    signer: BoxedSigner,
+    storage: &Storage,
+    peer: Option<PeerId>,
+    path: PathBuf,
+    urn: &Urn,
+) -> Result<(), Error> {
+    let project = identities::project::verify(storage, urn)?
+        .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
+    let transport = transport::Settings {
+        paths: paths.clone(),
+        signer,
+    };
+
+    let from = {
+        let local = storage.peer_id();
+        match peer {
+            None => Either::Left(fork::Local::new(&project, path)),
+            Some(peer) if peer == *local => Either::Left(fork::Local::new(&project, path)),
+            Some(peer) => {
+                let urn = Urn::try_from(Reference::rad_self(Namespace::from(&project.urn()), peer))
+                    .expect("namespace is set");
+                let person = identities::person::verify(storage, &urn)?
+                    .ok_or_else(|| identities::Error::NotFound(urn.clone()))?
+                    .into_inner();
+                Either::Right(fork::Peer::new(&project, (person, peer), path)?)
+            },
+        }
+    };
+    let repo = fork::fork(transport, &project, from)?;
+
+    let include = include::update(storage, &paths, &project)?;
+    librad::git::include::set_include_path(&repo, include).map_err(include::Error::from)?;
+
+    Ok(())
 }

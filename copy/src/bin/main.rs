@@ -21,6 +21,7 @@ use librad::{
     internal::canonical::Cstring,
     keys::{PublicKey, SecretKey},
     paths::Paths,
+    peer::PeerId,
     signer::{BoxedSigner, SomeSigner},
 };
 use radicle_keystore::{
@@ -46,6 +47,7 @@ pub struct Args {
 #[argh(subcommand)]
 pub enum Command {
     Existing(Existing),
+    Fork(Fork),
     New(New),
     Update(Update),
 }
@@ -98,6 +100,28 @@ pub struct Existing {
     path: PathBuf,
 }
 
+/// 🔀 Creates a working copy on your filesystem based off of a Radicle project.
+///   * If no `--peer` is given the working copy will based off of your own view
+///     of the project.
+///   * If `--peer` is given and it's the same as the current peer, then it's
+///     the same as above.
+///   * If `--peer` is given and it's not the current peer, then the working
+///     copy will be based off
+///   of the remote's view of the project.
+#[derive(Debug, FromArgs)]
+#[argh(subcommand, name = "create-fork")]
+pub struct Fork {
+    /// the peer were are forking from
+    #[argh(option, from_str_fn(PeerId::try_from))]
+    peer: Option<PeerId>,
+    /// the project's URN
+    #[argh(option, from_str_fn(Urn::try_from))]
+    urn: Urn,
+    /// the path where we are creating the working copy
+    #[argh(option)]
+    path: PathBuf,
+}
+
 fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
     let paths = Paths::from_env()?;
@@ -136,6 +160,11 @@ fn main() -> anyhow::Result<()> {
             let project = radicle_copy::init(paths, signer, &storage, whoami, valid)?;
 
             project_success(&project.urn(), path);
+        },
+        Command::Fork(Fork { peer, urn, path }) => {
+            radicle_copy::fork(paths, signer, &storage, peer, path.clone(), &urn)?;
+            println!("Your fork was created 🎉");
+            println!("The working copy exists at `{}`", path.display());
         },
         Command::Update(Update { urn }) => {
             let project = identities::project::get(&storage, &urn)?.ok_or_else(|| anyhow!(

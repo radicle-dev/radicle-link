@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use librad::{
     git::{
@@ -12,13 +12,14 @@ use librad::{
             url::LocalUrl,
         },
         types::{
-            remote::{LocalPushspec, Remote},
+            remote::{LocalFetchspec, LocalPushspec, Remote},
             Force,
             Refspec,
         },
     },
     git_ext::{self, OneLevel, Qualified},
     internal::canonical::Cstring,
+    reflike,
     refspec_pattern,
     std_ext::result::ResultExt as _,
 };
@@ -27,6 +28,9 @@ use librad::{
 pub enum Error {
     #[error(transparent)]
     Validation(#[from] validation::Error),
+
+    #[error(transparent)]
+    Ref(#[from] git_ext::name::StripPrefixError),
 
     #[error(transparent)]
     Transport(#[from] transport::Error),
@@ -147,6 +151,44 @@ pub fn set_upstream<Url>(
     config.set_multivar(&branch_remote, ".*", remote.name.as_str())?;
     config.set_multivar(&branch_merge, ".*", Qualified::from(branch).as_str())?;
     Ok(())
+}
+
+/// Clone a git repository to the `path` location, based off of the `remote`
+/// provided.
+///
+/// # Errors
+///   * if initialisation of the repository fails
+///   * if branch or remote manipulation fails
+pub fn clone<F>(
+    path: &Path,
+    storage: F,
+    mut remote: Remote<LocalUrl>,
+) -> Result<(git2::Repository, Remote<LocalUrl>), Error>
+where
+    F: CanOpenStorage + 'static,
+{
+    let repo = git2::Repository::init(path)?;
+    remote.save(&repo)?;
+    for (reference, oid) in remote.fetch(storage, &repo, LocalFetchspec::Configured)? {
+        let msg = format!("Fetched `{}->{}`", reference, oid);
+        tracing::debug!("{}", msg);
+
+        let branch: git_ext::RefLike = OneLevel::from(reference).into();
+        let branch = branch.strip_prefix(remote.name.clone())?;
+        let branch = branch.strip_prefix(reflike!("heads")).unwrap_or(branch);
+        let _remote_branch = repo.reference(
+            reflike!("refs/remotes")
+                .join(remote.name.clone())
+                .join(branch.clone())
+                .as_str(),
+            oid,
+            true,
+            &msg,
+        )?;
+        let _local_branch = repo.reference(Qualified::from(branch).as_str(), oid, true, &msg);
+    }
+
+    Ok((repo, remote))
 }
 
 pub mod validation {
