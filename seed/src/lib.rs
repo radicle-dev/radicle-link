@@ -26,7 +26,7 @@ use librad::{
     net::{
         discovery::{self, Discovery as _},
         peer::{self, Peer, ProtocolEvent},
-        protocol::{self, PeerInfo},
+        protocol::{self, graft, PeerInfo},
         Network,
     },
     paths,
@@ -134,6 +134,7 @@ impl Node {
         } else {
             paths::Paths::new()?
         };
+        let replication = Default::default();
         let peer_config = peer::Config {
             signer,
             protocol: protocol::Config {
@@ -141,7 +142,11 @@ impl Node {
                 listen_addr: config.listen_addr,
                 membership: Default::default(),
                 network: config.network,
-                graft: Default::default(),
+                replication,
+                graft: graft::Config {
+                    replication,
+                    ..Default::default()
+                },
             },
             storage_pools: Default::default(),
         };
@@ -300,9 +305,10 @@ impl Node {
         let addr_hints = peer_info.seen_addrs.iter().copied().collect::<Vec<_>>();
 
         let result = {
+            let cfg = api.protocol_config().replication;
             let urn = urn.clone();
             api.using_storage(move |storage| {
-                replication::replicate(&storage, None, urn.clone(), peer_id, addr_hints)?;
+                replication::replicate(&storage, cfg, None, urn.clone(), peer_id, addr_hints)?;
                 tracking::track(&storage, &urn, peer_id)?;
 
                 Ok::<_, Error>(())

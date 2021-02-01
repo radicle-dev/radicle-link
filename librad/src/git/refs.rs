@@ -25,7 +25,7 @@ use thiserror::Error;
 use super::{
     storage::{self, Storage},
     tracking,
-    types::{Namespace, Reference},
+    types::{Namespace, Reference, RefsCategory},
 };
 use crate::{
     internal::canonical::{Cjson, CjsonError},
@@ -201,10 +201,25 @@ pub mod stored {
     }
 }
 
-/// The current `refs/heads` and [`Remotes`] (transitive tracking graph)
+/// The published state of a local repository.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Refs {
+    /// `refs/heads/*`
     pub heads: BTreeMap<reference::OneLevel, Oid>,
+
+    /// `refs/rad/*`, excluding `refs/rad/signed_refs`
+    pub rad: BTreeMap<reference::OneLevel, Oid>,
+
+    /// `refs/tags/*`
+    pub tags: BTreeMap<reference::OneLevel, Oid>,
+
+    /// `refs/notes/*`
+    pub notes: BTreeMap<reference::OneLevel, Oid>,
+
+    /// The [`Remotes`], ie. tracking graph.
+    ///
+    /// Note that this does does not include the oids, as they can be determined
+    /// by inspecting the `rad/signed_refs` of the respective remote.
     pub remotes: Remotes<PeerId>,
 }
 
@@ -214,29 +229,44 @@ impl Refs {
     pub fn compute(storage: &Storage, urn: &Urn) -> Result<Self, stored::Error> {
         let namespace = Namespace::from(urn);
         let namespace_prefix = format!("refs/namespaces/{}/", namespace);
-        let heads_ref = Reference::heads(namespace, None);
 
-        tracing::debug!("reading heads from {}", &heads_ref);
+        fn peeled(r: Result<git2::Reference, storage::Error>) -> Option<(String, git2::Oid)> {
+            r.ok().and_then(|head| {
+                head.name()
+                    .and_then(|name| head.target().map(|target| (name.to_owned(), target)))
+            })
+        }
+
+        let refined = |(name, oid): (String, git2::Oid)|
+             -> Result<(reference::OneLevel, Oid), stored::Error>
+        {
+            let name = reference::RefLike::try_from(
+                name.strip_prefix(&namespace_prefix).unwrap_or(&name)
+            )?;
+            Ok((reference::OneLevel::from(name), oid.into()))
+        };
 
         let heads = storage
-            .references(&heads_ref)?
-            // FIXME: this is `git_ext::reference::iter::References::peeled()`,
-            // which we need to generalise to allow impl Iterator combinators
-            .filter_map(|reference| {
-                reference.ok().and_then(|head| {
-                    head.name()
-                        .and_then(|name| head.target().map(|target| (name.to_owned(), target)))
-                })
-            })
-            .try_fold(BTreeMap::new(), |mut acc, (name, oid)| {
-                tracing::trace!("raw refname: {}", name);
-                let name = name.strip_prefix(&namespace_prefix).unwrap_or(&name);
-                tracing::trace!("stripped namespace: {}", name);
-                let refname = reference::RefLike::try_from(name)?;
-                acc.insert(reference::OneLevel::from(refname), oid.into());
-
-                Ok::<_, stored::Error>(acc)
-            })?;
+            .references(&Reference::heads(namespace.clone(), None))?
+            .filter_map(peeled)
+            .map(refined)
+            .collect::<Result<_, _>>()?;
+        let rad = storage
+            .references(&Reference::rads(namespace.clone(), None))?
+            .filter_map(peeled)
+            .filter(|(name, _)| !name.ends_with("rad/signed_refs"))
+            .map(refined)
+            .collect::<Result<_, _>>()?;
+        let tags = storage
+            .references(&Reference::tags(namespace.clone(), None))?
+            .filter_map(peeled)
+            .map(refined)
+            .collect::<Result<_, _>>()?;
+        let notes = storage
+            .references(&Reference::notes(namespace, None))?
+            .filter_map(peeled)
+            .map(refined)
+            .collect::<Result<_, _>>()?;
 
         let mut remotes = tracking::tracked(storage, urn)?.collect::<Remotes<PeerId>>();
         for (peer, tracked) in remotes.iter_mut() {
@@ -245,7 +275,13 @@ impl Refs {
             }
         }
 
-        Ok(Self { heads, remotes })
+        Ok(Self {
+            heads,
+            rad,
+            tags,
+            notes,
+            remotes,
+        })
     }
 
     /// Load the [`Refs`] of [`Urn`] (and optionally a remote `peer`) from
@@ -351,6 +387,26 @@ impl Refs {
             signature: signature.into(),
             _verified: PhantomData,
         })
+    }
+
+    /// Iterator over all non-remote refs and their targets, paired with their
+    /// corresponding `RefsCategory`.
+    pub fn iter_categorised(
+        &self,
+    ) -> impl Iterator<Item = ((&reference::OneLevel, &Oid), RefsCategory)> {
+        let Refs {
+            heads,
+            rad,
+            tags,
+            notes,
+            remotes: _,
+        } = self;
+        heads
+            .iter()
+            .map(|x| (x, RefsCategory::Heads))
+            .chain(rad.iter().map(|x| (x, RefsCategory::Rad)))
+            .chain(tags.iter().map(|x| (x, RefsCategory::Tags)))
+            .chain(notes.iter().map(|x| (x, RefsCategory::Notes)))
     }
 
     fn canonical_form(&self) -> Result<Vec<u8>, CjsonError> {

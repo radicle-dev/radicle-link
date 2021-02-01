@@ -6,7 +6,7 @@
 use thiserror::Error;
 
 use super::{
-    super::{storage, types::reference},
+    super::{refs, storage, types::reference},
     local,
 };
 use crate::identities::{
@@ -26,6 +26,9 @@ pub enum Error {
 
     #[error("failed to build URN from ref")]
     UrnFromRef(#[from] urn::FromRefLikeError),
+
+    #[error("update of signed_refs failed")]
+    Sigrefs(#[from] refs::stored::Error),
 
     #[error(transparent)]
     LocalId(#[from] local::ValidationError),

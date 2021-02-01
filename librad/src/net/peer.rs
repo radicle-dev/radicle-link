@@ -91,10 +91,16 @@ where
 {
     pub fn new(config: Config<S>) -> Self {
         let phone = protocol::TinCans::default();
-        let peer_store = PeerStorage::new(git::storage::Pool::new(
-            git::storage::pool::Config::new(config.protocol.paths.clone(), config.signer.clone()),
-            config.storage_pools.protocol,
-        ));
+        let peer_store = PeerStorage::new(
+            git::storage::Pool::new(
+                git::storage::pool::Config::new(
+                    config.protocol.paths.clone(),
+                    config.signer.clone(),
+                ),
+                config.storage_pools.protocol,
+            ),
+            config.protocol.replication,
+        );
         let git_store = git::storage::Pool::new(
             git::storage::pool::Config::new(config.protocol.paths.clone(), config.signer.clone()),
             config.storage_pools.user,
@@ -114,6 +120,10 @@ where
 
     pub fn peer_id(&self) -> PeerId {
         PeerId::from_signer(self.signer())
+    }
+
+    pub fn protocol_config(&self) -> &protocol::Config {
+        &self.config.protocol
     }
 
     pub fn announce(&self, have: gossip::Payload) -> Result<(), gossip::Payload> {

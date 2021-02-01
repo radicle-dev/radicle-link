@@ -74,6 +74,7 @@ pub const MAX_OFFER_TOTAL: usize = 10_000;
 pub struct Config {
     pub sync_period: Duration,
     pub bloom_filter_accuracy: f64,
+    pub replication: replication::Config,
 }
 
 impl Default for Config {
@@ -81,6 +82,7 @@ impl Default for Config {
         Self {
             sync_period: Duration::from_secs(5 * 60),
             bloom_filter_accuracy: 0.0001,
+            replication: Default::default(),
         }
     }
 }
@@ -109,6 +111,10 @@ impl State {
         Ok(())
     }
 
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
     pub fn should_sync(&self) -> bool {
         self.snapshot.is_some() && Instant::now() > self.deadline
     }
@@ -131,13 +137,12 @@ pub fn ask(
         .map(bloom::BloomFilter::try_from)
         .transpose()
         .map_err(error::Ask::Bloom)?;
-    let offers = self::offers(storage, bloom)?.map(|of| of.map_err(error::Ask::from));
-
-    Ok(offers)
+    Ok(self::offers(storage, bloom)?)
 }
 
 #[tracing::instrument(skip(storage))]
 pub fn on_offer<S>(
+    config: Config,
     storage: &S,
     offer: Offer,
     remote_id: PeerId,
@@ -146,13 +151,21 @@ pub fn on_offer<S>(
 where
     S: storage::Pooled + Send + Sync + 'static,
 {
+    let rconfig = config.replication;
     offer
         .into_iter()
         .map(move |urn| async move {
             let SomeUrn::Git(gurn) = urn.clone();
             let storage = storage.get().await?;
             let task = tokio::task::spawn_blocking(move || {
-                replication::replicate(storage.as_ref(), None, gurn, remote_id, remote_addr)
+                replication::replicate(
+                    storage.as_ref(),
+                    rconfig,
+                    None,
+                    gurn,
+                    remote_id,
+                    remote_addr,
+                )
             });
 
             match task.await {
@@ -164,7 +177,7 @@ where
                     }
                 },
 
-                Ok(res) => Ok(res.map(|()| urn)?),
+                Ok(res) => Ok(res.map(|_| urn)?),
             }
         })
         .collect::<FuturesUnordered<_>>()

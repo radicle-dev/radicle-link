@@ -22,7 +22,7 @@ use librad::{
     net::{
         discovery::{self, Discovery as _},
         peer::{self, Peer},
-        protocol,
+        protocol::{self, graft},
     },
     paths::Paths,
     peer::PeerId,
@@ -79,12 +79,17 @@ where
     git::storage::Storage::init(&paths, key.clone())?;
 
     let listen_addr = *LOCALHOST_ANY;
+    let replication = Default::default();
     let protocol = protocol::Config {
         paths,
         listen_addr,
         membership: Default::default(),
         network: Default::default(),
-        graft: Default::default(),
+        replication,
+        graft: graft::Config {
+            replication,
+            ..Default::default()
+        },
     };
     let disco = seeds.into_iter().collect::<discovery::Static>();
     let storage_pools = peer::PoolSizes::default();

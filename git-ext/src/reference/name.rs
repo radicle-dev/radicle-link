@@ -477,6 +477,13 @@ impl Display for Qualified {
 pub struct RefspecPattern(PathBuf);
 
 impl RefspecPattern {
+    /// Append the `RefLike` to the `RefspecPattern`. This allows the creation
+    /// of patterns where the `*` appears in the middle of the path, e.g.
+    /// `refs/remotes/*/mfdoom`
+    pub fn append(&self, refl: impl Into<RefLike>) -> Self {
+        RefspecPattern(self.0.join(refl.into()))
+    }
+
     pub fn as_str(&self) -> &str {
         self.as_ref()
     }

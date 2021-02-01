@@ -466,16 +466,17 @@ where
     let mutual = tokio::task::spawn_blocking({
         let remote_id = stream.remote_peer_id();
         let pool = state.storage.clone();
+        let config = *state.graft.read().config();
         move || {
             for resp in rx {
-                futures::executor::block_on(graft::on_offer(&pool, resp, remote_id, None).for_each(
-                    |res| async {
+                futures::executor::block_on(
+                    graft::on_offer(config, &pool, resp, remote_id, None).for_each(|res| async {
                         res.map_or_else(
                             |e| tracing::error!(err = ?e, "mutual sync error"),
                             |SomeUrn::Git(urn)| tracing::info!(urn = %urn, "sync succeeded"),
                         )
-                    },
-                ))
+                    }),
+                )
             }
         }
     });
@@ -670,7 +671,8 @@ where
     framing
         .take(num_requested / graft::rpc::MAX_OFFER_BATCH_SIZE)
         .map_ok(|resp| {
-            graft::on_offer(&state.storage, resp, remote_id, Some(remote_addr))
+            let config = *state.graft.read().config();
+            graft::on_offer(config, &state.storage, resp, remote_id, Some(remote_addr))
                 .map_err(error::GraftInitiate::from)
         })
         .try_flatten()

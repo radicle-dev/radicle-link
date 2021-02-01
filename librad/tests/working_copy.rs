@@ -90,9 +90,10 @@ async fn can_fetch() {
         let tracked_persons = {
             let urn = project.urn();
             let peer1_id = peer1.peer_id();
+            let cfg = peer2.protocol_config().replication;
             peer2
                 .using_storage(move |store| {
-                    replication::replicate(&store, None, urn.clone(), peer1_id, None).unwrap();
+                    replication::replicate(&store, cfg, None, urn.clone(), peer1_id, None).unwrap();
                     tracking::tracked(&store, &urn)
                         .unwrap()
                         .map(|peer| {
