@@ -33,7 +33,7 @@ use crate::{
             server::GitServer,
             transport::{GitStream, GitStreamFactory},
         },
-        storage::pool::{PoolError, PooledRef, PooledStorage},
+        storage::{self, PoolError, PooledRef},
     },
     paths::Paths,
     signer::Signer,
@@ -352,9 +352,11 @@ impl Drop for Accept {
     }
 }
 
-pub trait ProtocolStorage<A>: broadcast::LocalStorage<A> + PooledStorage + Send + Sync {}
-impl<A, T> ProtocolStorage<A> for T where T: broadcast::LocalStorage<A> + PooledStorage + Send + Sync
-{}
+pub trait ProtocolStorage<A>: broadcast::LocalStorage<A> + storage::Pooled + Send + Sync {}
+impl<A, T> ProtocolStorage<A> for T where
+    T: broadcast::LocalStorage<A> + storage::Pooled + Send + Sync
+{
+}
 
 type Limiter = governor::RateLimiter<
     governor::state::direct::NotKeyed,
@@ -416,9 +418,9 @@ impl<S> broadcast::ErrorRateLimited for Storage<S> {
 }
 
 #[async_trait]
-impl<S> PooledStorage for Storage<S>
+impl<S> storage::Pooled for Storage<S>
 where
-    S: PooledStorage + Send + Sync,
+    S: storage::Pooled + Send + Sync,
 {
     async fn get(&self) -> Result<PooledRef, PoolError> {
         self.inner.get().await

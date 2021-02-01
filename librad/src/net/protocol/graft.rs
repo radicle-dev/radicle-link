@@ -20,7 +20,7 @@ use crate::{
     git::{
         identities,
         replication,
-        storage::{pool::PooledStorage, Storage},
+        storage::{self, Storage},
     },
     identities::SomeUrn,
     PeerId,
@@ -106,7 +106,7 @@ pub fn on_offer<S>(
     remote_addr: Option<SocketAddr>,
 ) -> impl futures::Stream<Item = Result<SomeUrn, error::Offer>> + '_
 where
-    S: PooledStorage + Send + Sync + 'static,
+    S: storage::Pooled + Send + Sync + 'static,
 {
     offer
         .into_iter()

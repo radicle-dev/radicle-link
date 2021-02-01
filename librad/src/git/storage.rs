@@ -23,7 +23,7 @@ pub mod pool;
 
 pub use config::Config;
 pub use glob::Pattern;
-pub use pool::{Pool, Pooled};
+pub use pool::{Pool, PoolError, Pooled, PooledRef};
 
 // FIXME: should be at the crate root
 pub use crate::identities::git::Urn;

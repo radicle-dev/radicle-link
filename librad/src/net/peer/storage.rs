@@ -12,10 +12,7 @@ use tokio::task::spawn_blocking;
 use crate::{
     git::{
         replication,
-        storage::{
-            pool::{PoolError, PooledRef, PooledStorage},
-            Pool,
-        },
+        storage::{self, Pool, PoolError, PooledRef},
         tracking,
         Urn,
     },
@@ -220,7 +217,7 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
 }
 
 #[async_trait]
-impl PooledStorage for Storage {
+impl storage::Pooled for Storage {
     async fn get(&self) -> Result<PooledRef, PoolError> {
         self.inner.get().await.map(PooledRef::from)
     }

@@ -29,7 +29,7 @@ use super::{
 use crate::{
     git::{
         self,
-        storage::pool::{PoolError, PooledStorage},
+        storage::{self, PoolError},
     },
     identities::SomeUrn,
     net::{
@@ -391,7 +391,7 @@ where
 
 async fn ingress_syn<S, T>(state: State<S>, stream: Upgraded<upgrade::Graft, T>)
 where
-    S: PooledStorage + Clone + Send + Sync + 'static,
+    S: storage::Pooled + Clone + Send + Sync + 'static,
     T: RemotePeer + AsyncRead + AsyncWrite + Unpin,
 {
     #[derive(Debug, Error)]
@@ -634,7 +634,7 @@ pub(super) async fn initiate_graft<S>(
     conn: quic::Connection,
 ) -> Result<(), error::GraftInitiate>
 where
-    S: PooledStorage + Send + Sync + 'static,
+    S: storage::Pooled + Send + Sync + 'static,
 {
     let remote_id = conn.remote_peer_id();
     let remote_addr = conn.remote_addr();
