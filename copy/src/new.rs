@@ -121,10 +121,9 @@ impl New<Valid> {
             &self.default_branch,
             &git2::Signature::now("Radicle Automated", "Radicle Automated")
                 .map_err(git::Error::Git)?,
-        )
-        .map_err(git::Error::Git)?;
+        )?;
         let remote = git::setup_remote(&repo, open_storage, url, &self.default_branch)?;
-        git::set_upstream(&repo, &remote, self.default_branch).map_err(git::Error::Git)?;
+        git::set_upstream(&repo, &remote, self.default_branch)?;
 
         Ok(repo)
     }

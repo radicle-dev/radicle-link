@@ -99,7 +99,7 @@ pub fn initial_commit(
     repo: &git2::Repository,
     default_branch: &OneLevel,
     signature: &git2::Signature<'static>,
-) -> Result<(), git2::Error> {
+) -> Result<(), Error> {
     // Now let's create an empty tree for this commit
     let tree_id = {
         let mut index = repo.index()?;
@@ -138,7 +138,7 @@ pub fn set_upstream<Url>(
     repo: &git2::Repository,
     remote: &Remote<Url>,
     branch: OneLevel,
-) -> Result<(), git2::Error> {
+) -> Result<(), Error> {
     let mut config = repo.config()?;
     let branch_remote = format!("branch.{}.remote", branch);
     let branch_merge = format!("branch.{}.merge", branch);
