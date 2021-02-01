@@ -199,6 +199,13 @@ impl Default for TinCans {
 pub struct Graft(tincan::Sender<event::Downstream>);
 
 impl Graft {
+    /// Initiate a [`graft`] exchange with the specified peer.
+    ///
+    /// It should rarely be needed to initiate a graft explicitly, instead of
+    /// relying on protocol defaults. Note also that namespace filter is not
+    /// recalculated when calling this method.
+    ///
+    /// [`graft`]: ./graft/index.html
     pub async fn initiate<Addrs>(
         &self,
         remote_id: PeerId,
@@ -222,6 +229,13 @@ impl Graft {
         rx.await.or(Err(error::GraftInitiate::Unavailable))?
     }
 
+    /// Reset the [`graft`]ing state.
+    ///
+    /// Namely, recalculate the namespace filter from persistent storage, and
+    /// reset the timer to the configured duration. Iow, prolong the sync period
+    /// for another round.
+    ///
+    /// [`graft`]: ./graft/index.html
     pub async fn reset(
         &self,
         when: event::downstream::GraftResetPolicy,

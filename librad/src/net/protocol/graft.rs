@@ -3,6 +3,44 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+//! Mutual storage synchronisation between two peers.
+//!
+//! We borrow the terminology "graft" from [Epidemic Broadcast Trees] (EBT),
+//! where grafting is a means for members of the gossip network to catch up when
+//! they suspect to have missed broadcast messages. Within the semantics given
+//! by EBT, `radicle-link` _always_ grafts, as no data payload is transmitted
+//! over gossip, only update announcements, which trigger `git` fetches. Such
+//! passive grafting is, however, not sufficient for mostly-disconnected peers,
+//! which we assume to form the majority in the `radice-link` network: the odds
+//! of peers to rendezvous with exactly the update announcements they are
+//! interested in are rather low. While this can be worked around with by
+//! emitting `Want` broadcasts, that method is rather inefficient, and causes
+//! undesired amplification. Therefore, we introduce a way to trigger a remote
+//! peer into a. advertising its top-level namespaces, and b. attempting to
+//! fetch those from the local peer.
+//!
+//! The details are essentially a workaround for the lack of [`git` protocol v2]
+//! support, and may thus be deprecated once `radicle-link` gains support for
+//! v2.
+//!
+//! Over the git protocol v2, ref advertisements are explicitly requested, and
+//! the requester may ask to apply prefix filters to the response. In a
+//! v2-world, the responder could distinguish between a normal and a graft fetch
+//! by determining whether the `ls-refs` command requests `ref-prefix` filters
+//! relative to the repository root, or a specific namespace (for example).
+//!
+//! We emulate `ref-prefix`ing by demanding that the initiator sends a bloom
+//! filter of the URNs it is interested in. The response is the intersection of
+//! this filter with the URNs the other side has, in batches of
+//! [`rpc::MAX_OFFER_BATCH_SIZE`]. Both sides attempt to fetch those URNs
+//! element-wise from the respective other side.
+//!
+//! Since it is more efficient for a long-running peer to react to gossip
+//! messages, it should graft only during a small time window after start up.
+//!
+//!
+//! [Epidemic Broadcast Trees]: https://asc.di.fct.unl.pt/~jleitao/pdf/srds07-leitao.pdf
+//! [`git` protocol v2]: https://git-scm.com/docs/protocol-v2
 use std::{
     convert::TryFrom as _,
     mem,

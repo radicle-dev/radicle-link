@@ -54,9 +54,12 @@ pub mod downstream {
         pub membership_passive: usize,
     }
 
+    /// When to [`Graft::Reset`].
     #[derive(Clone, Copy, Debug)]
     pub enum GraftResetPolicy {
+        /// Reset immediately, even if the sync period hasn't expired yet.
         Now,
+        /// Reset later, approximately when the sync period expires.
         Expired,
     }
 
