@@ -8,16 +8,16 @@ use thiserror::Error;
 use crate::git::{identities, replication, storage::pool::PoolError};
 
 #[derive(Debug, Error)]
-pub enum Request {
+pub enum Ask {
     #[error("invalid bloom filter: {0}")]
     Bloom(&'static str),
 
-    #[error("failed to load offer data")]
-    Offer(#[from] self::Offer),
+    #[error(transparent)]
+    Git(#[from] identities::Error),
 }
 
 #[derive(Debug, Error)]
-pub enum Response {
+pub enum Offer {
     #[error("unable to borrow pooled storage")]
     Pool(#[from] PoolError),
 
@@ -26,13 +26,6 @@ pub enum Response {
 
     #[error("handling task was cancelled")]
     Cancelled,
-}
-
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum Offer {
-    #[error(transparent)]
-    Git(#[from] identities::Error),
 }
 
 #[derive(Debug, Error)]

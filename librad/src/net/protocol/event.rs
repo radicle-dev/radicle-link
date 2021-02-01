@@ -46,7 +46,7 @@ pub mod downstream {
         Stats(Reply<Stats>),
     }
 
-    #[derive(Clone, Debug, Default)]
+    #[derive(Clone, Copy, Debug, Default)]
     pub struct Stats {
         pub connections_total: usize,
         pub connected_peers: usize,
@@ -54,16 +54,28 @@ pub mod downstream {
         pub membership_passive: usize,
     }
 
+    #[derive(Clone, Copy, Debug)]
+    pub enum GraftResetPolicy {
+        Now,
+        Expired,
+    }
+
+    impl Default for GraftResetPolicy {
+        fn default() -> Self {
+            Self::Now
+        }
+    }
+
     #[derive(Clone, Debug)]
     pub enum State {
-        ResetSyncPeriod {
-            force: bool,
-            reply: Reply<Result<(), error::ResetSyncPeriod>>,
+        GraftReset {
+            when: GraftResetPolicy,
+            reply: Reply<Result<(), error::GraftReset>>,
         },
-        InitiateSync {
+        GraftInitiate {
             remote_id: PeerId,
             addr_hints: Vec<SocketAddr>,
-            reply: Reply<Result<(), error::InitiateSync>>,
+            reply: Reply<Result<(), error::GraftInitiate>>,
         },
     }
 }

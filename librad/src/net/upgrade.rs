@@ -48,10 +48,8 @@ pub struct Git;
 #[derive(Debug)]
 pub struct Membership;
 
-// FIXME: need a better name -- `Info` would fit, but need to move `PeerInfo`
-// etc. somewhere else
 #[derive(Debug)]
-pub struct Syn;
+pub struct Graft;
 
 /// Signal the (sub-) protocol about to be sent over a given QUIC stream.
 ///
@@ -74,7 +72,7 @@ pub enum UpgradeRequest {
     Gossip = 0,
     Git = 1,
     Membership = 2,
-    Syn = 3,
+    Graft = 3,
 }
 
 impl Into<UpgradeRequest> for Gossip {
@@ -95,9 +93,9 @@ impl Into<UpgradeRequest> for Membership {
     }
 }
 
-impl Into<UpgradeRequest> for Syn {
+impl Into<UpgradeRequest> for Graft {
     fn into(self) -> UpgradeRequest {
-        UpgradeRequest::Syn
+        UpgradeRequest::Graft
     }
 }
 
@@ -122,7 +120,7 @@ impl<'de> minicbor::Decode<'de> for UpgradeRequest {
                 0 => Ok(Self::Gossip),
                 1 => Ok(Self::Git),
                 2 => Ok(Self::Membership),
-                3 => Ok(Self::Syn),
+                3 => Ok(Self::Graft),
                 n => Err(minicbor::decode::Error::UnknownVariant(n as u32)),
             },
             n => Err(minicbor::decode::Error::UnknownVariant(n as u32)),
@@ -235,7 +233,7 @@ pub enum SomeUpgraded<S> {
     Gossip(Upgraded<Gossip, S>),
     Git(Upgraded<Git, S>),
     Membership(Upgraded<Membership, S>),
-    Syn(Upgraded<Syn, S>),
+    Graft(Upgraded<Graft, S>),
 }
 
 impl<S> SomeUpgraded<S> {
@@ -247,7 +245,7 @@ impl<S> SomeUpgraded<S> {
             Self::Gossip(up) => SomeUpgraded::Gossip(up.map(f)),
             Self::Git(up) => SomeUpgraded::Git(up.map(f)),
             Self::Membership(up) => SomeUpgraded::Membership(up.map(f)),
-            Self::Syn(up) => SomeUpgraded::Syn(up.map(f)),
+            Self::Graft(up) => SomeUpgraded::Graft(up.map(f)),
         }
     }
 }
@@ -303,7 +301,7 @@ where
                 UpgradeRequest::Gossip => SomeUpgraded::Gossip(Upgraded::new(incoming)),
                 UpgradeRequest::Git => SomeUpgraded::Git(Upgraded::new(incoming)),
                 UpgradeRequest::Membership => SomeUpgraded::Membership(Upgraded::new(incoming)),
-                UpgradeRequest::Syn => SomeUpgraded::Syn(Upgraded::new(incoming)),
+                UpgradeRequest::Graft => SomeUpgraded::Graft(Upgraded::new(incoming)),
             };
 
             Ok(upgrade)

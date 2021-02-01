@@ -19,6 +19,7 @@ use crate::{
 
 pub use super::protocol::{
     event::{downstream::Stats, Upstream as ProtocolEvent},
+    Graft,
     PeerInfo,
 };
 pub use deadpool::managed::PoolError;
@@ -176,6 +177,10 @@ where
 
     pub async fn stats(&self) -> Stats {
         self.phone.stats().await
+    }
+
+    pub fn graft(&self) -> Graft {
+        self.phone.graft()
     }
 
     pub fn subscribe(

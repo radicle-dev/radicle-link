@@ -7,7 +7,7 @@ use std::{fmt::Debug, io};
 
 use thiserror::Error;
 
-use super::syn;
+use super::graft;
 use crate::{
     git::storage::pool::PoolError,
     net::{
@@ -24,7 +24,7 @@ pub(super) use internal::*;
 #[non_exhaustive]
 pub enum Bootstrap {
     #[error(transparent)]
-    Syn(#[from] syn::error::State),
+    Graft(#[from] graft::error::State),
 
     #[error(transparent)]
     Pool(#[from] PoolError),
@@ -35,12 +35,12 @@ pub enum Bootstrap {
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum InitiateSync {
+pub enum GraftInitiate {
     #[error("lost contact to deep space 9")]
     Unavailable,
 
     #[error(transparent)]
-    Syn(#[from] syn::error::Response),
+    Graft(#[from] graft::error::Offer),
 
     #[error("invalid bloom filter: {0}")]
     Bloom(&'static str),
@@ -58,7 +58,7 @@ pub enum InitiateSync {
     Io(#[from] io::Error),
 }
 
-impl From<CborCodecError> for InitiateSync {
+impl From<CborCodecError> for GraftInitiate {
     fn from(e: CborCodecError) -> Self {
         match e {
             CborCodecError::Cbor(e) => Self::Cbor(e),
@@ -69,12 +69,12 @@ impl From<CborCodecError> for InitiateSync {
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum ResetSyncPeriod {
+pub enum GraftReset {
     #[error("lost contact to deep space 9")]
     Unavailable,
 
     #[error(transparent)]
-    SynState(#[from] syn::error::State),
+    Graft(#[from] graft::error::State),
 
     #[error(transparent)]
     Pool(#[from] PoolError),

@@ -84,69 +84,79 @@ where
     use event::downstream::State;
 
     match evt {
-        State::ResetSyncPeriod { force, reply } => {
+        State::GraftReset { when, reply } => {
             let chan = reply.lock().take();
             if let Some(tx) = chan {
                 tokio::spawn(async move {
-                    let res = reset_sync_period(state, force).await;
+                    let res = graft::reset(state, when).await;
                     tx.send(res).ok();
                 });
             }
         },
 
-        State::InitiateSync {
+        State::GraftInitiate {
             remote_id,
             addr_hints,
             reply,
         } => {
             let chan = reply.lock().take();
             if let Some(tx) = chan {
-                let res = initiate_sync(&state, remote_id, addr_hints).await;
+                let res = graft::initiate(&state, remote_id, addr_hints).await;
                 tx.send(res).ok();
             }
         },
     }
 }
 
-async fn reset_sync_period<S>(state: State<S>, force: bool) -> Result<(), error::ResetSyncPeriod>
-where
-    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
-{
-    let delay = if force {
-        None
-    } else {
-        state
-            .sync
-            .read()
-            .deadline()
-            .checked_duration_since(Instant::now())
-            .map(Delay::new)
-    };
-    if let Some(wait) = delay {
-        wait.await
-    }
-    let storage = state.storage.get().await?;
-    Ok(state.sync.write().reset(storage.as_ref())?)
-}
+mod graft {
+    use super::*;
 
-async fn initiate_sync<S>(
-    state: &State<S>,
-    remote_id: PeerId,
-    addr_hints: Vec<SocketAddr>,
-) -> Result<(), error::InitiateSync>
-where
-    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
-{
-    let conn = match state.endpoint.get_connection(remote_id) {
-        None => io::connect(&state.endpoint, remote_id, addr_hints)
-            .await
-            .map(|(conn, ingress)| {
-                tokio::spawn(io::ingress_streams(state.clone(), ingress));
-                conn
-            }),
+    pub(super) async fn reset<S>(
+        state: State<S>,
+        when: event::downstream::GraftResetPolicy,
+    ) -> Result<(), error::GraftReset>
+    where
+        S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    {
+        use event::downstream::GraftResetPolicy::*;
 
-        Some(conn) => Some(conn),
+        let delay = match when {
+            Now => None,
+            Expired => state
+                .sync
+                .read()
+                .deadline()
+                .checked_duration_since(Instant::now())
+                .map(Delay::new),
+        };
+        if let Some(wait) = delay {
+            wait.await
+        }
+        let storage = state.storage.get().await?;
+        Ok(state.sync.write().reset(storage.as_ref())?)
     }
-    .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotConnected, "could not connect"))?;
-    io::initiate_sync(state, conn).await
+
+    pub(super) async fn initiate<S>(
+        state: &State<S>,
+        remote_id: PeerId,
+        addr_hints: Vec<SocketAddr>,
+    ) -> Result<(), error::GraftInitiate>
+    where
+        S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    {
+        let conn = match state.endpoint.get_connection(remote_id) {
+            None => io::connect(&state.endpoint, remote_id, addr_hints)
+                .await
+                .map(|(conn, ingress)| {
+                    tokio::spawn(io::ingress_streams(state.clone(), ingress));
+                    conn
+                }),
+
+            Some(conn) => Some(conn),
+        }
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotConnected, "could not connect")
+        })?;
+        io::initiate_graft(state, conn).await
+    }
 }

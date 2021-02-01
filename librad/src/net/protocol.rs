@@ -46,8 +46,8 @@ pub mod broadcast;
 pub mod error;
 pub mod event;
 pub mod gossip;
+pub mod graft;
 pub mod membership;
-pub mod syn;
 
 mod info;
 pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
@@ -63,7 +63,7 @@ pub struct Config {
     pub listen_addr: SocketAddr,
     pub membership: membership::Params,
     pub network: Network,
-    pub sync: syn::Config,
+    pub sync: graft::Config,
     // TODO: transport, ...
 }
 
@@ -181,39 +181,8 @@ impl TinCans {
         rx.await.unwrap_or_default()
     }
 
-    pub async fn initiate_sync<Addrs>(
-        &self,
-        remote_id: PeerId,
-        addr_hints: Addrs,
-    ) -> Result<(), error::InitiateSync>
-    where
-        Addrs: IntoIterator<Item = SocketAddr>,
-    {
-        use event::{downstream::State::InitiateSync, Downstream};
-
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let reply = Arc::new(Mutex::new(Some(tx)));
-        self.downstream
-            .send(Downstream::State(InitiateSync {
-                remote_id,
-                addr_hints: addr_hints.into_iter().collect(),
-                reply,
-            }))
-            .or(Err(error::InitiateSync::Unavailable))?;
-
-        rx.await.or(Err(error::InitiateSync::Unavailable))?
-    }
-
-    pub async fn reset_sync_period(&self, force: bool) -> Result<(), error::ResetSyncPeriod> {
-        use event::{downstream::State::ResetSyncPeriod, Downstream};
-
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let reply = Arc::new(Mutex::new(Some(tx)));
-        self.downstream
-            .send(Downstream::State(ResetSyncPeriod { force, reply }))
-            .or(Err(error::ResetSyncPeriod::Unavailable))?;
-
-        rx.await.or(Err(error::ResetSyncPeriod::Unavailable))?
+    pub fn graft(&self) -> Graft {
+        Graft(self.downstream.clone())
     }
 
     pub fn subscribe(&self) -> impl futures::Stream<Item = Result<event::Upstream, RecvError>> {
@@ -224,6 +193,48 @@ impl TinCans {
 impl Default for TinCans {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct Graft(tincan::Sender<event::Downstream>);
+
+impl Graft {
+    pub async fn initiate<Addrs>(
+        &self,
+        remote_id: PeerId,
+        addr_hints: Addrs,
+    ) -> Result<(), error::GraftInitiate>
+    where
+        Addrs: IntoIterator<Item = SocketAddr>,
+    {
+        use event::{downstream::State::GraftInitiate, Downstream};
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let reply = Arc::new(Mutex::new(Some(tx)));
+        self.0
+            .send(Downstream::State(GraftInitiate {
+                remote_id,
+                addr_hints: addr_hints.into_iter().collect(),
+                reply,
+            }))
+            .or(Err(error::GraftInitiate::Unavailable))?;
+
+        rx.await.or(Err(error::GraftInitiate::Unavailable))?
+    }
+
+    pub async fn reset(
+        &self,
+        when: event::downstream::GraftResetPolicy,
+    ) -> Result<(), error::GraftReset> {
+        use event::{downstream::State::GraftReset, Downstream};
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let reply = Arc::new(Mutex::new(Some(tx)));
+        self.0
+            .send(Downstream::State(GraftReset { when, reply }))
+            .or(Err(error::GraftReset::Unavailable))?;
+
+        rx.await.or(Err(error::GraftReset::Unavailable))?
     }
 }
 
@@ -250,7 +261,7 @@ where
     let events = phone.upstream.clone().into();
     let sync = {
         let git = storage.get().await?;
-        Arc::new(RwLock::new(syn::State::new(git.as_ref(), config.sync)?))
+        Arc::new(RwLock::new(graft::State::new(git.as_ref(), config.sync)?))
     };
     let state = State {
         local_id,
@@ -422,7 +433,7 @@ struct State<S> {
     membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     storage: Storage<S>,
     events: EventSink,
-    sync: Arc<RwLock<syn::State>>,
+    sync: Arc<RwLock<graft::State>>,
 }
 
 #[async_trait]

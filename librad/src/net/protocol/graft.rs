@@ -28,7 +28,7 @@ use crate::{
 
 pub mod error;
 pub mod rpc;
-pub use rpc::{Request, Response};
+pub use rpc::{Ask, Offer};
 
 pub const MAX_OFFER_TOTAL: usize = 10_000;
 
@@ -85,35 +85,30 @@ impl State {
 }
 
 #[tracing::instrument(skip(storage), err)]
-pub fn handle_request(
+pub fn ask(
     storage: &Storage,
-    request: Request,
-) -> Result<impl Iterator<Item = Result<Response, error::Request>> + '_, error::Request> {
-    let Request::ListNamespaces { filter } = request;
-    let bloom = filter
+    request: Ask,
+) -> Result<impl Iterator<Item = Result<Offer, error::Ask>> + '_, error::Ask> {
+    let bloom = request
         .map(bloom::BloomFilter::try_from)
         .transpose()
-        .map_err(error::Request::Bloom)?;
-    let offers = self::offers(storage, bloom)?.map(|of| {
-        of.map(|batch| Response::OfferNamespaces { batch })
-            .map_err(error::Request::from)
-    });
+        .map_err(error::Ask::Bloom)?;
+    let offers = self::offers(storage, bloom)?.map(|of| of.map_err(error::Ask::from));
 
     Ok(offers)
 }
 
 #[tracing::instrument(skip(storage))]
-pub fn handle_response<S>(
+pub fn on_offer<S>(
     storage: &S,
-    response: Response,
+    offer: Offer,
     remote_id: PeerId,
     remote_addr: Option<SocketAddr>,
-) -> impl futures::Stream<Item = Result<SomeUrn, error::Response>> + '_
+) -> impl futures::Stream<Item = Result<SomeUrn, error::Offer>> + '_
 where
     S: PooledStorage + Send + Sync + 'static,
 {
-    let Response::OfferNamespaces { batch } = response;
-    batch
+    offer
         .into_iter()
         .map(move |urn| async move {
             let SomeUrn::Git(gurn) = urn.clone();
@@ -127,7 +122,7 @@ where
                     if let Ok(panik) = e.try_into_panic() {
                         panic::resume_unwind(panik)
                     } else {
-                        Err(error::Response::Cancelled)
+                        Err(error::Offer::Cancelled)
                     }
                 },
 
@@ -140,9 +135,9 @@ where
 fn offers(
     storage: &Storage,
     filter: Option<bloom::BloomFilter<SomeUrn>>,
-) -> Result<impl Iterator<Item = Result<rpc::Offer, error::Offer>> + '_, error::Offer> {
+) -> Result<impl Iterator<Item = Result<rpc::Offer, error::Ask>> + '_, error::Ask> {
     let offers = identities::any::list_urns(storage)?
-        .map(|x| x.map_err(error::Offer::from))
+        .map(|x| x.map_err(error::Ask::from))
         .filter_map_ok(move |urn| {
             let urn = SomeUrn::Git(urn);
             match filter.as_ref() {

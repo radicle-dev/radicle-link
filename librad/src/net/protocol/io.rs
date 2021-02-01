@@ -19,9 +19,9 @@ use super::{
     error,
     event::upstream as event,
     gossip,
+    graft,
     info::{PartialPeerInfo, PeerAdvertisement, PeerInfo},
     membership,
-    syn,
     tick,
     ProtocolStorage,
     State,
@@ -44,8 +44,8 @@ use crate::{
 type Codec<T> = CborCodec<T, T>;
 type GossipCodec<T> = Codec<broadcast::Message<SocketAddr, T>>;
 type MembershipCodec = Codec<membership::Message<SocketAddr>>;
-type IngressSynCodec = CborCodec<syn::Response, syn::Request>;
-type EgressSynCodec = CborCodec<syn::Request, syn::Response>;
+type GraftAskCodec = CborCodec<graft::Offer, graft::Ask>;
+type GraftOfferCodec = CborCodec<graft::Ask, graft::Offer>;
 
 #[tracing::instrument(skip(state, peer, addrs), fields(remote_id = %peer))]
 pub(super) async fn discovered<S>(state: State<S>, peer: PeerId, addrs: Vec<SocketAddr>)
@@ -87,7 +87,7 @@ where
 
         tokio::spawn(async {
             let state_here = state;
-            initiate_sync(&state_here, conn).await
+            initiate_graft(&state_here, conn).await
         });
     }
 }
@@ -253,7 +253,7 @@ where
 
         Ok(Gossip(up)) => ingress_gossip(state, up).await,
         Ok(Membership(up)) => ingress_membership(state, up).await,
-        Ok(Syn(up)) => ingress_syn(state, up).await,
+        Ok(Graft(up)) => ingress_syn(state, up).await,
     }
 }
 
@@ -273,7 +273,7 @@ where
             tracing::warn!("unidirectional git requested");
             up.into_stream().close(CloseReason::InvalidUpgrade);
         },
-        Ok(Syn(up)) => {
+        Ok(Graft(up)) => {
             tracing::warn!("unidirectional syn requested");
             up.into_stream().close(CloseReason::InvalidUpgrade);
         },
@@ -389,7 +389,7 @@ where
     }
 }
 
-async fn ingress_syn<S, T>(state: State<S>, stream: Upgraded<upgrade::Syn, T>)
+async fn ingress_syn<S, T>(state: State<S>, stream: Upgraded<upgrade::Graft, T>)
 where
     S: PooledStorage + Clone + Send + Sync + 'static,
     T: RemotePeer + AsyncRead + AsyncWrite + Unpin,
@@ -397,7 +397,7 @@ where
     #[derive(Debug, Error)]
     enum Error {
         #[error("error handling request")]
-        Handler(#[from] syn::error::Request),
+        Handler(#[from] graft::error::Ask),
 
         #[error("unable to borrow pooled storage")]
         Pool(#[from] PoolError),
@@ -420,18 +420,15 @@ where
 
     async fn go<T>(
         storage: impl AsRef<git::storage::Storage>,
-        mut framing: Framed<T, IngressSynCodec>,
-        chan: std::sync::mpsc::SyncSender<syn::Response>,
+        mut framing: Framed<T, GraftAskCodec>,
+        chan: std::sync::mpsc::SyncSender<graft::Offer>,
     ) -> Result<(), Error>
     where
         T: AsyncRead + AsyncWrite + Unpin,
     {
         if let Some(req) = framing.try_next().await? {
-            let is_unconstrained = {
-                let syn::Request::ListNamespaces { filter } = &req;
-                filter.is_none()
-            };
-            for resp in syn::handle_request(storage.as_ref(), req)? {
+            let is_unconstrained = req.is_none();
+            for resp in graft::ask(storage.as_ref(), req)? {
                 let resp = resp?;
                 framing.start_send_unpin(resp.clone())?;
                 if !is_unconstrained {
@@ -471,19 +468,19 @@ where
         let pool = state.storage.clone();
         move || {
             for resp in rx {
-                futures::executor::block_on(
-                    syn::handle_response(&pool, resp, remote_id, None).for_each(|res| async {
+                futures::executor::block_on(graft::on_offer(&pool, resp, remote_id, None).for_each(
+                    |res| async {
                         res.map_or_else(
                             |e| tracing::error!(err = ?e, "mutual sync error"),
                             |SomeUrn::Git(urn)| tracing::info!(urn = %urn, "sync succeeded"),
                         )
-                    }),
-                )
+                    },
+                ))
             }
         }
     });
 
-    let framing = Framed::new(stream.into_stream(), IngressSynCodec::new());
+    let framing = Framed::new(stream.into_stream(), GraftAskCodec::new());
     state
         .storage
         .get()
@@ -632,10 +629,10 @@ where
     ),
     err
 )]
-pub(super) async fn initiate_sync<S>(
+pub(super) async fn initiate_graft<S>(
     state: &State<S>,
     conn: quic::Connection,
-) -> Result<(), error::InitiateSync>
+) -> Result<(), error::GraftInitiate>
 where
     S: PooledStorage + Send + Sync + 'static,
 {
@@ -644,8 +641,8 @@ where
 
     let mut framing = {
         let bi = conn.open_bidi().await?;
-        let stream = upgrade::upgrade(bi, upgrade::Syn).await?.into_stream();
-        Framed::new(stream, EgressSynCodec::new())
+        let stream = upgrade::upgrade(bi, upgrade::Graft).await?.into_stream();
+        Framed::new(stream, GraftOfferCodec::new())
     };
 
     let (num_requested, filter) = {
@@ -654,10 +651,10 @@ where
             // no snapshot, no sync
             None => Ok((0, None)),
             Some(bloom) => {
-                let n = cmp::min(bloom.approx_elements(), syn::MAX_OFFER_TOTAL);
-                let f =
-                    syn::rpc::BloomFilter::try_from(bloom).map_err(error::InitiateSync::Bloom)?;
-                Ok::<_, error::InitiateSync>((n, Some(f)))
+                let n = cmp::min(bloom.approx_elements(), graft::MAX_OFFER_TOTAL);
+                let f = graft::rpc::BloomFilter::try_from(bloom)
+                    .map_err(error::GraftInitiate::Bloom)?;
+                Ok::<_, error::GraftInitiate>((n, Some(f)))
             },
         }
     }?;
@@ -667,16 +664,14 @@ where
     }
 
     tracing::info!(num_requested, "requesting sync info");
-    framing
-        .send(syn::Request::ListNamespaces { filter })
-        .await?;
+    framing.send(filter).await?;
 
     // TODO: timeout
     framing
-        .take(num_requested / syn::rpc::MAX_OFFER_BATCH_SIZE)
+        .take(num_requested / graft::rpc::MAX_OFFER_BATCH_SIZE)
         .map_ok(|resp| {
-            syn::handle_response(&state.storage, resp, remote_id, Some(remote_addr))
-                .map_err(error::InitiateSync::from)
+            graft::on_offer(&state.storage, resp, remote_id, Some(remote_addr))
+                .map_err(error::GraftInitiate::from)
         })
         .try_flatten()
         .try_for_each(|SomeUrn::Git(urn)| {

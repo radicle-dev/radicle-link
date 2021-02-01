@@ -7,25 +7,7 @@ use std::{convert::TryFrom, hash::Hash};
 
 use crate::identities::SomeUrn;
 
-#[derive(Clone, Debug, minicbor::Encode, minicbor::Decode)]
-pub enum Request {
-    #[n(0)]
-    #[cbor(array)]
-    ListNamespaces {
-        #[n(0)]
-        filter: Option<BloomFilter>,
-    },
-}
-
-#[derive(Clone, Debug, minicbor::Encode, minicbor::Decode)]
-pub enum Response {
-    #[n(0)]
-    #[cbor(array)]
-    OfferNamespaces {
-        #[n(0)]
-        batch: Offer,
-    },
-}
+pub type Ask = Option<BloomFilter>;
 
 pub const MAX_OFFER_BATCH_SIZE: usize = 16;
 

@@ -112,7 +112,7 @@ where
                             tokio::spawn({
                                 let state = state.clone();
                                 let conn = conn.clone();
-                                async move { io::initiate_sync(&state, conn).await }
+                                async move { io::initiate_graft(&state, conn).await }
                             });
                         }
 
