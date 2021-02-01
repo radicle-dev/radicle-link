@@ -14,7 +14,7 @@ use librad::{
     internal::canonical::Cstring,
 };
 
-use crate::{git, AsPayload, CreateRepo};
+use crate::{git, sealed::Sealed, AsPayload, CreateRepo};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -38,6 +38,8 @@ pub struct New<V> {
     path: PathBuf,
     valid: V,
 }
+
+impl<V> Sealed for New<V> {}
 
 impl<V> AsPayload for New<V> {
     fn as_payload(&self) -> payload::Project {

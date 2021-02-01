@@ -28,9 +28,9 @@ pub mod include;
 pub mod new;
 
 mod git;
+mod sealed;
 
-// FIXME: seal
-pub trait CreateRepo {
+pub trait CreateRepo: sealed::Sealed {
     type Error;
 
     fn init<F>(self, url: LocalUrl, transport: F) -> Result<git2::Repository, Self::Error>
@@ -38,8 +38,7 @@ pub trait CreateRepo {
         F: CanOpenStorage + 'static;
 }
 
-// FIXME: seal
-pub trait AsPayload {
+pub trait AsPayload: sealed::Sealed {
     fn as_payload(&self) -> payload::Project;
 }
 

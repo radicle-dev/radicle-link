@@ -15,7 +15,7 @@ use librad::{
     std_ext::result::ResultExt as _,
 };
 
-use crate::{git, AsPayload, CreateRepo};
+use crate::{git, sealed::Sealed, AsPayload, CreateRepo};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -49,6 +49,8 @@ pub struct Existing<V> {
     name: Cstring,
     valid: V,
 }
+
+impl<V> Sealed for Existing<V> {}
 
 impl<V> AsPayload for Existing<V> {
     fn as_payload(&self) -> payload::Project {
