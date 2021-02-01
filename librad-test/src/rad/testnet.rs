@@ -84,7 +84,7 @@ where
         listen_addr,
         membership: Default::default(),
         network: Default::default(),
-        sync: Default::default(),
+        graft: Default::default(),
     };
     let disco = seeds.into_iter().collect::<discovery::Static>();
     let storage_pools = peer::PoolSizes::default();

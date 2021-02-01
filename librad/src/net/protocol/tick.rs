@@ -108,7 +108,7 @@ where
                             .await
                             .ok_or(error::BestEffortSend::CouldNotConnect { to })?;
 
-                        if state.sync.read().should_sync() {
+                        if state.graft.read().should_sync() {
                             tokio::spawn({
                                 let state = state.clone();
                                 let conn = conn.clone();

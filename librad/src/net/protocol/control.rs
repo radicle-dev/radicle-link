@@ -123,7 +123,7 @@ mod graft {
         let delay = match when {
             Now => None,
             Expired => state
-                .sync
+                .graft
                 .read()
                 .deadline()
                 .checked_duration_since(Instant::now())
@@ -133,7 +133,7 @@ mod graft {
             wait.await
         }
         let storage = state.storage.get().await?;
-        Ok(state.sync.write().reset(storage.as_ref())?)
+        Ok(state.graft.write().reset(storage.as_ref())?)
     }
 
     pub(super) async fn initiate<S>(

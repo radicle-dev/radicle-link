@@ -49,7 +49,7 @@ async fn main() {
                 listen_addr: *LOCALHOST_ANY,
                 membership: Default::default(),
                 network: Default::default(),
-                sync: Default::default(),
+                graft: Default::default(),
             },
             storage_pools: Default::default(),
         });

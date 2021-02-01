@@ -63,7 +63,7 @@ pub struct Config {
     pub listen_addr: SocketAddr,
     pub membership: membership::Params,
     pub network: Network,
-    pub sync: graft::Config,
+    pub graft: graft::Config,
     // TODO: transport, ...
 }
 
@@ -259,9 +259,9 @@ where
     );
     let storage = Storage::from(storage);
     let events = phone.upstream.clone().into();
-    let sync = {
+    let graft = {
         let git = storage.get().await?;
-        Arc::new(RwLock::new(graft::State::new(git.as_ref(), config.sync)?))
+        Arc::new(RwLock::new(graft::State::new(git.as_ref(), config.graft)?))
     };
     let state = State {
         local_id,
@@ -270,7 +270,7 @@ where
         membership,
         storage,
         events,
-        sync,
+        graft,
     };
 
     Ok(Bound {
@@ -433,7 +433,7 @@ struct State<S> {
     membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     storage: Storage<S>,
     events: EventSink,
-    sync: Arc<RwLock<graft::State>>,
+    graft: Arc<RwLock<graft::State>>,
 }
 
 #[async_trait]

@@ -646,8 +646,8 @@ where
     };
 
     let (num_requested, filter) = {
-        let sync = state.sync.read();
-        match sync.snapshot() {
+        let graft_state = state.graft.read();
+        match graft_state.snapshot() {
             // no snapshot, no sync
             None => Ok((0, None)),
             Some(bloom) => {
