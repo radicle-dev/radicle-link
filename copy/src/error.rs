@@ -5,7 +5,7 @@
 
 use librad::git::identities;
 
-use crate::{existing, include, new};
+use crate::{existing, fork, include, new};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -14,6 +14,9 @@ pub enum Error {
 
     #[error(transparent)]
     Existing(#[from] existing::Error),
+
+    #[error(transparent)]
+    Fork(#[from] fork::Error),
 
     #[error(transparent)]
     Identities(#[from] identities::Error),
