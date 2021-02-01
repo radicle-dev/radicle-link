@@ -53,10 +53,12 @@ async fn can_clone() {
             .unwrap()
             .unwrap();
 
+        let cfg = peer2.protocol_config().replication;
         peer2
             .using_storage(move |storage| {
                 let urn = project.urn();
-                replication::replicate(&storage, None, urn.clone(), peer1.peer_id(), None).unwrap();
+                replication::replicate(&storage, cfg, None, urn.clone(), peer1.peer_id(), None)
+                    .unwrap();
 
                 // check rad/self of peer1 exists
                 assert!(
@@ -97,11 +99,13 @@ async fn can_clone_disconnected() {
             .unwrap()
             .unwrap();
 
+        let cfg = peer2.protocol_config().replication;
         peer2
             .using_storage(move |storage| {
                 let urn = project.urn();
                 replication::replicate(
                     &storage,
+                    cfg,
                     None,
                     urn.clone(),
                     peer1.peer_id(),
@@ -151,7 +155,8 @@ async fn fetches_on_gossip_notify() {
             .using_storage({
                 let urn = project.urn();
                 let peer_id = peer1.peer_id();
-                move |storage| replication::replicate(&storage, None, urn, peer_id, None)
+                let cfg = peer2.protocol_config().replication;
+                move |storage| replication::replicate(&storage, cfg, None, urn, peer_id, None)
             })
             .await
             .unwrap()
@@ -259,7 +264,8 @@ async fn list_identities_returns_only_local_projects() {
             .using_storage({
                 let urn = project.urn();
                 let remote_peer = peer1.peer_id();
-                move |storage| replication::replicate(&storage, None, urn, remote_peer, None)
+                let cfg = peer2.protocol_config().replication;
+                move |storage| replication::replicate(&storage, cfg, None, urn, remote_peer, None)
             })
             .await
             .unwrap()
@@ -269,8 +275,9 @@ async fn list_identities_returns_only_local_projects() {
             .using_storage({
                 let urn = project.urn();
                 let remote_peer = peer2.peer_id();
+                let cfg = peer3.protocol_config().replication;
                 move |storage| -> Result<Vec<SomeIdentity>, anyhow::Error> {
-                    replication::replicate(&storage, None, urn, remote_peer, None)?;
+                    replication::replicate(&storage, cfg, None, urn, remote_peer, None)?;
                     Ok(identities::any::list(&storage)?.collect::<Result<Vec<_>, _>>()?)
                 }
             })
@@ -336,7 +343,8 @@ async fn ask_and_clone() {
         peer2
             .using_storage({
                 let urn = project.urn();
-                move |storage| replication::replicate(&storage, None, urn, remote_peer, None)
+                let cfg = peer2.protocol_config().replication;
+                move |storage| replication::replicate(&storage, cfg, None, urn, remote_peer, None)
             })
             .await
             .unwrap()
@@ -424,27 +432,49 @@ async fn menage_a_troi() {
                 .join(&default_branch),
         );
 
-        let peer2_has_ref = peer2
+        struct ExpectedReferences {
+            has_commit: bool,
+            has_rad_id: bool,
+            has_rad_self: bool,
+        }
+
+        let peer2_expected = peer2
             .using_storage({
                 let remote_peer = peer1.peer_id();
                 let urn = expected_urn.clone();
-                let addrs = peer1.listen_addrs().iter().copied().collect::<Vec<_>>();
-                move |storage| -> Result<bool, anyhow::Error> {
-                    replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
-                    Ok(storage.has_commit(&urn, Box::new(commit_id))?)
+                let rad_self = Reference::rad_self(Namespace::from(urn.clone()), peer1.peer_id());
+                let rad_id =
+                    Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
+                let addrs = peer1.listen_addrs().to_vec();
+                let cfg = peer2.protocol_config().replication;
+                move |storage| -> Result<ExpectedReferences, anyhow::Error> {
+                    replication::replicate(&storage, cfg, None, urn.clone(), remote_peer, addrs)?;
+                    Ok(ExpectedReferences {
+                        has_commit: storage.has_commit(&urn, Box::new(commit_id))?,
+                        has_rad_id: storage.has_ref(&rad_self)?,
+                        has_rad_self: storage.has_ref(&rad_id)?,
+                    })
                 }
             })
             .await
             .unwrap()
             .unwrap();
-        let peer3_has_ref = peer3
+        let peer3_expected = peer3
             .using_storage({
                 let remote_peer = peer2.peer_id();
                 let urn = expected_urn.clone();
-                let addrs = peer2.listen_addrs().iter().copied().collect::<Vec<_>>();
-                move |storage| -> Result<bool, anyhow::Error> {
-                    replication::replicate(&storage, None, urn.clone(), remote_peer, addrs)?;
-                    Ok(storage.has_commit(&urn, Box::new(commit_id))?)
+                let rad_self = Reference::rad_self(Namespace::from(urn.clone()), peer1.peer_id());
+                let rad_id =
+                    Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
+                let addrs = peer2.listen_addrs().to_vec();
+                let cfg = peer3.protocol_config().replication;
+                move |storage| -> Result<ExpectedReferences, anyhow::Error> {
+                    replication::replicate(&storage, cfg, None, urn.clone(), remote_peer, addrs)?;
+                    Ok(ExpectedReferences {
+                        has_commit: storage.has_commit(&urn, Box::new(commit_id))?,
+                        has_rad_id: storage.has_ref(&rad_self)?,
+                        has_rad_self: storage.has_ref(&rad_id)?,
+                    })
                 }
             })
             .await
@@ -452,13 +482,18 @@ async fn menage_a_troi() {
             .unwrap();
 
         assert!(
-            peer2_has_ref,
+            peer2_expected.has_commit,
             format!("peer 2 missing commit `{}@{}`", expected_urn, commit_id)
         );
+        assert!(peer2_expected.has_rad_id, "peer 2 missing `rad/id`");
+        assert!(peer2_expected.has_rad_self, "peer 2 missing `rad/self``");
+
         assert!(
-            peer3_has_ref,
+            peer3_expected.has_commit,
             format!("peer 3 missing commit `{}@{}`", expected_urn, commit_id)
         );
+        assert!(peer3_expected.has_rad_id, "peer 3 missing `rad/id`");
+        assert!(peer3_expected.has_rad_self, "peer 3 missing `rad/self``");
     })
     .await;
 }

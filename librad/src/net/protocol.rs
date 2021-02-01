@@ -33,6 +33,7 @@ use crate::{
             server::GitServer,
             transport::{GitStream, GitStreamFactory},
         },
+        replication,
     },
     paths::Paths,
     signer::Signer,
@@ -61,6 +62,7 @@ pub struct Config {
     pub listen_addr: SocketAddr,
     pub membership: membership::Params,
     pub network: Network,
+    pub replication: replication::Config,
     // TODO: transport, ...
 }
 

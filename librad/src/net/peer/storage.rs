@@ -22,11 +22,15 @@ pub use error::Error;
 #[derive(Clone)]
 pub struct Storage {
     inner: Pool,
+    config: replication::Config,
 }
 
 impl Storage {
-    pub fn new(pool: Pool) -> Self {
-        Self { inner: pool }
+    pub fn new(pool: Pool, config: replication::Config) -> Self {
+        Self {
+            inner: pool,
+            config,
+        }
     }
 
     async fn git_fetch(
@@ -34,11 +38,12 @@ impl Storage {
         from: impl Into<(PeerId, Vec<SocketAddr>)>,
         urn: Either<Urn, Originates<Urn>>,
         head: impl Into<Option<git2::Oid>>,
-    ) -> Result<(), Error> {
+    ) -> Result<replication::ReplicateResult, Error> {
         let git = self.inner.get().await?;
         let urn = urn_context(*git.peer_id(), urn);
         let head = head.into().map(ext::Oid::from);
         let (remote_peer, addr_hints) = from.into();
+        let config = self.config;
 
         spawn_blocking(move || {
             if let Some(head) = head {
@@ -49,6 +54,7 @@ impl Storage {
 
             Ok(replication::replicate(
                 &git,
+                config,
                 None,
                 urn,
                 remote_peer,
@@ -156,7 +162,7 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
                 .git_fetch((provider, addr_hints), urn.clone(), head)
                 .await
             {
-                Ok(()) => {
+                Ok(_) => {
                     // Verify that the announced data is stored locally now.
                     //
                     // If it is, rewrite the gossip message to use the `origin`

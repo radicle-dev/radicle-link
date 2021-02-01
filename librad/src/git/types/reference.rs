@@ -37,6 +37,7 @@ pub enum RefsCategory {
     Heads,
     Rad,
     Tags,
+    Notes,
 }
 
 impl RefsCategory {
@@ -45,6 +46,7 @@ impl RefsCategory {
             "heads" => Some(Self::Heads),
             "rad" => Some(Self::Rad),
             "tags" => Some(Self::Tags),
+            "notes" => Some(Self::Notes),
             _ => None,
         }
     }
@@ -56,6 +58,7 @@ impl Display for RefsCategory {
             Self::Heads => f.write_str("heads"),
             Self::Rad => f.write_str("rad"),
             Self::Tags => f.write_str("tags"),
+            Self::Notes => f.write_str("notes"),
         }
     }
 }
@@ -346,8 +349,8 @@ impl<N, R> Reference<N, R, Many> {
         ext::References::from_globs(repo, &[self.to_string()])
     }
 
-    /// Build a reference that points to
-    /// `refs/namespaces/<namespace>/refs/rad/ids/*`
+    /// Build a reference that points to:
+    ///     * `refs[/namespaces/<namespace>/refs]/rad/ids/*`
     pub fn rad_ids_glob(namespace: impl Into<Option<N>>) -> Self {
         Self {
             remote: None,
@@ -357,12 +360,45 @@ impl<N, R> Reference<N, R, Many> {
         }
     }
 
-    /// Build a reference that points to
-    /// `refs/namespaces/<namespace>/refs/rad/[peer_id]/heads/*`
+    /// Build a reference that points to:
+    ///     * `refs[/namespaces/<namespace>/refs][/remotes/<remote>]/heads/*`
     pub fn heads(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
         Self {
             remote: remote.into(),
             category: RefsCategory::Heads,
+            name: refspec_pattern!("*"),
+            namespace: namespace.into(),
+        }
+    }
+
+    /// Build a reference that points to:
+    ///     * `refs[/namespaces/<namespace>]/refs[/remotes/<remote>]/rad/*`
+    pub fn rads(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
+        Self {
+            remote: remote.into(),
+            category: RefsCategory::Rad,
+            name: refspec_pattern!("*"),
+            namespace: namespace.into(),
+        }
+    }
+
+    /// Build a reference that points to:
+    ///     * `refs[/namespaces/<namespace>]/refs[/remotes/<remote>]/tags/*`
+    pub fn tags(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
+        Self {
+            remote: remote.into(),
+            category: RefsCategory::Tags,
+            name: refspec_pattern!("*"),
+            namespace: namespace.into(),
+        }
+    }
+
+    /// Build a reference that points to:
+    ///     * `refs[/namespaces/<namespace>]/refs[/remotes/<remote>]/notes/*`
+    pub fn notes(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
+        Self {
+            remote: remote.into(),
+            category: RefsCategory::Notes,
             name: refspec_pattern!("*"),
             namespace: namespace.into(),
         }
