@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use deadpool::managed::{self, Manager, RecycleResult};
+use deadpool::managed::{self, Manager, Object, RecycleResult};
 
 use super::{Error, Storage};
 use crate::{paths::Paths, signer::Signer};
@@ -28,10 +28,10 @@ impl Pooled for Pool {
     }
 }
 
-/// Wrapper so we can use [`Pooled`] as `AsRef<Storage>`.
+/// A reference to a pooled [`Storage`].
 // TODO: may go away once https://github.com/bikeshedder/deadpool/pull/69
 // appears in a released version.
-pub struct PooledRef(deadpool::managed::Object<Storage, Error>);
+pub struct PooledRef(Object<Storage, Error>);
 
 impl Deref for PooledRef {
     type Target = Storage;
@@ -47,8 +47,8 @@ impl AsRef<Storage> for PooledRef {
     }
 }
 
-impl From<deadpool::managed::Object<Storage, Error>> for PooledRef {
-    fn from(obj: deadpool::managed::Object<Storage, Error>) -> Self {
+impl From<Object<Storage, Error>> for PooledRef {
+    fn from(obj: Object<Storage, Error>) -> Self {
         Self(obj)
     }
 }
