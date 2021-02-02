@@ -17,6 +17,10 @@ use librad::{git::Urn, internal::canonical::Cstring, peer::PeerId};
 pub struct Args {
     #[argh(subcommand)]
     pub command: Command,
+    /// 🔑 If you store multiple private keys, this allows you to specify which one you wish to use.
+    /// Note that this is just the file name, and not the whole path.
+    #[argh(option)]
+    pub key: Option<PathBuf>,
 }
 
 #[derive(Debug, FromArgs)]

@@ -5,6 +5,7 @@
 
 use std::{
     convert::TryFrom as _,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -31,12 +32,10 @@ use radicle_keystore::{
 use super::args::*;
 use crate::{fork, init, include};
 
-const SECRET_KEY_FILE: &str = "librad.key";
-
 pub fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
     let paths = Paths::from_env()?;
-    let signer = get_signer(paths.keys_dir())?;
+    let signer = get_signer(paths.keys_dir(), args.key)?;
     let storage = Storage::open(&paths, signer.clone())?;
     let whoami = local::default(&storage)?
         .ok_or_else(|| anyhow!("the default identity is not set for your Radicle store"))?;
@@ -94,8 +93,11 @@ fn project_success(urn: &Urn, path: PathBuf) {
     println!("The working copy exists at `{}`", path.display());
 }
 
-fn get_signer(keys_dir: &Path) -> anyhow::Result<BoxedSigner> {
-    let file = keys_dir.join(SECRET_KEY_FILE);
+fn get_signer<K>(keys_dir: &Path, key_file: Option<K>) -> anyhow::Result<BoxedSigner> where K: AsRef<Path> {
+    let file = match key_file {
+        Some(file) => keys_dir.join(file),
+        None => default_singer_file(keys_dir)?,
+    };
     let keystore = FileStorage::<_, PublicKey, _, _>::new(
         &file,
         Pwhash::new(
@@ -106,4 +108,18 @@ fn get_signer(keys_dir: &Path) -> anyhow::Result<BoxedSigner> {
     let key: SecretKey = keystore.get_key().map(|keypair| keypair.secret_key)?;
 
     Ok(SomeSigner { signer: key }.into())
+}
+
+fn default_singer_file(keys_dir: &Path) -> anyhow::Result<PathBuf> {
+    let mut keys = fs::read_dir(keys_dir)?;
+    match keys.next() {
+        None => Err(anyhow!("No key was found in `{}`, have you initialised your key yet?", keys_dir.display())),
+        Some(key) => {
+            if keys.next().is_some() {
+                Err(anyhow!("Multiple keys were found in `{}`, you will have to specify which key you are using", keys_dir.display()))
+            } else {
+                Ok(key?.path())
+            }
+        }
+    }
 }
