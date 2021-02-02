@@ -5,7 +5,10 @@
 
 use std::{
     convert::TryFrom as _,
+<<<<<<< HEAD
     fs,
+=======
+>>>>>>> f34d22d (Move CLI components into submodule)
     path::{Path, PathBuf},
 };
 
@@ -19,7 +22,11 @@ use librad::{
     },
     git_ext::{OneLevel, RefLike},
     keys::{PublicKey, SecretKey},
+<<<<<<< HEAD
     profile::Profile,
+=======
+    paths::Paths,
+>>>>>>> f34d22d (Move CLI components into submodule)
     signer::{BoxedSigner, SomeSigner},
 };
 use radicle_keystore::{
@@ -29,6 +36,7 @@ use radicle_keystore::{
     Keystore,
 };
 
+<<<<<<< HEAD
 use super::args::{community, garden, Args, Command, Community, Garden};
 use crate::{
     garden::{graft, plant, repot},
@@ -40,10 +48,22 @@ pub fn main() -> anyhow::Result<()> {
     let profile = Profile::load()?;
     let paths = profile.paths();
     let signer = get_signer(paths.keys_dir(), args.key)?;
+=======
+use super::args::*;
+use crate::{fork, init, include};
+
+const SECRET_KEY_FILE: &str = "librad.key";
+
+pub fn main() -> anyhow::Result<()> {
+    let args: Args = argh::from_env();
+    let paths = Paths::from_env()?;
+    let signer = get_signer(paths.keys_dir())?;
+>>>>>>> f34d22d (Move CLI components into submodule)
     let storage = Storage::open(&paths, signer.clone())?;
     let whoami = local::default(&storage)?
         .ok_or_else(|| anyhow!("the default identity is not set for your Radicle store"))?;
     match args.command {
+<<<<<<< HEAD
         Command::Garden(Garden { garden }) => match garden {
             garden::Options::Plant(garden::Plant {
                 description,
@@ -89,6 +109,49 @@ pub fn main() -> anyhow::Result<()> {
             ))?;
                 include::update(&storage, &paths, &project)?;
             },
+=======
+        Command::New(New {
+            description,
+            default_branch,
+            name,
+            path,
+        }) => {
+            use crate::new::New;
+
+            let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
+            let raw = New::new(description, default_branch, name, path);
+            let valid = New::validate(raw)?;
+            let path = valid.path();
+            let project = init(paths, signer, &storage, whoami, valid)?;
+
+            project_success(&project.urn(), path);
+        },
+        Command::Existing(Existing {
+            description,
+            default_branch,
+            path,
+            ..
+        }) => {
+            use crate::existing::Existing;
+
+            let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
+            let raw = Existing::new(description, default_branch, path.clone())?;
+            let valid = Existing::validate(raw)?;
+            let project = init(paths, signer, &storage, whoami, valid)?;
+
+            project_success(&project.urn(), path);
+        },
+        Command::Fork(Fork { peer, urn, path }) => {
+            fork(paths, signer, &storage, peer, path.clone(), &urn)?;
+            println!("Your fork was created 🎉");
+            println!("The working copy exists at `{}`", path.display());
+        },
+        Command::Update(Update { urn }) => {
+            let project = identities::project::get(&storage, &urn)?.ok_or_else(|| anyhow!(
+                "the project URN `{}` does not exist, are you sure you passed in the right URN?", urn
+            ))?;
+            include::update(&storage, &paths, &project)?;
+>>>>>>> f34d22d (Move CLI components into submodule)
         },
     };
 
@@ -101,6 +164,7 @@ fn project_success(urn: &Urn, path: PathBuf) {
     println!("The working copy exists at `{}`", path.display());
 }
 
+<<<<<<< HEAD
 fn get_signer<K>(keys_dir: &Path, key_file: Option<K>) -> anyhow::Result<BoxedSigner>
 where
     K: AsRef<Path>,
@@ -109,6 +173,10 @@ where
         Some(file) => keys_dir.join(file),
         None => default_singer_file(keys_dir)?,
     };
+=======
+fn get_signer(keys_dir: &Path) -> anyhow::Result<BoxedSigner> {
+    let file = keys_dir.join(SECRET_KEY_FILE);
+>>>>>>> f34d22d (Move CLI components into submodule)
     let keystore = FileStorage::<_, PublicKey, _, _>::new(
         &file,
         Pwhash::new(
@@ -120,6 +188,7 @@ where
 
     Ok(SomeSigner { signer: key }.into())
 }
+<<<<<<< HEAD
 
 fn default_singer_file(keys_dir: &Path) -> anyhow::Result<PathBuf> {
     let mut keys = fs::read_dir(keys_dir)?;
@@ -137,3 +206,5 @@ fn default_singer_file(keys_dir: &Path) -> anyhow::Result<PathBuf> {
         },
     }
 }
+=======
+>>>>>>> f34d22d (Move CLI components into submodule)
