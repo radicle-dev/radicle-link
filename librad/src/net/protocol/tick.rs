@@ -77,7 +77,7 @@ where
                 None => {
                     let membership::TnT { trans, ticks: cont } =
                         state.membership.connection_lost(to);
-                    trans.into_iter().for_each(|evt| state.events.emit(evt));
+                    trans.into_iter().for_each(|evt| state.phone.emit(evt));
 
                     Err(error::Tock::Reliable(error::ReliableSend {
                         cont,
@@ -90,7 +90,7 @@ where
                         .map_err(|e| {
                             let membership::TnT { trans, ticks: cont } =
                                 state.membership.connection_lost(to);
-                            trans.into_iter().for_each(|evt| state.events.emit(evt));
+                            trans.into_iter().for_each(|evt| state.phone.emit(evt));
 
                             error::Tock::Reliable(error::ReliableSend {
                                 cont,

@@ -74,7 +74,7 @@ where
                         seen_addrs: vec![conn.remote_addr()].into_iter().collect(),
                     });
 
-                trans.into_iter().for_each(|evt| state.events.emit(evt));
+                trans.into_iter().for_each(|evt| state.phone.emit(evt));
                 for tick in ticks {
                     stream::iter(membership::collect_tocks(&state.membership, &info, tick))
                         .for_each(|tock| tick::tock(state.clone(), tock))
@@ -115,7 +115,7 @@ where
         + Unpin,
 {
     let listen_addrs = state.endpoint.listen_addrs()?.collect();
-    state.events.emit(event::Endpoint::Up { listen_addrs });
+    state.phone.emit(event::Endpoint::Up { listen_addrs });
 
     let mut ingress = ingress.fuse();
     let mut tasks = FuturesUnordered::new();
@@ -133,7 +133,7 @@ where
                 if let Some(res) = res {
                     if let Err(e) = res {
                         if let Ok(panik) = e.try_into_panic() {
-                            state.events.emit(event::Endpoint::Down);
+                            state.phone.emit(event::Endpoint::Down);
                             panic::resume_unwind(panik)
                         }
                     }
@@ -144,7 +144,7 @@ where
         }
     }
 
-    state.events.emit(event::Endpoint::Down);
+    state.phone.emit(event::Endpoint::Down);
 
     while let Some(res) = tasks.next().await {
         if let Err(e) = res {
@@ -298,7 +298,7 @@ where
                 let info = || peer_advertisement(&state.endpoint);
 
                 let membership::TnT { trans, ticks } = state.membership.connection_lost(remote_id);
-                trans.into_iter().for_each(|evt| state.events.emit(evt));
+                trans.into_iter().for_each(|evt| state.phone.emit(evt));
                 for tick in ticks {
                     stream::iter(membership::collect_tocks(&state.membership, &info, tick))
                         .for_each(|tock| tick::tock(state.clone(), tock))
@@ -330,7 +330,7 @@ where
 
                     Ok((may_event, tocks)) => {
                         if let Some(event) = may_event {
-                            state.events.emit(event)
+                            state.phone.emit(event)
                         }
 
                         stream::iter(tocks)
@@ -359,7 +359,7 @@ where
                 let info = || peer_advertisement(&state.endpoint);
 
                 let membership::TnT { trans, ticks } = state.membership.connection_lost(remote_id);
-                trans.into_iter().for_each(|evt| state.events.emit(evt));
+                trans.into_iter().for_each(|evt| state.phone.emit(evt));
                 for tick in ticks {
                     stream::iter(membership::collect_tocks(&state.membership, &info, tick))
                         .for_each(|tock| tick::tock(state.clone(), tock))
@@ -378,7 +378,7 @@ where
                     },
 
                     Ok((trans, tocks)) => {
-                        trans.into_iter().for_each(|evt| state.events.emit(evt));
+                        trans.into_iter().for_each(|evt| state.phone.emit(evt));
                         stream::iter(tocks)
                             .for_each(|tock| tick::tock(state.clone(), tock))
                             .await
@@ -467,13 +467,26 @@ where
         let remote_id = stream.remote_peer_id();
         let pool = state.storage.clone();
         let config = *state.graft.read().config();
+        let phone = state.phone.clone();
         move || {
             for resp in rx {
                 futures::executor::block_on(
                     graft::on_offer(config, &pool, resp, remote_id, None).for_each(|res| async {
                         res.map_or_else(
                             |e| tracing::error!(err = ?e, "mutual sync error"),
-                            |SomeUrn::Git(urn)| tracing::info!(urn = %urn, "sync succeeded"),
+                            |r| {
+                                let SomeUrn::Git(urn) = r.urn;
+                                tracing::info!(urn = %urn, "sync succeeded");
+                                if !r.updated_tips.is_empty() {
+                                    phone
+                                        .announce(gossip::Payload {
+                                            urn,
+                                            rev: None,
+                                            origin: None,
+                                        })
+                                        .ok();
+                                }
+                            },
                         )
                     }),
                 )
@@ -676,8 +689,19 @@ where
                 .map_err(error::GraftInitiate::from)
         })
         .try_flatten()
-        .try_for_each(|SomeUrn::Git(urn)| {
+        .try_for_each(|graft::GraftSuccess { urn, updated_tips }| {
+            let SomeUrn::Git(urn) = urn;
             tracing::info!("synced {}", urn);
+            if !updated_tips.is_empty() {
+                state
+                    .phone
+                    .announce(gossip::Payload {
+                        urn,
+                        rev: None,
+                        origin: None,
+                    })
+                    .ok();
+            }
             future::ok(())
         })
         .await

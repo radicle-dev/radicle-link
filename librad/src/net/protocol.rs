@@ -190,6 +190,10 @@ impl TinCans {
     pub fn subscribe(&self) -> impl futures::Stream<Item = Result<event::Upstream, RecvError>> {
         self.upstream.subscribe()
     }
+
+    pub(self) fn emit(&self, evt: impl Into<event::Upstream>) {
+        self.upstream.send(evt.into()).ok();
+    }
 }
 
 impl Default for TinCans {
@@ -274,7 +278,6 @@ where
         config.membership,
     );
     let storage = Storage::from(storage);
-    let events = phone.upstream.clone().into();
     let graft = {
         let git = storage.get().await?;
         Arc::new(RwLock::new(graft::State::new(git.as_ref(), config.graft)?))
@@ -285,7 +288,7 @@ where
         git,
         membership,
         storage,
-        events,
+        phone: phone.clone(),
         graft,
     };
 
@@ -450,7 +453,7 @@ struct State<S> {
     git: GitServer,
     membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     storage: Storage<S>,
-    events: EventSink,
+    phone: TinCans,
     graft: Arc<RwLock<graft::State>>,
 }
 
@@ -502,29 +505,6 @@ where
                 Some(Box::new(upgraded))
             },
         }
-    }
-}
-
-#[derive(Clone)]
-struct EventSink(tokio::sync::broadcast::Sender<event::Upstream>);
-
-impl Deref for EventSink {
-    type Target = tokio::sync::broadcast::Sender<event::Upstream>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl EventSink {
-    fn emit(&self, evt: impl Into<event::Upstream>) {
-        self.0.send(evt.into()).ok();
-    }
-}
-
-impl From<tokio::sync::broadcast::Sender<event::Upstream>> for EventSink {
-    fn from(tok: tokio::sync::broadcast::Sender<event::Upstream>) -> Self {
-        Self(tok)
     }
 }
 

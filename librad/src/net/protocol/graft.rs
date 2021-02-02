@@ -33,7 +33,10 @@
 //! filter of the URNs it is interested in. The response is the intersection of
 //! this filter with the URNs the other side has, in batches of
 //! [`rpc::MAX_OFFER_BATCH_SIZE`]. Both sides attempt to fetch those URNs
-//! element-wise from the respective other side.
+//! element-wise from the respective other side. If a fetch succeeds **and** did
+//! fetch a non-zero amount of data, the fetching peer shall broadcast to its
+//! active set (except the fetched-from peer) a `Have` gossip message with only
+//! the URN set (ie. no `rev`).
 //!
 //! Since it is more efficient for a long-running peer to react to gossip
 //! messages, it should graft only during a small time window after start up.
@@ -42,6 +45,7 @@
 //! [Epidemic Broadcast Trees]: https://asc.di.fct.unl.pt/~jleitao/pdf/srds07-leitao.pdf
 //! [`git` protocol v2]: https://git-scm.com/docs/protocol-v2
 use std::{
+    collections::BTreeMap,
     convert::TryFrom as _,
     mem,
     net::SocketAddr,
@@ -51,6 +55,7 @@ use std::{
 };
 
 use futures::stream::FuturesUnordered;
+use git_ext as ext;
 use itertools::Itertools as _;
 
 use crate::{
@@ -133,11 +138,28 @@ pub fn ask(
     storage: &Storage,
     request: Ask,
 ) -> Result<impl Iterator<Item = Result<Offer, error::Ask>> + '_, error::Ask> {
-    let bloom = request
+    let filter = request
         .map(bloom::BloomFilter::try_from)
         .transpose()
         .map_err(error::Ask::Bloom)?;
-    Ok(self::offers(storage, bloom)?)
+    let offers = identities::any::list_urns(storage)?
+        .map(|x| x.map_err(error::Ask::from))
+        .filter_map_ok(move |urn| {
+            let urn = SomeUrn::Git(urn);
+            match filter.as_ref() {
+                None => Some(urn),
+                Some(bloom) => bloom.contains(&urn).then_some(urn),
+            }
+        })
+        .try_chunked(rpc::MAX_OFFER_BATCH_SIZE)
+        .map_ok(|chunk| rpc::Offer::try_from(chunk).expect("chunk size == batch size. qed"));
+
+    Ok(offers)
+}
+
+pub struct GraftSuccess {
+    pub urn: SomeUrn,
+    pub updated_tips: BTreeMap<ext::RefLike, ext::Oid>,
 }
 
 #[tracing::instrument(skip(storage))]
@@ -147,7 +169,7 @@ pub fn on_offer<S>(
     offer: Offer,
     remote_id: PeerId,
     remote_addr: Option<SocketAddr>,
-) -> impl futures::Stream<Item = Result<SomeUrn, error::Offer>> + '_
+) -> impl futures::Stream<Item = Result<GraftSuccess, error::Offer>> + '_
 where
     S: storage::Pooled + Send + Sync + 'static,
 {
@@ -177,29 +199,15 @@ where
                     }
                 },
 
-                Ok(res) => Ok(res.map(|_| urn)?),
+                Ok(res) => Ok(res.map(
+                    |replication::ReplicateResult { updated_tips, .. }| GraftSuccess {
+                        urn,
+                        updated_tips,
+                    },
+                )?),
             }
         })
         .collect::<FuturesUnordered<_>>()
-}
-
-fn offers(
-    storage: &Storage,
-    filter: Option<bloom::BloomFilter<SomeUrn>>,
-) -> Result<impl Iterator<Item = Result<rpc::Offer, error::Ask>> + '_, error::Ask> {
-    let offers = identities::any::list_urns(storage)?
-        .map(|x| x.map_err(error::Ask::from))
-        .filter_map_ok(move |urn| {
-            let urn = SomeUrn::Git(urn);
-            match filter.as_ref() {
-                None => Some(urn),
-                Some(bloom) => bloom.contains(&urn).then_some(urn),
-            }
-        })
-        .try_chunked(rpc::MAX_OFFER_BATCH_SIZE)
-        .map_ok(|chunk| rpc::Offer::try_from(chunk).expect("chunk size == batch size. qed"));
-
-    Ok(offers)
 }
 
 // FIXME: We can't have a non-allocating chunker, because we can't put the bytes
