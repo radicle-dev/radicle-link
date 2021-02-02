@@ -6,9 +6,13 @@
 use std::{
     convert::TryFrom as _,
 <<<<<<< HEAD
+<<<<<<< HEAD
     fs,
 =======
 >>>>>>> f34d22d (Move CLI components into submodule)
+=======
+    fs,
+>>>>>>> 47ea787 (Default key)
     path::{Path, PathBuf},
 };
 
@@ -52,13 +56,15 @@ pub fn main() -> anyhow::Result<()> {
 use super::args::*;
 use crate::{fork, init, include};
 
-const SECRET_KEY_FILE: &str = "librad.key";
-
 pub fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
     let paths = Paths::from_env()?;
+<<<<<<< HEAD
     let signer = get_signer(paths.keys_dir())?;
 >>>>>>> f34d22d (Move CLI components into submodule)
+=======
+    let signer = get_signer(paths.keys_dir(), args.key)?;
+>>>>>>> 47ea787 (Default key)
     let storage = Storage::open(&paths, signer.clone())?;
     let whoami = local::default(&storage)?
         .ok_or_else(|| anyhow!("the default identity is not set for your Radicle store"))?;
@@ -165,18 +171,25 @@ fn project_success(urn: &Urn, path: PathBuf) {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 fn get_signer<K>(keys_dir: &Path, key_file: Option<K>) -> anyhow::Result<BoxedSigner>
 where
     K: AsRef<Path>,
 {
+=======
+fn get_signer<K>(keys_dir: &Path, key_file: Option<K>) -> anyhow::Result<BoxedSigner> where K: AsRef<Path> {
+>>>>>>> 47ea787 (Default key)
     let file = match key_file {
         Some(file) => keys_dir.join(file),
         None => default_singer_file(keys_dir)?,
     };
+<<<<<<< HEAD
 =======
 fn get_signer(keys_dir: &Path) -> anyhow::Result<BoxedSigner> {
     let file = keys_dir.join(SECRET_KEY_FILE);
 >>>>>>> f34d22d (Move CLI components into submodule)
+=======
+>>>>>>> 47ea787 (Default key)
     let keystore = FileStorage::<_, PublicKey, _, _>::new(
         &file,
         Pwhash::new(
@@ -189,22 +202,35 @@ fn get_signer(keys_dir: &Path) -> anyhow::Result<BoxedSigner> {
     Ok(SomeSigner { signer: key }.into())
 }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 47ea787 (Default key)
 
 fn default_singer_file(keys_dir: &Path) -> anyhow::Result<PathBuf> {
     let mut keys = fs::read_dir(keys_dir)?;
     match keys.next() {
+<<<<<<< HEAD
         None => Err(anyhow!(
             "No key was found in `{}`, have you initialised your key yet?",
             keys_dir.display()
         )),
+=======
+        None => Err(anyhow!("No key was found in `{}`, have you initialised your key yet?", keys_dir.display())),
+>>>>>>> 47ea787 (Default key)
         Some(key) => {
             if keys.next().is_some() {
                 Err(anyhow!("Multiple keys were found in `{}`, you will have to specify which key you are using", keys_dir.display()))
             } else {
                 Ok(key?.path())
             }
+<<<<<<< HEAD
         },
     }
 }
 =======
 >>>>>>> f34d22d (Move CLI components into submodule)
+=======
+        }
+    }
+}
+>>>>>>> 47ea787 (Default key)
