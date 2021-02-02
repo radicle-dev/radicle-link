@@ -3,8 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#![feature(async_closure)]
-
 use std::{
     convert::{identity, TryFrom},
     fmt::Debug,
@@ -56,6 +54,8 @@ use librad_test::{
     },
 };
 
+const NUM_PEERS: usize = 2;
+
 /// This integration test is to ensure that we can setup a working copy that can
 /// fetch changes. The breakdown of the test into substeps is:
 ///
@@ -72,10 +72,8 @@ use librad_test::{
 async fn can_fetch() {
     logging::init();
 
-    const NUM_PEERS: usize = 2;
-
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut peers| {
+    testnet::run_on_testnet(peers, NUM_PEERS, |mut peers| async move {
         let peer1 = peers.pop().unwrap();
         let peer2 = peers.pop().unwrap();
 

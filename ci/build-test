@@ -2,7 +2,7 @@
 set -eou pipefail
 
 echo '--- Build'
-cargo build --verbose --workspace --all-features
+cargo build --workspace --all-features
 
 echo '--- Test'
 GIT_TRACE2=1 RUST_LOG=librad=trace cargo test --workspace --all-features

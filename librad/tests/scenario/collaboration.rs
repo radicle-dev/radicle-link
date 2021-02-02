@@ -20,14 +20,14 @@ use librad_test::{
     },
 };
 
+const NUM_PEERS: usize = 2;
+
 #[tokio::test(core_threads = 2)]
 async fn can_add_maintainer() {
     logging::init();
 
-    const NUM_PEERS: usize = 2;
-
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, move |mut apis| async move {
+    testnet::run_on_testnet(peers, NUM_PEERS, |mut apis| async move {
         let peer1 = apis.pop().unwrap();
         let peer2 = apis.pop().unwrap();
 
