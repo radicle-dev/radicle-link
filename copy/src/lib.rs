@@ -30,6 +30,7 @@ use librad::{
 pub mod error;
 use error::Error;
 
+pub mod cli;
 pub mod existing;
 pub mod fork;
 pub mod include;
