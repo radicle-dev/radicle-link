@@ -30,7 +30,7 @@ use radicle_keystore::{
 };
 
 use super::args::{community, garden, Args, Command, Community, Garden};
-use crate::{fork, include, init};
+use crate::{graft, include, plant, repot};
 
 pub fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
@@ -47,13 +47,13 @@ pub fn main() -> anyhow::Result<()> {
                 name,
                 path,
             }) => {
-                use crate::new::New;
+                use crate::plant::Plant;
 
                 let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
-                let raw = New::new(description, default_branch, name, path);
-                let valid = New::validate(raw)?;
+                let raw = Plant::new(description, default_branch, name, path);
+                let valid = Plant::validate(raw)?;
                 let path = valid.path();
-                let project = init(paths, signer, &storage, whoami, valid)?;
+                let project = plant(paths, signer, &storage, whoami, valid)?;
 
                 project_success(&project.urn(), path);
             },
@@ -63,19 +63,19 @@ pub fn main() -> anyhow::Result<()> {
                 path,
                 ..
             }) => {
-                use crate::existing::Existing;
+                use crate::repot::Repot;
 
                 let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
-                let raw = Existing::new(description, default_branch, path.clone())?;
-                let valid = Existing::validate(raw)?;
-                let project = init(paths, signer, &storage, whoami, valid)?;
+                let raw = Repot::new(description, default_branch, path.clone())?;
+                let valid = Repot::validate(raw)?;
+                let project = repot(paths, signer, &storage, whoami, valid)?;
 
                 project_success(&project.urn(), path);
             },
             garden::Options::Graft(garden::Graft { peer, urn, path }) => {
-                fork(paths, signer, &storage, peer, path.clone(), &urn)?;
-                println!("Your fork was created 🎉");
-                println!("The working copy exists at `{}`", path.display());
+                graft(paths, signer, &storage, peer, path.clone(), &urn)?;
+                println!("Your working copy was created 🎉");
+                println!("It exists at `{}`", path.display());
             },
         },
         Command::Community(Community { community }) => match community {
