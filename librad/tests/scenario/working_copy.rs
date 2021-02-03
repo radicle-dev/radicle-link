@@ -3,8 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#![feature(async_closure)]
-
 use std::{
     convert::{identity, TryFrom},
     fmt::Debug,
@@ -19,7 +17,6 @@ use librad::{
         identities::{self, Person, Project},
         include,
         local::url::LocalUrl,
-        replication,
         tracking,
         types::{
             remote::{LocalFetchspec, LocalPushspec},
@@ -50,11 +47,10 @@ use librad::{
 use librad_test::{
     git::create_commit,
     logging,
-    rad::{
-        identities::{create_test_project, TestProject},
-        testnet,
-    },
+    rad::{identities::TestProject, testnet},
 };
+
+const NUM_PEERS: usize = 2;
 
 /// This integration test is to ensure that we can setup a working copy that can
 /// fetch changes. The breakdown of the test into substeps is:
@@ -72,28 +68,24 @@ use librad_test::{
 async fn can_fetch() {
     logging::init();
 
-    const NUM_PEERS: usize = 2;
-
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, async move |mut peers| {
+    testnet::run_on_testnet(peers, NUM_PEERS, |mut peers| async move {
         let peer1 = peers.pop().unwrap();
         let peer2 = peers.pop().unwrap();
 
         let peer2_events = peer2.subscribe();
 
-        let TestProject { project, owner } = peer1
-            .using_storage(move |store| create_test_project(&store))
+        let proj = peer1
+            .using_storage(move |store| TestProject::create(&store))
             .await
             .unwrap()
             .unwrap();
+        proj.pull(&peer1, &peer2).await.ok().unwrap();
 
         let tracked_persons = {
-            let urn = project.urn();
-            let peer1_id = peer1.peer_id();
-            let cfg = peer2.protocol_config().replication;
+            let urn = proj.project.urn();
             peer2
                 .using_storage(move |store| {
-                    replication::replicate(&store, cfg, None, urn.clone(), peer1_id, None).unwrap();
                     tracking::tracked(&store, &urn)
                         .unwrap()
                         .map(|peer| {
@@ -115,9 +107,10 @@ async fn can_fetch() {
 
         let tmp = tempdir().unwrap();
         {
-            let commit_id = commit_and_push(tmp.path().join("peer1"), &peer1, &owner, &project)
-                .await
-                .unwrap();
+            let commit_id =
+                commit_and_push(tmp.path().join("peer1"), &peer1, &proj.owner, &proj.project)
+                    .await
+                    .unwrap();
             event::upstream::expect(
                 peer2_events,
                 gossip_from(peer1.peer_id()),
@@ -129,7 +122,7 @@ async fn can_fetch() {
                 tmp.path().join("peer2"),
                 tmp.path().to_path_buf(),
                 &peer2,
-                &project,
+                &proj.project,
                 tracked_persons,
             )
             .unwrap();

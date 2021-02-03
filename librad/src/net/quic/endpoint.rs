@@ -40,8 +40,8 @@ impl<'a> LocalPeer for BoundEndpoint<'a> {
 impl<'a> LocalAddr for BoundEndpoint<'a> {
     type Addr = SocketAddr;
 
-    fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.endpoint.local_addr()
+    fn listen_addrs(&self) -> io::Result<Vec<SocketAddr>> {
+        self.endpoint.listen_addrs()
     }
 }
 
@@ -94,7 +94,7 @@ impl Endpoint {
         Ok(BoundEndpoint { endpoint, incoming })
     }
 
-    pub fn listen_addrs(&self) -> io::Result<impl Iterator<Item = SocketAddr>> {
+    pub fn listen_addrs(&self) -> io::Result<Vec<SocketAddr>> {
         // FIXME: can this really fail?
         let local_addr = self.endpoint.local_addr()?;
         let local_ip = local_addr.ip();
@@ -124,7 +124,7 @@ impl Endpoint {
             vec![local_addr]
         };
 
-        Ok(addrs.into_iter())
+        Ok(addrs)
     }
 
     pub fn connections_total(&self) -> usize {
@@ -198,8 +198,8 @@ impl LocalPeer for Endpoint {
 impl LocalAddr for Endpoint {
     type Addr = SocketAddr;
 
-    fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.endpoint.local_addr()
+    fn listen_addrs(&self) -> io::Result<Vec<SocketAddr>> {
+        self.listen_addrs()
     }
 }
 

@@ -25,7 +25,12 @@ use rand_pcg::Pcg64Mcg;
 use tokio::sync::broadcast as tincan;
 use tracing::Instrument as _;
 
-use super::{quic, upgrade, Network};
+use super::{
+    connection::{LocalAddr, LocalPeer},
+    quic,
+    upgrade,
+    Network,
+};
 use crate::{
     git::{
         self,
@@ -81,7 +86,7 @@ impl<S> Bound<S> {
         self.state.local_id
     }
 
-    pub fn listen_addrs(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
+    pub fn listen_addrs(&self) -> std::io::Result<Vec<SocketAddr>> {
         self.state.endpoint.listen_addrs()
     }
 
@@ -91,6 +96,20 @@ impl<S> Bound<S> {
         D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
     {
         accept(self, disco).await
+    }
+}
+
+impl<S> LocalPeer for Bound<S> {
+    fn local_peer_id(&self) -> PeerId {
+        self.peer_id()
+    }
+}
+
+impl<S> LocalAddr for Bound<S> {
+    type Addr = SocketAddr;
+
+    fn listen_addrs(&self) -> std::io::Result<Vec<Self::Addr>> {
+        self.state.endpoint.listen_addrs()
     }
 }
 

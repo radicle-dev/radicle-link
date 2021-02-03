@@ -8,7 +8,7 @@ license = "GPL-3.0-or-later"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nonempty = "0.5"
+nonempty = "0.6"
 num-bigint = "0.3"
 thiserror = "1"
 
