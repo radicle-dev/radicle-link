@@ -15,7 +15,8 @@ use librad::{
     std_ext::result::ResultExt as _,
 };
 
-use crate::{git, sealed::Sealed, AsPayload, CreateRepo};
+use super::{AsPayload, CreateRepo};
+use crate::{git, sealed::Sealed};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -39,10 +40,10 @@ pub enum Error {
 #[error("could not determine the name of the project from the given path `{0}`")]
 pub struct EmptyNameError(PathBuf);
 
-/// For construction, use [`Existing::new`] followed by [`Existing::validate`].
+/// For construction, use [`Repot::new`] followed by [`Repot::validate`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Existing<V> {
+pub struct Repot<V> {
     description: Option<Cstring>,
     default_branch: OneLevel,
     path: PathBuf,
@@ -50,9 +51,9 @@ pub struct Existing<V> {
     valid: V,
 }
 
-impl<V> Sealed for Existing<V> {}
+impl<V> Sealed for Repot<V> {}
 
-impl<V> AsPayload for Existing<V> {
+impl<V> AsPayload for Repot<V> {
     fn as_payload(&self) -> payload::Project {
         payload::Project {
             default_branch: Some(Cstring::from(self.default_branch.as_str())),
@@ -62,7 +63,7 @@ impl<V> AsPayload for Existing<V> {
     }
 }
 
-impl CreateRepo for Existing<Valid> {
+impl CreateRepo for Repot<Valid> {
     type Error = Error;
 
     fn init<F>(self, url: LocalUrl, transport: F) -> Result<git2::Repository, Self::Error>
@@ -73,7 +74,7 @@ impl CreateRepo for Existing<Valid> {
     }
 }
 
-impl<V> Existing<V> {
+impl<V> Repot<V> {
     pub fn name(&self) -> &Cstring {
         &self.name
     }
@@ -81,7 +82,7 @@ impl<V> Existing<V> {
 
 type Invalid = PhantomData<!>;
 
-impl Existing<Invalid> {
+impl Repot<Invalid> {
     pub fn new(
         description: Option<Cstring>,
         default_branch: OneLevel,
@@ -108,8 +109,8 @@ pub struct Valid {
     repo: git2::Repository,
 }
 
-impl Existing<Valid> {
-    pub fn validate(existing: Existing<Invalid>) -> Result<Self, Error> {
+impl Repot<Valid> {
+    pub fn validate(existing: Repot<Invalid>) -> Result<Self, Error> {
         if !existing.path.exists() {
             return Err(Error::PathDoesNotExist(existing.path));
         }
@@ -123,7 +124,7 @@ impl Existing<Valid> {
             let _default_branch_ref = git::validation::branch(&repo, &existing.default_branch)?;
         }
 
-        Ok(Existing {
+        Ok(Repot {
             description: existing.description,
             default_branch: existing.default_branch,
             path: existing.path,

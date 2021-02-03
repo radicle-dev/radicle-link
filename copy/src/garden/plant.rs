@@ -14,7 +14,8 @@ use librad::{
     internal::canonical::Cstring,
 };
 
-use crate::{git, sealed::Sealed, AsPayload, CreateRepo};
+use super::{AsPayload, CreateRepo};
+use crate::{git, sealed::Sealed};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -28,10 +29,10 @@ pub enum Error {
     Io(#[from] io::Error),
 }
 
-/// For construction, use [`New::new`] followed by [`New::validate`].
+/// For construction, use [`Plant::new`] followed by [`Plant::validate`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct New<V> {
+pub struct Plant<V> {
     description: Option<Cstring>,
     default_branch: OneLevel,
     name: Cstring,
@@ -39,9 +40,9 @@ pub struct New<V> {
     valid: V,
 }
 
-impl<V> Sealed for New<V> {}
+impl<V> Sealed for Plant<V> {}
 
-impl<V> AsPayload for New<V> {
+impl<V> AsPayload for Plant<V> {
     fn as_payload(&self) -> payload::Project {
         payload::Project {
             default_branch: Some(Cstring::from(self.default_branch.as_str())),
@@ -51,7 +52,7 @@ impl<V> AsPayload for New<V> {
     }
 }
 
-impl CreateRepo for New<Valid> {
+impl CreateRepo for Plant<Valid> {
     type Error = Error;
 
     fn init<F>(self, url: LocalUrl, transport: F) -> Result<git2::Repository, Self::Error>
@@ -62,7 +63,7 @@ impl CreateRepo for New<Valid> {
     }
 }
 
-impl<V> New<V> {
+impl<V> Plant<V> {
     pub fn path(&self) -> PathBuf {
         self.path.join(self.name.to_string())
     }
@@ -71,7 +72,7 @@ impl<V> New<V> {
 pub type Invalid = PhantomData<!>;
 pub type Valid = PhantomData<!>;
 
-impl New<Invalid> {
+impl Plant<Invalid> {
     pub fn new(
         description: Option<Cstring>,
         default_branch: OneLevel,
@@ -88,8 +89,8 @@ impl New<Invalid> {
     }
 }
 
-impl New<Valid> {
-    pub fn validate(invalid: New<Invalid>) -> Result<Self, Error> {
+impl Plant<Valid> {
+    pub fn validate(invalid: Plant<Invalid>) -> Result<Self, Error> {
         let repo_path = invalid.path();
 
         if repo_path.is_file() {

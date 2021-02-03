@@ -5,18 +5,21 @@
 
 use librad::git::identities;
 
-use crate::{existing, fork, include, new};
+use crate::{
+    garden::{graft, plant, repot},
+    include,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    New(#[from] new::Error),
+    Plant(#[from] plant::Error),
 
     #[error(transparent)]
-    Existing(#[from] existing::Error),
+    Repot(#[from] repot::Error),
 
     #[error(transparent)]
-    Fork(#[from] fork::Error),
+    Graft(#[from] graft::Error),
 
     #[error(transparent)]
     Identities(#[from] identities::Error),

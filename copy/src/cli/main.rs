@@ -47,6 +47,7 @@ use crate::{
     garden::{graft, plant, repot},
     include,
 };
+<<<<<<< HEAD
 
 pub fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
@@ -58,8 +59,14 @@ use super::args::*;
 use crate::{fork, init, include};
 =======
 use super::args::{community, garden, Args, Command, Community, Garden};
+<<<<<<< HEAD
 use crate::{fork, include, init};
 >>>>>>> 5b6ca00 (Rework cli args)
+=======
+use crate::{graft, include, plant, repot};
+>>>>>>> 449103c (Reorganise module structure)
+=======
+>>>>>>> e7ea5aa (fixup! fixup! Reorganise module structure)
 
 pub fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
@@ -85,6 +92,8 @@ pub fn main() -> anyhow::Result<()> {
                 name,
                 path,
             }) => {
+<<<<<<< HEAD
+<<<<<<< HEAD
 <<<<<<< HEAD
                 use crate::garden::plant::Plant;
 
@@ -135,12 +144,18 @@ pub fn main() -> anyhow::Result<()> {
 =======
                 use crate::new::New;
 >>>>>>> 5b6ca00 (Rework cli args)
+=======
+                use crate::plant::Plant;
+>>>>>>> 449103c (Reorganise module structure)
+=======
+                use crate::garden::plant::Plant;
+>>>>>>> e7ea5aa (fixup! fixup! Reorganise module structure)
 
                 let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
-                let raw = New::new(description, default_branch, name, path);
-                let valid = New::validate(raw)?;
+                let raw = Plant::new(description, default_branch, name, path);
+                let valid = Plant::validate(raw)?;
                 let path = valid.path();
-                let project = init(paths, signer, &storage, whoami, valid)?;
+                let project = plant(paths, signer, &storage, whoami, valid)?;
 
                 project_success(&project.urn(), path);
             },
@@ -150,19 +165,19 @@ pub fn main() -> anyhow::Result<()> {
                 path,
                 ..
             }) => {
-                use crate::existing::Existing;
+                use crate::garden::repot::Repot;
 
                 let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
-                let raw = Existing::new(description, default_branch, path.clone())?;
-                let valid = Existing::validate(raw)?;
-                let project = init(paths, signer, &storage, whoami, valid)?;
+                let raw = Repot::new(description, default_branch, path.clone())?;
+                let valid = Repot::validate(raw)?;
+                let project = repot(paths, signer, &storage, whoami, valid)?;
 
                 project_success(&project.urn(), path);
             },
             garden::Options::Graft(garden::Graft { peer, urn, path }) => {
-                fork(paths, signer, &storage, peer, path.clone(), &urn)?;
-                println!("Your fork was created 🎉");
-                println!("The working copy exists at `{}`", path.display());
+                graft(paths, signer, &storage, peer, path.clone(), &urn)?;
+                println!("Your working copy was created 🎉");
+                println!("It exists at `{}`", path.display());
             },
         },
         Command::Community(Community { community }) => match community {

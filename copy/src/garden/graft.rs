@@ -92,7 +92,7 @@ pub enum Error {
 /// [include]
 ///     path = /home/user/.config/radicle/git-includes/hwd1yrerzpjbmtshsqw6ajokqtqrwaswty6p7kfeer3yt1n76t46iqggzcr.inc
 /// ```
-pub fn fork<F>(
+pub fn graft<F>(
     open_storage: F,
     project: &Project,
     from: Either<Local, Peer>,
@@ -110,8 +110,8 @@ where
     )?);
 
     let (repo, rad) = match from {
-        Either::Left(local) => local.fork(open_storage)?,
-        Either::Right(peer) => peer.fork(open_storage)?,
+        Either::Left(local) => local.graft(open_storage)?,
+        Either::Right(peer) => peer.graft(open_storage)?,
     };
 
     // Set configurations
@@ -135,7 +135,7 @@ impl Local {
         }
     }
 
-    fn fork<F>(self, open_storage: F) -> Result<(git2::Repository, Remote<LocalUrl>), Error>
+    fn graft<F>(self, open_storage: F) -> Result<(git2::Repository, Remote<LocalUrl>), Error>
     where
         F: CanOpenStorage + 'static,
     {
@@ -174,7 +174,7 @@ impl Peer {
         })
     }
 
-    fn fork<F>(self, open_storage: F) -> Result<(git2::Repository, Remote<LocalUrl>), Error>
+    fn graft<F>(self, open_storage: F) -> Result<(git2::Repository, Remote<LocalUrl>), Error>
     where
         F: CanOpenStorage + Clone + 'static,
     {
