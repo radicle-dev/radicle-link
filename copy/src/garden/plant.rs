@@ -57,7 +57,7 @@ impl CreateRepo for Plant<Valid> {
 
     fn init<F>(self, url: LocalUrl, transport: F) -> Result<git2::Repository, Self::Error>
     where
-        F: CanOpenStorage + 'static,
+        F: CanOpenStorage + Clone + 'static,
     {
         self.init(url, transport)
     }
@@ -112,7 +112,7 @@ impl Plant<Valid> {
 
     pub fn init<F>(self, url: LocalUrl, open_storage: F) -> Result<git2::Repository, Error>
     where
-        F: CanOpenStorage + 'static,
+        F: CanOpenStorage + Clone + 'static,
     {
         let path = self.path();
         tracing::debug!("Setting up new repository @ '{}'", path.display());

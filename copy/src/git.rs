@@ -5,6 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
+use nonempty::NonEmpty;
+
 use librad::{
     git::{
         local::{
@@ -13,6 +15,7 @@ use librad::{
         },
         types::{
             remote::{LocalFetchspec, LocalPushspec, Remote},
+            Fetchspec,
             Force,
             Refspec,
         },
@@ -48,7 +51,7 @@ pub fn setup_remote<F>(
     default_branch: &OneLevel,
 ) -> Result<Remote<LocalUrl>, Error>
 where
-    F: CanOpenStorage + 'static,
+    F: CanOpenStorage + Clone + 'static,
 {
     let _default_branch_ref = validation::branch(repo, default_branch)?;
 
@@ -68,7 +71,7 @@ where
         Ok,
     )?;
     for pushed in git_remote.push(
-        open_storage,
+        open_storage.clone(),
         repo,
         LocalPushspec::Matching {
             pattern: refspec_pattern!("refs/heads/*"),
@@ -77,6 +80,19 @@ where
     )? {
         tracing::debug!("Pushed local branch `{}`", pushed);
     }
+
+    // Ensure that we have the default branch fetched from the remote
+    let _fetched = git_remote.fetch(
+        open_storage,
+        &repo,
+        LocalFetchspec::Specs(NonEmpty::new(Fetchspec::from(Refspec {
+            src: reflike!("refs/heads").join(default_branch.clone()),
+            dst: reflike!("refs/remotes")
+                .join(git_remote.name.clone())
+                .join(default_branch.clone()),
+            force: Force::False,
+        }))),
+    )?;
     Ok(git_remote)
 }
 

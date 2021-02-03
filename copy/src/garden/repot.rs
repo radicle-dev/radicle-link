@@ -68,7 +68,7 @@ impl CreateRepo for Repot<Valid> {
 
     fn init<F>(self, url: LocalUrl, transport: F) -> Result<git2::Repository, Self::Error>
     where
-        F: CanOpenStorage + 'static,
+        F: CanOpenStorage + Clone + 'static,
     {
         self.init(url, transport)
     }
@@ -135,7 +135,7 @@ impl Repot<Valid> {
 
     pub fn init<F>(self, url: LocalUrl, open_storage: F) -> Result<git2::Repository, Error>
     where
-        F: CanOpenStorage + 'static,
+        F: CanOpenStorage + Clone + 'static,
     {
         let Valid { repo } = self.valid;
         tracing::debug!(
