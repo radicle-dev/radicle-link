@@ -36,7 +36,7 @@ pub trait CreateRepo: sealed::Sealed {
 
     fn init<F>(self, url: LocalUrl, transport: F) -> Result<git2::Repository, Self::Error>
     where
-        F: CanOpenStorage + 'static;
+        F: CanOpenStorage + Clone + 'static;
 }
 
 pub trait AsPayload: sealed::Sealed {
