@@ -61,7 +61,6 @@ pub enum Peer<S> {
 }
 
 impl<U> Peer<Status<U>> {
-    #![allow(clippy::use_self)]
     /// Refine a `Peer` into a `Replicated` peer.
     ///
     /// This will return `Some` if the `Status` was `Replicated`, and `None`
@@ -97,7 +96,6 @@ impl<U> Peer<Status<U>> {
     ///
     /// This will return `Some` if the `Peer` is `Replicated`, and `None`
     /// otherwise.
-    #[allow(clippy::missing_const_for_fn)]
     pub fn replicated_remote(self) -> Option<(PeerId, U)> {
         match self {
             Self::Remote {
@@ -127,7 +125,6 @@ impl<S> Peer<S> {
     }
 }
 
-#[allow(clippy::use_self)]
 impl<S> Peer<S> {
     /// Apply the function `f` to the `status` of the `Peer`. This allows us to
     /// easily change the underlying type of the `Peer` without changing the
@@ -160,7 +157,6 @@ pub struct Replicated<U> {
     pub user: U,
 }
 
-#[allow(clippy::use_self)]
 impl<U> Replicated<U> {
     /// Apply the supplied function `f` to the `user` field of `Replicated`.
     /// This leaves the `role` field untouched.
@@ -202,7 +198,6 @@ impl<U> Status<U> {
     }
 }
 
-#[allow(clippy::use_self)]
 impl<U> Status<U> {
     /// Apply the supplied function `f` to [`Replicated`], otherwise it leaves
     /// the `NotReplicated` variant untouched.
