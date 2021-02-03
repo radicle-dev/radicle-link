@@ -41,6 +41,7 @@ use radicle_keystore::{
 };
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 use super::args::{community, garden, Args, Command, Community, Garden};
 use crate::{
     garden::{graft, plant, repot},
@@ -55,6 +56,10 @@ pub fn main() -> anyhow::Result<()> {
 =======
 use super::args::*;
 use crate::{fork, init, include};
+=======
+use super::args::{community, garden, Args, Command, Community, Garden};
+use crate::{fork, include, init};
+>>>>>>> 5b6ca00 (Rework cli args)
 
 pub fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
@@ -70,6 +75,9 @@ pub fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow!("the default identity is not set for your Radicle store"))?;
     match args.command {
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 5b6ca00 (Rework cli args)
         Command::Garden(Garden { garden }) => match garden {
             garden::Options::Plant(garden::Plant {
                 description,
@@ -77,6 +85,7 @@ pub fn main() -> anyhow::Result<()> {
                 name,
                 path,
             }) => {
+<<<<<<< HEAD
                 use crate::garden::plant::Plant;
 
                 let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
@@ -123,41 +132,51 @@ pub fn main() -> anyhow::Result<()> {
             path,
         }) => {
             use crate::new::New;
+=======
+                use crate::new::New;
+>>>>>>> 5b6ca00 (Rework cli args)
 
-            let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
-            let raw = New::new(description, default_branch, name, path);
-            let valid = New::validate(raw)?;
-            let path = valid.path();
-            let project = init(paths, signer, &storage, whoami, valid)?;
+                let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
+                let raw = New::new(description, default_branch, name, path);
+                let valid = New::validate(raw)?;
+                let path = valid.path();
+                let project = init(paths, signer, &storage, whoami, valid)?;
 
-            project_success(&project.urn(), path);
+                project_success(&project.urn(), path);
+            },
+            garden::Options::Repot(garden::Repot {
+                description,
+                default_branch,
+                path,
+                ..
+            }) => {
+                use crate::existing::Existing;
+
+                let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
+                let raw = Existing::new(description, default_branch, path.clone())?;
+                let valid = Existing::validate(raw)?;
+                let project = init(paths, signer, &storage, whoami, valid)?;
+
+                project_success(&project.urn(), path);
+            },
+            garden::Options::Graft(garden::Graft { peer, urn, path }) => {
+                fork(paths, signer, &storage, peer, path.clone(), &urn)?;
+                println!("Your fork was created 🎉");
+                println!("The working copy exists at `{}`", path.display());
+            },
         },
-        Command::Existing(Existing {
-            description,
-            default_branch,
-            path,
-            ..
-        }) => {
-            use crate::existing::Existing;
-
-            let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
-            let raw = Existing::new(description, default_branch, path.clone())?;
-            let valid = Existing::validate(raw)?;
-            let project = init(paths, signer, &storage, whoami, valid)?;
-
-            project_success(&project.urn(), path);
-        },
-        Command::Fork(Fork { peer, urn, path }) => {
-            fork(paths, signer, &storage, peer, path.clone(), &urn)?;
-            println!("Your fork was created 🎉");
-            println!("The working copy exists at `{}`", path.display());
-        },
-        Command::Update(Update { urn }) => {
-            let project = identities::project::get(&storage, &urn)?.ok_or_else(|| anyhow!(
+        Command::Community(Community { community }) => match community {
+            community::Options::Update(community::Update { urn }) => {
+                let project = identities::project::get(&storage, &urn)?.ok_or_else(|| anyhow!(
                 "the project URN `{}` does not exist, are you sure you passed in the right URN?", urn
             ))?;
+<<<<<<< HEAD
             include::update(&storage, &paths, &project)?;
 >>>>>>> f34d22d (Move CLI components into submodule)
+=======
+                include::update(&storage, &paths, &project)?;
+            },
+>>>>>>> 5b6ca00 (Rework cli args)
         },
     };
 
@@ -172,13 +191,19 @@ fn project_success(urn: &Urn, path: PathBuf) {
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 5b6ca00 (Rework cli args)
 fn get_signer<K>(keys_dir: &Path, key_file: Option<K>) -> anyhow::Result<BoxedSigner>
 where
     K: AsRef<Path>,
 {
+<<<<<<< HEAD
 =======
 fn get_signer<K>(keys_dir: &Path, key_file: Option<K>) -> anyhow::Result<BoxedSigner> where K: AsRef<Path> {
 >>>>>>> 47ea787 (Default key)
+=======
+>>>>>>> 5b6ca00 (Rework cli args)
     let file = match key_file {
         Some(file) => keys_dir.join(file),
         None => default_singer_file(keys_dir)?,
@@ -210,19 +235,26 @@ fn default_singer_file(keys_dir: &Path) -> anyhow::Result<PathBuf> {
     let mut keys = fs::read_dir(keys_dir)?;
     match keys.next() {
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 5b6ca00 (Rework cli args)
         None => Err(anyhow!(
             "No key was found in `{}`, have you initialised your key yet?",
             keys_dir.display()
         )),
+<<<<<<< HEAD
 =======
         None => Err(anyhow!("No key was found in `{}`, have you initialised your key yet?", keys_dir.display())),
 >>>>>>> 47ea787 (Default key)
+=======
+>>>>>>> 5b6ca00 (Rework cli args)
         Some(key) => {
             if keys.next().is_some() {
                 Err(anyhow!("Multiple keys were found in `{}`, you will have to specify which key you are using", keys_dir.display()))
             } else {
                 Ok(key?.path())
             }
+<<<<<<< HEAD
 <<<<<<< HEAD
         },
     }
@@ -231,6 +263,9 @@ fn default_singer_file(keys_dir: &Path) -> anyhow::Result<PathBuf> {
 >>>>>>> f34d22d (Move CLI components into submodule)
 =======
         }
+=======
+        },
+>>>>>>> 5b6ca00 (Rework cli args)
     }
 }
 >>>>>>> 47ea787 (Default key)
