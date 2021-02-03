@@ -29,8 +29,8 @@ use radicle_keystore::{
     Keystore,
 };
 
-use super::args::*;
-use crate::{fork, init, include};
+use super::args::{community, garden, Args, Command, Community, Garden};
+use crate::{fork, include, init};
 
 pub fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
@@ -40,47 +40,51 @@ pub fn main() -> anyhow::Result<()> {
     let whoami = local::default(&storage)?
         .ok_or_else(|| anyhow!("the default identity is not set for your Radicle store"))?;
     match args.command {
-        Command::New(New {
-            description,
-            default_branch,
-            name,
-            path,
-        }) => {
-            use crate::new::New;
+        Command::Garden(Garden { garden }) => match garden {
+            garden::Options::Plant(garden::Plant {
+                description,
+                default_branch,
+                name,
+                path,
+            }) => {
+                use crate::new::New;
 
-            let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
-            let raw = New::new(description, default_branch, name, path);
-            let valid = New::validate(raw)?;
-            let path = valid.path();
-            let project = init(paths, signer, &storage, whoami, valid)?;
+                let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
+                let raw = New::new(description, default_branch, name, path);
+                let valid = New::validate(raw)?;
+                let path = valid.path();
+                let project = init(paths, signer, &storage, whoami, valid)?;
 
-            project_success(&project.urn(), path);
+                project_success(&project.urn(), path);
+            },
+            garden::Options::Repot(garden::Repot {
+                description,
+                default_branch,
+                path,
+                ..
+            }) => {
+                use crate::existing::Existing;
+
+                let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
+                let raw = Existing::new(description, default_branch, path.clone())?;
+                let valid = Existing::validate(raw)?;
+                let project = init(paths, signer, &storage, whoami, valid)?;
+
+                project_success(&project.urn(), path);
+            },
+            garden::Options::Graft(garden::Graft { peer, urn, path }) => {
+                fork(paths, signer, &storage, peer, path.clone(), &urn)?;
+                println!("Your fork was created 🎉");
+                println!("The working copy exists at `{}`", path.display());
+            },
         },
-        Command::Existing(Existing {
-            description,
-            default_branch,
-            path,
-            ..
-        }) => {
-            use crate::existing::Existing;
-
-            let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
-            let raw = Existing::new(description, default_branch, path.clone())?;
-            let valid = Existing::validate(raw)?;
-            let project = init(paths, signer, &storage, whoami, valid)?;
-
-            project_success(&project.urn(), path);
-        },
-        Command::Fork(Fork { peer, urn, path }) => {
-            fork(paths, signer, &storage, peer, path.clone(), &urn)?;
-            println!("Your fork was created 🎉");
-            println!("The working copy exists at `{}`", path.display());
-        },
-        Command::Update(Update { urn }) => {
-            let project = identities::project::get(&storage, &urn)?.ok_or_else(|| anyhow!(
+        Command::Community(Community { community }) => match community {
+            community::Options::Update(community::Update { urn }) => {
+                let project = identities::project::get(&storage, &urn)?.ok_or_else(|| anyhow!(
                 "the project URN `{}` does not exist, are you sure you passed in the right URN?", urn
             ))?;
-            include::update(&storage, &paths, &project)?;
+                include::update(&storage, &paths, &project)?;
+            },
         },
     };
 
@@ -93,7 +97,10 @@ fn project_success(urn: &Urn, path: PathBuf) {
     println!("The working copy exists at `{}`", path.display());
 }
 
-fn get_signer<K>(keys_dir: &Path, key_file: Option<K>) -> anyhow::Result<BoxedSigner> where K: AsRef<Path> {
+fn get_signer<K>(keys_dir: &Path, key_file: Option<K>) -> anyhow::Result<BoxedSigner>
+where
+    K: AsRef<Path>,
+{
     let file = match key_file {
         Some(file) => keys_dir.join(file),
         None => default_singer_file(keys_dir)?,
@@ -113,13 +120,16 @@ fn get_signer<K>(keys_dir: &Path, key_file: Option<K>) -> anyhow::Result<BoxedSi
 fn default_singer_file(keys_dir: &Path) -> anyhow::Result<PathBuf> {
     let mut keys = fs::read_dir(keys_dir)?;
     match keys.next() {
-        None => Err(anyhow!("No key was found in `{}`, have you initialised your key yet?", keys_dir.display())),
+        None => Err(anyhow!(
+            "No key was found in `{}`, have you initialised your key yet?",
+            keys_dir.display()
+        )),
         Some(key) => {
             if keys.next().is_some() {
                 Err(anyhow!("Multiple keys were found in `{}`, you will have to specify which key you are using", keys_dir.display()))
             } else {
                 Ok(key?.path())
             }
-        }
+        },
     }
 }

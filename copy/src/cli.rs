@@ -4,4 +4,5 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 pub mod args;
-pub mod main;
+mod main;
+pub use main::main;
