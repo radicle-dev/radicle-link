@@ -11,7 +11,6 @@ pub use error::Error;
 pub mod cli;
 pub mod garden;
 pub mod include;
-pub use garden::{graft, plant, repot};
 
 mod git;
 mod sealed;
