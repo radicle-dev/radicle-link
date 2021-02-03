@@ -14,7 +14,7 @@ use librad::{
 use librad_test::{
     logging,
     rad::{
-        identities::{create_test_project, TestProject},
+        identities::TestProject,
         testnet::{self, RunningTestPeer},
     },
 };
@@ -66,7 +66,7 @@ struct Host {
 impl Host {
     async fn init(peer: RunningTestPeer) -> Self {
         let project = peer
-            .using_storage(move |storage| create_test_project(&storage))
+            .using_storage(move |storage| TestProject::create(&storage))
             .await
             .unwrap()
             .unwrap();

@@ -3,30 +3,31 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom, time::Duration};
+use std::{convert::TryFrom, ops::Deref, time::Duration};
 
 use futures::StreamExt as _;
 use librad::{
     git::{
         local::url::LocalUrl,
-        replication,
         types::{remote, Flat, Force, GenericRef, Namespace, Reference, Refspec, Remote},
+        Urn,
     },
     git_ext as ext,
-    net::protocol::{
-        event::{self, upstream::predicate::gossip_from},
-        gossip::{self, Rev},
+    net::{
+        peer::Peer,
+        protocol::{
+            event::{self, upstream::predicate::gossip_from},
+            gossip::{self, Rev},
+        },
     },
     reflike,
     refspec_pattern,
+    signer::Signer,
 };
 use librad_test::{
     git::create_commit,
     logging,
-    rad::{
-        identities::{create_test_project, TestProject},
-        testnet,
-    },
+    rad::{identities::TestProject, testnet},
 };
 use tempfile::tempdir;
 
@@ -41,22 +42,14 @@ async fn fetches_on_gossip_notify() {
         let peer1 = peers.pop().unwrap();
         let peer2 = peers.pop().unwrap();
 
-        let TestProject { project, owner } = peer1
-            .using_storage(move |storage| create_test_project(&storage))
+        let proj = peer1
+            .using_storage(move |storage| TestProject::create(&storage))
             .await
             .unwrap()
             .unwrap();
-        peer2
-            .using_storage({
-                let urn = project.urn();
-                let peer_id = peer1.peer_id();
-                let cfg = peer2.protocol_config().replication;
-                move |storage| replication::replicate(&storage, cfg, None, urn, peer_id, None)
-            })
-            .await
-            .unwrap()
-            .expect("should be able to replicate");
+        proj.pull(&peer1, &peer2).await.ok().unwrap();
 
+        let TestProject { project, owner } = proj;
         let peer2_events = peer2.subscribe();
 
         let mastor = reflike!("refs/heads/master");
@@ -149,57 +142,50 @@ async fn ask_and_clone() {
     let peers = testnet::setup(NUM_PEERS).await.unwrap();
     testnet::run_on_testnet(peers, NUM_PEERS, |mut peers| async move {
         let peer1 = peers.pop().unwrap();
+        let peer2 = peers.pop().unwrap();
 
-        let TestProject { project, .. } = peer1
-            .using_storage(move |storage| create_test_project(&storage))
+        let proj = peer1
+            .using_storage(move |storage| TestProject::create(&storage))
             .await
             .unwrap()
             .unwrap();
+        let project_urn = proj.project.urn();
 
-        let peer2 = peers.pop().unwrap();
-        let res = peer2
-            .providers(project.urn(), Duration::from_secs(5))
+        let provider = peer2
+            .providers(project_urn.clone(), Duration::from_secs(5))
             .next()
             .await;
+        assert_eq!(
+            Some(peer1.peer_id()),
+            provider.map(|info| info.peer_id),
+            "Expected to have obtained peer1 as provider, but got nothing instead"
+        );
 
-        let remote_peer = match res {
-            Some(peer_info) => peer_info.peer_id,
-            None => panic!("Expected to have obtained peer1 but got None instead"),
-        };
-
-        let peer2_has_urn = || async {
-            peer2
-                .using_storage({
-                    let urn = project.urn();
-                    move |storage| storage.has_urn(&urn)
-                })
+        async fn has_urn<P, S>(peer: &P, urn: Urn) -> bool
+        where
+            P: Deref<Target = Peer<S>>,
+            S: Signer + Clone,
+        {
+            peer.using_storage(move |storage| storage.has_urn(&urn))
                 .await
                 .unwrap()
                 .unwrap()
-        };
+        }
 
         assert_eq!(
             false,
-            peer2_has_urn().await,
+            has_urn(&peer2, project_urn.clone()).await,
             "expected peer2 to not have URN {} yet",
-            project.urn()
+            project_urn
         );
 
-        peer2
-            .using_storage({
-                let urn = project.urn();
-                let cfg = peer2.protocol_config().replication;
-                move |storage| replication::replicate(&storage, cfg, None, urn, remote_peer, None)
-            })
-            .await
-            .unwrap()
-            .unwrap();
+        proj.pull(&peer1, &peer2).await.ok().unwrap();
 
         assert_eq!(
             true,
-            peer2_has_urn().await,
+            has_urn(&peer2, project_urn.clone()).await,
             "expected peer2 to have URN {}",
-            project.urn()
+            project_urn
         )
     })
     .await;

@@ -9,7 +9,6 @@ use librad::{
     self,
     git::{
         local::url::LocalUrl,
-        replication,
         types::{remote, Flat, Force, GenericRef, Namespace, Reference, Refspec, Remote},
     },
     git_ext as ext,
@@ -19,10 +18,7 @@ use librad::{
 use librad_test::{
     git::create_commit,
     logging,
-    rad::{
-        identities::{create_test_project, TestProject},
-        testnet,
-    },
+    rad::{identities::TestProject, testnet},
 };
 
 const NUM_PEERS: usize = 3;
@@ -37,12 +33,13 @@ async fn a_trois() {
         let peer2 = peers.pop().unwrap();
         let peer3 = peers.pop().unwrap();
 
-        let TestProject { project, owner } = peer1
-            .using_storage(move |storage| create_test_project(&storage))
+        let proj = peer1
+            .using_storage(move |storage| TestProject::create(&storage))
             .await
             .unwrap()
             .unwrap();
-        let default_branch: ext::RefLike = project
+        let default_branch: ext::RefLike = proj
+            .project
             .doc
             .payload
             .subject
@@ -57,12 +54,17 @@ async fn a_trois() {
         let commit_id = {
             // Perform commit and push to working copy on peer1
             let repo = git2::Repository::init(tmp.path().join("peer1")).unwrap();
-            let url = LocalUrl::from(project.urn());
-            let heads = Reference::heads(Namespace::from(project.urn()), Some(peer1.peer_id()));
+            let url = LocalUrl::from(proj.project.urn());
+            let heads =
+                Reference::heads(Namespace::from(proj.project.urn()), Some(peer1.peer_id()));
             let remotes = GenericRef::heads(
                 Flat,
-                ext::RefLike::try_from(format!("{}@{}", owner.subject().name, peer1.peer_id()))
-                    .unwrap(),
+                ext::RefLike::try_from(format!(
+                    "{}@{}",
+                    proj.owner.subject().name,
+                    peer1.peer_id()
+                ))
+                .unwrap(),
             );
             let mastor = reflike!("refs/heads").join(&default_branch);
             let mut remote = Remote::rad_remote(
@@ -90,7 +92,7 @@ async fn a_trois() {
             oid
         };
 
-        let expected_urn = project.urn().with_path(
+        let expected_urn = proj.project.urn().with_path(
             reflike!("refs/remotes")
                 .join(peer1.peer_id())
                 .join(reflike!("heads"))
@@ -103,17 +105,16 @@ async fn a_trois() {
             has_rad_self: bool,
         }
 
+        proj.pull(&peer1, &peer2).await.ok().unwrap();
+        proj.pull(&peer2, &peer3).await.ok().unwrap();
+
         let peer2_expected = peer2
             .using_storage({
-                let remote_peer = peer1.peer_id();
                 let urn = expected_urn.clone();
                 let rad_self = Reference::rad_self(Namespace::from(urn.clone()), peer1.peer_id());
                 let rad_id =
                     Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
-                let addrs = peer1.listen_addrs().to_vec();
-                let cfg = peer2.protocol_config().replication;
                 move |storage| -> Result<ExpectedReferences, anyhow::Error> {
-                    replication::replicate(&storage, cfg, None, urn.clone(), remote_peer, addrs)?;
                     Ok(ExpectedReferences {
                         has_commit: storage.has_commit(&urn, Box::new(commit_id))?,
                         has_rad_id: storage.has_ref(&rad_self)?,
@@ -126,15 +127,11 @@ async fn a_trois() {
             .unwrap();
         let peer3_expected = peer3
             .using_storage({
-                let remote_peer = peer2.peer_id();
                 let urn = expected_urn.clone();
                 let rad_self = Reference::rad_self(Namespace::from(urn.clone()), peer1.peer_id());
                 let rad_id =
                     Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
-                let addrs = peer2.listen_addrs().to_vec();
-                let cfg = peer3.protocol_config().replication;
                 move |storage| -> Result<ExpectedReferences, anyhow::Error> {
-                    replication::replicate(&storage, cfg, None, urn.clone(), remote_peer, addrs)?;
                     Ok(ExpectedReferences {
                         has_commit: storage.has_commit(&urn, Box::new(commit_id))?,
                         has_rad_id: storage.has_ref(&rad_self)?,

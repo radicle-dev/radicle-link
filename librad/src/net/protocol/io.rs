@@ -95,7 +95,7 @@ where
     I: futures::Stream<Item = quic::Result<(quic::Connection, quic::IncomingStreams<'static>)>>
         + Unpin,
 {
-    let listen_addrs = state.endpoint.listen_addrs()?.collect();
+    let listen_addrs = state.endpoint.listen_addrs()?;
     state.events.emit(event::Endpoint::Up { listen_addrs });
 
     while let Some((_, streams)) = ingress.try_next().await? {
@@ -382,11 +382,13 @@ where
 }
 
 pub(super) fn peer_advertisement(endpoint: &quic::Endpoint) -> PeerAdvertisement<SocketAddr> {
-    let addrs = endpoint
+    let listen_addrs = endpoint
         .listen_addrs()
-        .expect("unable to obtain listen addrs");
+        .expect("unable to obtain listen addrs")
+        .into_iter()
+        .collect();
     PeerAdvertisement {
-        listen_addrs: addrs.collect(),
+        listen_addrs,
         capabilities: Default::default(),
     }
 }

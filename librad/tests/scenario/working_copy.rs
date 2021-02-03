@@ -17,7 +17,6 @@ use librad::{
         identities::{self, Person, Project},
         include,
         local::url::LocalUrl,
-        replication,
         tracking,
         types::{
             remote::{LocalFetchspec, LocalPushspec},
@@ -48,10 +47,7 @@ use librad::{
 use librad_test::{
     git::create_commit,
     logging,
-    rad::{
-        identities::{create_test_project, TestProject},
-        testnet,
-    },
+    rad::{identities::TestProject, testnet},
 };
 
 const NUM_PEERS: usize = 2;
@@ -79,19 +75,17 @@ async fn can_fetch() {
 
         let peer2_events = peer2.subscribe();
 
-        let TestProject { project, owner } = peer1
-            .using_storage(move |store| create_test_project(&store))
+        let proj = peer1
+            .using_storage(move |store| TestProject::create(&store))
             .await
             .unwrap()
             .unwrap();
+        proj.pull(&peer1, &peer2).await.ok().unwrap();
 
         let tracked_persons = {
-            let urn = project.urn();
-            let peer1_id = peer1.peer_id();
-            let cfg = peer2.protocol_config().replication;
+            let urn = proj.project.urn();
             peer2
                 .using_storage(move |store| {
-                    replication::replicate(&store, cfg, None, urn.clone(), peer1_id, None).unwrap();
                     tracking::tracked(&store, &urn)
                         .unwrap()
                         .map(|peer| {
@@ -113,9 +107,10 @@ async fn can_fetch() {
 
         let tmp = tempdir().unwrap();
         {
-            let commit_id = commit_and_push(tmp.path().join("peer1"), &peer1, &owner, &project)
-                .await
-                .unwrap();
+            let commit_id =
+                commit_and_push(tmp.path().join("peer1"), &peer1, &proj.owner, &proj.project)
+                    .await
+                    .unwrap();
             event::upstream::expect(
                 peer2_events,
                 gossip_from(peer1.peer_id()),
@@ -127,7 +122,7 @@ async fn can_fetch() {
                 tmp.path().join("peer2"),
                 tmp.path().to_path_buf(),
                 &peer2,
-                &project,
+                &proj.project,
                 tracked_persons,
             )
             .unwrap();

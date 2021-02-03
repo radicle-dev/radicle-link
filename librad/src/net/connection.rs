@@ -17,7 +17,7 @@ pub trait LocalPeer {
 pub trait LocalAddr {
     type Addr;
 
-    fn local_addr(&self) -> io::Result<Self::Addr>;
+    fn listen_addrs(&self) -> io::Result<Vec<Self::Addr>>;
 }
 
 pub trait LocalInfo: LocalPeer + LocalAddr {}

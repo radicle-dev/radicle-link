@@ -5,17 +5,11 @@
 
 use librad::{
     self,
-    git::{
-        identities::{self, SomeIdentity},
-        replication,
-    },
+    git::identities::{self, SomeIdentity},
 };
 use librad_test::{
     logging,
-    rad::{
-        identities::{create_test_project, TestProject},
-        testnet,
-    },
+    rad::{identities::TestProject, testnet},
 };
 
 /// https://github.com/radicle-dev/radicle-link/issues/250
@@ -32,32 +26,18 @@ async fn list_identities_returns_only_local_projects() {
         let peer2 = peers.pop().unwrap();
         let peer3 = peers.pop().unwrap();
 
-        let TestProject { project, .. } = peer1
-            .using_storage(move |storage| create_test_project(&storage))
+        let proj = peer1
+            .using_storage(move |storage| TestProject::create(&storage))
             .await
             .unwrap()
             .unwrap();
 
-        peer2
-            .using_storage({
-                let urn = project.urn();
-                let remote_peer = peer1.peer_id();
-                let cfg = peer2.protocol_config().replication;
-                move |storage| replication::replicate(&storage, cfg, None, urn, remote_peer, None)
-            })
-            .await
-            .unwrap()
-            .unwrap();
+        proj.pull(&peer1, &peer2).await.ok().unwrap();
+        proj.pull(&peer2, &peer3).await.ok().unwrap();
 
         let all_identities = peer3
-            .using_storage({
-                let urn = project.urn();
-                let remote_peer = peer2.peer_id();
-                let cfg = peer3.protocol_config().replication;
-                move |storage| -> Result<Vec<SomeIdentity>, anyhow::Error> {
-                    replication::replicate(&storage, cfg, None, urn, remote_peer, None)?;
-                    Ok(identities::any::list(&storage)?.collect::<Result<Vec<_>, _>>()?)
-                }
+            .using_storage(move |storage| -> Result<Vec<SomeIdentity>, anyhow::Error> {
+                Ok(identities::any::list(&storage)?.collect::<Result<Vec<_>, _>>()?)
             })
             .await
             .unwrap()

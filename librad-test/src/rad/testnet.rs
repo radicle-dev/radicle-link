@@ -20,6 +20,7 @@ use librad::{
     git,
     keys::SecretKey,
     net::{
+        connection::{LocalAddr, LocalPeer},
         discovery::{self, Discovery as _},
         peer::{self, Peer},
         protocol,
@@ -42,7 +43,21 @@ pub struct BoundTestPeer {
 }
 
 impl BoundTestPeer {
-    pub fn listen_addrs(&self) -> io::Result<impl Iterator<Item = SocketAddr> + '_> {
+    pub fn listen_addrs(&self) -> io::Result<Vec<SocketAddr>> {
+        self.bound.listen_addrs()
+    }
+}
+
+impl LocalPeer for BoundTestPeer {
+    fn local_peer_id(&self) -> PeerId {
+        self.peer.peer_id()
+    }
+}
+
+impl LocalAddr for BoundTestPeer {
+    type Addr = SocketAddr;
+
+    fn listen_addrs(&self) -> io::Result<Vec<Self::Addr>> {
         self.bound.listen_addrs()
     }
 }
@@ -64,6 +79,20 @@ impl Deref for RunningTestPeer {
 impl RunningTestPeer {
     pub fn listen_addrs(&self) -> &[SocketAddr] {
         &self.listen_addrs
+    }
+}
+
+impl LocalPeer for RunningTestPeer {
+    fn local_peer_id(&self) -> PeerId {
+        self.peer.peer_id()
+    }
+}
+
+impl LocalAddr for RunningTestPeer {
+    type Addr = SocketAddr;
+
+    fn listen_addrs(&self) -> io::Result<Vec<Self::Addr>> {
+        Ok(self.listen_addrs.clone())
     }
 }
 
@@ -115,10 +144,7 @@ pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<BoundTestPeer>> {
     let mut seed_addrs: Option<(PeerId, Vec<SocketAddr>)> = None;
     for _ in 0..num_peers {
         let peer = boot(seed_addrs.take()).await?;
-        seed_addrs = Some((
-            peer.bound.peer_id(),
-            peer.bound.listen_addrs().unwrap().collect(),
-        ));
+        seed_addrs = Some((peer.bound.peer_id(), peer.bound.listen_addrs().unwrap()));
         peers.push(peer)
     }
 
@@ -161,7 +187,7 @@ where
                 let running = RunningTestPeer {
                     _tmp: tmp,
                     peer,
-                    listen_addrs: bound.listen_addrs().unwrap().collect(),
+                    listen_addrs: bound.listen_addrs().unwrap(),
                 };
                 let abort_handle = {
                     let (fut, hdl) = future::abortable(bound.accept(disco.discover()));

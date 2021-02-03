@@ -56,7 +56,7 @@ async fn main() {
         let bound = peer.bind().await.unwrap();
         let disco = discovery::Mdns::new(
             peer.peer_id(),
-            bound.listen_addrs().unwrap().collect(),
+            bound.listen_addrs().unwrap(),
             Duration::from_secs(60),
             Duration::from_secs(60),
         )
