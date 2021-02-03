@@ -30,7 +30,10 @@ use radicle_keystore::{
 };
 
 use super::args::{community, garden, Args, Command, Community, Garden};
-use crate::{graft, include, plant, repot};
+use crate::{
+    garden::{graft, plant, repot},
+    include,
+};
 
 pub fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
@@ -47,7 +50,7 @@ pub fn main() -> anyhow::Result<()> {
                 name,
                 path,
             }) => {
-                use crate::plant::Plant;
+                use crate::garden::plant::Plant;
 
                 let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
                 let raw = Plant::new(description, default_branch, name, path);
@@ -63,7 +66,7 @@ pub fn main() -> anyhow::Result<()> {
                 path,
                 ..
             }) => {
-                use crate::repot::Repot;
+                use crate::garden::repot::Repot;
 
                 let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
                 let raw = Repot::new(description, default_branch, path.clone())?;
