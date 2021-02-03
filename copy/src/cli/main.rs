@@ -19,7 +19,7 @@ use librad::{
     },
     git_ext::{OneLevel, RefLike},
     keys::{PublicKey, SecretKey},
-    paths::Paths,
+    profile::Profile,
     signer::{BoxedSigner, SomeSigner},
 };
 use radicle_keystore::{
@@ -37,7 +37,8 @@ use crate::{
 
 pub fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
-    let paths = Paths::from_env()?;
+    let profile = Profile::load()?;
+    let paths = profile.paths();
     let signer = get_signer(paths.keys_dir(), args.key)?;
     let storage = Storage::open(&paths, signer.clone())?;
     let whoami = local::default(&storage)?
@@ -56,7 +57,7 @@ pub fn main() -> anyhow::Result<()> {
                 let raw = Plant::new(description, default_branch, name, path);
                 let valid = Plant::validate(raw)?;
                 let path = valid.path();
-                let project = plant(paths, signer, &storage, whoami, valid)?;
+                let project = plant(paths.clone(), signer, &storage, whoami, valid)?;
 
                 project_success(&project.urn(), path);
             },
@@ -71,12 +72,12 @@ pub fn main() -> anyhow::Result<()> {
                 let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
                 let raw = Repot::new(description, default_branch, path.clone())?;
                 let valid = Repot::validate(raw)?;
-                let project = repot(paths, signer, &storage, whoami, valid)?;
+                let project = repot(paths.clone(), signer, &storage, whoami, valid)?;
 
                 project_success(&project.urn(), path);
             },
             garden::Options::Graft(garden::Graft { peer, urn, path }) => {
-                graft(paths, signer, &storage, peer, path.clone(), &urn)?;
+                graft(paths.clone(), signer, &storage, peer, path.clone(), &urn)?;
                 println!("Your working copy was created 🎉");
                 println!("It exists at `{}`", path.display());
             },
