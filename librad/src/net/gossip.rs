@@ -668,7 +668,7 @@ where
         async move {
             match msg {
                 Have { origin, val } => {
-                    tracing::trace!(origin.peer.id = %origin.peer_id, origin.value=?val, "Have");
+                    tracing::info!(origin.peer.id = %origin.peer_id, origin.value=?val, "Have");
 
                     self.subscribers
                         .emit(ProtocolEvent::Info(Info::Has(Has {
@@ -739,7 +739,7 @@ where
                 },
 
                 Want { origin, val } => {
-                    tracing::trace!(origin.peer.id = %origin.peer_id, origin.value = ?val, "Want");
+                    tracing::info!(origin.peer.id = %origin.peer_id, origin.value = ?val, "Want");
 
                     let have = self.storage.ask(val.clone()).await;
                     if have {
