@@ -545,7 +545,7 @@ where
             // This is usually a connection close or reset. We only log upstream,
             // and it's not too interesting to get error / warn logs for this.
             Error::Cbor(CborCodecError::Io(_)) => {
-                tracing::info!(msg = "ignoring recv IO error", err = %e);
+                tracing::info!(msg = "ignoring recv IO error", err = %e, remote_id = %remote_id);
                 Ok(())
             },
             e => Err(e),
