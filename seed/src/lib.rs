@@ -285,8 +285,8 @@ impl Node {
         let result = {
             let urn = urn.clone();
             api.with_storage(move |storage| {
-                replication::replicate(&storage, None, urn.clone(), peer_id, addr_hints, limit)?;
                 tracking::track(&storage, &urn, peer_id)?;
+                replication::replicate(&storage, None, urn.clone(), peer_id, addr_hints, limit)?;
 
                 Ok::<_, Error>(())
             })
