@@ -531,7 +531,7 @@ where
             })
             .try_for_each(future::ok)
             .await;
-        tracing::trace!(msg = "recv stream is done", remote_id = %remote_id);
+        tracing::info!(msg = "recv stream is done", remote_id = %remote_id);
 
         {
             let mut connected_peers = self.connected_peers.lock().await;
