@@ -676,6 +676,7 @@ where
                             val: val.clone(),
                         })))
                         .await;
+                    tracing::info!("Emitted Has event");
 
                     match self.storage.put(remote_id, val.clone()).await {
                         // `val` was new, and is now fetched to local storage.

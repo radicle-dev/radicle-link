@@ -440,6 +440,7 @@ impl PeerStorage {
         let head = head.into().map(ext::Oid::from);
         let limit = self.limit;
 
+        tracing::info!(head = %head, "checking if storage contains the commit");
         spawn_blocking(move || {
             if let Some(head) = head {
                 if git.has_commit(&urn, head)? {
@@ -447,6 +448,7 @@ impl PeerStorage {
                 }
             }
 
+            tracing::info!(head = %head, urn = %urn, from = %from, "replicating changes");
             Ok(replication::replicate(&git, None, urn, from, None, limit)?)
         })
         .await
@@ -525,7 +527,10 @@ impl LocalStorage for PeerStorage {
         // branch, assume we want the `provider`'s.
         let origin = has.origin.unwrap_or(provider);
         let is_tracked = match self.is_tracked(has.urn.clone(), origin).await {
-            Ok(b) => b,
+            Ok(b) => {
+                tracing::info!(tracke = %b, "is peer tracked?");
+                b
+            },
             Err(e) => {
                 tracing::error!(err = %e, "error determining tracking status");
                 return PutResult::Error;
