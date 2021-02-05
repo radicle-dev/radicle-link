@@ -440,7 +440,7 @@ impl PeerStorage {
         let head = head.into().map(ext::Oid::from);
         let limit = self.limit;
 
-        tracing::info!(head = %head, "checking if storage contains the commit");
+        tracing::info!(head = ?head, "checking if storage contains the commit");
         spawn_blocking(move || {
             if let Some(head) = head {
                 if git.has_commit(&urn, head)? {
@@ -448,7 +448,7 @@ impl PeerStorage {
                 }
             }
 
-            tracing::info!(head = %head, urn = %urn, from = %from, "replicating changes");
+            tracing::info!(head = ?head, urn = %urn, from = %from, "replicating changes");
             Ok(replication::replicate(&git, None, urn, from, None, limit)?)
         })
         .await
