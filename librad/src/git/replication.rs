@@ -278,6 +278,7 @@ fn replication(
     remote_peer: PeerId,
 ) -> Result<Replication, Error> {
     if !storage.has_urn(&urn)? {
+        tracing::info!("fetching references");
         let fetched_peers = fetcher
             .fetch(fetch::Fetchspecs::PeekAll { limit })
             .map_err(|e| Error::Fetch(e.into()))
@@ -305,6 +306,7 @@ fn replication(
             SomeIdentity::Person(_) => tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>(),
         };
 
+        tracing::info!("fetching references");
         let _ = fetcher
             .fetch(fetch::Fetchspecs::Peek {
                 remotes: existing.clone(),

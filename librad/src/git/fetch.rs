@@ -584,12 +584,12 @@ impl<'a> DefaultFetcher<'a> {
                 .into_iter()
                 .map(|spec| spec.to_string())
                 .collect::<Vec<_>>();
-            tracing::trace!("{:?}", refspecs);
+            tracing::info!("{:?}", refspecs);
 
             let mut callbacks = git2::RemoteCallbacks::new();
             callbacks.transfer_progress(|prog| {
                 let received_bytes = prog.received_bytes();
-                tracing::trace!("Fetch: received {} bytes", received_bytes);
+                tracing::info!("Fetch: received {} bytes", received_bytes);
                 if received_bytes > limit {
                     tracing::error!("Fetch: exceeded {} bytes", limit);
                     false
