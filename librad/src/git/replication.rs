@@ -285,6 +285,7 @@ fn replication(
 
         let remote_ident =
             unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)).with_remote(remote_peer));
+        tracing::info!(urn = %urn, remote = %remote_ident, "cloning identity");
         Ok(Replication::Clone {
             urn,
             fetched_peers,
@@ -311,6 +312,7 @@ fn replication(
             })
             .map_err(|e| Error::Fetch(e.into()))?;
 
+        tracing::info!(urn = %urn, "fetching identity");
         Ok(Replication::Fetch {
             urn,
             identity,
@@ -446,7 +448,7 @@ mod person {
         for delegate in delegates.iter() {
             let delegate =
                 unsafe_into_urn(Reference::rad_id(Namespace::from(rad_id)).with_remote(*delegate));
-            tracing::debug!(mine = %rad_id, theirs = %delegate, "checking for a fork");
+            tracing::info!(mine = %rad_id, theirs = %delegate, "checking for a fork");
             match identities::person::is_fork(&storage, &rad_id, &delegate) {
                 Ok(false) => { /* all good */ },
                 Ok(true) => {
@@ -456,7 +458,7 @@ mod person {
                     })
                 },
                 Err(identities::error::Error::NotFound(urn)) => {
-                    tracing::debug!(urn = %urn, "URN not found when checking for fork");
+                    tracing::info!(urn = %urn, "URN not found when checking for fork");
                 },
                 Err(err) => return Err(err.into()),
             }
@@ -574,7 +576,7 @@ mod project {
             .collect::<Result<BTreeMap<_, _>, _>>()?;
 
         // Fetch all the rest
-        tracing::debug!("fetching heads: {:?}, {:?}", tracked_sigrefs, delegates);
+        tracing::info!("fetching heads: {:?}, {:?}", tracked_sigrefs, delegates);
         fetcher
             .fetch(fetch::Fetchspecs::Replicate {
                 tracked_sigrefs: tracked_sigrefs.clone(),
@@ -603,7 +605,7 @@ mod project {
         delegates: BTreeSet<Urn>,
     ) -> Result<(), Error> {
         for delegate in delegates.iter() {
-            tracing::debug!(mine = %rad_id, theirs = %delegate, "checking for a fork");
+            tracing::info!(mine = %rad_id, theirs = %delegate, "checking for a fork");
             match identities::project::is_fork(&storage, &rad_id, &delegate) {
                 Ok(false) => { /* all good */ },
                 Ok(true) => {
@@ -613,7 +615,7 @@ mod project {
                     })
                 },
                 Err(identities::error::Error::NotFound(urn)) => {
-                    tracing::debug!(urn = %urn, "URN not found when checking for fork");
+                    tracing::info!(urn = %urn, "URN not found when checking for fork");
                 },
                 Err(err) => return Err(err.into()),
             }
@@ -750,17 +752,17 @@ mod project {
         // Are we a delegate?
         match delegates.get(local_peer) {
             None => {
-                tracing::debug!(tip = %tip, "adopting latest tip");
+                tracing::info!(tip = %tip, "adopting latest tip");
                 ensure_rad_id(storage, urn, tip.into())?;
                 Ok(ReplicateResult::Latest)
             },
             Some(view) => {
                 Ok(if view.project.content_id == tip.into() {
-                    tracing::debug!("we are at the latest tip");
+                    tracing::info!("we are at the latest tip");
                     ReplicateResult::Latest
                 } else {
                     // FIXME: We could be ahead
-                    tracing::debug!("we need to update the project");
+                    tracing::info!("we need to update the project");
                     ReplicateResult::Behind
                 })
             },
