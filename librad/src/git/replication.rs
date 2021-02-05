@@ -584,6 +584,7 @@ mod project {
                 limit,
             })
             .map_err(|e| Error::Fetch(e.into()))?;
+        tracing::info!("fetched heads");
 
         Refs::update(storage, &urn)?;
         Ok(tracked_sigrefs
