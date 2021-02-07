@@ -112,6 +112,11 @@ features = ["logging", "dangerous_configuration"]
 version = "1.0"
 features = ["derive"]
 
+# 0.1.12 breaks our builds
+# See: https://github.com/tokio-rs/tracing/issues/1227
+[dependencies.tracing-attributes]
+version = "<= 0.1.11"
+
 [dependencies.tokio]
 version = "0.2"
 features = ["full"]
