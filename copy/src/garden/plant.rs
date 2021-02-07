@@ -22,6 +22,9 @@ pub enum Error {
     #[error("a directory at `{0}` already exists")]
     AlreadExists(PathBuf),
 
+    #[error("attempted to canonicalize the path `{path}` but we encountered an error: {err}")]
+    Canonicalize { path: PathBuf, err: io::Error },
+
     #[error(transparent)]
     Git(#[from] git::Error),
 
@@ -91,7 +94,14 @@ impl Plant<Invalid> {
 
 impl Plant<Valid> {
     pub fn validate(invalid: Plant<Invalid>) -> Result<Self, Error> {
-        let repo_path = invalid.path();
+        let repo_path = invalid
+            .path
+            .canonicalize()
+            .map_err(|err| Error::Canonicalize {
+                path: invalid.path.clone(),
+                err,
+            })
+            .map(|path| path.join(invalid.name.to_string()))?;
 
         if repo_path.is_file() {
             return Err(Error::AlreadExists(repo_path));

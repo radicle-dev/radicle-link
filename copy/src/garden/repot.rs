@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{marker::PhantomData, path::PathBuf};
+use std::{io, marker::PhantomData, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +20,9 @@ use crate::{git, sealed::Sealed};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("attempted to canonicalize the path `{path}` but we encountered an error: {err}")]
+    Canonicalize { path: PathBuf, err: io::Error },
+
     #[error("the directory at `{0}` is not a git repository, did you provide the correct path?")]
     NotARepo(PathBuf),
 
@@ -111,11 +114,18 @@ pub struct Valid {
 
 impl Repot<Valid> {
     pub fn validate(existing: Repot<Invalid>) -> Result<Self, Error> {
-        if !existing.path.exists() {
+        let path = existing
+            .path
+            .canonicalize()
+            .map_err(|err| Error::Canonicalize {
+                err,
+                path: existing.path.clone(),
+            })?;
+        if !path.exists() {
             return Err(Error::PathDoesNotExist(existing.path));
         }
 
-        let repo = git2::Repository::open(existing.path.clone())
+        let repo = git2::Repository::open(path.clone())
             .or_matches(git_ext::is_not_found_err, || {
                 Err(Error::NotARepo(existing.path.clone()))
             })?;
@@ -127,7 +137,7 @@ impl Repot<Valid> {
         Ok(Repot {
             description: existing.description,
             default_branch: existing.default_branch,
-            path: existing.path,
+            path,
             name: existing.name,
             valid: Valid { repo },
         })
