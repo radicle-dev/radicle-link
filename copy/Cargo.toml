@@ -13,6 +13,7 @@ librad = { path = "../librad" }
 nonempty = "0.6"
 radicle-git-ext = { path = "../git-ext" }
 radicle-keystore = "0"
+serde_json = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
 
