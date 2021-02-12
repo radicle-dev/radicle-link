@@ -23,7 +23,7 @@ use librad_test::{
 
 const NUM_PEERS: usize = 3;
 
-#[tokio::test(core_threads = 2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_trois() {
     logging::init();
 

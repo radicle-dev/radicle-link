@@ -45,7 +45,7 @@ use crate::{
     PeerId,
 };
 
-pub use tokio::sync::broadcast::RecvError;
+pub use tokio::sync::broadcast::error::RecvError;
 
 mod accept;
 
@@ -134,7 +134,7 @@ impl TinCans {
         self.downstream
             .send(Downstream::Gossip(Announce(have)))
             .and(Ok(()))
-            .map_err(|tincan::SendError(e)| match e {
+            .map_err(|tincan::error::SendError(e)| match e {
                 Downstream::Gossip(g) => g.payload(),
                 _ => unreachable!(),
             })
@@ -146,7 +146,7 @@ impl TinCans {
         self.downstream
             .send(Downstream::Gossip(Query(want)))
             .and(Ok(()))
-            .map_err(|tincan::SendError(e)| match e {
+            .map_err(|tincan::error::SendError(e)| match e {
                 Downstream::Gossip(g) => g.payload(),
                 _ => unreachable!(),
             })
@@ -157,7 +157,7 @@ impl TinCans {
 
         let (tx, rx) = tokio::sync::oneshot::channel();
         let tx = Arc::new(Mutex::new(Some(tx)));
-        if let Err(tincan::SendError(e)) =
+        if let Err(tincan::error::SendError(e)) =
             self.downstream.send(Downstream::Info(ConnectedPeers(tx)))
         {
             match e {
@@ -185,7 +185,8 @@ impl TinCans {
 
         let (tx, rx) = tokio::sync::oneshot::channel();
         let tx = Arc::new(Mutex::new(Some(tx)));
-        if let Err(tincan::SendError(e)) = self.downstream.send(Downstream::Info(Stats(tx))) {
+        if let Err(tincan::error::SendError(e)) = self.downstream.send(Downstream::Info(Stats(tx)))
+        {
             match e {
                 Downstream::Info(Stats(reply)) => {
                     reply
@@ -204,7 +205,8 @@ impl TinCans {
     }
 
     pub fn subscribe(&self) -> impl futures::Stream<Item = Result<event::Upstream, RecvError>> {
-        self.upstream.subscribe()
+        let mut r = self.upstream.subscribe();
+        async_stream::stream! { loop { yield r.recv().await } }
     }
 }
 
@@ -291,7 +293,11 @@ where
         {
             let (fut, hdl) = future::abortable(accept::ground_control(
                 state.clone(),
-                phone.downstream.subscribe().into_stream().boxed(),
+                async_stream::stream! {
+                    let mut r = phone.downstream.subscribe();
+                    loop { yield r.recv().await; }
+                }
+                .boxed(),
             ));
             tokio::spawn(fut);
             hdl

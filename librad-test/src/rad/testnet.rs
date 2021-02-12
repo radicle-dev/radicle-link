@@ -210,7 +210,7 @@ where
 pub async fn wait_converged<E>(events: E, min_connected: usize)
 where
     E: IntoIterator,
-    E::Item: futures::Stream<Item = Result<protocol::event::Upstream, protocol::RecvError>> + Unpin,
+    E::Item: futures::Stream<Item = Result<protocol::event::Upstream, protocol::RecvError>> + Send,
 {
     if min_connected < 2 {
         return;
@@ -224,6 +224,7 @@ where
                     future::ok(!matches!(evt, protocol::event::Upstream::Membership(_)))
                 })
                 .map_ok(drop)
+                .boxed()
                 .into_future()
                 .map(|(x, _)| x)
         })

@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 
+use futures::StreamExt as _;
 use tempfile::tempdir;
 
 use librad::{
@@ -64,7 +65,7 @@ const NUM_PEERS: usize = 2;
 /// 7. peer2 creates an include file, based of the tracked users of the project
 /// i.e. peer1 8. peer2 includes this file in their working copy's config
 /// 9. peer2 fetches in the working copy and sees the commit
-#[tokio::test(core_threads = 2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn can_fetch() {
     logging::init();
 
@@ -112,7 +113,7 @@ async fn can_fetch() {
                     .await
                     .unwrap();
             event::upstream::expect(
-                peer2_events,
+                peer2_events.boxed(),
                 gossip_from(peer1.peer_id()),
                 Duration::from_secs(5),
             )

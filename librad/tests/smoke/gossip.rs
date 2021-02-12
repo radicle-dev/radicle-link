@@ -33,7 +33,7 @@ use tempfile::tempdir;
 
 const NUM_PEERS: usize = 2;
 
-#[tokio::test(core_threads = 2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fetches_on_gossip_notify() {
     logging::init();
 
@@ -102,7 +102,7 @@ async fn fetches_on_gossip_notify() {
 
         // Wait for peer2 to receive the gossip announcement
         event::upstream::expect(
-            peer2_events,
+            peer2_events.boxed(),
             gossip_from(peer1.peer_id()),
             Duration::from_secs(5),
         )

@@ -10,6 +10,7 @@ default = []
 disco-mdns = ["mdns", "madness"]
 
 [dependencies]
+async-stream = "0.3"
 async-trait = "0.1"
 bit-vec = "0.6"
 bs58 = "0.3"
@@ -22,7 +23,7 @@ globset = "0.4"
 governor = ">=0.3.2"
 lazy_static = "1"
 libc = "0.2"
-mdns = { version = "1", optional = true }
+mdns = { version = "3", optional = true }
 multibase = "0.9"
 multihash = "0.11"
 nom = "5"
@@ -83,7 +84,7 @@ features = []
 
 [dependencies.madness]
 git = "https://github.com/meilisearch/madness"
-rev = "cb12159a06f3698d0ba4ea078e95f8a915a9a9d3"
+rev = "12a7386952923990179fe400e0cd932cbdd90dfc"
 optional = true
 
 [dependencies.minicbor]
@@ -92,7 +93,7 @@ features = ["std", "derive"]
 
 [dependencies.quinn]
 git = "https://github.com/quinn-rs/quinn"
-rev = "47232c83d1615e96b4a8480ec25fbf7fcf6771f5"
+rev = "05bb6cdd5f53484f538a20da37407ef13faf42e0"
 default-features = false
 features = ["tls-rustls"]
 
@@ -107,20 +108,24 @@ path = "../std-ext"
 
 # Note: this MUST always match the exact patch version `quinn` uses
 [dependencies.rustls]
-git = "https://github.com/ctz/rustls"
-rev = "fee894f7e030"
+version  = "0.19"
 features = ["logging", "dangerous_configuration"]
 
 [dependencies.serde]
 version = "1.0"
 features = ["derive"]
 
+# 0.1.12 breaks our builds
+# See: https://github.com/tokio-rs/tracing/issues/1227
+[dependencies.tracing-attributes]
+version = "<= 0.1.11"
+
 [dependencies.tokio]
-version = "0.2"
+version = "1.1"
 features = ["full"]
 
 [dependencies.tokio-util]
-version = "0.3"
+version = "0.6"
 features = ["compat"]
 
 [dependencies.url]

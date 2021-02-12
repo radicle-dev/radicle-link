@@ -168,7 +168,7 @@ impl Node {
     /// occurs.
     pub async fn run(self, mut transmit: chan::Sender<Event>) -> Result<(), Error> {
         let peer = Peer::new(self.peer_config);
-        let mut events = peer.subscribe().fuse();
+        let mut events = peer.subscribe().boxed().fuse();
         let mut requests = self.requests;
         let mode = &self.config.mode;
 
@@ -186,7 +186,7 @@ impl Node {
                         },
                         Err(e) => {
                             tracing::error!(err = ?e, "Bind error");
-                            tokio::time::delay_for(Duration::from_secs(2)).await
+                            tokio::time::sleep(Duration::from_secs(2)).await
                         },
                     }
                 }

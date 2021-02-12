@@ -27,7 +27,7 @@ use futures::{
 use git2::transport::Service;
 use git_ext::{into_io_err, RefLike, References, UPLOAD_PACK_HEADER};
 use tokio::process::{self, Command};
-use tokio_util::compat::{Tokio02AsyncReadCompatExt, Tokio02AsyncWriteCompatExt};
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use super::{
     super::{
@@ -187,8 +187,8 @@ impl UploadPack {
                 let mut stdout = child.stdout.take().unwrap().compat();
 
                 send.write_all(UPLOAD_PACK_HEADER).await?;
-                futures::try_join!(futures::io::copy(&mut stdout, &mut send), child).and_then(
-                    |(_, status)| {
+                futures::try_join!(futures::io::copy(&mut stdout, &mut send), child.wait())
+                    .and_then(|(_, status)| {
                         if !status.success() {
                             Err(io::Error::new(
                                 io::ErrorKind::Other,
@@ -197,8 +197,7 @@ impl UploadPack {
                         } else {
                             Ok(())
                         }
-                    },
-                )
+                    })
             },
 
             Self::UploadPack(mut child) => {
@@ -208,7 +207,7 @@ impl UploadPack {
                 futures::try_join!(
                     futures::io::copy(&mut recv, &mut stdin),
                     futures::io::copy(&mut stdout, &mut send),
-                    child,
+                    child.wait(),
                 )
                 .and_then(|(_, _, status)| {
                     if !status.success() {

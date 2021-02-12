@@ -100,10 +100,10 @@ async fn emit_stats(peer: Peer<SecretKey>) -> anyhow::Result<!> {
         )
     };
 
-    let mut sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await?;
+    let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await?;
     sock.connect("127.0.0.1:9109").await?;
     loop {
-        tokio::time::delay_for(Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
         let stats = peer.stats().await;
         tracing::info!("stats: {:?}", stats);
 
