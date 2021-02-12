@@ -16,7 +16,7 @@ use librad::{
         url::LocalUrl,
     },
     keys::{PublicKey, SecretKey},
-    paths::Paths,
+    profile::Profile,
     signer::{BoxedSigner, SomeSigner},
 };
 use radicle_keystore::{
@@ -40,7 +40,8 @@ pub fn run() -> anyhow::Result<()> {
     let git_dir = env::var("GIT_DIR").map(PathBuf::from)?;
 
     let mut transport = {
-        let paths = Paths::from_env()?;
+        let profile = Profile::load()?;
+        let paths = profile.paths().to_owned();
         let signer = get_signer(&git_dir, paths.keys_dir(), &url)?;
         let settings: Box<dyn CanOpenStorage> = Box::new(Settings { paths, signer });
         Ok::<_, anyhow::Error>(LocalTransport::from(settings))

@@ -37,6 +37,7 @@ pub mod keys;
 pub mod net;
 pub mod paths;
 pub mod peer;
+pub mod profile;
 pub mod signer;
 
 // Re-exports

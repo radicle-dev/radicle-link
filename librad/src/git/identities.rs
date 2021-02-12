@@ -8,6 +8,7 @@ pub mod error;
 pub mod local;
 pub mod person;
 pub mod project;
+pub mod relations;
 
 pub(super) mod common;
 
