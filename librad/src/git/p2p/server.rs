@@ -59,6 +59,7 @@ impl GitServer {
         R: AsyncRead + Unpin,
         W: AsyncWrite + Unpin,
     {
+        tracing::info!("receiving in invoke serivce");
         let mut recv = BufReader::new(recv);
         let mut hdr_buf = String::with_capacity(256);
         if let Err(e) = recv.read_line(&mut hdr_buf).await {
@@ -66,14 +67,17 @@ impl GitServer {
             return send_err(&mut send, "garbage header").await;
         }
 
+        tracing::info!("header: {}", hdr_buf);
         match hdr_buf.parse::<Header<Urn>>() {
             Ok(Header { service, repo, .. }) => match *service {
                 Service::UploadPack => {
+                    tracing::info!("upload pack");
                     UploadPack::upload_pack(&self.monorepo)?
                         .run(recv, send)
                         .await
                 },
                 Service::UploadPackLs => {
+                    tracing::info!("advertise");
                     UploadPack::advertise(&self.monorepo, Namespace::from(repo))?
                         .run(recv, send)
                         .await
