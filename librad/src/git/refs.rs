@@ -292,7 +292,7 @@ impl Refs {
     ///
     /// If the blob where the signed [`Refs`] are expected to be stored is not
     /// found, `None` is returned.
-    #[tracing::instrument(skip(storage), err)]
+    // #[tracing::instrument(skip(storage), err)]
     pub fn load<P>(storage: &Storage, urn: &Urn, peer: P) -> Result<Option<Self>, stored::Error>
     where
         P: Into<Option<PeerId>> + Debug,
