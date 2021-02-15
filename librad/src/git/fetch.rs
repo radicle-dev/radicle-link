@@ -538,6 +538,7 @@ impl<'a> DefaultFetcher<'a> {
     where
         Addrs: IntoIterator<Item = SocketAddr>,
     {
+        tracing::info!("creating anonymous remote");
         let mut remote = storage.as_raw().remote_anonymous(
             &GitUrl {
                 local_peer: PeerId::from_signer(storage.signer()),
@@ -547,6 +548,7 @@ impl<'a> DefaultFetcher<'a> {
             }
             .to_string(),
         )?;
+        tracing::info!("connecting remote");
         remote.connect(git2::Direction::Fetch)?;
         let remote_heads = remote
             .list()?
@@ -554,7 +556,10 @@ impl<'a> DefaultFetcher<'a> {
             .filter_map(|remote_head| match remote_head.symref_target() {
                 Some(_) => None,
                 None => match ext::RefLike::try_from(remote_head.name()) {
-                    Ok(refname) => Some((refname, remote_head.oid().into())),
+                    Ok(refname) => {
+                        tracing::info!("remote reference {}->{}", refname, remote_head.oid());
+                        Some((refname, remote_head.oid().into()))
+                    },
                     Err(e) => {
                         tracing::warn!("invalid refname `{}`: {}", remote_head.name(), e);
                         None
