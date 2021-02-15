@@ -201,6 +201,8 @@ impl Read for RadSubTransport {
 
 impl Write for RadSubTransport {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        use std::str;
+        tracing::info!("buffer: {:?}", str::from_utf8(buf));
         block_on(async {
             self.ensure_header_sent().await?;
             self.stream.write(buf).await.map_err(io_error)
