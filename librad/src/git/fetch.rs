@@ -549,8 +549,12 @@ impl<'a> DefaultFetcher<'a> {
             .to_string(),
         )?;
         tracing::info!("connecting remote");
-        remote.connect(git2::Direction::Fetch)?;
-        tracing::info!("connected remote");
+        if remote.connected() {
+            tracing::info!("already connected");
+        } else {
+            tracing::info!("not connected, attempting connection");
+            remote.connect(git2::Direction::Fetch)?;
+        };
         let remote_heads = remote
             .list()?
             .iter()
