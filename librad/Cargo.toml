@@ -45,6 +45,7 @@ time = "0.2"
 tracing = "0.1"
 tracing-futures = "0.2"
 unicode-normalization = "0.1"
+uuid = { version = "0.8", features = ["v4"] }
 webpki = "0.21"
 
 [dependencies.deadpool]
@@ -110,6 +111,11 @@ features = ["logging", "dangerous_configuration"]
 [dependencies.serde]
 version = "1.0"
 features = ["derive"]
+
+# 0.1.12 breaks our builds
+# See: https://github.com/tokio-rs/tracing/issues/1227
+[dependencies.tracing-attributes]
+version = "<= 0.1.11"
 
 [dependencies.tokio]
 version = "0.2"
