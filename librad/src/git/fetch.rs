@@ -550,6 +550,7 @@ impl<'a> DefaultFetcher<'a> {
         )?;
         tracing::info!("connecting remote");
         remote.connect(git2::Direction::Fetch)?;
+        tracing::info!("connected remote");
         let remote_heads = remote
             .list()?
             .iter()
@@ -568,7 +569,7 @@ impl<'a> DefaultFetcher<'a> {
             })
             .collect::<BTreeMap<_, _>>()
             .into();
-
+        tracing::info!("calculated remote heads");
         Ok(Self {
             urn,
             remote_peer,
