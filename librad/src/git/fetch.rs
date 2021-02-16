@@ -598,7 +598,10 @@ impl<'a> DefaultFetcher<'a> {
                 }
             });
 
-            self.remote.download(
+            // FIXME: Using `download` is prefereable here because using fetch means we are
+            // forced to get the refs adervtisement multiple times redundantly.
+            // An issue was created in libgit2 to see if we can find the fix upsteam https://github.com/libgit2/libgit2/issues/5799.
+            self.remote.fetch(
                 &refspecs,
                 Some(
                     git2::FetchOptions::new()
@@ -607,6 +610,7 @@ impl<'a> DefaultFetcher<'a> {
                         .download_tags(git2::AutotagOption::None)
                         .remote_callbacks(callbacks),
                 ),
+                None,
             )?;
         }
 
