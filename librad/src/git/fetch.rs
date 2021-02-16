@@ -361,7 +361,7 @@ pub mod refspecs {
                 move |(x, category)| {
                     (
                         x,
-                        namespaced(&namespace, remote_peer, tracked_peer, x.0, category),
+                        namespaced(&namespace, remote_peer, tracked_peer, x.0.clone(), category),
                     )
                 }
             })
@@ -418,7 +418,7 @@ pub mod refspecs {
         namespace: &'a Namespace<R>,
         remote_peer: &'a P,
         tracked_peer: &'a P,
-        name: &'a ext::OneLevel,
+        name: ext::OneLevel,
         cat: RefsCategory,
     ) -> ext::RefLike
     where
@@ -433,7 +433,7 @@ pub mod refspecs {
         if tracked_peer == remote_peer {
             reflike!("refs/namespaces")
                 .join(namespace)
-                .join(ext::Qualified::from(name.clone()))
+                .join(name.into_qualified(cat.into()))
         // .. or `remote_peer` is tracking `tracked_peer`, in
         // which case it is in the remotes section.
         } else {
@@ -445,7 +445,7 @@ pub mod refspecs {
                 // remote tracking branches, so we need `heads`
                 // Like `Qualified::from(name).strip_prefix("refs")`
                 .join(ext::RefLike::from(cat))
-                .join(name.clone())
+                .join(name)
         }
     }
 }
