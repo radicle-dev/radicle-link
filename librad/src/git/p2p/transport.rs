@@ -205,7 +205,9 @@ impl Write for RadSubTransport {
         tracing::info!("write buffer: {:?}", str::from_utf8(buf));
         block_on(async {
             self.ensure_header_sent().await?;
-            self.stream.write(buf).await.map_err(io_error)
+            let bytes = self.stream.write(buf).await.map_err(io_error);
+            self.flush()?;
+            bytes
         })
     }
 
