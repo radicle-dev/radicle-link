@@ -206,7 +206,7 @@ impl Write for RadSubTransport {
         block_on(async {
             self.ensure_header_sent().await?;
             let bytes = self.stream.write(buf).await.map_err(io_error);
-            self.flush()?;
+            self.stream.flush().await.map_err(io_error)?;
             bytes
         })
     }
