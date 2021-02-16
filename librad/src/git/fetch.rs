@@ -608,6 +608,7 @@ impl<'a> DefaultFetcher<'a> {
                 }
             });
 
+            tracing::info!("performing download");
             self.remote.download(
                 &refspecs,
                 Some(
@@ -620,6 +621,7 @@ impl<'a> DefaultFetcher<'a> {
             )?;
         }
 
+        tracing::info!("updating tips");
         let mut updated_tips = BTreeMap::new();
         self.remote.update_tips(
             Some(git2::RemoteCallbacks::new().update_tips(|name, old, new| {
