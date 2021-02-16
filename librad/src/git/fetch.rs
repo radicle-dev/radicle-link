@@ -577,6 +577,7 @@ impl<'a> DefaultFetcher<'a> {
         &mut self,
         fetchspecs: Fetchspecs<PeerId, git::Revision>,
     ) -> Result<FetchResult, git2::Error> {
+        let mut updated_tips = BTreeMap::new();
         {
             let limit = fetchspecs.fetch_limit();
             let refspecs = fetchspecs
@@ -598,9 +599,25 @@ impl<'a> DefaultFetcher<'a> {
                 }
             });
 
-            // FIXME: Using `download` is prefereable here because using fetch means we are
-            // forced to get the refs adervtisement multiple times redundantly.
-            // An issue was created in libgit2 to see if we can find the fix upsteam https://github.com/libgit2/libgit2/issues/5799.
+            // FIXME: Using `download` + `update_tips` is preferable here because
+            // `fetch` is a composition of `connect`, `download` + `update_tips`,
+            // which means we're transmitting the refs advertisement multiple
+            // times redundantly.
+            //
+            // Upstream issue: https://github.com/libgit2/libgit2/issues/5799.
+
+            callbacks.update_tips(|name, old, new| {
+                tracing::debug!("Fetch: updating tip {}: {} -> {}", name, old, new);
+                match ext::RefLike::try_from(name) {
+                    Ok(refname) => {
+                        updated_tips.insert(refname, new.into());
+                    },
+                    Err(e) => tracing::warn!("invalid refname `{}`: {}", name, e),
+                }
+
+                true
+            });
+
             self.remote.fetch(
                 &refspecs,
                 Some(
@@ -613,24 +630,6 @@ impl<'a> DefaultFetcher<'a> {
                 None,
             )?;
         }
-
-        let mut updated_tips = BTreeMap::new();
-        self.remote.update_tips(
-            Some(git2::RemoteCallbacks::new().update_tips(|name, old, new| {
-                tracing::debug!("Fetch: updating tip {}: {} -> {}", name, old, new);
-                match ext::RefLike::try_from(name) {
-                    Ok(refname) => {
-                        updated_tips.insert(refname, new.into());
-                    },
-                    Err(e) => tracing::warn!("invalid refname `{}`: {}", name, e),
-                }
-
-                true
-            })),
-            false,
-            git2::AutotagOption::None,
-            Some(&format!("updated from {}", self.remote_peer)),
-        )?;
 
         Ok(FetchResult { updated_tips })
     }
