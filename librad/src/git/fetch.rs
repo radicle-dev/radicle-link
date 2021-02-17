@@ -617,9 +617,6 @@ impl<'a> DefaultFetcher<'a> {
                 true
             });
 
-            // FIXME: Using `download` is prefereable here because using fetch means we are
-            // forced to get the refs adervtisement multiple times redundantly.
-            // An issue was created in libgit2 to see if we can find the fix upsteam https://github.com/libgit2/libgit2/issues/5799.
             self.remote.fetch(
                 &refspecs,
                 Some(
