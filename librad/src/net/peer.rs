@@ -533,13 +533,11 @@ impl LocalStorage for PeerStorage {
         };
 
         let res = if is_tracked {
-            let urn = match has.origin {
-                Some(origin) => Right(Originates {
-                    from: origin,
-                    value: has.urn.clone(),
-                }),
-                None => Left(has.urn.clone()),
-            };
+            // The peer we fetch from is always the `origin` we figured out.
+            let urn = Right(Originates {
+                from: origin,
+                value: has.urn.clone(),
+            });
             let head = has.rev.as_ref().map(|Rev::Git(head)| *head);
 
             match self.git_fetch(provider, urn.clone(), head).await {
