@@ -577,6 +577,7 @@ impl<'a> DefaultFetcher<'a> {
         &mut self,
         fetchspecs: Fetchspecs<PeerId, git::Revision>,
     ) -> Result<FetchResult, git2::Error> {
+        let mut updated_tips = BTreeMap::new();
         {
             let limit = fetchspecs.fetch_limit();
             let refspecs = fetchspecs
@@ -598,21 +599,13 @@ impl<'a> DefaultFetcher<'a> {
                 }
             });
 
-            self.remote.download(
-                &refspecs,
-                Some(
-                    git2::FetchOptions::new()
-                        .prune(git2::FetchPrune::On)
-                        .update_fetchhead(false)
-                        .download_tags(git2::AutotagOption::None)
-                        .remote_callbacks(callbacks),
-                ),
-            )?;
-        }
-
-        let mut updated_tips = BTreeMap::new();
-        self.remote.update_tips(
-            Some(git2::RemoteCallbacks::new().update_tips(|name, old, new| {
+            // FIXME: Using `download` + `update_tips` is preferable here because
+            // `fetch` is a composition of `connect`, `download` + `update_tips`,
+            // which means we're transmitting the refs advertisement multiple
+            // times redundantly.
+            //
+            // Upstream issue: https://github.com/libgit2/libgit2/issues/5799.
+            callbacks.update_tips(|name, old, new| {
                 tracing::debug!("Fetch: updating tip {}: {} -> {}", name, old, new);
                 match ext::RefLike::try_from(name) {
                     Ok(refname) => {
@@ -622,11 +615,20 @@ impl<'a> DefaultFetcher<'a> {
                 }
 
                 true
-            })),
-            false,
-            git2::AutotagOption::None,
-            Some(&format!("updated from {}", self.remote_peer)),
-        )?;
+            });
+
+            self.remote.fetch(
+                &refspecs,
+                Some(
+                    git2::FetchOptions::new()
+                        .prune(git2::FetchPrune::On)
+                        .update_fetchhead(false)
+                        .download_tags(git2::AutotagOption::None)
+                        .remote_callbacks(callbacks),
+                ),
+                None,
+            )?;
+        }
 
         Ok(FetchResult { updated_tips })
     }
