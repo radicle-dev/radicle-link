@@ -3,722 +3,497 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-//! Main protocol dispatch loop
-
 use std::{
-    borrow::Cow,
-    collections::HashMap,
     fmt::Debug,
     future::Future,
-    io,
-    iter,
-    net::{IpAddr, SocketAddr},
+    net::SocketAddr,
+    ops::Deref,
     pin::Pin,
-    sync::{
-        atomic::{self, AtomicUsize},
-        Arc,
-    },
+    sync::Arc,
     task::{Context, Poll},
 };
 
 use futures::{
-    future::{self, BoxFuture, FutureExt, TryFutureExt},
-    lock::Mutex,
-    stream::{BoxStream, StreamExt, TryStreamExt},
+    channel::mpsc,
+    future::{self, BoxFuture, FutureExt as _, TryFutureExt as _},
+    stream::{BoxStream, StreamExt as _},
 };
-use minicbor::{Decode, Encode};
-use thiserror::Error;
-use tracing_futures::Instrument;
+use governor::{Quota, RateLimiter};
+use nonzero_ext::nonzero;
+use parking_lot::Mutex;
+use rand_pcg::Pcg64Mcg;
+use tokio::sync::broadcast as tincan;
+use tracing::Instrument as _;
 
-use crate::{
-    git::p2p::{
-        server::GitServer,
-        transport::{GitStream, GitStreamFactory},
-    },
-    internal::channel::Fanout,
-    net::{
-        codec::CborCodecError,
-        connection::{CloseReason, LocalInfo, RemoteInfo, Stream},
-        gossip,
-        quic,
-        upgrade::{self, upgrade, with_upgraded, SomeUpgraded, UpgradeRequest, Upgraded},
-    },
-    peer::PeerId,
+use super::{
+    connection::{LocalAddr, LocalPeer},
+    quic,
+    upgrade,
+    Network,
 };
+use crate::{
+    git::{
+        self,
+        p2p::{
+            server::GitServer,
+            transport::{GitStream, GitStreamFactory},
+        },
+        replication,
+    },
+    paths::Paths,
+    signer::Signer,
+    PeerId,
+};
+
+pub use tokio::sync::broadcast::error::RecvError;
+
+mod accept;
+
+pub mod broadcast;
+pub mod error;
+pub mod event;
+pub mod gossip;
+pub mod membership;
+
+mod info;
+pub use info::{PartialPeerInfo, PeerAdvertisement, PeerInfo};
+
+mod io;
+mod tick;
 
 #[derive(Clone, Debug)]
-pub enum ProtocolEvent<A> {
-    Connected(PeerId),
-    Disconnecting(PeerId),
-    Listening(SocketAddr),
-    Gossip(gossip::Info<IpAddr, A>),
-    Membership(gossip::MembershipInfo<IpAddr>),
+pub struct Config {
+    pub paths: Paths,
+    pub listen_addr: SocketAddr,
+    pub membership: membership::Params,
+    pub network: Network,
+    pub replication: replication::Config,
+    // TODO: transport, ...
 }
 
-/// Unification of the different inputs the run loop processes.
-///
-/// We do this instead of a hand-rolled `Future` so we can use
-/// `StreamExt::try_for_each_concurrent`, which allows us to retain control over
-/// spawned tasks.
-enum Run<'a, A> {
-    Discovered {
-        peer: PeerId,
-        addrs: Vec<SocketAddr>,
-    },
-
-    Incoming {
-        conn: quic::Connection,
-        incoming: BoxStream<'a, quic::Result<quic::Stream>>,
-    },
-
-    Gossip {
-        event: gossip::ProtocolEvent<IpAddr, A>,
-    },
+pub struct Bound<S> {
+    phone: TinCans,
+    state: State<S>,
+    incoming: BoxStream<'static, quic::Result<(quic::Connection, quic::IncomingStreams<'static>)>>,
+    periodic: mpsc::Receiver<membership::Periodic<SocketAddr>>,
 }
 
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum Error {
-    #[error("no connection to {0}")]
-    NoConnection(PeerId),
-
-    #[error("duplicate connection")]
-    DuplicateConnection,
-
-    #[error(transparent)]
-    Upgrade(#[from] upgrade::ErrorSource),
-
-    #[error(transparent)]
-    Cbor(#[from] CborCodecError),
-
-    #[error("error handling gossip upgrade")]
-    Gossip(#[from] gossip::error::Error),
-
-    #[error("error handling git upgrade")]
-    Git(#[source] io::Error),
-
-    #[error(transparent)]
-    Quic(#[from] quic::Error),
-
-    #[error(transparent)]
-    Io(#[from] io::Error),
-}
-
-pub type RunLoop = BoxFuture<'static, ()>;
-
-pub struct Protocol<S, A> {
-    gossip: gossip::Protocol<S, A, IpAddr, quic::RecvStream, quic::SendStream>,
-    git: GitServer,
-
-    endpoint: quic::Endpoint,
-
-    connections: Arc<Mutex<HashMap<PeerId, quic::Connection>>>,
-    subscribers: Fanout<ProtocolEvent<A>>,
-
-    ref_count: Arc<AtomicUsize>,
-}
-
-impl<S, A> Clone for Protocol<S, A>
-where
-    S: Clone,
-    A: Clone,
-{
-    fn clone(&self) -> Self {
-        const MAX_REFCOUNT: usize = (isize::MAX) as usize;
-
-        let old_count = self.ref_count.fetch_add(1, atomic::Ordering::Relaxed);
-        // See source docs of `std::sync::Arc`
-        if old_count > MAX_REFCOUNT {
-            eprintln!("Fatal: max refcount on gossip::Protocol exceeded");
-            core::intrinsics::abort()
-        }
-
-        Self {
-            gossip: self.gossip.clone(),
-            git: self.git.clone(),
-            endpoint: self.endpoint.clone(),
-            connections: self.connections.clone(),
-            subscribers: self.subscribers.clone(),
-            ref_count: self.ref_count.clone(),
-        }
-    }
-}
-
-impl<S, A> Drop for Protocol<S, A> {
-    fn drop(&mut self) {
-        // `Relaxed` is presumably ok here, because all we want is to not wrap
-        // around, which `saturating_sub` guarantees
-        let r = self.ref_count.fetch_update(
-            atomic::Ordering::Relaxed,
-            atomic::Ordering::Relaxed,
-            |x| Some(x.saturating_sub(1)),
-        );
-        match r {
-            Ok(x) | Err(x) if x == 0 => {
-                tracing::trace!("`net::Protocol` refcount is zero");
-                self.endpoint.shutdown()
-            },
-            _ => {},
-        }
-    }
-}
-
-impl<S, A> Protocol<S, A>
-where
-    S: gossip::LocalStorage<Update = A> + 'static,
-    for<'de> A: Encode + Decode<'de> + Clone + Debug + Send + Sync + 'static,
-{
-    pub fn new<Disco>(
-        gossip: gossip::Protocol<S, A, IpAddr, quic::RecvStream, quic::SendStream>,
-        git: GitServer,
-        quic::BoundEndpoint { endpoint, incoming }: quic::BoundEndpoint<'static>,
-        disco: Disco,
-    ) -> (Self, RunLoop)
-    where
-        Disco: futures::stream::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
-    {
-        let this = Self {
-            gossip,
-            git,
-            endpoint: endpoint.clone(),
-            connections: Arc::new(Mutex::new(HashMap::default())),
-            subscribers: Fanout::new(),
-            ref_count: Arc::new(AtomicUsize::new(0)),
-        };
-
-        let run_loop = {
-            let that = this.clone();
-            let local_addr = endpoint
-                .local_addr()
-                .expect("unable to get local endpoint addr");
-
-            let span = tracing::info_span!(
-                "Protocol::run",
-                local.id = %that.peer_id(),
-                local.addr = %local_addr
-            );
-
-            // Future which resolves once our refcount reaches zero.
-            //
-            // This ensures spawned tasks handling ingress/egress streams
-            // terminate when the last reference to `this` is dropped.
-            struct Bomb {
-                /// `ref_count` of `this`
-                ref_count: Arc<AtomicUsize>,
-            };
-
-            impl Future for Bomb {
-                type Output = ();
-
-                fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
-                    if self.ref_count.load(atomic::Ordering::Relaxed) < 1 {
-                        Poll::Ready(())
-                    } else {
-                        Poll::Pending
-                    }
-                }
-            }
-
-            async move {
-                let incoming = incoming.map(|(conn, i)| Run::Incoming { conn, incoming: i });
-                let bootstrap = disco.map(|(peer, addrs)| Run::Discovered { peer, addrs });
-                let gossip_events = that
-                    .gossip
-                    .subscribe()
-                    .await
-                    .map(|event| Run::Gossip { event });
-
-                tracing::info!("Listening");
-                that.subscribers
-                    .emit(ProtocolEvent::Listening(local_addr))
-                    .await;
-
-                let eval = futures::stream::select(
-                    incoming,
-                    futures::stream::select(bootstrap, gossip_events),
-                )
-                .for_each_concurrent(None, |run| that.eval_run(run));
-
-                future::select(
-                    eval.boxed(),
-                    Bomb {
-                        ref_count: that.ref_count.clone(),
-                    },
-                )
-                .map(|_| ())
-                .await;
-            }
-            .instrument(span)
-        };
-
-        (this, Box::pin(run_loop))
-    }
-
+impl<S> Bound<S> {
     pub fn peer_id(&self) -> PeerId {
-        self.gossip.peer_id()
+        self.state.local_id
     }
 
-    /// Subscribe to an infinite stream of [`ProtocolEvent`]s.
-    ///
-    /// The consumer must keep polling the stream, or drop it to cancel the
-    /// subscription.
-    pub async fn subscribe(&self) -> impl futures::Stream<Item = ProtocolEvent<A>> {
-        self.subscribers.subscribe().await
+    pub fn listen_addrs(&self) -> std::io::Result<Vec<SocketAddr>> {
+        self.state.endpoint.listen_addrs()
     }
 
-    /// Announce an update to the network
-    pub async fn announce(&self, have: A) {
-        self.gossip.announce(have).await
-    }
-
-    /// Mapping of currently connected [`PeerId`]s and their remote
-    /// [`SocketAddr`]s.
-    pub async fn connected_peers(&self) -> HashMap<PeerId, SocketAddr> {
-        self.connections
-            .lock()
-            .await
-            .iter()
-            .map(|(peer_id, conn)| (*peer_id, conn.remote_addr()))
-            .collect()
-    }
-
-    /// Returns `true` if there is at least one active connection.
-    pub async fn has_connections(&self) -> bool {
-        !self.connections.lock().await.is_empty()
-    }
-
-    /// Returns the number of currently active connections.
-    pub async fn num_connections(&self) -> usize {
-        self.connections.lock().await.len()
-    }
-
-    /// Query the network for an update
-    ///
-    /// Answers from the network will be available as `ProtocolEvent::Gossip`
-    /// when `subscribe`d.
-    ///
-    /// Note that responses will also cause [`gossip::LocalStorage::put`] to be
-    /// invoked, i.e. the local storage will be converged towards the
-    /// requested state.
-    pub async fn query(&self, want: A) {
-        self.gossip.query(want).await
-    }
-
-    /// Open a QUIC stream which is upgraded to expect the git protocol
-    ///
-    /// If no connection to the given peer is currently active, `addr_hints`
-    /// will be used to attempt to establish a new connection. `addr_hints` must
-    /// be finite -- we use the [`IntoIterator`] trait bound for notational
-    /// convenience (one can pass [`None`], for example).
-    pub async fn open_git<Addrs>(
-        &self,
-        to: PeerId,
-        addr_hints: Addrs,
-    ) -> Result<Upgraded<upgrade::Git, quic::Stream>, Error>
+    pub async fn accept<D>(self, disco: D) -> Result<!, quic::Error>
     where
-        Addrs: IntoIterator<Item = SocketAddr>,
+        S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
     {
-        self.open_stream(to, upgrade::Git)
-            .or_else(|e| async move {
-                match e {
-                    Error::NoConnection(_) => {
-                        // Ensure `addr_hints` has the same lifetime as `incoming`
-                        let addr_hints = addr_hints.into_iter().collect::<Vec<_>>();
-                        let (conn, incoming) = connect(&self.endpoint, to, addr_hints)
-                            .await
-                            .ok_or(Error::NoConnection(to))?;
+        accept(self, disco).await
+    }
+}
 
-                        let stream = conn.open_stream().await?;
-                        upgrade(stream, upgrade::Git)
-                            .await
-                            .map_err(|upgrade::Error { stream, source }| {
-                                stream.close(CloseReason::InvalidUpgrade);
-                                Error::from(source)
-                            })
-                            .map(|upgraded| {
-                                let this = self.clone();
-                                tokio::spawn(async move {
-                                    this.handle_connect(conn, incoming.boxed(), None).await
-                                });
-                                upgraded
-                            })
-                    },
-                    _ => Err(e),
-                }
+impl<S> LocalPeer for Bound<S> {
+    fn local_peer_id(&self) -> PeerId {
+        self.peer_id()
+    }
+}
+
+impl<S> LocalAddr for Bound<S> {
+    type Addr = SocketAddr;
+
+    fn listen_addrs(&self) -> std::io::Result<Vec<Self::Addr>> {
+        self.state.endpoint.listen_addrs()
+    }
+}
+
+#[derive(Clone)]
+pub struct TinCans {
+    downstream: tincan::Sender<event::Downstream>,
+    upstream: tincan::Sender<event::Upstream>,
+}
+
+impl TinCans {
+    pub fn new() -> Self {
+        Self {
+            downstream: tincan::channel(16).0,
+            upstream: tincan::channel(16).0,
+        }
+    }
+
+    pub fn announce(&self, have: gossip::Payload) -> Result<(), gossip::Payload> {
+        use event::{downstream::Gossip::Announce, Downstream};
+
+        self.downstream
+            .send(Downstream::Gossip(Announce(have)))
+            .and(Ok(()))
+            .map_err(|tincan::error::SendError(e)| match e {
+                Downstream::Gossip(g) => g.payload(),
+                _ => unreachable!(),
             })
-            .await
     }
 
-    async fn eval_run(&self, run: Run<'_, A>) {
-        match run {
-            Run::Discovered { peer, addrs } => {
-                tracing::trace!(
-                    remote.id = %peer,
-                    remote.addrs = ?addrs,
-                    "Run::Discovered",
-                );
+    pub fn query(&self, want: gossip::Payload) -> Result<(), gossip::Payload> {
+        use event::{downstream::Gossip::Query, Downstream};
 
-                // XXX: needs reconsideration: we leave it to the supplier of the
-                // disco stream to initiate a re-connect by yielding an element
-                // we actually saw before. The consequence is that existing
-                // connections will be terminated.
-                if let Some((conn, incoming)) = connect(&self.endpoint, peer, addrs).await {
-                    self.handle_connect(conn, incoming.boxed(), None).await;
-                }
-            },
-
-            Run::Incoming { conn, incoming } => {
-                tracing::trace!(
-                    remote.id = %conn.remote_peer_id(),
-                    remote.addrs = %conn.remote_addr(),
-                    "Run::Incoming",
-                );
-
-                if let Err(e) = self.handle_incoming(conn, incoming).await {
-                    tracing::warn!("Error processing incoming connections: {}", e)
-                }
-            },
-
-            Run::Gossip { event } => match event {
-                gossip::ProtocolEvent::Control(ctrl) => match ctrl {
-                    gossip::Control::SendAdhoc { to, rpc } => {
-                        tracing::trace!(remote.id = %to.peer_id, "Run::Rad(SendAdhoc)");
-
-                        let conn = match self.connections.lock().await.get(&to.peer_id) {
-                            Some(conn) => Some(conn.clone()),
-                            None => connect_peer_info(&self.endpoint, to)
-                                .await
-                                .map(|(conn, _)| conn),
-                        };
-
-                        if let Some(conn) = conn {
-                            if let Err(e) = conn
-                                .open_stream()
-                                .map_err(Error::from)
-                                .and_then(|stream| self.outgoing(stream, rpc))
-                                .await
-                            {
-                                tracing::warn!(
-                                    "Error handling ad-hoc outgoing stream to {}: {}",
-                                    conn.remote_addr(),
-                                    e
-                                )
-                            }
-                        }
-                    },
-
-                    gossip::Control::Connect { to } => {
-                        tracing::trace!(remote.id = %to.peer_id, "Run::Rad(Connect)");
-
-                        let connections = self.connections.lock().await;
-                        match connections.get(&to.peer_id) {
-                            None => {
-                                drop(connections);
-                                let conn = connect_peer_info(&self.endpoint, to).await;
-                                if let Some((conn, incoming)) = conn {
-                                    self.handle_connect(conn, incoming.boxed(), None).await
-                                }
-                            },
-
-                            Some(conn) => match conn.open_stream().await {
-                                Ok(stream) => {
-                                    drop(connections);
-                                    // The incoming future should still be running,
-                                    // so it's enough to drive an outgoing
-                                    if let Err(e) = self.outgoing(stream, None).await {
-                                        tracing::warn!("error handling outgoing stream: {}", e);
-                                    }
-                                },
-
-                                Err(e) => {
-                                    let remote_id = conn.remote_peer_id();
-                                    drop(connections);
-                                    tracing::warn!("error opening outgoing stream: {}", e);
-                                    self.handle_disconnect(remote_id).await
-                                },
-                            },
-                        }
-                    },
-                },
-
-                gossip::ProtocolEvent::Info(info) => {
-                    self.subscribers.emit(ProtocolEvent::Gossip(info)).await
-                },
-
-                gossip::ProtocolEvent::Membership(info) => {
-                    self.subscribers.emit(ProtocolEvent::Membership(info)).await
-                },
-            },
-        }
+        self.downstream
+            .send(Downstream::Gossip(Query(want)))
+            .and(Ok(()))
+            .map_err(|tincan::error::SendError(e)| match e {
+                Downstream::Gossip(g) => g.payload(),
+                _ => unreachable!(),
+            })
     }
 
-    async fn handle_connect(
-        &self,
-        conn: quic::Connection,
-        mut incoming: BoxStream<'_, quic::Result<quic::Stream>>,
-        hello: impl Into<Option<gossip::Rpc<IpAddr, A>>>,
-    ) {
-        let remote_id = conn.remote_peer_id();
-        tracing::info!(remote.id = %remote_id, "New outgoing connection");
+    pub async fn connected_peers(&self) -> Vec<PeerId> {
+        use event::{downstream::Info::*, Downstream};
 
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let tx = Arc::new(Mutex::new(Some(tx)));
+        if let Err(tincan::error::SendError(e)) =
+            self.downstream.send(Downstream::Info(ConnectedPeers(tx)))
         {
-            let mut connections = self.connections.lock().await;
-            if let Some(prev) = connections.insert(remote_id, conn.clone()) {
-                tracing::warn!(
-                    "new outgoing ejects previous connection to {}@{}",
-                    remote_id,
-                    prev.remote_addr()
-                );
-                prev.close(CloseReason::DuplicateConnection);
-                self.subscribers
-                    .emit(ProtocolEvent::Disconnecting(remote_id))
-                    .await;
+            match e {
+                Downstream::Info(ConnectedPeers(reply)) => {
+                    reply
+                        .lock()
+                        .take()
+                        .expect("if chan send failed, there can't be another contender")
+                        .send(vec![])
+                        .ok();
+                },
+
+                _ => unreachable!(),
             }
         }
 
-        self.subscribers
-            .emit(ProtocolEvent::Connected(remote_id))
-            .await;
+        rx.await.unwrap_or_default()
+    }
 
-        // XXX: potential race here: we expect that, if we ejected a previous
-        // connection, all stream-processing futures associated with are done by
-        // now, and the `CONNECTION_CLOSE` is in the send buffers. There is no
-        // way we can assert this, though, so our fresh connection `conn` might
-        // be rejected by the other end.
-
-        let res = futures::try_join!(
-            async {
-                let outgoing = conn.open_stream().await?;
-                self.outgoing(outgoing, hello).await
-            },
-            async {
-                while let Some(stream) = incoming.try_next().await? {
-                    self.incoming(stream).await?
-                }
-
-                Ok(())
-            }
-        );
-
-        if let Err(e) = res {
-            tracing::warn!("Closing connection with {}, because: {}", remote_id, e);
-            conn.close(CloseReason::InternalError);
+    pub async fn stats(&self) -> event::downstream::Stats {
+        use event::{
+            downstream::{Info::*, Stats},
+            Downstream,
         };
 
-        self.handle_disconnect(remote_id).await;
-    }
-
-    async fn handle_disconnect(&self, peer: PeerId) {
-        if let Some(conn) = self.connections.lock().await.remove(&peer) {
-            tracing::info!(msg = "Disconnecting", remote.addr = %conn.remote_addr());
-            conn.close(CloseReason::ProtocolDisconnect);
-            self.subscribers
-                .emit(ProtocolEvent::Disconnecting(peer))
-                .await
-        }
-    }
-
-    async fn handle_incoming<Incoming>(
-        &self,
-        conn: quic::Connection,
-        incoming: Incoming,
-    ) -> Result<(), Error>
-    where
-        Incoming: futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
-    {
-        let remote_id = conn.remote_peer_id();
-        tracing::info!(remote.id = %remote_id, "new incoming connection");
-
-        let mut connections = self.connections.lock().await;
-        if connections.contains_key(&remote_id) {
-            tracing::warn!(remote.id = %remote_id, "rejecting duplicate incoming connection");
-
-            conn.close(CloseReason::DuplicateConnection);
-            drop(incoming);
-
-            self.subscribers
-                .emit(ProtocolEvent::Disconnecting(remote_id))
-                .await;
-            drop(connections);
-
-            Err(Error::DuplicateConnection)
-        } else {
-            let _prev = connections.insert(remote_id, conn);
-            debug_assert!(_prev.is_none());
-
-            self.subscribers
-                .emit(ProtocolEvent::Connected(remote_id))
-                .await;
-            drop(connections);
-
-            let res = self.handle_incoming_streams(incoming).await;
-            self.handle_disconnect(remote_id).await;
-            res
-        }
-    }
-
-    async fn handle_incoming_streams<Incoming>(&self, mut incoming: Incoming) -> Result<(), Error>
-    where
-        Incoming: futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
-    {
-        while let Some(stream) = incoming.try_next().await? {
-            tracing::trace!("New incoming stream");
-            let this = self.clone();
-            tokio::spawn(async move {
-                if let Err(e) = this.incoming(stream).await {
-                    tracing::warn!("Incoming stream error: {}", e);
-                }
-            });
-        }
-
-        Ok(())
-    }
-
-    async fn outgoing(
-        &self,
-        stream: quic::Stream,
-        hello: impl Into<Option<gossip::Rpc<IpAddr, A>>>,
-    ) -> Result<(), Error> {
-        match upgrade(stream, upgrade::Gossip).await {
-            Err(upgrade::Error { stream, source }) => {
-                stream.close(CloseReason::InvalidUpgrade);
-                Err(Error::from(source))
-            },
-
-            Ok(upgraded) => self
-                .gossip
-                .outgoing(upgraded, hello)
-                .await
-                .map_err(|e| e.into()),
-        }
-    }
-
-    async fn incoming(&self, stream: quic::Stream) -> Result<(), Error> {
-        match with_upgraded(stream).await {
-            Err(upgrade::Error { stream, source }) => {
-                stream.close(CloseReason::InvalidUpgrade);
-                Err(Error::from(source))
-            },
-
-            Ok(upgraded) => match upgraded {
-                SomeUpgraded::Gossip(upgraded) => {
-                    self.gossip.incoming(upgraded).await.map_err(Error::Gossip)
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let tx = Arc::new(Mutex::new(Some(tx)));
+        if let Err(tincan::error::SendError(e)) = self.downstream.send(Downstream::Info(Stats(tx)))
+        {
+            match e {
+                Downstream::Info(Stats(reply)) => {
+                    reply
+                        .lock()
+                        .take()
+                        .expect("if chan send failed, there can't be another contender")
+                        .send(Stats::default())
+                        .ok();
                 },
 
-                SomeUpgraded::Git(upgraded) => self
-                    .git
-                    .invoke_service(upgraded.into_stream().split())
-                    .await
-                    .map_err(Error::Git),
-            },
+                _ => unreachable!(),
+            }
         }
+
+        rx.await.unwrap_or_default()
     }
 
-    async fn open_stream<U>(&self, to: PeerId, up: U) -> Result<Upgraded<U, quic::Stream>, Error>
-    where
-        U: Into<UpgradeRequest>,
-    {
-        let stream = match self.connections.lock().await.get(&to) {
-            Some(conn) => conn.open_stream().await.map_err(Error::from),
-            None => Err(Error::NoConnection(to)),
-        }?;
+    pub fn subscribe(&self) -> impl futures::Stream<Item = Result<event::Upstream, RecvError>> {
+        let mut r = self.upstream.subscribe();
+        async_stream::stream! { loop { yield r.recv().await } }
+    }
+}
 
-        upgrade(stream, up)
-            .await
-            .map_err(|upgrade::Error { stream, source }| {
-                stream.close(CloseReason::InvalidUpgrade);
-                Error::from(source)
-            })
+impl Default for TinCans {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub async fn bind<Sign, Store>(
+    phone: TinCans,
+    config: Config,
+    signer: Sign,
+    storage: Store,
+) -> Result<Bound<Store>, error::Bootstrap>
+where
+    Sign: Signer + Clone + Send + Sync + 'static,
+    Store: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+{
+    let local_id = PeerId::from_signer(&signer);
+    let git = GitServer::new(&config.paths);
+    let quic::BoundEndpoint { endpoint, incoming } =
+        quic::Endpoint::bind(signer, config.listen_addr, config.network).await?;
+    let (membership, periodic) = membership::Hpv::<_, SocketAddr>::new(
+        local_id,
+        Pcg64Mcg::new(rand::random()),
+        config.membership,
+    );
+    let storage = Storage::from(storage);
+    let events = phone.upstream.clone().into();
+    let state = State {
+        local_id,
+        endpoint,
+        git,
+        membership,
+        storage,
+        events,
+    };
+
+    Ok(Bound {
+        phone,
+        state,
+        incoming,
+        periodic,
+    })
+}
+
+pub fn accept<Store, Disco>(
+    Bound {
+        phone,
+        state,
+        incoming,
+        periodic,
+    }: Bound<Store>,
+    disco: Disco,
+) -> impl Future<Output = Result<!, quic::Error>>
+where
+    Store: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    Disco: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
+{
+    let _git_factory = Arc::new(Box::new(state.clone()) as Box<dyn GitStreamFactory>);
+    git::p2p::transport::register()
+        .register_stream_factory(state.local_id, Arc::downgrade(&_git_factory));
+
+    let tasks = [
+        {
+            let (fut, hdl) = future::abortable(accept::disco(state.clone(), disco));
+            tokio::spawn(fut);
+            hdl
+        },
+        {
+            let (fut, hdl) = future::abortable(accept::periodic(state.clone(), periodic));
+            tokio::spawn(fut);
+            hdl
+        },
+        {
+            let (fut, hdl) = future::abortable(accept::ground_control(
+                state.clone(),
+                async_stream::stream! {
+                    let mut r = phone.downstream.subscribe();
+                    loop { yield r.recv().await; }
+                }
+                .boxed(),
+            ));
+            tokio::spawn(fut);
+            hdl
+        },
+    ];
+    let main = io::ingress_connections(state.clone(), incoming).boxed();
+
+    Accept {
+        _git_factory,
+        endpoint: state.endpoint,
+        tasks,
+        main,
+    }
+}
+
+struct Accept {
+    _git_factory: Arc<Box<dyn GitStreamFactory>>,
+    endpoint: quic::Endpoint,
+    tasks: [future::AbortHandle; 3],
+    main: BoxFuture<'static, Result<!, quic::Error>>,
+}
+
+impl Future for Accept {
+    type Output = Result<!, quic::Error>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        self.main.poll_unpin(cx)
+    }
+}
+
+impl Drop for Accept {
+    fn drop(&mut self) {
+        self.endpoint.shutdown();
+        for task in &self.tasks {
+            task.abort()
+        }
+    }
+}
+
+type Limiter = governor::RateLimiter<
+    governor::state::direct::NotKeyed,
+    governor::state::InMemoryState,
+    governor::clock::DefaultClock,
+>;
+
+#[derive(Clone)]
+struct Storage<S> {
+    inner: S,
+    limiter: Arc<Limiter>,
+}
+
+impl<S> From<S> for Storage<S> {
+    fn from(inner: S) -> Self {
+        Self {
+            inner,
+            limiter: Arc::new(RateLimiter::direct(Quota::per_second(
+                // TODO: make this an "advanced" config
+                nonzero!(5u32),
+            ))),
+        }
+    }
+}
+
+impl<S> Deref for Storage<S> {
+    type Target = S;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 
 #[async_trait]
-impl<S, A> GitStreamFactory for Protocol<S, A>
+impl<A, S> broadcast::LocalStorage<A> for Storage<S>
 where
-    S: gossip::LocalStorage<Update = A> + 'static,
-    for<'de> A: Encode + Decode<'de> + Clone + Debug + Send + Sync + 'static,
+    A: 'static,
+    S: broadcast::LocalStorage<A>,
+    S::Update: Send,
+{
+    type Update = S::Update;
+
+    async fn put<P>(&self, provider: P, has: Self::Update) -> broadcast::PutResult<Self::Update>
+    where
+        P: Into<(PeerId, Vec<A>)> + Send,
+    {
+        self.inner.put(provider, has).await
+    }
+
+    async fn ask(&self, want: Self::Update) -> bool {
+        self.inner.ask(want).await
+    }
+}
+
+impl<S> broadcast::ErrorRateLimited for Storage<S> {
+    fn is_error_rate_limit_breached(&self) -> bool {
+        self.limiter.check().is_err()
+    }
+}
+
+#[derive(Clone)]
+struct State<S> {
+    local_id: PeerId,
+    endpoint: quic::Endpoint,
+    git: GitServer,
+    membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
+    storage: Storage<S>,
+    events: EventSink,
+}
+
+#[async_trait]
+impl<S> GitStreamFactory for State<S>
+where
+    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     async fn open_stream(
         &self,
         to: &PeerId,
         addr_hints: &[SocketAddr],
     ) -> Option<Box<dyn GitStream>> {
-        let span = tracing::trace_span!("GitStreamFactory::open_stream", peer.id = %to);
+        let span = tracing::info_span!("open-git-stream", remote_id = %to);
 
-        match self
-            .open_git(*to, addr_hints.iter().copied())
-            .instrument(span.clone())
-            .await
-        {
-            Ok(s) => Some(Box::new(s)),
-            Err(e) => {
-                span.in_scope(|| tracing::warn!("Error opening git stream: {}", e));
+        let may_conn = match self.endpoint.get_connection(*to) {
+            Some(conn) => Some(conn),
+            None => {
+                let addr_hints = addr_hints.iter().copied().collect::<Vec<_>>();
+                io::connect(&self.endpoint, *to, addr_hints)
+                    .instrument(span.clone())
+                    .await
+                    .map(|(conn, ingress)| {
+                        tokio::spawn(io::ingress_streams(self.clone(), ingress));
+                        conn
+                    })
+            },
+        };
+
+        match may_conn {
+            None => {
+                span.in_scope(|| tracing::error!("unable to obtain connection"));
                 None
+            },
+
+            Some(conn) => {
+                let stream = conn
+                    .open_bidi()
+                    .inspect_err(|e| tracing::error!(err = ?e, "unable to open stream"))
+                    .instrument(span.clone())
+                    .await
+                    .ok()?;
+                let upgraded = upgrade::upgrade(stream, upgrade::Git)
+                    .inspect_err(|e| tracing::error!(err = ?e, "unable to upgrade stream"))
+                    .instrument(span)
+                    .await
+                    .ok()?;
+
+                Some(Box::new(upgraded))
             },
         }
     }
 }
 
-impl<'a, S, A> From<&'a Protocol<S, A>> for Cow<'a, Protocol<S, A>>
-where
-    S: Clone,
-    A: Clone,
-{
-    fn from(p: &'a Protocol<S, A>) -> Self {
-        Cow::Borrowed(p)
+#[derive(Clone)]
+struct EventSink(tokio::sync::broadcast::Sender<event::Upstream>);
+
+impl Deref for EventSink {
+    type Target = tokio::sync::broadcast::Sender<event::Upstream>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-async fn connect_peer_info(
-    endpoint: &quic::Endpoint,
-    peer_info: gossip::PeerInfo<IpAddr>,
-) -> Option<(
-    quic::Connection,
-    impl futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
-)> {
-    let advertised_port = peer_info.advertised_info.listen_port;
-    let addrs = iter::once(peer_info.advertised_info.listen_addr)
-        .chain(peer_info.seen_addrs)
-        .map(move |ip| SocketAddr::new(ip, advertised_port));
-    connect(endpoint, peer_info.peer_id, addrs).await
+impl EventSink {
+    fn emit(&self, evt: impl Into<event::Upstream>) {
+        self.0.send(evt.into()).ok();
+    }
 }
 
-async fn connect<Addrs>(
-    endpoint: &quic::Endpoint,
-    peer_id: PeerId,
-    addrs: Addrs,
-) -> Option<(
-    quic::Connection,
-    impl futures::Stream<Item = quic::Result<quic::Stream>> + Unpin,
-)>
+impl From<tokio::sync::broadcast::Sender<event::Upstream>> for EventSink {
+    fn from(tok: tokio::sync::broadcast::Sender<event::Upstream>) -> Self {
+        Self(tok)
+    }
+}
+
+impl<R, A> broadcast::Membership for membership::Hpv<R, A>
 where
-    Addrs: IntoIterator<Item = SocketAddr>,
+    R: rand::Rng + Clone,
+    A: Clone + Debug + Ord,
 {
-    fn routable(addr: &SocketAddr) -> bool {
-        let ip = addr.ip();
-        !(ip.is_unspecified() || ip.is_documentation() || ip.is_multicast())
+    fn members(&self, exclude: Option<PeerId>) -> Vec<PeerId> {
+        self.broadcast_recipients(exclude)
     }
 
-    let addrs = addrs.into_iter().filter(routable).collect::<Vec<_>>();
-    if addrs.is_empty() {
-        tracing::warn!("no routable addrs for {}", peer_id);
-        None
-    } else {
-        future::select_ok(addrs.iter().map(|addr| {
-            let mut endpoint = endpoint.clone();
-            tracing::info!(remote.id = %peer_id, remote.addr = %addr, "establishing connection");
-            Box::pin(async move {
-                endpoint
-                    .connect(peer_id, &addr)
-                    .map_err(|e| {
-                        tracing::warn!("could not connect to {} at {}: {}", peer_id, addr, e);
-                        e
-                    })
-                    .await
-            })
-        }))
-        .await
-        .ok()
-        .map(|(success, _pending)| success)
+    fn is_member(&self, peer: &PeerId) -> bool {
+        self.is_active(peer)
     }
 }

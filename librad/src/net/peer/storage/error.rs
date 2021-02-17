@@ -3,24 +3,25 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::io;
-
 use thiserror::Error;
 
-use crate::net::codec::CborCodecError;
+use crate::git::{self, replication, tracking};
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
-    #[error("connection to self")]
-    SelfConnection,
-
-    #[error("too many storage errors")]
-    StorageErrorRateLimitExceeded,
+    #[error("already have {0}")]
+    KnownObject(git2::Oid),
 
     #[error(transparent)]
-    Cbor(#[from] CborCodecError),
+    Tracking(#[from] tracking::Error),
 
     #[error(transparent)]
-    Io(#[from] io::Error),
+    Replication(#[from] replication::Error),
+
+    #[error(transparent)]
+    Store(#[from] git::storage::Error),
+
+    #[error(transparent)]
+    Pool(#[from] deadpool::managed::PoolError<git::storage::Error>),
 }

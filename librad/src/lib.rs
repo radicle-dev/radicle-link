@@ -9,11 +9,15 @@
 #![feature(associated_type_bounds)]
 #![feature(backtrace)]
 #![feature(bool_to_option)]
+#![feature(box_patterns)]
 #![feature(btree_drain_filter)]
 #![feature(core_intrinsics)]
+#![feature(drain_filter)]
+#![feature(duration_saturating_ops)]
 #![feature(generic_associated_types)]
 #![feature(ip)]
 #![feature(never_type)]
+#![feature(try_trait)]
 
 #[macro_use]
 extern crate async_trait;
@@ -37,6 +41,7 @@ pub mod profile;
 pub mod signer;
 
 // Re-exports
+pub use peer::PeerId;
 pub use radicle_macros::*;
 
 #[cfg(test)]

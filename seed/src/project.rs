@@ -10,10 +10,10 @@ use librad::{
         identities::{self, SomeIdentity},
         Urn,
     },
-    net::peer::PeerApi,
+    net::peer::Peer,
 };
 
-use crate::Error;
+use crate::{signer::Signer, Error};
 
 #[derive(Debug, Clone)]
 pub struct Project {
@@ -46,8 +46,8 @@ impl From<identities::Project> for Project {
 }
 
 /// Get all local projects.
-pub async fn get_projects(api: &PeerApi) -> Result<Vec<Project>, Error> {
-    api.with_storage(|s| {
+pub async fn get_projects(api: &Peer<Signer>) -> Result<Vec<Project>, Error> {
+    api.using_storage(|s| {
         identities::any::list(&s)?
             .filter_map(|res| {
                 res.map(|id| match id {

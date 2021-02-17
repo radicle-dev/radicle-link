@@ -10,10 +10,12 @@ default = []
 disco-mdns = ["mdns", "madness"]
 
 [dependencies]
+async-stream = "0.3"
 async-trait = "0.1"
 bit-vec = "0.6"
 bs58 = "0.3"
 bytes = "0.5"
+dashmap = "4.0"
 directories = "3.0"
 dyn-clone = "1.0"
 futures-timer = "3.0"
@@ -21,12 +23,14 @@ globset = "0.4"
 governor = ">=0.3.2"
 lazy_static = "1"
 libc = "0.2"
-mdns = { version = "1", optional = true }
+mdns = { version = "3", optional = true }
 multibase = "0.9"
 multihash = "0.11"
 nom = "5"
 nonempty = "0.6"
+nonzero_ext = "0.2"
 num_cpus = "1"
+parking_lot = "0.11"
 percent-encoding = "2"
 picky-asn1 = "0.3"
 picky-asn1-der = "0.2"
@@ -81,7 +85,7 @@ features = []
 
 [dependencies.madness]
 git = "https://github.com/meilisearch/madness"
-rev = "cb12159a06f3698d0ba4ea078e95f8a915a9a9d3"
+rev = "12a7386952923990179fe400e0cd932cbdd90dfc"
 optional = true
 
 [dependencies.minicbor]
@@ -89,8 +93,8 @@ version = ">= 0.5, 0"
 features = ["std", "derive"]
 
 [dependencies.quinn]
-git = "https://github.com/djc/quinn"
-rev = "babb07b079e7e3ac4ff2fa7ef25b0dac5e934377"
+git = "https://github.com/quinn-rs/quinn"
+rev = "05bb6cdd5f53484f538a20da37407ef13faf42e0"
 default-features = false
 features = ["tls-rustls"]
 
@@ -105,7 +109,7 @@ path = "../std-ext"
 
 # Note: this MUST always match the exact patch version `quinn` uses
 [dependencies.rustls]
-version = "0.18.0"
+version  = "0.19"
 features = ["logging", "dangerous_configuration"]
 
 [dependencies.serde]
@@ -118,11 +122,11 @@ features = ["derive"]
 version = "<= 0.1.11"
 
 [dependencies.tokio]
-version = "0.2"
+version = "1.1"
 features = ["full"]
 
 [dependencies.tokio-util]
-version = "0.3"
+version = "0.6"
 features = ["compat"]
 
 [dependencies.url]
@@ -135,13 +139,17 @@ features = ["zeroize_derive"]
 
 [dev-dependencies]
 anyhow = "1"
+argh = "0"
 assert_matches = "1"
+env_logger = "0"
 fnv = "1"
 futures-await-test = "0"
 futures_ringbuf = "0"
+log = "0.4"
 nonempty = "0.6"
 pretty_assertions = "0"
 proptest = "0"
+tracing-subscriber = ">= 0.2"
 
 [dev-dependencies.librad-test]
 path = "../librad-test"

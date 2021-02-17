@@ -5,13 +5,14 @@
 
 use std::{
     future::Future,
+    io,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     ops::Deref,
 };
 
 use futures::{
-    future,
-    stream::{self, StreamExt},
+    future::{self, FutureExt as _},
+    stream::{StreamExt as _, TryStreamExt as _},
 };
 use tempfile::{tempdir, TempDir};
 
@@ -19,13 +20,14 @@ use librad::{
     git,
     keys::SecretKey,
     net::{
-        discovery,
-        gossip,
-        peer::{Gossip, Peer, PeerApi, PeerConfig},
-        protocol::ProtocolEvent,
+        connection::{LocalAddr, LocalPeer},
+        discovery::{self, Discovery as _},
+        peer::{self, Peer},
+        protocol,
     },
     paths::Paths,
     peer::PeerId,
+    std_ext::iter::IteratorExt as _,
 };
 
 lazy_static! {
@@ -33,167 +35,209 @@ lazy_static! {
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0));
 }
 
-pub struct TestPeer {
-    _tmp: TempDir,
-    pub peer: Peer,
-    pub key: SecretKey,
+pub struct BoundTestPeer {
+    tmp: TempDir,
+    peer: Peer<SecretKey>,
+    bound: protocol::Bound<peer::PeerStorage>,
+    disco: discovery::Static,
 }
 
-impl Deref for TestPeer {
-    type Target = Peer;
+impl BoundTestPeer {
+    pub fn listen_addrs(&self) -> io::Result<Vec<SocketAddr>> {
+        self.bound.listen_addrs()
+    }
+}
+
+impl LocalPeer for BoundTestPeer {
+    fn local_peer_id(&self) -> PeerId {
+        self.peer.peer_id()
+    }
+}
+
+impl LocalAddr for BoundTestPeer {
+    type Addr = SocketAddr;
+
+    fn listen_addrs(&self) -> io::Result<Vec<Self::Addr>> {
+        self.bound.listen_addrs()
+    }
+}
+
+pub struct RunningTestPeer {
+    _tmp: TempDir,
+    peer: Peer<SecretKey>,
+    listen_addrs: Vec<SocketAddr>,
+}
+
+impl Deref for RunningTestPeer {
+    type Target = Peer<SecretKey>;
 
     fn deref(&self) -> &Self::Target {
         &self.peer
     }
 }
 
-impl AsRef<Peer> for TestPeer {
-    fn as_ref(&self) -> &Peer {
-        self
+impl RunningTestPeer {
+    pub fn listen_addrs(&self) -> &[SocketAddr] {
+        &self.listen_addrs
     }
 }
 
-async fn boot<I>(seeds: I) -> anyhow::Result<TestPeer>
+impl LocalPeer for RunningTestPeer {
+    fn local_peer_id(&self) -> PeerId {
+        self.peer.peer_id()
+    }
+}
+
+impl LocalAddr for RunningTestPeer {
+    type Addr = SocketAddr;
+
+    fn listen_addrs(&self) -> io::Result<Vec<Self::Addr>> {
+        Ok(self.listen_addrs.clone())
+    }
+}
+
+pub async fn boot<I, J>(seeds: I) -> anyhow::Result<BoundTestPeer>
 where
-    I: IntoIterator<Item = (PeerId, Vec<SocketAddr>)>,
+    I: IntoIterator<Item = (PeerId, J)>,
+    J: IntoIterator<Item = SocketAddr>,
 {
     let tmp = tempdir()?;
     let paths = Paths::from_root(tmp.path())?;
     let key = SecretKey::new();
-    let listen_addr = *LOCALHOST_ANY;
-    let gossip_params = Default::default();
-    let disco = seeds.into_iter().collect::<discovery::Static>();
-    let storage_config = Default::default();
-    let fetch_limit = Default::default();
-    let network = Default::default();
 
     git::storage::Storage::init(&paths, key.clone())?;
 
-    let config = PeerConfig {
-        signer: key.clone(),
+    let listen_addr = *LOCALHOST_ANY;
+    let protocol = protocol::Config {
         paths,
         listen_addr,
-        gossip_params,
-        storage_config,
-        fetch_limit,
-        network,
+        membership: Default::default(),
+        network: Default::default(),
+        replication: Default::default(),
     };
+    let disco = seeds.into_iter().collect::<discovery::Static>();
+    let storage_pools = peer::PoolSizes::default();
 
-    Peer::bootstrap(config, disco)
-        .await
-        .map(|peer| {
-            tracing::debug!(path = %tmp.path().display(), peer_id = %peer.peer_id(), "setting up peer");
-            TestPeer {
-                _tmp: tmp,
-                peer,
-                key,
-            }
-        })
-        .map_err(|e| e.into())
+    let peer = Peer::new(peer::Config {
+        signer: key,
+        protocol,
+        storage_pools,
+    });
+    let bound = peer.bind().await?;
+
+    Ok(BoundTestPeer {
+        tmp,
+        peer,
+        bound,
+        disco,
+    })
 }
 
 /// Setup a testnet with the given number of peers.
 /// Peer X+1 has peer X as a seed peer.
-pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
+pub async fn setup(num_peers: usize) -> anyhow::Result<Vec<BoundTestPeer>> {
     if num_peers < 1 {
         return Ok(vec![]);
     }
 
     let mut peers = Vec::with_capacity(num_peers);
-    let mut seed_addrs = None;
+    let mut seed_addrs: Option<(PeerId, Vec<SocketAddr>)> = None;
     for _ in 0..num_peers {
         let peer = boot(seed_addrs.take()).await?;
-        seed_addrs = Some((peer.peer_id(), peer.listen_addrs().collect()));
+        seed_addrs = Some((peer.bound.peer_id(), peer.bound.listen_addrs().unwrap()));
         peers.push(peer)
     }
 
     Ok(peers)
 }
 
-pub async fn setup_disconnected(num_peers: usize) -> anyhow::Result<Vec<TestPeer>> {
+pub async fn setup_disconnected(num_peers: usize) -> anyhow::Result<Vec<BoundTestPeer>> {
     if num_peers < 1 {
         return Ok(vec![]);
     }
 
     let mut peers = Vec::with_capacity(num_peers);
     for _ in 0..num_peers {
-        let peer = boot(vec![]).await?;
+        let peer = boot::<Option<_>, Option<_>>(None).await?;
         peers.push(peer)
     }
 
     Ok(peers)
 }
 
-pub async fn run_on_testnet<F, Fut, A>(peers: Vec<TestPeer>, min_connected: usize, mut f: F) -> A
+pub async fn run_on_testnet<F, Fut, A>(
+    peers: Vec<BoundTestPeer>,
+    min_connected: usize,
+    mut f: F,
+) -> A
 where
-    F: FnMut(Vec<(PeerApi, SecretKey)>) -> Fut,
+    F: FnMut(Vec<RunningTestPeer>) -> Fut,
     Fut: Future<Output = A>,
 {
-    let num_peers = peers.len();
-
-    // move out tempdirs, so they don't get dropped
-    let (_tmps, peers_and_keys) = peers
+    let (running, abort_handles, events) = peers
         .into_iter()
-        .map(|TestPeer { _tmp, peer, key }| (_tmp, (peer, key)))
-        .unzip::<_, _, Vec<_>, Vec<_>>();
+        .map(
+            |BoundTestPeer {
+                 tmp,
+                 peer,
+                 bound,
+                 disco,
+             }| {
+                let events = peer.subscribe();
+                let running = RunningTestPeer {
+                    _tmp: tmp,
+                    peer,
+                    listen_addrs: bound.listen_addrs().unwrap(),
+                };
+                let abort_handle = {
+                    let (fut, hdl) = future::abortable(bound.accept(disco.discover()));
+                    tokio::task::spawn(fut);
+                    hdl
+                };
 
-    // unzip2, anyone?
-    let (peers, keys) = peers_and_keys.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
+                (running, abort_handle, events)
+            },
+        )
+        .unzip3::<_, _, _, Vec<_>, Vec<_>, Vec<_>>();
 
-    let (apis, runners) = peers
-        .into_iter()
-        .map(|peer| peer.accept().unwrap())
-        .unzip::<_, _, Vec<_>, Vec<_>>();
-
-    let events = {
-        let mut events = Vec::with_capacity(num_peers);
-        for api in &apis {
-            events.push(api.protocol().subscribe().await);
-        }
-        events
-    };
-    let converged = wait_converged(events, min_connected);
-
-    let (abort_handle, abort_reg) = future::AbortHandle::new_pair();
-    tokio::task::spawn(future::Abortable::new(
-        future::select_all(runners),
-        abort_reg,
-    ));
-    converged.await;
-
-    let res = f(apis.into_iter().zip(keys).collect()).await;
-    abort_handle.abort();
+    wait_converged(events, min_connected).await;
+    let res = f(running).await;
+    abort_handles.into_iter().for_each(|hdl| hdl.abort());
 
     res
 }
 
-pub async fn wait_converged<S>(events: Vec<S>, min_connected: usize)
+pub async fn wait_converged<E>(events: E, min_connected: usize)
 where
-    S: futures::Stream<Item = ProtocolEvent<Gossip>> + Unpin,
+    E: IntoIterator,
+    E::Item: futures::Stream<Item = Result<protocol::event::Upstream, protocol::RecvError>> + Send,
 {
     if min_connected < 2 {
         return;
     }
 
-    let min_joined = min_connected - 1;
-
-    stream::select_all(events)
-        .scan((0, 0), |(connected, joined), event| {
-            match event {
-                ProtocolEvent::Connected(_) => *connected += 1,
-                ProtocolEvent::Membership(ref info) => match info {
-                    gossip::MembershipInfo::Join { .. } => *joined += 1,
-                    gossip::MembershipInfo::Neighbour(_) => *joined += 1,
-                },
-                _ => (),
-            };
-
-            future::ready(if *connected < min_connected || *joined < min_joined {
-                Some(event)
-            } else {
-                None
-            })
+    let mut pending = events
+        .into_iter()
+        .map(|stream| {
+            stream
+                .try_skip_while(|evt| {
+                    future::ok(!matches!(evt, protocol::event::Upstream::Membership(_)))
+                })
+                .map_ok(drop)
+                .boxed()
+                .into_future()
+                .map(|(x, _)| x)
         })
-        .collect::<Vec<_>>()
-        .await;
+        .collect();
+    let mut connected = 0;
+    loop {
+        let (out, _, rest): (Option<Result<_, _>>, _, _) = future::select_all(pending).await;
+        if let Some(()) = out.transpose().unwrap() {
+            connected += 1;
+            if connected >= min_connected {
+                break;
+            }
+        }
+        pending = rest
+    }
 }

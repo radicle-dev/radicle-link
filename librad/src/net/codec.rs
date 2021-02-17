@@ -12,12 +12,21 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum CborCodecError {
+pub enum CborError {
+    // Note: the error will not actually contain any io, the type parameter is
+    // there due to the `Write` impl of `Vec`
     #[error(transparent)]
     Encode(#[from] minicbor::encode::Error<io::Error>),
 
     #[error(transparent)]
     Decode(#[from] minicbor::decode::Error),
+}
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum CborCodecError {
+    #[error(transparent)]
+    Cbor(#[from] CborError),
 
     #[error(transparent)]
     Io(#[from] io::Error),
@@ -46,7 +55,7 @@ where
     type Error = CborCodecError;
 
     fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let bytes = minicbor::to_vec(&item)?;
+        let bytes = minicbor::to_vec(&item).map_err(CborError::from)?;
 
         dst.reserve(bytes.len());
         dst.put_slice(&bytes);
@@ -69,7 +78,7 @@ where
             Ok(v) => Ok(Some(v)),
             // try later if we reach EOF prematurely
             Err(minicbor::decode::Error::EndOfInput) => Ok(None),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(CborError::from(e).into()),
         };
 
         let offset = decoder.position();

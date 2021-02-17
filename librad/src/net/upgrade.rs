@@ -45,6 +45,9 @@ pub struct Gossip;
 #[derive(Debug)]
 pub struct Git;
 
+#[derive(Debug)]
+pub struct Membership;
+
 /// Signal the (sub-) protocol about to be sent over a given QUIC stream.
 ///
 /// This is only valid as the first message sent by the initiator of a fresh
@@ -65,6 +68,7 @@ pub struct Git;
 pub enum UpgradeRequest {
     Gossip = 0,
     Git = 1,
+    Membership = 2,
 }
 
 impl Into<UpgradeRequest> for Gossip {
@@ -76,6 +80,12 @@ impl Into<UpgradeRequest> for Gossip {
 impl Into<UpgradeRequest> for Git {
     fn into(self) -> UpgradeRequest {
         UpgradeRequest::Git
+    }
+}
+
+impl Into<UpgradeRequest> for Membership {
+    fn into(self) -> UpgradeRequest {
+        UpgradeRequest::Membership
     }
 }
 
@@ -99,6 +109,7 @@ impl<'de> minicbor::Decode<'de> for UpgradeRequest {
             0 => match d.u8()? {
                 0 => Ok(Self::Gossip),
                 1 => Ok(Self::Git),
+                2 => Ok(Self::Membership),
                 n => Err(minicbor::decode::Error::UnknownVariant(n as u32)),
             },
             n => Err(minicbor::decode::Error::UnknownVariant(n as u32)),
@@ -210,6 +221,7 @@ impl<S> GitStream for Upgraded<Git, S> where S: AsyncRead + AsyncWrite + Unpin +
 pub enum SomeUpgraded<S> {
     Gossip(Upgraded<Gossip, S>),
     Git(Upgraded<Git, S>),
+    Membership(Upgraded<Membership, S>),
 }
 
 impl<S> SomeUpgraded<S> {
@@ -220,6 +232,7 @@ impl<S> SomeUpgraded<S> {
         match self {
             Self::Gossip(up) => SomeUpgraded::Gossip(up.map(f)),
             Self::Git(up) => SomeUpgraded::Git(up.map(f)),
+            Self::Membership(up) => SomeUpgraded::Membership(up.map(f)),
         }
     }
 }
@@ -227,7 +240,7 @@ impl<S> SomeUpgraded<S> {
 pub async fn upgrade<U, S>(mut stream: S, upgrade: U) -> Result<Upgraded<U, S>, Error<S>>
 where
     U: Into<UpgradeRequest>,
-    S: AsyncRead + AsyncWrite + Unpin + Send + Sync,
+    S: AsyncWrite + Unpin + Send + Sync,
 {
     let send = async {
         let cbor = minicbor::to_vec(&upgrade.into())?;
@@ -242,7 +255,7 @@ where
 
 pub async fn with_upgraded<'a, S>(mut incoming: S) -> Result<SomeUpgraded<S>, Error<S>>
 where
-    S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'a,
+    S: AsyncRead + Unpin + Send + Sync + 'a,
 {
     let recv = async {
         let mut buf = [0u8; UPGRADE_REQUEST_ENCODING_LEN];
@@ -274,6 +287,7 @@ where
             let upgrade = match req {
                 UpgradeRequest::Gossip => SomeUpgraded::Gossip(Upgraded::new(incoming)),
                 UpgradeRequest::Git => SomeUpgraded::Git(Upgraded::new(incoming)),
+                UpgradeRequest::Membership => SomeUpgraded::Membership(Upgraded::new(incoming)),
             };
 
             Ok(upgrade)
@@ -326,9 +340,18 @@ mod tests {
         assert_matches!(test_upgrade(Gossip).await, Ok(SomeUpgraded::Gossip(_)))
     }
 
+    #[async_test]
+    async fn upgrade_membership() {
+        assert_matches!(
+            test_upgrade(Membership).await,
+            Ok(SomeUpgraded::Membership(_))
+        )
+    }
+
     #[test]
-    fn rountrip_upgrade_request() {
+    fn roundtrip_upgrade_request() {
         cbor_roundtrip(UpgradeRequest::Gossip);
-        cbor_roundtrip(UpgradeRequest::Git)
+        cbor_roundtrip(UpgradeRequest::Git);
+        cbor_roundtrip(UpgradeRequest::Membership);
     }
 }

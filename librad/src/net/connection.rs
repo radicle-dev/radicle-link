@@ -3,39 +3,49 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    io,
-    net::{IpAddr, SocketAddr},
-};
+use std::{io, ops::Deref};
 
-use crate::peer::PeerId;
 use futures::io::{AsyncRead, AsyncWrite};
+use futures_codec::FramedWrite;
 
-pub trait LocalInfo {
-    type Addr;
+use crate::PeerId;
 
+pub trait LocalPeer {
     fn local_peer_id(&self) -> PeerId;
-    fn local_addr(&self) -> io::Result<Self::Addr>;
 }
 
-pub trait RemoteInfo {
+pub trait LocalAddr {
     type Addr;
 
+    fn listen_addrs(&self) -> io::Result<Vec<Self::Addr>>;
+}
+
+pub trait LocalInfo: LocalPeer + LocalAddr {}
+impl<T> LocalInfo for T where T: LocalPeer + LocalAddr {}
+
+pub trait RemotePeer {
     fn remote_peer_id(&self) -> PeerId;
-    fn remote_addr(&self) -> Self::Addr;
 }
 
-pub trait AsAddr<A> {
-    fn as_addr(&self) -> A;
-}
-
-impl AsAddr<IpAddr> for SocketAddr {
-    fn as_addr(&self) -> IpAddr {
-        self.ip()
+impl<T, E> RemotePeer for FramedWrite<T, E>
+where
+    T: RemotePeer,
+{
+    fn remote_peer_id(&self) -> PeerId {
+        self.deref().remote_peer_id()
     }
 }
 
-pub trait Stream: RemoteInfo + AsyncRead + AsyncWrite + Unpin + Send + Sync + Sized {
+pub trait RemoteAddr {
+    type Addr;
+
+    fn remote_addr(&self) -> Self::Addr;
+}
+
+pub trait RemoteInfo: RemotePeer + RemoteAddr {}
+impl<T> RemoteInfo for T where T: RemotePeer + RemoteAddr {}
+
+pub trait Duplex: RemoteInfo + AsyncRead + AsyncWrite + Unpin + Send + Sync + Sized {
     type Read;
     type Write;
 
@@ -45,23 +55,21 @@ pub trait Stream: RemoteInfo + AsyncRead + AsyncWrite + Unpin + Send + Sync + Si
 #[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum CloseReason {
-    DuplicateConnection = 1,
-    ProtocolDisconnect = 2,
     ConnectionError = 3,
-    InternalError = 4,
     ServerShutdown = 5,
     InvalidUpgrade = 6,
+    TooManyConnections = 7,
+    Timeout = 8,
 }
 
 impl CloseReason {
     pub fn reason_phrase(&self) -> &[u8] {
         match self {
-            Self::DuplicateConnection => b"duplicate connection",
-            Self::ProtocolDisconnect => b"bye!",
             Self::ConnectionError => b"connection error",
-            Self::InternalError => b"internal server error",
             Self::ServerShutdown => b"server shutdown",
             Self::InvalidUpgrade => b"invalid or unsupported protocol upgrade",
+            Self::TooManyConnections => b"too many connections",
+            Self::Timeout => b"timeout",
         }
     }
 }
@@ -93,19 +101,21 @@ pub(crate) mod mock {
         }
     }
 
-    impl RemoteInfo for MockStream {
-        type Addr = PeerId;
-
+    impl RemotePeer for MockStream {
         fn remote_peer_id(&self) -> PeerId {
             self.id
         }
+    }
+
+    impl RemoteAddr for MockStream {
+        type Addr = PeerId;
 
         fn remote_addr(&self) -> Self::Addr {
             self.id
         }
     }
 
-    impl Stream for MockStream {
+    impl Duplex for MockStream {
         type Read = ReadHalf<Endpoint>;
         type Write = WriteHalf<Endpoint>;
 

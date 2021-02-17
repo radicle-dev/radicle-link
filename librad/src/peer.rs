@@ -14,7 +14,7 @@ use keystore::sign;
 
 use crate::keys::{self, PublicKey, SecretKey};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Encode, Decode)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, Encode, Decode)]
 #[cbor(array)]
 pub struct PeerId(#[n(0)] PublicKey);
 
@@ -150,6 +150,12 @@ impl FromStr for PeerId {
 
 impl fmt::Display for PeerId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.default_encoding())
+    }
+}
+
+impl fmt::Debug for PeerId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(&self.default_encoding())
     }
 }

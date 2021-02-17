@@ -1,0 +1,25 @@
+[package]
+name = "radicle-link-e2e"
+version = "0.1.0"
+authors = ["The Radicle Team <dev@radicle.xyz>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+anyhow = "1"
+argh = "0"
+dashmap = "4.0"
+env_logger = "0"
+futures = "0.3"
+lazy_static = "1"
+rustc-hash = "1.1"
+tempfile = "3.1"
+tracing = "0.1"
+tracing-subscriber = ">= 0.2"
+
+[dependencies.librad]
+path = "../librad"
+features = ["disco-mdns"]
+
+[dependencies.tokio]
+version = "1.1"

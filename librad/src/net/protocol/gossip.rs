@@ -46,7 +46,7 @@ impl<'de> Decode<'de> for Rev {
 /// The gossip payload type
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 #[cbor(array)]
-pub struct Gossip {
+pub struct Payload {
     /// URN of an updated or wanted repo.
     ///
     /// The path component denotes the named branch the `rev` was applied to.
@@ -61,7 +61,7 @@ pub struct Gossip {
     /// The origin of the update.
     ///
     /// If `Some`, this refers to the `PeerId`'s view of `urn` and `rev`. That
-    /// is, it may map to `remotes/<PeerId>/<urn>`.
+    /// is, it may map to `remotes/<origin>/<urn.path@rev>`.
     #[n(2)]
     pub origin: Option<PeerId>,
 }
@@ -79,18 +79,18 @@ mod tests {
     }
 
     #[test]
-    fn test_rev_cbor() {
+    fn roundtrip_rev() {
         cbor_roundtrip(Rev::Git(*OID));
     }
 
     #[test]
-    fn test_gossip_cbor() {
-        let gossip = Gossip {
+    fn roundtrip_payload() {
+        let payload = Payload {
             urn: Urn::new(git_ext::Oid::from(git2::Oid::zero())),
             rev: Some(Rev::Git(*OID)),
             origin: Some(PeerId::from(SecretKey::new())),
         };
 
-        cbor_roundtrip(gossip)
+        cbor_roundtrip(payload)
     }
 }

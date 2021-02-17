@@ -16,7 +16,7 @@ use directories::ProjectDirs;
 /// The paths are either based on system specific directories when created
 /// with [`crate::profile::Profile::paths`] or all contained in a given
 /// directory when created with [`Paths::from_root`].
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Paths {
     keys_dir: PathBuf,
     git_dir: PathBuf,
