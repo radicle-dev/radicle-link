@@ -609,7 +609,7 @@ impl<'a> DefaultFetcher<'a> {
             });
 
             tracing::info!("performing download");
-            self.remote.fetch(
+            self.remote.download(
                 &refspecs,
                 Some(
                     git2::FetchOptions::new()
@@ -618,7 +618,6 @@ impl<'a> DefaultFetcher<'a> {
                         .download_tags(git2::AutotagOption::None)
                         .remote_callbacks(callbacks),
                 ),
-                None,
             )?;
         }
 
