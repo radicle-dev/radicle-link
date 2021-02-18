@@ -1,0 +1,20 @@
+[package]
+name = "radicle-patience"
+version = "0.1.0"
+authors = ["The Radicle Team <dev@radicle.xyz>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+either = "1"
+librad = { path = "../librad" }
+serde_millis = "0.1"
+thiserror = "1.0"
+
+[dependencies.serde]
+version = "1.0"
+features = ["derive"]
+
+[dev-dependencies]
+assert_matches = "1"
+pretty_assertions = "0"
