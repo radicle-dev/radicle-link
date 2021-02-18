@@ -7,13 +7,24 @@ use std::net::SocketAddr;
 
 use futures::stream::{self, StreamExt as _};
 
-use super::{broadcast, event, gossip, io, membership, tick, PeerInfo, RecvError, State};
+use super::{
+    broadcast,
+    event,
+    gossip,
+    io,
+    membership,
+    tick,
+    PeerInfo,
+    ProtocolStorage,
+    RecvError,
+    State,
+};
 use crate::PeerId;
 
 #[tracing::instrument(skip(state, disco))]
 pub(super) async fn disco<S, D>(state: State<S>, disco: D)
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
     D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)>,
 {
     disco
@@ -27,7 +38,7 @@ where
 #[tracing::instrument(skip(state, tasks))]
 pub(super) async fn periodic<S, P>(state: State<S>, tasks: P)
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
     P: futures::Stream<Item = membership::Periodic<SocketAddr>>,
 {
     tasks
@@ -87,7 +98,7 @@ where
 #[tracing::instrument(skip(state, rx))]
 pub(super) async fn ground_control<S, E>(state: State<S>, mut rx: E)
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
     E: futures::Stream<Item = Result<event::Downstream, RecvError>> + Unpin,
 {
     use event::{

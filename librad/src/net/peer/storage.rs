@@ -10,7 +10,12 @@ use git_ext::{self as ext, reference};
 use tokio::task::spawn_blocking;
 
 use crate::{
-    git::{replication, storage::Pool, tracking, Urn},
+    git::{
+        replication,
+        storage::{self, Pool, PoolError, PooledRef},
+        tracking,
+        Urn,
+    },
     identities::urn,
     net::protocol::{broadcast, gossip},
     peer::{Originates, PeerId},
@@ -214,6 +219,13 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
             want.rev.map(|gossip::Rev::Git(head)| head),
         )
         .await
+    }
+}
+
+#[async_trait]
+impl storage::Pooled for Storage {
+    async fn get(&self) -> Result<PooledRef, PoolError> {
+        self.inner.get().await.map(PooledRef::from)
     }
 }
 

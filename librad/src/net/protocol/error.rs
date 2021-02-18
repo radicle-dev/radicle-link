@@ -9,6 +9,7 @@ use thiserror::Error;
 
 use super::{membership, PeerInfo};
 use crate::{
+    git::storage::pool::PoolError,
     net::{
         codec::{CborCodecError, CborError},
         quic,
@@ -20,6 +21,9 @@ use crate::{
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Bootstrap {
+    #[error(transparent)]
+    Pool(#[from] PoolError),
+
     #[error(transparent)]
     Quic(#[from] quic::Error),
 }

@@ -39,6 +39,7 @@ use crate::{
             transport::{GitStream, GitStreamFactory},
         },
         replication,
+        storage::{self, PoolError, PooledRef},
     },
     paths::Paths,
     signer::Signer,
@@ -89,11 +90,7 @@ impl<S> Bound<S> {
 
     pub async fn accept<D>(self, disco: D) -> Result<!, quic::Error>
     where
-        S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
         D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
     {
         accept(self, disco).await
@@ -224,11 +221,7 @@ pub async fn bind<Sign, Store>(
 ) -> Result<Bound<Store>, error::Bootstrap>
 where
     Sign: Signer + Clone + Send + Sync + 'static,
-    Store: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     let local_id = PeerId::from_signer(&signer);
     let git = GitServer::new(&config.paths);
@@ -268,11 +261,7 @@ pub fn accept<Store, Disco>(
     disco: Disco,
 ) -> impl Future<Output = Result<!, quic::Error>>
 where
-    Store: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     Disco: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
 {
     let _git_factory = Arc::new(Box::new(state.clone()) as Box<dyn GitStreamFactory>);
@@ -337,6 +326,12 @@ impl Drop for Accept {
     }
 }
 
+pub trait ProtocolStorage<A>: broadcast::LocalStorage<A> + storage::Pooled + Send + Sync {}
+impl<A, T> ProtocolStorage<A> for T where
+    T: broadcast::LocalStorage<A> + storage::Pooled + Send + Sync
+{
+}
+
 type Limiter = governor::RateLimiter<
     governor::state::direct::NotKeyed,
     governor::state::InMemoryState,
@@ -396,6 +391,16 @@ impl<S> broadcast::ErrorRateLimited for Storage<S> {
     }
 }
 
+#[async_trait]
+impl<S> storage::Pooled for Storage<S>
+where
+    S: storage::Pooled + Send + Sync,
+{
+    async fn get(&self) -> Result<PooledRef, PoolError> {
+        self.inner.get().await
+    }
+}
+
 #[derive(Clone)]
 struct State<S> {
     local_id: PeerId,
@@ -409,11 +414,7 @@ struct State<S> {
 #[async_trait]
 impl<S> GitStreamFactory for State<S>
 where
-    S: broadcast::LocalStorage<SocketAddr, Update = gossip::Payload>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     async fn open_stream(
         &self,

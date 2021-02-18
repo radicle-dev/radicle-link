@@ -3,30 +3,51 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 
-use deadpool::managed::{Manager, RecycleResult};
+use deadpool::managed::{self, Manager, Object, RecycleResult};
 
 use super::{Error, Storage};
 use crate::{paths::Paths, signer::Signer};
 
 pub type Pool = deadpool::managed::Pool<Storage, Error>;
-pub type Pooled = deadpool::managed::Object<Storage, Error>;
+pub type PoolError = managed::PoolError<Error>;
 
-/// Wrapper so we can use [`Pooled`] as `AsRef<Storage>`.
-// TODO: may go away once https://github.com/bikeshedder/deadpool/pull/69
-// appears in a released version.
-pub struct PooledRef(Pooled);
+#[async_trait]
+pub trait Pooled {
+    async fn get(&self) -> Result<PooledRef, PoolError>;
+}
 
-impl AsRef<Storage> for PooledRef {
-    fn as_ref(&self) -> &Storage {
-        &self.0
+#[async_trait]
+impl Pooled for Pool {
+    async fn get(&self) -> Result<PooledRef, PoolError> {
+        self.get().await.map(PooledRef::from)
     }
 }
 
-impl From<Pooled> for PooledRef {
-    fn from(pooled: Pooled) -> Self {
-        Self(pooled)
+/// A reference to a pooled [`Storage`].
+pub struct PooledRef(Object<Storage, Error>);
+
+impl Deref for PooledRef {
+    type Target = Storage;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
+    }
+}
+
+impl AsRef<Storage> for PooledRef {
+    fn as_ref(&self) -> &Storage {
+        self
+    }
+}
+
+impl From<Object<Storage, Error>> for PooledRef {
+    fn from(obj: Object<Storage, Error>) -> Self {
+        Self(obj)
     }
 }
 
