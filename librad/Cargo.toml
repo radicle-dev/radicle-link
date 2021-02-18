@@ -90,7 +90,7 @@ rev = "12a7386952923990179fe400e0cd932cbdd90dfc"
 optional = true
 
 [dependencies.minicbor]
-version = ">= 0.5, 0"
+version = ">= 0.6, 0"
 features = ["std", "derive"]
 
 [dependencies.quinn]
