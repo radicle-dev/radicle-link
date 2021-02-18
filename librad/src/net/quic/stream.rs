@@ -98,6 +98,22 @@ impl RecvStream {
     pub fn id(&self) -> quinn::StreamId {
         self.recv.id()
     }
+
+    #[tracing::instrument(
+        skip(self, e),
+        fields(
+            dir = "recv",
+            remote_id = %self.remote_peer_id(),
+            remote_addr = %self.remote_addr(),
+        )
+    )]
+    fn on_stream_error(&self, e: &io::Error) {
+        self.conn.on_stream_error(e)
+    }
+
+    fn tickle(&self) {
+        self.conn.tickle()
+    }
 }
 
 impl RemotePeer for RecvStream {
@@ -125,8 +141,8 @@ impl AsyncRead for RecvStream {
 
         if let Poll::Ready(ready) = &res {
             match ready {
-                Err(e) => this.conn.on_stream_error(e),
-                Ok(_) => this.conn.tickle(),
+                Err(e) => this.on_stream_error(e),
+                Ok(_) => this.tickle(),
             }
         }
 
@@ -146,6 +162,22 @@ impl SendStream {
 
     pub fn id(&self) -> quinn::StreamId {
         self.send.id()
+    }
+
+    #[tracing::instrument(
+        skip(self, e),
+        fields(
+            dir = "send",
+            remote_id = %self.remote_peer_id(),
+            remote_addr = %self.remote_addr(),
+        )
+    )]
+    fn on_stream_error(&self, e: &io::Error) {
+        self.conn.on_stream_error(e)
+    }
+
+    fn tickle(&self) {
+        self.conn.tickle()
     }
 }
 
@@ -170,8 +202,8 @@ impl AsyncWrite for SendStream {
 
         if let Poll::Ready(ready) = &res {
             match ready {
-                Err(e) => this.conn.on_stream_error(e),
-                Ok(_) => this.conn.tickle(),
+                Err(e) => this.on_stream_error(e),
+                Ok(_) => this.tickle(),
             }
         }
 
@@ -184,8 +216,8 @@ impl AsyncWrite for SendStream {
 
         if let Poll::Ready(ready) = &res {
             match ready {
-                Err(e) => this.conn.on_stream_error(e),
-                Ok(()) => this.conn.tickle(),
+                Err(e) => this.on_stream_error(e),
+                Ok(()) => this.tickle(),
             }
         }
 
@@ -198,8 +230,8 @@ impl AsyncWrite for SendStream {
 
         if let Poll::Ready(ready) = &res {
             match ready {
-                Err(e) => this.conn.on_stream_error(e),
-                Ok(()) => this.conn.tickle(),
+                Err(e) => this.on_stream_error(e),
+                Ok(()) => this.tickle(),
             }
         }
 

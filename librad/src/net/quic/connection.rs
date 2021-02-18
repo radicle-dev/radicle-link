@@ -147,6 +147,7 @@ impl Connection {
         self.track.disconnect(&self.id(), reason);
     }
 
+    #[tracing::instrument(skip(self, e))]
     pub(super) fn on_stream_error(&self, e: &io::Error) {
         tracing::warn!(err = ?e, "stream error");
         self.track

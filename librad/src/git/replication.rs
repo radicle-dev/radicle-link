@@ -134,7 +134,7 @@ pub enum ReplicateResult {
 /// set, which is enforced by the
 /// [`crate::git::local::transport::LocalTransport`].
 #[allow(clippy::unit_arg)]
-#[tracing::instrument(skip(storage, whoami, addr_hints), err)]
+#[tracing::instrument(skip(storage, whoami, urn, addr_hints), fields(urn = %urn), err)]
 pub fn replicate<Addrs>(
     storage: &Storage,
     config: Config,
@@ -277,7 +277,7 @@ where
 /// If we are fetching updates then we only fetch the relevant remotes that we
 /// already know about.
 #[allow(clippy::unit_arg)]
-#[tracing::instrument(skip(storage, fetcher), err)]
+#[tracing::instrument(skip(storage, fetcher, urn), fields(urn = %urn), err)]
 fn replication(
     storage: &Storage,
     fetcher: &mut fetch::DefaultFetcher,
@@ -332,7 +332,7 @@ fn unsafe_into_urn(reference: Reference<git_ext::RefLike>) -> Urn {
 }
 
 #[allow(clippy::unit_arg)]
-#[tracing::instrument(level = "trace", skip(storage), err)]
+#[tracing::instrument(level = "trace", skip(storage, urn), fields(urn = %urn), err)]
 fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<(), Error> {
     identities::common::IdRef::from(urn)
         .create(storage, tip)
@@ -346,7 +346,12 @@ fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<(), Erro
 /// remotes which were meant for pruning might not have been removed, resulting
 /// in unnecessary remote references.
 #[allow(clippy::unit_arg)]
-#[tracing::instrument(level = "trace", skip(storage, prune_list))]
+#[tracing::instrument(
+    level = "trace",
+    skip(storage, urn, prune_list),
+    fields(urn = %urn),
+    err
+)]
 fn prune<'a>(
     storage: &Storage,
     urn: &Urn,
@@ -561,7 +566,12 @@ mod project {
     /// Fetch `rad/signed_refs` and `refs/heads` of the delegates and our
     /// tracked graph, returning the set of tracked peers.
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage, fetcher), err)]
+    #[tracing::instrument(
+        level = "trace",
+        skip(storage, fetcher, urn),
+        fields(urn = %urn),
+        err
+    )]
     pub fn replicate_signed_refs(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,

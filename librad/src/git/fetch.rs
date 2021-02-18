@@ -528,7 +528,7 @@ pub struct DefaultFetcher<'a> {
 }
 
 impl<'a> DefaultFetcher<'a> {
-    #[tracing::instrument(skip(storage, addr_hints), err)]
+    #[tracing::instrument(skip(storage, urn, addr_hints), fields(urn = %urn), err)]
     pub fn new<Addrs>(
         storage: &'a Storage,
         urn: git::Urn,
