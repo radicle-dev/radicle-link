@@ -17,6 +17,7 @@ pub use storage::Storage;
 pub mod tracking;
 pub mod trailer;
 pub mod types;
+pub mod util;
 
 mod sealed;
 
