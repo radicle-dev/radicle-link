@@ -14,6 +14,7 @@ pub mod replication;
 pub mod storage;
 pub use storage::Storage;
 
+pub mod sync;
 pub mod tracking;
 pub mod trailer;
 pub mod types;
