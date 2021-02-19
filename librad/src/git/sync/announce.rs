@@ -132,7 +132,7 @@ where
 
     if !updates.is_empty() {
         emit(peer, updates.clone().into_iter());
-        store.save(snapshot.clone())?;
+        store.save(snapshot)?;
     }
 
     Ok(updates)

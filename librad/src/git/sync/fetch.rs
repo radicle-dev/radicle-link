@@ -52,7 +52,7 @@ pub fn fetch(
 ) -> HashSet<Remote> {
     tracing::trace!("starting synchronisation of peer");
     remotes
-        .filter_map(move |remote| {
+        .filter(move |remote| {
             tracing::trace!(urn = %remote.urn, "starting fetch");
             match replication::replicate(
                 storage,
@@ -64,11 +64,11 @@ pub fn fetch(
             ) {
                 Ok(_result) => {
                     tracing::trace!(urn = %remote.urn, "finished fetch");
-                    Some(remote)
+                    true
                 },
                 Err(err) => {
                     tracing::warn!(err = %err, "failed fetch");
-                    None
+                    false
                 },
             }
         })
