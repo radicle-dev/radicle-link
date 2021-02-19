@@ -2,4 +2,5 @@
 set -eou pipefail
 
 echo "--- Docs"
+RUSTDOCFLAGS="-D broken-intra-doc-links" \
 cargo doc --no-deps --workspace --document-private-items --all-features

@@ -6,6 +6,7 @@
 #![allow(incomplete_features)]
 #![allow(private_intra_doc_links)]
 #![warn(clippy::extra_unused_lifetimes)]
+#![deny(broken_intra_doc_links)]
 #![feature(associated_type_bounds)]
 #![feature(backtrace)]
 #![feature(bool_to_option)]
