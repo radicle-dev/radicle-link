@@ -51,10 +51,12 @@ pub enum StripPrefixError {
 /// [`RefspecPattern`]), and that the maximum length of the name is 1024 bytes.
 ///
 /// [`git-check-ref-format`]: https://git-scm.com/docs/git-check-ref-format
-#[derive(
-    Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(into = "String", try_from = "String")
 )]
-#[serde(into = "String", try_from = "String")]
 pub struct RefLike(String);
 
 impl RefLike {
@@ -251,10 +253,12 @@ impl Display for RefLike {
 ///     "refs/remotes/origin/hopper",
 /// );
 /// ```
-#[derive(
-    Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(into = "String", try_from = "RefLike")
 )]
-#[serde(into = "String", try_from = "RefLike")]
 pub struct OneLevel(String);
 
 impl OneLevel {
@@ -367,10 +371,12 @@ impl Display for OneLevel {
 ///     "refs/tags/v6.6.6"
 /// );
 /// ```
-#[derive(
-    Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(into = "String", try_from = "RefLike")
 )]
-#[serde(into = "String", try_from = "RefLike")]
 pub struct Qualified(String);
 
 impl Qualified {
@@ -435,10 +441,12 @@ impl Display for Qualified {
 /// character.
 ///
 /// [`git-check-ref-format`]: https://git-scm.com/docs/git-check-ref-format
-#[derive(
-    Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(into = "String", try_from = "String")
 )]
-#[serde(into = "String", try_from = "String")]
 pub struct RefspecPattern(String);
 
 impl RefspecPattern {
@@ -564,6 +572,80 @@ impl From<&Qualified> for RefspecPattern {
     }
 }
 
+#[cfg(feature = "minicbor")]
+mod minicbor_impls {
+    use super::*;
+    use minicbor::{
+        decode,
+        encode::{self, Write},
+        Decode,
+        Decoder,
+        Encode,
+        Encoder,
+    };
+
+    impl Encode for RefLike {
+        fn encode<W: Write>(&self, e: &mut Encoder<W>) -> Result<(), encode::Error<W::Error>> {
+            e.str(self.as_str())?;
+            Ok(())
+        }
+    }
+
+    impl<'b> Decode<'b> for RefLike {
+        fn decode(d: &mut Decoder) -> Result<Self, decode::Error> {
+            let path = d.str()?;
+            Self::try_from(path).or(Err(decode::Error::Message("invalid reflike")))
+        }
+    }
+
+    impl minicbor::Encode for OneLevel {
+        fn encode<W: Write>(&self, e: &mut Encoder<W>) -> Result<(), encode::Error<W::Error>> {
+            e.str(self.as_str())?;
+            Ok(())
+        }
+    }
+
+    impl<'b> Decode<'b> for OneLevel {
+        fn decode(d: &mut Decoder) -> Result<Self, decode::Error> {
+            let refl: RefLike = Decode::decode(d)?;
+            Ok(Self::from(refl))
+        }
+    }
+
+    impl Encode for Qualified {
+        fn encode<W: encode::Write>(
+            &self,
+            e: &mut Encoder<W>,
+        ) -> Result<(), encode::Error<W::Error>> {
+            e.str(self.as_str())?;
+            Ok(())
+        }
+    }
+
+    impl<'b> Decode<'b> for Qualified {
+        fn decode(d: &mut Decoder) -> Result<Self, decode::Error> {
+            let refl: RefLike = Decode::decode(d)?;
+            Ok(Self::from(refl))
+        }
+    }
+
+    impl Encode for RefspecPattern {
+        fn encode<W: encode::Write>(
+            &self,
+            e: &mut Encoder<W>,
+        ) -> Result<(), encode::Error<W::Error>> {
+            e.str(self.as_str())?;
+            Ok(())
+        }
+    }
+
+    impl<'b> Decode<'b> for RefspecPattern {
+        fn decode(d: &mut Decoder) -> Result<Self, decode::Error> {
+            Self::try_from(d.str()?).or(Err(decode::Error::Message("invalid refspec pattern")))
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 fn normalize_name(s: &str, flags: git2::ReferenceFormat) -> Result<String, Error> {
@@ -589,7 +671,7 @@ fn normalize_name(s: &str, flags: git2::ReferenceFormat) -> Result<String, Error
 #[cfg(test)]
 mod tests {
     use super::*;
-    use librad_test::roundtrip::json_roundtrip;
+    use librad_test::roundtrip::{cbor_roundtrip, json_roundtrip};
 
     mod common {
         use super::*;
@@ -737,6 +819,22 @@ mod tests {
             assert!(serde_json::from_str::<OneLevel>(&json).is_err());
             assert!(serde_json::from_str::<Qualified>(&json).is_err())
         }
+
+        #[test]
+        fn cbor() {
+            let refl = RefLike::try_from("pu").unwrap();
+            cbor_roundtrip(refl.clone());
+            cbor_roundtrip(OneLevel::from(refl.clone()));
+            cbor_roundtrip(Qualified::from(refl))
+        }
+
+        #[test]
+        fn cbor_invalid() {
+            let cbor = minicbor::to_vec("HEAD^").unwrap();
+            assert!(minicbor::decode::<RefLike>(&cbor).is_err());
+            assert!(minicbor::decode::<OneLevel>(&cbor).is_err());
+            assert!(minicbor::decode::<Qualified>(&cbor).is_err())
+        }
     }
 
     mod pattern {
@@ -795,6 +893,17 @@ mod tests {
         fn serde_invalid() {
             let json = serde_json::to_string("HEAD^").unwrap();
             assert!(serde_json::from_str::<RefspecPattern>(&json).is_err())
+        }
+
+        #[test]
+        fn cbor() {
+            cbor_roundtrip(RefspecPattern::try_from("refs/heads/*").unwrap())
+        }
+
+        #[test]
+        fn cbor_invalid() {
+            let cbor = minicbor::to_vec("HEAD^").unwrap();
+            assert!(minicbor::decode::<RefspecPattern>(&cbor).is_err())
         }
 
         #[test]

@@ -11,7 +11,6 @@ use std::{
 };
 
 use multihash::{Multihash, MultihashRef};
-use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 /// Serializable [`git2::Oid`]
@@ -24,38 +23,73 @@ impl Oid {
     }
 }
 
-impl Serialize for Oid {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.0.to_string().serialize(serializer)
+#[cfg(feature = "serde")]
+mod serde_impls {
+    use super::*;
+    use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
+
+    impl Serialize for Oid {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            self.0.to_string().serialize(serializer)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for Oid {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct OidVisitor;
+
+            impl<'de> Visitor<'de> for OidVisitor {
+                type Value = Oid;
+
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    write!(f, "a hexidecimal git2::Oid")
+                }
+
+                fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+                where
+                    E: serde::de::Error,
+                {
+                    s.parse().map_err(serde::de::Error::custom)
+                }
+            }
+
+            deserializer.deserialize_str(OidVisitor)
+        }
     }
 }
 
-impl<'de> Deserialize<'de> for Oid {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct OidVisitor;
+#[cfg(feature = "minicbor")]
+mod minicbor_impls {
+    use super::*;
+    use minicbor::{
+        decode,
+        encode::{self, Write},
+        Decode,
+        Decoder,
+        Encode,
+        Encoder,
+    };
 
-        impl<'de> Visitor<'de> for OidVisitor {
-            type Value = Oid;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "a hexidecimal git2::Oid")
-            }
-
-            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                s.parse().map_err(serde::de::Error::custom)
-            }
+    impl Encode for Oid {
+        fn encode<W: Write>(&self, e: &mut Encoder<W>) -> Result<(), encode::Error<W::Error>> {
+            e.bytes(Multihash::from(self).as_bytes())?;
+            Ok(())
         }
+    }
 
-        deserializer.deserialize_str(OidVisitor)
+    impl<'b> Decode<'b> for Oid {
+        fn decode(d: &mut Decoder) -> Result<Self, decode::Error> {
+            let bytes = d.bytes()?;
+            let mhash = MultihashRef::from_slice(bytes)
+                .or(Err(decode::Error::Message("not a multihash")))?;
+            Self::try_from(mhash).or(Err(decode::Error::Message("not a git oid")))
+        }
     }
 }
 
