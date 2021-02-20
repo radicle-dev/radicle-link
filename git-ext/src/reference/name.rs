@@ -248,7 +248,7 @@ impl Display for RefLike {
 ///     &*OneLevel::from(RefLike::try_from("origin/hopper").unwrap()).into_qualified(
 ///         RefLike::try_from("remotes").unwrap()
 ///     ),
-///     Path::new("refs/remotes/origin/hopper"),
+///     "refs/remotes/origin/hopper",
 /// );
 /// ```
 #[derive(
@@ -263,15 +263,19 @@ impl OneLevel {
     }
 
     pub fn from_qualified(Qualified(path): Qualified) -> (Self, Option<RefLike>) {
-        // skip "refs/"
-        let mut path = path.iter().skip(1);
+        let mut path = path.strip_prefix("refs/").unwrap_or(&path).split("/");
         match path.next() {
             Some(category) => {
-                let category = RefLike(Path::new(category).to_path_buf());
+                let category = RefLike(category.into());
                 // check that the "category" is not the only component of the path
                 match path.next() {
                     Some(head) => (
-                        Self(std::iter::once(head).chain(path).collect()),
+                        Self(
+                            std::iter::once(head)
+                                .chain(path)
+                                .collect::<Vec<_>>()
+                                .join("/"),
+                        ),
                         Some(category),
                     ),
                     None => (Self::from(category), None),
@@ -282,7 +286,7 @@ impl OneLevel {
     }
 
     pub fn into_qualified(self, category: RefLike) -> Qualified {
-        Qualified(Path::new("refs").join(category).join(self))
+        Qualified(format!("refs/{}/{}", category, self))
     }
 }
 
@@ -442,7 +446,7 @@ impl RefspecPattern {
     /// of patterns where the `*` appears in the middle of the path, e.g.
     /// `refs/remotes/*/mfdoom`
     pub fn append(&self, refl: impl Into<RefLike>) -> Self {
-        RefspecPattern(self.0.join(refl.into()))
+        RefspecPattern(format!("{}/{}", self.0, refl.into()))
     }
 
     pub fn as_str(&self) -> &str {
