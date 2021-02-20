@@ -263,7 +263,7 @@ impl OneLevel {
     }
 
     pub fn from_qualified(Qualified(path): Qualified) -> (Self, Option<RefLike>) {
-        let mut path = path.strip_prefix("refs/").unwrap_or(&path).split("/");
+        let mut path = path.strip_prefix("refs/").unwrap_or(&path).split('/');
         match path.next() {
             Some(category) => {
                 let category = RefLike(category.into());
