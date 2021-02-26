@@ -104,6 +104,8 @@ pub struct NodeConfig {
     pub root: Option<PathBuf>,
     /// The radicle network to connect to.
     pub network: Network,
+    /// List of bootstrap peers
+    pub bootstrap: Vec<(PeerId, SocketAddr)>,
 }
 
 impl Default for NodeConfig {
@@ -113,6 +115,7 @@ impl Default for NodeConfig {
             mode: Mode::TrackEverything,
             root: None,
             network: Network::default(),
+            bootstrap: vec![],
         }
     }
 }
@@ -179,7 +182,7 @@ impl Node {
         // Spawn the background peer thread.
         tokio::spawn({
             let peer = peer.clone();
-            let disco = discovery::Static::default();
+            let disco = discovery::Static::resolve(self.config.bootstrap.clone())?;
             async move {
                 loop {
                     match peer.bind().await {
