@@ -1,0 +1,27 @@
+name: fast
+on: [pull_request]
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: Install Rust
+        run: rustup update nightly-2020-11-10 && rustup default nightly-2020-11-10 && rustup component add clippy rustfmt
+      - run: ./ci/clippy
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [linux, macos, windows]
+        include:
+          - build: linux
+            os: ubuntu-latest
+          - build: macos
+            os: macos-latest
+          - build: windows
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: Install Rust
+        run: rustup update nightly-2020-11-10 --no-self-update && rustup default nightly-2020-11-10
+      - run: ./ci/build-test
