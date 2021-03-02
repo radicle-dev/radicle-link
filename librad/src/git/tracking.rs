@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{ops::Range, str::FromStr};
+use std::{convert::TryFrom, ops::Range, str::FromStr};
 
 use git_ext::{is_exists_err, is_not_found_err, RefLike};
 use std_ext::result::ResultExt as _;
@@ -25,6 +25,9 @@ pub enum Error {
 
     #[error(transparent)]
     Store(#[from] storage::Error),
+
+    #[error(transparent)]
+    Config(#[from] storage::config::Error),
 
     #[error(transparent)]
     Git(#[from] git2::Error),
@@ -62,9 +65,10 @@ pub fn track(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> 
         // Remove default fetchspec, as it is almost always invalid (we compute
         // the fetchspecs ourselves). We also don't want libgit2 to prune the
         // remote.
-        // FIXME: go through `&mut storage::Config`
-        let mut config = storage.as_raw().config()?;
-        config.remove_multivar(&format!("remote.{}.fetch", remote_name), ".*")?;
+        let mut config = storage::Config::try_from(storage)?;
+        config
+            .as_raw_mut()
+            .remove_multivar(&format!("remote.{}.fetch", remote_name), ".*")?;
     }
 
     Ok(was_created)

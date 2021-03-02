@@ -56,7 +56,7 @@ impl<'a> TryFrom<&'a Storage> for Config<'a, BoxedSigner> {
     type Error = Error;
 
     fn try_from(storage: &'a Storage) -> Result<Self, Self::Error> {
-        let inner = storage.as_raw().config()?;
+        let inner = git2::Config::open(&storage.as_raw().path().join("config"))?;
         let this = Self {
             inner,
             signer: storage.signer(),
@@ -71,7 +71,7 @@ impl TryFrom<&git2::Repository> for Config<'_, PhantomData<!>> {
     type Error = git2::Error;
 
     fn try_from(repo: &git2::Repository) -> Result<Self, Self::Error> {
-        let inner = repo.config()?;
+        let inner = git2::Config::open(&repo.path().join("config"))?;
         Ok(Self {
             inner,
             signer: &PhantomData,
@@ -151,6 +151,14 @@ where
                 Ok(())
             },
         }
+    }
+
+    pub(crate) fn as_raw(&self) -> &git2::Config {
+        &self.inner
+    }
+
+    pub(crate) fn as_raw_mut(&mut self) -> &mut git2::Config {
+        &mut self.inner
     }
 }
 
