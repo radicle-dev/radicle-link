@@ -105,6 +105,7 @@ where
     let paths = Paths::from_root(tmp.path())?;
     let key = SecretKey::new();
 
+    // eagerly init so we error out early when it fails
     git::storage::Storage::init(&paths, key.clone())?;
 
     let listen_addr = *LOCALHOST_ANY;

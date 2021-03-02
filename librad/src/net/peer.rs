@@ -13,6 +13,7 @@ use tokio::task::spawn_blocking;
 use super::protocol::{self, gossip};
 use crate::{
     git::{self, Urn},
+    internal::klock::Klock,
     signer::Signer,
     PeerId,
 };
@@ -90,18 +91,25 @@ where
 {
     pub fn new(config: Config<S>) -> Self {
         let phone = protocol::TinCans::default();
+        let fetch_lock =
+            Klock::with_slots(config.storage_pools.protocol + config.storage_pools.user);
         let peer_store = PeerStorage::new(
             git::storage::Pool::new(
-                git::storage::pool::Config::new(
+                git::storage::pool::Config::with_fetch_lock(
                     config.protocol.paths.clone(),
                     config.signer.clone(),
+                    fetch_lock.clone(),
                 ),
                 config.storage_pools.protocol,
             ),
             config.protocol.replication,
         );
         let git_store = git::storage::Pool::new(
-            git::storage::pool::Config::new(config.protocol.paths.clone(), config.signer.clone()),
+            git::storage::pool::Config::with_fetch_lock(
+                config.protocol.paths.clone(),
+                config.signer.clone(),
+                fetch_lock,
+            ),
             config.storage_pools.user,
         );
 

@@ -40,6 +40,7 @@ async fn main() {
         let paths = Paths::from_root(root.path()).unwrap();
         let key = SecretKey::new();
 
+        // eagerly init so we crash immediately on error
         git::storage::Storage::init(&paths, key.clone()).unwrap();
 
         let peer = Peer::new(peer::Config {

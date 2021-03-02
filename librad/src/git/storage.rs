@@ -12,6 +12,7 @@ use thiserror::Error;
 use super::types::{reference, Many, Namespace, One, Reference};
 use crate::{
     identities::git::Identities,
+    internal::klock::Klock,
     paths::Paths,
     peer::PeerId,
     signer::{BoxedSigner, Signer, SomeSigner},
@@ -52,6 +53,7 @@ pub struct Storage {
     backend: git2::Repository,
     peer_id: PeerId,
     signer: BoxedSigner,
+    fetch_lock: Klock<Urn>,
 }
 
 impl Storage {
@@ -60,9 +62,32 @@ impl Storage {
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
+        Self::with_fetch_lock(paths, signer, Default::default())
+    }
+
+    fn with_fetch_lock<S>(paths: &Paths, signer: S, fetch_lock: Klock<Urn>) -> Result<Self, Error>
+    where
+        S: Signer + Clone,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
         crate::git::init();
 
-        let backend = git2::Repository::open_bare(paths.git_dir())?;
+        let backend = match git2::Repository::open_bare(paths.git_dir()) {
+            Err(e) if is_not_found_err(&e) => {
+                let mut backend = git2::Repository::init_opts(
+                    paths.git_dir(),
+                    git2::RepositoryInitOptions::new()
+                        .bare(true)
+                        .no_reinit(true)
+                        .external_template(false),
+                )?;
+                Config::init(&mut backend, &signer)?;
+
+                Ok(backend)
+            },
+            Ok(repo) => Ok(repo),
+            Err(e) => Err(e),
+        }?;
         let peer_id = Config::try_from(&backend)?.peer_id()?;
 
         if peer_id != PeerId::from_signer(&signer) {
@@ -73,46 +98,26 @@ impl Storage {
             backend,
             peer_id,
             signer: BoxedSigner::from(SomeSigner { signer }),
+            fetch_lock,
         })
     }
 
-    pub fn init<S>(paths: &Paths, signer: S) -> Result<Self, Error>
+    pub fn init<S>(paths: &Paths, signer: S) -> Result<(), Error>
     where
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
-        crate::git::init();
-
-        let mut backend = git2::Repository::init_opts(
-            paths.git_dir(),
-            git2::RepositoryInitOptions::new()
-                .bare(true)
-                .no_reinit(true)
-                .external_template(false),
-        )?;
-        Config::init(&mut backend, &signer)?;
-        let peer_id = PeerId::from_signer(&signer);
-
-        Ok(Self {
-            backend,
-            peer_id,
-            signer: BoxedSigner::from(SomeSigner { signer }),
-        })
+        Self::open(paths, signer)?;
+        Ok(())
     }
 
+    #[deprecated = "use `open` instead"]
     pub fn open_or_init<S>(paths: &Paths, signer: S) -> Result<Self, Error>
     where
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
-        let peer_id = PeerId::from_signer(&signer);
-        match Self::open(paths, signer.clone()) {
-            Err(Error::Git(e)) if is_not_found_err(&e) => Self::init(paths, signer),
-            Err(e) => Err(e),
-            Ok(this) if this.peer_id != peer_id => Err(Error::SignerKeyMismatch),
-
-            Ok(this) => Ok(this),
-        }
+        Self::open(paths, signer)
     }
 
     pub fn peer_id(&self) -> &PeerId {
@@ -296,6 +301,10 @@ impl Storage {
     // model "capabilities" in terms of traits.
     pub(super) fn as_raw(&self) -> &git2::Repository {
         &self.backend
+    }
+
+    pub(super) fn fetch_lock(&self) -> &Klock<Urn> {
+        &self.fetch_lock
     }
 }
 

@@ -15,6 +15,7 @@ use std::{
 
 use git_ext as ext;
 use multihash::Multihash;
+use thiserror::Error;
 
 use super::{
     p2p::url::GitUrl,
@@ -34,6 +35,7 @@ use crate::{
         git,
         urn::{HasProtocol, Urn},
     },
+    internal::klock::Klock,
     peer::PeerId,
 };
 
@@ -519,12 +521,22 @@ pub trait Fetcher {
     ) -> Result<FetchResult, Self::Error>;
 }
 
+#[derive(Debug, Error)]
+pub enum FetchError {
+    #[error("unable to acquire lock on {0}")]
+    Lock(git::Urn),
+
+    #[error(transparent)]
+    Git(#[from] git2::Error),
+}
+
 /// The default [`Fetcher`], which uses the peer-to-peer network for fetching.
 pub struct DefaultFetcher<'a> {
     urn: git::Urn,
     remote_peer: PeerId,
     remote_heads: RemoteHeads,
     remote: git2::Remote<'a>,
+    lock: &'a Klock<git::Urn>,
 }
 
 impl<'a> DefaultFetcher<'a> {
@@ -569,6 +581,7 @@ impl<'a> DefaultFetcher<'a> {
             remote_peer,
             remote_heads,
             remote,
+            lock: storage.fetch_lock(),
         })
     }
 
@@ -576,7 +589,11 @@ impl<'a> DefaultFetcher<'a> {
     pub fn fetch(
         &mut self,
         fetchspecs: Fetchspecs<PeerId, git::Revision>,
-    ) -> Result<FetchResult, git2::Error> {
+    ) -> Result<FetchResult, FetchError> {
+        let _lock = self
+            .lock
+            .try_lock(&self.urn)
+            .ok_or_else(|| FetchError::Lock(self.urn.clone()))?;
         let mut updated_tips = BTreeMap::new();
         {
             let limit = fetchspecs.fetch_limit();
@@ -635,7 +652,7 @@ impl<'a> DefaultFetcher<'a> {
 }
 
 impl Fetcher for DefaultFetcher<'_> {
-    type Error = git2::Error;
+    type Error = FetchError;
     type PeerId = PeerId;
     type UrnId = git::Revision;
 

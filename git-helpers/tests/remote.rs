@@ -77,7 +77,7 @@ fn smoke() {
 }
 
 fn setup_project(paths: &Paths, key: SecretKey) -> anyhow::Result<Urn> {
-    let store = Storage::open_or_init(paths, key)?;
+    let store = Storage::open(paths, key)?;
     let proj = create_test_project(&store)?;
     Ok(proj.project.urn())
 }
