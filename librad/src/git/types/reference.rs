@@ -261,6 +261,18 @@ impl<N, R> Reference<N, R, One> {
             namespace: namespace.into(),
         }
     }
+
+    /// Build a reference that points to:
+    /// * `refs/namespaces/<namespace>/refs/tags/<name>`
+    /// * `refs/namespaces/<namespace>/refs/remote/<peer_id>/tags/<name>
+    pub fn tag(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>, name: One) -> Self {
+        Self {
+            remote: remote.into(),
+            category: RefsCategory::Tags,
+            name,
+            namespace: namespace.into(),
+        }
+    }
 }
 
 impl<N, R> Display for Reference<N, R, One>
