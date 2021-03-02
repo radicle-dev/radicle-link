@@ -94,8 +94,7 @@ version = ">= 0.6, 0"
 features = ["std", "derive"]
 
 [dependencies.quinn]
-git = "https://github.com/quinn-rs/quinn"
-rev = "05bb6cdd5f53484f538a20da37407ef13faf42e0"
+version = "0.7"
 default-features = false
 features = ["tls-rustls"]
 
