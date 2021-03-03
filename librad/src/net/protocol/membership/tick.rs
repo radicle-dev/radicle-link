@@ -52,6 +52,10 @@ where
         use Transition::*;
 
         match t {
+            Demoted(info) => Some(Try {
+                recipient: info,
+                message: Message::Disconnect,
+            }),
             Evicted(info) => Some(Forget { peer: info.peer_id }),
             _ => None,
         }
