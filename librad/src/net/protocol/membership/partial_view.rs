@@ -54,8 +54,16 @@ where
         self.active().chain(self.passive())
     }
 
+    pub fn is_known(&self, peer: &PeerId) -> bool {
+        self.is_active(peer) || self.is_passive(peer)
+    }
+
     pub fn active(&self) -> impl Iterator<Item = PeerId> + '_ {
         self.active.keys().copied()
+    }
+
+    pub fn is_active(&self, peer: &PeerId) -> bool {
+        self.active.contains_key(peer)
     }
 
     pub fn active_info(&self) -> impl Iterator<Item = PartialPeerInfo<A>> + '_ {
@@ -66,12 +74,12 @@ where
         self.passive.keys().copied()
     }
 
-    pub fn passive_info(&self) -> impl Iterator<Item = PeerInfo<A>> + '_ {
-        self.passive.values().cloned()
+    pub fn is_passive(&self, peer: &PeerId) -> bool {
+        self.passive.contains_key(peer)
     }
 
-    pub fn is_active(&self, peer: &PeerId) -> bool {
-        self.active.contains_key(peer)
+    pub fn passive_info(&self) -> impl Iterator<Item = PeerInfo<A>> + '_ {
+        self.passive.values().cloned()
     }
 
     pub fn num_active(&self) -> usize {

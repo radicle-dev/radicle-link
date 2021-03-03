@@ -495,6 +495,6 @@ where
     }
 
     fn is_member(&self, peer: &PeerId) -> bool {
-        self.is_active(peer)
+        self.is_known(peer)
     }
 }

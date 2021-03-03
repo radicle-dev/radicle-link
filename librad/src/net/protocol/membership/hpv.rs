@@ -168,6 +168,14 @@ where
         self.0.read().is_active(peer)
     }
 
+    pub fn is_passive(&self, peer: &PeerId) -> bool {
+        self.0.read().is_passive(peer)
+    }
+
+    pub fn is_known(&self, peer: &PeerId) -> bool {
+        self.0.read().is_known(peer)
+    }
+
     pub fn known(&self) -> Vec<PeerId> {
         self.0.read().known().collect()
     }
@@ -262,8 +270,16 @@ where
         self.view.num_passive()
     }
 
+    pub fn is_known(&self, peer: &PeerId) -> bool {
+        self.view.is_known(peer)
+    }
+
     pub fn is_active(&self, peer: &PeerId) -> bool {
         self.view.is_active(peer)
+    }
+
+    pub fn is_passive(&self, peer: &PeerId) -> bool {
+        self.view.is_passive(peer)
     }
 
     pub fn connection_lost(&mut self, remote_peer: PeerId) -> TnT<Addr> {
