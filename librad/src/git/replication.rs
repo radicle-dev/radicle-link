@@ -245,7 +245,7 @@ where
                 },
             };
 
-            let (removed, _, _) = partition(&existing, &updated);
+            let Partition { removed, .. } = partition(&existing, &updated);
             Ok((result, removed))
         },
     }?;
@@ -375,6 +375,15 @@ fn prune<'a>(
     Ok(())
 }
 
+// Allowing dead code to keep the other fields
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Partition<A> {
+    removed: BTreeSet<A>,
+    added: BTreeSet<A>,
+    kept: BTreeSet<A>,
+}
+
 // Return three sets where the first consists of elements in `ys` but not in
 // `xs` and the second vice-versa, and the final set contains the elements they
 // both share.
@@ -382,23 +391,24 @@ fn prune<'a>(
 // If `ys` represents an "updated" set of `xs` then the first set will be all
 // elements that were removed, the second set will be all the elements added,
 // and the third set all the elements that stayed the same.
-fn partition<'a, A: Clone + Ord>(
-    xs: &'a BTreeSet<A>,
-    ys: &'a BTreeSet<A>,
-) -> (BTreeSet<A>, BTreeSet<A>, BTreeSet<A>) {
+fn partition<'a, A: Clone + Ord>(xs: &'a BTreeSet<A>, ys: &'a BTreeSet<A>) -> Partition<A> {
     let mut removed = BTreeSet::new();
     let mut added = BTreeSet::new();
     let kept = xs.intersection(ys).cloned().collect();
 
     for e in xs.symmetric_difference(ys) {
         if xs.contains(e) {
-            added.insert(e.clone());
-        } else {
             removed.insert(e.clone());
+        } else {
+            added.insert(e.clone());
         }
     }
 
-    (removed, added, kept)
+    Partition {
+        removed,
+        added,
+        kept,
+    }
 }
 
 mod person {
@@ -828,5 +838,75 @@ mod project {
                     .collect(),
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use proptest::{collection, prelude::*};
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn annihilated(xs in collection::btree_set(0u32..1000, 0..100)) {
+            annihilated_prop(xs)
+        }
+
+        #[test]
+        fn full(ys in collection::btree_set(0u32..1000, 0..100)) {
+            full_prop(ys)
+        }
+
+        #[test]
+        fn kept(xs in collection::btree_set(0u32..1000, 0..100), ys in collection::btree_set(0u32..1000, 0..100)) {
+            kept_prop(xs, ys)
+        }
+    }
+
+    #[test]
+    fn partitioning() {
+        let xs = vec![1, 2, 3, 4, 5].into_iter().collect();
+        let ys = vec![3, 4, 5, 6, 7].into_iter().collect();
+        let expected = Partition {
+            removed: vec![1, 2].into_iter().collect(),
+            added: vec![6, 7].into_iter().collect(),
+            kept: vec![3, 4, 5].into_iter().collect(),
+        };
+        assert_eq!(partition(&xs, &ys), expected);
+    }
+
+    /// If the `ys` parameter to partition is empty then `xs` is considered
+    /// removed.
+    fn annihilated_prop(xs: BTreeSet<u32>) {
+        assert_eq!(
+            partition(&xs, &BTreeSet::new()),
+            Partition {
+                removed: xs.clone(),
+                added: BTreeSet::new(),
+                kept: BTreeSet::new()
+            }
+        )
+    }
+
+    /// If the `xs` parameter to partition is empty then `ys` is considered
+    /// added.
+    fn full_prop(ys: BTreeSet<u32>) {
+        assert_eq!(
+            partition(&BTreeSet::new(), &ys),
+            Partition {
+                removed: BTreeSet::new(),
+                added: ys.clone(),
+                kept: BTreeSet::new()
+            }
+        )
+    }
+
+    /// The intersection of `xs` and `ys` is always kept
+    fn kept_prop(xs: BTreeSet<u32>, ys: BTreeSet<u32>) {
+        assert_eq!(
+            partition(&xs, &ys).kept,
+            xs.intersection(&ys).copied().collect()
+        )
     }
 }
