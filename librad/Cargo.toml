@@ -54,7 +54,7 @@ uuid = { version = "0.8", features = ["v4"] }
 webpki = "0.21"
 
 [dependencies.deadpool]
-version = "0.5"
+version = "0.7"
 default-features = false
 features = ["managed"]
 
