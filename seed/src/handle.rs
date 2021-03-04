@@ -6,7 +6,7 @@
 use futures::{channel::mpsc as chan, sink::SinkExt as _, stream::StreamExt as _};
 use thiserror::Error;
 
-use librad::peer::PeerId;
+use librad::{net::protocol::event::downstream::MembershipInfo, peer::PeerId};
 
 use crate::Project;
 
@@ -26,6 +26,16 @@ pub struct NodeHandle {
 impl NodeHandle {
     pub(crate) fn new(channel: chan::UnboundedSender<Request>) -> Self {
         Self { channel }
+    }
+
+    pub async fn get_membership(&mut self) -> Result<MembershipInfo, NodeError> {
+        let (tx, mut rx) = chan::channel(1);
+        self.channel
+            .send(Request::GetMembership(tx))
+            .await
+            .map_err(|_| NodeError::RequestFailed)?;
+
+        rx.next().await.ok_or(NodeError::RequestFailed)
     }
 
     /// Get all local projects.
@@ -53,6 +63,8 @@ impl NodeHandle {
 
 /// User request to the seed node.
 pub enum Request {
+    /// Get current membership info.
+    GetMembership(chan::Sender<MembershipInfo>),
     /// Get local projects.
     GetProjects(chan::Sender<Vec<Project>>),
     /// Get connected peers.

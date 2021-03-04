@@ -42,7 +42,14 @@ pub mod downstream {
     #[derive(Clone)]
     pub enum Info {
         ConnectedPeers(Reply<Vec<PeerId>>),
+        Membership(Reply<MembershipInfo>),
         Stats(Reply<Stats>),
+    }
+
+    #[derive(Clone, Debug, Default)]
+    pub struct MembershipInfo {
+        pub active: Vec<PeerId>,
+        pub passive: Vec<PeerId>,
     }
 
     #[derive(Clone, Debug, Default)]

@@ -102,7 +102,7 @@ where
     E: futures::Stream<Item = Result<event::Downstream, RecvError>> + Unpin,
 {
     use event::{
-        downstream::{Gossip, Info, Stats},
+        downstream::{Gossip, Info, MembershipInfo, Stats},
         Downstream,
     };
 
@@ -150,6 +150,16 @@ where
                         Info::ConnectedPeers(tx) => {
                             if let Some(tx) = tx.lock().take() {
                                 tx.send(state.endpoint.peers()).ok();
+                            }
+                        },
+
+                        Info::Membership(tx) => {
+                            if let Some(tx) = tx.lock().take() {
+                                tx.send(MembershipInfo {
+                                    active: state.membership.active(),
+                                    passive: state.membership.passive(),
+                                })
+                                .ok();
                             }
                         },
 

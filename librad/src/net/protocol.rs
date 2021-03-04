@@ -174,6 +174,34 @@ impl TinCans {
         rx.await.unwrap_or_default()
     }
 
+    pub async fn membership(&self) -> event::downstream::MembershipInfo {
+        use event::{
+            downstream::{Info::*, MembershipInfo},
+            Downstream,
+        };
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let tx = Arc::new(Mutex::new(Some(tx)));
+
+        if let Err(tincan::error::SendError(e)) =
+            self.downstream.send(Downstream::Info(Membership(tx)))
+        {
+            match e {
+                Downstream::Info(Membership(reply)) => {
+                    reply
+                        .lock()
+                        .take()
+                        .expect("if chan send failed, there can't be another contender")
+                        .send(MembershipInfo::default())
+                        .ok();
+                },
+                _ => unreachable!(),
+            }
+        }
+
+        rx.await.unwrap_or_default()
+    }
+
     pub async fn stats(&self) -> event::downstream::Stats {
         use event::{
             downstream::{Info::*, Stats},

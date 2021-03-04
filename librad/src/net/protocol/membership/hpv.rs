@@ -164,6 +164,10 @@ where
         (guard.num_active(), guard.num_passive())
     }
 
+    pub fn active(&self) -> Vec<PeerId> {
+        self.0.read().active().collect()
+    }
+
     pub fn is_active(&self, peer: &PeerId) -> bool {
         self.0.read().is_active(peer)
     }
@@ -178,6 +182,10 @@ where
 
     pub fn known(&self) -> Vec<PeerId> {
         self.0.read().known().collect()
+    }
+
+    pub fn passive(&self) -> Vec<PeerId> {
+        self.0.read().passive().collect()
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
@@ -258,8 +266,16 @@ where
         }
     }
 
+    pub fn active(&self) -> impl Iterator<Item = PeerId> + '_ {
+        self.view.active()
+    }
+
     pub fn known(&self) -> impl Iterator<Item = PeerId> + '_ {
         self.view.known()
+    }
+
+    pub fn passive(&self) -> impl Iterator<Item = PeerId> + '_ {
+        self.view.passive()
     }
 
     pub fn num_active(&self) -> usize {

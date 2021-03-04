@@ -235,6 +235,10 @@ impl Node {
     /// Handle user requests.
     async fn handle_request(request: Request, api: &Peer<Signer>) -> Result<(), Error> {
         match request {
+            Request::GetMembership(mut reply) => {
+                let info = api.membership().await;
+                reply.send(info).await?;
+            },
             Request::GetPeers(mut reply) => {
                 let peers = api.connected_peers().await;
                 reply.send(peers).await?;
