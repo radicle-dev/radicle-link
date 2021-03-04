@@ -356,16 +356,14 @@ pub mod refspecs {
         for<'b> &'b R: Into<Multihash>,
     {
         refs.iter_categorised()
-            .map({
-                let namespace = namespace.clone();
-                move |(x, category)| {
-                    (
-                        x,
-                        namespaced(&namespace, remote_peer, tracked_peer, x.0.clone(), category),
-                    )
-                }
-            })
-            .filter_map(move |((name, target), namespaced_name)| {
+            .filter_map(move |((name, target), category)| {
+                let namespaced_name = namespaced(
+                    &namespace,
+                    remote_peer,
+                    tracked_peer,
+                    name.clone(),
+                    category,
+                );
                 // Only include the advertised ref if its target OID
                 // is the same as the signed one.
                 let targets_match = {
@@ -393,11 +391,12 @@ pub mod refspecs {
                 };
 
                 targets_match.then_some({
-                    let dst = Reference::head(
-                        namespace.clone(),
-                        tracked_peer.clone(),
-                        name.clone().into(),
-                    );
+                    let dst = Reference {
+                        remote: Some(tracked_peer.clone()),
+                        category,
+                        name: ext::RefLike::from(name.clone()),
+                        namespace: Some(namespace.clone()),
+                    };
                     let src = if tracked_peer == remote_peer {
                         dst.clone().with_remote(None)
                     } else {
