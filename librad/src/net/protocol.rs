@@ -74,7 +74,7 @@ pub struct Config {
 
 /// Binding of a peer to a network socket.
 ///
-/// Created by [`net::peer::Peer::bind`]. Call [`Bound::accept`] to start
+/// Created by [`crate::net::peer::Peer::bind`]. Call [`Bound::accept`] to start
 /// accepting connections from peers.
 pub struct Bound<S> {
     phone: TinCans,
