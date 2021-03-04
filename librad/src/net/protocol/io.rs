@@ -91,8 +91,23 @@ where
     let listen_addrs = state.endpoint.listen_addrs()?;
     state.events.emit(event::Endpoint::Up { listen_addrs });
 
-    while let Some((_, streams)) = ingress.try_next().await? {
-        tokio::spawn(ingress_streams(state.clone(), streams));
+    while let Some(res) = ingress.next().await {
+        use quic::Error::*;
+
+        match res {
+            Ok((_, streams)) => {
+                tokio::spawn(ingress_streams(state.clone(), streams));
+            },
+            Err(err) => match err {
+                Connection(_) | PeerId(_) | RemoteIdUnavailable | SelfConnect => {
+                    tracing::warn!(err = %err, "ingress error");
+                },
+                Connect(_) | Endpoint(_) | Io(_) | Shutdown | Signer(_) => {
+                    tracing::error!(err = %err, "ingress error");
+                    break;
+                },
+            },
+        }
     }
 
     state.events.emit(event::Endpoint::Down);
