@@ -15,7 +15,7 @@ use std::{
 
 use futures::{
     channel::mpsc,
-    future::{self, BoxFuture, FutureExt as _, TryFutureExt as _},
+    future::{BoxFuture, FutureExt as _, TryFutureExt as _},
     stream::{BoxStream, StreamExt as _},
 };
 use governor::{Quota, RateLimiter};
@@ -72,6 +72,10 @@ pub struct Config {
     // TODO: transport, ...
 }
 
+/// Binding of a peer to a network socket.
+///
+/// Created by [`crate::net::peer::Peer::bind`]. Call [`Bound::accept`] to start
+/// accepting connections from peers.
 pub struct Bound<S> {
     phone: TinCans,
     state: State<S>,
@@ -88,6 +92,9 @@ impl<S> Bound<S> {
         self.state.endpoint.listen_addrs()
     }
 
+    /// Start accepting connections from remote peers.
+    ///
+    /// Unbinds from the socket if the returned future is dropped.
     pub async fn accept<D>(self, disco: D) -> Result<!, quic::Error>
     where
         S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
@@ -300,28 +307,16 @@ where
         .register_stream_factory(state.local_id, Arc::downgrade(&_git_factory));
 
     let tasks = [
-        {
-            let (fut, hdl) = future::abortable(accept::disco(state.clone(), disco));
-            tokio::spawn(fut);
-            hdl
-        },
-        {
-            let (fut, hdl) = future::abortable(accept::periodic(state.clone(), periodic));
-            tokio::spawn(fut);
-            hdl
-        },
-        {
-            let (fut, hdl) = future::abortable(accept::ground_control(
-                state.clone(),
-                async_stream::stream! {
-                    let mut r = phone.downstream.subscribe();
-                    loop { yield r.recv().await; }
-                }
-                .boxed(),
-            ));
-            tokio::spawn(fut);
-            hdl
-        },
+        tokio::spawn(accept::disco(state.clone(), disco)),
+        tokio::spawn(accept::periodic(state.clone(), periodic)),
+        tokio::spawn(accept::ground_control(
+            state.clone(),
+            async_stream::stream! {
+                let mut r = phone.downstream.subscribe();
+                loop { yield r.recv().await; }
+            }
+            .boxed(),
+        )),
     ];
     let main = io::connections::incoming(state.clone(), incoming).boxed();
 
@@ -336,7 +331,7 @@ where
 struct Accept {
     _git_factory: Arc<Box<dyn GitStreamFactory>>,
     endpoint: quic::Endpoint,
-    tasks: [future::AbortHandle; 3],
+    tasks: [tokio::task::JoinHandle<()>; 3],
     main: BoxFuture<'static, Result<!, quic::Error>>,
 }
 
