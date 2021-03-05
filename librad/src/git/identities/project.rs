@@ -80,6 +80,16 @@ pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedProject>, E
     }
 }
 
+/// Get the root [`Urn`] for the given `payload` and set of `delegations`.
+#[tracing::instrument(level = "debug", skip(storage), err)]
+pub fn urn<P>(storage: &Storage, payload: P, delegations: IndirectDelegation) -> Result<Urn, Error>
+where
+    P: Into<ProjectPayload> + Debug,
+{
+    let (_, revision) = identities(storage).base(payload.into(), delegations)?;
+    Ok(Urn::new(revision))
+}
+
 /// Create a new [`Project`].
 #[tracing::instrument(level = "debug", skip(storage, whoami), err)]
 pub fn create<P>(

@@ -475,14 +475,7 @@ impl<'a> Identities<'a, Person> {
     where
         S: Signer,
     {
-        let doc = Doc {
-            version: 0,
-            replaces: None,
-            payload,
-            delegations: payload::PersonDelegations::from(delegations),
-        };
-
-        let root: Revision = self.repo.blob(&Cjson(&doc).canonical_form()?)?.into();
+        let (doc, root) = self.base(payload, delegations)?;
         let revision = {
             let mut builder = self.repo.treebuilder(None)?;
             builder.insert(root.to_string(), *root, 0o100_644)?;
@@ -505,6 +498,22 @@ impl<'a> Identities<'a, Person> {
             doc: doc.second(delegation::Direct::from),
             signatures,
         })
+    }
+
+    /// Create the initial [`PersonDoc`] and compute its [`Revision`].
+    pub fn base(
+        &self,
+        payload: PersonPayload,
+        delegations: delegation::Direct,
+    ) -> Result<(Doc<PersonPayload, payload::PersonDelegations>, Revision), error::Store> {
+        let doc = Doc {
+            version: 0,
+            replaces: None,
+            payload,
+            delegations: payload::PersonDelegations::from(delegations),
+        };
+        let root: Revision = self.repo.blob(&Cjson(&doc).canonical_form()?)?.into();
+        Ok((doc, root))
     }
 
     /// Update an existing [`SignedPerson`] with a new payload and delegations.
@@ -632,14 +641,7 @@ impl<'a> Identities<'a, Project> {
     where
         S: Signer,
     {
-        let doc = Doc {
-            version: 0,
-            replaces: None,
-            payload,
-            delegations: payload::ProjectDelegations::from(delegations.clone()),
-        };
-
-        let root: Revision = self.repo.blob(&Cjson(&doc).canonical_form()?)?.into();
+        let (doc, root) = self.base(payload, delegations.clone())?;
         let revision = {
             let mut builder = self.repo.treebuilder(None)?;
             self.inline_indirect(&mut builder, &delegations)?;
@@ -663,6 +665,28 @@ impl<'a> Identities<'a, Project> {
             doc: doc.second(|_| delegations),
             signatures,
         })
+    }
+
+    /// Create the initial [`ProjectDoc`] and compute its [`Revision`].
+    pub fn base(
+        &self,
+        payload: ProjectPayload,
+        delegations: IndirectDelegation,
+    ) -> Result<
+        (
+            Doc<ProjectPayload, payload::ProjectDelegations<Revision>>,
+            Revision,
+        ),
+        error::Store,
+    > {
+        let doc = Doc {
+            version: 0,
+            replaces: None,
+            payload,
+            delegations: payload::ProjectDelegations::from(delegations),
+        };
+        let root: Revision = self.repo.blob(&Cjson(&doc).canonical_form()?)?.into();
+        Ok((doc, root))
     }
 
     /// Update an existing [`SignedProject`] with a new payload and delegations.
