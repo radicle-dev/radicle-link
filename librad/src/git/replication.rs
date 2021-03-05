@@ -82,26 +82,26 @@ pub struct Config {
     pub fetch_limit: fetch::Limit,
 }
 
-pub enum Replication {
-    Clone {
-        urn: Urn,
-        identity: SomeIdentity,
-        fetched_peers: BTreeSet<PeerId>,
-    },
-    Fetch {
-        urn: Urn,
-        identity: SomeIdentity,
-        existing: BTreeSet<PeerId>,
-    },
+/// The success outcome of [`self::replicate`].
+pub struct ReplicateResult {
+    /// The set of refs which were updated during the sync, along with the
+    /// [`ext::Oid`] they are now pointing to.
+    ///
+    /// If this is empty, no data was fetched from the other side.
+    pub updated_tips: BTreeMap<ext::RefLike, ext::Oid>,
+
+    /// An indicator of whether the local view of the identity document might
+    /// need approval of updates.
+    pub identity: IdStatus,
 }
 
-/// The result of replicating an identity will tell us if we are at the latest
-/// tip or, in the case of our peer being a delegate, if we are behind and
-/// require updating the document.
-#[derive(Debug)]
-pub enum ReplicateResult {
-    Latest,
-    Behind,
+/// The "freshness" of the local view of a repo identity wrt the delegates.
+pub enum IdStatus {
+    /// Up-to-date, no further action is required.
+    Even,
+    /// Delegate tips are either behind or ahead. Interactive review is
+    /// recommended.
+    Uneven,
 }
 
 /// Attempt to fetch `urn` from `remote_peer`, optionally supplying
@@ -154,13 +154,14 @@ where
     }
 
     let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
-    let (result, mut remove) = match replication(
+    let (mut updated_tips, next) = replication(
         storage,
         &mut fetcher,
         config.fetch_limit,
         urn.clone(),
         remote_peer,
-    )? {
+    )?;
+    let (result, mut remove) = match next {
         Replication::Clone {
             urn,
             identity,
@@ -175,7 +176,7 @@ where
                     );
                     let proj = identities::project::verify(storage, &rad_id)?
                         .ok_or(Error::MissingIdentity)?;
-                    project::ensure_setup(
+                    let mut setup = project::ensure_setup(
                         storage,
                         &mut fetcher,
                         config.fetch_limit,
@@ -183,6 +184,7 @@ where
                         &rad_id,
                         proj,
                     )?;
+                    updated_tips.append(&mut setup.updated_tips);
                     allowed
                 },
                 SomeIdentity::Person(person) => {
@@ -205,10 +207,14 @@ where
             }
 
             Ok::<_, Error>((
-                ReplicateResult::Latest,
+                ReplicateResult {
+                    updated_tips,
+                    identity: IdStatus::Even,
+                },
                 fetched_peers.difference(&allowed).copied().collect(),
             ))
         },
+
         Replication::Fetch {
             urn,
             identity,
@@ -221,7 +227,7 @@ where
                         .ok_or(Error::MissingIdentity)?;
                     let mut updated_delegations = project::all_delegates(&proj);
                     let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)));
-                    let result = project::ensure_setup(
+                    let mut result = project::ensure_setup(
                         &storage,
                         &mut fetcher,
                         config.fetch_limit,
@@ -229,17 +235,27 @@ where
                         &rad_id,
                         proj,
                     )?;
+                    updated_tips.append(&mut result.updated_tips);
 
                     let mut updated_tracked =
                         tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
                     updated_tracked.append(&mut updated_delegations);
-                    (result, updated_tracked)
+                    (
+                        ReplicateResult {
+                            updated_tips,
+                            identity: result.identity,
+                        },
+                        updated_tracked,
+                    )
                 },
                 SomeIdentity::Person(person) => {
                     let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(&person.urn())));
                     person::ensure_setup(storage, &rad_id, person)?;
                     (
-                        ReplicateResult::Latest,
+                        ReplicateResult {
+                            updated_tips,
+                            identity: IdStatus::Even,
+                        },
                         tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>(),
                     )
                 },
@@ -263,6 +279,18 @@ where
     Ok(result)
 }
 
+enum Replication {
+    Clone {
+        urn: Urn,
+        identity: SomeIdentity,
+        fetched_peers: BTreeSet<PeerId>,
+    },
+    Fetch {
+        urn: Urn,
+        identity: SomeIdentity,
+        existing: BTreeSet<PeerId>,
+    },
+}
 /// Identify the type of replication case we're in -- whether it's a new
 /// identity which we're cloning onto our machine or an existing identity that
 /// we are updating.
@@ -284,21 +312,24 @@ fn replication(
     limit: fetch::Limit,
     urn: Urn,
     remote_peer: PeerId,
-) -> Result<Replication, Error> {
+) -> Result<(BTreeMap<ext::RefLike, ext::Oid>, Replication), Error> {
     if !storage.has_urn(&urn)? {
-        let fetched_peers = fetcher
+        let updated = fetcher
             .fetch(fetch::Fetchspecs::PeekAll { limit })
-            .map_err(|e| Error::Fetch(e.into()))
-            .and_then(project::fetched_peers)?;
+            .map_err(|e| Error::Fetch(e.into()))?;
+        let fetched_peers = project::fetched_peers(&updated)?;
 
         let remote_ident =
             unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)).with_remote(remote_peer));
-        Ok(Replication::Clone {
-            urn,
-            fetched_peers,
-            identity: identities::any::get(storage, &remote_ident)?
-                .ok_or(Error::MissingIdentity)?,
-        })
+        Ok((
+            updated.updated_tips,
+            Replication::Clone {
+                urn,
+                fetched_peers,
+                identity: identities::any::get(storage, &remote_ident)?
+                    .ok_or(Error::MissingIdentity)?,
+            },
+        ))
     } else {
         let identity = identities::any::get(storage, &urn)?.ok_or(Error::MissingIdentity)?;
         let existing = match identity {
@@ -312,18 +343,21 @@ fn replication(
             SomeIdentity::Person(_) => tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>(),
         };
 
-        let _ = fetcher
+        let fetch::FetchResult { updated_tips } = fetcher
             .fetch(fetch::Fetchspecs::Peek {
                 remotes: existing.clone(),
                 limit,
             })
             .map_err(|e| Error::Fetch(e.into()))?;
 
-        Ok(Replication::Fetch {
-            urn,
-            identity,
-            existing,
-        })
+        Ok((
+            updated_tips,
+            Replication::Fetch {
+                urn,
+                identity,
+                existing,
+            },
+        ))
     }
 }
 
@@ -554,7 +588,7 @@ mod project {
 
         let urn = proj.urn();
         project::track_direct(storage, &proj)?;
-        let tracked = replicate_signed_refs(
+        let (fetch_result, tracked) = replicate_signed_refs(
             storage,
             fetcher,
             limit,
@@ -569,8 +603,12 @@ mod project {
                 tracking::track(&storage, &urn, peer)?;
             }
         }
+        let diverging = project::adopt_latest(storage, &urn, delegates)?;
 
-        project::adopt_latest(storage, &urn, delegates)
+        Ok(ReplicateResult {
+            updated_tips: fetch_result.updated_tips,
+            identity: diverging,
+        })
     }
 
     /// Fetch `rad/signed_refs` and `refs/heads` of the delegates and our
@@ -588,7 +626,7 @@ mod project {
         limit: fetch::Limit,
         urn: &Urn,
         delegates: BTreeSet<Urn>,
-    ) -> Result<BTreeSet<PeerId>, Error> {
+    ) -> Result<(fetch::FetchResult, BTreeSet<PeerId>), Error> {
         // Read `signed_refs` for all tracked
         let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
         let tracked_sigrefs = tracked
@@ -603,7 +641,7 @@ mod project {
 
         // Fetch all the rest
         tracing::debug!("fetching heads: {:?}, {:?}", tracked_sigrefs, delegates);
-        fetcher
+        let res = fetcher
             .fetch(fetch::Fetchspecs::Replicate {
                 tracked_sigrefs: tracked_sigrefs.clone(),
                 delegates,
@@ -612,10 +650,13 @@ mod project {
             .map_err(|e| Error::Fetch(e.into()))?;
 
         Refs::update(storage, &urn)?;
-        Ok(tracked_sigrefs
-            .iter()
-            .flat_map(|(peer, refs)| iter::once(*peer).chain(refs.remotes.flatten().copied()))
-            .collect())
+        Ok((
+            res,
+            tracked_sigrefs
+                .iter()
+                .flat_map(|(peer, refs)| iter::once(*peer).chain(refs.remotes.flatten().copied()))
+                .collect(),
+        ))
     }
 
     /// Compare the given `rad_id` of the project against each delegate and
@@ -759,7 +800,9 @@ mod project {
         storage: &Storage,
         urn: &Urn,
         delegates: BTreeMap<PeerId, DelegateView>,
-    ) -> Result<ReplicateResult, Error> {
+    ) -> Result<IdStatus, Error> {
+        use IdStatus::*;
+
         let local_peer = storage.peer_id();
         let projects = NonEmpty::from_vec(
             delegates
@@ -780,24 +823,21 @@ mod project {
             None => {
                 tracing::debug!(tip = %tip, "adopting latest tip");
                 ensure_rad_id(storage, urn, tip.into())?;
-                Ok(ReplicateResult::Latest)
+                Ok(Even)
             },
-            Some(view) => {
-                Ok(if view.project.content_id == tip.into() {
-                    tracing::debug!("we are at the latest tip");
-                    ReplicateResult::Latest
-                } else {
-                    // FIXME: We could be ahead
-                    tracing::debug!("we need to update the project");
-                    ReplicateResult::Behind
-                })
-            },
+            Some(view) => Ok(if view.project.content_id == tip.into() {
+                tracing::debug!("we are at the latest tip");
+                Even
+            } else {
+                tracing::debug!("we need to update the project");
+                Uneven
+            }),
         }
     }
 
     /// Using the fetched references we parse out the set of `PeerId`s that were
     /// fetched.
-    pub fn fetched_peers(result: fetch::FetchResult) -> Result<BTreeSet<PeerId>, Error> {
+    pub fn fetched_peers(result: &fetch::FetchResult) -> Result<BTreeSet<PeerId>, Error> {
         use std::str::FromStr;
 
         let mut peers = BTreeSet::new();
