@@ -3,18 +3,5 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-pub mod delegation;
-pub mod generic;
-pub mod git;
-pub mod payload;
-pub mod relations;
-pub mod sign;
-pub mod urn;
-pub use urn::Urn;
-
-mod sealed;
-
-#[cfg(test)]
-pub(crate) mod gen;
-
-pub use git::*;
+pub mod rpc;
+pub use rpc::send_rpc;

@@ -48,9 +48,6 @@ use crate::{
 
 pub use tokio::sync::broadcast::error::RecvError;
 
-mod accept;
-mod control;
-
 pub mod broadcast;
 pub mod error;
 pub mod event;
@@ -60,6 +57,8 @@ pub mod membership;
 mod info;
 pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
 
+mod accept;
+mod control;
 mod io;
 mod tick;
 
@@ -234,6 +233,10 @@ impl TinCans {
         let mut r = self.upstream.subscribe();
         async_stream::stream! { loop { yield r.recv().await } }
     }
+
+    pub(self) fn emit(&self, evt: impl Into<event::Upstream>) {
+        self.upstream.send(evt.into()).ok();
+    }
 }
 
 impl Default for TinCans {
@@ -262,14 +265,13 @@ where
         config.membership,
     );
     let storage = Storage::from(storage);
-    let events = phone.upstream.clone().into();
     let state = State {
         local_id,
         endpoint,
         git,
         membership,
         storage,
-        events,
+        phone: phone.clone(),
     };
 
     Ok(Bound {
@@ -321,7 +323,7 @@ where
             hdl
         },
     ];
-    let main = io::ingress_connections(state.clone(), incoming).boxed();
+    let main = io::connections::incoming(state.clone(), incoming).boxed();
 
     Accept {
         _git_factory,
@@ -437,7 +439,7 @@ struct State<S> {
     git: GitServer,
     membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     storage: Storage<S>,
-    events: EventSink,
+    phone: TinCans,
 }
 
 #[async_trait]
@@ -460,7 +462,7 @@ where
                     .instrument(span.clone())
                     .await
                     .map(|(conn, ingress)| {
-                        tokio::spawn(io::ingress_streams(self.clone(), ingress));
+                        tokio::spawn(io::streams::incoming(self.clone(), ingress));
                         conn
                     })
             },
@@ -488,29 +490,6 @@ where
                 Some(Box::new(upgraded))
             },
         }
-    }
-}
-
-#[derive(Clone)]
-struct EventSink(tokio::sync::broadcast::Sender<event::Upstream>);
-
-impl Deref for EventSink {
-    type Target = tokio::sync::broadcast::Sender<event::Upstream>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl EventSink {
-    fn emit(&self, evt: impl Into<event::Upstream>) {
-        self.0.send(evt.into()).ok();
-    }
-}
-
-impl From<tokio::sync::broadcast::Sender<event::Upstream>> for EventSink {
-    fn from(tok: tokio::sync::broadcast::Sender<event::Upstream>) -> Self {
-        Self(tok)
     }
 }
 
