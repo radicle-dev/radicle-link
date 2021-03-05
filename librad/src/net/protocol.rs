@@ -49,6 +49,7 @@ use crate::{
 pub use tokio::sync::broadcast::error::RecvError;
 
 mod accept;
+mod control;
 
 pub mod broadcast;
 pub mod error;
