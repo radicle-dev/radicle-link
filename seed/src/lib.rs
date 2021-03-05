@@ -112,6 +112,8 @@ pub struct NodeConfig {
     pub network: Network,
     /// List of bootstrap peers
     pub bootstrap: Vec<(PeerId, SocketAddr)>,
+    /// The pool sizes for storage consumers.
+    pub storage_pools: peer::PoolSizes,
 }
 
 impl Default for NodeConfig {
@@ -122,6 +124,7 @@ impl Default for NodeConfig {
             root: None,
             network: Network::default(),
             bootstrap: vec![],
+            storage_pools: peer::PoolSizes::default(),
         }
     }
 }
@@ -156,7 +159,7 @@ impl Node {
                 network: config.network,
                 replication: Default::default(),
             },
-            storage_pools: Default::default(),
+            storage_pools: config.storage_pools,
         };
 
         Ok(Node {
