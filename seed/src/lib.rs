@@ -26,7 +26,7 @@ use librad::{
     net::{
         discovery::{self, Discovery as _},
         peer::{self, Peer, ProtocolEvent},
-        protocol::{self, PeerInfo},
+        protocol::{self, gossip::Payload, PeerInfo},
         Network,
     },
     paths,
@@ -290,6 +290,12 @@ impl Node {
                         // Attempt to track, but keep going if it fails.
                         if Node::track_project(&api, urn, &provider).await.is_ok() {
                             let event = Event::project_tracked(urn.clone(), *peer_id, &api).await?;
+                            api.announce(Payload {
+                                urn: urn.clone(),
+                                rev: None,
+                                origin: Some(*peer_id),
+                            })
+                            .ok();
                             transmit.send(event).await.ok();
                         }
                     }
