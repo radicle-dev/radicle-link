@@ -1,0 +1,5 @@
+if brew ls --versions gnu-tar > /dev/null; then
+  echo "gnu-tar is already installed"
+else
+  brew install gnu-tar
+fi
