@@ -51,6 +51,22 @@ pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<SomeIdentity>, Error> 
 pub fn list<'a>(
     storage: &'a Storage,
 ) -> Result<impl Iterator<Item = Result<SomeIdentity, Error>> + 'a, Error> {
+    let iter = self::list_urns(storage)?.filter_map(move |urn| match urn {
+        Ok(urn) => self::get(storage, &urn).transpose(),
+        Err(e) => Some(Err(e)),
+    });
+
+    Ok(iter)
+}
+
+/// List only the [`Urn`]s of all identities found in `storage.
+///
+/// Note that this means that only the namespace must successfully parse as a
+/// [`Urn`], but neither the existence nor the validity of the identity
+/// histories is guaranteed.
+pub fn list_urns(
+    storage: &Storage,
+) -> Result<impl Iterator<Item = Result<Urn, Error>> + '_, Error> {
     lazy_static! {
         static ref GLOB: glob::RefspecMatcher =
             refspec_pattern!("refs/namespaces/*/refs/rad/id").into();
@@ -58,13 +74,7 @@ pub fn list<'a>(
 
     let iter = storage
         .reference_names_glob(GLOB.clone())?
-        .filter_map(move |name| match name {
-            Ok(name) => {
-                Urn::try_from(name).map_or(None, |urn| self::get(storage, &urn).transpose())
-            },
-
-            Err(e) => Some(Err(e.into())),
-        });
+        .map(|name| Ok(Urn::try_from(name?)?.with_path(None)));
 
     Ok(iter)
 }
