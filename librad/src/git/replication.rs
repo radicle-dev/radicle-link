@@ -319,10 +319,19 @@ fn replication(
             .map_err(|e| Error::Fetch(e.into()))?;
         let fetched_peers = project::fetched_peers(&updated)?;
 
+        let mut tips = updated.updated_tips;
+        let peeked = fetcher
+            .fetch(fetch::Fetchspecs::Peek {
+                remotes: fetched_peers.clone(),
+                limit,
+            })
+            .map_err(|e| Error::Fetch(e.into()))?;
+        tips.extend(peeked.updated_tips);
+
         let remote_ident =
             unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)).with_remote(remote_peer));
         Ok((
-            updated.updated_tips,
+            tips,
             Replication::Clone {
                 urn,
                 fetched_peers,
