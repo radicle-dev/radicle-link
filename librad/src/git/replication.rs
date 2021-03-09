@@ -71,10 +71,16 @@ pub enum Error {
     Fetch(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error(transparent)]
-    Identities(#[from] identities::error::Error),
+    Identities(#[from] Box<identities::error::Error>),
 
     #[error(transparent)]
     Store(#[from] storage::Error),
+}
+
+impl From<identities::error::Error> for Error {
+    fn from(e: identities::error::Error) -> Self {
+        Self::Identities(Box::new(e))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]

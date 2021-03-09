@@ -54,7 +54,7 @@ pub enum Error {
     Tracking(#[from] tracking::Error),
 
     #[error(transparent)]
-    Identities(#[from] identities::Error),
+    Identities(#[from] Box<identities::Error>),
 
     #[error(transparent)]
     Replication(#[from] replication::Error),
@@ -70,6 +70,12 @@ pub enum Error {
 
     #[error(transparent)]
     Profile(#[from] profile::Error),
+}
+
+impl From<identities::Error> for Error {
+    fn from(e: identities::Error) -> Self {
+        Self::Identities(Box::new(e))
+    }
 }
 
 /// Seed operational mode.
