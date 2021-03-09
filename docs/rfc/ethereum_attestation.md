@@ -15,29 +15,30 @@ to Link to build user's trust in the identity.
 
 ## Overview
 
-This RFC is built on top of [Identity Proofs RFC][rfc].
+This RFC is built on top of [identities spec][identities].
 It introduces support for Ethereum address claims on Link
 and a smart contract on Ethereum to make Link identity claims on Ethereum.
 
 ## Link identity JSON extension
 
-The identity JSON supports a new key: `ethereum`.
+The identity JSON `payload` structure supports a new key: `https://radicle.xyz/ethereum/claim/v1`.
 Under this key there is stored an ethereum address claim following this convention:
 
-- `account` - the claimed ethereum address, encoded according to [EIP-55][eip-55],
+- `address` - the claimed ethereum address, encoded according to [EIP-55][eip-55],
 e.g. using [ethers.js][ethers-addr]
-- `proof` - not set (according to [Identity Proofs RFC][rfc] it's an optional field)
+- `expiration` - the claim expiration timestamp, encoded as a [JavaScript Date][date]
 
 Example:
 ```json
 {
-    "ethereum": {
-        "account": "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
-        "expiration": {
-            "created": 1614768373,
-            "expires": 31536000
+    "payload": {
+        "https://radicle.xyz/ethereum/claim/v1": {
+            "account": "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+            "expiration": "2021-03-19T23:15:30.000Z"
         }
+        ...
     }
+    ...
 }
 ```
 
@@ -73,9 +74,9 @@ If anybody makes a claim using a different instance, it won't be recognized by o
 ## Creation of an attestation
 
 You need to perform 2 actions in any order:
-- Add or update an `ethereum` entry in your identity JSON.
+- Add or update an `https://radicle.xyz/ethereum/claim/v1` entry in your identity JSON.
 The entry's `account` must be your Ethereum address.
-It's highly recommended to set a reasonable expiration date as Ethereum claims don't expire.
+It's highly recommended to set a short expiration date as Ethereum claims don't expire.
 - Call `claim` in the `Claims` smart contract. The `id` must point to your link identity.
 
 ## Discovery from an Ethereum address
@@ -98,7 +99,7 @@ see [Discovery from a Link ID](#discovery-from-a-link-id)
 
 When you have a link ID, you can find the claimed Ethereum address.
 Obtain the tip of its identity chain and read the ethereum address from the identity JSON
-`account` field in section `ethereum`, unless it's expired.
+`account` field in section `https://radicle.xyz/ethereum/claim/v1`, unless it's expired.
 You need to verify that the given Ethereum address claims back the link ID,
 see [Discovery from an Ethereum address](#discovery-from-an-ethereum-address).
 
@@ -110,15 +111,17 @@ Only one claim needs to be revoked to break the attestation,
 but to improve security you should revoke both sides if you can.
 
 To revoke a claim on Link, update and publish the identity JSON.
-You can change the claimed Ethereum address or remove the `ethereum` section altogether.
+You can change the claimed Ethereum address or remove
+the `https://radicle.xyz/ethereum/claim/v1` section altogether.
 
 To revoke a claim on Ethereum, call the `claim` function in `Claims` contract.
 You can claim a different link ID or an ID `0` to revoke any claim you may have.
 
 ---
 
-[rfc]: ./identity_proofs.md
+[identities]: ../spec/sections/002-identities/index.md
 [eip-55]: https://eips.ethereum.org/EIPS/eip-55
+[date]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/toJSON
 [ethers-addr]: https://docs.ethers.io/v5/api/utils/address/
 [rpc]: https://eth.wiki/json-rpc/API
 [rpc-logs]: https://eth.wiki/json-rpc/API#eth_getlogs
