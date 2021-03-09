@@ -35,7 +35,7 @@ const NUM_PEERS: usize = 2;
 /// Given two connected peers.
 /// Then create a project for peer1.
 /// Then have peer2 track peer1’s project.
-/// Then create a a commit, a branch and a tag for that project and push it to
+/// Then create a commit, a branch and a tag for that project and push it to
 /// peer1. Then wait for peer2 to receive announcements for the project.
 /// Assert that peer2’s monorepo contains the comit, the branch and the tag from
 /// peer1.
