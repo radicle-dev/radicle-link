@@ -33,7 +33,7 @@ Example:
 {
     "payload": {
         "https://radicle.xyz/ethereum/claim/v1": {
-            "account": "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+            "address": "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
             "expiration": "2021-03-19T23:15:30.000Z"
         }
         ...
@@ -75,7 +75,7 @@ If anybody makes a claim using a different instance, it won't be recognized by o
 
 You need to perform 2 actions in any order:
 - Add or update an `https://radicle.xyz/ethereum/claim/v1` entry in your identity JSON.
-The entry's `account` must be your Ethereum address.
+The entry's `address` must be your Ethereum address.
 It's highly recommended to set a short expiration date as Ethereum claims don't expire.
 - Call `claim` in the `Claims` smart contract. The `id` must point to your link identity.
 
@@ -99,7 +99,7 @@ see [Discovery from a Link ID](#discovery-from-a-link-id)
 
 When you have a link ID, you can find the claimed Ethereum address.
 Obtain the tip of its identity chain and read the ethereum address from the identity JSON
-`account` field in section `https://radicle.xyz/ethereum/claim/v1`, unless it's expired.
+`address` field in section `https://radicle.xyz/ethereum/claim/v1`, unless it's expired.
 You need to verify that the given Ethereum address claims back the link ID,
 see [Discovery from an Ethereum address](#discovery-from-an-ethereum-address).
 
