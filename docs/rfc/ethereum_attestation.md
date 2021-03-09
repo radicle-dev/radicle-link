@@ -9,8 +9,8 @@
 
 The attestation between Link and Ethereum is a valuable building block for a user identity.
 It brings the Link reputation coming from projects and contributions to the
-Ethereum world of DAOs and donations, where it's important to know, who's behind an address.
-On the other hand it lends Ethereum account reputation with its assets and undeniable history
+Ethereum world of DAOs and donations, where it's important to know who's behind an address.
+On the other hand, it lends Ethereum account reputation with its assets and undeniable history
 to Link to build user's trust in the identity.
 
 ## Overview
@@ -26,7 +26,7 @@ Under this key there is stored an ethereum address claim following this conventi
 
 - `account` - the claimed ethereum address, encoded according to [EIP-55][eip-55],
 e.g. using [ethers.js][ethers-addr]
-- `proof` - always `null`
+- `proof` - not set (according to [Identity Proofs RFC][rfc] it's an optional field)
 
 Example:
 ```json
@@ -36,15 +36,14 @@ Example:
         "expiration": {
             "created": 1614768373,
             "expires": 31536000
-        },
-        "proof": null
+        }
     }
 }
 ```
 
 ## Ethereum smart contract
 
-A new smart contract is deployed to the network, which is used to publish link claims:
+A new Ethereum smart contract is deployed to the network, which lets users claim their Radicle IDs:
 
 ```solidity
 contract Claims {
@@ -53,7 +52,7 @@ contract Claims {
 }
 ```
 
-In order to claim an ID, call `claim` using your Ethereum account.
+To claim an ID, call `claim` using your Ethereum account.
 It will emit an event `Claimed`, which later can be queried to discover your attestation.
 The claims have no expiration date and don't need to be renewed.
 
@@ -67,23 +66,24 @@ Currently supported `version` values:
 `000000000000000000000000fb3102b74d7254eed7f18a31a3ba1ea946bb1a99`
 - `2` - an `id` is a SHA-256 root hash
 
-Everybody must use the same smart contract address.
-Claims sent to an address not known by the users won't be noticed by anyone and will be useless.
+We need to deploy an official instance of the `Claims` smart contract and
+it must be used by all the users.
+If anybody makes a claim using a different instance, it won't be recognized by others.
 
 ## Creation of an attestation
 
 You need to perform 2 actions in any order:
 - Add or update an `ethereum` entry in your identity JSON.
 The entry's `account` must be your Ethereum address.
-It's higly recommended to set a reasonable expiration date as Ethereum claims don't expire.
+It's highly recommended to set a reasonable expiration date as Ethereum claims don't expire.
 - Call `claim` in the `Claims` smart contract. The `id` must point to your link identity.
 
 ## Discovery from an Ethereum address
 
 When you have an Ethereum address, you can find the claimed link ID using an Ethereum client.
 The example calls are based on the standard [client JSON RPC API][rpc] and should be exposed
-by your favorite Ethereum client library.
-It is important that the client must be trusted not to hide the events.
+by your favourite Ethereum client library.
+It's important that the client must be trusted not to hide the events.
 
 - Use [getLogs][rpc-logs] to get the newest `Claimed` event filtered for the given ethereum address
 - Get the event's `transactionHash` field and use it to fetch the transaction which emitted it with
@@ -113,7 +113,7 @@ To revoke a claim on Link, update and publish the identity JSON.
 You can change the claimed Ethereum address or remove the `ethereum` section altogether.
 
 To revoke a claim on Ethereum, call the `claim` function in `Claims` contract.
-You can claim a different link ID or an ID `0` to stop claiming anything.
+You can claim a different link ID or an ID `0` to revoke any claim you may have.
 
 ---
 
