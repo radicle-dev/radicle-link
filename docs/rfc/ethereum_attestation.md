@@ -22,6 +22,7 @@ and a smart contract on Ethereum to make Link identity claims on Ethereum.
 ## Link identity JSON extension
 
 The identity JSON `payload` structure supports a new key: `https://radicle.xyz/ethereum/claim/v1`.
+It can be used only in conjunction with an `https://radicle.xyz/link/identities/person/` entry.
 Under this key there is stored an ethereum address claim following this convention:
 
 - `address` - the claimed ethereum address, encoded according to [EIP-55][eip-55],
