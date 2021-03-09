@@ -15,7 +15,7 @@ to Link to build user's trust in the identity.
 
 ## Overview
 
-This RFC is built on top of [identities spec][identities].
+This RFC is built on top of the [identities spec][identities].
 It introduces support for Ethereum address claims on Link
 and a smart contract on Ethereum to make Link identity claims on Ethereum.
 
@@ -113,9 +113,12 @@ but to improve security you should revoke both sides if you can.
 To revoke a claim on Link, update and publish the identity JSON.
 You can change the claimed Ethereum address or remove
 the `https://radicle.xyz/ethereum/claim/v1` section altogether.
+The other Link nodes will not notice this update until they fetch it.
 
 To revoke a claim on Ethereum, call the `claim` function in `Claims` contract.
 You can claim a different link ID or an ID `0` to revoke any claim you may have.
+The other users will notice this update almost immediately if they
+are subscribed to the `Claimed` events for your Ethereum address in their Ethereum client.
 
 ---
 
