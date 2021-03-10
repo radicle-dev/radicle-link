@@ -127,8 +127,14 @@ where
             return vec![];
         }
 
-        let demoted = if self.num_active() >= self.max_active {
+        let demoted = if self.is_active_full() {
             self.demote_random()
+        } else {
+            vec![]
+        };
+
+        let evicted = if self.is_passive(&info.peer_id) {
+            self.evict(&info.peer_id)
         } else {
             vec![]
         };
@@ -138,6 +144,7 @@ where
 
         iter::once(Transition::Promoted(info))
             .chain(demoted)
+            .chain(evicted)
             .collect()
     }
 
@@ -187,5 +194,41 @@ where
             .map(|evicted| Transition::Evicted(PartialPeerInfo::from(evicted)))
             .into_iter()
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::BTreeSet;
+
+    use crate::{keys::SecretKey, net::protocol::info::PeerAdvertisement, peer::PeerId};
+
+    use super::*;
+
+    #[test]
+    fn active_passive_parity() {
+        let local_id = PeerId::from(SecretKey::new());
+        let remote_id = PeerId::from(SecretKey::new());
+        let remote_info: PartialPeerInfo<()> = PartialPeerInfo {
+            peer_id: remote_id,
+            advertised_info: Some(PeerAdvertisement {
+                listen_addrs: BTreeSet::new(),
+                capabilities: BTreeSet::new(),
+            }),
+            seen_addrs: BTreeSet::new(),
+        };
+        let mut view = PartialView::new(local_id, rand::thread_rng(), 3, 3);
+
+        assert!(!view.is_known(&remote_id));
+
+        view.add_active(remote_info.clone());
+        assert!(view.is_active(&remote_id) && !view.is_passive(&remote_id));
+
+        view.demote(&remote_id);
+        assert!(!view.is_active(&remote_id) && view.is_passive(&remote_id));
+
+        // adding the peer again should remove them from the passive list
+        view.add_active(remote_info);
+        assert!(view.is_active(&remote_id) && !view.is_passive(&remote_id));
     }
 }

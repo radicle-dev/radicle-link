@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use futures::stream::{self, StreamExt as _};
 
 use super::{
-    broadcast,
+    control,
     event,
     gossip,
     io,
@@ -101,10 +101,7 @@ where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
     E: futures::Stream<Item = Result<event::Downstream, RecvError>> + Unpin,
 {
-    use event::{
-        downstream::{Gossip, Info, MembershipInfo, Stats},
-        Downstream,
-    };
+    use event::Downstream;
 
     while let Some(x) = rx.next().await {
         match x {
@@ -117,66 +114,9 @@ where
                 tracing::warn!("skipped {} messages from ground control", i)
             },
 
-            Ok(evt) => {
-                let origin = PeerInfo {
-                    peer_id: state.local_id,
-                    advertised_info: io::peer_advertisement(&state.endpoint),
-                    seen_addrs: Default::default(),
-                };
-                match evt {
-                    // TODO: answer `Want`s from a provider cache
-                    Downstream::Gossip(gossip) => {
-                        let rpc = match gossip {
-                            Gossip::Announce(payload) => broadcast::Message::Have {
-                                origin,
-                                val: payload,
-                            },
-                            Gossip::Query(payload) => broadcast::Message::Want {
-                                origin,
-                                val: payload,
-                            },
-                        };
-                        stream::iter(state.membership.broadcast_recipients(None).into_iter().map(
-                            |to| tick::Tock::SendConnected {
-                                to,
-                                message: rpc.clone().into(),
-                            },
-                        ))
-                        .for_each(|tock| tick::tock(state.clone(), tock))
-                        .await
-                    },
-
-                    Downstream::Info(info) => match info {
-                        Info::ConnectedPeers(tx) => {
-                            if let Some(tx) = tx.lock().take() {
-                                tx.send(state.endpoint.peers()).ok();
-                            }
-                        },
-
-                        Info::Membership(tx) => {
-                            if let Some(tx) = tx.lock().take() {
-                                tx.send(MembershipInfo {
-                                    active: state.membership.active(),
-                                    passive: state.membership.passive(),
-                                })
-                                .ok();
-                            }
-                        },
-
-                        Info::Stats(tx) => {
-                            if let Some(tx) = tx.lock().take() {
-                                let (active, passive) = state.membership.view_stats();
-                                tx.send(Stats {
-                                    connections_total: state.endpoint.connections_total(),
-                                    connected_peers: state.endpoint.connected_peers(),
-                                    membership_active: active,
-                                    membership_passive: passive,
-                                })
-                                .ok();
-                            }
-                        },
-                    },
-                };
+            Ok(evt) => match evt {
+                Downstream::Gossip(gossip) => control::gossip(&state, gossip).await,
+                Downstream::Info(info) => control::info(&state, info),
             },
         }
     }

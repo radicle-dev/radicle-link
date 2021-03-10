@@ -79,6 +79,16 @@ pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedPerson>, Er
     }
 }
 
+/// Get the root [`Urn`] for the given `payload` and set of `delegations`.
+#[tracing::instrument(level = "debug", skip(storage), err)]
+pub fn urn<P>(storage: &Storage, payload: P, delegations: delegation::Direct) -> Result<Urn, Error>
+where
+    P: Into<PersonPayload> + Debug,
+{
+    let (_, revision) = identities(storage).base(payload.into(), delegations)?;
+    Ok(Urn::new(revision))
+}
+
 /// Create a new [`Person`].
 ///
 /// The `delegations` must include the [`Storage`]'s [`crate::signer::Signer`]

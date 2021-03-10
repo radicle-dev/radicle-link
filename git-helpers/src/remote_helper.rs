@@ -31,6 +31,14 @@ const SECRET_KEY_FILE: &str = "librad.key";
 pub fn run() -> anyhow::Result<()> {
     let url = {
         let args = env::args().skip(1).take(2).collect::<Vec<_>>();
+        if args.is_empty() {
+            return Err(anyhow::anyhow!(
+                r#"This remote helper is transparently used by Git when you use commands
+such as "git fetch <URL>", "git clone <URL>", "git push <URL>" or
+"git remote add <nick> <URL>", where <URL> begins with "rad://".
+See https://git-scm.com/docs/git-remote-ext for more detail."#
+            ));
+        }
         args[0]
             .parse()
             .or_else(|_| args[1].parse())

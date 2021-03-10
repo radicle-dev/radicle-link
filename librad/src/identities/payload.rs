@@ -142,6 +142,12 @@ pub trait HasNamespace {
     fn namespace() -> &'static Url;
 }
 
+impl<T: HasNamespace> HasNamespace for Option<T> {
+    fn namespace() -> &'static Url {
+        T::namespace()
+    }
+}
+
 impl HasNamespace for Person {
     fn namespace() -> &'static Url {
         &PERSON_NAMESPACE_V1

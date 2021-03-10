@@ -60,6 +60,11 @@ jobs:
       - name: Install Rust
         run: rustup update nightly-2020-11-10 --no-self-update && rustup default nightly-2020-11-10
         shell: bash
+      # NB: We install gnu-tar because BSD tar is buggy on Github's macos machines. https://github.com/actions/cache/issues/403
+      - name: Install GNU tar
+        run: |
+          ./ci/macos-gnu
+          echo "/usr/local/opt/gnu-tar/libexec/gnubin" >> $GITHUB_PATH
       - run: ./ci/test-fast
         shell: bash
 

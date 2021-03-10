@@ -15,7 +15,7 @@ use std::{
 
 use futures::{
     channel::mpsc,
-    future::{self, BoxFuture, FutureExt as _, TryFutureExt as _},
+    future::{BoxFuture, FutureExt as _, TryFutureExt as _},
     stream::{BoxStream, StreamExt as _},
 };
 use governor::{Quota, RateLimiter};
@@ -48,8 +48,6 @@ use crate::{
 
 pub use tokio::sync::broadcast::error::RecvError;
 
-mod accept;
-
 pub mod broadcast;
 pub mod error;
 pub mod event;
@@ -59,6 +57,8 @@ pub mod membership;
 mod info;
 pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
 
+mod accept;
+mod control;
 mod io;
 mod tick;
 
@@ -72,6 +72,10 @@ pub struct Config {
     // TODO: transport, ...
 }
 
+/// Binding of a peer to a network socket.
+///
+/// Created by [`crate::net::peer::Peer::bind`]. Call [`Bound::accept`] to start
+/// accepting connections from peers.
 pub struct Bound<S> {
     phone: TinCans,
     state: State<S>,
@@ -88,6 +92,9 @@ impl<S> Bound<S> {
         self.state.endpoint.listen_addrs()
     }
 
+    /// Start accepting connections from remote peers.
+    ///
+    /// Unbinds from the socket if the returned future is dropped.
     pub async fn accept<D>(self, disco: D) -> Result<!, quic::Error>
     where
         S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
@@ -233,6 +240,10 @@ impl TinCans {
         let mut r = self.upstream.subscribe();
         async_stream::stream! { loop { yield r.recv().await } }
     }
+
+    pub(self) fn emit(&self, evt: impl Into<event::Upstream>) {
+        self.upstream.send(evt.into()).ok();
+    }
 }
 
 impl Default for TinCans {
@@ -261,14 +272,13 @@ where
         config.membership,
     );
     let storage = Storage::from(storage);
-    let events = phone.upstream.clone().into();
     let state = State {
         local_id,
         endpoint,
         git,
         membership,
         storage,
-        events,
+        phone: phone.clone(),
     };
 
     Ok(Bound {
@@ -297,30 +307,18 @@ where
         .register_stream_factory(state.local_id, Arc::downgrade(&_git_factory));
 
     let tasks = [
-        {
-            let (fut, hdl) = future::abortable(accept::disco(state.clone(), disco));
-            tokio::spawn(fut);
-            hdl
-        },
-        {
-            let (fut, hdl) = future::abortable(accept::periodic(state.clone(), periodic));
-            tokio::spawn(fut);
-            hdl
-        },
-        {
-            let (fut, hdl) = future::abortable(accept::ground_control(
-                state.clone(),
-                async_stream::stream! {
-                    let mut r = phone.downstream.subscribe();
-                    loop { yield r.recv().await; }
-                }
-                .boxed(),
-            ));
-            tokio::spawn(fut);
-            hdl
-        },
+        tokio::spawn(accept::disco(state.clone(), disco)),
+        tokio::spawn(accept::periodic(state.clone(), periodic)),
+        tokio::spawn(accept::ground_control(
+            state.clone(),
+            async_stream::stream! {
+                let mut r = phone.downstream.subscribe();
+                loop { yield r.recv().await; }
+            }
+            .boxed(),
+        )),
     ];
-    let main = io::ingress_connections(state.clone(), incoming).boxed();
+    let main = io::connections::incoming(state.clone(), incoming).boxed();
 
     Accept {
         _git_factory,
@@ -333,7 +331,7 @@ where
 struct Accept {
     _git_factory: Arc<Box<dyn GitStreamFactory>>,
     endpoint: quic::Endpoint,
-    tasks: [future::AbortHandle; 3],
+    tasks: [tokio::task::JoinHandle<()>; 3],
     main: BoxFuture<'static, Result<!, quic::Error>>,
 }
 
@@ -436,7 +434,7 @@ struct State<S> {
     git: GitServer,
     membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     storage: Storage<S>,
-    events: EventSink,
+    phone: TinCans,
 }
 
 #[async_trait]
@@ -459,7 +457,7 @@ where
                     .instrument(span.clone())
                     .await
                     .map(|(conn, ingress)| {
-                        tokio::spawn(io::ingress_streams(self.clone(), ingress));
+                        tokio::spawn(io::streams::incoming(self.clone(), ingress));
                         conn
                     })
             },
@@ -487,29 +485,6 @@ where
                 Some(Box::new(upgraded))
             },
         }
-    }
-}
-
-#[derive(Clone)]
-struct EventSink(tokio::sync::broadcast::Sender<event::Upstream>);
-
-impl Deref for EventSink {
-    type Target = tokio::sync::broadcast::Sender<event::Upstream>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl EventSink {
-    fn emit(&self, evt: impl Into<event::Upstream>) {
-        self.0.send(evt.into()).ok();
-    }
-}
-
-impl From<tokio::sync::broadcast::Sender<event::Upstream>> for EventSink {
-    fn from(tok: tokio::sync::broadcast::Sender<event::Upstream>) -> Self {
-        Self(tok)
     }
 }
 

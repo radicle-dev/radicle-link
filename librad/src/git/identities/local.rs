@@ -26,13 +26,19 @@ pub enum Error {
     Validation(#[from] ValidationError),
 
     #[error(transparent)]
-    Identities(#[from] super::Error),
+    Identities(#[from] Box<super::Error>),
 
     #[error(transparent)]
     Store(#[from] storage::Error),
 
     #[error(transparent)]
     Config(#[from] config::Error),
+}
+
+impl From<super::Error> for Error {
+    fn from(e: super::Error) -> Self {
+        Self::Identities(Box::new(e))
+    }
 }
 
 #[derive(Debug, Error)]

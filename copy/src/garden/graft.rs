@@ -36,7 +36,7 @@ pub enum Error {
     Git(#[from] git::Error),
 
     #[error(transparent)]
-    Identities(#[from] identities::Error),
+    Identities(#[from] Box<identities::Error>),
 
     #[error("the project, at `{0}`, does not have default branch set")]
     MissingDefaultBranch(Urn),
@@ -47,6 +47,12 @@ pub enum Error {
     /// An error occurred in the local transport.
     #[error(transparent)]
     Transport(#[from] librad::git::local::transport::Error),
+}
+
+impl From<identities::Error> for Error {
+    fn from(e: identities::Error) -> Self {
+        Self::Identities(Box::new(e))
+    }
 }
 
 /// Based off of the `Fork`, clone the project using the provided inputs.

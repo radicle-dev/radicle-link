@@ -49,7 +49,6 @@ async fn a_trois() {
             .unwrap_or_else(|| "mistress".to_owned())
             .try_into()
             .unwrap();
-
         let tmp = tempfile::tempdir().unwrap();
         let commit_id = {
             // Perform commit and push to working copy on peer1
@@ -103,6 +102,7 @@ async fn a_trois() {
             has_commit: bool,
             has_rad_id: bool,
             has_rad_self: bool,
+            has_rad_ids: bool,
         }
 
         proj.pull(&peer1, &peer2).await.ok().unwrap();
@@ -114,11 +114,15 @@ async fn a_trois() {
                 let rad_self = Reference::rad_self(Namespace::from(urn.clone()), peer1.peer_id());
                 let rad_id =
                     Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
+                let rad_ids =
+                    Reference::rad_delegate(Namespace::from(urn.clone()), &proj.owner.urn())
+                        .with_remote(peer1.peer_id());
                 move |storage| -> Result<ExpectedReferences, anyhow::Error> {
                     Ok(ExpectedReferences {
                         has_commit: storage.has_commit(&urn, Box::new(commit_id))?,
                         has_rad_id: storage.has_ref(&rad_self)?,
                         has_rad_self: storage.has_ref(&rad_id)?,
+                        has_rad_ids: storage.has_ref(&rad_ids)?,
                     })
                 }
             })
@@ -131,24 +135,31 @@ async fn a_trois() {
                 let rad_self = Reference::rad_self(Namespace::from(urn.clone()), peer1.peer_id());
                 let rad_id =
                     Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
+                let rad_ids =
+                    Reference::rad_delegate(Namespace::from(urn.clone()), &proj.owner.urn())
+                        .with_remote(peer1.peer_id());
                 move |storage| -> Result<ExpectedReferences, anyhow::Error> {
                     Ok(ExpectedReferences {
                         has_commit: storage.has_commit(&urn, Box::new(commit_id))?,
                         has_rad_id: storage.has_ref(&rad_self)?,
                         has_rad_self: storage.has_ref(&rad_id)?,
+                        has_rad_ids: storage.has_ref(&rad_ids)?,
                     })
                 }
             })
             .await
             .unwrap()
             .unwrap();
-
         assert!(
             peer2_expected.has_commit,
             format!("peer 2 missing commit `{}@{}`", expected_urn, commit_id)
         );
         assert!(peer2_expected.has_rad_id, "peer 2 missing `rad/id`");
         assert!(peer2_expected.has_rad_self, "peer 2 missing `rad/self``");
+        assert!(
+            peer2_expected.has_rad_ids,
+            "peer 2 missing `rad/ids/<delegate>`"
+        );
 
         assert!(
             peer3_expected.has_commit,
@@ -156,6 +167,10 @@ async fn a_trois() {
         );
         assert!(peer3_expected.has_rad_id, "peer 3 missing `rad/id`");
         assert!(peer3_expected.has_rad_self, "peer 3 missing `rad/self``");
+        assert!(
+            peer3_expected.has_rad_ids,
+            "peer 3 missing `rad/ids/<delegate>`"
+        );
     })
     .await;
 }

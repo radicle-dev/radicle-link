@@ -174,7 +174,7 @@ where
     F: FnMut(Vec<RunningTestPeer>) -> Fut,
     Fut: Future<Output = A>,
 {
-    let (running, abort_handles, events) = peers
+    let (running, bound_tasks, events) = peers
         .into_iter()
         .map(
             |BoundTestPeer {
@@ -189,20 +189,16 @@ where
                     peer,
                     listen_addrs: bound.listen_addrs().unwrap(),
                 };
-                let abort_handle = {
-                    let (fut, hdl) = future::abortable(bound.accept(disco.discover()));
-                    tokio::task::spawn(fut);
-                    hdl
-                };
+                let bound_task = tokio::task::spawn(bound.accept(disco.discover()));
 
-                (running, abort_handle, events)
+                (running, bound_task, events)
             },
         )
         .unzip3::<_, _, _, Vec<_>, Vec<_>, Vec<_>>();
 
     wait_converged(events, min_connected).await;
     let res = f(running).await;
-    abort_handles.into_iter().for_each(|hdl| hdl.abort());
+    bound_tasks.into_iter().for_each(|task| task.abort());
 
     res
 }
