@@ -22,6 +22,7 @@ where
     Evicted(PartialPeerInfo<A>),
 }
 
+#[derive(Debug)]
 pub(super) struct PartialView<Rng, Addr>
 where
     Addr: Clone + Ord,
@@ -198,34 +199,189 @@ where
 mod test {
     use std::collections::BTreeSet;
 
-    use crate::{keys::SecretKey, net::protocol::info::PeerAdvertisement, peer::PeerId};
+    use proptest::{collection, prelude::*};
 
     use super::*;
 
-    #[test]
-    fn active_passive_parity() {
-        let local_id = PeerId::from(SecretKey::new());
-        let remote_id = PeerId::from(SecretKey::new());
-        let remote_info: PartialPeerInfo<()> = PartialPeerInfo {
-            peer_id: remote_id,
+    use crate::{
+        net::protocol::info::PeerAdvertisement,
+        peer::{tests::gen_peer_id, PeerId},
+    };
+
+    fn gen_peers() -> impl Strategy<Value = (PeerId, Vec<PeerId>)> {
+        gen_peer_id().prop_flat_map(move |local| {
+            collection::vec(gen_peer_id(), 1..20).prop_map(move |remotes| {
+                (
+                    local,
+                    remotes
+                        .into_iter()
+                        .filter(|remote| *remote != local)
+                        .collect(),
+                )
+            })
+        })
+    }
+
+    fn gen_partial_view() -> impl Strategy<Value = PartialView<rand::rngs::ThreadRng, ()>> {
+        gen_peer_id().prop_flat_map(|local_id| {
+            any::<(usize, usize)>().prop_map(move |(max_active, max_passive)| {
+                PartialView::new(local_id, rand::thread_rng(), max_active, max_passive)
+            })
+        })
+    }
+
+    fn blank_peer_info<A: Ord + Clone>(peer_id: PeerId) -> PartialPeerInfo<A> {
+        PartialPeerInfo {
+            peer_id,
             advertised_info: Some(PeerAdvertisement {
                 listen_addrs: BTreeSet::new(),
                 capabilities: BTreeSet::new(),
             }),
             seen_addrs: BTreeSet::new(),
-        };
-        let mut view = PartialView::new(local_id, rand::thread_rng(), 3, 3);
+        }
+    }
 
-        assert!(!view.is_known(&remote_id));
+    proptest! {
+        #[test]
+        fn demotion_when_active_is_full((local_id, remotes) in gen_peers()) {
+            prop_demotion_when_active_is_full(local_id, remotes)
+        }
+
+        #[test]
+        fn ignores_local(view in gen_partial_view()) {
+            prop_ignores_local(view)
+        }
+
+        #[test]
+        fn active_passive_parity(view in gen_partial_view(), remote in gen_peer_id()) {
+            prop_active_passive_parity(view, remote)
+        }
+
+        #[test]
+        fn active_peer_cant_be_made_passive(view in gen_partial_view(), remote in gen_peer_id()) {
+            prop_active_peer_cant_be_made_passive(view, remote)
+        }
+
+        #[test]
+        fn evicted_peer_when_passive_is_full((local_id, remotes) in gen_peers()) {
+            prop_evicted_peer_when_passive_is_full(local_id, remotes)
+        }
+    }
+
+    fn prop_evicted_peer_when_passive_is_full(local_id: PeerId, remotes: Vec<PeerId>) {
+        let mut view: PartialView<_, ()> = PartialView::new(
+            local_id,
+            rand::thread_rng(),
+            remotes.len(),
+            remotes.len() - 1,
+        );
+
+        // first need to make all remotes active
+        for remote in &remotes {
+            view.add_active(blank_peer_info(*remote));
+        }
+
+        let mut transitions = vec![];
+        for remote in &remotes {
+            transitions.extend(view.demote(remote))
+        }
+
+        let mut eviction_count = 0;
+        let mut demoted_count = 0;
+        for transition in transitions {
+            match transition {
+                Transition::Promoted(_) => unreachable!(),
+                Transition::Demoted(_) => {
+                    demoted_count += 1;
+                },
+                Transition::Evicted(info) => {
+                    assert!(!view.is_known(&info.peer_id));
+                    eviction_count += 1;
+                },
+            }
+        }
+
+        if remotes.len() == 1 {
+            let remote = remotes.last().unwrap();
+            assert!(!view.is_active(remote));
+            assert!(view.is_passive(remote));
+        } else {
+            assert_eq!(eviction_count, 1);
+            assert_eq!(demoted_count, remotes.len());
+            assert_eq!(view.passive().count(), remotes.len() - 1);
+            assert_eq!(view.active().count(), 0);
+        }
+    }
+
+    fn prop_active_peer_cant_be_made_passive<R: rand::Rng, A: Ord + Clone>(
+        mut view: PartialView<R, A>,
+        remote: PeerId,
+    ) {
+        let info = blank_peer_info(remote);
+        view.add_active(info.clone());
+        view.add_passive(info.sequence().unwrap());
+        assert!(view.is_active(&remote));
+    }
+
+    fn prop_active_passive_parity<R: rand::Rng, A: Ord + Clone>(
+        mut view: PartialView<R, A>,
+        remote: PeerId,
+    ) {
+        let remote_info = blank_peer_info(remote);
+
+        assert!(!view.is_known(&remote));
 
         view.add_active(remote_info.clone());
-        assert!(view.is_active(&remote_id) && !view.is_passive(&remote_id));
+        assert!(view.is_active(&remote) && !view.is_passive(&remote));
 
-        view.demote(&remote_id);
-        assert!(!view.is_active(&remote_id) && view.is_passive(&remote_id));
+        view.demote(&remote);
+        assert!(!view.is_active(&remote) && view.is_passive(&remote));
 
         // adding the peer again should remove them from the passive list
         view.add_active(remote_info);
-        assert!(view.is_active(&remote_id) && !view.is_passive(&remote_id));
+        assert!(view.is_active(&remote) && !view.is_passive(&remote));
+    }
+
+    fn prop_demotion_when_active_is_full(local_id: PeerId, remotes: Vec<PeerId>) {
+        let mut view: PartialView<_, ()> = PartialView::new(
+            local_id,
+            rand::thread_rng(),
+            remotes.len() - 1,
+            remotes.len() - 1,
+        );
+
+        for remote in &remotes {
+            view.add_active(blank_peer_info(*remote));
+        }
+
+        if remotes.len() == 1 {
+            let remote = remotes.last().unwrap();
+            assert!(
+                view.is_active(remote) && !view.is_passive(remote),
+                "only peer was not active"
+            );
+        } else if !remotes.is_empty() {
+            assert_eq!(view.passive().count(), 1, "passive counts are not equal");
+            assert_eq!(
+                view.active().count(),
+                remotes.len() - 1,
+                "active counts are not equal"
+            );
+            let remote = remotes.last().unwrap();
+            assert!(
+                view.is_active(remote) && !view.is_passive(remote),
+                "the last added peer was not active"
+            );
+        }
+    }
+
+    fn prop_ignores_local<R: rand::Rng, A: Ord + Clone>(mut view: PartialView<R, A>) {
+        let local = view.local_id;
+        let info = blank_peer_info(local);
+
+        assert!(view.demote(&local).is_empty());
+        assert!(view.add_active(info.clone()).is_empty());
+        assert!(view.add_passive(info.sequence().unwrap()).is_empty());
+        assert!(view.evict(&local).is_empty());
     }
 }
