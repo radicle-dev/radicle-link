@@ -6,4 +6,5 @@
 mod clone;
 mod fetch_limit;
 mod gossip;
+mod graft;
 mod regression;

@@ -19,14 +19,16 @@ pub struct Header<Urn> {
     pub service: Service,
     pub repo: Urn,
     pub peer: PeerId,
+    pub nonce: Option<u32>,
 }
 
 impl<Urn> Header<Urn> {
-    pub fn new(service: GitService, repo: Urn, peer: PeerId) -> Self {
+    pub fn new(service: GitService, repo: Urn, peer: PeerId, nonce: Option<u32>) -> Self {
         Self {
             service: Service(service),
             repo,
             peer,
+            nonce,
         }
     }
 }
@@ -35,20 +37,23 @@ impl<Urn: Display> Display for Header<Urn> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.service.0 {
             GitService::UploadPackLs => {
-                writeln!(f, "git-upload-pack {}\0host={}\0ls\0", self.repo, self.peer)
+                write!(f, "git-upload-pack {}\0host={}\0ls", self.repo, self.peer)
             },
             GitService::UploadPack => {
-                writeln!(f, "git-upload-pack {}\0host={}\0", self.repo, self.peer)
+                write!(f, "git-upload-pack {}\0host={}", self.repo, self.peer)
             },
-            GitService::ReceivePackLs => writeln!(
-                f,
-                "git-receive-pack {}\0host={}\0ls\0",
-                self.repo, self.peer
-            ),
+            GitService::ReceivePackLs => {
+                writeln!(f, "git-receive-pack {}\0host={}\0ls", self.repo, self.peer)
+            },
             GitService::ReceivePack => {
-                writeln!(f, "git-receive-pack {}\0host={}\0", self.repo, self.peer)
+                write!(f, "git-receive-pack {}\0host={}", self.repo, self.peer)
             },
+        }?;
+
+        if let Some(n) = self.nonce {
+            write!(f, "\0n={}", n)?;
         }
+        writeln!(f, "\0")
     }
 }
 
@@ -95,30 +100,45 @@ where
                 repo.parse::<Urn>()
                     .map_err(|e| ParseError::InvalidRepo(Box::new(e)))
             })?;
-        let peer = parts
-            .next()
-            .and_then(|peer| peer.strip_prefix("host="))
-            .ok_or(ParseError::MissingHost)
-            .and_then(|peer| peer.parse::<PeerId>().map_err(|e| e.into()))?;
-        let mode = parts.next().unwrap_or("");
 
+        let mut peer = None;
+        let mut ls = false;
+        let mut nonce = None;
+
+        for part in parts {
+            if part == "ls" {
+                ls = true
+            } else if let Some((k, v)) = part.split_once('=') {
+                match k {
+                    "host" => peer = Some(v.parse::<PeerId>()?),
+                    "n" => nonce = v.parse().ok(),
+                    _ => {},
+                }
+            }
+        }
+
+        let peer = peer.ok_or(ParseError::MissingHost)?;
         let service = match service {
-            "git-upload-pack" => match mode {
-                "ls" => Ok(GitService::UploadPackLs),
-                "" | "\n" => Ok(GitService::UploadPack),
-                _ => Err(ParseError::InvalidMode(mode.to_owned())),
+            "git-upload-pack" => {
+                if ls {
+                    Ok(GitService::UploadPackLs)
+                } else {
+                    Ok(GitService::UploadPack)
+                }
             },
 
-            "git-receive-pack" => match mode {
-                "ls" => Ok(GitService::ReceivePackLs),
-                "" | "\n" => Ok(GitService::ReceivePack),
-                _ => Err(ParseError::InvalidMode(mode.to_owned())),
+            "git-receive-pack" => {
+                if ls {
+                    Ok(GitService::ReceivePackLs)
+                } else {
+                    Ok(GitService::ReceivePack)
+                }
             },
 
             unknown => Err(ParseError::InvalidService(unknown.to_owned())),
         }?;
 
-        Ok(Self::new(service, repo, peer))
+        Ok(Self::new(service, repo, peer, nonce))
     }
 }
 
@@ -165,11 +185,24 @@ mod tests {
     use crate::{git::Urn, keys::SecretKey};
 
     #[test]
-    fn test_str_roundtrip() {
+    fn roundtrip_unnonced() {
         let hdr = Header::new(
             GitService::UploadPackLs,
             Urn::new(git_ext::Oid::from(git2::Oid::zero())),
             PeerId::from(SecretKey::new()),
+            None,
+        );
+
+        assert_eq!(hdr, hdr.to_string().parse::<Header<Urn>>().unwrap())
+    }
+
+    #[test]
+    fn roundtrip_nonced() {
+        let hdr = Header::new(
+            GitService::UploadPackLs,
+            Urn::new(git_ext::Oid::from(git2::Oid::zero())),
+            PeerId::from(SecretKey::new()),
+            Some(69),
         );
 
         assert_eq!(hdr, hdr.to_string().parse::<Header<Urn>>().unwrap())

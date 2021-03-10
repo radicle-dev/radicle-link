@@ -11,6 +11,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use futures::{
@@ -61,6 +62,7 @@ pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
 mod accept;
 mod control;
 mod io;
+mod nonce;
 mod tick;
 
 #[derive(Clone, Debug)]
@@ -71,7 +73,25 @@ pub struct Config {
     pub membership: membership::Params,
     pub network: Network,
     pub replication: replication::Config,
+    pub fetch: config::Fetch,
     // TODO: transport, ...
+}
+
+pub mod config {
+    use std::time::Duration;
+
+    #[derive(Clone, Copy, Debug)]
+    pub struct Fetch {
+        pub fetch_slot_wait_timeout: Duration,
+    }
+
+    impl Default for Fetch {
+        fn default() -> Self {
+            Self {
+                fetch_slot_wait_timeout: Duration::from_secs(20),
+            }
+        }
+    }
 }
 
 /// Binding of a peer to a network socket.
@@ -286,6 +306,11 @@ where
         membership,
         storage,
         phone: phone.clone(),
+        config: StateConfig {
+            replication: config.replication,
+            fetch: config.fetch,
+        },
+        nonces: nonce::NonceBag::new(Duration::from_secs(300)), // TODO: config
     };
 
     Ok(Bound {
@@ -434,6 +459,12 @@ where
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct StateConfig {
+    pub replication: replication::Config,
+    pub fetch: config::Fetch,
+}
+
 #[derive(Clone)]
 struct State<S> {
     local_id: PeerId,
@@ -442,6 +473,8 @@ struct State<S> {
     membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     storage: Storage<S>,
     phone: TinCans,
+    config: StateConfig,
+    nonces: nonce::NonceBag,
 }
 
 #[async_trait]

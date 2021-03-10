@@ -40,21 +40,23 @@ use crate::paths::Paths;
 
 #[derive(Clone)]
 pub struct GitServer {
-    monorepo: PathBuf,
+    repo_path: PathBuf,
 }
 
 impl GitServer {
     pub fn new(paths: &Paths) -> Self {
         Self {
-            monorepo: paths.git_dir().to_path_buf(),
+            repo_path: paths.git_dir().to_path_buf(),
         }
     }
 }
 
 impl GitServer {
-    #[allow(clippy::unit_arg)]
-    #[tracing::instrument(skip(self, recv, send), err)]
-    pub async fn invoke_service<R, W>(&self, (recv, mut send): (R, W)) -> io::Result<()>
+    pub async fn service<R, W>(
+        &self,
+        recv: R,
+        mut send: W,
+    ) -> io::Result<GitService<BufReader<R>, W>>
     where
         R: AsyncRead + Unpin,
         W: AsyncWrite + Unpin,
@@ -62,39 +64,63 @@ impl GitServer {
         let mut recv = BufReader::new(recv);
         let mut hdr_buf = String::with_capacity(256);
         if let Err(e) = recv.read_line(&mut hdr_buf).await {
-            tracing::error!("Error reading git service header: {}", e);
-            return send_err(&mut send, "garbage header").await;
+            tracing::error!("error reading git service header: {}", e);
+            send_err(&mut send, "garbage header").await?;
+            return Err(io::Error::new(io::ErrorKind::InvalidData, e));
         }
-
-        match hdr_buf.parse::<Header<Urn>>() {
-            Ok(Header { service, repo, .. }) => match *service {
-                Service::UploadPack => {
-                    tracing::info!("upload pack");
-                    UploadPack::upload_pack(&self.monorepo)?
-                        .run(recv, send)
-                        .await?;
-                    tracing::info!("upload pack done");
-                    Ok(())
-                },
-                Service::UploadPackLs => {
-                    tracing::info!("upload pack ls");
-                    UploadPack::advertise(&self.monorepo, Namespace::from(repo))?
-                        .run(recv, send)
-                        .await?;
-                    tracing::info!("upload pack ls done");
-                    Ok(())
-                },
-                service => {
-                    tracing::error!("Invalid git service: {:?}", header::Service(service));
-                    send_err(&mut send, "service not enabled").await
-                },
-            },
-
+        match hdr_buf.parse() {
+            Ok(header) => Ok(GitService {
+                repo_path: self.repo_path.to_path_buf(),
+                header,
+                recv,
+                send,
+            }),
             Err(e) => {
-                tracing::error!("Error parsing git service header: {}", e);
-                send_err(&mut send, "invalid header").await
+                tracing::error!("error parsing git service header: {}", e);
+                send_err(&mut send, "invalid header").await?;
+                Err(io::Error::new(io::ErrorKind::InvalidData, e))
             },
         }
+    }
+}
+
+pub struct GitService<R, W> {
+    pub repo_path: PathBuf,
+    pub header: Header<Urn>,
+    recv: R,
+    send: W,
+}
+
+impl<R, W> GitService<R, W>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    #[allow(clippy::unit_arg)]
+    #[tracing::instrument(skip(self), err)]
+    pub async fn run(mut self) -> io::Result<()> {
+        let Header { service, repo, .. } = self.header;
+        match *service {
+            Service::UploadPack => {
+                tracing::info!("upload pack");
+                UploadPack::upload_pack(&self.repo_path)?
+                    .run(self.recv, self.send)
+                    .await?;
+            },
+            Service::UploadPackLs => {
+                tracing::info!("upload pack ls");
+                UploadPack::advertise(&self.repo_path, Namespace::from(repo))?
+                    .run(self.recv, self.send)
+                    .await?;
+            },
+            service => {
+                tracing::error!("invalid git service: {:?}", header::Service(service));
+                send_err(&mut self.send, "service not enabled").await?;
+            },
+        }
+
+        tracing::info!("git service completed");
+        Ok(())
     }
 }
 

@@ -116,6 +116,7 @@ where
         membership: Default::default(),
         network: Default::default(),
         replication: Default::default(),
+        fetch: Default::default(),
     };
     let disco = seeds.into_iter().collect::<discovery::Static>();
     let peer = Peer::new(peer::Config {

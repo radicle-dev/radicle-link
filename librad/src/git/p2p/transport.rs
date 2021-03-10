@@ -157,11 +157,12 @@ impl SmartSubtransport for RadTransport {
             remote_peer,
             repo,
             addr_hints,
+            nonce,
         } = url.parse().map_err(into_git_err)?;
         let stream = self
             .open_stream(&local_peer, &remote_peer, &addr_hints)
             .ok_or_else(|| into_git_err(format!("No connection to {}", remote_peer)))?;
-        let header = Header::new(service, Urn::new(repo), remote_peer);
+        let header = Header::new(service, Urn::new(repo), remote_peer, nonce);
 
         Ok(Box::new(RadSubTransport {
             header: Some(header),

@@ -87,6 +87,7 @@ pub struct Config {
 }
 
 /// The success outcome of [`self::replicate`].
+#[derive(Debug)]
 pub struct ReplicateResult {
     /// The set of refs which were updated during the sync, along with the
     /// [`ext::Oid`] they are now pointing to.
@@ -104,6 +105,7 @@ pub struct ReplicateResult {
 }
 
 /// The "freshness" of the local view of a repo identity wrt the delegates.
+#[derive(Debug)]
 pub enum IdStatus {
     /// Up-to-date, no further action is required.
     Even,
@@ -113,6 +115,7 @@ pub enum IdStatus {
 }
 
 /// The "mode" `replicate` was operating in.
+#[derive(Debug)]
 pub enum Mode {
     /// The git tree corresponding to [`Urn`] was previously **not** present
     /// locally, so the operation was equivalent to `git clone`.

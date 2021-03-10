@@ -52,6 +52,7 @@ async fn main() {
                 membership: Default::default(),
                 network: Default::default(),
                 replication: Default::default(),
+                fetch: Default::default(),
             },
             storage: Default::default(),
         });

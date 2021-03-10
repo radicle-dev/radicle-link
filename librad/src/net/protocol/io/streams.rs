@@ -10,7 +10,7 @@ use futures::stream::{FuturesUnordered, Stream, StreamExt as _};
 
 use super::recv;
 use crate::net::{
-    connection::{CloseReason, Duplex as _, RemoteAddr as _, RemotePeer},
+    connection::{CloseReason, RemoteAddr as _, RemotePeer},
     protocol::{gossip, ProtocolStorage, State},
     quic,
     upgrade,
@@ -106,12 +106,7 @@ mod incoming {
                 stream.close(CloseReason::InvalidUpgrade)
             },
 
-            Ok(Git(up)) => {
-                if let Err(e) = state.git.invoke_service(up.into_stream().split()).await {
-                    tracing::warn!(err = ?e, "git service error");
-                }
-            },
-
+            Ok(Git(up)) => recv::git(state, up).await,
             Ok(Gossip(up)) => recv::gossip(state, up).await,
             Ok(Membership(up)) => recv::membership(state, up).await,
         }

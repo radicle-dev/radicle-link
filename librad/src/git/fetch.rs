@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeMap, ops::Deref};
+use std::{collections::BTreeMap, iter::FromIterator, ops::Deref};
 
 use git_ext as ext;
 
@@ -57,6 +57,15 @@ impl Deref for RemoteHeads {
 impl From<BTreeMap<ext::RefLike, ext::Oid>> for RemoteHeads {
     fn from(map: BTreeMap<ext::RefLike, ext::Oid>) -> Self {
         Self(map)
+    }
+}
+
+impl FromIterator<(ext::RefLike, ext::Oid)> for RemoteHeads {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (ext::RefLike, ext::Oid)>,
+    {
+        Self(iter.into_iter().collect())
     }
 }
 
