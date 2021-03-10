@@ -233,9 +233,17 @@ impl<'a, T> From<&'a Originates<T>> for OriginatesRef<'a, T> {
 
 #[cfg(test)]
 pub mod tests {
+    use proptest::prelude::Strategy;
+
     use super::*;
 
+    use crate::keys::tests::gen_secret_key;
+
     use librad_test::roundtrip::*;
+
+    pub fn gen_peer_id() -> impl Strategy<Value = PeerId> {
+        gen_secret_key().prop_map(PeerId::from)
+    }
 
     #[test]
     fn test_default_encoding_roundtrip() {
