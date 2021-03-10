@@ -133,18 +133,15 @@ where
             vec![]
         };
 
-        let evicted = if self.is_passive(&info.peer_id) {
-            self.evict(&info.peer_id)
-        } else {
-            vec![]
-        };
+        if self.is_passive(&info.peer_id) {
+            self.passive.remove(&info.peer_id);
+        }
 
         let _prev = self.active.insert(info.peer_id, info.clone());
         debug_assert!(_prev.is_none());
 
         iter::once(Transition::Promoted(info))
             .chain(demoted)
-            .chain(evicted)
             .collect()
     }
 
