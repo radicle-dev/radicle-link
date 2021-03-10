@@ -37,8 +37,8 @@ const NUM_PEERS: usize = 2;
 /// Then have peer2 track peer1’s project.
 /// Then create a commit, a branch and a tag for that project and push it to
 /// peer1. Then wait for peer2 to receive announcements for the project.
-/// Assert that peer2’s monorepo contains the commit, the branch and the tag from
-/// peer1.
+/// Assert that peer2’s monorepo contains the commit, the branch and the tag
+/// from peer1.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fetches_on_gossip_notify() {
     logging::init();
