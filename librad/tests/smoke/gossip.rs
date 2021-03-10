@@ -3,16 +3,15 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom, ops::Deref, time::Duration};
+use std::{ops::Deref, time::Duration};
 
 use futures::StreamExt as _;
 use librad::{
     git::{
         local::url::LocalUrl,
-        types::{remote, Flat, Force, GenericRef, Namespace, Reference, Refspec, Remote},
+        types::{remote, Fetchspec, Force, Reference, Remote},
         Urn,
     },
-    git_ext as ext,
     net::{
         peer::Peer,
         protocol::{
@@ -33,6 +32,13 @@ use tempfile::tempdir;
 
 const NUM_PEERS: usize = 2;
 
+/// Given two connected peers.
+/// Then create a project for peer1.
+/// Then have peer2 track peer1’s project.
+/// Then create a commit, a branch and a tag for that project and push it to
+/// peer1. Then wait for peer2 to receive announcements for the project.
+/// Assert that peer2’s monorepo contains the commit, the branch and the tag
+/// from peer1.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fetches_on_gossip_notify() {
     logging::init();
@@ -49,56 +55,61 @@ async fn fetches_on_gossip_notify() {
             .unwrap();
         proj.pull(&peer1, &peer2).await.ok().unwrap();
 
-        let TestProject { project, owner } = proj;
+        let TestProject { project, owner: _ } = proj;
         let peer2_events = peer2.subscribe();
 
         let mastor = reflike!("refs/heads/master");
-        // Check out a working copy on peer1, add a commit, and push it
-        let commit_id = {
-            let tmp = tempdir().unwrap();
-            let repo = git2::Repository::init(tmp.path()).unwrap();
-            let url = LocalUrl::from(project.urn());
+        let project_repo_path = tempdir().unwrap();
+        let repo = git2::Repository::init(&project_repo_path).unwrap();
+        let url = LocalUrl::from(project.urn());
 
-            let mut remote = Remote::rad_remote(
-                url,
-                Refspec {
-                    src: Reference::heads(Namespace::from(project.urn()), peer1.peer_id()),
-                    dst: GenericRef::heads(
-                        Flat,
-                        ext::RefLike::try_from(format!(
-                            "{}@{}",
-                            owner.subject().name,
-                            peer1.peer_id(),
-                        ))
-                        .unwrap(),
-                    ),
+        let mut remote = Remote::rad_remote::<_, Fetchspec>(url, None);
+
+        let commit_id = create_commit(&repo, mastor.clone()).unwrap();
+        let commit = repo.find_object(commit_id, None).unwrap();
+
+        let author = git2::Signature::now("The Animal", "animal@muppets.com").unwrap();
+        let tag_id = repo
+            .tag("MY-TAG", &commit, &author, "MESSAGE", false)
+            .unwrap();
+
+        remote
+            .push(
+                peer1.clone(),
+                &repo,
+                remote::LocalPushspec::Matching {
+                    pattern: refspec_pattern!("refs/heads/*"),
                     force: Force::True,
-                }
-                .into_fetchspec(),
-            );
+                },
+            )
+            .unwrap()
+            .for_each(drop);
+        remote
+            .push(
+                peer1.clone(),
+                &repo,
+                remote::LocalPushspec::Matching {
+                    pattern: refspec_pattern!("refs/tags/*"),
+                    force: Force::True,
+                },
+            )
+            .unwrap()
+            .for_each(drop);
 
-            let oid = create_commit(&repo, mastor.clone()).unwrap();
-            remote
-                .push(
-                    peer1.clone(),
-                    &repo,
-                    remote::LocalPushspec::Matching {
-                        pattern: refspec_pattern!("refs/heads/*"),
-                        force: Force::True,
-                    },
-                )
-                .unwrap()
-                .for_each(drop);
-            peer1
-                .announce(gossip::Payload {
-                    origin: None,
-                    urn: project.urn().with_path(mastor.clone()),
-                    rev: Some(Rev::Git(oid)),
-                })
-                .unwrap();
-
-            oid
-        };
+        peer1
+            .announce(gossip::Payload {
+                origin: None,
+                urn: project.urn().with_path(mastor.clone()),
+                rev: Some(Rev::Git(commit_id)),
+            })
+            .unwrap();
+        peer1
+            .announce(gossip::Payload {
+                origin: None,
+                urn: project.urn().with_path(reflike!("refs/tags/MY-TAG")),
+                rev: Some(Rev::Git(tag_id)),
+            })
+            .unwrap();
 
         // Wait for peer2 to receive the gossip announcement
         event::upstream::expect(
@@ -109,22 +120,30 @@ async fn fetches_on_gossip_notify() {
         .await
         .unwrap();
 
-        // Check that peer2 has fetched the update
-        let peer2_has_commit = peer2
-            .using_storage(move |storage| {
-                storage.has_commit(
-                    &project.urn().with_path(
-                        reflike!("refs/remotes")
-                            .join(peer1.peer_id())
-                            .join(mastor.strip_prefix("refs").unwrap()),
-                    ),
-                    Box::new(commit_id),
-                )
-            })
-            .await
-            .unwrap()
+        let commit_urn = project.urn().with_path(
+            reflike!("refs/remotes")
+                .join(peer1.peer_id())
+                .join(mastor.strip_prefix("refs").unwrap()),
+        );
+        let storage = peer2.storage().await.unwrap();
+        let peer2_has_commit = storage
+            .as_ref()
+            .has_commit(&commit_urn, Box::new(commit_id))
             .unwrap();
         assert!(peer2_has_commit);
+
+        let remote_tag_ref = Reference::tag(
+            Some(project.urn().into()),
+            peer1.peer_id(),
+            reflike!("MY-TAG"),
+        );
+
+        let tag_ref = storage
+            .as_ref()
+            .reference(&remote_tag_ref)
+            .unwrap()
+            .unwrap();
+        assert_eq!(tag_ref.target(), Some(tag_id));
     })
     .await;
 }
