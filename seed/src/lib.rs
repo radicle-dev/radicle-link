@@ -26,7 +26,7 @@ use librad::{
     net::{
         discovery::{self, Discovery as _},
         peer::{self, Peer, ProtocolEvent},
-        protocol::{self, gossip::Payload, PeerInfo},
+        protocol::{self, gossip::Payload, membership, PeerInfo},
         Network,
     },
     paths,
@@ -100,6 +100,7 @@ impl Mode {
     }
 }
 
+// FIXME(finto): We should just use `peer::Config`
 /// Node configuration.
 pub struct NodeConfig {
     /// Address to listen to for new connections.
@@ -114,6 +115,10 @@ pub struct NodeConfig {
     pub bootstrap: Vec<(PeerId, SocketAddr)>,
     /// The pool sizes for storage consumers.
     pub storage_pools: peer::PoolSizes,
+    /// Parameters for the membership protocol.
+    pub membership: membership::Params,
+    /// Parameters for the replication of data.
+    pub replication: replication::Config,
 }
 
 impl Default for NodeConfig {
@@ -125,6 +130,8 @@ impl Default for NodeConfig {
             network: Network::default(),
             bootstrap: vec![],
             storage_pools: peer::PoolSizes::default(),
+            membership: membership::Params::default(),
+            replication: replication::Config::default(),
         }
     }
 }
@@ -155,9 +162,9 @@ impl Node {
             protocol: protocol::Config {
                 paths,
                 listen_addr: config.listen_addr,
-                membership: Default::default(),
+                membership: config.membership.clone(),
                 network: config.network,
-                replication: Default::default(),
+                replication: config.replication,
             },
             storage_pools: config.storage_pools,
         };
