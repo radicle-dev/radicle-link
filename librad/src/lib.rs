@@ -3,7 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#![allow(incomplete_features)]
 #![allow(private_intra_doc_links)]
 #![warn(clippy::extra_unused_lifetimes)]
 #![deny(broken_intra_doc_links)]
@@ -15,7 +14,6 @@
 #![feature(core_intrinsics)]
 #![feature(drain_filter)]
 #![feature(duration_saturating_ops)]
-#![feature(generic_associated_types)]
 #![feature(ip)]
 #![feature(never_type)]
 #![feature(try_trait)]

@@ -7,7 +7,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     convert::{TryFrom, TryInto},
     iter,
-    net::SocketAddr,
 };
 
 use either::Either;
@@ -16,7 +15,7 @@ use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
 use super::{
-    fetch::{self, CanFetch as _},
+    fetch,
     identities::{self, local::LocalIdentity},
     refs::{self, Refs},
     storage::{self, Storage},
@@ -66,7 +65,7 @@ pub enum Error {
     #[error("signer error")]
     Sign(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
-    #[error("fetcher error")]
+    #[error("fetch error")]
     Fetch(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error(transparent)]
@@ -166,26 +165,23 @@ enum ModeInternal {
 /// set, which is enforced by the
 /// [`crate::git::local::transport::LocalTransport`].
 #[allow(clippy::unit_arg)]
-#[tracing::instrument(skip(storage, whoami, urn, addr_hints), fields(urn = %urn), err)]
-pub fn replicate<Addrs>(
-    storage: &Storage,
+#[tracing::instrument(skip(storage, fetcher, whoami), err)]
+pub fn replicate<'a, F>(
+    storage: &'a Storage,
+    mut fetcher: F,
     config: Config,
     whoami: Option<LocalIdentity>,
-    urn: Urn,
-    remote_peer: PeerId,
-    addr_hints: Addrs,
 ) -> Result<ReplicateResult, Error>
 where
-    Addrs: IntoIterator<Item = SocketAddr>,
+    F: fetch::Fetcher<PeerId = PeerId, UrnId = Revision>,
+    F::Error: std::error::Error + Send + Sync + 'static,
 {
-    let urn = Urn::new(urn.id);
+    let remote_peer = *fetcher.remote_peer();
     let local_peer_id = storage.peer_id();
-
     if local_peer_id == &remote_peer {
         return Err(Error::SelfReplication);
     }
-
-    let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
+    let urn = Urn::new(fetcher.urn().id);
     let (mut updated_tips, next) = determine_mode(
         storage,
         &mut fetcher,

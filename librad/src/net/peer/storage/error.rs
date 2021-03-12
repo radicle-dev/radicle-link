@@ -5,7 +5,7 @@
 
 use thiserror::Error;
 
-use crate::git::{self, replication, tracking};
+use crate::git::{self, replication, storage::fetcher, tracking};
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -18,6 +18,9 @@ pub enum Error {
 
     #[error(transparent)]
     Replication(#[from] replication::Error),
+
+    #[error("unable to obtain fetcher")]
+    Fetcher(#[from] fetcher::error::Retrying<git2::Error>),
 
     #[error(transparent)]
     Store(#[from] git::storage::Error),

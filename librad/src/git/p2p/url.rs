@@ -169,30 +169,51 @@ impl<R> GitUrlRef<'_, R> {
     }
 }
 
+impl<'a, R> Clone for GitUrlRef<'a, R> {
+    #[inline]
+    fn clone(&self) -> GitUrlRef<'a, R> {
+        Self {
+            local_peer: &self.local_peer,
+            remote_peer: &self.remote_peer,
+            addr_hints: &self.addr_hints,
+            repo: &self.repo,
+        }
+    }
+}
+
+impl<'a, R> Copy for GitUrlRef<'a, R> {}
+
 impl<'a, R> Display for GitUrlRef<'a, R>
 where
     &'a R: Into<Multihash>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(Url::from(*self).as_str())
+    }
+}
+
+impl<'a, R> From<GitUrlRef<'a, R>> for Url
+where
+    &'a R: Into<Multihash>,
+{
+    fn from(git: GitUrlRef<'a, R>) -> Self {
         let mut url = Url::parse(&format!(
             "{}://{}@{}",
             super::URL_SCHEME,
-            self.local_peer,
-            self.remote_peer
+            git.local_peer,
+            git.remote_peer
         ))
         .unwrap();
 
-        url.query_pairs_mut().extend_pairs(
-            self.addr_hints
-                .iter()
-                .map(|addr| ("addr", addr.to_string())),
-        );
+        url.query_pairs_mut()
+            .extend_pairs(git.addr_hints.iter().map(|addr| ("addr", addr.to_string())));
+        let repo: Multihash = git.repo.into();
         url.set_path(&format!(
             "/{}.git",
-            multibase::encode(multibase::Base::Base32Z, self.repo.into())
+            multibase::encode(multibase::Base::Base32Z, repo)
         ));
 
-        f.write_str(url.as_str())
+        url
     }
 }
 

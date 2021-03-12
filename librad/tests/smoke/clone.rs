@@ -8,6 +8,7 @@ use librad::{
     git::{
         identities,
         replication,
+        storage::fetcher,
         types::{Namespace, Reference},
     },
 };
@@ -50,14 +51,15 @@ async fn not_present() {
                     "`refs/remotes/<maintainer>/rad/self` should exist before"
                 );
 
-                let res = replication::replicate(
-                    &storage,
-                    cfg,
-                    None,
+                let fetcher = fetcher::PeerToPeer::new(
                     urn.clone(),
                     voyeur.peer_id(),
                     voyeur.listen_addrs().iter().copied(),
-                );
+                )
+                .build(&storage)
+                .unwrap()
+                .unwrap();
+                let res = replication::replicate(&storage, fetcher, cfg, None);
                 assert!(res.is_ok());
 
                 // check rad/self of maintainer exists
@@ -136,10 +138,7 @@ impl Leecher {
         self.0
             .using_storage(move |storage| {
                 let urn = host.project.project.urn();
-                replication::replicate(
-                    &storage,
-                    cfg,
-                    None,
+                let fetcher = fetcher::PeerToPeer::new(
                     urn.clone(),
                     host.peer.peer_id(),
                     supply_addr_hints
@@ -147,7 +146,10 @@ impl Leecher {
                         .into_iter()
                         .flatten(),
                 )
+                .build(&storage)
+                .unwrap()
                 .unwrap();
+                replication::replicate(&storage, fetcher, cfg, None).unwrap();
 
                 // check rad/self of peer1 exists
                 assert!(

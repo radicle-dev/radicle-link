@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use either::Either::{self, Left, Right};
 use git_ext::{self as ext, reference};
@@ -12,7 +12,7 @@ use tokio::task::spawn_blocking;
 use crate::{
     git::{
         replication,
-        storage::{self, Pool, PoolError, PooledRef},
+        storage::{self, fetcher, Pool, PoolError, PooledRef},
         tracking,
         Urn,
     },
@@ -24,18 +24,21 @@ use crate::{
 mod error;
 pub use error::Error;
 
+#[derive(Clone, Copy)]
+pub struct Config {
+    pub replication: replication::Config,
+    pub fetch_slot_wait_timeout: Duration,
+}
+
 #[derive(Clone)]
 pub struct Storage {
-    inner: Pool,
-    config: replication::Config,
+    pool: Pool,
+    config: Config,
 }
 
 impl Storage {
-    pub fn new(pool: Pool, config: replication::Config) -> Self {
-        Self {
-            inner: pool,
-            config,
-        }
+    pub fn new(pool: Pool, config: Config) -> Self {
+        Self { pool, config }
     }
 
     async fn git_fetch(
@@ -44,30 +47,38 @@ impl Storage {
         urn: Either<Urn, Originates<Urn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> Result<replication::ReplicateResult, Error> {
-        let git = self.inner.get().await?;
-        let urn = urn_context(*git.peer_id(), urn);
+        let urn = {
+            let git = self.pool.get().await?;
+            urn_context(*git.peer_id(), urn)
+        };
         let head = head.into().map(ext::Oid::from);
+
+        if let Some(head) = head {
+            let git = self.pool.get().await?;
+            let urn = urn.clone();
+            spawn_blocking(move || {
+                if git.has_commit(&urn, head)? || git.has_tag(&urn, head)? {
+                    Err(Error::KnownObject(*head))
+                } else {
+                    Ok(())
+                }
+            })
+            .await
+            .expect("has_commit panicked")?;
+        }
+
         let (remote_peer, addr_hints) = from.into();
         let config = self.config;
-
-        spawn_blocking(move || {
-            if let Some(head) = head {
-                if git.has_commit(&urn, head)? || git.has_tag(&urn, head)? {
-                    return Err(Error::KnownObject(*head));
-                }
-            }
-
-            Ok(replication::replicate(
-                &git,
-                config,
-                None,
-                urn,
-                remote_peer,
-                addr_hints,
-            )?)
-        })
-        .await
-        .expect("`Storage::git_fetch` panicked")
+        fetcher::retrying(
+            self.pool.clone(),
+            fetcher::PeerToPeer::new(urn.clone(), remote_peer, addr_hints),
+            config.fetch_slot_wait_timeout,
+            move |storage, fetcher| {
+                replication::replicate(storage, fetcher, config.replication, None)
+                    .map_err(Error::from)
+            },
+        )
+        .await?
     }
 
     /// Determine if we have the given object locally
@@ -76,7 +87,7 @@ impl Storage {
         urn: Either<Urn, Originates<Urn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
-        let git = self.inner.get().await.unwrap();
+        let git = self.pool.get().await.unwrap();
         let urn = urn_context(*git.peer_id(), urn);
         let head = head.into().map(ext::Oid::from);
         spawn_blocking(move || match head {
@@ -91,7 +102,7 @@ impl Storage {
     }
 
     async fn is_tracked(&self, urn: Urn, peer: PeerId) -> Result<bool, Error> {
-        let git = self.inner.get().await?;
+        let git = self.pool.get().await?;
         Ok(
             spawn_blocking(move || tracking::is_tracked(&git, &urn, peer))
                 .await
@@ -228,7 +239,7 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
 #[async_trait]
 impl storage::Pooled for Storage {
     async fn get(&self) -> Result<PooledRef, PoolError> {
-        self.inner.get().await.map(PooledRef::from)
+        self.pool.get().await.map(PooledRef::from)
     }
 }
 

@@ -12,6 +12,7 @@ disco-mdns = ["mdns", "madness"]
 [dependencies]
 async-stream = "0.3"
 async-trait = "0.1"
+backoff = "0.3"
 bit-vec = "0.6"
 bs58 = "0.3"
 bytes = "0.5"

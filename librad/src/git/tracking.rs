@@ -186,7 +186,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         {
             let paths = Paths::from_root(&tmp).unwrap();
-            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let storage = Storage::open(&paths, SecretKey::new()).unwrap();
             let remote_peer = PeerId::from(SecretKey::new());
             let urn = Urn::new(git2::Oid::zero().into());
 
@@ -200,7 +200,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         {
             let paths = Paths::from_root(&tmp).unwrap();
-            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let storage = Storage::open(&paths, SecretKey::new()).unwrap();
             let remote_peer = PeerId::from(SecretKey::new());
             let urn = Urn::new(git2::Oid::zero().into());
 
@@ -216,7 +216,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         {
             let paths = Paths::from_root(&tmp).unwrap();
-            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let storage = Storage::open(&paths, SecretKey::new()).unwrap();
             let remote_peer = PeerId::from(SecretKey::new());
             let urn = Urn::new(git2::Oid::zero().into());
 
@@ -232,7 +232,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         {
             let paths = Paths::from_root(&tmp).unwrap();
-            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let storage = Storage::open(&paths, SecretKey::new()).unwrap();
             let remote_peer = PeerId::from(SecretKey::new());
             let urn = Urn::new(git2::Oid::zero().into());
 
@@ -246,7 +246,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         {
             let paths = Paths::from_root(&tmp).unwrap();
-            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let storage = Storage::open(&paths, SecretKey::new()).unwrap();
             let peer1 = PeerId::from(SecretKey::new());
             let peer2 = PeerId::from(SecretKey::new());
             let urn = Urn::new(git2::Oid::zero().into());
@@ -265,7 +265,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         {
             let paths = Paths::from_root(&tmp).unwrap();
-            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let storage = Storage::open(&paths, SecretKey::new()).unwrap();
             let remote_peer = PeerId::from(SecretKey::new());
             let urn = Urn::new(git2::Oid::zero().into());
 

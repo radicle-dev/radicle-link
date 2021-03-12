@@ -22,8 +22,8 @@ pub type TmpStorage = WithTmpDir<Storage>;
 pub fn storage(signer: SecretKey) -> anyhow::Result<TmpStorage> {
     Ok(WithTmpDir::new(|path| {
         let paths = Paths::from_root(path)?;
-        let storage = Storage::open_or_init(&paths, signer)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let storage =
+            Storage::open(&paths, signer).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         Ok::<_, io::Error>(storage)
     })?)
 }

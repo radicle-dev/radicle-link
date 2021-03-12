@@ -18,10 +18,12 @@ use crate::{
 };
 
 pub mod config;
+pub mod fetcher;
 pub mod glob;
 pub mod pool;
 
 pub use config::Config;
+pub use fetcher::{Fetcher, Fetchers};
 pub use glob::Pattern;
 pub use pool::{Pool, PoolError, Pooled, PooledRef};
 
@@ -52,17 +54,54 @@ pub struct Storage {
     backend: git2::Repository,
     peer_id: PeerId,
     signer: BoxedSigner,
+    fetchers: Fetchers,
 }
 
 impl Storage {
+    /// Open the [`Storage`], initialising it if it doesn't exist.
+    ///
+    /// Note that a [`Storage`] is tied to the [`Signer`] with which it was
+    /// initialised, attempting to open it with a different one (that is, a
+    /// different key) will return an error.
+    ///
+    /// # Concurrency
+    ///
+    /// [`Storage`] can be sent between threads, but it can't be shared between
+    /// threads. _Some_ operations are safe to perform concurrently in much
+    /// the same way two `git` processes can access the same repository.
+    /// However, if you need multiple [`Storage`]s to be shared between
+    /// threads, use a [`Pool`] instead.
     pub fn open<S>(paths: &Paths, signer: S) -> Result<Self, Error>
+    where
+        S: Signer + Clone,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
+        Self::with_fetchers(paths, signer, Default::default())
+    }
+
+    pub fn with_fetchers<S>(paths: &Paths, signer: S, fetchers: Fetchers) -> Result<Self, Error>
     where
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
         crate::git::init();
 
-        let backend = git2::Repository::open_bare(paths.git_dir())?;
+        let backend = match git2::Repository::open_bare(paths.git_dir()) {
+            Err(e) if is_not_found_err(&e) => {
+                let mut backend = git2::Repository::init_opts(
+                    paths.git_dir(),
+                    git2::RepositoryInitOptions::new()
+                        .bare(true)
+                        .no_reinit(true)
+                        .external_template(false),
+                )?;
+                Config::init(&mut backend, &signer)?;
+
+                Ok(backend)
+            },
+            Ok(repo) => Ok(repo),
+            Err(e) => Err(e),
+        }?;
         let peer_id = Config::try_from(&backend)?.peer_id()?;
 
         if peer_id != PeerId::from_signer(&signer) {
@@ -73,46 +112,35 @@ impl Storage {
             backend,
             peer_id,
             signer: BoxedSigner::from(SomeSigner { signer }),
+            fetchers,
         })
     }
 
-    pub fn init<S>(paths: &Paths, signer: S) -> Result<Self, Error>
+    /// Initialise a [`Storage`].
+    ///
+    /// If already initialised, this method does nothing. It is the same as
+    /// `open`, but discarding the result.
+    ///
+    /// Use this if you need to ensure that an initialisation
+    /// error is propagated promptly -- e.g. when you use a [`Pool`],
+    /// initialisation would happen lazily, which makes it easy to miss
+    /// errors.
+    pub fn init<S>(paths: &Paths, signer: S) -> Result<(), Error>
     where
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
-        crate::git::init();
-
-        let mut backend = git2::Repository::init_opts(
-            paths.git_dir(),
-            git2::RepositoryInitOptions::new()
-                .bare(true)
-                .no_reinit(true)
-                .external_template(false),
-        )?;
-        Config::init(&mut backend, &signer)?;
-        let peer_id = PeerId::from_signer(&signer);
-
-        Ok(Self {
-            backend,
-            peer_id,
-            signer: BoxedSigner::from(SomeSigner { signer }),
-        })
+        Self::open(paths, signer)?;
+        Ok(())
     }
 
+    #[deprecated = "use `open` instead"]
     pub fn open_or_init<S>(paths: &Paths, signer: S) -> Result<Self, Error>
     where
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
-        let peer_id = PeerId::from_signer(&signer);
-        match Self::open(paths, signer.clone()) {
-            Err(Error::Git(e)) if is_not_found_err(&e) => Self::init(paths, signer),
-            Err(e) => Err(e),
-            Ok(this) if this.peer_id != peer_id => Err(Error::SignerKeyMismatch),
-
-            Ok(this) => Ok(this),
-        }
+        Self::open(paths, signer)
     }
 
     pub fn peer_id(&self) -> &PeerId {
@@ -339,6 +367,10 @@ impl Storage {
     // model "capabilities" in terms of traits.
     pub(super) fn as_raw(&self) -> &git2::Repository {
         &self.backend
+    }
+
+    fn fetchers(&self) -> &Fetchers {
+        &self.fetchers
     }
 }
 

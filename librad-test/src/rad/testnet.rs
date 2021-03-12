@@ -105,6 +105,7 @@ where
     let paths = Paths::from_root(tmp.path())?;
     let key = SecretKey::new();
 
+    // eagerly init so we error out early when it fails
     git::storage::Storage::init(&paths, key.clone())?;
 
     let listen_addr = *LOCALHOST_ANY;
@@ -117,12 +118,10 @@ where
         replication: Default::default(),
     };
     let disco = seeds.into_iter().collect::<discovery::Static>();
-    let storage_pools = peer::PoolSizes::default();
-
     let peer = Peer::new(peer::Config {
         signer: key,
         protocol,
-        storage_pools,
+        storage: Default::default(),
     });
     let bound = peer.bind().await?;
 

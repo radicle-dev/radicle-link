@@ -12,7 +12,7 @@ use tokio::task::spawn_blocking;
 
 use super::protocol::{self, gossip};
 use crate::{
-    git::{self, Urn},
+    git::{self, storage::Fetchers, Urn},
     signer::Signer,
     PeerId,
 };
@@ -33,29 +33,54 @@ pub use storage::Storage as PeerStorage;
 pub struct Config<Signer> {
     pub signer: Signer,
     pub protocol: protocol::Config,
-    pub storage_pools: PoolSizes,
+    pub storage: config::Storage,
 }
 
-#[derive(Clone, Copy)]
-pub struct PoolSizes {
-    /// Number of [`git::storage::Storage`] instances to pool for [`Peer`]
-    /// consumers.
-    ///
-    /// Default: the number of physical cores available
-    pub user: usize,
+pub mod config {
+    use super::*;
 
-    /// Number of [`git::storage::Storage`] instances to reserve for protocol
-    /// use.
-    ///
-    /// Default: the number of physical cores available
-    pub protocol: usize,
-}
+    #[derive(Clone, Copy, Default)]
+    pub struct Storage {
+        pub user: UserStorage,
+        pub protocol: ProtocolStorage,
+    }
 
-impl Default for PoolSizes {
-    fn default() -> Self {
-        Self {
-            user: num_cpus::get_physical(),
-            protocol: num_cpus::get_physical(),
+    /// Settings for the user-facing storage.
+    ///
+    /// Cf. [`Peer::using_storage`]
+    #[derive(Clone, Copy)]
+    pub struct UserStorage {
+        /// Number of [`git::storage::Storage`] instances to reserve.
+        pub pool_size: usize,
+    }
+
+    impl Default for UserStorage {
+        fn default() -> Self {
+            Self {
+                pool_size: num_cpus::get_physical(),
+            }
+        }
+    }
+
+    /// Settings for the protocol storage.
+    ///
+    /// Cf. [`PeerStorage`]
+    #[derive(Clone, Copy)]
+    pub struct ProtocolStorage {
+        /// Number of [`git::storage::Storage`] instances to reserve.
+        pub pool_size: usize,
+        /// Maximum amount of time to wait until a fetch slot becomes available.
+        ///
+        /// Applies to fetches initiated by incoming gossip messages.
+        pub fetch_slot_wait_timeout: Duration,
+    }
+
+    impl Default for ProtocolStorage {
+        fn default() -> Self {
+            Self {
+                pool_size: num_cpus::get_physical(),
+                fetch_slot_wait_timeout: Duration::from_secs(20),
+            }
         }
     }
 }
@@ -93,19 +118,28 @@ where
 {
     pub fn new(config: Config<S>) -> Self {
         let phone = protocol::TinCans::default();
+        let fetchers = Fetchers::default();
         let peer_store = PeerStorage::new(
             git::storage::Pool::new(
-                git::storage::pool::Config::new(
+                git::storage::pool::Config::with_fetchers(
                     config.protocol.paths.clone(),
                     config.signer.clone(),
+                    fetchers.clone(),
                 ),
-                config.storage_pools.protocol,
+                config.storage.protocol.pool_size,
             ),
-            config.protocol.replication,
+            storage::Config {
+                replication: config.protocol.replication,
+                fetch_slot_wait_timeout: config.storage.protocol.fetch_slot_wait_timeout,
+            },
         );
         let git_store = git::storage::Pool::new(
-            git::storage::pool::Config::new(config.protocol.paths.clone(), config.signer.clone()),
-            config.storage_pools.user,
+            git::storage::pool::Config::with_fetchers(
+                config.protocol.paths.clone(),
+                config.signer.clone(),
+                fetchers,
+            ),
+            config.storage.user.pool_size,
         );
 
         Self {

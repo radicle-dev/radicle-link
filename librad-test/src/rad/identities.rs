@@ -9,7 +9,7 @@ use librad::{
     git::{
         identities::{self, Person, Project},
         replication::{self, ReplicateResult},
-        storage::Storage,
+        storage::{fetcher, Storage},
     },
     identities::{delegation, payload},
     net::{connection::LocalInfo, peer::Peer},
@@ -65,7 +65,11 @@ impl TestProject {
         let cfg = to.protocol_config().replication;
         let res = to
             .using_storage(move |storage| {
-                replication::replicate(&storage, cfg, None, urn, remote_peer, remote_addrs)
+                let fetcher = fetcher::PeerToPeer::new(urn, remote_peer, remote_addrs)
+                    .build(&storage)
+                    .unwrap()
+                    .unwrap();
+                replication::replicate(&storage, fetcher, cfg, None)
             })
             .await??;
         Ok(res)

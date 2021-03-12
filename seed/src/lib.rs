@@ -21,6 +21,7 @@ use librad::{
     git::{
         identities::{self, Urn},
         replication,
+        storage::fetcher,
         tracking,
     },
     net::{
@@ -44,6 +45,12 @@ pub use crate::{
 pub enum Error {
     #[error("unable to resolve URN {0}")]
     NoSuchUrn(Urn),
+
+    #[error("error creating fetcher")]
+    MkFetcher(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
+
+    #[error("replication of {urn} from {remote_peer} already in-flight")]
+    Concurrent { urn: Urn, remote_peer: PeerId },
 
     #[error(transparent)]
     Storage(#[from] peer::StorageError),
@@ -73,6 +80,16 @@ pub enum Error {
 impl From<identities::Error> for Error {
     fn from(e: identities::Error) -> Self {
         Self::Identities(Box::new(e))
+    }
+}
+
+impl From<fetcher::Info> for Error {
+    fn from(
+        fetcher::Info {
+            urn, remote_peer, ..
+        }: fetcher::Info,
+    ) -> Self {
+        Self::Concurrent { urn, remote_peer }
     }
 }
 
@@ -290,7 +307,10 @@ impl Node {
             let cfg = api.protocol_config().replication;
             let urn = urn.clone();
             api.using_storage(move |storage| {
-                replication::replicate(&storage, cfg, None, urn.clone(), peer_id, addr_hints)?;
+                let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
+                    .build(&storage)
+                    .map_err(|e| Error::MkFetcher(e.into()))??;
+                replication::replicate(&storage, fetcher, cfg, None)?;
                 tracking::track(&storage, &urn, peer_id)?;
 
                 Ok::<_, Error>(())
@@ -311,7 +331,7 @@ impl Node {
                 );
             },
         }
-        result.map_err(Error::from)
+        result
     }
 
     /// Attempt to track initial URN list, if any.

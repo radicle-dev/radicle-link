@@ -4,13 +4,13 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    ops::Deref,
+    ops::{Deref, DerefMut},
     sync::{Arc, Mutex},
 };
 
 use deadpool::managed::{self, Manager, Object, RecycleResult};
 
-use super::{Error, Storage};
+use super::{Error, Fetchers, Storage};
 use crate::{paths::Paths, signer::Signer};
 
 pub type Pool = deadpool::managed::Pool<Storage, Error>;
@@ -39,8 +39,20 @@ impl Deref for PooledRef {
     }
 }
 
+impl DerefMut for PooledRef {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.deref_mut()
+    }
+}
+
 impl AsRef<Storage> for PooledRef {
     fn as_ref(&self) -> &Storage {
+        self
+    }
+}
+
+impl AsMut<Storage> for PooledRef {
+    fn as_mut(&mut self) -> &mut Storage {
         self
     }
 }
@@ -55,15 +67,21 @@ impl From<Object<Storage, Error>> for PooledRef {
 pub struct Config<S> {
     paths: Paths,
     signer: S,
-    lock: Arc<Mutex<()>>,
+    fetchers: Fetchers,
+    init_lock: Arc<Mutex<()>>,
 }
 
 impl<S> Config<S> {
     pub fn new(paths: Paths, signer: S) -> Self {
+        Self::with_fetchers(paths, signer, Default::default())
+    }
+
+    pub fn with_fetchers(paths: Paths, signer: S, fetchers: Fetchers) -> Self {
         Self {
             paths,
             signer,
-            lock: Arc::new(Mutex::new(())),
+            fetchers,
+            init_lock: Arc::new(Mutex::new(())),
         }
     }
 }
@@ -77,9 +95,9 @@ where
     async fn create(&self) -> Result<Storage, Error> {
         // FIXME(kim): we should `block_in_place` here, but that forces the
         // threaded runtime onto users
-        let _lock = self.lock.lock().unwrap();
+        let _lock = self.init_lock.lock().unwrap();
         {
-            Storage::open_or_init(&self.paths, self.signer.clone())
+            Storage::with_fetchers(&self.paths, self.signer.clone(), self.fetchers.clone())
         }
     }
 
