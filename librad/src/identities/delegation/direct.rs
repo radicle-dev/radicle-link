@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
+    cmp,
     collections::{btree_set, BTreeSet},
     iter::FromIterator,
 };
@@ -41,7 +42,7 @@ impl Delegations for Direct {
     }
 
     fn quorum_threshold(&self) -> usize {
-        self.0.len() / 2
+        cmp::max(1, self.0.len() / 2)
     }
 }
 

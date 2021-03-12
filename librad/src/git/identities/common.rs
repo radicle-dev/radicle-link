@@ -22,6 +22,10 @@ impl<'a> From<&'a Urn> for IdRef<'a> {
 }
 
 impl<'a> IdRef<'a> {
+    pub fn oid(&self, storage: &Storage) -> Result<git2::Oid, git2::Error> {
+        Reference::rad_id(Namespace::from(self.0)).oid(storage.as_raw())
+    }
+
     pub fn create(
         &self,
         storage: &Storage,

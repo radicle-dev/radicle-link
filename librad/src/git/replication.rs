@@ -12,7 +12,6 @@ use std::{
 
 use either::Either;
 use git_ext::{self as ext, is_exists_err};
-use nonempty::NonEmpty;
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
@@ -25,7 +24,7 @@ use super::{
     types::{reference, Force, Namespace, Reference},
 };
 use crate::{
-    identities::git::{Person, Project, SomeIdentity, VerifiedPerson, VerifiedProject},
+    identities::git::{Person, Project, Revision, SomeIdentity, VerifiedPerson, VerifiedProject},
     peer::PeerId,
 };
 
@@ -99,6 +98,10 @@ pub struct ReplicateResult {
     /// An indicator of whether the local view of the identity document might
     /// need approval of updates.
     pub identity: IdStatus,
+
+    /// Whether the replicated [`Urn`] was previously present in local storage
+    /// or not.
+    pub mode: Mode,
 }
 
 /// The "freshness" of the local view of a repo identity wrt the delegates.
@@ -108,6 +111,29 @@ pub enum IdStatus {
     /// Delegate tips are either behind or ahead. Interactive review is
     /// recommended.
     Uneven,
+}
+
+/// The "mode" `replicate` was operating in.
+pub enum Mode {
+    /// The git tree corresponding to [`Urn`] was previously **not** present
+    /// locally, so the operation was equivalent to `git clone`.
+    Clone,
+    /// The git tree corresponding to [`Urn`] was already present locally, so
+    /// the operation was equivalent to `git fetch`.
+    Fetch,
+}
+
+enum ModeInternal {
+    Clone {
+        urn: Urn,
+        identity: SomeIdentity,
+        fetched_peers: BTreeSet<PeerId>,
+    },
+    Fetch {
+        urn: Urn,
+        identity: SomeIdentity,
+        existing: BTreeSet<PeerId>,
+    },
 }
 
 /// Attempt to fetch `urn` from `remote_peer`, optionally supplying
@@ -160,7 +186,7 @@ where
     }
 
     let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
-    let (mut updated_tips, next) = replication(
+    let (mut updated_tips, next) = determine_mode(
         storage,
         &mut fetcher,
         config.fetch_limit,
@@ -168,12 +194,12 @@ where
         remote_peer,
     )?;
     let (result, mut remove) = match next {
-        Replication::Clone {
+        ModeInternal::Clone {
             urn,
             identity,
             fetched_peers,
         } => {
-            let allowed = match identity {
+            let (allowed, id_status) = match identity {
                 SomeIdentity::Project(proj) => {
                     let delegates = project::delegate_views(storage, proj, Some(remote_peer))?;
                     let mut allowed = delegates.keys().copied().collect::<BTreeSet<_>>();
@@ -182,7 +208,10 @@ where
                     );
                     let proj = identities::project::verify(storage, &rad_id)?
                         .ok_or(Error::MissingIdentity)?;
-                    let mut setup = project::ensure_setup(
+                    let project::SetupResult {
+                        updated_tips: mut project_tips,
+                        identity: id_status,
+                    } = project::ensure_setup(
                         storage,
                         &mut fetcher,
                         config.fetch_limit,
@@ -190,23 +219,24 @@ where
                         &rad_id,
                         proj,
                     )?;
-                    updated_tips.append(&mut setup.updated_tips);
-
+                    updated_tips.append(&mut project_tips);
                     let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
                     allowed.extend(tracked);
-                    allowed
+
+                    (allowed, id_status)
                 },
                 SomeIdentity::Person(person) => {
                     let rad_id = unsafe_into_urn(
                         Reference::rad_id(Namespace::from(&person.urn())).with_remote(remote_peer),
                     );
-                    person::ensure_setup(storage, &rad_id, person.clone())?;
-                    person
+                    let id_status = person::ensure_setup(storage, &rad_id, person.clone())?;
+                    let allowed = person
                         .delegations()
                         .iter()
                         .copied()
                         .map(PeerId::from)
-                        .collect()
+                        .collect();
+                    (allowed, id_status)
                 },
             };
 
@@ -218,13 +248,14 @@ where
             Ok::<_, Error>((
                 ReplicateResult {
                     updated_tips,
-                    identity: IdStatus::Even,
+                    identity: id_status,
+                    mode: Mode::Clone,
                 },
                 fetched_peers.difference(&allowed).copied().collect(),
             ))
         },
 
-        Replication::Fetch {
+        ModeInternal::Fetch {
             urn,
             identity,
             existing,
@@ -236,7 +267,10 @@ where
                         .ok_or(Error::MissingIdentity)?;
                     let mut updated_delegations = project::all_delegates(&proj);
                     let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)));
-                    let mut result = project::ensure_setup(
+                    let project::SetupResult {
+                        updated_tips: mut project_tips,
+                        identity: id_status,
+                    } = project::ensure_setup(
                         &storage,
                         &mut fetcher,
                         config.fetch_limit,
@@ -244,7 +278,7 @@ where
                         &rad_id,
                         proj,
                     )?;
-                    updated_tips.append(&mut result.updated_tips);
+                    updated_tips.append(&mut project_tips);
 
                     let mut updated_tracked =
                         tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
@@ -252,18 +286,20 @@ where
                     (
                         ReplicateResult {
                             updated_tips,
-                            identity: result.identity,
+                            identity: id_status,
+                            mode: Mode::Fetch,
                         },
                         updated_tracked,
                     )
                 },
                 SomeIdentity::Person(person) => {
                     let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(&person.urn())));
-                    person::ensure_setup(storage, &rad_id, person)?;
+                    let id_status = person::ensure_setup(storage, &rad_id, person)?;
                     (
                         ReplicateResult {
                             updated_tips,
-                            identity: IdStatus::Even,
+                            identity: id_status,
+                            mode: Mode::Fetch,
                         },
                         tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>(),
                     )
@@ -288,18 +324,6 @@ where
     Ok(result)
 }
 
-enum Replication {
-    Clone {
-        urn: Urn,
-        identity: SomeIdentity,
-        fetched_peers: BTreeSet<PeerId>,
-    },
-    Fetch {
-        urn: Urn,
-        identity: SomeIdentity,
-        existing: BTreeSet<PeerId>,
-    },
-}
 /// Identify the type of replication case we're in -- whether it's a new
 /// identity which we're cloning onto our machine or an existing identity that
 /// we are updating.
@@ -315,13 +339,17 @@ enum Replication {
 /// already know about.
 #[allow(clippy::unit_arg)]
 #[tracing::instrument(skip(storage, fetcher, urn), fields(urn = %urn), err)]
-fn replication(
+fn determine_mode<F>(
     storage: &Storage,
-    fetcher: &mut fetch::DefaultFetcher,
+    fetcher: &mut F,
     limit: fetch::Limit,
     urn: Urn,
     remote_peer: PeerId,
-) -> Result<(BTreeMap<ext::RefLike, ext::Oid>, Replication), Error> {
+) -> Result<(BTreeMap<ext::RefLike, ext::Oid>, ModeInternal), Error>
+where
+    F: fetch::Fetcher<PeerId = PeerId>,
+    F::Error: std::error::Error + Send + Sync + 'static,
+{
     if !storage.has_urn(&urn)? {
         let updated = fetcher
             .fetch(fetch::Fetchspecs::PeekAll { limit })
@@ -343,7 +371,7 @@ fn replication(
             unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)).with_remote(remote_peer));
         Ok((
             tips,
-            Replication::Clone {
+            ModeInternal::Clone {
                 urn,
                 fetched_peers,
                 identity: identities::any::get(storage, &remote_ident)?
@@ -372,7 +400,7 @@ fn replication(
 
         Ok((
             updated_tips,
-            Replication::Fetch {
+            ModeInternal::Fetch {
                 urn,
                 identity,
                 existing,
@@ -385,11 +413,20 @@ fn unsafe_into_urn(reference: Reference<git_ext::RefLike>) -> Urn {
     reference.try_into().expect("namespace is set")
 }
 
-#[allow(clippy::unit_arg)]
+/// Set the `rad/id` ref of `urn` to the given [`ext::Oid`].
+///
+/// No-op if the ref already exists. Returns the [`ext::Oid`] the ref points to
+/// after the operation.
 #[tracing::instrument(level = "trace", skip(storage, urn), fields(urn = %urn), err)]
-fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<(), Error> {
-    identities::common::IdRef::from(urn)
+fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<ext::Oid, Error> {
+    let id_ref = identities::common::IdRef::from(urn);
+    id_ref
         .create(storage, tip)
+        .map_err(|e| Error::Store(e.into()))?;
+
+    id_ref
+        .oid(storage)
+        .map(Into::into)
         .map_err(|e| Error::Store(e.into()))
 }
 
@@ -475,7 +512,11 @@ mod person {
     ///     version
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage), err)]
-    pub fn ensure_setup(storage: &Storage, rad_id: &Urn, person: Person) -> Result<(), Error> {
+    pub fn ensure_setup(
+        storage: &Storage,
+        rad_id: &Urn,
+        person: Person,
+    ) -> Result<IdStatus, Error> {
         let local_peer = storage.peer_id();
         let urn = person.urn();
 
@@ -500,46 +541,8 @@ mod person {
                 Ok(delegations)
             },
         }?;
-
-        ensure_no_forking(storage, &rad_id, &delegations)?;
-
         // Create `rad/id` here, if not exists
-        adopt_latest(storage, &person.urn(), delegations)?;
-        Ok(())
-    }
-
-    /// Compare the given `rad_id` of the person against each delegate and
-    /// ensure there are no forks.
-    ///
-    /// # Errors
-    ///   * If there is a fork
-    #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage), err)]
-    pub fn ensure_no_forking(
-        storage: &Storage,
-        rad_id: &Urn,
-        delegates: &BTreeSet<PeerId>,
-    ) -> Result<(), Error> {
-        for delegate in delegates.iter() {
-            let delegate =
-                unsafe_into_urn(Reference::rad_id(Namespace::from(rad_id)).with_remote(*delegate));
-            tracing::debug!(mine = %rad_id, theirs = %delegate, "checking for a fork");
-            match identities::person::is_fork(&storage, &rad_id, &delegate) {
-                Ok(false) => { /* all good */ },
-                Ok(true) => {
-                    return Err(Error::Fork {
-                        mine: rad_id.clone(),
-                        theirs: delegate.clone(),
-                    })
-                },
-                Err(identities::error::Error::NotFound(urn)) => {
-                    tracing::debug!(urn = %urn, "URN not found when checking for fork");
-                },
-                Err(err) => return Err(err.into()),
-            }
-        }
-
-        Ok(())
+        adopt_latest(storage, &person.urn(), delegations)
     }
 
     /// Adopt the `rad/id` that has the most up-to-date commit from the set of
@@ -550,22 +553,45 @@ mod person {
         storage: &Storage,
         urn: &Urn,
         delegates: BTreeSet<PeerId>,
-    ) -> Result<(), Error> {
-        let persons = NonEmpty::from_vec(
-            delegates
-                .into_iter()
-                .flat_map(|peer| {
-                    let urn =
-                        unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(peer));
-                    identities::person::get(storage, &urn).ok().flatten()
-                })
-                .collect(),
-        );
-        let tip = match persons {
-            Some(persons) => identities::person::latest_tip(storage, persons).map_err(Error::from),
-            None => Err(Error::MissingIdentities(urn.clone())),
-        }?;
-        ensure_rad_id(storage, urn, tip.into())
+    ) -> Result<IdStatus, Error> {
+        use IdStatus::*;
+
+        let local_peer = storage.peer_id();
+        let delegates: BTreeMap<PeerId, VerifiedPerson> = delegates
+            .into_iter()
+            .map(|peer| {
+                let remote_urn =
+                    unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(peer));
+                let verified = identities::person::verify(storage, &remote_urn)?
+                    .ok_or_else(|| Error::MissingIdentities(remote_urn.clone()))?;
+
+                Ok((peer, verified))
+            })
+            .collect::<Result<_, Error>>()?;
+        let latest = {
+            let mut prev = None;
+            for pers in delegates.values().cloned() {
+                match prev {
+                    None => prev = Some(pers),
+                    Some(p) => {
+                        let newer = identities::person::newer(storage, p, pers)?;
+                        prev = Some(newer);
+                    },
+                }
+            }
+            prev.expect("empty delegations")
+        };
+
+        let expected = match delegates.get(local_peer) {
+            Some(ours) => ours.content_id,
+            None => latest.content_id,
+        };
+        let actual = ensure_rad_id(storage, urn, expected)?;
+        if actual == expected {
+            Ok(Even)
+        } else {
+            Ok(Uneven)
+        }
     }
 }
 
@@ -577,6 +603,11 @@ mod project {
         pub urn: Urn,
         pub delegate: VerifiedPerson,
         pub project: VerifiedProject,
+    }
+
+    pub struct SetupResult {
+        pub updated_tips: BTreeMap<ext::RefLike, ext::Oid>,
+        pub identity: IdStatus,
     }
 
     /// Process the setup of a `Project` by:
@@ -591,23 +622,23 @@ mod project {
     ///     version
     #[allow(clippy::unit_arg)]
     #[tracing::instrument(level = "trace", skip(storage, fetcher), err)]
-    pub fn ensure_setup(
+    pub fn ensure_setup<F>(
         storage: &Storage,
-        fetcher: &mut fetch::DefaultFetcher,
+        fetcher: &mut F,
         limit: fetch::Limit,
         delegates: BTreeMap<PeerId, project::DelegateView>,
         rad_id: &Urn,
         proj: VerifiedProject,
-    ) -> Result<ReplicateResult, Error> {
+    ) -> Result<SetupResult, Error>
+    where
+        F: fetch::Fetcher<PeerId = PeerId, UrnId = Revision>,
+        F::Error: std::error::Error + Send + Sync + 'static,
+    {
         let local_peer = storage.peer_id();
-        project::ensure_no_forking(
-            storage,
-            rad_id,
-            delegates.values().map(|view| view.urn.clone()).collect(),
-        )?;
-
         let urn = proj.urn();
-        project::track_direct(storage, &proj)?;
+        let id_status = self::adopt_latest(storage, &urn, &delegates)?;
+
+        self::track_direct(storage, &proj)?;
         let (fetch_result, tracked) = replicate_signed_refs(
             storage,
             fetcher,
@@ -623,30 +654,32 @@ mod project {
                 tracking::track(&storage, &urn, peer)?;
             }
         }
-        let diverging = project::adopt_latest(storage, &urn, delegates)?;
 
-        Ok(ReplicateResult {
+        Ok(SetupResult {
             updated_tips: fetch_result.updated_tips,
-            identity: diverging,
+            identity: id_status,
         })
     }
 
     /// Fetch `rad/signed_refs` and `refs/heads` of the delegates and our
     /// tracked graph, returning the set of tracked peers.
-    #[allow(clippy::unit_arg)]
     #[tracing::instrument(
         level = "trace",
         skip(storage, fetcher, urn),
         fields(urn = %urn),
         err
     )]
-    pub fn replicate_signed_refs(
+    pub fn replicate_signed_refs<F>(
         storage: &Storage,
-        fetcher: &mut fetch::DefaultFetcher,
+        fetcher: &mut F,
         limit: fetch::Limit,
         urn: &Urn,
         delegates: BTreeSet<Urn>,
-    ) -> Result<(fetch::FetchResult, BTreeSet<PeerId>), Error> {
+    ) -> Result<(fetch::FetchResult, BTreeSet<PeerId>), Error>
+    where
+        F: fetch::Fetcher<PeerId = PeerId, UrnId = Revision>,
+        F::Error: std::error::Error + Send + Sync + 'static,
+    {
         // Read `signed_refs` for all tracked
         let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
         let tracked_sigrefs = tracked
@@ -677,38 +710,6 @@ mod project {
                 .flat_map(|(peer, refs)| iter::once(*peer).chain(refs.remotes.flatten().copied()))
                 .collect(),
         ))
-    }
-
-    /// Compare the given `rad_id` of the project against each delegate and
-    /// ensure there are no forks.
-    ///
-    /// # Errors
-    ///   * If there is a fork
-    #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage), err)]
-    pub fn ensure_no_forking(
-        storage: &Storage,
-        rad_id: &Urn,
-        delegates: BTreeSet<Urn>,
-    ) -> Result<(), Error> {
-        for delegate in delegates.iter() {
-            tracing::debug!(mine = %rad_id, theirs = %delegate, "checking for a fork");
-            match identities::project::is_fork(&storage, &rad_id, &delegate) {
-                Ok(false) => { /* all good */ },
-                Ok(true) => {
-                    return Err(Error::Fork {
-                        mine: rad_id.clone(),
-                        theirs: delegate.clone(),
-                    })
-                },
-                Err(identities::error::Error::NotFound(urn)) => {
-                    tracing::debug!(urn = %urn, "URN not found when checking for fork");
-                },
-                Err(err) => return Err(err.into()),
-            }
-        }
-
-        Ok(())
     }
 
     /// For each delegate in `remotes/<remote_peer>/rad/ids/*` get the view for
@@ -819,39 +820,34 @@ mod project {
     pub fn adopt_latest(
         storage: &Storage,
         urn: &Urn,
-        delegates: BTreeMap<PeerId, DelegateView>,
+        delegates: &BTreeMap<PeerId, DelegateView>,
     ) -> Result<IdStatus, Error> {
         use IdStatus::*;
 
         let local_peer = storage.peer_id();
-        let projects = NonEmpty::from_vec(
-            delegates
-                .values()
-                .map(|view| view.project.clone().into_inner())
-                .collect::<Vec<_>>(),
-        );
+        let latest = {
+            let mut prev = None;
+            for proj in delegates.values().map(|view| view.project.clone()) {
+                match prev {
+                    None => prev = Some(proj),
+                    Some(p) => {
+                        let newer = identities::project::newer(storage, p, proj)?;
+                        prev = Some(newer);
+                    },
+                }
+            }
+            prev.expect("empty delegations")
+        };
 
-        let tip = match projects {
-            Some(projects) => {
-                identities::project::latest_tip(storage, projects).map_err(Error::from)
-            },
-            None => Err(Error::MissingIdentities(urn.clone())),
-        }?;
-
-        // Are we a delegate?
-        match delegates.get(local_peer) {
-            None => {
-                tracing::debug!(tip = %tip, "adopting latest tip");
-                ensure_rad_id(storage, urn, tip.into())?;
-                Ok(Even)
-            },
-            Some(view) => Ok(if view.project.content_id == tip.into() {
-                tracing::debug!("we are at the latest tip");
-                Even
-            } else {
-                tracing::debug!("we need to update the project");
-                Uneven
-            }),
+        let expected = match delegates.get(local_peer) {
+            Some(ours) => ours.project.content_id,
+            None => latest.content_id,
+        };
+        let actual = ensure_rad_id(storage, urn, expected)?;
+        if actual == expected {
+            Ok(Even)
+        } else {
+            Ok(Uneven)
         }
     }
 

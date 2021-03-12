@@ -296,23 +296,28 @@ fn fork() -> anyhow::Result<()> {
         let dylan_project = common::Project::create_from(dylan.clone(), &cheyenne_project)?;
         dylan_project.assert_verifies(lookup(&heads))?;
 
-        // Change the description of the project
-        let cheyenne_project = cheyenne_project.change_description()?;
-        let dylan_project = dylan_project.update_from(&cheyenne_project)?;
+        // Sign two concurrent updates
+        let dylan_west = {
+            let cheyenne_west = cheyenne_project.clone().change_description("West")?;
+            dylan_project.clone().update_from(&cheyenne_west)?
+        };
+        let dylan_east = {
+            let cheyenne_east = cheyenne_project.change_description("East")?;
+            dylan_project.update_from(&cheyenne_east)?
+        };
 
-        // Same project, different day
-        let cheyenne_other = {
-            let update = IndirectDelegation::try_from_iter(vec![
-                Right(cheyenne.current().clone()),
-                Right(dylan.current().clone()),
-            ])?;
-            common::Project::new(cheyenne.clone())?.update(update)
-        }?;
-        let dylan_other = common::Project::create_from(dylan.clone(), &cheyenne_other)?;
+        // Dylan's forks should each verify
+        let west = dylan_west.verify(lookup(&heads))?;
+        let east = dylan_east.verify(lookup(&heads))?;
 
-        let mine = dylan_project.verify(lookup(&heads))?;
-        let theirs = dylan_other.verify(lookup(&heads))?;
-        cheyenne_project.assert_forks(&mine, &theirs)
+        // But trying to figure out which is newer should reveal they are unrelated
+        let git = dylan.git::<VerifiedProject>();
+        anyhow::ensure!(
+            git.newer(west, east).is_err(),
+            "expected diverging histories"
+        );
+
+        Ok(())
     }
 }
 

@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
+    cmp,
     collections::{
         btree_map::{self, Entry},
         BTreeMap,
@@ -328,7 +329,7 @@ impl<T, R, C> Delegations for Indirect<T, R, C> {
             .count();
         let indirect = self.identities.len();
 
-        (direct + indirect) / 2
+        cmp::max(1, (direct + indirect) / 2)
     }
 }
 

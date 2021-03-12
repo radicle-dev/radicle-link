@@ -74,6 +74,10 @@ impl<'a> Device<'a> {
         })
     }
 
+    pub fn git<T>(&'a self) -> Identities<'a, T> {
+        self.git.coerce()
+    }
+
     pub fn current(&self) -> &Person {
         &self.cur
     }
@@ -166,15 +170,13 @@ impl<'a> Project<'a> {
         Ok(Self { dev, cur })
     }
 
-    pub fn change_description(self) -> anyhow::Result<Self> {
+    pub fn change_description(self, descr: &str) -> anyhow::Result<Self> {
         let cur = self.dev.git.as_project().update(
             Verifying::from(self.cur.clone()).signed()?,
             Some(
                 payload::Project {
                     name: self.cur.subject().name.clone(),
-                    description: Some(
-                        "The Most Functional Software Project In The Universe".into(),
-                    ),
+                    description: Some(descr.into()),
                     default_branch: self.cur.subject().default_branch.clone(),
                 }
                 .into(),
@@ -251,21 +253,6 @@ impl<'a> Project<'a> {
             )
         );
 
-        Ok(())
-    }
-
-    pub fn assert_forks(
-        &self,
-        mine: &VerifiedProject,
-        theirs: &VerifiedProject,
-    ) -> anyhow::Result<()> {
-        let is_fork = self.dev.git.as_verified_project().is_fork(&mine, &theirs)?;
-        anyhow::ensure!(
-            is_fork,
-            anyhow!(
-            "the projects were expected to be in a forked state but their histories are in sync"
-        )
-        );
         Ok(())
     }
 }
