@@ -5,12 +5,18 @@
 
 use std::io;
 
-use librad::keys;
+use librad::{keys, peer::PeerId};
 use radicle_keystore::sign::ed25519;
 
 #[derive(Clone)]
 pub struct Signer {
     pub(super) key: keys::SecretKey,
+}
+
+impl From<Signer> for PeerId {
+    fn from(signer: Signer) -> Self {
+        signer.key.into()
+    }
 }
 
 impl Signer {

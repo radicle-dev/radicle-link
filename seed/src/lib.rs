@@ -12,7 +12,7 @@ pub mod handle;
 pub mod project;
 pub mod signer;
 
-use std::{collections::HashSet, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{collections::HashSet, net::SocketAddr, time::Duration};
 
 use futures::{channel::mpsc as chan, select, sink::SinkExt as _, stream::StreamExt as _};
 use thiserror::Error;
@@ -26,10 +26,8 @@ use librad::{
     net::{
         discovery::{self, Discovery as _},
         peer::{self, Peer, ProtocolEvent},
-        protocol::{self, gossip::Payload, membership, PeerInfo},
-        Network,
+        protocol::{self, gossip::Payload, PeerInfo},
     },
-    paths,
     peer::PeerId,
     profile,
 };
@@ -100,48 +98,25 @@ impl Mode {
     }
 }
 
-// FIXME(finto): We should just use `peer::Config`
 /// Node configuration.
 pub struct NodeConfig {
-    /// Address to listen to for new connections.
-    pub listen_addr: SocketAddr,
     /// Operational mode. Determines the tracking rules for this seed node.
     pub mode: Mode,
-    /// Radicle root path.
-    pub root: Option<PathBuf>,
-    /// The radicle network to connect to.
-    pub network: Network,
     /// List of bootstrap peers
     pub bootstrap: Vec<(PeerId, SocketAddr)>,
-    /// The pool sizes for storage consumers.
-    pub storage_pools: peer::PoolSizes,
-    /// Parameters for the membership protocol.
-    pub membership: membership::Params,
-    /// Parameters for the replication of data.
-    pub replication: replication::Config,
 }
 
 impl Default for NodeConfig {
     fn default() -> Self {
         Self {
-            listen_addr: ([0, 0, 0, 0], 0).into(),
             mode: Mode::TrackEverything,
-            root: None,
-            network: Network::default(),
             bootstrap: vec![],
-            storage_pools: peer::PoolSizes::default(),
-            membership: membership::Params::default(),
-            replication: replication::Config::default(),
         }
     }
 }
 
 /// Seed node instance.
 pub struct Node {
-    /// Node configuration.
-    config: NodeConfig,
-    /// Peer configuration.
-    peer_config: peer::Config<Signer>,
     /// Receiver end of user requests.
     requests: chan::UnboundedReceiver<Request>,
     /// Sender end of user requests.
@@ -150,36 +125,10 @@ pub struct Node {
 
 impl Node {
     /// Create a new seed node.
-    pub fn new(config: NodeConfig, signer: Signer) -> Result<Self, Error> {
+    pub fn new() -> Result<Self, Error> {
         let (handle, requests) = chan::unbounded::<Request>();
-        let paths = if let Some(root) = &config.root {
-            paths::Paths::from_root(root)?
-        } else {
-            profile::Profile::load()?.paths().to_owned()
-        };
-        let peer_config = peer::Config {
-            signer,
-            protocol: protocol::Config {
-                paths,
-                listen_addr: config.listen_addr,
-                membership: config.membership.clone(),
-                network: config.network,
-                replication: config.replication,
-            },
-            storage_pools: config.storage_pools,
-        };
 
-        Ok(Node {
-            peer_config,
-            config,
-            handle,
-            requests,
-        })
-    }
-
-    /// Get the node's peer id.
-    pub fn peer_id(&self) -> PeerId {
-        PeerId::from_signer(&self.peer_config.signer)
+        Ok(Node { handle, requests })
     }
 
     /// Create a new handle.
@@ -189,16 +138,21 @@ impl Node {
 
     /// Run the seed node. This function runs indefinitely until a fatal error
     /// occurs.
-    pub async fn run(self, mut transmit: chan::Sender<Event>) -> Result<(), Error> {
-        let peer = Peer::new(self.peer_config);
+    pub async fn run(
+        self,
+        node_config: NodeConfig,
+        peer_config: peer::Config<Signer>,
+        mut transmit: chan::Sender<Event>,
+    ) -> Result<(), Error> {
+        let peer = Peer::new(peer_config);
         let mut events = peer.subscribe().boxed().fuse();
         let mut requests = self.requests;
-        let mode = &self.config.mode;
+        let mode = &node_config.mode;
 
         // Spawn the background peer thread.
         tokio::spawn({
             let peer = peer.clone();
-            let disco = discovery::Static::resolve(self.config.bootstrap.clone())?;
+            let disco = discovery::Static::resolve(node_config.bootstrap.clone())?;
             async move {
                 loop {
                     match peer.bind().await {
