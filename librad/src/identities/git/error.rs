@@ -154,3 +154,16 @@ pub enum Verify {
     #[error(transparent)]
     Person(#[from] VerifyPerson),
 }
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum History<T: Debug> {
+    #[error("unrelated histories")]
+    Fork {
+        left: super::VerifiedIdentity<T>,
+        right: super::VerifiedIdentity<T>,
+    },
+
+    #[error(transparent)]
+    Git(#[from] git2::Error),
+}

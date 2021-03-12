@@ -55,5 +55,11 @@ pub enum Error {
     Store(#[from] identities::git::error::Store),
 
     #[error(transparent)]
+    PersHist(#[from] identities::git::error::History<identities::git::PersonDoc>),
+
+    #[error(transparent)]
+    ProjHist(#[from] identities::git::error::History<identities::git::ProjectDoc>),
+
+    #[error(transparent)]
     Git(#[from] git2::Error),
 }

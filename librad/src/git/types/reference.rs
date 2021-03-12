@@ -166,6 +166,16 @@ impl<N, R> Reference<N, R, One> {
         repo.find_reference(&self.to_string())
     }
 
+    /// Resolve the [`git2::Oid`] the reference points to (if it exists).
+    ///
+    /// Avoids allocating a [`git2::Reference`].
+    pub fn oid(&self, repo: &git2::Repository) -> Result<git2::Oid, git2::Error>
+    where
+        Self: ToString,
+    {
+        repo.refname_to_id(&self.to_string())
+    }
+
     pub fn create<'a>(
         &self,
         repo: &'a git2::Repository,
