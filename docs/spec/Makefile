@@ -38,7 +38,7 @@ out/radicle-link.html: out/spec.css meta.yaml $(sections) pandoc/template.html p
 		--citeproc \
 		--csl=pandoc/ieee-with-url.csl \
 		-o $@ \
-		$$(<index)
+		$$(cat index)
 
 out/spec.css: out pandoc/spec.css
 	cp pandoc/spec.css out/spec.css

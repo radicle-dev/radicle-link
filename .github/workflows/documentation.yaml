@@ -1,0 +1,21 @@
+name: github pages
+on:
+  push:
+    branches:
+      - master
+jobs:
+  deploy:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Dependencies
+        run: |
+          wget https://github.com/jgm/pandoc/releases/download/2.12/pandoc-2.12-1-amd64.deb \
+            && sudo dpkg -i ./pandoc-2.12-1-amd64.deb
+      - name: Build
+        run: cd docs/spec && make html
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs/spec/out
