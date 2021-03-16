@@ -62,13 +62,6 @@ pub enum SomeIdentity {
 }
 
 impl SomeIdentity {
-    pub fn urn(&self) -> Urn {
-        match self {
-            Self::Person(person) => person.urn(),
-            Self::Project(project) => project.urn(),
-        }
-    }
-
     pub fn person(self) -> Option<Person> {
         match self {
             Self::Person(person) => Some(person),

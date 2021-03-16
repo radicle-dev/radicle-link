@@ -5,7 +5,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-
 use crate::git::{
     fetch,
     storage::Storage,
@@ -14,10 +13,7 @@ use crate::git::{
 
 use super::*;
 
-use crate::{
-    identities::git::VerifiedPerson,
-    peer::PeerId,
-};
+use crate::{identities::git::VerifiedPerson, peer::PeerId};
 
 pub struct PersonDelegates(Delegates<BTreeMap<PeerId, VerifiedPerson>>);
 
@@ -44,7 +40,12 @@ impl From<ReplicateResult> for super::ReplicateResult {
     }
 }
 
-pub fn clone(storage: &Storage, fetcher: &mut fetch::DefaultFetcher, config: Config, provider: Provider<VerifiedPerson>) -> Result<ReplicateResult, Error> {
+pub fn clone(
+    storage: &Storage,
+    fetcher: &mut fetch::DefaultFetcher,
+    config: Config,
+    provider: Provider<VerifiedPerson>,
+) -> Result<ReplicateResult, Error> {
     let urn = provider.identity.urn();
     let delegates = PersonDelegates::from_provider(storage, fetcher, config, provider)?;
     let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
@@ -58,7 +59,12 @@ pub fn clone(storage: &Storage, fetcher: &mut fetch::DefaultFetcher, config: Con
     })
 }
 
-pub fn fetch(storage: &Storage, fetcher: &mut fetch::DefaultFetcher, config: Config, urn: &Urn) -> Result<ReplicateResult, Error> {
+pub fn fetch(
+    storage: &Storage,
+    fetcher: &mut fetch::DefaultFetcher,
+    config: Config,
+    urn: &Urn,
+) -> Result<ReplicateResult, Error> {
     let tracked = Tracked::load(storage, urn)?;
     let delegates = PersonDelegates::from_local(storage, fetcher, config, urn, tracked)?;
     let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
@@ -79,7 +85,13 @@ impl PersonDelegates {
         config: Config,
         proivder: Provider<VerifiedPerson>,
     ) -> Result<Self, Error> {
-        Self::from_identity(storage, fetcher, config, proivder.identity.clone(), proivder.delegates().collect())
+        Self::from_identity(
+            storage,
+            fetcher,
+            config,
+            proivder.identity.clone(),
+            proivder.delegates().collect(),
+        )
     }
 
     pub fn from_local(
@@ -98,7 +110,9 @@ impl PersonDelegates {
     }
 
     pub fn rad_ids(&'_ self) -> impl Iterator<Item = Urn> + '_ {
-        self.0.views.iter().map(|(remote, person)| unsafe_into_urn(Reference::rad_id(Namespace::from(person.urn())).with_remote(*remote)))
+        self.0.views.iter().map(|(remote, person)| {
+            unsafe_into_urn(Reference::rad_id(Namespace::from(person.urn())).with_remote(*remote))
+        })
     }
 
     pub fn adopt(&self, storage: &Storage, urn: &Urn) -> Result<IdStatus, Error> {
@@ -150,8 +164,10 @@ impl PersonDelegates {
 
         for key in person.delegations().into_iter() {
             let remote = PeerId::from(*key);
-            let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)).with_remote(remote));
-            let delegate = identities::person::verify(storage, &rad_id)?.ok_or(Error::MissingIdentity)?;
+            let rad_id =
+                unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)).with_remote(remote));
+            let delegate =
+                identities::person::verify(storage, &rad_id)?.ok_or(Error::MissingIdentity)?;
             delegates.insert(remote, delegate);
         }
 
@@ -159,6 +175,7 @@ impl PersonDelegates {
             result: peeked,
             fetched: remotes,
             views: delegates,
-        }.into())
+        }
+        .into())
     }
 }

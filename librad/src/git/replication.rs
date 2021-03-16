@@ -133,7 +133,10 @@ pub struct Provider<A> {
 }
 
 impl<A> Provider<A> {
-    pub fn map<F, B>(self, f: F) -> Provider<B> where F: FnOnce(A) -> B {
+    pub fn map<F, B>(self, f: F) -> Provider<B>
+    where
+        F: FnOnce(A) -> B,
+    {
         Provider {
             result: self.result,
             provider: self.provider,
@@ -179,8 +182,7 @@ impl Provider<SomeIdentity> {
             .map_err(|e| Error::Fetch(e.into()))?;
 
         let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(provider));
-        let identity =
-            identities::any::get(storage, &rad_id)?.ok_or(Error::MissingIdentity)?;
+        let identity = identities::any::get(storage, &rad_id)?.ok_or(Error::MissingIdentity)?;
 
         Ok(Self {
             result: peeked,
@@ -189,50 +191,73 @@ impl Provider<SomeIdentity> {
         })
     }
 
-    pub fn try_verify(self, storage: &Storage) -> Result<Either<Provider<VerifiedPerson>, Provider<Project>>, Error> {
+    pub fn try_verify(
+        self,
+        storage: &Storage,
+    ) -> Result<Either<Provider<VerifiedPerson>, Provider<Project>>, Error> {
         Ok(match self.identity {
-                SomeIdentity::Person(person) => {
-                    let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(person.urn())).with_remote(self.provider));
-                    tracing::debug!(urn = %rad_id, "verifying provider");
-                    let person = identities::person::verify(storage, &rad_id)?.ok_or(Error::MissingIdentity)?;
-                    Either::Left(Provider {
-                        result: self.result,
-                        provider: self.provider,
-                        identity: person,
-                    })
-                },
-                SomeIdentity::Project(project) => {
-                    Either::Right(Provider {
-                        result: self.result,
-                        provider: self.provider,
-                        identity: project,
-                    })
-                },
-            }
-        )
+            SomeIdentity::Person(person) => {
+                let rad_id = unsafe_into_urn(
+                    Reference::rad_id(Namespace::from(person.urn())).with_remote(self.provider),
+                );
+                tracing::debug!(urn = %rad_id, "verifying provider");
+                let person =
+                    identities::person::verify(storage, &rad_id)?.ok_or(Error::MissingIdentity)?;
+                Either::Left(Provider {
+                    result: self.result,
+                    provider: self.provider,
+                    identity: person,
+                })
+            },
+            SomeIdentity::Project(project) => Either::Right(Provider {
+                result: self.result,
+                provider: self.provider,
+                identity: project,
+            }),
+        })
     }
 }
 
 impl Provider<VerifiedProject> {
     pub fn delegates(&'_ self) -> impl Iterator<Item = PeerId> + '_ {
-        self.identity.delegations().into_iter().flat_map(|delegate| match delegate {
-            Either::Left(key) => Either::Left(iter::once(PeerId::from(*key))),
-            Either::Right(person) => Either::Right(person.delegations().into_iter().map(|key| PeerId::from(*key))),
-        })
+        self.identity
+            .delegations()
+            .into_iter()
+            .flat_map(|delegate| match delegate {
+                Either::Left(key) => Either::Left(iter::once(PeerId::from(*key))),
+                Either::Right(person) => Either::Right(
+                    person
+                        .delegations()
+                        .into_iter()
+                        .map(|key| PeerId::from(*key)),
+                ),
+            })
     }
 }
 
 impl Provider<Project> {
     pub fn delegates(&'_ self) -> impl Iterator<Item = PeerId> + '_ {
-        self.identity.delegations().into_iter().flat_map(|delegate| match delegate {
-            Either::Left(key) => Either::Left(iter::once(PeerId::from(*key))),
-            Either::Right(person) => Either::Right(person.delegations().into_iter().map(|key| PeerId::from(*key))),
-        })
+        self.identity
+            .delegations()
+            .into_iter()
+            .flat_map(|delegate| match delegate {
+                Either::Left(key) => Either::Left(iter::once(PeerId::from(*key))),
+                Either::Right(person) => Either::Right(
+                    person
+                        .delegations()
+                        .into_iter()
+                        .map(|key| PeerId::from(*key)),
+                ),
+            })
     }
 }
 impl Provider<VerifiedPerson> {
     pub fn delegates(&'_ self) -> impl Iterator<Item = PeerId> + '_ {
-        self.identity.delegations().iter().copied().map(PeerId::from)
+        self.identity
+            .delegations()
+            .iter()
+            .copied()
+            .map(PeerId::from)
     }
 }
 
@@ -248,7 +273,11 @@ pub struct Tracked {
 }
 
 impl Tracked {
-    pub fn new(storage: &Storage, urn: &Urn, remotes: impl Iterator<Item = PeerId>) -> Result<Self, Error> {
+    pub fn new(
+        storage: &Storage,
+        urn: &Urn,
+        remotes: impl Iterator<Item = PeerId>,
+    ) -> Result<Self, Error> {
         let local = storage.peer_id();
         remotes
             .filter(|remote| remote != local)
@@ -259,11 +288,14 @@ impl Tracked {
     }
 
     pub fn load(storage: &Storage, urn: &Urn) -> Result<Self, Error> {
-        Ok(Tracked { remotes: tracking::tracked(storage, urn)?.into_iter().collect() })
+        Ok(Tracked {
+            remotes: tracking::tracked(storage, urn)?.into_iter().collect(),
+        })
     }
 }
 
-/// The peers that are ripe for pruning since they were removed from the tracking graph.
+/// The peers that are ripe for pruning since they were removed from the
+/// tracking graph.
 pub struct Pruned {
     remotes: BTreeSet<PeerId>,
 }
@@ -330,7 +362,9 @@ where
         tracing::debug!(tips = ?provider_tips, "provider tips");
         let mut result: ReplicateResult = match provider.try_verify(storage)? {
             Either::Left(person) => person::clone(storage, &mut fetcher, config, person)?.into(),
-            Either::Right(project) => project::clone(storage, &mut fetcher, config, project)?.into(),
+            Either::Right(project) => {
+                project::clone(storage, &mut fetcher, config, project)?.into()
+            },
         };
 
         // Symref `rad/self` if a `LocalIdentity` was given
