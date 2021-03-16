@@ -191,6 +191,8 @@ impl Provider<SomeIdentity> {
         })
     }
 
+    // FIXME(finto): the naming is wrong here because we can't verify the project since we haven't
+    // resolved any of the delegates as top-level identities
     pub fn try_verify(
         self,
         storage: &Storage,
