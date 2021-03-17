@@ -5,7 +5,7 @@
 
 use std::{convert::TryFrom, ops::Range, str::FromStr};
 
-use git_ext::{is_exists_err, is_not_found_err, RefLike};
+use git_ext::{is_exists_err, is_not_found_err};
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
@@ -139,7 +139,7 @@ impl Tracked {
     fn collect(repo: &git2::Repository, context: &Urn) -> Result<Self, git2::Error> {
         let remotes = repo.remotes()?;
         let range = 0..remotes.len();
-        let prefix = format!("{}/", RefLike::from(context));
+        let prefix = format!("{}/", context.encode_id());
         Ok(Self {
             remotes,
             range,
@@ -257,6 +257,22 @@ mod tests {
                 [peer1, peer2].iter().copied().collect::<BTreeSet<_>>(),
                 tracked(&storage, &urn).unwrap().collect::<BTreeSet<_>>()
             )
+        }
+    }
+
+    #[test]
+    fn tracked_ignores_urn_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        {
+            let paths = Paths::from_root(&tmp).unwrap();
+            let storage = Storage::open_or_init(&paths, SecretKey::new()).unwrap();
+            let remote_peer = PeerId::from(SecretKey::new());
+            let urn = Urn::new(git2::Oid::zero().into());
+
+            track(&storage, &urn, remote_peer).unwrap();
+
+            let urn = urn.with_path(reflike!("ri/ra/rutsch"));
+            assert_eq!(Some(remote_peer), tracked(&storage, &urn).unwrap().next())
         }
     }
 }
