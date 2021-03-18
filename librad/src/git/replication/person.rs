@@ -23,37 +23,23 @@ impl From<Delegates<BTreeMap<PeerId, VerifiedPerson>>> for PersonDelegates {
     }
 }
 
-pub struct ReplicateResult {
-    delegates: PersonDelegates,
-    tracked: Tracked,
-    identity: IdStatus,
-    mode: Mode,
-}
-
-impl From<ReplicateResult> for super::ReplicateResult {
-    fn from(result: ReplicateResult) -> Self {
-        Self {
-            updated_tips: result.delegates.0.result.updated_tips,
-            identity: result.identity,
-            mode: result.mode,
-        }
-    }
-}
-
 pub fn clone(
     storage: &Storage,
     fetcher: &mut fetch::DefaultFetcher,
     config: Config,
-    provider: Provider<VerifiedPerson>,
+    provider: Provider<Person>,
 ) -> Result<ReplicateResult, Error> {
     let urn = provider.identity.urn();
     let delegates = PersonDelegates::from_provider(storage, fetcher, config, provider)?;
     let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
     let identity = delegates.adopt(storage, &urn)?;
+    let updated_tips = delegates.0.result.updated_tips;
+
+    tracing::debug!(tips = ?updated_tips, "tips for delegates fetch");
+    tracing::debug!(tips = ?tracked.trace(), "tracked peers");
 
     Ok(ReplicateResult {
-        delegates,
-        tracked,
+        updated_tips,
         identity,
         mode: Mode::Clone,
     })
@@ -67,33 +53,47 @@ pub fn fetch(
 ) -> Result<ReplicateResult, Error> {
     let tracked = Tracked::load(storage, urn)?;
     let delegates = PersonDelegates::from_local(storage, fetcher, config, urn, tracked)?;
-    let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
+    let remotes = delegates.updates();
+    let tracked = Tracked::new(storage, &urn, remotes.into_iter())?;
     let identity = delegates.adopt(storage, urn)?;
+    let updated_tips = delegates.0.result.updated_tips;
+
+    tracing::debug!(tips = ?updated_tips, "tips for delegates fetch");
+    tracing::debug!(tips = ?tracked.trace(), "tracked peers");
 
     Ok(ReplicateResult {
-        delegates,
-        tracked,
+        updated_tips,
         identity,
         mode: Mode::Fetch,
     })
 }
 
 impl PersonDelegates {
+    /// Verifies the `provider` and resolves the delegate [`PeerId`]s for this [`Person`] identity.
+    ///
+    /// We look at what [`PeerId`]s are advertised in the document and fetch the `rad/*` references,
+    /// giving us a [`VerifiedPerson`] for each delegate in the set.
     pub fn from_provider(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,
         config: Config,
-        proivder: Provider<VerifiedPerson>,
+        provider: Provider<Person>,
     ) -> Result<Self, Error> {
+        let provider = provider.verify(storage)?;
         Self::from_identity(
             storage,
             fetcher,
             config,
-            proivder.identity.clone(),
-            proivder.delegates().collect(),
+            provider.identity.clone(),
+            provider.delegates().collect(),
         )
     }
 
+    /// We use the existing [`VerifiedPerson`] from our own [`Storage`], along with the existing
+    /// tracked remote [`PeerId`]s. The remotes are fetched and the delegates are resolved from the
+    /// existing [`VerifiedPerson`].
+    ///
+    /// TODO(finto): What do we do in the case of added/removed delegations?
     pub fn from_local(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,
@@ -101,20 +101,16 @@ impl PersonDelegates {
         urn: &Urn,
         tracked: Tracked,
     ) -> Result<Self, Error> {
-        let project = identities::person::verify(storage, urn)?.ok_or(Error::MissingIdentity)?;
-        Self::from_identity(storage, fetcher, config, project, tracked.remotes)
+        let person = identities::person::verify(storage, urn)?.ok_or(Error::MissingIdentity)?;
+        Self::from_identity(storage, fetcher, config, person, tracked.remotes)
     }
 
-    pub fn remotes(&'_ self) -> impl Iterator<Item = PeerId> + '_ {
-        self.0.views.keys().copied()
-    }
-
-    pub fn rad_ids(&'_ self) -> impl Iterator<Item = Urn> + '_ {
-        self.0.views.iter().map(|(remote, person)| {
-            unsafe_into_urn(Reference::rad_id(Namespace::from(person.urn())).with_remote(*remote))
-        })
-    }
-
+    /// Using the delegates we determine the latest tip for `rad/id`.
+    ///
+    /// If we are one of the delegates then we keep our own tip and determine the [`IdStatus`] by
+    /// comparing our tip to the latest.
+    ///
+    /// Otherwise, we adopt the latest tip for our version of `rad/id`.
     pub fn adopt(&self, storage: &Storage, urn: &Urn) -> Result<IdStatus, Error> {
         use IdStatus::*;
 
@@ -143,6 +139,16 @@ impl PersonDelegates {
         } else {
             Ok(Uneven)
         }
+    }
+
+    pub fn remotes(&'_ self) -> impl Iterator<Item = PeerId> + '_ {
+        self.0.views.keys().copied()
+    }
+
+    pub fn rad_ids(&'_ self) -> impl Iterator<Item = Urn> + '_ {
+        self.0.views.iter().map(|(remote, person)| {
+            unsafe_into_urn(Reference::rad_id(Namespace::from(person.urn())).with_remote(*remote))
+        })
     }
 
     fn from_identity(
@@ -177,5 +183,9 @@ impl PersonDelegates {
             views: delegates,
         }
         .into())
+    }
+
+    fn updates(&self) -> BTreeSet<PeerId> {
+        self.0.views.values().flat_map(|person| person.delegations().iter().map(|key| PeerId::from(*key))).collect()
     }
 }

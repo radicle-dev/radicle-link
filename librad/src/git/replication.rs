@@ -24,7 +24,7 @@ use super::{
     types::{reference, Force, Namespace, Reference},
 };
 use crate::{
-    identities::git::{Project, SomeIdentity, VerifiedPerson, VerifiedProject},
+    identities::git::{Person, Project, SomeIdentity, VerifiedPerson, VerifiedProject},
     peer::PeerId,
 };
 
@@ -126,182 +126,6 @@ pub enum Mode {
     Fetch,
 }
 
-pub struct Provider<A> {
-    result: fetch::FetchResult,
-    provider: PeerId,
-    identity: A,
-}
-
-impl<A> Provider<A> {
-    pub fn map<F, B>(self, f: F) -> Provider<B>
-    where
-        F: FnOnce(A) -> B,
-    {
-        Provider {
-            result: self.result,
-            provider: self.provider,
-            identity: f(self.identity),
-        }
-    }
-}
-
-// TODO(finto): Maybe we don't need these
-impl<A> Provider<Option<A>> {
-    pub fn sequence(self) -> Option<Provider<A>> {
-        Some(Provider {
-            result: self.result,
-            provider: self.provider,
-            identity: self.identity?,
-        })
-    }
-}
-
-impl<A, E> Provider<Result<A, E>> {
-    pub fn sequence(self) -> Result<Provider<A>, E> {
-        Ok(Provider {
-            result: self.result,
-            provider: self.provider,
-            identity: self.identity?,
-        })
-    }
-}
-
-impl Provider<SomeIdentity> {
-    pub fn fetch(
-        storage: &Storage,
-        fetcher: &mut fetch::DefaultFetcher,
-        config: Config,
-        urn: &Urn,
-        provider: PeerId,
-    ) -> Result<Self, Error> {
-        let peeked = fetcher
-            .fetch(fetch::Fetchspecs::Peek {
-                remotes: Some(provider).into_iter().collect(),
-                limit: config.fetch_limit,
-            })
-            .map_err(|e| Error::Fetch(e.into()))?;
-
-        let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(provider));
-        let identity = identities::any::get(storage, &rad_id)?.ok_or(Error::MissingIdentity)?;
-
-        Ok(Self {
-            result: peeked,
-            provider,
-            identity,
-        })
-    }
-
-    // FIXME(finto): the naming is wrong here because we can't verify the project since we haven't
-    // resolved any of the delegates as top-level identities
-    pub fn try_verify(
-        self,
-        storage: &Storage,
-    ) -> Result<Either<Provider<VerifiedPerson>, Provider<Project>>, Error> {
-        Ok(match self.identity {
-            SomeIdentity::Person(person) => {
-                let rad_id = unsafe_into_urn(
-                    Reference::rad_id(Namespace::from(person.urn())).with_remote(self.provider),
-                );
-                tracing::debug!(urn = %rad_id, "verifying provider");
-                let person =
-                    identities::person::verify(storage, &rad_id)?.ok_or(Error::MissingIdentity)?;
-                Either::Left(Provider {
-                    result: self.result,
-                    provider: self.provider,
-                    identity: person,
-                })
-            },
-            SomeIdentity::Project(project) => Either::Right(Provider {
-                result: self.result,
-                provider: self.provider,
-                identity: project,
-            }),
-        })
-    }
-}
-
-impl Provider<VerifiedProject> {
-    pub fn delegates(&'_ self) -> impl Iterator<Item = PeerId> + '_ {
-        self.identity
-            .delegations()
-            .into_iter()
-            .flat_map(|delegate| match delegate {
-                Either::Left(key) => Either::Left(iter::once(PeerId::from(*key))),
-                Either::Right(person) => Either::Right(
-                    person
-                        .delegations()
-                        .into_iter()
-                        .map(|key| PeerId::from(*key)),
-                ),
-            })
-    }
-}
-
-impl Provider<Project> {
-    pub fn delegates(&'_ self) -> impl Iterator<Item = PeerId> + '_ {
-        self.identity
-            .delegations()
-            .into_iter()
-            .flat_map(|delegate| match delegate {
-                Either::Left(key) => Either::Left(iter::once(PeerId::from(*key))),
-                Either::Right(person) => Either::Right(
-                    person
-                        .delegations()
-                        .into_iter()
-                        .map(|key| PeerId::from(*key)),
-                ),
-            })
-    }
-}
-impl Provider<VerifiedPerson> {
-    pub fn delegates(&'_ self) -> impl Iterator<Item = PeerId> + '_ {
-        self.identity
-            .delegations()
-            .iter()
-            .copied()
-            .map(PeerId::from)
-    }
-}
-
-pub struct Delegates<A> {
-    result: fetch::FetchResult,
-    fetched: BTreeSet<PeerId>,
-    views: A,
-}
-
-#[derive(Clone, Debug)]
-pub struct Tracked {
-    remotes: BTreeSet<PeerId>,
-}
-
-impl Tracked {
-    pub fn new(
-        storage: &Storage,
-        urn: &Urn,
-        remotes: impl Iterator<Item = PeerId>,
-    ) -> Result<Self, Error> {
-        let local = storage.peer_id();
-        remotes
-            .filter(|remote| remote != local)
-            .map(|remote| tracking::track(storage, urn, remote).map(|_| remote))
-            .collect::<Result<_, _>>()
-            .map(|remotes| Self { remotes })
-            .map_err(Error::Track)
-    }
-
-    pub fn load(storage: &Storage, urn: &Urn) -> Result<Self, Error> {
-        Ok(Tracked {
-            remotes: tracking::tracked(storage, urn)?.into_iter().collect(),
-        })
-    }
-}
-
-/// The peers that are ripe for pruning since they were removed from the
-/// tracking graph.
-pub struct Pruned {
-    remotes: BTreeSet<PeerId>,
-}
-
 /// Attempt to fetch `urn` from `remote_peer`, optionally supplying
 /// `addr_hints`. `urn` may or may not already exist locally.
 ///
@@ -344,7 +168,6 @@ pub fn replicate<Addrs>(
 where
     Addrs: IntoIterator<Item = SocketAddr>,
 {
-    println!("here?");
     let urn = Urn::new(urn.id);
     let local_peer_id = storage.peer_id();
 
@@ -362,17 +185,16 @@ where
         let provider = Provider::fetch(storage, &mut fetcher, config, &urn, remote_peer)?;
         let provider_tips = provider.result.updated_tips.clone();
         tracing::debug!(tips = ?provider_tips, "provider tips");
-        let mut result: ReplicateResult = match provider.try_verify(storage)? {
+        let mut result: ReplicateResult = match provider.determine_identity() {
             Either::Left(person) => person::clone(storage, &mut fetcher, config, person)?.into(),
-            Either::Right(project) => {
-                project::clone(storage, &mut fetcher, config, project)?.into()
-            },
+            Either::Right(project) => project::clone(storage, &mut fetcher, config, project)?.into(),
         };
 
         // Symref `rad/self` if a `LocalIdentity` was given
         if let Some(local_id) = whoami {
             local_id.link(storage, &urn)?;
         }
+
         result.updated_tips.extend(provider_tips);
         result
     };
@@ -382,6 +204,178 @@ where
     // perhaps we'd want to return some kind of continuation here, so the caller
     // could schedule a deferred task directly?
     Ok(result)
+}
+
+pub struct Provider<A> {
+    result: fetch::FetchResult,
+    provider: PeerId,
+    identity: A,
+}
+
+impl<A> Provider<A> {
+    pub fn map<F, B>(self, f: F) -> Provider<B>
+    where
+        F: FnOnce(A) -> B,
+    {
+        Provider {
+            result: self.result,
+            provider: self.provider,
+            identity: f(self.identity),
+        }
+    }
+}
+
+impl<A, E> Provider<Result<A, E>> {
+    pub fn sequence(self) -> Result<Provider<A>, E> {
+        Ok(Provider {
+            result: self.result,
+            provider: self.provider,
+            identity: self.identity?,
+        })
+    }
+}
+
+impl Provider<SomeIdentity> {
+    pub fn fetch(
+        storage: &Storage,
+        fetcher: &mut fetch::DefaultFetcher,
+        config: Config,
+        urn: &Urn,
+        provider: PeerId,
+    ) -> Result<Self, Error> {
+        let peeked = fetcher
+            .fetch(fetch::Fetchspecs::Peek {
+                remotes: Some(provider).into_iter().collect(),
+                limit: config.fetch_limit,
+            })
+            .map_err(|e| Error::Fetch(e.into()))?;
+
+        let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(provider));
+        let identity = identities::any::get(storage, &rad_id)?.ok_or(Error::MissingIdentity)?;
+
+        Ok(Self {
+            result: peeked,
+            provider,
+            identity,
+        })
+    }
+
+    pub fn determine_identity(
+        self,
+    ) -> Either<Provider<Person>, Provider<Project>> {
+        match self.identity {
+            SomeIdentity::Person(person) => {
+                Either::Left(Provider {
+                    result: self.result,
+                    provider: self.provider,
+                    identity: person,
+                })
+            },
+            SomeIdentity::Project(project) => Either::Right(Provider {
+                result: self.result,
+                provider: self.provider,
+                identity: project,
+            }),
+        }
+    }
+}
+
+impl Provider<VerifiedProject> {
+    pub fn delegates(&'_ self) -> impl Iterator<Item = PeerId> + '_ {
+        self.identity
+            .delegations()
+            .into_iter()
+            .flat_map(|delegate| match delegate {
+                Either::Left(key) => Either::Left(iter::once(PeerId::from(*key))),
+                Either::Right(person) => Either::Right(
+                    person
+                        .delegations()
+                        .into_iter()
+                        .map(|key| PeerId::from(*key)),
+                ),
+            })
+    }
+}
+
+impl Provider<Project> {
+    pub fn delegates(&'_ self) -> impl Iterator<Item = PeerId> + '_ {
+        self.identity
+            .delegations()
+            .into_iter()
+            .flat_map(|delegate| match delegate {
+                Either::Left(key) => Either::Left(iter::once(PeerId::from(*key))),
+                Either::Right(person) => Either::Right(
+                    person
+                        .delegations()
+                        .into_iter()
+                        .map(|key| PeerId::from(*key)),
+                ),
+            })
+    }
+}
+
+impl Provider<Person> {
+    pub fn verify(self, storage: &Storage) -> Result<Provider<VerifiedPerson>, Error> {
+        let remote = self.provider;
+        self.map(|identity| {
+            let urn = unsafe_into_urn(Reference::rad_id(Namespace::from(&identity.urn())).with_remote(remote));
+            identities::person::verify(storage, &urn).map_err(Error::from).and_then(|person| person.ok_or(Error::MissingIdentity))
+        }).sequence()
+    }
+}
+
+impl Provider<VerifiedPerson> {
+    pub fn delegates(&'_ self) -> impl Iterator<Item = PeerId> + '_ {
+        self.identity
+            .delegations()
+            .iter()
+            .copied()
+            .map(PeerId::from)
+    }
+}
+
+pub struct Delegates<A> {
+    result: fetch::FetchResult,
+    fetched: BTreeSet<PeerId>,
+    views: A,
+}
+
+#[derive(Clone, Debug)]
+pub struct Tracked {
+    remotes: BTreeSet<PeerId>,
+}
+
+impl Tracked {
+    pub fn new(
+        storage: &Storage,
+        urn: &Urn,
+        remotes: impl Iterator<Item = PeerId>,
+    ) -> Result<Self, Error> {
+        let local = storage.peer_id();
+        remotes
+            .filter(|remote| remote != local)
+            .map(|remote| tracking::track(storage, urn, remote).map(|_| remote))
+            .collect::<Result<_, _>>()
+            .map(|remotes| Self { remotes })
+            .map_err(Error::Track)
+    }
+
+    pub fn load(storage: &Storage, urn: &Urn) -> Result<Self, Error> {
+        Ok(Tracked {
+            remotes: tracking::tracked(storage, urn)?.into_iter().collect(),
+        })
+    }
+
+    /// Readable format for the tracked peers
+    fn trace(&self) -> Vec<String> {
+        self.remotes.iter().map(|peer| peer.to_string()).collect()
+    }
+}
+
+/// The peers that are ripe for pruning since they were removed from the
+/// tracking graph.
+pub struct Pruned {
+    remotes: BTreeSet<PeerId>,
 }
 
 fn unsafe_into_urn(reference: Reference<git_ext::RefLike>) -> Urn {
