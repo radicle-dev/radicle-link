@@ -23,6 +23,9 @@ impl From<Delegates<BTreeMap<PeerId, VerifiedPerson>>> for PersonDelegates {
     }
 }
 
+/// Clone the [`Person`] from the `provider` by fetching the delegates in the document.
+///
+/// We track all the delegates in the document and adopt the `rad/id` for this identity.
 pub fn clone(
     storage: &Storage,
     fetcher: &mut fetch::DefaultFetcher,
@@ -45,6 +48,10 @@ pub fn clone(
     })
 }
 
+/// Fetch the latest changes for the remotes that we are tracking for `urn`.
+///
+/// If there are any new delegates we track them. Following that, we
+/// [`adopt`][`PersonDelegates::adopt`] the latest tip if necessary.
 pub fn fetch(
     storage: &Storage,
     fetcher: &mut fetch::DefaultFetcher,
@@ -53,8 +60,7 @@ pub fn fetch(
 ) -> Result<ReplicateResult, Error> {
     let tracked = Tracked::load(storage, urn)?;
     let delegates = PersonDelegates::from_local(storage, fetcher, config, urn, tracked)?;
-    let remotes = delegates.updates();
-    let tracked = Tracked::new(storage, &urn, remotes.into_iter())?;
+    let tracked = Tracked::new(storage, &urn, delegates.updates().into_iter())?;
     let identity = delegates.adopt(storage, urn)?;
     let updated_tips = delegates.0.result.updated_tips;
 
@@ -69,10 +75,12 @@ pub fn fetch(
 }
 
 impl PersonDelegates {
-    /// Verifies the `provider` and resolves the delegate [`PeerId`]s for this [`Person`] identity.
+    /// Verifies the `provider` and resolves the delegate [`PeerId`]s for this
+    /// [`Person`] identity.
     ///
-    /// We look at what [`PeerId`]s are advertised in the document and fetch the `rad/*` references,
-    /// giving us a [`VerifiedPerson`] for each delegate in the set.
+    /// We look at what [`PeerId`]s are advertised in the document and fetch the
+    /// `rad/*` references, giving us a [`VerifiedPerson`] for each delegate
+    /// in the set.
     pub fn from_provider(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,
@@ -89,11 +97,15 @@ impl PersonDelegates {
         )
     }
 
-    /// We use the existing [`VerifiedPerson`] from our own [`Storage`], along with the existing
-    /// tracked remote [`PeerId`]s. The remotes are fetched and the delegates are resolved from the
+    /// We use the existing [`VerifiedPerson`] from our own [`Storage`], along
+    /// with the existing tracked remote [`PeerId`]s. The remotes are
+    /// fetched and the delegates are resolved from the
     /// existing [`VerifiedPerson`].
     ///
-    /// TODO(finto): What do we do in the case of added/removed delegations?
+    /// **Note**: new delegates could be removed or added, these are not fetched
+    /// immediately, but instead added to the tracking graph. This means
+    /// that we wait for another pass of replication to fetch those, and so
+    /// on.
     pub fn from_local(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,
@@ -107,8 +119,8 @@ impl PersonDelegates {
 
     /// Using the delegates we determine the latest tip for `rad/id`.
     ///
-    /// If we are one of the delegates then we keep our own tip and determine the [`IdStatus`] by
-    /// comparing our tip to the latest.
+    /// If we are one of the delegates then we keep our own tip and determine
+    /// the [`IdStatus`] by comparing our tip to the latest.
     ///
     /// Otherwise, we adopt the latest tip for our version of `rad/id`.
     pub fn adopt(&self, storage: &Storage, urn: &Urn) -> Result<IdStatus, Error> {
@@ -186,6 +198,10 @@ impl PersonDelegates {
     }
 
     fn updates(&self) -> BTreeSet<PeerId> {
-        self.0.views.values().flat_map(|person| person.delegations().iter().map(|key| PeerId::from(*key))).collect()
+        self.0
+            .views
+            .values()
+            .flat_map(|person| person.delegations().iter().map(|key| PeerId::from(*key)))
+            .collect()
     }
 }

@@ -32,26 +32,6 @@ impl<P> From<Delegates<Vec<DelegateView<P>>>> for ProjectDelegates<P> {
     }
 }
 
-pub struct ReplicateResult {
-    delegates: ProjectDelegates<VerifiedProject>,
-    tracked: Tracked,
-    signed_refs: SignedRefs,
-    identity: IdStatus,
-    mode: Mode,
-}
-
-impl From<ReplicateResult> for super::ReplicateResult {
-    fn from(result: ReplicateResult) -> Self {
-        let mut tips = result.delegates.0.result.updated_tips;
-        tips.extend(result.signed_refs.result.updated_tips);
-        Self {
-            updated_tips: tips,
-            identity: result.identity,
-            mode: result.mode,
-        }
-    }
-}
-
 pub fn clone(
     storage: &Storage,
     fetcher: &mut fetch::DefaultFetcher,
@@ -62,16 +42,10 @@ pub fn clone(
     let delegates = ProjectDelegates::from_provider(storage, fetcher, config, provider)?;
     let delegates = delegates.verify(storage, &urn)?;
     let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
-    let signed_refs = SignedRefs::new(storage, fetcher, config, &urn, &delegates, &tracked)?;
+    let signed_refs = SignedRefs::fetch(storage, fetcher, config, &urn, &delegates, &tracked)?;
     let identity = delegates.adopt(storage, &urn)?;
 
-    Ok(ReplicateResult {
-        delegates,
-        tracked,
-        signed_refs,
-        identity,
-        mode: Mode::Clone,
-    })
+    Ok(mk_replicate_result(delegates, tracked, signed_refs, identity, Mode::Clone))
 }
 
 pub fn fetch(
@@ -84,33 +58,44 @@ pub fn fetch(
     let delegates = ProjectDelegates::from_local(storage, fetcher, config, urn, tracked)?
         .verify(storage, urn)?;
     let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
-    let signed_refs = SignedRefs::new(storage, fetcher, config, &urn, &delegates, &tracked)?;
+    let signed_refs = SignedRefs::fetch(storage, fetcher, config, &urn, &delegates, &tracked)?;
     let identity = delegates.adopt(storage, urn)?;
 
-    Ok(ReplicateResult {
-        delegates,
-        tracked,
-        signed_refs,
-        identity,
-        mode: Mode::Fetch,
-    })
+    Ok(mk_replicate_result(delegates, tracked, signed_refs, identity, Mode::Fetch))
 }
 
-/* FIXME: turn this into docs
- * What do I want to do here?
- *
- * clone: We have looked at the rad/ids from the provider and so we can
- * determine who the delegates are and we fetch those remotes.
- * But we _should_ have at least one project view for each delegate. If it's
- * anonymous then we expect there to one and only one remote entry for them.
- * If it's a Person delegation we can have one or more remote entries.
- */
+fn mk_replicate_result(delegates: ProjectDelegates<VerifiedProject>, tracked: Tracked, signed_refs: SignedRefs, identity: IdStatus, mode: Mode) -> ReplicateResult {
+    let mut updated_tips = delegates.0.result.updated_tips;
+    tracing::debug!(tips = ?updated_tips, "tips for delegates fetch");
+
+    let sigref_tips = signed_refs.result.updated_tips;
+    tracing::debug!(tips = ?sigref_tips, "tips for rad/signed_refs");
+    updated_tips.extend(sigref_tips);
+
+    tracing::debug!(tracked = ?tracked.trace(), "tracked peers");
+
+    ReplicateResult {
+        updated_tips,
+        identity,
+        mode,
+    }
+}
+
+/// Delegates for [`Project`]s can either be direct, using only a [`PeerId`], or indirect, using a
+/// [`Person`] identity.
 #[derive(Clone)]
 pub enum DelegateView<P> {
+    /// The delegate remains anonymous and only goes by their `PeerId`.
     Direct {
         remote: PeerId,
         project: P,
     },
+    /// The delegate is using a [`Person`] identity to delegate for the project. The [`Person`] in
+    /// turn has one or more `PeerId`s associated with it, and so we can have one or more remote
+    /// entries for this particular project.
+    ///
+    /// Note: the entries in `remotes` SHOULD be the keys of `projects`. They're copied for
+    /// convenience.
     Indirect {
         person: VerifiedPerson,
         projects: BTreeMap<PeerId, P>,
@@ -251,11 +236,6 @@ impl DelegateView<Project> {
             },
         }
     }
-}
-
-pub struct SignedRefs {
-    result: fetch::FetchResult,
-    tracked: Tracked,
 }
 
 impl<P> ProjectDelegates<P> {
@@ -446,8 +426,13 @@ impl ProjectDelegates<Project> {
     }
 }
 
+pub struct SignedRefs {
+    result: fetch::FetchResult,
+    tracked: Tracked,
+}
+
 impl SignedRefs {
-    pub fn new(
+    pub fn fetch(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,
         config: Config,

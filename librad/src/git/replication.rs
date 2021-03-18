@@ -187,7 +187,9 @@ where
         tracing::debug!(tips = ?provider_tips, "provider tips");
         let mut result: ReplicateResult = match provider.determine_identity() {
             Either::Left(person) => person::clone(storage, &mut fetcher, config, person)?.into(),
-            Either::Right(project) => project::clone(storage, &mut fetcher, config, project)?.into(),
+            Either::Right(project) => {
+                project::clone(storage, &mut fetcher, config, project)?.into()
+            },
         };
 
         // Symref `rad/self` if a `LocalIdentity` was given
@@ -260,17 +262,13 @@ impl Provider<SomeIdentity> {
         })
     }
 
-    pub fn determine_identity(
-        self,
-    ) -> Either<Provider<Person>, Provider<Project>> {
+    pub fn determine_identity(self) -> Either<Provider<Person>, Provider<Project>> {
         match self.identity {
-            SomeIdentity::Person(person) => {
-                Either::Left(Provider {
-                    result: self.result,
-                    provider: self.provider,
-                    identity: person,
-                })
-            },
+            SomeIdentity::Person(person) => Either::Left(Provider {
+                result: self.result,
+                provider: self.provider,
+                identity: person,
+            }),
             SomeIdentity::Project(project) => Either::Right(Provider {
                 result: self.result,
                 provider: self.provider,
@@ -318,9 +316,14 @@ impl Provider<Person> {
     pub fn verify(self, storage: &Storage) -> Result<Provider<VerifiedPerson>, Error> {
         let remote = self.provider;
         self.map(|identity| {
-            let urn = unsafe_into_urn(Reference::rad_id(Namespace::from(&identity.urn())).with_remote(remote));
-            identities::person::verify(storage, &urn).map_err(Error::from).and_then(|person| person.ok_or(Error::MissingIdentity))
-        }).sequence()
+            let urn = unsafe_into_urn(
+                Reference::rad_id(Namespace::from(&identity.urn())).with_remote(remote),
+            );
+            identities::person::verify(storage, &urn)
+                .map_err(Error::from)
+                .and_then(|person| person.ok_or(Error::MissingIdentity))
+        })
+        .sequence()
     }
 }
 
