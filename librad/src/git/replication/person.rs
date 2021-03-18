@@ -23,9 +23,11 @@ impl From<Delegates<BTreeMap<PeerId, VerifiedPerson>>> for PersonDelegates {
     }
 }
 
-/// Clone the [`Person`] from the `provider` by fetching the delegates in the document.
+/// Clone the [`Person`] from the `provider` by fetching the delegates in the
+/// document.
 ///
-/// We track all the delegates in the document and adopt the `rad/id` for this identity.
+/// We track all the delegates in the document and adopt the `rad/id` for this
+/// identity.
 pub fn clone(
     storage: &Storage,
     fetcher: &mut fetch::DefaultFetcher,
@@ -189,12 +191,16 @@ impl PersonDelegates {
             delegates.insert(remote, delegate);
         }
 
-        Ok(Delegates {
-            result: peeked,
-            fetched: remotes,
-            views: delegates,
+        if delegates.is_empty() {
+            Err(Error::NoTrustee)
+        } else {
+            Ok(Delegates {
+                result: peeked,
+                fetched: remotes,
+                views: delegates,
+            }
+            .into())
         }
-        .into())
     }
 
     fn updates(&self) -> BTreeSet<PeerId> {

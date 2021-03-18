@@ -39,13 +39,18 @@ pub fn clone(
     provider: Provider<Project>,
 ) -> Result<ReplicateResult, Error> {
     let urn = provider.identity.urn();
-    let delegates = ProjectDelegates::from_provider(storage, fetcher, config, provider)?;
-    let delegates = delegates.verify(storage, &urn)?;
+    let delegates = ProjectDelegates::from_provider(storage, fetcher, config, provider)?.verify(storage)?;
     let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
     let signed_refs = SignedRefs::fetch(storage, fetcher, config, &urn, &delegates, &tracked)?;
     let identity = delegates.adopt(storage, &urn)?;
 
-    Ok(mk_replicate_result(delegates, tracked, signed_refs, identity, Mode::Clone))
+    Ok(mk_replicate_result(
+        delegates,
+        tracked,
+        signed_refs,
+        identity,
+        Mode::Clone,
+    ))
 }
 
 pub fn fetch(
@@ -56,20 +61,33 @@ pub fn fetch(
 ) -> Result<ReplicateResult, Error> {
     let tracked = Tracked::load(storage, urn)?;
     let delegates = ProjectDelegates::from_local(storage, fetcher, config, urn, tracked)?
-        .verify(storage, urn)?;
+        .verify(storage)?;
     let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
     let signed_refs = SignedRefs::fetch(storage, fetcher, config, &urn, &delegates, &tracked)?;
     let identity = delegates.adopt(storage, urn)?;
 
-    Ok(mk_replicate_result(delegates, tracked, signed_refs, identity, Mode::Fetch))
+    Ok(mk_replicate_result(
+        delegates,
+        tracked,
+        signed_refs,
+        identity,
+        Mode::Fetch,
+    ))
 }
 
-fn mk_replicate_result(delegates: ProjectDelegates<VerifiedProject>, tracked: Tracked, signed_refs: SignedRefs, identity: IdStatus, mode: Mode) -> ReplicateResult {
+fn mk_replicate_result(
+    delegates: ProjectDelegates<VerifiedProject>,
+    tracked: Tracked,
+    signed_refs: SignedRefs,
+    identity: IdStatus,
+    mode: Mode,
+) -> ReplicateResult {
     let mut updated_tips = delegates.0.result.updated_tips;
     tracing::debug!(tips = ?updated_tips, "tips for delegates fetch");
 
     let sigref_tips = signed_refs.result.updated_tips;
     tracing::debug!(tips = ?sigref_tips, "tips for rad/signed_refs");
+    tracing::debug!(tracked = ?signed_refs.tracked.trace(), "tracked peers");
     updated_tips.extend(sigref_tips);
 
     tracing::debug!(tracked = ?tracked.trace(), "tracked peers");
@@ -81,21 +99,24 @@ fn mk_replicate_result(delegates: ProjectDelegates<VerifiedProject>, tracked: Tr
     }
 }
 
-/// Delegates for [`Project`]s can either be direct, using only a [`PeerId`], or indirect, using a
-/// [`Person`] identity.
+/// Delegates for [`Project`]s can either be direct, using only a [`PeerId`], or
+/// indirect, using a [`Person`] identity.
+///
+/// `DelegateView` is parametrised over `P` since we cannot directly construct
+/// one for a [`VerifiedProject`]. This is because we must adopt any
+/// [`VerifiedPerson`] in the `Indirect` case for verification. We can however
+/// get a [`Project`].
 #[derive(Clone)]
 pub enum DelegateView<P> {
     /// The delegate remains anonymous and only goes by their `PeerId`.
-    Direct {
-        remote: PeerId,
-        project: P,
-    },
-    /// The delegate is using a [`Person`] identity to delegate for the project. The [`Person`] in
-    /// turn has one or more `PeerId`s associated with it, and so we can have one or more remote
-    /// entries for this particular project.
+    Direct { remote: PeerId, project: P },
+    /// The delegate is using a [`Person`] identity to delegate for the project.
+    /// The [`Person`] in turn has one or more `PeerId`s associated with it,
+    /// and so we can have one or more remote entries for this particular
+    /// project.
     ///
-    /// Note: the entries in `remotes` SHOULD be the keys of `projects`. They're copied for
-    /// convenience.
+    /// Note: the entries in `remotes` SHOULD be the keys of `projects`. They're
+    /// copied for convenience.
     Indirect {
         person: VerifiedPerson,
         projects: BTreeMap<PeerId, P>,
@@ -122,12 +143,18 @@ impl<P> DelegateView<P> {
 }
 
 impl DelegateView<Project> {
+    /// Construct the `Direct` variant by calling
+    /// [`get`][`identities::project::get`] for the [`Project`].
     pub fn direct(storage: &Storage, urn: &Urn, remote: PeerId) -> Result<Self, Error> {
         let urn = unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(remote));
         let project = identities::project::get(storage, &urn)?.ok_or(Error::MissingIdentity)?;
         Ok(DelegateView::Direct { remote, project })
     }
 
+    /// Construct the `Indirect` variant. We must
+    /// [`verify`][`identities::person::verify`] the person identity. For
+    /// each key in the [`VerifiedPerson`] we attempt to
+    /// [`get`][`identities::project::get`] the [`Project`].
     pub fn indirect<P>(storage: &Storage, urn: &Urn, delegate: &Urn, who: P) -> Result<Self, Error>
     where
         P: Into<Option<PeerId>>,
@@ -143,30 +170,42 @@ impl DelegateView<Project> {
             identities::person::verify(storage, &in_rad_ids)?.ok_or(Error::MissingIdentity)?;
         for key in person.delegations().iter() {
             let remote = PeerId::from(*key);
-            remotes.insert(remote);
-            let project = if &remote == local {
-                identities::project::get(storage, urn)?.ok_or(Error::MissingIdentity)?
+            if &remote == local {
+                let project =
+                    identities::project::get(storage, urn)?.ok_or(Error::MissingIdentity)?;
+                projects.insert(remote, project);
+                remotes.insert(remote);
             } else {
                 let urn =
                     unsafe_into_urn(Reference::rad_id(Namespace::from(urn)).with_remote(remote));
-                identities::project::get(storage, &urn)?.ok_or(Error::MissingIdentity)?
+                if let Some(project) = identities::project::get(storage, &urn)? {
+                    projects.insert(remote, project);
+                    remotes.insert(remote);
+                }
             };
-            projects.insert(remote, project);
         }
 
-        Ok(Self::Indirect {
-            person,
-            projects,
-            remotes,
-        })
+        if projects.is_empty() {
+            Err(Error::NoTrustee)
+        } else {
+            Ok(Self::Indirect {
+                person,
+                projects,
+                remotes,
+            })
+        }
     }
 
+    /// Verify the [`Project`] in the `DelegateView`, turning them into [`VerifiedProject`]s.
+    ///
+    /// For `Direct` it's straight-forward since there is no indirection on the delegation.
+    ///
+    /// For `Indirect` we must first adopt the [`VerifiedProject`] associated and then verify the
+    /// project.
     pub fn verify(
         self,
         storage: &Storage,
-        urn: &Urn,
     ) -> Result<DelegateView<VerifiedProject>, Error> {
-        self.adopt_direct(storage, urn)?;
         match self {
             DelegateView::Direct { remote, project } => {
                 let urn = unsafe_into_urn(
@@ -187,13 +226,16 @@ impl DelegateView<Project> {
                         let urn = unsafe_into_urn(
                             Reference::rad_id(Namespace::from(&project.urn())).with_remote(remote),
                         );
-                        identities::project::verify(storage, &urn)
-                            .map_err(Error::from)
-                            .and_then(|project| {
-                                project
-                                    .ok_or(Error::MissingIdentity)
-                                    .map(|project| (remote, project))
-                            })
+                        adopt_direct(storage, &person, remotes.iter().copied(), &urn).and_then(|tracked| {
+                            tracing::debug!(tracked = ?tracked.trace(), urn = %person.urn(), "tracked peers for delegate");
+                            identities::project::verify(storage, &urn)
+                                .map_err(Error::from)
+                                .and_then(|project| {
+                                    project
+                                        .ok_or(Error::MissingIdentity)
+                                        .map(|project| (remote, project))
+                                })
+                        })
                     })
                     .collect::<Result<_, _>>()?;
                 Ok(DelegateView::Indirect {
@@ -204,38 +246,30 @@ impl DelegateView<Project> {
             },
         }
     }
+}
 
-    pub fn adopt_direct(&self, storage: &Storage, project_urn: &Urn) -> Result<Tracked, Error> {
-        match self {
-            Self::Direct { remote, project } => {
-                Tracked::new(storage, &project.urn(), Some(*remote).into_iter())
-            },
-            Self::Indirect {
-                person, remotes, ..
-            } => {
-                let urn = person.urn();
-                let tracked = Tracked::new(storage, &urn, remotes.iter().cloned())?;
 
-                ensure_rad_id(storage, &urn, person.content_id)?;
-                // Now point our view to the top-level
-                Reference::try_from(&urn)
-                    .map_err(|e| Error::RefFromUrn {
-                        urn: urn.clone(),
-                        source: e,
-                    })?
-                    .symbolic_ref::<_, PeerId>(
-                        Reference::rad_delegate(Namespace::from(project_urn), &urn),
-                        Force::False,
-                    )
-                    .create(storage.as_raw())
-                    .and(Ok(()))
-                    .or_matches(is_exists_err, || Ok(()))
-                    .map_err(|e: git2::Error| Error::Store(e.into()))?;
+fn adopt_direct(storage: &Storage, person: &VerifiedPerson, remotes: impl Iterator<Item = PeerId>, project_urn: &Urn) -> Result<Tracked, Error> {
+    let urn = person.urn();
+    let tracked = Tracked::new(storage, &urn, remotes)?;
 
-                Ok(tracked)
-            },
-        }
-    }
+    ensure_rad_id(storage, &urn, person.content_id)?;
+    // Now point our view to the top-level
+    Reference::try_from(&urn)
+        .map_err(|e| Error::RefFromUrn {
+            urn: urn.clone(),
+            source: e,
+        })?
+        .symbolic_ref::<_, PeerId>(
+            Reference::rad_delegate(Namespace::from(project_urn), &urn),
+            Force::False,
+        )
+        .create(storage.as_raw())
+        .and(Ok(()))
+        .or_matches(is_exists_err, || Ok(()))
+        .map_err(|e: git2::Error| Error::Store(e.into()))?;
+
+    Ok(tracked)
 }
 
 impl<P> ProjectDelegates<P> {
@@ -335,7 +369,6 @@ impl ProjectDelegates<Project> {
     pub fn verify(
         self,
         storage: &Storage,
-        urn: &Urn,
     ) -> Result<ProjectDelegates<VerifiedProject>, Error> {
         let ProjectDelegates(Delegates {
             result,
@@ -344,7 +377,7 @@ impl ProjectDelegates<Project> {
         }) = self;
         let views = views
             .into_iter()
-            .map(|view| view.verify(storage, urn))
+            .map(|view| view.verify(storage))
             .collect::<Result<_, _>>()?;
         Ok(ProjectDelegates(Delegates {
             result,
@@ -382,36 +415,24 @@ impl ProjectDelegates<Project> {
         P: Into<Option<PeerId>> + Clone,
     {
         let mut delegates = vec![];
-        // FIXME: actually why do I want this?
-        let mut delegate_remotes = BTreeSet::new();
         let urn = project.urn();
 
-        tracing::debug!(remotes = ?remotes, "peeking remotes");
         let peeked = fetcher
             .fetch(fetch::Fetchspecs::Peek {
-                remotes,
+                remotes: remotes.clone(),
                 limit: config.fetch_limit,
             })
             .map_err(|e| Error::Fetch(e.into()))?;
-        tracing::debug!(tips = ?peeked.updated_tips);
 
         for delegate in project.delegations().into_iter() {
             match delegate {
                 Either::Left(key) => {
                     let remote = PeerId::from(*key);
-                    delegate_remotes.insert(remote);
                     delegates.push(DelegateView::direct(storage, &urn, remote)?);
                 },
                 Either::Right(person) => {
                     let indirect =
                         DelegateView::indirect(storage, &urn, &person.urn(), who.clone())?;
-                    match &indirect {
-                        DelegateView::Indirect {
-                            remotes: indirect_remotes,
-                            ..
-                        } => delegate_remotes.extend(indirect_remotes),
-                        _ => unreachable!(),
-                    }
                     delegates.push(indirect);
                 },
             }
@@ -419,7 +440,7 @@ impl ProjectDelegates<Project> {
 
         Ok(Delegates {
             result: peeked,
-            fetched: delegate_remotes,
+            fetched: remotes,
             views: delegates,
         }
         .into())
