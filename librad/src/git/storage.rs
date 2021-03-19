@@ -136,7 +136,21 @@ impl Storage {
             .or_matches(is_not_found_err, || Ok(false))
     }
 
-    #[tracing::instrument(level = "debug", skip(self), err)]
+    /// Check the existence of `oid`.
+    ///
+    /// The `oid` may only point to an **annotated tag** or a **commit**.
+    ///
+    /// The result will be `false` if:
+    ///
+    /// 1. No object could be found for `oid`
+    /// 2. The object kind was not an **annotated tag** or **commit**
+    /// 3. The reference path for the `urn` could not be found (it defaults to
+    /// `rad/id` if not provided)
+    /// 4. The tip SHA was not:
+    ///    a. the same as the tag's SHA
+    ///    b. in the history of the commit
+    /// 5. The `oid` was the zero [`git2::Oid`]
+    #[tracing::instrument(level = "debug", skip(self, urn), fields(urn = %urn), err)]
     pub fn has_commit<Oid>(&self, urn: &Urn, oid: Oid) -> Result<bool, Error>
     where
         Oid: AsRef<git2::Oid> + Debug,
@@ -149,8 +163,8 @@ impl Storage {
         }
 
         self.backend
-            .find_commit(*oid)
-            .and_then(|commit| {
+            .find_object(*oid, None)
+            .and_then(|object| {
                 let namespace = Namespace::from(urn);
                 let branch = {
                     let path = match &urn.path {
@@ -161,13 +175,40 @@ impl Storage {
                 };
                 self.backend
                     .refname_to_id(&format!("refs/namespaces/{}/refs/{}", namespace, branch))
-                    .and_then(|tip| {
-                        Ok(tip == commit.id()
-                            || self.backend.graph_descendant_of(tip, commit.id())?)
+                    .and_then(|tip| self.has_tag_or_commit(tip, &object))
+                    .or_matches(is_not_found_err, || {
+                        tracing::debug!("ref not found");
+                        Ok(false)
                     })
-                    .or_matches(is_not_found_err, || Ok(false))
             })
-            .or_matches(is_not_found_err, || Ok(false))
+            .or_matches(is_not_found_err, || {
+                tracing::debug!("object not found");
+                Ok(false)
+            })
+    }
+
+    fn has_tag_or_commit(
+        &self,
+        tip: git2::Oid,
+        object: &git2::Object,
+    ) -> Result<bool, git2::Error> {
+        let as_commit = |obj: &git2::Object| {
+            let commit = obj.as_commit()?;
+            Some(if tip == commit.id() {
+                Ok(true)
+            } else {
+                self.backend.graph_descendant_of(tip, commit.id())
+            })
+        };
+
+        let as_tag = |obj: &git2::Object| {
+            let tag = obj.as_tag()?;
+            Some(Ok(tip == tag.id()))
+        };
+
+        as_commit(object)
+            .or_else(|| as_tag(object))
+            .unwrap_or(Ok(false))
     }
 
     #[tracing::instrument(level = "debug", skip(self), err)]

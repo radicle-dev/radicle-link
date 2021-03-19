@@ -56,6 +56,7 @@ async fn fetches_on_gossip_notify() {
         proj.pull(&peer1, &peer2).await.ok().unwrap();
 
         let TestProject { project, owner: _ } = proj;
+        let peer1_events = peer2.subscribe();
         let peer2_events = peer2.subscribe();
 
         let mastor = reflike!("refs/heads/master");
@@ -114,6 +115,15 @@ async fn fetches_on_gossip_notify() {
         // Wait for peer2 to receive the gossip announcement
         event::upstream::expect(
             peer2_events.boxed(),
+            gossip_from(peer1.peer_id()),
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+
+        // Does peer2 forward the gossip?
+        event::upstream::expect(
+            peer1_events.boxed(),
             gossip_from(peer1.peer_id()),
             Duration::from_secs(5),
         )
