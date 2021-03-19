@@ -46,7 +46,13 @@ pub fn clone(
         Pruned::empty()
     };
 
-    Ok(mk_replicate_result(delegates, tracked, pruned, identity, Mode::Clone))
+    Ok(mk_replicate_result(
+        delegates,
+        tracked,
+        pruned,
+        identity,
+        Mode::Clone,
+    ))
 }
 
 /// Fetch the latest changes for the remotes that we are tracking for `urn`.
@@ -70,7 +76,13 @@ pub fn fetch(
     let identity = delegates.adopt(storage, urn)?;
     let pruned = Pruned::new(storage, urn, previous.removed(&tracked).into_iter())?;
 
-    Ok(mk_replicate_result(delegates, tracked, pruned, identity, Mode::Fetch))
+    Ok(mk_replicate_result(
+        delegates,
+        tracked,
+        pruned,
+        identity,
+        Mode::Fetch,
+    ))
 }
 
 #[tracing::instrument(skip(delegates, tracked, pruned))]

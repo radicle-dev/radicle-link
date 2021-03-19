@@ -133,20 +133,28 @@ pub enum Mode {
 ///
 /// The [`Urn::path`] is ignored (defaulting to `rad/id`).
 ///
-/// The fetch proceeds in three stages:
+/// The fetch can happen in one of two [`Mode`]. If the `urn` does not exist
+/// locally it will act in [`Mode::Clone`], otherwise it will act in
+/// [`Mode::Fetch`].
 ///
-/// 1. Update the remote branches needed for identity verification
+/// In the former the fetch proceeds as:
 ///
-///    The identity according to `remote_peer` is verified, and if that passes
-///    the local branch layout created (if it does not already exist). It may
-///    also update local tracking relationships based on the identity
-///    information.
+/// 1. Fetch the `remote_peer`'s view of the identity and determine the
+/// delegates from this view.
 ///
-/// 2. Fetch the `rad/signed_refs` of all tracked peers, and compute the
-///    eligible heads (i.e. where the `remote_peer` advertises the same tip
-///    oid as found in the signed refs)
+/// 2. Fetch the delegates, verifying the layout of each delegate.
+///     a. Fetch the eligible heads in the case of [`Project`].
 ///
-/// 3. Fetch the rest (i.e. eligible heads)
+/// 3. Track the delegates and one-degree out.
+///
+/// 4. Prune any peers that are no longer in the tracking graph
+///
+/// 5. Adopt the latest tip for `rad/id`. If the local peer is a delegate, the
+/// adoption will not    take place if they are not on the latest tip, see
+/// [`IdStatus`].
+///
+/// In the later, the fetch proceeds as above except the local view is used in
+/// step `1.`
 ///
 /// Optionally, a [`LocalIdentity`] can be specified to identify as in the
 /// context of this namespace (ie. to be used as the `rad/self` branch). If not
@@ -180,18 +188,16 @@ where
     let mut fetcher = storage.fetcher(urn.clone(), remote_peer, addr_hints)?;
     let result = if storage.has_urn(&urn)? {
         match identities::any::get(storage, &urn)?.ok_or(Error::MissingIdentity)? {
-            SomeIdentity::Person(_) => person::fetch(storage, &mut fetcher, config, &urn)?.into(),
-            SomeIdentity::Project(_) => project::fetch(storage, &mut fetcher, config, &urn)?.into(),
+            SomeIdentity::Person(_) => person::fetch(storage, &mut fetcher, config, &urn)?,
+            SomeIdentity::Project(_) => project::fetch(storage, &mut fetcher, config, &urn)?,
         }
     } else {
         let provider = Provider::fetch(storage, &mut fetcher, config, &urn, remote_peer)?;
         let provider_tips = provider.result.updated_tips.clone();
         tracing::debug!(tips = ?provider_tips, "provider tips");
         let mut result: ReplicateResult = match provider.determine_identity() {
-            Either::Left(person) => person::clone(storage, &mut fetcher, config, person)?.into(),
-            Either::Right(project) => {
-                project::clone(storage, &mut fetcher, config, project)?.into()
-            },
+            Either::Left(person) => person::clone(storage, &mut fetcher, config, person)?,
+            Either::Right(project) => project::clone(storage, &mut fetcher, config, project)?,
         };
 
         // Symref `rad/self` if a `LocalIdentity` was given
@@ -373,7 +379,11 @@ impl Tracked {
     }
 
     pub fn removed(&self, latest: &Self) -> BTreeSet<PeerId> {
-        self.remotes.iter().filter(|remote| !latest.remotes.contains(remote)).copied().collect()
+        self.remotes
+            .iter()
+            .filter(|remote| !latest.remotes.contains(remote))
+            .copied()
+            .collect()
     }
 
     /// Readable format for the tracked peers
@@ -402,7 +412,9 @@ impl Pruned {
     }
 
     pub fn empty() -> Self {
-        Pruned { remotes: BTreeSet::new() }
+        Pruned {
+            remotes: BTreeSet::new(),
+        }
     }
 
     /// Readable format for the pruned peers

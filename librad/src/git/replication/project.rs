@@ -83,8 +83,8 @@ pub fn fetch(
     urn: &Urn,
 ) -> Result<ReplicateResult, Error> {
     let previous = Tracked::load(storage, urn)?;
-    let delegates =
-        ProjectDelegates::from_local(storage, fetcher, config, urn, previous.clone())?.verify(storage)?;
+    let delegates = ProjectDelegates::from_local(storage, fetcher, config, urn, previous.clone())?
+        .verify(storage)?;
     let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
     let signed_refs = SignedRefs::fetch(storage, fetcher, config, &urn, &delegates, &tracked)?;
     let identity = delegates.adopt(storage, urn)?;
@@ -114,7 +114,7 @@ fn mk_replicate_result(
 
     let sigref_tips = signed_refs.result.updated_tips;
     tracing::debug!(tips = ?sigref_tips, "tips for rad/signed_refs");
-    tracing::debug!(tracked = ?signed_refs.tracked.trace(), "tracked peers");
+    tracing::debug!(tracked = ?signed_refs.tracked.trace(), "tracked peers from signed refs");
     updated_tips.extend(sigref_tips);
 
     tracing::debug!(tracked = ?tracked.trace(), "tracked peers");
