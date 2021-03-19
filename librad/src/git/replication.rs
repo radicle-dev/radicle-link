@@ -67,7 +67,7 @@ pub enum Error {
     #[error("signer error")]
     Sign(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
-    #[error("fetcher error")]
+    #[error("fetcher error: {0}")]
     Fetch(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error(transparent)]
