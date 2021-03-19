@@ -35,45 +35,62 @@ pub fn clone(
     provider: Provider<Person>,
 ) -> Result<ReplicateResult, Error> {
     let urn = provider.identity.urn();
+    let provider_id = provider.provider;
     let delegates = PersonDelegates::from_provider(storage, fetcher, config, provider)?;
     let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
     let identity = delegates.adopt(storage, &urn)?;
-    let updated_tips = delegates.0.result.updated_tips;
 
-    tracing::debug!(tips = ?updated_tips, "tips for delegates fetch");
-    tracing::debug!(tips = ?tracked.trace(), "tracked peers");
+    let pruned = if delegates.remotes().any(|remote| remote == provider_id) {
+        Pruned::new(storage, &urn, Some(provider_id).into_iter())?
+    } else {
+        Pruned::empty()
+    };
 
-    Ok(ReplicateResult {
-        updated_tips,
-        identity,
-        mode: Mode::Clone,
-    })
+    Ok(mk_replicate_result(delegates, tracked, pruned, identity, Mode::Clone))
 }
 
 /// Fetch the latest changes for the remotes that we are tracking for `urn`.
 ///
 /// If there are any new delegates we track them. Following that, we
 /// [`adopt`][`PersonDelegates::adopt`] the latest tip if necessary.
+///
+/// **Note**: new delegates could be removed or added, these are not fetched
+/// immediately, but instead added to the tracking graph. This means
+/// that we wait for another pass of replication to fetch those, and so
+/// on.
 pub fn fetch(
     storage: &Storage,
     fetcher: &mut fetch::DefaultFetcher,
     config: Config,
     urn: &Urn,
 ) -> Result<ReplicateResult, Error> {
-    let tracked = Tracked::load(storage, urn)?;
-    let delegates = PersonDelegates::from_local(storage, fetcher, config, urn, tracked)?;
+    let previous = Tracked::load(storage, urn)?;
+    let delegates = PersonDelegates::from_local(storage, fetcher, config, urn, previous.clone())?;
     let tracked = Tracked::new(storage, &urn, delegates.updates().into_iter())?;
     let identity = delegates.adopt(storage, urn)?;
+    let pruned = Pruned::new(storage, urn, previous.removed(&tracked).into_iter())?;
+
+    Ok(mk_replicate_result(delegates, tracked, pruned, identity, Mode::Fetch))
+}
+
+#[tracing::instrument(skip(delegates, tracked, pruned))]
+fn mk_replicate_result(
+    delegates: PersonDelegates,
+    tracked: Tracked,
+    pruned: Pruned,
+    identity: IdStatus,
+    mode: Mode,
+) -> ReplicateResult {
     let updated_tips = delegates.0.result.updated_tips;
-
     tracing::debug!(tips = ?updated_tips, "tips for delegates fetch");
-    tracing::debug!(tips = ?tracked.trace(), "tracked peers");
+    tracing::debug!(tracked = ?tracked.trace(), "tracked peers");
+    tracing::debug!(pruned = ?pruned.trace(), "pruned peers");
 
-    Ok(ReplicateResult {
+    ReplicateResult {
         updated_tips,
         identity,
-        mode: Mode::Fetch,
-    })
+        mode,
+    }
 }
 
 impl PersonDelegates {
@@ -103,11 +120,6 @@ impl PersonDelegates {
     /// with the existing tracked remote [`PeerId`]s. The remotes are
     /// fetched and the delegates are resolved from the
     /// existing [`VerifiedPerson`].
-    ///
-    /// **Note**: new delegates could be removed or added, these are not fetched
-    /// immediately, but instead added to the tracking graph. This means
-    /// that we wait for another pass of replication to fetch those, and so
-    /// on.
     pub fn from_local(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,

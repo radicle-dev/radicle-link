@@ -32,52 +32,79 @@ impl<P> From<Delegates<Vec<DelegateView<P>>>> for ProjectDelegates<P> {
     }
 }
 
+/// Clone the [`Project`] from the `provider` by fetching the delegates in the
+/// document.
+///
+/// We track all the delegates in the document and adopt the `rad/id` for this
+/// identity.
 pub fn clone(
     storage: &Storage,
     fetcher: &mut fetch::DefaultFetcher,
     config: Config,
     provider: Provider<Project>,
 ) -> Result<ReplicateResult, Error> {
+    let provider_id = provider.provider;
     let urn = provider.identity.urn();
-    let delegates = ProjectDelegates::from_provider(storage, fetcher, config, provider)?.verify(storage)?;
+    let delegates =
+        ProjectDelegates::from_provider(storage, fetcher, config, provider)?.verify(storage)?;
     let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
     let signed_refs = SignedRefs::fetch(storage, fetcher, config, &urn, &delegates, &tracked)?;
     let identity = delegates.adopt(storage, &urn)?;
 
+    let pruned = if delegates.remotes().any(|remote| remote == provider_id) {
+        Pruned::new(storage, &urn, Some(provider_id).into_iter())?
+    } else {
+        Pruned::empty()
+    };
+
     Ok(mk_replicate_result(
         delegates,
         tracked,
+        pruned,
         signed_refs,
         identity,
         Mode::Clone,
     ))
 }
 
+/// Fetch the latest changes for the remotes that we are tracking for `urn`.
+///
+/// If there are any new delegates we track them. Following that, we
+/// [`adopt`][`ProjectDelegates::adopt`] the latest tip if necessary.
+///
+/// **Note**: new delegates could be removed or added, these are not fetched
+/// immediately, but instead added to the tracking graph. This means
+/// that we wait for another pass of replication to fetch those, and so
+/// on.
 pub fn fetch(
     storage: &Storage,
     fetcher: &mut fetch::DefaultFetcher,
     config: Config,
     urn: &Urn,
 ) -> Result<ReplicateResult, Error> {
-    let tracked = Tracked::load(storage, urn)?;
-    let delegates = ProjectDelegates::from_local(storage, fetcher, config, urn, tracked)?
-        .verify(storage)?;
+    let previous = Tracked::load(storage, urn)?;
+    let delegates =
+        ProjectDelegates::from_local(storage, fetcher, config, urn, previous.clone())?.verify(storage)?;
     let tracked = Tracked::new(storage, &urn, delegates.remotes())?;
     let signed_refs = SignedRefs::fetch(storage, fetcher, config, &urn, &delegates, &tracked)?;
     let identity = delegates.adopt(storage, urn)?;
+    let pruned = Pruned::new(storage, urn, previous.removed(&tracked).into_iter())?;
 
     Ok(mk_replicate_result(
         delegates,
         tracked,
+        pruned,
         signed_refs,
         identity,
         Mode::Fetch,
     ))
 }
 
+#[tracing::instrument(skip(delegates, tracked, pruned, signed_refs))]
 fn mk_replicate_result(
     delegates: ProjectDelegates<VerifiedProject>,
     tracked: Tracked,
+    pruned: Pruned,
     signed_refs: SignedRefs,
     identity: IdStatus,
     mode: Mode,
@@ -91,6 +118,7 @@ fn mk_replicate_result(
     updated_tips.extend(sigref_tips);
 
     tracing::debug!(tracked = ?tracked.trace(), "tracked peers");
+    tracing::debug!(pruned = ?pruned.trace(), "pruned peers");
 
     ReplicateResult {
         updated_tips,
@@ -196,16 +224,15 @@ impl DelegateView<Project> {
         }
     }
 
-    /// Verify the [`Project`] in the `DelegateView`, turning them into [`VerifiedProject`]s.
+    /// Verify the [`Project`] in the `DelegateView`, turning them into
+    /// [`VerifiedProject`]s.
     ///
-    /// For `Direct` it's straight-forward since there is no indirection on the delegation.
+    /// For `Direct` it's straight-forward since there is no indirection on the
+    /// delegation.
     ///
-    /// For `Indirect` we must first adopt the [`VerifiedProject`] associated and then verify the
-    /// project.
-    pub fn verify(
-        self,
-        storage: &Storage,
-    ) -> Result<DelegateView<VerifiedProject>, Error> {
+    /// For `Indirect` we must first adopt the [`VerifiedProject`] associated
+    /// and then verify the project.
+    pub fn verify(self, storage: &Storage) -> Result<DelegateView<VerifiedProject>, Error> {
         match self {
             DelegateView::Direct { remote, project } => {
                 let urn = unsafe_into_urn(
@@ -248,8 +275,12 @@ impl DelegateView<Project> {
     }
 }
 
-
-fn adopt_direct(storage: &Storage, person: &VerifiedPerson, remotes: impl Iterator<Item = PeerId>, project_urn: &Urn) -> Result<Tracked, Error> {
+fn adopt_direct(
+    storage: &Storage,
+    person: &VerifiedPerson,
+    remotes: impl Iterator<Item = PeerId>,
+    project_urn: &Urn,
+) -> Result<Tracked, Error> {
     let urn = person.urn();
     let tracked = Tracked::new(storage, &urn, remotes)?;
 
@@ -279,10 +310,11 @@ impl<P> ProjectDelegates<P> {
             DelegateView::Indirect { remotes, .. } => Either::Right(remotes.iter().copied()),
         })
     }
-}
 
-impl ProjectDelegates<VerifiedProject> {
-    pub fn rad_ids(&'_ self) -> impl Iterator<Item = Urn> + '_ {
+    pub fn rad_ids(&'_ self) -> impl Iterator<Item = Urn> + '_
+    where
+        P: std::ops::Deref<Target = Project>,
+    {
         self.0.views.iter().flat_map(|view| match view {
             DelegateView::Direct { remote, project } => Either::Left(iter::once(unsafe_into_urn(
                 Reference::rad_id(Namespace::from(project.urn())).with_remote(*remote),
@@ -296,7 +328,15 @@ impl ProjectDelegates<VerifiedProject> {
             },
         })
     }
+}
 
+impl ProjectDelegates<VerifiedProject> {
+    /// Using the delegates we determine the latest tip for `rad/id`.
+    ///
+    /// If we are one of the delegates then we keep our own tip and determine
+    /// the [`IdStatus`] by comparing our tip to the latest.
+    ///
+    /// Otherwise, we adopt the latest tip for our version of `rad/id`.
     pub fn adopt(&self, storage: &Storage, urn: &Urn) -> Result<IdStatus, Error> {
         use IdStatus::*;
 
@@ -339,6 +379,9 @@ impl ProjectDelegates<VerifiedProject> {
 }
 
 impl ProjectDelegates<Project> {
+    /// Looking at the delegates of using the `provider`'s view we build up a
+    /// set of [`DelegateView<Project>`]. At this point we have only fetched the
+    /// delegates and we haven't verified them.
     pub fn from_provider(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,
@@ -355,6 +398,9 @@ impl ProjectDelegates<Project> {
         )
     }
 
+    /// We use the `tracked` set of peers to fetch any updates for them, and
+    /// build up a set of [`DelegateView<Project>`] from our local view of
+    /// the [`Project`].
     pub fn from_local(
         storage: &Storage,
         fetcher: &mut fetch::DefaultFetcher,
@@ -366,10 +412,9 @@ impl ProjectDelegates<Project> {
         Self::from_identity(storage, fetcher, config, project, tracked.remotes, None)
     }
 
-    pub fn verify(
-        self,
-        storage: &Storage,
-    ) -> Result<ProjectDelegates<VerifiedProject>, Error> {
+    /// Verify the [`Project`]s in the delegate set, see
+    /// [`DelegateView::verify`].
+    pub fn verify(self, storage: &Storage) -> Result<ProjectDelegates<VerifiedProject>, Error> {
         let ProjectDelegates(Delegates {
             result,
             fetched,
@@ -384,21 +429,6 @@ impl ProjectDelegates<Project> {
             fetched,
             views,
         }))
-    }
-
-    pub fn rad_ids(&'_ self) -> impl Iterator<Item = Urn> + '_ {
-        self.0.views.iter().flat_map(|view| match view {
-            DelegateView::Direct { remote, project } => Either::Left(iter::once(unsafe_into_urn(
-                Reference::rad_id(Namespace::from(project.urn())).with_remote(*remote),
-            ))),
-            DelegateView::Indirect { projects, .. } => {
-                Either::Right(projects.iter().map(|(remote, project)| {
-                    unsafe_into_urn(
-                        Reference::rad_id(Namespace::from(project.urn())).with_remote(*remote),
-                    )
-                }))
-            },
-        })
     }
 
     #[allow(clippy::unit_arg)]

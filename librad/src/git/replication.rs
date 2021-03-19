@@ -108,6 +108,7 @@ pub struct ReplicateResult {
 }
 
 /// The "freshness" of the local view of a repo identity wrt the delegates.
+#[derive(Debug)]
 pub enum IdStatus {
     /// Up-to-date, no further action is required.
     Even,
@@ -117,6 +118,7 @@ pub enum IdStatus {
 }
 
 /// The "mode" `replicate` was operating in.
+#[derive(Debug)]
 pub enum Mode {
     /// The git tree corresponding to [`Urn`] was previously **not** present
     /// locally, so the operation was equivalent to `git clone`.
@@ -343,6 +345,7 @@ pub struct Delegates<A> {
     views: A,
 }
 
+/// The peers that are part of the identity's tracking graph.
 #[derive(Clone, Debug)]
 pub struct Tracked {
     remotes: BTreeSet<PeerId>,
@@ -369,6 +372,10 @@ impl Tracked {
         })
     }
 
+    pub fn removed(&self, latest: &Self) -> BTreeSet<PeerId> {
+        self.remotes.iter().filter(|remote| !latest.remotes.contains(remote)).copied().collect()
+    }
+
     /// Readable format for the tracked peers
     fn trace(&self) -> Vec<String> {
         self.remotes.iter().map(|peer| peer.to_string()).collect()
@@ -379,6 +386,29 @@ impl Tracked {
 /// tracking graph.
 pub struct Pruned {
     remotes: BTreeSet<PeerId>,
+}
+
+impl Pruned {
+    pub fn new(
+        storage: &Storage,
+        urn: &Urn,
+        remotes: impl Iterator<Item = PeerId>,
+    ) -> Result<Self, Error> {
+        remotes
+            .map(|remote| tracking::track(storage, urn, remote).map(|_| remote))
+            .collect::<Result<_, _>>()
+            .map(|remotes| Self { remotes })
+            .map_err(Error::Track)
+    }
+
+    pub fn empty() -> Self {
+        Pruned { remotes: BTreeSet::new() }
+    }
+
+    /// Readable format for the pruned peers
+    fn trace(&self) -> Vec<String> {
+        self.remotes.iter().map(|peer| peer.to_string()).collect()
+    }
 }
 
 fn unsafe_into_urn(reference: Reference<git_ext::RefLike>) -> Urn {
@@ -400,146 +430,4 @@ fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<ext::Oid
         .oid(storage)
         .map(Into::into)
         .map_err(|e| Error::Store(e.into()))
-}
-
-/// Untrack the list of `PeerId`s, which also has the side-effect of removing
-/// that peer's remote references in the storage.
-///
-/// **Note**: this function will return early on failure. This could mean that
-/// remotes which were meant for pruning might not have been removed, resulting
-/// in unnecessary remote references.
-#[allow(clippy::unit_arg)]
-#[tracing::instrument(
-    level = "trace",
-    skip(storage, urn, prune_list),
-    fields(urn = %urn),
-    err
-)]
-fn prune<'a>(
-    storage: &Storage,
-    urn: &Urn,
-    prune_list: impl Iterator<Item = &'a PeerId>,
-) -> Result<(), Error> {
-    for peer in prune_list {
-        match tracking::untrack(storage, urn, *peer) {
-            Ok(removed) => {
-                if removed {
-                    tracing::info!(peer = %peer, "pruned");
-                } else {
-                    tracing::trace!(peer = %peer, "peer did not exist for pruning");
-                }
-            },
-            Err(err) => {
-                tracing::warn!(peer = %peer, err = %err, "failed to prune");
-                return Err(err.into());
-            },
-        }
-    }
-    Ok(())
-}
-
-// Allowing dead code to keep the other fields
-#[allow(dead_code)]
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Partition<A> {
-    removed: BTreeSet<A>,
-    added: BTreeSet<A>,
-    kept: BTreeSet<A>,
-}
-
-// Return three sets where the first consists of elements in `ys` but not in
-// `xs` and the second vice-versa, and the final set contains the elements they
-// both share.
-//
-// If `ys` represents an "updated" set of `xs` then the first set will be all
-// elements that were removed, the second set will be all the elements added,
-// and the third set all the elements that stayed the same.
-fn partition<'a, A: Clone + Ord>(xs: &'a BTreeSet<A>, ys: &'a BTreeSet<A>) -> Partition<A> {
-    let mut removed = BTreeSet::new();
-    let mut added = BTreeSet::new();
-    let kept = xs.intersection(ys).cloned().collect();
-
-    for e in xs.symmetric_difference(ys) {
-        if xs.contains(e) {
-            removed.insert(e.clone());
-        } else {
-            added.insert(e.clone());
-        }
-    }
-
-    Partition {
-        removed,
-        added,
-        kept,
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use proptest::{collection, prelude::*};
-
-    use super::*;
-
-    proptest! {
-        #[test]
-        fn annihilated(xs in collection::btree_set(0u32..1000, 0..100)) {
-            annihilated_prop(xs)
-        }
-
-        #[test]
-        fn full(ys in collection::btree_set(0u32..1000, 0..100)) {
-            full_prop(ys)
-        }
-
-        #[test]
-        fn kept(xs in collection::btree_set(0u32..1000, 0..100), ys in collection::btree_set(0u32..1000, 0..100)) {
-            kept_prop(xs, ys)
-        }
-    }
-
-    #[test]
-    fn partitioning() {
-        let xs = vec![1, 2, 3, 4, 5].into_iter().collect();
-        let ys = vec![3, 4, 5, 6, 7].into_iter().collect();
-        let expected = Partition {
-            removed: vec![1, 2].into_iter().collect(),
-            added: vec![6, 7].into_iter().collect(),
-            kept: vec![3, 4, 5].into_iter().collect(),
-        };
-        assert_eq!(partition(&xs, &ys), expected);
-    }
-
-    /// If the `ys` parameter to partition is empty then `xs` is considered
-    /// removed.
-    fn annihilated_prop(xs: BTreeSet<u32>) {
-        assert_eq!(
-            partition(&xs, &BTreeSet::new()),
-            Partition {
-                removed: xs.clone(),
-                added: BTreeSet::new(),
-                kept: BTreeSet::new()
-            }
-        )
-    }
-
-    /// If the `xs` parameter to partition is empty then `ys` is considered
-    /// added.
-    fn full_prop(ys: BTreeSet<u32>) {
-        assert_eq!(
-            partition(&BTreeSet::new(), &ys),
-            Partition {
-                removed: BTreeSet::new(),
-                added: ys.clone(),
-                kept: BTreeSet::new()
-            }
-        )
-    }
-
-    /// The intersection of `xs` and `ys` is always kept
-    fn kept_prop(xs: BTreeSet<u32>, ys: BTreeSet<u32>) {
-        assert_eq!(
-            partition(&xs, &ys).kept,
-            xs.intersection(&ys).copied().collect()
-        )
-    }
 }
