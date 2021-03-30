@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "copy",
+  "daemon",
   "e2e",
   "git-ext",
   "git-helpers",
