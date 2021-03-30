@@ -3,6 +3,7 @@ members = [
   "copy",
   "daemon",  
   "data",
+  "daemon",
   "e2e",
   "git-ext",
   "git-helpers",
