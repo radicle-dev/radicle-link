@@ -5,13 +5,14 @@
 
 use std::net::SocketAddr;
 
-use super::{broadcast, gossip, membership};
+use super::{broadcast, error, gossip, interrogation, membership};
 use crate::PeerId;
 
 #[derive(Clone)]
 pub enum Downstream {
     Gossip(downstream::Gossip),
     Info(downstream::Info),
+    Interrogation(downstream::Interrogation),
 }
 
 pub mod downstream {
@@ -58,6 +59,14 @@ pub mod downstream {
         pub connected_peers: usize,
         pub membership_active: usize,
         pub membership_passive: usize,
+    }
+
+    #[derive(Clone)]
+    pub struct Interrogation {
+        pub peer: (PeerId, Vec<SocketAddr>),
+        pub request: interrogation::Request,
+        pub reply:
+            Reply<Result<interrogation::Response<'static, SocketAddr>, error::Interrogation>>,
     }
 }
 

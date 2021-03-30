@@ -18,3 +18,15 @@ mod sealed;
 pub(crate) mod gen;
 
 pub use git::*;
+
+#[derive(Clone, Debug, minicbor::Encode, minicbor::Decode)]
+pub enum SomeUrn {
+    #[n(0)]
+    Git(#[n(0)] git::Urn),
+}
+
+impl From<git::Urn> for SomeUrn {
+    fn from(urn: git::Urn) -> Self {
+        Self::Git(urn)
+    }
+}

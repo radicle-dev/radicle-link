@@ -109,6 +109,7 @@ mod incoming {
             Ok(Git(up)) => recv::git(state, up).await,
             Ok(Gossip(up)) => recv::gossip(state, up).await,
             Ok(Membership(up)) => recv::membership(state, up).await,
+            Ok(Interrogation(up)) => recv::interrogation(state, up).await,
         }
     }
 
@@ -124,13 +125,16 @@ mod incoming {
                 stream.close(CloseReason::InvalidUpgrade)
             },
 
-            Ok(Git(up)) => {
-                tracing::warn!("unidirectional git requested");
-                up.into_stream().close(CloseReason::InvalidUpgrade);
-            },
+            Ok(Git(up)) => deny_uni(up.into_stream(), "git"),
+            Ok(Interrogation(up)) => deny_uni(up.into_stream(), "interrogation"),
 
             Ok(Gossip(up)) => recv::gossip(state, up).await,
             Ok(Membership(up)) => recv::membership(state, up).await,
         }
+    }
+
+    fn deny_uni(stream: quic::RecvStream, kind: &str) {
+        tracing::warn!("unidirectional {} requested", kind);
+        stream.close(CloseReason::InvalidUpgrade)
     }
 }

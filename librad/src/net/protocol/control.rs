@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 
 use futures::stream::{self, StreamExt as _};
 
-use super::{broadcast, event, gossip, io, tick, PeerInfo, ProtocolStorage, State};
+use super::{broadcast, error, event, gossip, io, tick, PeerInfo, ProtocolStorage, State};
 
 pub(super) async fn gossip<S>(state: &State<S>, evt: event::downstream::Gossip)
 where
@@ -59,8 +59,9 @@ where
             }
         },
 
-        Info::Membership(tx) => {
-            if let Some(tx) = tx.lock().take() {
+        Info::Membership(reply) => {
+            let chan = reply.lock().take();
+            if let Some(tx) = chan {
                 tx.send(MembershipInfo {
                     active: state.membership.active(),
                     passive: state.membership.passive(),
@@ -82,5 +83,37 @@ where
                 .ok();
             }
         },
+    }
+}
+
+pub(super) async fn interrogation<S>(
+    state: State<S>,
+    event::downstream::Interrogation {
+        peer: (peer, addr_hints),
+        request,
+        reply,
+    }: event::downstream::Interrogation,
+) where
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+{
+    let chan = reply.lock().take();
+    if let Some(tx) = chan {
+        let may_conn = match state.endpoint.get_connection(peer) {
+            Some(conn) => Some(conn),
+            None => io::connect(&state.endpoint, peer, addr_hints)
+                .await
+                .map(|(conn, ingress)| {
+                    tokio::spawn(io::streams::incoming(state.clone(), ingress));
+                    conn
+                }),
+        };
+        let resp = match may_conn {
+            None => Err(error::Interrogation::NoConnection(peer)),
+            Some(conn) => match io::send::request(&conn, request).await {
+                Err(e) => Err(e.into()),
+                Ok(resp) => resp.ok_or(error::Interrogation::NoResponse(peer)),
+            },
+        };
+        tx.send(resp).ok();
     }
 }

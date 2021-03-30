@@ -22,6 +22,7 @@ pub use super::protocol::{
         downstream::{MembershipInfo, Stats},
         Upstream as ProtocolEvent,
     },
+    Interrogation,
     PeerInfo,
 };
 pub use deadpool::managed::PoolError;
@@ -227,6 +228,10 @@ where
 
     pub async fn stats(&self) -> Stats {
         self.phone.stats().await
+    }
+
+    pub fn interrogate(&self, peer: impl Into<(PeerId, Vec<SocketAddr>)>) -> Interrogation {
+        self.phone.interrogate(peer)
     }
 
     pub fn subscribe(

@@ -92,7 +92,7 @@ where
 
             tracing::debug!("remotes: {:?}", refs.remotes);
 
-            if is_interesting(&remote_peer, &remote_heads, &refs.remotes) {
+            if is_interesting(remote_peer, &remote_heads, &refs.remotes) {
                 tracing::debug!("interesting");
                 Ok(Some(
                     replication::replicate(&storage, fetcher, config.replication, None)
@@ -107,40 +107,22 @@ where
     .await?
 }
 
-fn is_interesting<P>(remote_peer: &P, remote_heads: &RemoteHeads, remotes: &Remotes<P>) -> bool
+fn is_interesting<P>(remote_peer: P, remote_heads: &RemoteHeads, remotes: &Remotes<P>) -> bool
 where
     P: Ord + FromStr,
 {
     let tracked_local = remotes.flatten().collect::<BTreeSet<_>>();
-    //
-    // Ok, computer science NERDS. Can we make this actually efficient?
-    //
-    // Permit borrowing string slices
-    let refs = remote_heads.keys();
-    let remote_peer_ids = refs
-        // Avoid parsing until we have a set of candidates
-        .fold(BTreeSet::new(), |mut acc, ref_ish| {
-            if let Some(maybe_peer_id) = ref_ish
+    let mut tracked_remote =
+        iter::once(remote_peer).chain(remote_heads.keys().filter_map(|ref_ish| {
+            ref_ish
                 .split('/')
                 .skip_while(|&x| x != "remotes")
                 .skip(1)
                 .take(1)
                 .next()
-            {
-                acc.insert(maybe_peer_id);
-            }
-
-            acc
-        })
-        .into_iter()
-        .filter_map(|maybe_peer_id| maybe_peer_id.parse().ok())
-        // Permit borrowing the `PeerId`s, so as to match the type of `tracked_local`
-        .collect::<Vec<_>>();
-    let tracked_remote = iter::once(remote_peer)
-        .chain(remote_peer_ids.iter())
-        .collect::<BTreeSet<_>>();
-
-    !tracked_local.is_disjoint(&tracked_remote)
+                .and_then(|remote| remote.parse().ok())
+        }));
+    tracked_remote.any(|peer_id: P| tracked_local.contains(&peer_id))
 }
 
 #[cfg(test)]
@@ -168,7 +150,7 @@ mod test {
         .into_iter()
         .collect();
 
-        assert!(is_interesting(&remote_peer, &remote_heads, &remotes))
+        assert!(is_interesting(remote_peer, &remote_heads, &remotes))
     }
 
     #[test]
@@ -188,6 +170,6 @@ mod test {
         .into_iter()
         .collect();
 
-        assert!(!is_interesting(&remote_peer, &remote_heads, &remotes))
+        assert!(!is_interesting(remote_peer, &remote_heads, &remotes))
     }
 }

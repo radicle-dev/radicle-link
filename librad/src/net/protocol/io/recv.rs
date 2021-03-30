@@ -9,5 +9,8 @@ pub(in crate::net::protocol) use git::git;
 mod gossip;
 pub(in crate::net::protocol) use gossip::gossip;
 
+pub(in crate::net::protocol) mod interrogation;
+pub(in crate::net::protocol) use interrogation::interrogation;
+
 mod membership;
 pub(in crate::net::protocol) use membership::{connection_lost, membership};

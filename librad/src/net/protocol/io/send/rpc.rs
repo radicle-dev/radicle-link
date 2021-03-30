@@ -14,6 +14,7 @@ use crate::net::{
     quic,
     upgrade,
 };
+
 #[derive(Debug)]
 pub enum Rpc<A, P>
 where
@@ -50,7 +51,10 @@ where
     ),
     err
 )]
-pub async fn send_rpc<R, P>(conn: &quic::Connection, rpc: R) -> Result<(), error::SendGossip>
+pub async fn send_rpc<R, P>(
+    conn: &quic::Connection,
+    rpc: R,
+) -> Result<(), error::Rpc<quic::SendStream>>
 where
     R: Into<Rpc<SocketAddr, P>>,
     P: minicbor::Encode,
@@ -65,7 +69,6 @@ where
             FramedWrite::new(upgraded, codec::Membership::new())
                 .send(msg)
                 .await?;
-            Ok(())
         },
 
         Gossip(msg) => {
@@ -73,7 +76,8 @@ where
             FramedWrite::new(upgraded, codec::Gossip::new())
                 .send(msg)
                 .await?;
-            Ok(())
         },
     }
+
+    Ok(())
 }

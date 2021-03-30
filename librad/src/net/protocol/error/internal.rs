@@ -3,7 +3,10 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{fmt::Debug, io};
+use std::{
+    fmt::{self, Debug},
+    io,
+};
 
 use thiserror::Error;
 
@@ -60,7 +63,7 @@ pub enum ReliableSendSource {
     NotConnected { to: PeerId },
 
     #[error(transparent)]
-    SendGossip(#[from] SendGossip),
+    SendGossip(#[from] Rpc<quic::SendStream>),
 }
 
 #[derive(Debug, Error)]
@@ -69,13 +72,13 @@ pub enum BestEffortSend<A: Clone + Ord + Debug + 'static> {
     CouldNotConnect { to: PeerInfo<A> },
 
     #[error(transparent)]
-    SendGossip(#[from] SendGossip),
+    SendGossip(#[from] Rpc<quic::SendStream>),
 }
 
-#[derive(Debug, Error)]
-pub enum SendGossip {
+#[derive(Error)]
+pub enum Rpc<S: 'static> {
     #[error(transparent)]
-    Upgrade(#[from] upgrade::Error<quic::SendStream>),
+    Upgrade(#[from] upgrade::Error<S>),
 
     #[error(transparent)]
     Quic(#[from] quic::Error),
@@ -87,7 +90,20 @@ pub enum SendGossip {
     Io(#[from] io::Error),
 }
 
-impl From<CborCodecError> for SendGossip {
+// As per usual, the derive macro generates too strict bounds on the type
+// parameter
+impl<S> Debug for Rpc<S> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Upgrade(x) => f.debug_tuple("Upgrade").field(x).finish(),
+            Self::Quic(x) => f.debug_tuple("Quic").field(x).finish(),
+            Self::Cbor(x) => f.debug_tuple("Cbor").field(x).finish(),
+            Self::Io(x) => f.debug_tuple("Io").field(x).finish(),
+        }
+    }
+}
+
+impl<S> From<CborCodecError> for Rpc<S> {
     fn from(e: CborCodecError) -> Self {
         match e {
             CborCodecError::Cbor(e) => Self::Cbor(e),

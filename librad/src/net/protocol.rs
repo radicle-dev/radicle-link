@@ -22,9 +22,7 @@ use futures::{
 use governor::{Quota, RateLimiter};
 use nonempty::NonEmpty;
 use nonzero_ext::nonzero;
-use parking_lot::Mutex;
 use rand_pcg::Pcg64Mcg;
-use tokio::sync::broadcast as tincan;
 use tracing::Instrument as _;
 
 use super::{
@@ -48,22 +46,26 @@ use crate::{
     PeerId,
 };
 
-pub use tokio::sync::broadcast::error::RecvError;
-
 pub mod broadcast;
 pub mod error;
 pub mod event;
 pub mod gossip;
+pub mod interrogation;
 pub mod membership;
 
 mod info;
 pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
 
 mod accept;
+mod cache;
 mod control;
 mod io;
 mod nonce;
 mod tick;
+
+mod tincans;
+pub(super) use tincans::TinCans;
+pub use tincans::{Interrogation, RecvError};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -140,140 +142,6 @@ impl<S> LocalAddr for Bound<S> {
     }
 }
 
-#[derive(Clone)]
-pub struct TinCans {
-    downstream: tincan::Sender<event::Downstream>,
-    upstream: tincan::Sender<event::Upstream>,
-}
-
-impl TinCans {
-    pub fn new() -> Self {
-        Self {
-            downstream: tincan::channel(16).0,
-            upstream: tincan::channel(16).0,
-        }
-    }
-
-    pub fn announce(&self, have: gossip::Payload) -> Result<(), gossip::Payload> {
-        use event::{downstream::Gossip::Announce, Downstream};
-
-        self.downstream
-            .send(Downstream::Gossip(Announce(have)))
-            .and(Ok(()))
-            .map_err(|tincan::error::SendError(e)| match e {
-                Downstream::Gossip(g) => g.payload(),
-                _ => unreachable!(),
-            })
-    }
-
-    pub fn query(&self, want: gossip::Payload) -> Result<(), gossip::Payload> {
-        use event::{downstream::Gossip::Query, Downstream};
-
-        self.downstream
-            .send(Downstream::Gossip(Query(want)))
-            .and(Ok(()))
-            .map_err(|tincan::error::SendError(e)| match e {
-                Downstream::Gossip(g) => g.payload(),
-                _ => unreachable!(),
-            })
-    }
-
-    pub async fn connected_peers(&self) -> Vec<PeerId> {
-        use event::{downstream::Info::*, Downstream};
-
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let tx = Arc::new(Mutex::new(Some(tx)));
-        if let Err(tincan::error::SendError(e)) =
-            self.downstream.send(Downstream::Info(ConnectedPeers(tx)))
-        {
-            match e {
-                Downstream::Info(ConnectedPeers(reply)) => {
-                    reply
-                        .lock()
-                        .take()
-                        .expect("if chan send failed, there can't be another contender")
-                        .send(vec![])
-                        .ok();
-                },
-
-                _ => unreachable!(),
-            }
-        }
-
-        rx.await.unwrap_or_default()
-    }
-
-    pub async fn membership(&self) -> event::downstream::MembershipInfo {
-        use event::{
-            downstream::{Info::*, MembershipInfo},
-            Downstream,
-        };
-
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let tx = Arc::new(Mutex::new(Some(tx)));
-
-        if let Err(tincan::error::SendError(e)) =
-            self.downstream.send(Downstream::Info(Membership(tx)))
-        {
-            match e {
-                Downstream::Info(Membership(reply)) => {
-                    reply
-                        .lock()
-                        .take()
-                        .expect("if chan send failed, there can't be another contender")
-                        .send(MembershipInfo::default())
-                        .ok();
-                },
-                _ => unreachable!(),
-            }
-        }
-
-        rx.await.unwrap_or_default()
-    }
-
-    pub async fn stats(&self) -> event::downstream::Stats {
-        use event::{
-            downstream::{Info::*, Stats},
-            Downstream,
-        };
-
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let tx = Arc::new(Mutex::new(Some(tx)));
-        if let Err(tincan::error::SendError(e)) = self.downstream.send(Downstream::Info(Stats(tx)))
-        {
-            match e {
-                Downstream::Info(Stats(reply)) => {
-                    reply
-                        .lock()
-                        .take()
-                        .expect("if chan send failed, there can't be another contender")
-                        .send(Stats::default())
-                        .ok();
-                },
-
-                _ => unreachable!(),
-            }
-        }
-
-        rx.await.unwrap_or_default()
-    }
-
-    pub fn subscribe(&self) -> impl futures::Stream<Item = Result<event::Upstream, RecvError>> {
-        let mut r = self.upstream.subscribe();
-        async_stream::stream! { loop { yield r.recv().await } }
-    }
-
-    pub(self) fn emit(&self, evt: impl Into<event::Upstream>) {
-        self.upstream.send(evt.into()).ok();
-    }
-}
-
-impl Default for TinCans {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 pub async fn bind<Sign, Store>(
     phone: TinCans,
     config: Config,
@@ -311,6 +179,7 @@ where
             fetch: config.fetch,
         },
         nonces: nonce::NonceBag::new(Duration::from_secs(300)), // TODO: config
+        caches: cache::Caches::default(),
     };
 
     Ok(Bound {
@@ -475,6 +344,7 @@ struct State<S> {
     phone: TinCans,
     config: StateConfig,
     nonces: nonce::NonceBag,
+    caches: cache::Caches,
 }
 
 #[async_trait]

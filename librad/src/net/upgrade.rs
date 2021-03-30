@@ -48,6 +48,9 @@ pub struct Git;
 #[derive(Debug)]
 pub struct Membership;
 
+#[derive(Debug)]
+pub struct Interrogation;
+
 /// Signal the (sub-) protocol about to be sent over a given QUIC stream.
 ///
 /// This is only valid as the first message sent by the initiator of a fresh
@@ -69,6 +72,7 @@ pub enum UpgradeRequest {
     Gossip = 0,
     Git = 1,
     Membership = 2,
+    Interrogation = 3,
 }
 
 impl From<Gossip> for UpgradeRequest {
@@ -86,6 +90,12 @@ impl From<Git> for UpgradeRequest {
 impl From<Membership> for UpgradeRequest {
     fn from(_membership: Membership) -> Self {
         UpgradeRequest::Membership
+    }
+}
+
+impl From<Interrogation> for UpgradeRequest {
+    fn from(_interrogation: Interrogation) -> Self {
+        UpgradeRequest::Interrogation
     }
 }
 
@@ -110,6 +120,7 @@ impl<'de> minicbor::Decode<'de> for UpgradeRequest {
                 0 => Ok(Self::Gossip),
                 1 => Ok(Self::Git),
                 2 => Ok(Self::Membership),
+                3 => Ok(Self::Interrogation),
                 n => Err(minicbor::decode::Error::UnknownVariant(n as u32)),
             },
             n => Err(minicbor::decode::Error::UnknownVariant(n as u32)),
@@ -222,6 +233,7 @@ pub enum SomeUpgraded<S> {
     Gossip(Upgraded<Gossip, S>),
     Git(Upgraded<Git, S>),
     Membership(Upgraded<Membership, S>),
+    Interrogation(Upgraded<Interrogation, S>),
 }
 
 impl<S> SomeUpgraded<S> {
@@ -233,6 +245,7 @@ impl<S> SomeUpgraded<S> {
             Self::Gossip(up) => SomeUpgraded::Gossip(up.map(f)),
             Self::Git(up) => SomeUpgraded::Git(up.map(f)),
             Self::Membership(up) => SomeUpgraded::Membership(up.map(f)),
+            Self::Interrogation(up) => SomeUpgraded::Interrogation(up.map(f)),
         }
     }
 }
@@ -288,6 +301,9 @@ where
                 UpgradeRequest::Gossip => SomeUpgraded::Gossip(Upgraded::new(incoming)),
                 UpgradeRequest::Git => SomeUpgraded::Git(Upgraded::new(incoming)),
                 UpgradeRequest::Membership => SomeUpgraded::Membership(Upgraded::new(incoming)),
+                UpgradeRequest::Interrogation => {
+                    SomeUpgraded::Interrogation(Upgraded::new(incoming))
+                },
             };
 
             Ok(upgrade)
@@ -348,10 +364,19 @@ mod tests {
         )
     }
 
+    #[async_test]
+    async fn upgrade_interrogation() {
+        assert_matches!(
+            test_upgrade(Interrogation).await,
+            Ok(SomeUpgraded::Interrogation(_))
+        )
+    }
+
     #[test]
     fn roundtrip_upgrade_request() {
         cbor_roundtrip(UpgradeRequest::Gossip);
         cbor_roundtrip(UpgradeRequest::Git);
         cbor_roundtrip(UpgradeRequest::Membership);
+        cbor_roundtrip(UpgradeRequest::Interrogation);
     }
 }
