@@ -11,17 +11,20 @@ use futures::{
 };
 use futures_codec::FramedRead;
 
-use crate::net::{
-    connection::RemoteInfo,
-    protocol::{
-        gossip,
-        io::{codec, peer_advertisement},
-        membership,
-        tick,
-        ProtocolStorage,
-        State,
+use crate::{
+    net::{
+        connection::RemoteInfo,
+        protocol::{
+            gossip,
+            io::{codec, peer_advertisement},
+            membership,
+            tick,
+            ProtocolStorage,
+            State,
+        },
+        upgrade::{self, Upgraded},
     },
-    upgrade::{self, Upgraded},
+    PeerId,
 };
 
 pub(in crate::net::protocol) async fn membership<S, T>(
@@ -39,16 +42,7 @@ pub(in crate::net::protocol) async fn membership<S, T>(
         match x {
             Err(e) => {
                 tracing::warn!(err = ?e, "membership recv error");
-                let info = || peer_advertisement(&state.endpoint);
-
-                let membership::TnT { trans, ticks } = state.membership.connection_lost(remote_id);
-                trans.into_iter().for_each(|evt| state.phone.emit(evt));
-                for tick in ticks {
-                    stream::iter(membership::collect_tocks(&state.membership, &info, tick))
-                        .for_each(|tock| tick::tock(state.clone(), tock))
-                        .await
-                }
-
+                self::connection_lost(state, remote_id).await;
                 break;
             },
 
@@ -69,5 +63,20 @@ pub(in crate::net::protocol) async fn membership<S, T>(
                 }
             },
         }
+    }
+}
+
+pub(in crate::net::protocol) async fn connection_lost<S>(state: State<S>, remote_id: PeerId)
+where
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+{
+    let info = || peer_advertisement(&state.endpoint);
+
+    let membership::TnT { trans, ticks } = state.membership.connection_lost(remote_id);
+    trans.into_iter().for_each(|evt| state.phone.emit(evt));
+    for tick in ticks {
+        stream::iter(membership::collect_tocks(&state.membership, &info, tick))
+            .for_each(|tock| tick::tock(state.clone(), tock))
+            .await
     }
 }

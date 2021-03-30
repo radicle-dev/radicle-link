@@ -302,17 +302,19 @@ where
         use Tick::*;
 
         tracing::debug!("connection lost");
-        let mut tnt = self
-            .view
-            .demote(&remote_peer)
-            .into_iter()
-            .collect::<TnT<_>>();
-        tnt.extend(
-            self.choose_passive_to_promote()
-                .into_iter()
-                .map(|to| Connect { to }),
-        );
-        tnt
+        let demoted = self.view.demote(&remote_peer);
+        if demoted.is_empty() {
+            TnT::default()
+        } else {
+            TnT {
+                trans: demoted,
+                ticks: self
+                    .choose_passive_to_promote()
+                    .into_iter()
+                    .map(|to| Connect { to })
+                    .collect(),
+            }
+        }
     }
 
     pub fn connection_established(&mut self, info: PartialPeerInfo<Addr>) -> TnT<Addr> {

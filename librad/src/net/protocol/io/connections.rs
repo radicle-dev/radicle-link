@@ -5,9 +5,10 @@
 
 use std::{collections::BTreeSet, net::SocketAddr, panic};
 
+use either::Either;
 use futures::{
     future::{self, TryFutureExt as _},
-    stream::{FuturesUnordered, StreamExt as _},
+    stream::{FuturesUnordered, Stream, StreamExt as _},
 };
 
 use crate::{
@@ -37,7 +38,9 @@ pub(in crate::net::protocol) async fn incoming<S, I>(
 ) -> Result<!, quic::Error>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
-    I: futures::Stream<Item = quic::Result<(quic::Connection, quic::IncomingStreams<'static>)>>,
+    I: futures::Stream<
+        Item = quic::Result<(quic::Connection, quic::BoxedIncomingStreams<'static>)>,
+    >,
 {
     use quic::Error::*;
 
@@ -91,10 +94,15 @@ where
     Err(quic::Error::Shutdown)
 }
 
-pub async fn connect_peer_info<'a>(
+pub async fn connect_peer_info(
     endpoint: &quic::Endpoint,
     peer_info: PeerInfo<SocketAddr>,
-) -> Option<(quic::Connection, quic::IncomingStreams<'a>)> {
+) -> Option<(
+    quic::Connection,
+    quic::IncomingStreams<
+        impl Stream<Item = quic::Result<Either<quic::BidiStream, quic::RecvStream>>>,
+    >,
+)> {
     let addrs = peer_info
         .advertised_info
         .listen_addrs
@@ -108,7 +116,12 @@ pub async fn connect<'a, Addrs>(
     endpoint: &quic::Endpoint,
     remote_id: PeerId,
     addrs: Addrs,
-) -> Option<(quic::Connection, quic::IncomingStreams<'a>)>
+) -> Option<(
+    quic::Connection,
+    quic::IncomingStreams<
+        impl Stream<Item = quic::Result<Either<quic::BidiStream, quic::RecvStream>>>,
+    >,
+)>
 where
     Addrs: IntoIterator<Item = SocketAddr>,
 {

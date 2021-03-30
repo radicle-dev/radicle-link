@@ -13,7 +13,7 @@ use futures::stream::{BoxStream, StreamExt as _, TryStreamExt as _};
 use pnet_datalink::interfaces as network_interfaces;
 use quinn::{NewConnection, TransportConfig};
 
-use super::{Connection, Conntrack, Error, IncomingStreams, Result};
+use super::{BoxedIncomingStreams, Connection, Conntrack, Error, Result};
 use crate::{
     net::{
         connection::{CloseReason, LocalAddr, LocalPeer},
@@ -26,9 +26,11 @@ use crate::{
     PeerId,
 };
 
+pub type IncomingConnections<'a> = BoxStream<'a, Result<(Connection, BoxedIncomingStreams<'a>)>>;
+
 pub struct BoundEndpoint<'a> {
     pub endpoint: Endpoint,
-    pub incoming: BoxStream<'a, Result<(Connection, IncomingStreams<'a>)>>,
+    pub incoming: IncomingConnections<'a>,
 }
 
 impl<'a> LocalPeer for BoundEndpoint<'a> {
@@ -86,7 +88,7 @@ impl Endpoint {
                     let (conn, streams) = Connection::new(remote_peer, conntrack.clone(), conn);
                     conntrack.connected(&conn);
 
-                    Ok((conn, streams))
+                    Ok((conn, streams.boxed()))
                 }
             })
             .boxed();
@@ -143,7 +145,7 @@ impl Endpoint {
         &mut self,
         peer: PeerId,
         addr: &SocketAddr,
-    ) -> Result<(Connection, IncomingStreams<'a>)> {
+    ) -> Result<(Connection, BoxedIncomingStreams<'a>)> {
         if peer == self.peer_id {
             return Err(Error::SelfConnect);
         }
@@ -155,7 +157,7 @@ impl Endpoint {
         let (conn, streams) = Connection::new(peer, self.conntrack.clone(), conn);
         self.conntrack.connected(&conn);
 
-        Ok((conn, streams))
+        Ok((conn, streams.boxed()))
     }
 
     pub fn get_connection(&self, to: PeerId) -> Option<Connection> {

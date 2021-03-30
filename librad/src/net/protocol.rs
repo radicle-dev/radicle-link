@@ -16,7 +16,7 @@ use std::{
 use futures::{
     channel::mpsc,
     future::{BoxFuture, FutureExt as _, TryFutureExt as _},
-    stream::{BoxStream, StreamExt as _},
+    stream::StreamExt as _,
 };
 use governor::{Quota, RateLimiter};
 use nonzero_ext::nonzero;
@@ -79,7 +79,7 @@ pub struct Config {
 pub struct Bound<S> {
     phone: TinCans,
     state: State<S>,
-    incoming: BoxStream<'static, quic::Result<(quic::Connection, quic::IncomingStreams<'static>)>>,
+    incoming: quic::IncomingConnections<'static>,
     periodic: mpsc::Receiver<membership::Periodic<SocketAddr>>,
 }
 

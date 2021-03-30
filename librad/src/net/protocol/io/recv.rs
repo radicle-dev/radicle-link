@@ -7,4 +7,4 @@ mod gossip;
 pub(in crate::net::protocol) use gossip::gossip;
 
 mod membership;
-pub(in crate::net::protocol) use membership::membership;
+pub(in crate::net::protocol) use membership::{connection_lost, membership};

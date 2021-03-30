@@ -5,8 +5,10 @@
 
 use std::{net::SocketAddr, panic};
 
-use futures::stream::{FuturesUnordered, StreamExt as _, TryStreamExt as _};
+use either::Either;
+use futures::stream::{FuturesUnordered, Stream, StreamExt as _};
 
+use super::recv;
 use crate::net::{
     connection::{CloseReason, Duplex as _, RemoteAddr as _, RemotePeer},
     protocol::{gossip, ProtocolStorage, State},
@@ -19,59 +21,52 @@ use crate::net::{
 /// # Panics
 ///
 /// Panics if one of the tasks [`tokio::spawn`]ed by this function panics.
-#[tracing::instrument(skip(state, bidi, uni))]
-pub(in crate::net::protocol) async fn incoming<S>(
+#[tracing::instrument(
+    skip(state, streams),
+    fields(
+        remote_id = %streams.remote_peer_id(),
+        remote_addr = %streams.remote_addr()
+    )
+)]
+pub(in crate::net::protocol) async fn incoming<S, I>(
     state: State<S>,
-    quic::IncomingStreams { bidi, uni }: quic::IncomingStreams<'static>,
+    streams: quic::IncomingStreams<I>,
 ) where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    I: Stream<Item = quic::Result<Either<quic::BidiStream, quic::RecvStream>>> + Unpin,
 {
-    let mut bidi = bidi
-        .inspect_ok(|stream| {
-            tracing::info!(
-                remote_id = %stream.remote_peer_id(),
-                remote_addr = %stream.remote_addr(),
-                "new ingress bidi stream"
-            )
-        })
-        .fuse();
-    let mut uni = uni
-        .inspect_ok(|stream| {
-            tracing::info!(
-                remote_id = %stream.remote_peer_id(),
-                remote_addr = %stream.remote_addr(),
-                "new ingress uni stream"
-            )
-        })
-        .fuse();
+    use Either::{Left, Right};
 
+    let remote_id = streams.remote_peer_id();
+
+    let mut streams = streams.fuse();
     let mut tasks = FuturesUnordered::new();
     loop {
         futures::select! {
-            stream = bidi.next() => match stream {
-                Some(item) => match item {
-                    Ok(stream) => tasks.push(tokio::spawn(incoming::bidi(state.clone(), stream))),
-                    Err(e) => {
-                        tracing::warn!(err = ?e, "ingress bidi error");
-                        break;
-                    }
-                },
+            next_stream = streams.next() => match next_stream {
                 None => {
+                    recv::connection_lost(state, remote_id).await;
                     break;
+                },
+                Some(stream) => {
+                    tracing::info!("new ingress stream");
+                    match stream {
+                        Ok(s) => {
+                            let task = match s {
+                                Left(bidi) => tokio::spawn(incoming::bidi(state.clone(), bidi)),
+                                Right(uni) => tokio::spawn(incoming::uni(state.clone(), uni)),
+                            };
+                            tasks.push(task)
+                        },
+                        Err(e) => {
+                            tracing::warn!(err = ?e, "ingress stream error");
+                            recv::connection_lost(state, remote_id).await;
+                            break;
+                        }
+                    }
                 }
             },
-            stream = uni.next() => match stream {
-                Some(item) => match item {
-                    Ok(stream) => tasks.push(tokio::spawn(incoming::uni(state.clone(), stream))),
-                    Err(e) => {
-                        tracing::warn!(err = ?e, "ingress uni error");
-                        break;
-                    }
-                },
-                None => {
-                    break;
-                }
-            },
+
             res = tasks.next() => {
                 if let Some(Err(e)) = res {
                     if let Ok(panik) = e.try_into_panic() {
@@ -79,9 +74,8 @@ pub(in crate::net::protocol) async fn incoming<S>(
                     }
                 }
             },
-            complete => {
-                break;
-            }
+
+            complete => break
         }
     }
     tracing::debug!("ingress streams done, draining tasks");
