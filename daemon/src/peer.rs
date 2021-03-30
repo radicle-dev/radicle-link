@@ -31,7 +31,14 @@ pub mod gossip;
 pub mod include;
 
 mod run_state;
-pub use run_state::{config as run_config, Config as RunConfig, Event, Status, WaitingRoomEvent};
+pub use run_state::{
+    config as run_config,
+    Config as RunConfig,
+    Event,
+    NetworkDiagnosticEvent,
+    Status,
+    WaitingRoomEvent,
+};
 
 mod subroutines;
 use subroutines::Subroutines;
@@ -161,6 +168,7 @@ where
         let (addrs_tx, addrs_rx) = watch::channel(vec![]);
 
         let protocol_events = peer.subscribe().boxed();
+        let network_diagnostic_events = peer.subscribe_to_diagnostic_events().boxed();
         let subroutines = Subroutines::new(
             peer.clone(),
             addrs_rx,
@@ -169,6 +177,7 @@ where
             protocol_events,
             subscriber,
             control_receiver,
+            network_diagnostic_events,
         )
         .run()
         .fuse()

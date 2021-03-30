@@ -5,8 +5,10 @@
 
 use std::{collections::HashMap, net::SocketAddr};
 
-use super::{broadcast, error, gossip, interrogation, membership};
+use super::{broadcast, error, gossip, interrogation, io::Rpc, membership};
 use crate::PeerId;
+
+use serde::Serialize;
 
 #[derive(Clone)]
 pub enum Downstream {
@@ -166,6 +168,60 @@ pub mod upstream {
                 Upstream::Gossip(box Gossip::Put { provider, .. }) => provider.peer_id == peer,
                 _ => false,
             }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum NetworkDiagnosticEvent {
+    GossipSent {
+        to: SocketAddr,
+        message: broadcast::Message<SocketAddr, gossip::Payload>,
+    },
+    GossipReceived {
+        from: SocketAddr,
+        message: broadcast::Message<SocketAddr, gossip::Payload>,
+    },
+    HpvSent {
+        to: SocketAddr,
+        message: membership::Message<SocketAddr>,
+    },
+    HpvReceived {
+        from: SocketAddr,
+        message: membership::Message<SocketAddr>,
+    },
+}
+
+impl NetworkDiagnosticEvent {
+    pub(crate) fn hpv_sent(
+        to: SocketAddr,
+        message: membership::Message<SocketAddr>,
+    ) -> NetworkDiagnosticEvent {
+        NetworkDiagnosticEvent::HpvSent { to, message }
+    }
+
+    pub(crate) fn hpv_received(
+        from: SocketAddr,
+        message: membership::Message<SocketAddr>,
+    ) -> NetworkDiagnosticEvent {
+        NetworkDiagnosticEvent::HpvReceived { from, message }
+    }
+
+    pub(crate) fn gossip_received(
+        from: SocketAddr,
+        message: broadcast::Message<SocketAddr, gossip::Payload>,
+    ) -> NetworkDiagnosticEvent {
+        NetworkDiagnosticEvent::GossipReceived { from, message }
+    }
+
+    pub(crate) fn rpc_sent(
+        to: SocketAddr,
+        rpc: Rpc<SocketAddr, gossip::Payload>,
+    ) -> NetworkDiagnosticEvent {
+        match rpc {
+            Rpc::Membership(message) => NetworkDiagnosticEvent::HpvSent { to, message },
+            Rpc::Gossip(message) => NetworkDiagnosticEvent::GossipSent { to, message },
         }
     }
 }

@@ -13,7 +13,9 @@ use crate::PeerId;
 mod storage;
 pub use storage::{LocalStorage, PutResult};
 
-#[derive(Clone, Debug, PartialEq, minicbor::Encode, minicbor::Decode)]
+use serde::Serialize;
+
+#[derive(Clone, Debug, PartialEq, minicbor::Encode, minicbor::Decode, Serialize)]
 pub enum Message<Addr, Payload> {
     #[n(0)]
     #[cbor(array)]

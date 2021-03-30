@@ -97,7 +97,7 @@ features = ["tls-rustls"]
 
 [dependencies.radicle-data]
 path = "../data"
-features = ["minicbor"]
+features = ["minicbor", "serde"]
 
 [dependencies.radicle-git-ext]
 path = "../git-ext"

@@ -5,7 +5,9 @@
 
 use crate::net::protocol::info::{PeerAdvertisement, PeerInfo};
 
-#[derive(Debug, Clone, PartialEq, minicbor::Encode, minicbor::Decode)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, PartialEq, minicbor::Encode, minicbor::Decode, Serialize)]
 pub enum Message<Addr> {
     #[n(0)]
     #[cbor(array)]

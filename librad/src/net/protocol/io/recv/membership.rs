@@ -15,6 +15,7 @@ use crate::{
     net::{
         connection::RemoteInfo,
         protocol::{
+            event::NetworkDiagnosticEvent,
             gossip,
             io::{codec, peer_advertisement},
             membership,
@@ -47,6 +48,12 @@ pub(in crate::net::protocol) async fn membership<S, T>(
             },
 
             Ok(msg) => {
+                state
+                    .phone
+                    .emit_diagnostic_event(NetworkDiagnosticEvent::hpv_received(
+                        remote_addr,
+                        msg.clone(),
+                    ));
                 let info = || peer_advertisement(&state.endpoint);
                 match membership::apply(&state.membership, &info, remote_id, remote_addr, msg) {
                     Err(e) => {

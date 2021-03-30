@@ -7,7 +7,12 @@ use std::{net::SocketAddr, time::SystemTime};
 
 use tokio::sync::oneshot;
 
-use librad::{git::Urn, net, net::peer::ProtocolEvent, peer::PeerId};
+use librad::{
+    git::Urn,
+    net,
+    net::{peer::ProtocolEvent, protocol::event::NetworkDiagnosticEvent},
+    peer::PeerId,
+};
 
 use crate::{
     peer::announcement,
@@ -31,6 +36,7 @@ pub enum Input {
     /// the network.
     Request(Request),
     Stats(Stats),
+    NetworkDiagnostic(NetworkDiagnosticEvent),
 }
 
 /// Announcement subroutine lifecycle events.

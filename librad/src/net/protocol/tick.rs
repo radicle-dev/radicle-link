@@ -11,8 +11,8 @@ use futures::{
 };
 use tracing::Instrument as _;
 
-use super::{error, gossip, io, membership, PeerInfo, ProtocolStorage, State};
-use crate::PeerId;
+use super::{error, event, gossip, io, membership, PeerInfo, ProtocolStorage, State};
+use crate::{net::connection::RemoteAddr, PeerId};
 
 #[derive(Debug)]
 pub(super) enum Tock<A, P> {
@@ -84,7 +84,7 @@ where
                 },
 
                 Some(conn) => {
-                    io::send_rpc(&conn, message)
+                    io::send_rpc(&conn, message.clone())
                         .map_err(|e| {
                             let membership::TnT { trans, ticks: cont } =
                                 state.membership.connection_lost(to);
@@ -95,11 +95,19 @@ where
                                 source: e.into(),
                             })
                         })
-                        .await
+                        .await?;
+                    state
+                        .phone
+                        .emit_diagnostic_event(event::NetworkDiagnosticEvent::rpc_sent(
+                            conn.remote_addr(),
+                            message,
+                        ));
+                    Ok(())
                 },
             },
 
             AttemptSend { to, message } => {
+                let phone = state.phone.clone();
                 let conn = match state.endpoint.get_connection(to.peer_id) {
                     None => {
                         let (conn, ingress) = io::connect_peer_info(&state.endpoint, to.clone())
@@ -111,9 +119,14 @@ where
                     },
                     Some(conn) => Ok::<_, error::Tock<SocketAddr>>(conn),
                 }?;
-                Ok(io::send_rpc(&conn, message)
+                io::send_rpc(&conn, message.clone())
                     .await
-                    .map_err(error::BestEffortSend::SendGossip)?)
+                    .map_err(error::BestEffortSend::SendGossip)?;
+                phone.emit_diagnostic_event(event::NetworkDiagnosticEvent::rpc_sent(
+                    conn.remote_addr(),
+                    message,
+                ));
+                Ok(())
             },
 
             Disconnect { peer } => {

@@ -197,6 +197,7 @@ pub fn accept<Store, Disco>(
         state,
         incoming,
         periodic,
+        ..
     }: Bound<Store>,
     disco: Disco,
 ) -> impl Future<Output = Result<!, quic::Error>>
