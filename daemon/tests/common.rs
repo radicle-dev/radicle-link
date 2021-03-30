@@ -87,7 +87,7 @@ pub async fn connected(
 ) -> Result<(), Elapsed> {
     assert_event!(
         receiver,
-        PeerEvent::StatusChanged { new: PeerStatus::Online { connected }, .. } if connected >= min_connected
+        PeerEvent::StatusChanged { new: PeerStatus::Online { connected, .. }, .. } if connected >= min_connected
     )
 }
 

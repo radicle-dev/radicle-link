@@ -4,7 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     io,
     net::{SocketAddr, UdpSocket},
     pin::Pin,
@@ -128,8 +128,8 @@ impl Endpoint {
         self.conntrack.total()
     }
 
-    pub fn connected_peers(&self) -> usize {
-        self.conntrack.num_peers()
+    pub fn connected_peers(&self) -> HashMap<PeerId, Vec<SocketAddr>> {
+        self.conntrack.connected_peers()
     }
 
     pub fn peers(&self) -> Vec<PeerId> {

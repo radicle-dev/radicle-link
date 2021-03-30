@@ -96,7 +96,7 @@ pub enum Request {
 #[derive(Debug)]
 pub enum Stats {
     Tick,
-    Values(Vec<PeerId>, net::protocol::event::downstream::Stats),
+    Values(net::protocol::event::downstream::Stats),
 }
 
 /// Lifecycle events during peer sync operations.

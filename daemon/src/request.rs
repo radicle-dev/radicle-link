@@ -20,6 +20,9 @@ use serde::{Deserialize, Serialize};
 
 use librad::{git::Urn, net::protocol::gossip::Payload, peer::PeerId};
 
+mod event;
+pub use event::Event;
+
 pub mod existential;
 pub use existential::SomeRequest;
 pub mod states;

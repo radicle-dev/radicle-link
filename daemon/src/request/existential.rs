@@ -10,9 +10,11 @@
 // much.
 #![allow(clippy::wildcard_enum_match_arm)]
 
+use librad::peer::PeerId;
 use serde::{Deserialize, Serialize};
 
 use super::{
+    event::Event,
     Attempts,
     Cancelled,
     Cloned,
@@ -25,6 +27,7 @@ use super::{
     Request,
     RequestState,
     Requested,
+    Status,
     TimedOut,
     Urn,
 };
@@ -215,17 +218,30 @@ impl<T> SomeRequest<T> {
     /// then we follow that transition.
     ///
     /// If not we leave the `SomeRequest` as is.
-    pub fn transition<Prev, Next>(
+    pub(super) fn transition<Prev, Next>(
         self,
         matcher: impl FnOnce(SomeRequest<T>) -> Option<Prev>,
-        transition: impl FnOnce(Prev) -> Next,
-    ) -> Either<SomeRequest<T>, Next>
+        transition: impl FnOnce(Prev) -> (Next, Event),
+    ) -> Either<SomeRequest<T>, (Next, Event)>
     where
         T: Clone,
     {
         match matcher(self.clone()) {
             Some(previous) => Either::Right(transition(previous)),
             None => Either::Left(self),
+        }
+    }
+
+    /// Get any peers associated with this request
+    pub fn peers(&self) -> Option<&std::collections::HashMap<PeerId, Status>> {
+        match self {
+            SomeRequest::Created(_)
+            | SomeRequest::Requested(_)
+            | SomeRequest::Cloned(_)
+            | SomeRequest::Cancelled(_)
+            | SomeRequest::TimedOut(..) => None,
+            SomeRequest::Found(f) => Some(&f.peers),
+            SomeRequest::Cloning(c) => Some(&c.peers),
         }
     }
 }
