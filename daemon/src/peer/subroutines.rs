@@ -1,5 +1,10 @@
-//! Management of peer subroutine tasks driven by advancing the core state machine with a stream of
-//! inputs, producing commands.
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
+//! Management of peer subroutine tasks driven by advancing the core state
+//! machine with a stream of inputs, producing commands.
 
 use std::{
     net::SocketAddr,
@@ -28,15 +33,20 @@ use crate::{
 };
 
 use super::{
-    announcement, control, gossip, include,
+    announcement,
+    control,
+    gossip,
+    include,
     run_state::{command, config, input, Command, Config as RunConfig, Event, Input, RunState},
-    sync, waiting_room, RECEIVER_CAPACITY,
+    sync,
+    waiting_room,
+    RECEIVER_CAPACITY,
 };
 
 /// Management of "subroutine" tasks.
 pub struct Subroutines {
-    /// Set of handles of spawned subroutine tasks. Draining them will ensure resources are
-    /// release.
+    /// Set of handles of spawned subroutine tasks. Draining them will ensure
+    /// resources are release.
     pending_tasks: FuturesUnordered<JoinHandle<()>>,
     /// Stream of inputs to [`RunState`] state machine.
     inputs: SelectAll<BoxStream<'static, Input>>,
@@ -49,9 +59,11 @@ pub struct Subroutines {
     /// Main peer state machine.
     run_state: RunState,
 
-    /// Feedback channel for subroutine tasks send new inputs to the state machine.
+    /// Feedback channel for subroutine tasks send new inputs to the state
+    /// machine.
     input_sender: mpsc::Sender<Input>,
-    /// Channel for public subscribers to get to know of significant events of the peer machinery.
+    /// Channel for public subscribers to get to know of significant events of
+    /// the peer machinery.
     subscriber: broadcast::Sender<Event>,
 }
 
@@ -315,8 +327,8 @@ impl Drop for Subroutines {
     }
 }
 
-/// Run the announcement of updated refs for local projects. On completion report back with the
-/// success or failure.
+/// Run the announcement of updated refs for local projects. On completion
+/// report back with the success or failure.
 async fn announce(
     peer: net::peer::Peer<BoxedSigner>,
     store: kv::Store,
@@ -368,8 +380,8 @@ async fn persist_waiting_room(waiting_room: WaitingRoom<SystemTime, Duration>, s
     }
 }
 
-/// Run the sync with a single peer to reach state parity for locally tracked projects. On
-/// completion report back with the success or failure.
+/// Run the sync with a single peer to reach state parity for locally tracked
+/// projects. On completion report back with the success or failure.
 async fn sync(peer: net::peer::Peer<BoxedSigner>, peer_id: PeerId, sender: mpsc::Sender<Input>) {
     sender
         .send(Input::PeerSync(input::Sync::Started(peer_id)))
@@ -402,7 +414,8 @@ async fn query(urn: Urn, peer: net::peer::Peer<BoxedSigner>, sender: mpsc::Sende
         .ok();
 }
 
-/// Run a clone for the given `url`. On completion report back with the success or failure.
+/// Run a clone for the given `url`. On completion report back with the success
+/// or failure.
 async fn clone(
     urn: Urn,
     remote_peer: PeerId,

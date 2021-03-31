@@ -1,5 +1,10 @@
-//! The enumeration of different [`super::Request`] states unified under a single enum called
-//! [`SomeRequest`].
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
+//! The enumeration of different [`super::Request`] states unified under a
+//! single enum called [`SomeRequest`].
 
 // I reserve the right to not match all the arms when picking out particular cases, thank you very
 // much.
@@ -8,20 +13,33 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Attempts, Cancelled, Cloned, Clones, Cloning, Created, Either, Found, Queries, Request,
-    RequestState, Requested, TimedOut, Urn,
+    Attempts,
+    Cancelled,
+    Cloned,
+    Clones,
+    Cloning,
+    Created,
+    Either,
+    Found,
+    Queries,
+    Request,
+    RequestState,
+    Requested,
+    TimedOut,
+    Urn,
 };
 
-/// Since a `Request` is parameterised over its state, it makes it difficult to talk about a
-/// `Request` in general without the compiler complaining at us. For example, we cannot have
-/// something like `vec![created, requested, cloning, timedout]` since they all have distinct types
-/// where they differ in states.
+/// Since a `Request` is parameterised over its state, it makes it difficult to
+/// talk about a `Request` in general without the compiler complaining at us.
+/// For example, we cannot have something like `vec![created, requested,
+/// cloning, timedout]` since they all have distinct types where they differ in
+/// states.
 ///
-/// To allow us to do this we unify all the states into `SomeRequest` where each state is a variant
-/// in the enumeration.
+/// To allow us to do this we unify all the states into `SomeRequest` where each
+/// state is a variant in the enumeration.
 ///
-/// When we pattern match we get back the request parameterised over the specific state and can
-/// work in a type safe manner with this request.
+/// When we pattern match we get back the request parameterised over the
+/// specific state and can work in a type safe manner with this request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     bound = "T: serde_millis::Milliseconds",
@@ -153,9 +171,10 @@ impl<T> SomeRequest<T> {
         }
     }
 
-    /// We can cancel an underlying `Request` if it is allowed to be cancelled. In the case that it
-    /// is allowed, then we get back the cancelled request in the `Right` variant. Otherwise we get
-    /// back our original `SomeRequest` in the `Left` variant.
+    /// We can cancel an underlying `Request` if it is allowed to be cancelled.
+    /// In the case that it is allowed, then we get back the cancelled
+    /// request in the `Right` variant. Otherwise we get back our original
+    /// `SomeRequest` in the `Left` variant.
     pub fn cancel(self, timestamp: T) -> Either<SomeRequest<T>, Request<Cancelled, T>> {
         match self {
             SomeRequest::Created(request) => Either::Right(request.cancel(timestamp)),
@@ -167,9 +186,10 @@ impl<T> SomeRequest<T> {
         }
     }
 
-    /// We can see if our underlying `Request` timed out if it is in a state where a time out can
-    /// occur. In the case that it can time out, then we get back the timed out request in the
-    /// `Right` variant. Otherwise we get back our original `SomeRequest` in the `Left` variant.
+    /// We can see if our underlying `Request` timed out if it is in a state
+    /// where a time out can occur. In the case that it can time out, then
+    /// we get back the timed out request in the `Right` variant. Otherwise
+    /// we get back our original `SomeRequest` in the `Left` variant.
     pub fn timed_out(
         self,
         max_queries: Queries,
@@ -190,8 +210,9 @@ impl<T> SomeRequest<T> {
         }
     }
 
-    /// If we have some way of picking a specific `Request` from `SomeRequest` and a function that
-    /// transitions that `Request` into a next state then we follow that transition.
+    /// If we have some way of picking a specific `Request` from `SomeRequest`
+    /// and a function that transitions that `Request` into a next state
+    /// then we follow that transition.
     ///
     /// If not we leave the `SomeRequest` as is.
     pub fn transition<Prev, Next>(

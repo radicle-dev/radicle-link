@@ -1,5 +1,10 @@
-//! Validation logic for safely checking that a [`super::Repo`] is valid before setting up the
-//! working copy.
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
+//! Validation logic for safely checking that a [`super::Repo`] is valid before
+//! setting up the working copy.
 
 use std::{convert::TryFrom, io, path::PathBuf};
 
@@ -8,12 +13,15 @@ use librad::{
         local::{transport::CanOpenStorage, url::LocalUrl},
         types::{
             remote::{self, LocalPushspec, Remote},
-            Fetchspec, Force, Refspec,
+            Fetchspec,
+            Force,
+            Refspec,
         },
     },
     git_ext::{self, OneLevel},
+    reflike,
+    refspec_pattern,
     std_ext::result::ResultExt as _,
-    reflike, refspec_pattern
 };
 use nonempty::NonEmpty;
 
@@ -27,8 +35,8 @@ pub enum Error {
     #[error("the path provided '{0}' already exists")]
     AlreadExists(PathBuf),
 
-    /// An existing project is being created, but we couldn't get the `name` of the project, i.e.
-    /// the final suffix of the file path.
+    /// An existing project is being created, but we couldn't get the `name` of
+    /// the project, i.e. the final suffix of the file path.
     #[error(
         "the existing path provided '{0}' was empty, and we could not get the project name from it"
     )]
@@ -42,11 +50,13 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] io::Error),
 
-    /// When checking the default git config for `user.email` we could not find it.
+    /// When checking the default git config for `user.email` we could not find
+    /// it.
     #[error("the author email for creating the project could not be found - have you configured your git config?")]
     MissingAuthorEmail,
 
-    /// When checking the default git config for `user.name` we could not find it.
+    /// When checking the default git config for `user.name` we could not find
+    /// it.
     #[error("the author name for creating the project could not be found - have you configured your git config?")]
     MissingAuthorName,
 
@@ -79,15 +89,18 @@ pub enum Error {
     #[error("the path provided '{0}' does not exist when it was expected to")]
     PathDoesNotExist(PathBuf),
 
-    /// When attempting to find a particular remote that _should_ exist, it did not.
+    /// When attempting to find a particular remote that _should_ exist, it did
+    /// not.
     #[error(transparent)]
     Remote(#[from] remote::FindError),
 
-    /// An internal error occurred when talking to the local transport for git related I/O.
+    /// An internal error occurred when talking to the local transport for git
+    /// related I/O.
     #[error(transparent)]
     Transport(#[from] librad::git::local::transport::Error),
 
-    /// The `rad` remote was found, but the URL did not match the URL we were expecting.
+    /// The `rad` remote was found, but the URL did not match the URL we were
+    /// expecting.
     #[error("the `rad` remote was found but the url field does not match the provided url, found: '{found}' expected: '{expected}'")]
     UrlMismatch {
         /// The expected URL of the `rad` remote.
@@ -97,8 +110,8 @@ pub enum Error {
     },
 }
 
-/// The signature of a git author. Used internally to convert into a `git2::Signature`, which
-/// _cannot_ be shared between threads.
+/// The signature of a git author. Used internally to convert into a
+/// `git2::Signature`, which _cannot_ be shared between threads.
 #[derive(Debug)]
 pub struct Signature {
     name: String,
@@ -113,7 +126,8 @@ impl TryFrom<Signature> for git2::Signature<'static> {
     }
 }
 
-/// A `Repository` represents the validated information for setting up a working copy.
+/// A `Repository` represents the validated information for setting up a working
+/// copy.
 ///
 /// We can get a `Repository` by calling [`Repository::validate`].
 pub enum Repository {
@@ -144,27 +158,31 @@ pub enum Repository {
 impl Repository {
     /// Validate a [`super::Repo`] to construct a `Repository`.
     ///
-    /// This ensures that when setting up a working copy, that there should be no errors.
-    /// The following are validated for each case:
+    /// This ensures that when setting up a working copy, that there should be
+    /// no errors. The following are validated for each case:
     ///
     /// **Existing**:
     ///   * The path provided should exist
-    ///   * The path provided should have at least one component, which forms the name of the
-    ///   project. E.g. `Developer/radicle-upstream` is the directory and `radicle-upstream` is the
-    ///   project name.
+    ///   * The path provided should have at least one component, which forms
+    ///     the name of the
+    ///   project. E.g. `Developer/radicle-upstream` is the directory and
+    /// `radicle-upstream` is the   project name.
     ///   * The path leads to a git repository
     ///   * The default branch passed exists in the repository
     ///   * If a `rad` remote exists, that it:
     ///         * Has a url field
-    ///         * If it does have a url field, that it matches the one provided here
+    ///         * If it does have a url field, that it matches the one provided
+    ///           here
     ///
     /// **New**:
     ///   * The path provided does not exist:
-    ///         * If it does exist, it should be a directory and it should be empty
+    ///         * If it does exist, it should be a directory and it should be
+    ///           empty
     ///
     /// # Errors
     ///
-    /// If any of the criteria outlined above are violated, this will result in an [`Error`].
+    /// If any of the criteria outlined above are violated, this will result in
+    /// an [`Error`].
     pub fn validate(
         repo: super::Repo,
         url: LocalUrl,
@@ -323,8 +341,8 @@ impl Repository {
         Ok(())
     }
 
-    /// Equips a repository with a rad remote for the given id. If the directory at the given path
-    /// is not managed by git yet we initialise it first.
+    /// Equips a repository with a rad remote for the given id. If the directory
+    /// at the given path is not managed by git yet we initialise it first.
     fn setup_remote<F>(
         repo: &git2::Repository,
         open_storage: F,

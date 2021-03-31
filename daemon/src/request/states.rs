@@ -1,4 +1,10 @@
-//! The state types and traits that we can use for [`super::Request`]'s `S` parameter.
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
+//! The state types and traits that we can use for [`super::Request`]'s `S`
+//! parameter.
 
 use std::{
     collections::HashMap,
@@ -20,8 +26,9 @@ impl sealed::Sealed for Cancelled {}
 
 // State Types
 
-/// An enumeration of the different states a `Request` can be in. This is useful if we want to
-/// convey the state information without any of the other state data.
+/// An enumeration of the different states a `Request` can be in. This is useful
+/// if we want to convey the state information without any of the other state
+/// data.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RequestState {
     /// The initial state where the `Request` has been created.
@@ -61,15 +68,18 @@ pub struct Created {}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Requested {
-    /// A set of found peers and the lifecycle of clone attempts made on those peers.
+    /// A set of found peers and the lifecycle of clone attempts made on those
+    /// peers.
     pub(super) peers: HashMap<PeerId, Status>,
 }
 
-/// `Status` represents the lifecycle of some action on data. The data could be available to take
-/// the action on, the action could be in progress, or it could have failed.
+/// `Status` represents the lifecycle of some action on data. The data could be
+/// available to take the action on, the action could be in progress, or it
+/// could have failed.
 ///
-/// Note that the related data isn't in the `Status` variants. The status is free to be associated
-/// with any external data, e.g. using it as a value in a `HashMap`.
+/// Note that the related data isn't in the `Status` variants. The status is
+/// free to be associated with any external data, e.g. using it as a value in a
+/// `HashMap`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Status {
@@ -82,14 +92,15 @@ pub enum Status {
 }
 
 impl Status {
-    /// Joining two `Status` favours `Failed` over any other `Status`, then `InProgress`, and
-    /// finally `Available`.
+    /// Joining two `Status` favours `Failed` over any other `Status`, then
+    /// `InProgress`, and finally `Available`.
     ///
-    /// This translates to the fact that if something has `Failed` then that's it, there's no going
-    /// back.
-    /// If it's `InProgress`, it doesn't matter that the other `Status` is saying its `Available`,
-    /// because you know what? It's actually in progress.
-    /// And finally, the last case is that both `Status`es agree the `Status` is `Available`.
+    /// This translates to the fact that if something has `Failed` then that's
+    /// it, there's no going back.
+    /// If it's `InProgress`, it doesn't matter that the other `Status` is
+    /// saying its `Available`, because you know what? It's actually in
+    /// progress. And finally, the last case is that both `Status`es agree
+    /// the `Status` is `Available`.
     #[must_use]
     pub const fn join(self, other: Self) -> Self {
         match (self, other) {
@@ -100,11 +111,13 @@ impl Status {
     }
 }
 
-/// The `Found` state means that we have found at least one peer and can possibly find more.
+/// The `Found` state means that we have found at least one peer and can
+/// possibly find more.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Found {
-    /// A set of found peers and the lifecycle of clone attempts made on those peers.
+    /// A set of found peers and the lifecycle of clone attempts made on those
+    /// peers.
     pub(crate) peers: HashMap<PeerId, Status>,
 }
 
@@ -116,12 +129,13 @@ impl Deref for Found {
     }
 }
 
-/// The `Cloning` state means that we have found at least one peer and we are attempting a clone on
-/// one of them.
+/// The `Cloning` state means that we have found at least one peer and we are
+/// attempting a clone on one of them.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cloning {
-    /// A set of found peers and the lifecycle of clone attempts made on those peers.
+    /// A set of found peers and the lifecycle of clone attempts made on those
+    /// peers.
     pub(crate) peers: HashMap<PeerId, Status>,
 }
 
@@ -133,19 +147,23 @@ impl Deref for Cloning {
     }
 }
 
-/// The `Cloned` state means that we have successfully cloned the desired identity.
+/// The `Cloned` state means that we have successfully cloned the desired
+/// identity.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cloned {
-    /// The identity that we were attempting to find and the peer that we found it from.
+    /// The identity that we were attempting to find and the peer that we found
+    /// it from.
     pub(crate) remote_peer: PeerId,
 }
-/// One of the terminal states for a `Request` where the task has been cancelled.
+/// One of the terminal states for a `Request` where the task has been
+/// cancelled.
 #[derive(Clone, Debug, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cancelled {}
 
-/// One of the terminal states for a `Request` where the task made too many attempts.
+/// One of the terminal states for a `Request` where the task made too many
+/// attempts.
 #[derive(Clone, Debug, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TimedOut {
@@ -164,12 +182,14 @@ impl fmt::Display for TimedOut {
     }
 }
 
-/// `Queries` is a wrapper around `usize` so that we can differentiate it from [`Clones`].
+/// `Queries` is a wrapper around `usize` so that we can differentiate it from
+/// [`Clones`].
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Queries {
     /// The max number of queries allowed per request.
     Max(usize),
-    /// The max number is infinite, and so we allow the request to never time out.
+    /// The max number is infinite, and so we allow the request to never time
+    /// out.
     Infinite,
 }
 
@@ -210,12 +230,14 @@ impl AddAssign<usize> for Queries {
     }
 }
 
-/// `Clones` is a wrapper around `usize` so that we can differentiate it from [`Queries`].
+/// `Clones` is a wrapper around `usize` so that we can differentiate it from
+/// [`Queries`].
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Clones {
     /// The max number of clones allowed per request.
     Max(usize),
-    /// The max number is infinite, and so we allow the request to never time out.
+    /// The max number is infinite, and so we allow the request to never time
+    /// out.
     Infinite,
 }
 
@@ -267,7 +289,8 @@ pub struct Attempts {
 }
 
 impl Attempts {
-    /// Get a new `Attempts` where the number of queires and clones is initially `0`.
+    /// Get a new `Attempts` where the number of queires and clones is initially
+    /// `0`.
     #[must_use]
     pub const fn new() -> Self {
         Attempts {
@@ -276,7 +299,8 @@ impl Attempts {
         }
     }
 
-    /// Construct an `Attempts` where the number of queries and clones is `Infinite`.
+    /// Construct an `Attempts` where the number of queries and clones is
+    /// `Infinite`.
     #[must_use]
     pub const fn infinite() -> Self {
         Attempts {
@@ -296,17 +320,19 @@ impl sealed::Sealed for Attempts {}
 
 // State Traits
 
-/// If a state type implements this trait then it means that the type is allowed to increment the
-/// query attempts in a `Request`.
+/// If a state type implements this trait then it means that the type is allowed
+/// to increment the query attempts in a `Request`.
 ///
-/// The trait is sealed internally, so we do not expect end-users to implement it.
+/// The trait is sealed internally, so we do not expect end-users to implement
+/// it.
 pub trait QueryAttempt: sealed::Sealed {}
 impl QueryAttempt for Requested {}
 
-/// If a state type implements this trait then it means that the type holds a `HashMap` of peers and
-/// their status of cloning.
+/// If a state type implements this trait then it means that the type holds a
+/// `HashMap` of peers and their status of cloning.
 ///
-/// The trait is sealed internally, so we do not expect end-users to implement it.
+/// The trait is sealed internally, so we do not expect end-users to implement
+/// it.
 pub trait HasPeers: sealed::Sealed
 where
     Self: Sized + Deref<Target = HashMap<PeerId, Status>>,
@@ -314,10 +340,11 @@ where
     /// Give back the underlying `HashMap` of peers that is contained in `Self`.
     fn peers(&mut self) -> &mut HashMap<PeerId, Status>;
 
-    /// Returns `false` if the `peers` are empty or if any of them are `Status::Available`
-    /// or `Status::InProgress`.
+    /// Returns `false` if the `peers` are empty or if any of them are
+    /// `Status::Available` or `Status::InProgress`.
     ///
-    /// Otherwise, if all are in the `Status::Failed` state, then we return `true`.
+    /// Otherwise, if all are in the `Status::Failed` state, then we return
+    /// `true`.
     fn all_failed(&self) -> bool {
         if self.is_empty() {
             return false;
@@ -339,16 +366,17 @@ impl HasPeers for Cloning {
     }
 }
 
-/// If a state type implements this trait it means that there is a valid transition from that state
-/// to the `Cancelled` state.
+/// If a state type implements this trait it means that there is a valid
+/// transition from that state to the `Cancelled` state.
 ///
-/// The trait is sealed internally, so we do not expect end-users to implement it.
+/// The trait is sealed internally, so we do not expect end-users to implement
+/// it.
 pub trait Cancel: sealed::Sealed
 where
     Self: Sized,
 {
-    /// Transition the state into `Cancelled`. This ignores whatever state we were in and defaults
-    /// by returning the `Cancelled` state.
+    /// Transition the state into `Cancelled`. This ignores whatever state we
+    /// were in and defaults by returning the `Cancelled` state.
     fn cancel(self) -> Cancelled {
         Cancelled {}
     }
@@ -360,16 +388,18 @@ impl Cancel for Found {}
 impl Cancel for Cloning {}
 impl Cancel for Cancelled {}
 
-/// If a state type implements this trait it means that there is a valid transition from that state
-/// to the `TimedOut` state.
+/// If a state type implements this trait it means that there is a valid
+/// transition from that state to the `TimedOut` state.
 ///
-/// The trait is sealed internally, so we do not expect end-users to implement it.
+/// The trait is sealed internally, so we do not expect end-users to implement
+/// it.
 pub trait TimeOut: sealed::Sealed
 where
     Self: Sized,
 {
-    /// Transition the state into `TimedOut`. This ignores whatever state we were in and defaults
-    /// by returning the `TimedOut` state by returning the `kind` of timeout.
+    /// Transition the state into `TimedOut`. This ignores whatever state we
+    /// were in and defaults by returning the `TimedOut` state by returning
+    /// the `kind` of timeout.
     fn time_out(self, kind: TimedOut) -> TimedOut {
         kind
     }

@@ -1,7 +1,12 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! Storage of secret keys.
 //!
-//! This module provides the [`Keystore`] trait and the [`file()`] and [`memory()`] functions to
-//! construct specific [`Keystore`] implementations.
+//! This module provides the [`Keystore`] trait and the [`file()`] and
+//! [`memory()`] functions to construct specific [`Keystore`] implementations.
 
 use std::convert::Infallible;
 
@@ -9,7 +14,9 @@ use librad::{keys, paths};
 pub use radicle_keystore::pinentry::SecUtf8;
 use radicle_keystore::{
     crypto::{self, Pwhash, SecretBoxError},
-    file, Keystore as _, SecretKeyExt,
+    file,
+    Keystore as _,
+    SecretKeyExt,
 };
 
 /// Storage for one secret key.
@@ -18,7 +25,8 @@ pub trait Keystore {
     ///
     /// # Errors
     ///
-    /// Errors when the storage backend fails to persist the key or a key already exists.
+    /// Errors when the storage backend fails to persist the key or a key
+    /// already exists.
     fn create_key(&self, passphrase: SecUtf8) -> Result<keys::SecretKey, Error>;
 
     /// Get the secret from the storage.
@@ -36,7 +44,8 @@ const KEY_PATH: &str = "librad.key";
 
 /// Create a [`Keystore`] that is backed by an encrypted file on disk.
 ///
-/// The key file is named `librad.key` and located under in the `paths` key directory.
+/// The key file is named `librad.key` and located under in the `paths` key
+/// directory.
 #[must_use]
 pub fn file(paths: paths::Paths) -> impl Keystore + Send + Sync {
     FileStore { paths }
@@ -144,15 +153,16 @@ pub struct Error {
 }
 
 impl Error {
-    /// Returns `true` if the error indicates that an invalid passphrase was used to decrypt the
-    /// secret key.
+    /// Returns `true` if the error indicates that an invalid passphrase was
+    /// used to decrypt the secret key.
     #[must_use]
     pub const fn is_invalid_passphrase(&self) -> bool {
         #[allow(clippy::wildcard_enum_match_arm)]
         matches!(self.inner, FileError::Crypto(SecretBoxError::InvalidKey))
     }
 
-    /// Returns `true` if the error indicates that a key already exists in the store.
+    /// Returns `true` if the error indicates that a key already exists in the
+    /// store.
     #[must_use]
     pub const fn is_key_exists(&self) -> bool {
         #[allow(clippy::wildcard_enum_match_arm)]

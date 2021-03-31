@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! Project creation data and functions.
 
 use std::{io, path::Path};
@@ -12,7 +17,8 @@ use librad::{
 pub mod create;
 pub use create::{Create, Repo};
 
-/// Module concerned with checkout out working copies of projects, as git repositories.
+/// Module concerned with checkout out working copies of projects, as git
+/// repositories.
 pub mod checkout;
 pub use checkout::Checkout;
 
@@ -21,7 +27,8 @@ pub use peer::Peer;
 
 /// Set the upstream of the given branch to the given remote.
 ///
-/// This writes to the `config` directly. The entry will look like the following:
+/// This writes to the `config` directly. The entry will look like the
+/// following:
 ///
 /// ```text
 /// [branch "main"]
@@ -52,7 +59,8 @@ fn set_upstream<Url>(
 ///  * a non-existent directory
 /// If these checks pass then the path is returned as `Ok(Some(path))`.
 ///
-/// If the `path` is a file or is a directory with contents, then it will return `Ok(None)`.
+/// If the `path` is a file or is a directory with contents, then it will return
+/// `Ok(None)`.
 ///
 /// # Errors
 ///   * I/O error in reading the directory contents

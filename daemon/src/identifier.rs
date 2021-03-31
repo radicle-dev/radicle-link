@@ -1,5 +1,10 @@
-//! An `Identifier` is the combination of a user handle and the [`librad::git::Urn`] that
-//! identifies the user.
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
+//! An `Identifier` is the combination of a user handle and the
+//! [`librad::git::Urn`] that identifies the user.
 
 use std::{fmt, str::FromStr};
 
@@ -7,7 +12,8 @@ use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
 use librad::{identities::Person, peer};
 
-/// Errors captured when parsing a shareable identifier of the form `<handle>@<urn>`.
+/// Errors captured when parsing a shareable identifier of the form
+/// `<handle>@<urn>`.
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
     /// Could not parse the URN portion of the identifier.
@@ -24,7 +30,8 @@ pub enum ParseError {
     MissingPeerId,
 }
 
-/// The combination of a handle and a urn give user's a structure for sharing their identities.
+/// The combination of a handle and a urn give user's a structure for sharing
+/// their identities.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Identifier {
     /// The user's chosen handle.

@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! Seed nodes.
 use std::{io, net::SocketAddr};
 
@@ -69,7 +74,8 @@ impl Seed {
 ///
 /// # Errors
 ///
-/// If any of the supplied seeds cannot be parsed or resolved, an error is returned.
+/// If any of the supplied seeds cannot be parsed or resolved, an error is
+/// returned.
 pub async fn resolve<T: AsRef<str> + Send + Sync>(seeds: &[T]) -> Result<Vec<Seed>, Error> {
     let mut resolved = Vec::with_capacity(seeds.len());
 

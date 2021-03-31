@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! The black box tracker of [`Request`]s and their lifecycles.
 
 // I reserve the right to not match all the arms when picking out a single case, thank you very
@@ -34,16 +39,16 @@ pub enum Error {
     #[error("the URN '{0}' was not found in the waiting room")]
     MissingUrn(Urn),
 
-    /// When performing an operation on the a [`Request`] in the [`WaitingRoom`] it was found to be
-    /// in the wrong state for the desired operation.
+    /// When performing an operation on the a [`Request`] in the [`WaitingRoom`]
+    /// it was found to be in the wrong state for the desired operation.
     ///
-    /// For example, if we tried to call `cloning` on a request that has only been created then
-    /// this would be an invalid transition.
+    /// For example, if we tried to call `cloning` on a request that has only
+    /// been created then this would be an invalid transition.
     #[error("the state fetched '{0}' from the waiting room was not one of the expected states")]
     StateMismatch(RequestState),
 
-    /// The [`Request`] timed out when performing an operation on it by exceeding the number of
-    /// attempts it was allowed to make.
+    /// The [`Request`] timed out when performing an operation on it by
+    /// exceeding the number of attempts it was allowed to make.
     #[error("encountered {timeout} time out after {attempts:?} attempts")]
     TimeOut {
         /// What kind of the time out that occurred.
@@ -68,18 +73,19 @@ impl<T> From<Request<TimedOut, T>> for Error {
     }
 }
 
-/// Holds either the newly created request or the request already present for the requested urn.
+/// Holds either the newly created request or the request already present for
+/// the requested urn.
 pub type Created<T> = Either<SomeRequest<T>, SomeRequest<T>>;
 
-/// A `WaitingRoom` knows about a set of `Request`s that have been made, and can look them up via
-/// their `Urn`.
+/// A `WaitingRoom` knows about a set of `Request`s that have been made, and can
+/// look them up via their `Urn`.
 ///
-/// It keeps track of these states as the user tells the waiting room what is happening to the
-/// request on the outside.
+/// It keeps track of these states as the user tells the waiting room what is
+/// happening to the request on the outside.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WaitingRoom<T, D> {
-    /// The set of requests keyed by their `Urn`. This helps us keep only unique requests in the
-    /// waiting room.
+    /// The set of requests keyed by their `Urn`. This helps us keep only unique
+    /// requests in the waiting room.
     #[serde(bound = "T: serde_millis::Milliseconds")]
     requests: HashMap<Revision, SomeRequest<T>>,
 
@@ -87,12 +93,12 @@ pub struct WaitingRoom<T, D> {
     config: Config<D>,
 }
 
-/// The `Config` for the waiting room tells it what are the maximum number of query and clone
-/// attempts that can be made for a single request.
+/// The `Config` for the waiting room tells it what are the maximum number of
+/// query and clone attempts that can be made for a single request.
 ///
-/// The recommended approach to initialising the `Config` is to use its `Default` implementation,
-/// i.e. `Config::default()`, followed by setting the `delta`, since the usual default values for
-/// number values are `0`.
+/// The recommended approach to initialising the `Config` is to use its
+/// `Default` implementation, i.e. `Config::default()`, followed by setting the
+/// `delta`, since the usual default values for number values are `0`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config<D> {
@@ -100,8 +106,8 @@ pub struct Config<D> {
     pub max_queries: Queries,
     /// The maximum number of clone attempts that can be made.
     pub max_clones: Clones,
-    /// The minimum elapsed time between some provided time and a request's timestamp.
-    /// For example, if we had the following setup:
+    /// The minimum elapsed time between some provided time and a request's
+    /// timestamp. For example, if we had the following setup:
     ///   * `delta = 1`
     ///   * `now = 3`
     ///   * `request.timestamp = 2`
@@ -145,18 +151,19 @@ impl<T, D> WaitingRoom<T, D> {
         self.requests.get(&urn.id)
     }
 
-    /// Permanently remove a request from the `WaitingRoom`. If the `urn` did exist in the
-    /// `WaitingRoom` then the request will be returned.
+    /// Permanently remove a request from the `WaitingRoom`. If the `urn` did
+    /// exist in the `WaitingRoom` then the request will be returned.
     ///
     /// Otherwise, it will return `None` if no such request existed.
     pub fn remove(&mut self, urn: &Urn) -> Option<SomeRequest<T>> {
         self.requests.remove(&urn.id)
     }
 
-    /// This will return the request for the given `urn` if one exists in the `WaitingRoom`.
+    /// This will return the request for the given `urn` if one exists in the
+    /// `WaitingRoom`.
     ///
-    /// If there is no such `urn` then it create a fresh `Request` using the `urn` and `timestamp`
-    /// and it will return `None`.
+    /// If there is no such `urn` then it create a fresh `Request` using the
+    /// `urn` and `timestamp` and it will return `None`.
     pub fn request(&mut self, urn: &Urn, timestamp: T) -> Either<SomeRequest<T>, SomeRequest<T>>
     where
         T: Clone,
@@ -171,8 +178,8 @@ impl<T, D> WaitingRoom<T, D> {
         }
     }
 
-    /// Transition the `Request` found at the provided `urn` and call the transition function to
-    /// move it into its `Next` state.
+    /// Transition the `Request` found at the provided `urn` and call the
+    /// transition function to move it into its `Next` state.
     ///
     /// # Errors
     ///
@@ -208,11 +215,11 @@ impl<T, D> WaitingRoom<T, D> {
 
     /// Tell the `WaitingRoom` that a query was made for the given `urn`.
     ///
-    /// If the underlying `Request` was in the `Created` state then it will transition to the
-    /// `IsRequested` state.
+    /// If the underlying `Request` was in the `Created` state then it will
+    /// transition to the `IsRequested` state.
     ///
-    /// If the underlying `Request` was in the `IsRequested` state then it increments the query
-    /// attempt.
+    /// If the underlying `Request` was in the `IsRequested` state then it
+    /// increments the query attempt.
     ///
     /// # Errors
     ///
@@ -240,11 +247,11 @@ impl<T, D> WaitingRoom<T, D> {
 
     /// Tell the `WaitingRoom` that a `peer` was found for the given `urn`.
     ///
-    /// If the underlying `Request` was in the `IsRequested` state then it will transition to the
-    /// `Found` state.
+    /// If the underlying `Request` was in the `IsRequested` state then it will
+    /// transition to the `Found` state.
     ///
-    /// If the underlying `Request` was in the `Found` or `Cloning` state then it add this `peer`
-    /// to the set of found peers.
+    /// If the underlying `Request` was in the `Found` or `Cloning` state then
+    /// it add this `peer` to the set of found peers.
     ///
     /// # Errors
     ///
@@ -274,10 +281,11 @@ impl<T, D> WaitingRoom<T, D> {
         )
     }
 
-    /// Tell the `WaitingRoom` that we are attempting a clone from the `peer` for the given `urn`.
+    /// Tell the `WaitingRoom` that we are attempting a clone from the `peer`
+    /// for the given `urn`.
     ///
-    /// If the underlying `Request` was in the `Found` state then it will transition to the
-    /// `Cloning` state.
+    /// If the underlying `Request` was in the `Found` state then it will
+    /// transition to the `Cloning` state.
     ///
     /// # Errors
     ///
@@ -300,11 +308,11 @@ impl<T, D> WaitingRoom<T, D> {
         )
     }
 
-    /// Tell the `WaitingRoom` that we failed the attempt to clone from the `peer` for the given
-    /// `urn`.
+    /// Tell the `WaitingRoom` that we failed the attempt to clone from the
+    /// `peer` for the given `urn`.
     ///
-    /// If the underlying `Request` was in the `Cloning` state then it will transition to the
-    /// `Found` state.
+    /// If the underlying `Request` was in the `Cloning` state then it will
+    /// transition to the `Found` state.
     ///
     /// # Errors
     ///
@@ -331,8 +339,8 @@ impl<T, D> WaitingRoom<T, D> {
 
     /// Tell the `WaitingRoom` that we successfully cloned the given `urn`.
     ///
-    /// If the underlying `Request` was in the `Cloning` state then it will transition to the
-    /// `Cloned` state.
+    /// If the underlying `Request` was in the `Cloning` state then it will
+    /// transition to the `Cloned` state.
     ///
     /// # Errors
     ///
@@ -352,10 +360,12 @@ impl<T, D> WaitingRoom<T, D> {
         )
     }
 
-    /// Tell the `WaitingRoom` that we are cancelling the request for the given `urn`.
+    /// Tell the `WaitingRoom` that we are cancelling the request for the given
+    /// `urn`.
     ///
-    /// If the underlying `Request` was in the `{Created, IsRequested, Found, Cloning,
-    /// Cancelled}` state then it will transition to the `Cancelled` state.
+    /// If the underlying `Request` was in the `{Created, IsRequested, Found,
+    /// Cloning, Cancelled}` state then it will transition to the
+    /// `Cancelled` state.
     ///
     /// # Errors
     ///
@@ -389,17 +399,20 @@ impl<T, D> WaitingRoom<T, D> {
             .filter(move |(_, request)| RequestState::from(*request) == request_state.clone())
     }
 
-    /// Find the first occurring request based on the call to [`WaitingRoom::filter_by_state`].
+    /// Find the first occurring request based on the call to
+    /// [`WaitingRoom::filter_by_state`].
     pub fn find_by_state(&self, request_state: RequestState) -> Option<(Urn, &SomeRequest<T>)> {
         self.filter_by_state(request_state).next()
     }
 
-    /// Get the next `Request` that is in a query state, i.e. `Created` or `Requested`.
+    /// Get the next `Request` that is in a query state, i.e. `Created` or
+    /// `Requested`.
     ///
     /// In the case of the `Requested` state we check if:
-    ///   * The request is a fresh request that hasn't had an attempt to clone yet
-    ///   * Or the elapsed time between the `timestamp` and the `Request`'s timestamp is greater
-    ///     than the `delta` provided in the [`Config`].
+    ///   * The request is a fresh request that hasn't had an attempt to clone
+    ///     yet
+    ///   * Or the elapsed time between the `timestamp` and the `Request`'s
+    ///     timestamp is greater than the `delta` provided in the [`Config`].
     pub fn next_query(&self, timestamp: T) -> Option<Urn>
     where
         T: Add<D, Output = T> + PartialOrd + Clone,
@@ -419,8 +432,8 @@ impl<T, D> WaitingRoom<T, D> {
         created.or(requested).map(|(urn, _request)| urn)
     }
 
-    /// Get the next `Request` that is in the the `Found` state and the status of the peer is
-    /// `Available`.
+    /// Get the next `Request` that is in the the `Found` state and the status
+    /// of the peer is `Available`.
     pub fn next_clone(&self) -> Option<(Urn, PeerId)> {
         self.find_by_state(RequestState::Found)
             .and_then(|(urn, request)| match request {
@@ -794,8 +807,8 @@ mod test {
 
         waiting_room.queried(&urn, 5)?;
 
-        // Should not return the urn again before delta + backoff has elapsed, i.e. 5 + (5 * 1) =
-        // 10.
+        // Should not return the urn again before delta + backoff has elapsed, i.e. 5 +
+        // (5 * 1) = 10.
         let request = waiting_room.next_query(8);
         assert_eq!(request, None);
 

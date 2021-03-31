@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! Utility for fixture data in the monorepo.
 
 use std::{env, io, path, str::FromStr};
@@ -10,7 +15,9 @@ use librad::{
         local::{transport, url::LocalUrl},
         types::{
             remote::{LocalPushspec, Remote},
-            Force, Pushspec, Refspec,
+            Force,
+            Pushspec,
+            Refspec,
         },
     },
     git_ext::OneLevel,
@@ -18,8 +25,9 @@ use librad::{
     keys,
     net::peer::Peer,
     peer::PeerId,
+    reflike,
+    refspec_pattern,
     signer::BoxedSigner,
-    reflike, refspec_pattern
 };
 
 use crate::{
@@ -73,13 +81,13 @@ pub async fn setup_fixtures(
     Ok(projects)
 }
 
-/// Create a copy of the git-platinum repo, init with coco and push tags and the additional dev
-/// branch.
+/// Create a copy of the git-platinum repo, init with coco and push tags and the
+/// additional dev branch.
 ///
 /// # Errors
 ///
-/// Will return [`Error`] if any of the git interaction fail, or the initialisation of
-/// the coco project.
+/// Will return [`Error`] if any of the git interaction fail, or the
+/// initialisation of the coco project.
 pub async fn replicate_platinum(
     peer: &Peer<BoxedSigner>,
     owner: &LocalIdentity,
@@ -157,7 +165,8 @@ pub fn push_tags(
 ///
 /// # Errors
 ///
-///   * The path could not be canonicalized. This happens if the path does not exist.
+///   * The path could not be canonicalized. This happens if the path does not
+///     exist.
 fn platinum_directory() -> io::Result<path::PathBuf> {
     let cargo_manifest_dir = env!("CARGO_MANIFEST_DIR");
     path::Path::new(cargo_manifest_dir)
@@ -165,8 +174,8 @@ fn platinum_directory() -> io::Result<path::PathBuf> {
         .canonicalize()
 }
 
-/// TODO(finto): Burn this. It's just a big foot gun and it breaks whenever we try to access
-/// `signed_refs`.
+/// TODO(finto): Burn this. It's just a big foot gun and it breaks whenever we
+/// try to access `signed_refs`.
 ///
 /// Create and track a fake peer.
 pub async fn track_fake_peer(
@@ -176,10 +185,10 @@ pub async fn track_fake_peer(
 ) -> (PeerId, LocalIdentity) {
     // TODO(finto): We're faking a lot of the networking interaction here.
     // Create git references of the form and track the peer.
-    //   refs/namespaces/<platinum_project.id>/remotes/<fake_peer_id>/signed_refs/heads
-    //   refs/namespaces/<platinum_project.id>/remotes/<fake_peer_id>/rad/id
-    //   refs/namespaces/<platinum_project.id>/remotes/<fake_peer_id>/rad/self <- points
-    //   to fake_user
+    //   refs/namespaces/<platinum_project.id>/remotes/<fake_peer_id>/signed_refs/
+    // heads   refs/namespaces/<platinum_project.id>/remotes/<fake_peer_id>/rad/
+    // id   refs/namespaces/<platinum_project.id>/remotes/<fake_peer_id>/rad/
+    // self <- points   to fake_user
     let urn = project.urn();
     let fake_user =
         state::init_user(peer, fake_user_handle.to_string()).await.unwrap_or_else(|_| panic!("User account creation for fake peer: {} failed, make sure your mocked user accounts don't clash!", fake_user_handle));
@@ -255,8 +264,8 @@ pub async fn track_fake_peer(
     (remote, fake_user)
 }
 
-/// This function exists as a standalone because the logic does not play well with async in
-/// `replicate_platinum`.
+/// This function exists as a standalone because the logic does not play well
+/// with async in `replicate_platinum`.
 ///
 /// # Errors
 ///
