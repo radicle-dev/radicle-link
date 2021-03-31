@@ -7,8 +7,6 @@
 
 use std::collections::HashSet;
 
-use kv::Codec as _;
-
 use librad::{
     git::Urn,
     git_ext::{Oid, RefLike},
@@ -110,9 +108,7 @@ fn diff<'a>(old_state: &'a Updates, new_state: &'a Updates) -> Updates {
 /// * if the access of the key in the [`kv::Bucket`] fails
 fn load(store: &kv::Store) -> Result<Updates, Error> {
     let bucket = store.bucket::<&'static str, kv::Json<Updates>>(Some(BUCKET_NAME))?;
-    let value = bucket
-        .get(KEY_NAME)?
-        .map_or(HashSet::new(), kv::Json::to_inner);
+    let value = bucket.get(KEY_NAME)?.map_or(HashSet::new(), |json| json.0);
 
     Ok(value)
 }
