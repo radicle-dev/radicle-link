@@ -1,10 +1,21 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! Compute, track and announce noteworthy changes to the network.
 
 use std::collections::HashSet;
 
 use kv::Codec as _;
 
-use librad::{git::Urn, git_ext::{Oid, RefLike}, identities::urn::ParseError, net::peer::Peer, signer::BoxedSigner};
+use librad::{
+    git::Urn,
+    git_ext::{Oid, RefLike},
+    identities::urn::ParseError,
+    net::peer::Peer,
+    signer::BoxedSigner,
+};
 
 use crate::{peer::gossip, state};
 
@@ -29,7 +40,8 @@ pub enum Error {
     State(#[from] state::Error),
 }
 
-/// An update and all the required information that can be announced on the network.
+/// An update and all the required information that can be announced on the
+/// network.
 pub type Announcement = (Urn, Oid);
 
 /// Unique list of [`Announcement`]s.
@@ -46,7 +58,8 @@ async fn announce(peer: &Peer<BoxedSigner>, updates: impl Iterator<Item = &Annou
     }
 }
 
-/// Builds the latest list of [`Announcement`]s for the current state of the peer.
+/// Builds the latest list of [`Announcement`]s for the current state of the
+/// peer.
 ///
 /// # Errors
 ///
@@ -80,8 +93,9 @@ async fn build(peer: &Peer<BoxedSigner>) -> Result<Updates, Error> {
     }
 }
 
-/// Computes the list of announcements based on the difference of the `new` and `old` state. An
-/// [`Announcement`] will be included if an entry in `new` can't be found in `old`.
+/// Computes the list of announcements based on the difference of the `new` and
+/// `old` state. An [`Announcement`] will be included if an entry in `new` can't
+/// be found in `old`.
 #[allow(clippy::implicit_hasher)]
 #[must_use]
 fn diff<'a>(old_state: &'a Updates, new_state: &'a Updates) -> Updates {

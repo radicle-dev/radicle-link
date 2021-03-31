@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! Capture `State` related error variants.
 
 use librad::{
@@ -32,7 +37,8 @@ pub enum Error {
     #[error(transparent)]
     Identities(#[from] librad::git::identities::Error),
 
-    /// An interaction involving [`librad::git::identities::local::LocalIdentity`] failed.
+    /// An interaction involving
+    /// [`librad::git::identities::local::LocalIdentity`] failed.
     #[error(transparent)]
     IdentitiesLocal(#[from] librad::git::identities::local::Error),
 
@@ -48,11 +54,13 @@ pub enum Error {
     #[error("this operation depends on the present of a default owner")]
     MissingOwner,
 
-    /// The [`librad::git::identities::Person`] was not found for the provided [`Urn`].
+    /// The [`librad::git::identities::Person`] was not found for the provided
+    /// [`Urn`].
     #[error("person not found for '{0}'")]
     PersonNotFound(Urn),
 
-    /// The [`librad::git::identities::Project`] was not found for the provided [`Urn`].
+    /// The [`librad::git::identities::Project`] was not found for the provided
+    /// [`Urn`].
     #[error("project not found for '{0}'")]
     ProjectNotFound(Urn),
 
@@ -115,14 +123,16 @@ impl From<Infallible> for Error {
     }
 }
 
-/// Re-export the underlying [`storage::Error`] so that consumers don't need to add `librad` as a
-/// dependency to match on the variant. Instead, they can import `coco::state::error::storage`.
+/// Re-export the underlying [`storage::Error`] so that consumers don't need to
+/// add `librad` as a dependency to match on the variant. Instead, they can
+/// import `coco::state::error::storage`.
 pub mod storage {
     pub use librad::git::storage::Error;
 }
 
-/// Re-export the underlying [`blob::Error`] so that consumers don't need to add `librad` as a
-/// dependency to match on the variant. Instead, they can import `coco::state::error::blob`.
+/// Re-export the underlying [`blob::Error`] so that consumers don't need to add
+/// `librad` as a dependency to match on the variant. Instead, they can import
+/// `coco::state::error::blob`.
 pub mod blob {
     pub use librad::git_ext::blob::Error;
 }

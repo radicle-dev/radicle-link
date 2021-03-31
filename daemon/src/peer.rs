@@ -1,5 +1,10 @@
-//! Machinery to advance the underlying network protocol and manage auxiliary tasks ensuring
-//! prorper state updates.
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
+//! Machinery to advance the underlying network protocol and manage auxiliary
+//! tasks ensuring prorper state updates.
 
 use std::{io, net::SocketAddr, vec};
 
@@ -49,7 +54,8 @@ pub enum Error {
     #[error(transparent)]
     Bootstrap(#[from] net::protocol::error::Bootstrap),
 
-    /// Encountered an I/O error, for example fetching the peer's listen addresses.
+    /// Encountered an I/O error, for example fetching the peer's listen
+    /// addresses.
     #[error(transparent)]
     Io(#[from] io::Error),
 
@@ -122,16 +128,16 @@ where
 
     /// Subscribe to peer events.
     ///
-    /// NB(xla): A caller must call this before the run loop is started, as that consumes the peer.
-    /// There is also a configured [`RECEIVER_CAPACITY`], which prevents unbounded queues fron
-    /// filling up.
+    /// NB(xla): A caller must call this before the run loop is started, as that
+    /// consumes the peer. There is also a configured [`RECEIVER_CAPACITY`],
+    /// which prevents unbounded queues fron filling up.
     #[must_use = "eat your events"]
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.subscriber.subscribe()
     }
 
-    /// Start up the internal machinery to advance the underlying protocol, react to significant
-    /// events and keep auxiliary tasks running.
+    /// Start up the internal machinery to advance the underlying protocol,
+    /// react to significant events and keep auxiliary tasks running.
     ///
     /// # Errors
     /// * Failed to accept peer connections

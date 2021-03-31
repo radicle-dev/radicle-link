@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! Utility to work with the peer api of librad.
 
 use std::{
@@ -13,7 +18,8 @@ use librad::{
         identities::{
             self,
             local::{self, LocalIdentity},
-            person, project,
+            person,
+            project,
         },
         include::{self, Include},
         local::{transport, url::LocalUrl},
@@ -27,7 +33,9 @@ use librad::{
     identities::{
         delegation::Indirect,
         payload::{self, PersonPayload},
-        Person, Project, SomeIdentity,
+        Person,
+        Project,
+        SomeIdentity,
     },
     internal::canonical::Cstring,
     keys,
@@ -89,7 +97,8 @@ where
         .await??)
 }
 
-/// Initialise a [`LocalIdentity`] and make them the default owner of this [`Peer`].
+/// Initialise a [`LocalIdentity`] and make them the default owner of this
+/// [`Peer`].
 ///
 /// # Errors
 ///
@@ -138,7 +147,8 @@ where
     }
 }
 
-/// Given some hints as to where you might find it, get the urn of the project found at `url`.
+/// Given some hints as to where you might find it, get the urn of the project
+/// found at `url`.
 ///
 /// # Errors
 ///   * Could not successfully acquire a lock to the API.
@@ -191,9 +201,9 @@ pub async fn get_project(peer: &Peer<BoxedSigner>, urn: Urn) -> Result<Option<Pr
 ///
 ///   * Retrieving the project entities from the store fails.
 pub async fn list_projects(peer: &Peer<BoxedSigner>) -> Result<Vec<Project>, Error> {
-    // FIXME(xla): Instead of implicitely expecting a presence of a default owner, there either
-    // should be an explicit argument, or it's made impossible to call this function without an
-    // owner associated with the state.
+    // FIXME(xla): Instead of implicitely expecting a presence of a default owner,
+    // there either should be an explicit argument, or it's made impossible to
+    // call this function without an owner associated with the state.
     let owner = match default_owner(peer).await? {
         None => return Err(Error::MissingOwner),
         Some(owner) => owner.into_inner().into_inner(),
@@ -273,7 +283,8 @@ pub async fn list_users(peer: &Peer<BoxedSigner>) -> Result<Vec<Person>, Error> 
     .await?
 }
 
-/// Given some hints as to where you might find it, get the urn of the user found at `url`.
+/// Given some hints as to where you might find it, get the urn of the user
+/// found at `url`.
 ///
 /// # Errors
 ///
@@ -316,7 +327,8 @@ pub async fn get_user(peer: &Peer<BoxedSigner>, urn: Urn) -> Result<Option<Local
     .map_err(Error::from)
 }
 
-/// Fetch any updates at the given `RadUrl`, providing address hints if we have them.
+/// Fetch any updates at the given `RadUrl`, providing address hints if we have
+/// them.
 ///
 /// # Errors
 ///
@@ -387,7 +399,8 @@ pub async fn init_project(
         project.subject().name
     );
 
-    // TODO(xla): Validate project working copy before creation and don't depend on URL.
+    // TODO(xla): Validate project working copy before creation and don't depend on
+    // URL.
     let url = LocalUrl::from(project.urn());
     let repository = create
         .validate(url)
@@ -410,8 +423,9 @@ pub async fn init_project(
     Ok(project)
 }
 
-/// Create a [`LocalIdentity`] with the provided `handle`. This assumes that you are creating a
-/// user that uses the secret key the `PeerApi` was configured with.
+/// Create a [`LocalIdentity`] with the provided `handle`. This assumes that you
+/// are creating a user that uses the secret key the `PeerApi` was configured
+/// with.
 ///
 /// # Errors
 ///
@@ -477,8 +491,8 @@ pub async fn untrack(
     Ok(res)
 }
 
-/// Get the [`crate::project::Peer`]s that are tracking this project, including their
-/// [`PeerId`].
+/// Get the [`crate::project::Peer`]s that are tracking this project, including
+/// their [`PeerId`].
 ///
 /// # Errors
 ///
@@ -521,8 +535,9 @@ pub async fn tracked(
 }
 
 // TODO(xla): Account for projects not replicated but wanted.
-/// Constructs the list of [`crate::project::Peer`] for the given `urn`. The basis is the list
-/// of tracking peers of the project combined with the local view.
+/// Constructs the list of [`crate::project::Peer`] for the given `urn`. The
+/// basis is the list of tracking peers of the project combined with the local
+/// view.
 ///
 /// # Errors
 ///
@@ -568,7 +583,8 @@ pub async fn list_project_peers(
 
 /// Creates a working copy for the project of the given `urn`.
 ///
-/// The `destination` is the directory where the caller wishes to place the working copy.
+/// The `destination` is the directory where the caller wishes to place the
+/// working copy.
 ///
 /// The `peer_id` is from which peer we wish to base our checkout from.
 ///
@@ -644,7 +660,8 @@ where
     Ok(path)
 }
 
-/// Prepare the include file for the given `project` with the latest tracked peers.
+/// Prepare the include file for the given `project` with the latest tracked
+/// peers.
 ///
 /// # Errors
 ///
@@ -670,10 +687,11 @@ pub async fn update_include(peer: &Peer<BoxedSigner>, urn: Urn) -> Result<PathBu
     Ok(include_path)
 }
 
-/// This method helps us get a branch for a given [`Urn`] and optional [`PeerId`].
+/// This method helps us get a branch for a given [`Urn`] and optional
+/// [`PeerId`].
 ///
-/// If the `branch_name` is `None` then we get the project for the given [`Urn`] and use its
-/// `default_branch`.
+/// If the `branch_name` is `None` then we get the project for the given [`Urn`]
+/// and use its `default_branch`.
 ///
 /// # Errors
 ///   * If the storage operations fail.
@@ -728,9 +746,11 @@ where
 /// This method helps us get the default branch for a given [`Urn`].
 ///
 /// It does this by:
-///     * First checking if the owner of this storage has a reference to the default
+///     * First checking if the owner of this storage has a reference to the
+///       default
 /// branch.
-///     * If the owner does not have this reference then it falls back to the first maintainer.
+///     * If the owner does not have this reference then it falls back to the
+///       first maintainer.
 ///
 /// # Errors
 ///   * If the storage operations fail.
@@ -792,7 +812,8 @@ pub fn paths(peer: &Peer<BoxedSigner>) -> paths::Paths {
     peer.protocol_config().paths.clone()
 }
 
-/// Construct the local [`transport::Settings`] for interacting with git related I/O.
+/// Construct the local [`transport::Settings`] for interacting with git related
+/// I/O.
 #[must_use]
 pub fn settings(peer: &Peer<BoxedSigner>) -> transport::Settings {
     transport::Settings {
@@ -803,11 +824,11 @@ pub fn settings(peer: &Peer<BoxedSigner>) -> transport::Settings {
 
 /// Determine the [`peer::Role`] for a given [`Project`] and [`PeerId`].
 ///
-/// If `peer` is `Either::Left` then we have the local `PeerId` and we can ignore it for looking
-/// at `rad/signed_refs`.
+/// If `peer` is `Either::Left` then we have the local `PeerId` and we can
+/// ignore it for looking at `rad/signed_refs`.
 ///
-/// If `peer` is `Either::Right` then it is a remote peer and we use it for looking at
-/// `rad/signed_refs`.
+/// If `peer` is `Either::Right` then it is a remote peer and we use it for
+/// looking at `rad/signed_refs`.
 fn role(
     store: &librad::git::storage::Storage,
     project: &Project,

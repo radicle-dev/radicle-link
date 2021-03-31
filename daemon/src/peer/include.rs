@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! Handling of include files
 
 use librad::{git::Urn, net::peer::Peer, signer::BoxedSigner};

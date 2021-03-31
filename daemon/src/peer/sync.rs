@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! Perform full state syncs with remote peers.
 
 use librad::{identities::generic::Identity, net::peer::Peer, peer::PeerId, signer::BoxedSigner};
@@ -6,7 +11,8 @@ use crate::state;
 
 use super::{include, Error};
 
-/// Initiaites a fetch for all locally tracked projects from the given [`PeerId`].
+/// Initiaites a fetch for all locally tracked projects from the given
+/// [`PeerId`].
 pub async fn sync(peer: &Peer<BoxedSigner>, remote_peer: PeerId) -> Result<(), Error> {
     log::debug!("Starting sync from {}", remote_peer);
 

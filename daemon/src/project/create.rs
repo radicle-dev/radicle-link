@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -41,7 +46,8 @@ impl Repo {
     ///
     /// # Errors
     ///
-    ///   * The existing path provided was empty, so we could not get the project's name.
+    ///   * The existing path provided was empty, so we could not get the
+    ///     project's name.
     pub fn project_name(&self) -> Result<String, validation::Error> {
         match self {
             Self::Existing { path } => path
@@ -77,8 +83,8 @@ pub struct Create {
 }
 
 impl Create {
-    /// Validate `Create` into a [`validation::Repository`]. This ensures that we have valid
-    /// paths when we attempt to create the working copy.
+    /// Validate `Create` into a [`validation::Repository`]. This ensures that
+    /// we have valid paths when we attempt to create the working copy.
     ///
     /// # Errors
     ///
@@ -88,7 +94,8 @@ impl Create {
     }
 }
 
-// Clippy is stupid and doesn't realise the `Create`s here are different types than `Self`.
+// Clippy is stupid and doesn't realise the `Create`s here are different types
+// than `Self`.
 #[allow(clippy::use_self)]
 impl Create {
     /// Transforms into an existing project.

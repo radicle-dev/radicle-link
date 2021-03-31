@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! Configuration types for configuring the `RunState`.
 
 use std::time::Duration;
@@ -73,11 +78,12 @@ impl Default for Sync {
     }
 }
 
-/// Set of knobs to alter the [`crate::request::waiting_room::WaitingRoom`] behvaviour.
+/// Set of knobs to alter the [`crate::request::waiting_room::WaitingRoom`]
+/// behvaviour.
 #[derive(Clone, Debug)]
 pub struct WaitingRoom {
-    /// Interval at which to query the [`crate::request::waiting_room::WaitingRoom`] for ready
-    /// requests.
+    /// Interval at which to query the
+    /// [`crate::request::waiting_room::WaitingRoom`] for ready requests.
     pub interval: Duration,
 }
 

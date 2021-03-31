@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! State machine to manage the current mode of operation during peer lifecycle.
 
 use std::{
@@ -61,7 +66,8 @@ pub enum Event {
     RequestCloned(Urn, PeerId),
     /// Request is being cloned from a peer.
     RequestCloning(Urn, PeerId),
-    /// Request for the URN was created and is pending submission to the network.
+    /// Request for the URN was created and is pending submission to the
+    /// network.
     RequestCreated(Urn),
     /// Request for the URN was submitted to the network.
     RequestQueried(Urn),
@@ -121,11 +127,13 @@ impl MaybeFrom<&Input> for Event {
 pub enum Status {
     /// Nothing is setup, not even a socket to listen on.
     Stopped,
-    /// Local peer is listening on a socket but has not connected to any peers yet.
+    /// Local peer is listening on a socket but has not connected to any peers
+    /// yet.
     Started,
     /// The local peer lost its connections to all its peers.
     Offline,
-    /// The local peer is operational and is able to interact with the peers it has connected to.
+    /// The local peer is operational and is able to interact with the peers it
+    /// has connected to.
     #[serde(rename_all = "camelCase")]
     Online {
         /// Number of connected peers.
@@ -168,7 +176,8 @@ impl RunState {
         }
     }
 
-    /// Creates a new `RunState` initialising it with the provided `config` and `waiting_room`.
+    /// Creates a new `RunState` initialising it with the provided `config` and
+    /// `waiting_room`.
     pub fn new(waiting_room: WaitingRoom<SystemTime, Duration>) -> Self {
         Self {
             connected_peers: HashSet::new(),
@@ -181,8 +190,9 @@ impl RunState {
         }
     }
 
-    /// Applies the `input` and based on the current state, transforms to the new state and in some
-    /// cases produes commands which should be executed in the appropriate subroutines.
+    /// Applies the `input` and based on the current state, transforms to the
+    /// new state and in some cases produes commands which should be
+    /// executed in the appropriate subroutines.
     pub fn transition(&mut self, input: Input) -> Vec<Command> {
         log::trace!("TRANSITION START: {:?} {:?}", input, self.status);
 

@@ -1,6 +1,12 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 use std::{
     convert::TryFrom,
-    ffi, io,
+    ffi,
+    io,
     path::{self, PathBuf},
 };
 
@@ -10,13 +16,18 @@ use librad::{
         local::{transport::CanOpenStorage, url::LocalUrl},
         types::{
             remote::{LocalFetchspec, LocalPushspec, Remote},
-            Flat, Force, GenericRef, Reference, Refspec,
+            Flat,
+            Force,
+            GenericRef,
+            Reference,
+            Refspec,
         },
         Urn,
     },
     git_ext::{self, OneLevel, Qualified, RefLike},
     peer::PeerId,
-    reflike, refspec_pattern
+    reflike,
+    refspec_pattern,
 };
 
 /// When checking out a working copy, we can run into several I/O failures.
@@ -60,19 +71,21 @@ where
     pub default_branch: OneLevel,
     /// The path on the filesystem where we're going to checkout to.
     pub path: P,
-    /// Absolute path of the include file that will be set in the working copy config.
+    /// Absolute path of the include file that will be set in the working copy
+    /// config.
     pub include_path: PathBuf,
 }
 
-/// We want to know whether we're checking out from one of our own copies, or if we're checking out
-/// based off of a remote's branch.
+/// We want to know whether we're checking out from one of our own copies, or if
+/// we're checking out based off of a remote's branch.
 pub enum Ownership {
     /// We're checking out our own copy of the project.
     Local(PeerId),
     /// We're checking out a remote's version of the project.
     Remote {
-        /// The handle of the remote peer gives themselves via their user profile. For example,
-        /// `90s-kid` -- the name of the remote will then be `90s-kid@<urn.id>`.
+        /// The handle of the remote peer gives themselves via their user
+        /// profile. For example, `90s-kid` -- the name of the remote
+        /// will then be `90s-kid@<urn.id>`.
         handle: String,
         /// The `PeerId` of the remote.
         remote: PeerId,
@@ -81,7 +94,8 @@ pub enum Ownership {
     },
 }
 
-/// Clone a git repository to the `path` location, based off of the `remote` provided.
+/// Clone a git repository to the `path` location, based off of the `remote`
+/// provided.
 ///
 /// # Errors
 ///   * if initialisation of the repository fails
@@ -100,8 +114,8 @@ where
         let msg = format!("Fetched `{}->{}`", reference, oid);
         log::debug!("{}", msg);
 
-        // FIXME(finto): we should ignore refs that don't start with heads to avoid unintended
-        // side-effects.
+        // FIXME(finto): we should ignore refs that don't start with heads to avoid
+        // unintended side-effects.
         let branch: RefLike = OneLevel::from(reference).into();
         let branch = branch.strip_prefix(remote.name.clone())?;
         let branch = branch.strip_prefix(reflike!("heads")).unwrap_or(branch);
@@ -121,11 +135,13 @@ where
 }
 
 impl Ownership {
-    /// Clone a project based off of the `Ownership` value. See [`Checkout::run`] for more details.
+    /// Clone a project based off of the `Ownership` value. See
+    /// [`Checkout::run`] for more details.
     ///
     /// # Errors
     ///   * If the cloning of the working copy fails.
-    ///   * In the case of a remote clone, if the pushing of the default branch fails.
+    ///   * In the case of a remote clone, if the pushing of the default branch
+    ///     fails.
     pub fn clone<F>(
         self,
         open_storage: F,
@@ -221,32 +237,37 @@ impl<P> Checkout<P>
 where
     P: AsRef<path::Path>,
 {
-    /// Based off of the `Ownership`, clone the project using the provided inputs.
+    /// Based off of the `Ownership`, clone the project using the provided
+    /// inputs.
     ///
     /// ## Local Clone
     ///
-    /// If the `Ownership` is `Local` this means that we are cloning based off the user's own
-    /// project and so the `url` used to clone will be built from the user's `PeerId`. The only
-    /// remote that will be created is `rad` remote, pointing to the `url` built from the
-    /// provided `urn` and the user's `PeerId`.
+    /// If the `Ownership` is `Local` this means that we are cloning based off
+    /// the user's own project and so the `url` used to clone will be built
+    /// from the user's `PeerId`. The only remote that will be created is
+    /// `rad` remote, pointing to the `url` built from the provided `urn`
+    /// and the user's `PeerId`.
     ///
     /// ## Remote Clone
     ///
-    /// If the `Ownership` is `Remote` this means that we are cloning based off of a peer's
-    /// project.
-    /// Due to this we need to point the remote to the specific remote in our project's hierarchy.
-    /// What this means is that we need to set up a fetch refspec in the form of
-    /// `refs/remotes/<peer_id>/heads/*` where the name of the remote is given by
-    /// `<user_handle>@<peer_id>` -- this keeps in line with `librad::git::include`. To finalise
-    /// the setup of the clone, we also want to add the `rad` remote, which is the designated
-    /// remote the user pushes their own work to update their monorepo for this project.
-    /// To do this, we create a `url` that is built using the provided `urn` and the user's `PeerId`
-    /// and create the `rad` remote. Finally, we initialise the `default_branch` of the proejct --
-    /// think upstream branch in git. We do this by pushing to the `rad` remote. This means that
-    /// the working copy will be now setup where when we open it up we see the initial branch as
-    /// being `default_branch`.
+    /// If the `Ownership` is `Remote` this means that we are cloning based off
+    /// of a peer's project.
+    /// Due to this we need to point the remote to the specific remote in our
+    /// project's hierarchy. What this means is that we need to set up a
+    /// fetch refspec in the form of `refs/remotes/<peer_id>/heads/*` where
+    /// the name of the remote is given by `<user_handle>@<peer_id>` -- this
+    /// keeps in line with `librad::git::include`. To finalise the setup of
+    /// the clone, we also want to add the `rad` remote, which is the designated
+    /// remote the user pushes their own work to update their monorepo for this
+    /// project. To do this, we create a `url` that is built using the
+    /// provided `urn` and the user's `PeerId` and create the `rad` remote.
+    /// Finally, we initialise the `default_branch` of the proejct --
+    /// think upstream branch in git. We do this by pushing to the `rad` remote.
+    /// This means that the working copy will be now setup where when we
+    /// open it up we see the initial branch as being `default_branch`.
     ///
-    /// To illustrate further, the `config` of the final repository will look similar to:
+    /// To illustrate further, the `config` of the final repository will look
+    /// similar to:
     ///
     /// ```text
     /// [remote "rad"]
@@ -270,8 +291,8 @@ where
     where
         F: CanOpenStorage + Clone + 'static,
     {
-        // Check if the path provided ends in the 'directory_name' provided. If not we create the
-        // full path to that name.
+        // Check if the path provided ends in the 'directory_name' provided. If not we
+        // create the full path to that name.
         let path = &self.path.as_ref();
         let project_path: PathBuf =
             path.components()

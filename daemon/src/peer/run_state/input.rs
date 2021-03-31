@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 use std::{net::SocketAddr, time::SystemTime};
 
 use tokio::sync::oneshot;
@@ -22,7 +27,8 @@ pub enum Input {
     Protocol(ProtocolEvent),
     /// Lifecycle events during peer sync operations.
     PeerSync(Sync),
-    /// Request subroutine events that wish to attempt to fetch an identity from the network.
+    /// Request subroutine events that wish to attempt to fetch an identity from
+    /// the network.
     Request(Request),
     Stats(Stats),
 }

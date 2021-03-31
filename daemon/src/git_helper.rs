@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! git-remote-rad git helper related functionality.
 
 use std::{fs, io, os::unix::fs::PermissionsExt as _, path};
@@ -18,7 +23,8 @@ pub const GIT_REMOTE_RAD: &str = "git-remote-rad";
 ///
 /// # Errors
 ///
-///   * Could not get the path to directory where helper binaries should be stored.
+///   * Could not get the path to directory where helper binaries should be
+///     stored.
 ///   * Could not get the current working directory.
 ///   * Could not create the path to binary directory.
 ///   * Could not copy helper executable to the binary directory.
