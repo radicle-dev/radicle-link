@@ -2,12 +2,9 @@
 name = "daemon"
 version = "0.1.0"
 license = "GPL-3.0-only"
-authors = ["radicle team <dev@radicle.xyz>"]
+authors = ["Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 description = "Abstractions and utilities to run and interact with radicle-link"
-readme = "https://github.com/radicle-dev/radicle-upstream/blob/master/proxy/README.md"
-categories = [ "code", "p2p" ]
-keywords = [ "radicle", "upstream", "daemon", "git", "quic" ]
 
 [dependencies]
 async-stream = "0.3"
@@ -24,9 +21,13 @@ thiserror = "1.0"
 tokio = { version = "1.2", features = [ "macros", "net", "rt-multi-thread", "sync", "time" ] }
 url = "2.1"
 
+[dependencies.git2]
+version = "0.13"
+default-features = false
+features = []
+
 [dependencies.kv]
-git = "https://github.com/zshipko/rust-kv.git"
-rev = "a98e1ace84b22ceaac276abf796633bd8e735500"
+version = "0.22"
 features = [ "json-value" ]
 
 [dependencies.librad]
@@ -37,11 +38,6 @@ path = "../git-ext"
 
 [dependencies.radicle-git-helpers]
 path = "../git-helpers"
-
-[dependencies.git2]
-version = "0.13"
-default-features = false
-features = []
 
 [dev-dependencies]
 assert_matches = "1.3"

@@ -7,8 +7,6 @@
 
 use std::time::{Duration, SystemTime};
 
-use kv::Codec as _;
-
 use crate::request::waiting_room::WaitingRoom;
 
 /// Name for the bucket used in [`kv::Store`].
@@ -34,7 +32,7 @@ pub enum Error {
 pub fn load(store: &kv::Store) -> Result<Option<WaitingRoom<SystemTime, Duration>>, Error> {
     let bucket = store
         .bucket::<&'static str, kv::Json<WaitingRoom<SystemTime, Duration>>>(Some(BUCKET_NAME))?;
-    Ok(bucket.get(KEY_NAME)?.map(kv::Json::to_inner))
+    Ok(bucket.get(KEY_NAME)?.map(|json| json.0))
 }
 
 /// Update the cache with the latest [`WaitingRoom`].
