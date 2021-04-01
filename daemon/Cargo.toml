@@ -1,5 +1,5 @@
 [package]
-name = "daemon"
+name = "radicle-daemon"
 version = "0.1.0"
 license = "GPL-3.0-only"
 authors = ["Radicle Team <dev@radicle.xyz>"]
