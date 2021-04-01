@@ -29,6 +29,7 @@
 #![feature(duration_zero, hash_set_entry, never_type, or_patterns)]
 
 pub use librad::{
+    self,
     git::{self, identities::local::LocalIdentity, include, local::url::LocalUrl, Urn},
     identities::{self, Person, Project},
     keys,
@@ -44,11 +45,7 @@ pub use librad::git_ext;
 pub use radicle_git_helpers::remote_helper;
 
 pub mod config;
-pub mod control;
 pub mod convert;
-pub mod git_helper;
-mod identifier;
-pub use identifier::Identifier;
 pub mod keystore;
 pub mod peer;
 pub use peer::{Control as PeerControl, Event as PeerEvent, Peer, RunConfig, Status as PeerStatus};
