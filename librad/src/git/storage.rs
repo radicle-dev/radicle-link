@@ -150,18 +150,20 @@ impl Storage {
     where
         Oid: AsRef<git2::Oid> + Debug,
     {
-        let oid = match self.find_object(oid)? {
+        let (oid, kind) = match self.find_object(oid)? {
             None => return Ok(false),
             Some(object) => match object.kind() {
-                Some(git2::ObjectType::Commit) => object.id(),
+                Some(git2::ObjectType::Commit) => (object.id(), git2::ObjectType::Commit),
                 _ => return Ok(false),
             },
         };
 
-        let tip = self.tip(urn)?;
+        let tip = self.tip(urn, kind)?;
         Ok(tip
             .map(|tip| {
-                Ok::<_, git2::Error>(*tip == oid || self.backend.graph_descendant_of(*tip, oid)?)
+                Ok::<_, git2::Error>(
+                    tip.id() == oid || self.backend.graph_descendant_of(tip.id(), oid)?,
+                )
             })
             .transpose()?
             .unwrap_or(false))
@@ -181,16 +183,16 @@ impl Storage {
     where
         Oid: AsRef<git2::Oid> + Debug,
     {
-        let oid = match self.find_object(oid)? {
+        let (oid, kind) = match self.find_object(oid)? {
             None => return Ok(false),
             Some(object) => match object.kind() {
-                Some(git2::ObjectType::Tag) => object.id(),
+                Some(git2::ObjectType::Tag) => (object.id(), git2::ObjectType::Tag),
                 _ => return Ok(false),
             },
         };
 
-        let tip = self.tip(urn)?;
-        Ok(tip.map(|tip| *tip == oid).unwrap_or(false))
+        let tip = self.tip(urn, kind)?;
+        Ok(tip.map(|tip| tip.id() == oid).unwrap_or(false))
     }
 
     #[tracing::instrument(level = "debug", skip(self), err)]
@@ -225,7 +227,7 @@ impl Storage {
     }
 
     #[tracing::instrument(level = "trace", skip(self), err)]
-    pub fn tip(&self, urn: &Urn) -> Result<Option<ext::Oid>, Error> {
+    pub fn tip(&self, urn: &Urn, kind: git2::ObjectType) -> Result<Option<git2::Object>, Error> {
         let reference = self
             .backend
             .find_reference(RefLike::from(&Reference::try_from(urn)?).as_str())
@@ -234,7 +236,7 @@ impl Storage {
 
         match reference {
             None => Ok(None),
-            Some(r) => Ok(Some(r.peel_to_commit()?.id().into())),
+            Some(r) => r.peel(kind).map(Some).map_err(Error::from),
         }
     }
 
