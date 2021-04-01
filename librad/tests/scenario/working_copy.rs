@@ -3,12 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    convert::{identity, TryFrom},
-    fmt::Debug,
-    path::Path,
-    time::Duration,
-};
+use std::{convert::TryFrom, fmt::Debug, path::Path, time::Duration};
 
 use futures::StreamExt as _;
 use tempfile::tempdir;
@@ -216,7 +211,7 @@ where
     include::set_include_path(&repo, inc_path)?;
 
     // Fetch from the working copy and check we have the commit in the working copy
-    for remote in repo.remotes()?.iter().filter_map(identity) {
+    for remote in repo.remotes()?.iter().flatten() {
         let mut remote = Remote::find(&repo, ext::RefLike::try_from(remote).unwrap())?
             .expect("should exist, because libgit told us about it");
         remote

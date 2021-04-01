@@ -36,8 +36,5 @@ pub fn dylan(storage: &Storage, key: &SecretKey) -> anyhow::Result<local::LocalI
         },
         Some(key.public()).into_iter().collect(),
     )?;
-    Ok(
-        local::load(&storage, dylan.urn())?
-            .ok_or_else(|| anyhow::anyhow!("where did dylan go?"))?,
-    )
+    local::load(&storage, dylan.urn())?.ok_or_else(|| anyhow::anyhow!("where did dylan go?"))
 }

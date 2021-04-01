@@ -3,10 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    convert::{identity, TryFrom},
-    str::FromStr,
-};
+use std::{convert::TryFrom, str::FromStr};
 
 use git_ext::{
     error::{is_exists_err, is_not_found_err},
@@ -185,13 +182,13 @@ impl<Url> Remote<Url> {
                 let fetchspecs = remote
                     .fetch_refspecs()?
                     .into_iter()
-                    .filter_map(identity)
+                    .flatten()
                     .map(Fetchspec::try_from)
                     .collect::<Result<_, _>>()?;
                 let pushspecs = remote
                     .push_refspecs()?
                     .into_iter()
-                    .filter_map(identity)
+                    .flatten()
                     .map(Pushspec::try_from)
                     .collect::<Result<_, _>>()?;
 
@@ -589,10 +586,7 @@ mod tests {
         let fetch_refspecs = git_remote.fetch_refspecs()?;
 
         assert_eq!(
-            fetch_refspecs
-                .iter()
-                .filter_map(identity)
-                .collect::<Vec<_>>(),
+            fetch_refspecs.iter().flatten().collect::<Vec<_>>(),
             vec![format!("+refs/remotes/{}/heads/*:refs/remotes/{}/*", *PEER_ID, name).as_str()]
         );
 

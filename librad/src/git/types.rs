@@ -29,8 +29,8 @@ pub use remote::Remote;
 /// namespace.
 pub struct Flat;
 
-impl Into<Option<Namespace<git_ext::Oid>>> for Flat {
-    fn into(self) -> Option<Namespace<git_ext::Oid>> {
+impl From<Flat> for Option<Namespace<git_ext::Oid>> {
+    fn from(_flat: Flat) -> Self {
         None
     }
 }

@@ -152,7 +152,8 @@ async fn a_trois() {
             .unwrap();
         assert!(
             peer2_expected.has_commit,
-            format!("peer 2 missing commit `{}@{}`", expected_urn, commit_id)
+            "peer 2 missing commit `{}@{}`",
+            expected_urn, commit_id
         );
         assert!(peer2_expected.has_rad_id, "peer 2 missing `rad/id`");
         assert!(peer2_expected.has_rad_self, "peer 2 missing `rad/self``");
@@ -163,7 +164,8 @@ async fn a_trois() {
 
         assert!(
             peer3_expected.has_commit,
-            format!("peer 3 missing commit `{}@{}`", expected_urn, commit_id)
+            "peer 3 missing commit `{}@{}`",
+            expected_urn, commit_id
         );
         assert!(peer3_expected.has_rad_id, "peer 3 missing `rad/id`");
         assert!(peer3_expected.has_rad_self, "peer 3 missing `rad/self``");

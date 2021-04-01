@@ -103,7 +103,7 @@ impl<'a> Device<'a> {
     }
 
     pub fn verify(&self) -> Result<VerifiedPerson, error::VerifyPerson> {
-        Ok(self.git.verify(*self.cur.content_id)?)
+        self.git.verify(*self.cur.content_id)
     }
 
     pub fn assert_verifies(&self) -> anyhow::Result<()> {
@@ -217,11 +217,10 @@ impl<'a> Project<'a> {
     where
         F: Fn(Urn) -> Result<git2::Oid, !>,
     {
-        Ok(self
-            .dev
+        self.dev
             .git
             .as_project()
-            .verify(*self.cur.content_id, lookup)?)
+            .verify(*self.cur.content_id, lookup)
     }
 
     pub fn assert_verifies<F>(&self, lookup: F) -> anyhow::Result<()>

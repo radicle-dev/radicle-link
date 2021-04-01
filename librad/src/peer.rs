@@ -172,9 +172,9 @@ impl<'a> TryFrom<webpki::DNSNameRef<'a>> for PeerId {
     }
 }
 
-impl Into<webpki::DNSName> for PeerId {
-    fn into(self) -> webpki::DNSName {
-        webpki::DNSNameRef::try_from_ascii_str(&self.to_string())
+impl From<PeerId> for webpki::DNSName {
+    fn from(peer_id: PeerId) -> Self {
+        webpki::DNSNameRef::try_from_ascii_str(&peer_id.to_string())
             .unwrap()
             .to_owned()
     }
@@ -188,19 +188,16 @@ impl Deref for PeerId {
     }
 }
 
-// FIXME(kim): We'd probably want From impls, instead of only Into, but the
-// typechecker fails to terminate in some cases. No clue why.
-
-impl Into<ext::RefLike> for &PeerId {
-    fn into(self) -> ext::RefLike {
-        ext::RefLike::try_from(self.to_string())
+impl From<&PeerId> for ext::RefLike {
+    fn from(peer_id: &PeerId) -> Self {
+        Self::try_from(peer_id.to_string())
             .expect("string representation of PeerId must be a valid git refname")
     }
 }
 
-impl Into<ext::RefLike> for PeerId {
-    fn into(self) -> ext::RefLike {
-        (&self).into()
+impl From<PeerId> for ext::RefLike {
+    fn from(peer_id: PeerId) -> Self {
+        (&peer_id).into()
     }
 }
 

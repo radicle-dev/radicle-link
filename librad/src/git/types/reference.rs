@@ -339,6 +339,7 @@ where
 }
 
 // TODO(kim): what is this for?
+#[allow(clippy::from_over_into)]
 impl<'a, N, R> Into<ext::blob::Branch<'a>> for &'a Reference<N, R, Single>
 where
     Self: ToString,

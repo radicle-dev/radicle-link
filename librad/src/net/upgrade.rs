@@ -71,20 +71,20 @@ pub enum UpgradeRequest {
     Membership = 2,
 }
 
-impl Into<UpgradeRequest> for Gossip {
-    fn into(self) -> UpgradeRequest {
+impl From<Gossip> for UpgradeRequest {
+    fn from(_gossip: Gossip) -> Self {
         UpgradeRequest::Gossip
     }
 }
 
-impl Into<UpgradeRequest> for Git {
-    fn into(self) -> UpgradeRequest {
+impl From<Git> for UpgradeRequest {
+    fn from(_git: Git) -> Self {
         UpgradeRequest::Git
     }
 }
 
-impl Into<UpgradeRequest> for Membership {
-    fn into(self) -> UpgradeRequest {
+impl From<Membership> for UpgradeRequest {
+    fn from(_membership: Membership) -> Self {
         UpgradeRequest::Membership
     }
 }

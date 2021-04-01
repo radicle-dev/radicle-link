@@ -117,10 +117,10 @@ impl Default for NodeConfig {
 
 /// Seed node instance.
 pub struct Node {
-    /// Receiver end of user requests.
-    requests: chan::UnboundedReceiver<Request>,
     /// Sender end of user requests.
     handle: chan::UnboundedSender<Request>,
+    /// Receiver end of user requests.
+    requests: chan::UnboundedReceiver<Request>,
 }
 
 impl Node {

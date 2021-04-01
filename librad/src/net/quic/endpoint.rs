@@ -102,7 +102,10 @@ impl Endpoint {
         let local_ip = local_addr.ip();
 
         fn same_family(a: &IpAddr, b: &IpAddr) -> bool {
-            matches!((a, b), (IpAddr::V4(_), IpAddr::V4(_)) | (IpAddr::V6(_), IpAddr::V6(_)))
+            matches!(
+                (a, b),
+                (IpAddr::V4(_), IpAddr::V4(_)) | (IpAddr::V6(_), IpAddr::V6(_))
+            )
         }
 
         let addrs = if local_ip.is_unspecified() {

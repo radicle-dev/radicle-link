@@ -98,9 +98,9 @@ impl FromStr for LocalUrl {
     }
 }
 
-impl Into<Urn> for LocalUrl {
-    fn into(self) -> Urn {
-        self.urn
+impl From<LocalUrl> for Urn {
+    fn from(url: LocalUrl) -> Self {
+        url.urn
     }
 }
 

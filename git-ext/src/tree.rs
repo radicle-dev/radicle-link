@@ -78,7 +78,7 @@ impl Tree<'_> {
             }
         }
 
-        Ok(builder.write()?)
+        builder.write()
     }
 }
 
