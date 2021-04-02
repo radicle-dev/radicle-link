@@ -447,12 +447,38 @@ impl<T, D> WaitingRoom<T, D> {
             })
     }
 
+    /// TODO
+    pub fn stats(&self) -> Stats {
+        self.requests.iter().map(|(_, r)| r).collect()
+    }
+
     #[cfg(test)]
     pub fn insert<R>(&mut self, urn: &Urn, request: R)
     where
         R: Into<SomeRequest<T>>,
     {
         self.requests.insert(urn.id, request.into());
+    }
+}
+
+#[derive(Debug)]
+pub struct Stats(HashMap<String, (String, String, String)>);
+
+impl<'a, T: 'a> std::iter::FromIterator<&'a SomeRequest<T>> for Stats {
+    fn from_iter<I: IntoIterator<Item = &'a SomeRequest<T>>>(iter: I) -> Self {
+        Stats(
+            iter.into_iter()
+                .map(|r| {
+                    let peers = match r {
+                        SomeRequest::Found(f) => {
+                            format!("{:?}", f.peers)
+                        },
+                        _ => "".to_string(),
+                    };
+                    (r.urn().to_string(), (r.attempts().to_string(), RequestState::from(r).to_string(), peers))
+                })
+                .collect(),
+        )
     }
 }
 
