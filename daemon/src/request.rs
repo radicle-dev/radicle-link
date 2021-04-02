@@ -126,9 +126,19 @@ impl<S, T> Request<S, T> {
     where
         S: HasPeers,
     {
-        self.state.peers().entry(peer).or_insert(Status::Available);
-        self.timestamp = timestamp;
-        self
+	let status = match self.state.peers().get(peer) {
+	    None => {
+
+		self.state.peer.insert(peer, Status::Available)
+		self.timestamp = timestamp;
+		self
+	    },
+	    Some(Status::Failed) => self.failed(peer, timestamp),
+	    Some(_) => {
+		self.timestamp = timestamp;
+		self
+	    },
+	}
     }
 
     /// A `Request` transitions into a timed out state if it exceeds the maximum
