@@ -186,6 +186,7 @@ impl RunState {
     /// executed in the appropriate subroutines.
     pub fn transition(&mut self, input: Input) -> Vec<Command> {
         log::trace!("TRANSITION START: {:?} {:?}", input, self.status);
+        log::debug!("Before transition: {:?}", self.waiting_room.stats());
 
         let cmds = match input {
             Input::Announce(announce_input) => self.handle_announce(announce_input),
@@ -196,6 +197,7 @@ impl RunState {
             Input::Request(request_input) => self.handle_request(request_input),
             Input::Stats(stats_input) => self.handle_stats(stats_input),
         };
+        log::debug!("After transition: {:?}", self.waiting_room.stats());
 
         log::trace!("TRANSITION END: {:?} {:?}", self.status, cmds);
 

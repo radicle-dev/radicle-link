@@ -201,6 +201,15 @@ impl Queries {
     }
 }
 
+impl fmt::Display for Queries {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Queries::Max(n) => write!(f, "{}", n),
+            &Queries::Infinite => write!(f, "∞"),
+        }
+    }
+}
+
 impl From<Queries> for Option<usize> {
     fn from(other: Queries) -> Self {
         match other {
@@ -246,6 +255,15 @@ impl Clones {
     #[must_use]
     pub const fn new(n: usize) -> Self {
         Self::Max(n)
+    }
+}
+
+impl fmt::Display for Clones {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Clones::Max(m) => write!(f, "{}", m),
+            Clones::Infinite => write!(f, "∞"),
+        }
     }
 }
 
@@ -313,6 +331,12 @@ impl Attempts {
 impl Default for Attempts {
     fn default() -> Self {
         Attempts::new()
+    }
+}
+
+impl fmt::Display for Attempts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "queries={}, clones={}", self.queries, self.clones) 
     }
 }
 
