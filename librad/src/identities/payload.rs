@@ -264,6 +264,16 @@ where
     {
         self.ext.range(range)
     }
+
+    pub fn remove_ext<U>(&mut self) -> Result<Option<U>, serde_json::Error>
+    where
+        U: HasNamespace + serde::de::DeserializeOwned,
+    {
+        self.ext
+            .remove(U::namespace())
+            .map(serde_json::from_value)
+            .transpose()
+    }
 }
 
 impl<T> serde::Serialize for Payload<T>
@@ -723,6 +733,33 @@ mod tests {
             serde_json::to_string_pretty(&payload).unwrap(),
             json_pretty.to_owned()
         )
+    }
+
+    #[test]
+    fn remove_ext() {
+        let mut payload = PersonPayload::new(Person {
+            name: "cloudhead".into(),
+        })
+        .with_ext(UpstreamUser {
+            registered_as: "cloudhead".into(),
+        })
+        .unwrap();
+
+        assert_eq!(
+            payload.get_ext::<UpstreamUser>().unwrap().unwrap(),
+            UpstreamUser {
+                registered_as: "cloudhead".into(),
+            }
+        );
+
+        let result = payload.remove_ext::<UpstreamUser>();
+        assert_eq!(
+            result.unwrap(),
+            Some(UpstreamUser {
+                registered_as: "cloudhead".into()
+            })
+        );
+        assert_eq!(payload.get_ext::<UpstreamUser>().unwrap(), None);
     }
 
     #[test]
