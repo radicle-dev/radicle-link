@@ -378,11 +378,10 @@ where
 pub(crate) mod tests {
     use super::*;
 
-    use git_ext::Oid;
     use librad_test::roundtrip::*;
     use proptest::prelude::*;
 
-    use crate::identities::gen::gen_oid;
+    use crate::identities::gen::gen_urn;
 
     /// Fake `id` of a `Urn<FakeId>`.
     ///
@@ -412,25 +411,6 @@ pub(crate) mod tests {
         fn from(id: &FakeId) -> Self {
             multihash::wrap(multihash::Code::Identity, &id.0.to_be_bytes())
         }
-    }
-
-    fn gen_urn() -> impl Strategy<Value = Urn<Oid>> {
-        (
-            gen_oid(git2::ObjectType::Tree),
-            prop::option::of(prop::collection::vec("[a-z0-9]+", 1..3)),
-        )
-            .prop_map(|(id, path)| {
-                let path = path.map(|elems| {
-                    ext::RefLike::try_from(elems.join("/")).unwrap_or_else(|e| {
-                        panic!(
-                            "Unexpected error generating a RefLike from `{}`: {}",
-                            elems.join("/"),
-                            e
-                        )
-                    })
-                });
-                Urn { id, path }
-            })
     }
 
     /// All serialisation roundtrips [`Urn`] must pass

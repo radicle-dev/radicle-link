@@ -16,7 +16,7 @@ use proptest::prelude::*;
 use super::*;
 use crate::{
     identities::delegation,
-    keys::{tests::gen_secret_key, PublicKey, SecretKey, Signature},
+    keys::{gen::gen_secret_key, PublicKey, SecretKey, Signature},
 };
 
 /// A completely irrelevant value.

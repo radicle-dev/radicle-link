@@ -120,27 +120,6 @@ impl<S, T> Request<S, T> {
         }
     }
 
-    /// If a state keeps track of found peers then it can transition back to
-    /// itself by adding a `PeerId` to the existing set of peers.
-    pub fn found(mut self, peer: PeerId, timestamp: T) -> Request<S, T>
-    where
-        S: HasPeers,
-    {
-	let status = match self.state.peers().get(peer) {
-	    None => {
-
-		self.state.peer.insert(peer, Status::Available)
-		self.timestamp = timestamp;
-		self
-	    },
-	    Some(Status::Failed) => self.failed(peer, timestamp),
-	    Some(_) => {
-		self.timestamp = timestamp;
-		self
-	    },
-	}
-    }
-
     /// A `Request` transitions into a timed out state if it exceeds the maximum
     /// number of queries or maximum number of clones. Otherwise, the
     /// `Request` proceeds as normal.
@@ -305,6 +284,23 @@ impl<T> Request<Found, T> {
             Either::Right(self)
         }
     }
+
+    pub fn found(mut self, peer: PeerId, timestamp: T) -> Either<Request<Requested, T>, Request<Found, T>>
+    {
+	match self.state.peers().get(&peer) {
+	    None => {
+		self.state.peers().insert(peer, Status::Available);
+		self.timestamp = timestamp;
+		Either::Right(self)
+	    },
+	    Some(Status::Failed) => self.failed(),
+	    Some(_) => {
+		self.timestamp = timestamp;
+		Either::Right(self)
+	    },
+	}
+    }
+
 }
 
 impl<T> Request<Cloning, T> {
@@ -343,5 +339,12 @@ impl<T> Request<Cloning, T> {
             timestamp,
             state: Cloned { remote_peer },
         }
+    }
+
+    pub fn found(mut self, peer: PeerId, timestamp: T) -> Request<Cloning, T>
+    {
+        self.state.peers.entry(peer).or_insert(Status::Available);
+        self.timestamp = timestamp;
+        self
     }
 }
