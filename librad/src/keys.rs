@@ -34,7 +34,7 @@ impl<T: error::Error + Send + Sync + 'static> SignError for T {}
 
 /// A device-specific signing key
 #[derive(Clone, Zeroize)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(any(test, feature="proptest_generators"), derive(Debug))]
 #[zeroize(drop)]
 pub struct SecretKey(ed25519::SigningKey);
 
@@ -67,7 +67,7 @@ impl SecretKey {
         Self(sk)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature="proptest_generators"))]
     pub fn from_seed(seed: [u8; 32]) -> Self {
         Self(ed25519::SigningKey::from(seed))
     }
@@ -427,14 +427,10 @@ impl<'b> minicbor::Decode<'b> for Signature {
     }
 }
 
-#[cfg(test)]
-pub mod tests {
+#[cfg(any(test, feature="proptest_generators"))]
+pub mod gen {
     use super::*;
-
-    use librad_test::roundtrip::*;
     use proptest::prelude::*;
-
-    const DATA_TO_SIGN: &[u8] = b"alors monsieur";
 
     pub fn gen_secret_key() -> impl Strategy<Value = SecretKey> {
         any::<[u8; 32]>().prop_map(SecretKey::from_seed)
@@ -443,6 +439,15 @@ pub mod tests {
     pub fn gen_public_key() -> impl Strategy<Value = PublicKey> {
         gen_secret_key().prop_map(|sk| sk.public())
     }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    use librad_test::roundtrip::*;
+
+    const DATA_TO_SIGN: &[u8] = b"alors monsieur";
 
     #[test]
     fn test_sign_verify_via_signature() {

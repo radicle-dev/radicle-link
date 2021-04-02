@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc da840815902dc7c574d8588b993ffd6b3e0c27f30efcafa04cf650bf9b12e7cb # shrinks to transitions = [CloningFailed(Urn { id: Oid(6f30afbb57f942519c255bef6fc67e7afc20105b), path: None }, hyd643ni18ehu39gfkir9j33bnct7qnet751981xn7igdyowuftq8k, SystemTime { tv_sec: 1882711758, tv_nsec: 300568587 })]

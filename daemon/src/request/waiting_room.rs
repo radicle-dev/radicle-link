@@ -416,7 +416,7 @@ impl<T, D> WaitingRoom<T, D> {
     pub fn next_query(&self, timestamp: T) -> Option<Urn>
     where
         T: Add<D, Output = T> + PartialOrd + Clone,
-        D: Mul<u32, Output = D> + Ord + Clone,
+        D: Mul<u32, Output = D> + Ord + Clone
     {
         let backoff = |tries: Queries| match tries {
             Queries::Max(i) => self.config.delta.clone() * u32::try_from(i).unwrap_or(u32::MAX),
@@ -484,11 +484,13 @@ impl<'a, T: 'a> std::iter::FromIterator<&'a SomeRequest<T>> for Stats {
 
 #[cfg(test)]
 mod test {
-    use std::{error, str::FromStr};
+    use std::{error, str::FromStr, time::SystemTime};
 
     use assert_matches::assert_matches;
     use librad::{git::Urn, git_ext::Oid, keys::SecretKey, peer::PeerId};
     use pretty_assertions::assert_eq;
+    use proptest::prelude::*;
+    use proptest::sample::select as proptest_select;
 
     use super::*;
 
@@ -844,4 +846,62 @@ mod test {
 
         Ok(())
     }
+
+    #[derive(Debug)]
+    enum Transition {
+        Created(Urn, SystemTime),
+        Queried(Urn, SystemTime),
+        Found(Urn, PeerId, SystemTime),
+        Cloning(Urn, PeerId, SystemTime),
+        CloningFailed(Urn, PeerId, SystemTime),
+        Cloned(Urn, PeerId, SystemTime),
+        Canceled(Urn, SystemTime),
+    }
+
+    fn arb_peers() -> impl Strategy<Value=Vec<PeerId>> {
+        proptest::collection::vec(librad::peer::gen::gen_peer_id(), 1..10)
+    }
+
+    fn arb_urns() -> impl Strategy<Value=Vec<Urn>> {
+        proptest::collection::vec(librad::identities::gen::gen_urn(), 1..10)
+    }
+
+    fn arb_transition(peers: Vec<PeerId>, urns: Vec<Urn>) -> impl Strategy<Value=Transition> {
+        proptest::prop_oneof![
+            (proptest_select(urns.clone()), any::<SystemTime>()).prop_map(|(urn, t)| Transition::Created(urn, t)),
+            (proptest_select(urns.clone()), any::<SystemTime>()).prop_map(|(urn, t)| Transition::Queried(urn, t)),
+            (proptest_select(urns.clone()), proptest_select(peers.clone()), any::<SystemTime>()).prop_map(|(urn, peer, t)| Transition::Found(urn, peer, t)),
+            (proptest_select(urns.clone()), proptest_select(peers.clone()), any::<SystemTime>()).prop_map(|(urn, peer, t)| Transition::Cloning(urn, peer, t)),
+            (proptest_select(urns.clone()), proptest_select(peers.clone()), any::<SystemTime>()).prop_map(|(urn, peer, t)| Transition::CloningFailed(urn, peer, t)),
+            (proptest_select(urns.clone()), proptest_select(peers.clone()), any::<SystemTime>()).prop_map(|(urn, peer, t)| Transition::Cloned(urn, peer, t)),
+            (proptest_select(urns.clone()),  any::<SystemTime>()).prop_map(|(urn, t)| Transition::Canceled(urn, t)),
+        ]
+    }
+
+    fn arb_transitions() -> impl Strategy<Value=Vec<Transition>> {
+        let transition = (arb_peers(), arb_urns()).prop_flat_map(|(peers, urns)| arb_transition(peers, urns));
+        proptest::collection::vec(transition, 1..100)
+    }
+
+    proptest!{
+        #[test]
+        fn all_failed_transitions_to_requested(transitions in arb_transitions()) {
+            let mut waiting_room: WaitingRoom<SystemTime, u32> = WaitingRoom::new(Config {
+                delta: 5,
+                ..Config::default()
+            });
+            for transition in transitions {
+                match transition {
+                    Transition::Created(urn, t) => { waiting_room.request(&urn, t); },
+                    Transition::Queried(urn, t) => { waiting_room.queried(&urn, t).unwrap(); },
+                    Transition::Found(urn, peer, t) => { waiting_room.found(&urn, peer, t).unwrap(); },
+                    Transition::Cloning(urn, peer, t) => { waiting_room.cloning(&urn, peer, t).unwrap(); },
+                    Transition::CloningFailed(urn, peer, t) => { waiting_room.cloning_failed(&urn, peer, t).unwrap(); },
+                    Transition::Cloned(urn, peer, t) => { waiting_room.cloned(&urn, peer, t).unwrap(); },
+                    Transition::Canceled(urn, t) => { waiting_room.canceled(&urn, t).unwrap(); },
+                }
+            }
+        }
+    }
+
 }

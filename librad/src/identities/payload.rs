@@ -597,7 +597,7 @@ mod tests {
 
     use crate::{
         identities::gen::gen_oid,
-        keys::{tests::gen_public_key, SecretKey},
+        keys::{gen::gen_public_key, SecretKey},
     };
 
     lazy_static! {

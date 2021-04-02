@@ -46,3 +46,8 @@ pretty_env_logger = "0.3"
 tempfile = "3.1"
 tracing = "0.1"
 tracing-subscriber = "0.2"
+proptest = "0"
+
+[dev-dependencies.librad]
+path = "../librad"
+features = ["proptest_generators"]
