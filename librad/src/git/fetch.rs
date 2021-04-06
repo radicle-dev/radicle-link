@@ -49,7 +49,7 @@ pub const FIVE_GB: usize = ONE_KB * ONE_KB * ONE_KB * 5;
 /// Limits used for guarding against fetching large amounts of data from the
 /// network.
 ///
-/// The default values are [`FIVE_KB`], [`FIVE_GB`], respectively.
+/// The default values are [`TEN_KB`], [`FIVE_GB`], respectively.
 #[derive(Clone, Copy, Debug)]
 pub struct Limit {
     /// Limit the amount of data we fetch using [`Fetchspecs::PeekAll`] and
