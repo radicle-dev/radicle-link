@@ -4,5 +4,6 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 mod clone;
+mod fetch_limit;
 mod gossip;
 mod regression;
