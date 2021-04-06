@@ -9,6 +9,9 @@ use librad_test::{
     rad::{identities::TestProject, testnet},
 };
 
+/// Stress test the limits that are set for fetching when using `replicate`.
+/// The `fetch::Limit` contains a base limit and should be scaled by the number
+/// of remotes that the fetcher is fetching from.
 #[tokio::test]
 async fn replication_does_not_exceed_limit() {
     logging::init();
