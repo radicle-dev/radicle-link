@@ -46,7 +46,10 @@ use librad::{
 };
 use radicle_keystore::sign::Signer as _;
 
-use crate::{peer::gossip, project::peer};
+use crate::{
+    peer::gossip,
+    project::{create::Signature, peer},
+};
 
 pub mod error;
 pub use error::Error;
@@ -387,8 +390,13 @@ pub async fn init_project(
         .using_storage(move |store| {
             let urn = project::urn(store, payload.clone(), delegations.clone())?;
             let url = LocalUrl::from(urn.clone());
+            let config = store.config()?;
+            let signature = Signature {
+                name: config.user_name()?,
+                email: config.user_email()?,
+            };
             let repository = create
-                .validate(url)
+                .validate(url, signature)
                 .map_err(crate::project::create::Error::from)?;
 
             if store.has_urn(&urn)? {
