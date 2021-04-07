@@ -29,6 +29,10 @@
 )]
 #![feature(duration_zero, hash_set_entry, never_type)]
 
+#[cfg(test)]
+#[macro_use]
+extern crate assert_matches;
+
 pub use librad::{
     self,
     git::{self, identities::local::LocalIdentity, include, local::url::LocalUrl, Urn},
