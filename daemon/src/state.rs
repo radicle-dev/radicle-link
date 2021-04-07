@@ -963,7 +963,7 @@ pub mod test {
         .await?;
         let project = super::init_project(&peer, &user, radicle_project(repo_path.clone())).await;
 
-        assert!(project.is_ok());
+        assert_matches!(project, Ok(_));
         assert!(repo_path.join("radicalise").exists());
 
         Ok(())
@@ -988,7 +988,7 @@ pub mod test {
         .await?;
         let project = super::init_project(&peer, &user, radicle_project(repo_path.clone())).await;
 
-        assert!(project.is_ok());
+        assert_matches!(project, Ok(_));
         assert!(repo_path.exists());
 
         Ok(())
