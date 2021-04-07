@@ -1012,7 +1012,7 @@ pub mod test {
         )
         .await?;
 
-        for fixture in fixtures(repo_path.clone()) {
+        for fixture in fixtures(tmp_dir.path()) {
             super::init_project(&peer, &user, fixture).await?;
         }
 
