@@ -4,7 +4,6 @@ version = "0.1.0"
 license = "GPL-3.0-only"
 authors = ["Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
-description = "Abstractions and utilities to run and interact with radicle-link"
 
 [dependencies]
 async-stream = "0.3"

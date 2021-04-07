@@ -55,7 +55,7 @@ impl Repo {
                 .next_back()
                 .and_then(|component| component.as_os_str().to_str())
                 .map(ToString::to_string)
-                .ok_or_else(|| validation::Error::EmptyExistingPath(path.to_path_buf())),
+                .ok_or_else(|| validation::Error::EmptyExistingPath(path.clone())),
             Self::New { name, .. } => Ok(name.to_string()),
         }
     }
@@ -64,7 +64,7 @@ impl Repo {
     #[must_use]
     pub fn full_path(&self) -> PathBuf {
         match self {
-            Self::Existing { path } => path.to_path_buf(),
+            Self::Existing { path } => path.clone(),
             Self::New { name, path } => path.join(name),
         }
     }
