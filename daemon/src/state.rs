@@ -948,7 +948,6 @@ pub mod test {
     async fn can_create_project() -> Result<(), Box<dyn std::error::Error>> {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
         env::set_var("RAD_HOME", tmp_dir.path());
-        let repo_path = tmp_dir.path().join("radicle");
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
@@ -961,10 +960,11 @@ pub mod test {
             },
         )
         .await?;
-        let project = super::init_project(&peer, &user, radicle_project(repo_path.clone())).await;
+        let project =
+            super::init_project(&peer, &user, radicle_project(tmp_dir.path().to_path_buf())).await;
 
         assert_matches!(project, Ok(_));
-        assert!(repo_path.join("radicalise").exists());
+        assert!(tmp_dir.path().join("radicalise").exists());
 
         Ok(())
     }
@@ -974,6 +974,7 @@ pub mod test {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
         let repo_path = tmp_dir.path().join("radicle");
         let repo_path = repo_path.join("radicalise");
+        std::fs::create_dir_all(repo_path.clone()).expect("failed to create directory path");
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
