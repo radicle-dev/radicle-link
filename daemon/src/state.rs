@@ -997,7 +997,6 @@ pub mod test {
     #[tokio::test]
     async fn list_projects() -> Result<(), Box<dyn std::error::Error>> {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
-        let repo_path = tmp_dir.path().join("radicle");
 
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
@@ -1012,12 +1011,13 @@ pub mod test {
         )
         .await?;
 
-        for fixture in fixtures(tmp_dir.path()) {
+        for fixture in fixtures(tmp_dir.path().to_path_buf()) {
             super::init_project(&peer, &user, fixture).await?;
         }
 
         let kalt = super::init_user(&peer, "kalt".to_string()).await?;
-        let fakie = super::init_project(&peer, &kalt, fakie_project(repo_path)).await?;
+        let fakie =
+            super::init_project(&peer, &kalt, fakie_project(tmp_dir.path().to_path_buf())).await?;
 
         let projects = super::list_projects(&peer).await?;
         let mut project_names = projects
