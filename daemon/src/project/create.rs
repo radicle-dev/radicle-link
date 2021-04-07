@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::path::PathBuf;
+use std::{convert::TryFrom, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +21,24 @@ pub enum Error {
     /// An error occurred while validating input.
     #[error(transparent)]
     Validation(#[from] validation::Error),
+}
+
+/// The signature of a git author. Used internally to convert into a
+/// `git2::Signature`, which _cannot_ be shared between threads.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Signature {
+    /// The name of the author
+    pub name: String,
+    /// The email of the author
+    pub email: String,
+}
+
+impl TryFrom<Signature> for git2::Signature<'static> {
+    type Error = git2::Error;
+
+    fn try_from(signature: Signature) -> Result<Self, Self::Error> {
+        Self::now(&signature.name, &signature.email)
+    }
 }
 
 /// The data required to either open an existing repository or create a new one.
@@ -65,7 +83,7 @@ impl Repo {
     pub fn full_path(&self) -> PathBuf {
         match self {
             Self::Existing { path } => path.clone(),
-            Self::New { name, path } => path.join(name),
+            Self::New { name, path, .. } => path.join(name),
         }
     }
 }
@@ -89,8 +107,12 @@ impl Create {
     /// # Errors
     ///
     /// See [`validation::Repository::validate`]
-    pub fn validate(self, url: LocalUrl) -> Result<validation::Repository, validation::Error> {
-        validation::Repository::validate(self.repo, url, self.default_branch)
+    pub fn validate(
+        self,
+        url: LocalUrl,
+        signature: Signature,
+    ) -> Result<validation::Repository, validation::Error> {
+        validation::Repository::validate(self.repo, url, self.default_branch, signature)
     }
 }
 
@@ -141,7 +163,15 @@ mod test {
             },
         };
         assert_matches!(
-            create.validate(url).err(),
+            create
+                .validate(
+                    url,
+                    Signature {
+                        name: "functor".to_string(),
+                        email: "map@functor.ct".to_string(),
+                    }
+                )
+                .err(),
             Some(validation::Error::AlreadExists(_))
         );
 
@@ -165,7 +195,15 @@ mod test {
                 path: tmpdir.path().to_path_buf(),
             },
         };
-        assert!(create.validate(url).is_ok());
+        assert!(create
+            .validate(
+                url,
+                Signature {
+                    name: "cocone".to_string(),
+                    email: "cocone@pushout.ct".to_string(),
+                }
+            )
+            .is_ok());
 
         Ok(())
     }

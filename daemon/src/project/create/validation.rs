@@ -25,8 +25,7 @@ use librad::{
 };
 use nonempty::NonEmpty;
 
-const USER_NAME: &str = "user.name";
-const USER_EMAIL: &str = "user.email";
+use super::Signature;
 
 /// Errors that occur when validating a [`super::Repo`]'s path.
 #[derive(Debug, thiserror::Error)]
@@ -110,22 +109,6 @@ pub enum Error {
     },
 }
 
-/// The signature of a git author. Used internally to convert into a
-/// `git2::Signature`, which _cannot_ be shared between threads.
-#[derive(Debug)]
-pub struct Signature {
-    name: String,
-    email: String,
-}
-
-impl TryFrom<Signature> for git2::Signature<'static> {
-    type Error = git2::Error;
-
-    fn try_from(signature: Signature) -> Result<Self, Self::Error> {
-        Self::now(&signature.name, &signature.email)
-    }
-}
-
 /// A `Repository` represents the validated information for setting up a working
 /// copy.
 ///
@@ -150,7 +133,7 @@ pub enum Repository {
         url: LocalUrl,
         /// The default branch the repository should be set up with.
         default_branch: OneLevel,
-        /// The signature to be used for creating the first commit.
+        /// The signature to use for the initial commit.
         signature: Signature,
     },
 }
@@ -187,6 +170,7 @@ impl Repository {
         repo: super::Repo,
         url: LocalUrl,
         default_branch: OneLevel,
+        signature: Signature,
     ) -> Result<Self, Error> {
         match repo {
             super::Repo::Existing { path } => {
@@ -218,8 +202,6 @@ impl Repository {
                 let repo_path = path.join(name.clone());
                 let _repo_path = crate::project::ensure_directory(&repo_path)?
                     .ok_or_else(|| Error::AlreadExists(repo_path.clone()))?;
-
-                let signature = Self::existing_author()?;
 
                 Ok(Self::New {
                     name,
@@ -415,17 +397,5 @@ impl Repository {
             }),
             Ok(remote) => Ok(remote),
         }
-    }
-
-    fn existing_author() -> Result<Signature, Error> {
-        let config = git2::Config::open_default()
-            .or_matches(git_ext::is_not_found_err, || Err(Error::MissingGitConfig))?;
-        let name = config
-            .get_string(USER_NAME)
-            .or_matches(git_ext::is_not_found_err, || Err(Error::MissingAuthorName))?;
-        let email = config
-            .get_string(USER_EMAIL)
-            .or_matches(git_ext::is_not_found_err, || Err(Error::MissingAuthorEmail))?;
-        Ok(Signature { name, email })
     }
 }
