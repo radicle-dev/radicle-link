@@ -8,14 +8,14 @@
 use std::time::Duration;
 
 /// Default time to wait between announcement subroutine runs.
-pub(super) const DEFAULT_ANNOUNCE_INTERVAL: Duration = std::time::Duration::from_secs(1);
+const DEFAULT_ANNOUNCE_INTERVAL: Duration = std::time::Duration::from_secs(1);
 
-pub(super) const DEFAULT_STATS_INTERVAL: Duration = Duration::from_millis(1000);
+const DEFAULT_STATS_INTERVAL: Duration = Duration::from_millis(1000);
 
-pub(super) const DEFAULT_SYNC_INTERVAL: Duration = std::time::Duration::from_secs(30);
+const DEFAULT_SYNC_INTERVAL: Duration = std::time::Duration::from_secs(30);
 
 /// Default period at which we query the waiting room.
-pub(super) const DEFAULT_WAITING_ROOM_INTERVAL: Duration = Duration::from_millis(500);
+const DEFAULT_WAITING_ROOM_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Default period to consider until a query has timed out.
 pub(crate) const DEFAULT_WAITING_ROOM_TIMEOUT: Duration = Duration::from_secs(10);
