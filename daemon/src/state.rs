@@ -1024,7 +1024,6 @@ pub mod test {
     async fn can_create_project() -> Result<(), Box<dyn std::error::Error>> {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
         env::set_var("RAD_HOME", tmp_dir.path());
-        let repo_path = tmp_dir.path().join("radicle");
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
@@ -1037,10 +1036,11 @@ pub mod test {
             },
         )
         .await?;
-        let project = super::init_project(&peer, &user, radicle_project(repo_path.clone())).await;
+        let project =
+            super::init_project(&peer, &user, radicle_project(tmp_dir.path().to_path_buf())).await;
 
         assert!(project.is_ok());
-        assert!(repo_path.join("radicalise").exists());
+        assert!(tmp_dir.path().join("radicalise").exists());
 
         Ok(())
     }
@@ -1050,6 +1050,7 @@ pub mod test {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
         let repo_path = tmp_dir.path().join("radicle");
         let repo_path = repo_path.join("radicalise");
+        std::fs::create_dir_all(repo_path.clone()).expect("failed to create directory path");
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
@@ -1073,7 +1074,6 @@ pub mod test {
     #[tokio::test]
     async fn list_projects() -> Result<(), Box<dyn std::error::Error>> {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
-        let repo_path = tmp_dir.path().join("radicle");
 
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
@@ -1088,12 +1088,13 @@ pub mod test {
         )
         .await?;
 
-        for fixture in fixtures(repo_path.clone()) {
+        for fixture in fixtures(tmp_dir.path().to_path_buf()) {
             super::init_project(&peer, &user, fixture).await?;
         }
 
         let kalt = super::init_user(&peer, "kalt".to_string()).await?;
-        let fakie = super::init_project(&peer, &kalt, fakie_project(repo_path)).await?;
+        let fakie =
+            super::init_project(&peer, &kalt, fakie_project(tmp_dir.path().to_path_buf())).await?;
 
         let projects = super::list_projects(&peer).await?;
         let mut project_names = projects
