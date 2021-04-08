@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
+    collections::HashMap,
     io,
     net::{IpAddr, SocketAddr},
     sync::Arc,
@@ -147,8 +148,8 @@ impl Endpoint {
         self.conntrack.total()
     }
 
-    pub fn connected_peers(&self) -> usize {
-        self.conntrack.num_peers()
+    pub fn connected_peers(&self) -> HashMap<PeerId, Vec<SocketAddr>> {
+        self.conntrack.connected_peers()
     }
 
     pub fn peers(&self) -> Vec<PeerId> {

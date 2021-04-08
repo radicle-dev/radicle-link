@@ -6,7 +6,7 @@
 //! State machine to manage the current mode of operation during peer lifecycle.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     net::SocketAddr,
     time::{Duration, SystemTime},
 };
@@ -26,12 +26,17 @@ use librad::{
     },
     peer::PeerId,
 };
+use waiting_room::TransitionWithResult;
 
 use crate::{
     convert::MaybeFrom,
     peer::{announcement, control},
-    request::waiting_room::{self, WaitingRoom},
+    request::{
+        waiting_room::{self, Transition as WaitingRoomTransition, WaitingRoom},
+        Event as RequestEvent,
+    },
 };
+use either::Either;
 
 pub mod command;
 pub use command::Command;
@@ -82,6 +87,14 @@ pub enum Event {
         /// The net status
         new: Status,
     },
+    /// A state change occurred in the waiting room
+    WaitingRoomTransition(WaitingRoomTransition<SystemTime>),
+}
+
+impl From<WaitingRoomTransition<SystemTime>> for Event {
+    fn from(transition: WaitingRoomTransition<SystemTime>) -> Self {
+        Self::WaitingRoomTransition(transition)
+    }
 }
 
 impl MaybeFrom<&Input> for Event {
@@ -138,6 +151,8 @@ pub enum Status {
     Online {
         /// Number of connected peers.
         connected: usize,
+        /// Connected peers
+        connected_peers: HashMap<PeerId, Vec<SocketAddr>>,
     },
 }
 
@@ -207,7 +222,7 @@ impl RunState {
         match (&self.status, input) {
             // Announce new updates while the peer is online.
             (Status::Online { .. } | Status::Started { .. }, input::Announce::Tick)
-                if self.stats.connected_peers > 0 && self.stats.membership_active > 0 =>
+                if !self.stats.connected_peers.is_empty() && self.stats.membership_active > 0 =>
             {
                 vec![Command::Announce]
             }
@@ -219,25 +234,53 @@ impl RunState {
     fn handle_control(&mut self, input: input::Control) -> Vec<Command> {
         match input {
             input::Control::CancelRequest(urn, timestamp, sender) => {
-                let request = self
-                    .waiting_room
-                    .canceled(&urn, timestamp)
-                    .map(|()| self.waiting_room.remove(&urn));
-                vec![
-                    Command::Control(command::Control::Respond(control::Response::CancelSearch(
-                        sender, request,
-                    ))),
-                    Command::PersistWaitingRoom(self.waiting_room.clone()),
-                ]
+                let cancel_result =
+                    self.waiting_room
+                        .canceled(&urn, timestamp)
+                        .map(|transition1| {
+                            let transition2 = self.waiting_room.remove(&urn, timestamp);
+                            (
+                                transition2.result.clone(),
+                                (transition1.transition(), transition2.transition()),
+                            )
+                        });
+                match cancel_result {
+                    Ok((request, (transition1, transition2))) => vec![
+                        Command::Control(command::Control::Respond(
+                            control::Response::CancelSearch(sender, Ok(request)),
+                        )),
+                        Command::PersistWaitingRoom(self.waiting_room.clone()),
+                        Command::EmitEvent(transition1.into()),
+                        Command::EmitEvent(transition2.into()),
+                    ],
+                    Err(e) => vec![
+                        Command::Control(command::Control::Respond(
+                            control::Response::CancelSearch(sender, Err(e)),
+                        )),
+                        Command::PersistWaitingRoom(self.waiting_room.clone()),
+                    ],
+                }
             },
             input::Control::CreateRequest(urn, time, sender) => {
                 let request = self.waiting_room.request(&urn, time);
-                vec![
-                    Command::Control(command::Control::Respond(control::Response::StartSearch(
-                        sender, request,
-                    ))),
-                    Command::EmitEvent(Event::RequestCreated(urn)),
-                ]
+                match request {
+                    Either::Left(transition) => vec![
+                        Command::Control(command::Control::Respond(
+                            control::Response::StartSearch(
+                                sender,
+                                Either::Left(transition.result.clone()),
+                            ),
+                        )),
+                        Command::EmitEvent(Event::RequestCreated(urn)),
+                        Command::EmitEvent(transition.transition().into()),
+                    ],
+                    Either::Right(request) => vec![
+                        Command::Control(command::Control::Respond(
+                            control::Response::StartSearch(sender, Either::Right(request)),
+                        )),
+                        Command::EmitEvent(Event::RequestCreated(urn)),
+                    ],
+                }
             },
             input::Control::GetRequest(urn, sender) => {
                 vec![Command::Control(command::Control::Respond(
@@ -318,10 +361,14 @@ impl RunState {
                         provider: PeerInfo { peer_id, .. },
                         result,
                     } => {
-                        if let Err(waiting_room::Error::TimeOut { .. }) =
-                            self.waiting_room.found(&urn, peer_id, SystemTime::now())
-                        {
-                            cmds.push(Command::Request(command::Request::TimedOut(urn.clone())));
+                        let transition = self.waiting_room.found(&urn, peer_id, SystemTime::now());
+                        if let Ok(transition) = transition.map(TransitionWithResult::transition) {
+                            if let RequestEvent::TimedOut { ref urn, .. } = transition.event {
+                                cmds.push(Command::Request(command::Request::TimedOut(
+                                    urn.clone(),
+                                )));
+                                cmds.push(Command::EmitEvent(transition.into()));
+                            }
                         }
 
                         if let PutResult::Applied(_) = result {
@@ -342,7 +389,7 @@ impl RunState {
         match (&self.status, input) {
             // Check for new query and clone requests.
             (Status::Online { .. }, input::Request::Tick) => {
-                let mut cmds = Vec::with_capacity(2);
+                let mut cmds = Vec::with_capacity(3);
 
                 if let Some(urn) = self.waiting_room.next_query(SystemTime::now()) {
                     cmds.push(Command::Request(command::Request::Query(urn)));
@@ -352,6 +399,9 @@ impl RunState {
                     cmds.push(Command::Request(command::Request::Clone(urn, remote_peer)));
                     cmds.push(Command::PersistWaitingRoom(self.waiting_room.clone()));
                 }
+                cmds.push(Command::EmitEvent(
+                    self.waiting_room.tick(SystemTime::now()).into(),
+                ));
                 cmds
             },
             // FIXME(xla): Come up with a strategy for the results returned by the waiting room.
@@ -359,22 +409,37 @@ impl RunState {
                 .waiting_room
                 .cloning(&urn, remote_peer, SystemTime::now())
                 .map_or_else(
-                    |error| Self::handle_waiting_room_timeout(urn, &error),
-                    |_| vec![Command::PersistWaitingRoom(self.waiting_room.clone())],
+                    |error| Self::handle_waiting_room_error(&error),
+                    |t| {
+                        Self::waiting_room_events_to_commands(
+                            self.waiting_room.clone(),
+                            t.transition(),
+                        )
+                    },
                 ),
             (_, input::Request::Cloned(urn, remote_peer)) => self
                 .waiting_room
                 .cloned(&urn, remote_peer, SystemTime::now())
                 .map_or_else(
-                    |error| Self::handle_waiting_room_timeout(urn, &error),
-                    |_| vec![Command::PersistWaitingRoom(self.waiting_room.clone())],
+                    |error| Self::handle_waiting_room_error(&error),
+                    |t| {
+                        Self::waiting_room_events_to_commands(
+                            self.waiting_room.clone(),
+                            t.transition(),
+                        )
+                    },
                 ),
             (_, input::Request::Queried(urn)) => self
                 .waiting_room
                 .queried(&urn, SystemTime::now())
                 .map_or_else(
-                    |error| Self::handle_waiting_room_timeout(urn, &error),
-                    |_| vec![Command::PersistWaitingRoom(self.waiting_room.clone())],
+                    |error| Self::handle_waiting_room_error(&error),
+                    |t| {
+                        Self::waiting_room_events_to_commands(
+                            self.waiting_room.clone(),
+                            t.transition(),
+                        )
+                    },
                 ),
             (
                 _,
@@ -386,10 +451,15 @@ impl RunState {
             ) => {
                 log::warn!("Cloning failed with: {}", reason);
                 self.waiting_room
-                    .cloning_failed(&urn, remote_peer, SystemTime::now())
+                    .cloning_failed(&urn, remote_peer, SystemTime::now(), reason)
                     .map_or_else(
-                        |error| Self::handle_waiting_room_timeout(urn, &error),
-                        |_| vec![Command::PersistWaitingRoom(self.waiting_room.clone())],
+                        |error| Self::handle_waiting_room_error(&error),
+                        |t| {
+                            Self::waiting_room_events_to_commands(
+                                self.waiting_room.clone(),
+                                t.transition(),
+                            )
+                        },
                     )
             },
             _ => vec![],
@@ -399,25 +469,27 @@ impl RunState {
     fn handle_stats(&mut self, input: input::Stats) -> Vec<Command> {
         match (&self.status, input) {
             (_, input::Stats::Tick) => vec![Command::Stats],
-            (status, input::Stats::Values(connected_peers, stats)) => {
+            (status, input::Stats::Values(stats)) => {
+                self.connected_peers = stats.connected_peers.keys().into_iter().cloned().collect();
                 match status {
-                    Status::Online { .. } if stats.connected_peers == 0 => {
+                    Status::Online { .. } if stats.connected_peers.is_empty() => {
                         self.status = Status::Offline;
                     },
-                    Status::Offline if stats.connected_peers > 0 => {
+                    Status::Offline if !stats.connected_peers.is_empty() => {
                         self.status = Status::Online {
-                            connected: stats.connected_peers,
+                            connected: stats.connected_peers.len(),
+                            connected_peers: stats.connected_peers.clone(),
                         };
                     },
-                    Status::Started if stats.connected_peers > 0 => {
+                    Status::Started if !stats.connected_peers.is_empty() => {
                         self.status = Status::Online {
-                            connected: stats.connected_peers,
+                            connected: stats.connected_peers.len(),
+                            connected_peers: stats.connected_peers.clone(),
                         };
                     },
                     _ => {},
                 };
 
-                self.connected_peers = connected_peers.into_iter().collect();
                 self.stats = stats;
 
                 vec![]
@@ -426,14 +498,22 @@ impl RunState {
     }
 
     /// Handle [`waiting_room::Error`]s.
-    fn handle_waiting_room_timeout(urn: Urn, error: &waiting_room::Error) -> Vec<Command> {
+    fn handle_waiting_room_error(error: &waiting_room::Error) -> Vec<Command> {
         log::warn!("WaitingRoom::Error : {}", error);
-        match error {
-            waiting_room::Error::TimeOut { .. } => {
-                vec![Command::Request(command::Request::TimedOut(urn))]
-            },
-            _ => vec![],
-        }
+        Vec::new()
+    }
+
+    fn waiting_room_events_to_commands(
+        waiting_room: WaitingRoom<SystemTime, Duration>,
+        transition: WaitingRoomTransition<SystemTime>,
+    ) -> Vec<Command> {
+        let mut commands = Vec::with_capacity(3);
+        commands.push(Command::PersistWaitingRoom(waiting_room));
+        if let RequestEvent::TimedOut { ref urn, .. } = transition.event {
+            commands.push(Command::Request(command::Request::TimedOut(urn.clone())));
+        };
+        commands.push(Command::EmitEvent(transition.into()));
+        commands
     }
 }
 
@@ -441,7 +521,7 @@ impl RunState {
 #[cfg(test)]
 mod test {
     use std::{
-        collections::{BTreeSet, HashSet},
+        collections::{BTreeSet, HashMap, HashSet},
         net::SocketAddr,
         str::FromStr,
         time::SystemTime,
@@ -496,15 +576,12 @@ mod test {
         let cmds = {
             let key = SecretKey::new();
             let peer_id = PeerId::from(key);
-            state.transition(Input::Stats(input::Stats::Values(
-                vec![peer_id],
-                downstream::Stats {
-                    connections_total: 1,
-                    connected_peers: 1,
-                    membership_active: 1,
-                    membership_passive: 1,
-                },
-            )))
+            state.transition(Input::Stats(input::Stats::Values(downstream::Stats {
+                connections_total: 1,
+                connected_peers: one_connected_peer(peer_id),
+                membership_active: 1,
+                membership_passive: 1,
+            })))
         };
         assert!(cmds.is_empty());
         assert_matches!(state.status, Status::Online { .. });
@@ -513,12 +590,14 @@ mod test {
     #[test]
     fn transition_to_offline_when_last_peer_disconnects() {
         let peer_id = PeerId::from(SecretKey::new());
-        let status = Status::Online { connected: 0 };
+        let status = Status::Online {
+            connected: 0,
+            connected_peers: HashMap::new(),
+        };
         let mut state =
             RunState::construct(Some(peer_id).into_iter().collect(), status, HashSet::new());
 
         let _cmds = state.transition(Input::Stats(input::Stats::Values(
-            vec![],
             downstream::Stats::default(),
         )));
         assert_matches!(state.status, Status::Offline);
@@ -526,14 +605,18 @@ mod test {
 
     #[test]
     fn issue_announce_while_online_and_active_membering() {
-        let status = Status::Online { connected: 1 };
+        let peer_id = PeerId::from(SecretKey::new());
+        let status = Status::Online {
+            connected: 1,
+            connected_peers: one_connected_peer(peer_id),
+        };
         let mut state = RunState::construct(HashSet::new(), status, HashSet::new());
 
         let cmds = state.transition(Input::Announce(input::Announce::Tick));
         assert!(cmds.is_empty(), "expected no command");
 
         state.stats = librad::net::protocol::event::downstream::Stats {
-            connected_peers: 1,
+            connected_peers: one_connected_peer(peer_id),
             membership_active: 1,
             ..librad::net::protocol::event::downstream::Stats::default()
         };
@@ -545,11 +628,15 @@ mod test {
 
     #[test]
     fn dont_announce_with_inactive_member() {
-        let status = Status::Online { connected: 1 };
+        let peer_id = PeerId::from(SecretKey::new());
+        let status = Status::Online {
+            connected: 1,
+            connected_peers: one_connected_peer(peer_id),
+        };
         let mut state = RunState::construct(HashSet::new(), status, HashSet::new());
 
         state.stats = librad::net::protocol::event::downstream::Stats {
-            connected_peers: 0,
+            connected_peers: HashMap::new(),
             membership_active: 0,
             membership_passive: 1,
             ..librad::net::protocol::event::downstream::Stats::default()
@@ -572,7 +659,11 @@ mod test {
     fn issue_query_when_requested_and_online() -> Result<(), Box<dyn std::error::Error + 'static>> {
         let urn: Urn = Urn::new(Oid::from_str("7ab8629dd6da14dcacde7f65b3d58cd291d7e235")?);
 
-        let status = Status::Online { connected: 1 };
+        let connected_peers = one_connected_peer(PeerId::from(SecretKey::new()));
+        let status = Status::Online {
+            connected: 1,
+            connected_peers,
+        };
         let (response_sender, _) = oneshot::channel();
         let mut state = RunState::construct(HashSet::new(), status, HashSet::new());
         state.transition(Input::Control(input::Control::CreateRequest(
@@ -598,7 +689,11 @@ mod test {
         let peer_id = PeerId::from(SecretKey::new());
         let addr = "127.0.0.0:80".parse()?;
 
-        let status = Status::Online { connected: 0 };
+        let connected_peers = one_connected_peer(PeerId::from(SecretKey::new()));
+        let status = Status::Online {
+            connected: 0,
+            connected_peers,
+        };
         let (response_sender, _) = oneshot::channel();
         let mut state = RunState::construct(HashSet::new(), status, HashSet::new());
 
@@ -655,18 +750,30 @@ mod test {
     fn issue_syncs() {
         let num_peers = 5;
 
-        let mut connected_peers = HashSet::new();
+        let mut connected_peers = HashMap::new();
         for _ in 0..num_peers {
-            connected_peers.insert(PeerId::from(SecretKey::new()));
+            connected_peers.insert(
+                PeerId::from(SecretKey::new()),
+                vec!["127.0.0.1:1234".parse().unwrap()],
+            );
         }
 
         let status = Status::Online {
             connected: num_peers,
+            connected_peers: connected_peers.clone(),
         };
-        let mut state = RunState::construct(connected_peers, status, HashSet::new());
+        let mut state = RunState::construct(
+            connected_peers.keys().cloned().collect(),
+            status,
+            HashSet::new(),
+        );
 
         let cmds = state.transition(Input::PeerSync(input::Sync::Tick));
 
         assert_eq!(cmds.len(), num_peers);
+    }
+
+    fn one_connected_peer(peer_id: PeerId) -> HashMap<PeerId, Vec<SocketAddr>> {
+        std::iter::once((peer_id, vec!["127.0.0.1:1234".parse().unwrap()])).collect()
     }
 }

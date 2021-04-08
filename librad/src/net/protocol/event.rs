@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::net::SocketAddr;
+use std::{collections::HashMap, net::SocketAddr};
 
 use super::{broadcast, error, gossip, interrogation, membership};
 use crate::PeerId;
@@ -56,7 +56,7 @@ pub mod downstream {
     #[derive(Clone, Debug, Default)]
     pub struct Stats {
         pub connections_total: usize,
-        pub connected_peers: usize,
+        pub connected_peers: HashMap<PeerId, Vec<SocketAddr>>,
         pub membership_active: usize,
         pub membership_passive: usize,
     }

@@ -427,7 +427,7 @@ impl Remote<LocalUrl> {
                 specs,
                 Some(
                     git2::FetchOptions::new()
-                        .prune(git2::FetchPrune::On)
+                        .prune(git2::FetchPrune::Off)
                         .update_fetchhead(false)
                         .download_tags(git2::AutotagOption::None)
                         .remote_callbacks(callbacks),
