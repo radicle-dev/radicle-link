@@ -3,15 +3,22 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::convert::{TryFrom, TryInto};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt::Debug,
+};
 
 use librad::{
     self,
     git::{
         local::url::LocalUrl,
+        storage::Storage,
+        tracking,
         types::{remote, Flat, Force, GenericRef, Namespace, Reference, Refspec, Remote},
+        Urn,
     },
     git_ext as ext,
+    peer::PeerId,
     reflike,
     refspec_pattern,
 };
@@ -22,6 +29,38 @@ use librad_test::{
 };
 
 const NUM_PEERS: usize = 3;
+
+struct ExpectedReferences {
+    has_commit: bool,
+    has_rad_id: bool,
+    has_rad_self: bool,
+    has_rad_ids: bool,
+}
+
+impl ExpectedReferences {
+    fn new<Oid>(
+        storage: &Storage,
+        urn: &Urn,
+        remote: PeerId,
+        delegate: Urn,
+        commit: Option<Oid>,
+    ) -> Result<Self, anyhow::Error>
+    where
+        Oid: AsRef<git2::Oid> + Debug,
+    {
+        let rad_self = Reference::rad_self(Namespace::from(urn.clone()), remote);
+        let rad_id = Reference::rad_id(Namespace::from(urn.clone())).with_remote(remote);
+        let rad_ids =
+            Reference::rad_delegate(Namespace::from(urn.clone()), &delegate).with_remote(remote);
+
+        Ok(ExpectedReferences {
+            has_commit: commit.map_or(Ok(true), |commit| storage.has_commit(&urn, commit))?,
+            has_rad_id: storage.has_ref(&rad_id)?,
+            has_rad_self: storage.has_ref(&rad_self)?,
+            has_rad_ids: storage.has_ref(&rad_ids)?,
+        })
+    }
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_trois() {
@@ -98,32 +137,22 @@ async fn a_trois() {
                 .join(&default_branch),
         );
 
-        struct ExpectedReferences {
-            has_commit: bool,
-            has_rad_id: bool,
-            has_rad_self: bool,
-            has_rad_ids: bool,
-        }
-
         proj.pull(&peer1, &peer2).await.ok().unwrap();
         proj.pull(&peer2, &peer3).await.ok().unwrap();
 
         let peer2_expected = peer2
             .using_storage({
                 let urn = expected_urn.clone();
-                let rad_self = Reference::rad_self(Namespace::from(urn.clone()), peer1.peer_id());
-                let rad_id =
-                    Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
-                let rad_ids =
-                    Reference::rad_delegate(Namespace::from(urn.clone()), &proj.owner.urn())
-                        .with_remote(peer1.peer_id());
-                move |storage| -> Result<ExpectedReferences, anyhow::Error> {
-                    Ok(ExpectedReferences {
-                        has_commit: storage.has_commit(&urn, Box::new(commit_id))?,
-                        has_rad_id: storage.has_ref(&rad_self)?,
-                        has_rad_self: storage.has_ref(&rad_id)?,
-                        has_rad_ids: storage.has_ref(&rad_ids)?,
-                    })
+                let remote = peer1.peer_id();
+                let delegate = proj.owner.urn();
+                move |storage| {
+                    ExpectedReferences::new(
+                        storage,
+                        &urn,
+                        remote,
+                        delegate,
+                        Some(Box::new(commit_id)),
+                    )
                 }
             })
             .await
@@ -132,19 +161,16 @@ async fn a_trois() {
         let peer3_expected = peer3
             .using_storage({
                 let urn = expected_urn.clone();
-                let rad_self = Reference::rad_self(Namespace::from(urn.clone()), peer1.peer_id());
-                let rad_id =
-                    Reference::rad_id(Namespace::from(urn.clone())).with_remote(peer1.peer_id());
-                let rad_ids =
-                    Reference::rad_delegate(Namespace::from(urn.clone()), &proj.owner.urn())
-                        .with_remote(peer1.peer_id());
-                move |storage| -> Result<ExpectedReferences, anyhow::Error> {
-                    Ok(ExpectedReferences {
-                        has_commit: storage.has_commit(&urn, Box::new(commit_id))?,
-                        has_rad_id: storage.has_ref(&rad_self)?,
-                        has_rad_self: storage.has_ref(&rad_id)?,
-                        has_rad_ids: storage.has_ref(&rad_ids)?,
-                    })
+                let remote = peer1.peer_id();
+                let delegate = proj.owner.urn();
+                move |storage| {
+                    ExpectedReferences::new(
+                        storage,
+                        &urn,
+                        remote,
+                        delegate,
+                        Some(Box::new(commit_id)),
+                    )
                 }
             })
             .await
@@ -169,6 +195,83 @@ async fn a_trois() {
         );
         assert!(peer3_expected.has_rad_id, "peer 3 missing `rad/id`");
         assert!(peer3_expected.has_rad_self, "peer 3 missing `rad/self``");
+        assert!(
+            peer3_expected.has_rad_ids,
+            "peer 3 missing `rad/ids/<delegate>`"
+        );
+    })
+    .await;
+}
+
+/// `peer1` is a delegate of a project and tracks `peer2`.
+/// When `peer3` replicates from `peer1` they should have references for `peer1`
+/// and `peer2`, due to the tracking graph.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn threes_a_crowd() {
+    logging::init();
+
+    let peers = testnet::setup(NUM_PEERS).await.unwrap();
+    testnet::run_on_testnet(peers, NUM_PEERS, |mut peers| async move {
+        let peer1 = peers.pop().unwrap();
+        let peer2 = peers.pop().unwrap();
+        let peer3 = peers.pop().unwrap();
+
+        let proj = peer1
+            .using_storage(move |storage| TestProject::create(&storage))
+            .await
+            .unwrap()
+            .unwrap();
+
+        peer1
+            .using_storage({
+                let peer_id = peer2.peer_id();
+                let urn = proj.project.urn();
+                move |storage| tracking::track(storage, &urn, peer_id)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        proj.pull(&peer1, &peer2).await.ok().unwrap();
+        proj.pull(&peer2, &peer1).await.ok().unwrap();
+        proj.pull(&peer1, &peer3).await.ok().unwrap();
+
+        // Has peer1 refs?
+        let peer3_expected = peer3
+            .using_storage({
+                let urn = proj.project.urn();
+                let delegate = proj.owner.urn();
+                let remote = peer1.peer_id();
+                move |storage| {
+                    ExpectedReferences::new::<ext::Oid>(storage, &urn, remote, delegate, None)
+                }
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(peer3_expected.has_rad_id, "peer 3 missing `rad/id`");
+        assert!(peer3_expected.has_rad_self, "peer 3 missing `rad/self``");
+        assert!(
+            peer3_expected.has_rad_ids,
+            "peer 3 missing `rad/ids/<delegate>`"
+        );
+
+        // Has peer2 refs?
+        // Skipping rad/self since peer2 never creates a Person
+        let peer3_expected = peer3
+            .using_storage({
+                let urn = proj.project.urn();
+                let delegate = proj.owner.urn();
+                let remote = peer2.peer_id();
+                move |storage| {
+                    ExpectedReferences::new::<ext::Oid>(storage, &urn, remote, delegate, None)
+                }
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(peer3_expected.has_rad_id, "peer 3 missing `rad/id`");
         assert!(
             peer3_expected.has_rad_ids,
             "peer 3 missing `rad/ids/<delegate>`"

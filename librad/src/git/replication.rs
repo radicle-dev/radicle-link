@@ -176,7 +176,7 @@ where
             let allowed = match identity {
                 SomeIdentity::Project(proj) => {
                     let delegates = project::delegate_views(storage, proj, Some(remote_peer))?;
-                    let allowed = delegates.keys().copied().collect();
+                    let mut allowed = delegates.keys().copied().collect::<BTreeSet<_>>();
                     let rad_id = unsafe_into_urn(
                         Reference::rad_id(Namespace::from(&urn)).with_remote(remote_peer),
                     );
@@ -191,6 +191,9 @@ where
                         proj,
                     )?;
                     updated_tips.append(&mut setup.updated_tips);
+
+                    let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
+                    allowed.extend(tracked);
                     allowed
                 },
                 SomeIdentity::Person(person) => {
@@ -326,6 +329,8 @@ fn replication(
         let fetched_peers = project::fetched_peers(&updated)?;
 
         let mut tips = updated.updated_tips;
+        // We can't fetch `refs/remotes/*/rad/ids/*` since we can't have two globs, so
+        // we fetch `refs/remotes/{fetched_peer}/rad/ids/*`.
         let peeked = fetcher
             .fetch(fetch::Fetchspecs::Peek {
                 remotes: fetched_peers.clone(),
