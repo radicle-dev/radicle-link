@@ -279,7 +279,7 @@ where
     remove.insert(*local_peer_id);
 
     // Remove any remote tracking branches we don't need
-    prune(storage, &urn, remove.iter())?;
+    // prune(storage, &urn, remove.iter())?;
 
     // TODO: At this point, the tracking graph may have changed, and/or we
     // created top-level person namespaces. We will eventually converge, but
