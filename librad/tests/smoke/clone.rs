@@ -21,6 +21,59 @@ use librad_test::{
 
 const NUM_PEERS: usize = 2;
 
+/// Fetching from a peer that does not have the identity should leave the
+/// `rad/*` refs intact.
+#[tokio::test]
+async fn not_present() {
+    logging::init();
+
+    let peers = testnet::setup(3).await.unwrap();
+    testnet::run_on_testnet(peers, 3, |mut peers| async move {
+        let maintainer = Host::init(peers.pop().unwrap()).await;
+        let contributor = Leecher(peers.pop().unwrap());
+        let voyeur = peers.pop().unwrap();
+
+        let urn = maintainer.project.project.urn().clone();
+        let maintainer_id = maintainer.peer.peer_id();
+
+        contributor.clone_from(maintainer, true).await;
+
+        let cfg = contributor.0.protocol_config().replication;
+        contributor
+            .0
+            .using_storage(move |storage| {
+                // check rad/self of maintainer exists
+                assert!(
+                    storage
+                        .has_ref(&Reference::rad_self(Namespace::from(&urn), maintainer_id))
+                        .unwrap(),
+                    "`refs/remotes/<maintainer>/rad/self` should exist before"
+                );
+
+                let res = replication::replicate(
+                    &storage,
+                    cfg,
+                    None,
+                    urn.clone(),
+                    voyeur.peer_id(),
+                    voyeur.listen_addrs().iter().copied(),
+                );
+                assert!(res.is_ok());
+
+                // check rad/self of maintainer exists
+                assert!(
+                    storage
+                        .has_ref(&Reference::rad_self(Namespace::from(&urn), maintainer_id))
+                        .unwrap(),
+                    "`refs/remotes/<maintainer>/rad/self` should exist after"
+                );
+            })
+            .await
+            .unwrap();
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn when_connected() {
     logging::init();

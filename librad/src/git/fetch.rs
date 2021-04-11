@@ -547,7 +547,7 @@ impl<'a> DefaultFetcher<'a> {
             .to_string(),
         )?;
         remote.connect(git2::Direction::Fetch)?;
-        let remote_heads = remote
+        let remote_heads: RemoteHeads = remote
             .list()?
             .iter()
             .filter_map(|remote_head| match remote_head.symref_target() {
@@ -620,7 +620,7 @@ impl<'a> DefaultFetcher<'a> {
                 &refspecs,
                 Some(
                     git2::FetchOptions::new()
-                        .prune(git2::FetchPrune::On)
+                        .prune(git2::FetchPrune::Off)
                         .update_fetchhead(false)
                         .download_tags(git2::AutotagOption::None)
                         .remote_callbacks(callbacks),
