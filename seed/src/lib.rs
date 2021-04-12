@@ -199,11 +199,13 @@ impl Node {
                         },
                         // There might be intermittent errors due to restarting.
                         // We can just ignore them.
-                        Some(Err(_)) => {
+                        Some(Err(err)) => {
+                            tracing::error!(err =?err, "seed node events error");
                             continue;
                         },
                         // We're done when you're done.
                         None => {
+                            tracing::info!("events stream ended, seed node will be dropped");
                             break;
                         }
                     }
@@ -212,6 +214,7 @@ impl Node {
                     if let Some(r) = request {
                         Node::handle_request(r, &peer).await?;
                     }
+                    tracing::info!("requests stream ended, seed node will be dropped");
                 }
             }
         }
