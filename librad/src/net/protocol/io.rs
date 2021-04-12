@@ -74,7 +74,7 @@ where
 
 pub(super) fn peer_advertisement(endpoint: &quic::Endpoint) -> PeerAdvertisement<SocketAddr> {
     let listen_addrs = endpoint
-        .listen_addrs()
+        .advertised_addrs()
         .expect("unable to obtain listen addrs")
         .into_iter()
         .collect();

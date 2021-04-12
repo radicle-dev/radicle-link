@@ -10,6 +10,7 @@ use std::{
 };
 
 use futures::stream::{BoxStream, StreamExt as _, TryStreamExt as _};
+use nonempty::NonEmpty;
 use pnet_datalink::interfaces as network_interfaces;
 use quinn::{NewConnection, TransportConfig};
 
@@ -51,6 +52,7 @@ impl<'a> LocalAddr for BoundEndpoint<'a> {
 pub struct Endpoint {
     peer_id: PeerId,
     endpoint: quinn::Endpoint,
+    advertised_addrs: Option<NonEmpty<SocketAddr>>,
     conntrack: Conntrack,
     refcount: Arc<()>,
 }
@@ -59,6 +61,7 @@ impl Endpoint {
     pub async fn bind<'a, S>(
         signer: S,
         listen_addr: SocketAddr,
+        advertised_addrs: Option<NonEmpty<SocketAddr>>,
         network: Network,
     ) -> Result<BoundEndpoint<'a>>
     where
@@ -71,6 +74,7 @@ impl Endpoint {
         let endpoint = Endpoint {
             peer_id,
             endpoint,
+            advertised_addrs,
             conntrack: conntrack.clone(),
             refcount: Arc::new(()),
         };
@@ -94,6 +98,13 @@ impl Endpoint {
             .boxed();
 
         Ok(BoundEndpoint { endpoint, incoming })
+    }
+
+    pub fn advertised_addrs(&self) -> io::Result<Vec<SocketAddr>> {
+        match self.advertised_addrs {
+            None => self.listen_addrs(),
+            Some(ref x) => Ok(x.clone().into()),
+        }
     }
 
     pub fn listen_addrs(&self) -> io::Result<Vec<SocketAddr>> {

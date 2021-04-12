@@ -19,6 +19,7 @@ use futures::{
     stream::StreamExt as _,
 };
 use governor::{Quota, RateLimiter};
+use nonempty::NonEmpty;
 use nonzero_ext::nonzero;
 use parking_lot::Mutex;
 use rand_pcg::Pcg64Mcg;
@@ -66,6 +67,7 @@ mod tick;
 pub struct Config {
     pub paths: Paths,
     pub listen_addr: SocketAddr,
+    pub advertised_addrs: Option<NonEmpty<SocketAddr>>,
     pub membership: membership::Params,
     pub network: Network,
     pub replication: replication::Config,
@@ -264,8 +266,13 @@ where
 {
     let local_id = PeerId::from_signer(&signer);
     let git = GitServer::new(&config.paths);
-    let quic::BoundEndpoint { endpoint, incoming } =
-        quic::Endpoint::bind(signer, config.listen_addr, config.network).await?;
+    let quic::BoundEndpoint { endpoint, incoming } = quic::Endpoint::bind(
+        signer,
+        config.listen_addr,
+        config.advertised_addrs,
+        config.network,
+    )
+    .await?;
     let (membership, periodic) = membership::Hpv::<_, SocketAddr>::new(
         local_id,
         Pcg64Mcg::new(rand::random()),

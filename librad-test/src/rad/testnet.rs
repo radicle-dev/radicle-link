@@ -111,6 +111,7 @@ where
     let protocol = protocol::Config {
         paths,
         listen_addr,
+        advertised_addrs: None,
         membership: Default::default(),
         network: Default::default(),
         replication: Default::default(),

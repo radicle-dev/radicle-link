@@ -47,6 +47,7 @@ async fn main() {
             protocol: protocol::Config {
                 paths,
                 listen_addr: *LOCALHOST_ANY,
+                advertised_addrs: None,
                 membership: Default::default(),
                 network: Default::default(),
                 replication: Default::default(),
