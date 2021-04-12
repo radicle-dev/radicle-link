@@ -2,7 +2,7 @@ name: fast
 on: [pull_request]
 jobs:
   fmt:
-    if: github.event.pull_request.head.repo.fork == true
+    if: ${{ github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@master
@@ -23,7 +23,7 @@ jobs:
         shell: bash
 
   test-linux:
-    if: github.event.pull_request.head.repo.fork == true
+    if: ${{ github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@master
