@@ -19,7 +19,7 @@ use librad::{
 };
 use radicle_git_ext::RefLike;
 
-use coco::{
+use radicle_daemon::{
     identities::payload::Person,
     project::{peer, Peer},
     seed::Seed,
@@ -31,7 +31,12 @@ use coco::{
 #[macro_use]
 mod common;
 use common::{
-    build_peer, build_peer_with_seeds, connected, init_logging, shia_le_pathbuf, started,
+    build_peer,
+    build_peer_with_seeds,
+    connected,
+    init_logging,
+    shia_le_pathbuf,
+    started,
 };
 
 #[tokio::test]
@@ -99,11 +104,11 @@ async fn can_clone_project() -> Result<(), Box<dyn std::error::Error>> {
             .collect::<Vec<_>>();
         have.sort_by(|p1, p2| p1.status().cmp(p2.status()));
         let want: Vec<_> = vec![
-            coco::project::Peer::Remote {
+            radicle_daemon::project::Peer::Remote {
                 peer_id: another_peer,
                 status: peer::Status::NotReplicated,
             },
-            coco::project::Peer::Remote {
+            radicle_daemon::project::Peer::Remote {
                 peer_id: alice_peer.peer_id(),
                 status: peer::Status::replicated(
                     peer::Role::Maintainer,
@@ -305,7 +310,7 @@ async fn can_fetch_project_changes() -> Result<(), Box<dyn std::error::Error>> {
             ))
             .unwrap(),
         )),
-        coco::git_ext::Oid::from(commit_id),
+        radicle_daemon::git_ext::Oid::from(commit_id),
     )
     .await?;
     assert!(has_commit);
@@ -320,7 +325,7 @@ async fn can_sync_on_startup() -> Result<(), Box<dyn std::error::Error>> {
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_repo_path = alice_tmp_dir.path().join("radicle");
     let config = RunConfig {
-        sync: coco::peer::run_config::Sync {
+        sync: radicle_daemon::peer::run_config::Sync {
             interval: Duration::from_millis(500),
         },
         ..RunConfig::default()
@@ -376,7 +381,7 @@ async fn can_sync_on_startup() -> Result<(), Box<dyn std::error::Error>> {
 
     assert_event!(
         alice_events,
-        coco::PeerEvent::PeerSynced(peer_id) if peer_id == bob_peer_id
+        radicle_daemon::PeerEvent::PeerSynced(peer_id) if peer_id == bob_peer_id
     )?;
 
     Ok(())
@@ -590,7 +595,10 @@ async fn track_peer() -> Result<(), Box<dyn std::error::Error>> {
 
     state::track(&alice_peer, project.urn(), bob_peer.peer_id()).await?;
 
-    assert_event!(alice_events, coco::PeerEvent::GossipFetched { .. })?;
+    assert_event!(
+        alice_events,
+        radicle_daemon::PeerEvent::GossipFetched { .. }
+    )?;
 
     let tracked = state::tracked(&alice_peer, project.urn()).await?;
     assert!(tracked.iter().any(|peer| match peer {

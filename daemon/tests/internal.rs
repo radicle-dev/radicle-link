@@ -8,7 +8,7 @@ use std::time::Duration;
 use futures::{future, stream::StreamExt as _};
 use tokio::time::timeout;
 
-use coco::{PeerEvent, RunConfig};
+use radicle_daemon::{PeerEvent, RunConfig};
 
 #[macro_use]
 mod common;

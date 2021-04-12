@@ -13,10 +13,16 @@ use tokio::{
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 use librad::{
-    git::Urn, git_ext::OneLevel, keys::SecretKey, net::discovery, peer::PeerId, reflike, signer,
+    git::Urn,
+    git_ext::OneLevel,
+    keys::SecretKey,
+    net::discovery,
+    peer::PeerId,
+    reflike,
+    signer,
 };
 
-use coco::{config, project, seed::Seed, Paths, Peer, PeerEvent, PeerStatus, RunConfig};
+use radicle_daemon::{config, project, seed::Seed, Paths, Peer, PeerEvent, PeerStatus, RunConfig};
 
 #[doc(hidden)]
 #[macro_export]
@@ -72,8 +78,8 @@ pub async fn requested(
     )
 }
 
-/// Assert that the `PeerStatus` transitions to `Online` and the number of connected peers is equal
-/// to or more than `min_connected`.
+/// Assert that the `PeerStatus` transitions to `Online` and the number of
+/// connected peers is equal to or more than `min_connected`.
 #[allow(dead_code)]
 pub async fn connected(
     mut receiver: broadcast::Receiver<PeerEvent>,
@@ -105,7 +111,7 @@ pub async fn build_peer(
     let store = kv::Store::new(kv::Config::new(tmp_dir.path().join("store")))?;
     let conf = config::default(signer, tmp_dir.path())?;
     let disco = config::static_seed_discovery(&[]);
-    let peer = coco::Peer::new(conf, disco, store, run_config);
+    let peer = radicle_daemon::Peer::new(conf, disco, store, run_config);
 
     Ok(peer)
 }
@@ -122,7 +128,7 @@ pub async fn build_peer_with_seeds(
     let paths = Paths::from_root(tmp_dir.path())?;
     let conf = config::configure(paths, signer, *config::LOCALHOST_ANY);
     let disco = config::static_seed_discovery(&seeds);
-    let peer = coco::Peer::new(conf, disco, store, run_config);
+    let peer = radicle_daemon::Peer::new(conf, disco, store, run_config);
 
     Ok(peer)
 }
