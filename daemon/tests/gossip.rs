@@ -9,7 +9,7 @@ use assert_matches::assert_matches;
 use futures::{future, StreamExt as _};
 use tokio::time::timeout;
 
-use coco::{
+use radicle_daemon::{
     identities::payload::Person,
     peer::run_config,
     seed::Seed,
@@ -20,8 +20,15 @@ use coco::{
 #[macro_use]
 mod common;
 use common::{
-    assert_cloned, build_peer, build_peer_with_seeds, connected, init_logging, radicle_project,
-    requested, shia_le_pathbuf, started,
+    assert_cloned,
+    build_peer,
+    build_peer_with_seeds,
+    connected,
+    init_logging,
+    radicle_project,
+    requested,
+    shia_le_pathbuf,
+    started,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -89,7 +96,7 @@ async fn can_observe_announcement_from_connected_peer() -> Result<(), Box<dyn st
 
     let announced = async_stream::stream! { loop { yield bob_events.recv().await } }
         .filter_map(|res| match res.unwrap() {
-            coco::PeerEvent::GossipFetched {
+            radicle_daemon::PeerEvent::GossipFetched {
                 gossip, provider, ..
             } if provider.peer_id == alice_peer_id && gossip.urn.id == project.urn().id => {
                 future::ready(Some(()))
@@ -175,9 +182,9 @@ async fn can_ask_and_clone_project() -> Result<(), Box<dyn std::error::Error>> {
     // Make sure Bob is NotReplicated.
     assert_eq!(
         state::tracked(&alice_peer, urn.clone()).await?,
-        vec![coco::project::peer::Peer::Remote {
+        vec![radicle_daemon::project::peer::Peer::Remote {
             peer_id: bob_peer_id,
-            status: coco::project::peer::Status::NotReplicated,
+            status: radicle_daemon::project::peer::Status::NotReplicated,
         }]
     );
 
@@ -190,7 +197,7 @@ async fn can_ask_and_clone_project() -> Result<(), Box<dyn std::error::Error>> {
 
     let announced = async_stream::stream! { loop { yield alice_events.recv().await } }
         .filter_map(|res| match res.unwrap() {
-            coco::PeerEvent::GossipFetched {
+            radicle_daemon::PeerEvent::GossipFetched {
                 gossip, provider, ..
             } if provider.peer_id == bob_peer_id && gossip.urn.id == urn.id => {
                 future::ready(Some(()))
@@ -208,12 +215,12 @@ async fn can_ask_and_clone_project() -> Result<(), Box<dyn std::error::Error>> {
 
     assert_matches!(
         alice_tracked.first().unwrap(),
-        coco::project::peer::Peer::Remote {
+        radicle_daemon::project::peer::Peer::Remote {
             peer_id,
-            status: coco::project::peer::Status::Replicated(coco::project::peer::Replicated { role, .. }),
+            status: radicle_daemon::project::peer::Status::Replicated(radicle_daemon::project::peer::Replicated { role, .. }),
         } => {
             assert_eq!(*peer_id, bob_peer_id);
-            assert_eq!(*role, coco::project::peer::Role::Tracker);
+            assert_eq!(*role, radicle_daemon::project::peer::Role::Tracker);
         }
     );
 
