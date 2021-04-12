@@ -16,7 +16,6 @@ steps:
       DOCKER_FILE: .buildkite/docker/rust/Dockerfile
 
   - wait
-    if: build.pull_request.repository.fork == false
 
   - label: "Build + Test"
     if: build.pull_request.repository.fork == false
