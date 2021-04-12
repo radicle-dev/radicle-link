@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use coco::{
+use radicle_daemon::{
     identities::payload::Person,
     project::checkout,
     state::{self, init_owner},
@@ -41,8 +41,8 @@ async fn upstream_for_default() -> Result<(), Box<dyn std::error::Error>> {
     let working_copy_path = create.repo.full_path();
     let _ = state::init_project(&alice_peer, &alice, create).await?;
 
-    let repo = git2::Repository::open(working_copy_path)
-        .map_err(radicle_surf::vcs::git::error::Error::from)?;
+    let repo = git2::Repository::open(working_copy_path)?;
+
     let remote = repo.branch_upstream_remote("refs/heads/it")?;
 
     assert_eq!(remote.as_str().unwrap(), "rad");
