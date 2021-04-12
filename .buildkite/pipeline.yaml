@@ -3,6 +3,8 @@ steps:
   # triggering `n` image builds when updating the `DOCKER_IMAGE`. Note that it
   # still saves about 20sec to pin the image to a SHA256 after an upgrade.
   - label: "Build container"
+    # Nb: `if` skips the step if the expression evaluates to false
+    if: build.pull_request.repository.fork == false
     commands:
       - ".buildkite/env"
       - ".buildkite/build-container"
@@ -14,8 +16,10 @@ steps:
       DOCKER_FILE: .buildkite/docker/rust/Dockerfile
 
   - wait
+    if: build.pull_request.repository.fork == false
 
   - label: "Build + Test"
+    if: build.pull_request.repository.fork == false
     commands:
       - ".buildkite/env"
       - "ci/build-test"
@@ -25,7 +29,7 @@ steps:
     env: *build-docker
 
   - label: "fmt + clip"
-    skip:
+    if: build.pull_request.repository.fork == false
     commands:
       - ".buildkite/env"
       - "ci/clippy"
@@ -35,7 +39,7 @@ steps:
     env: *build-docker
 
   - label: "Deny"
-    skip:
+    if: build.pull_request.repository.fork == false
     commands:
       - ".buildkite/env"
       - "ci/advisory"
@@ -45,6 +49,7 @@ steps:
     env: *build-docker
 
   - label: "Docs"
+    if: build.pull_request.repository.fork == false
     commands:
       - ".buildkite/env"
       - "ci/docs"
