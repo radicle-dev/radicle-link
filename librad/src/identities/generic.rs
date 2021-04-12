@@ -383,7 +383,7 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Signed> {
             .map_err(error::Verify::eligibility)?
             .len();
 
-        if eligible > self.doc.quorum_threshold() {
+        if eligible > 0 && eligible > self.doc.quorum_threshold() {
             Ok(self.coerce())
         } else {
             Err(error::Verify::Quorum)
@@ -449,7 +449,7 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Quorum> {
                         .map_err(error::Verify::eligibility)?
                         .len();
 
-                    if votes > parent.doc.quorum_threshold() {
+                    if votes > 0 && votes > parent.doc.quorum_threshold() {
                         Ok(self.coerce())
                     } else {
                         Err(error::Verify::ParentQuorum)
