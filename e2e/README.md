@@ -2,19 +2,32 @@
 
 Tooling and utilities for E2E testing of `radicle-link` networks.
 
-## Lo-fi Local Devnet
+## Prequisites
 
-Prequisites:
+* [podman] or [docker]
+* [docker-compose]
+* Optional: [overmind]
 
-    * [overmind](https://github.com/DarthSim/overmind)
-    * [podman](https://podman.io)
+## Usage
 
-Run [`./localnet`](./localnet) to compile a simple peer against `HEAD`, and run
-it. Once it started up, you can watch some (rudimentary) metrics via the 'theus
-web interface at [http://localhost:9090](http://localhost:9090).
+To quickly spin up a few peers without waiting for slow container builds, run
+the `quick` script. This will start `$NUM_PEERS`, plus a bootstrap node, using
+[overmind].
 
-You can adjust the number of peers by setting the `NUM_PEERS` environment
-variable.
+A more elaborate setup is provided via [docker-compose]. Run
 
-_Note that this is currently simply a debugging aid. More sophisticated
-orchestration may be added in the future (contributions welcome!)_
+    DOCKER_BUILDKIT=1 docker-compose -f compose.yaml up
+
+to spin up a similar network topology. In addition, a [prometheus] dashboard
+will be available at [http://localhost:9090](http://localhost:9090).
+
+To force [docker-compose] to rebuild the container(s) after a code change, run:
+
+    DOCKER_BUILDKIT=1 docker-compose -f compose.yaml up --build
+
+
+[overmind]: https://github.com/DarthSim/overmind
+[podman]: https://podman.io
+[docker]: https://docs.docker.com/engine/
+[docker-compose]: https://docs.docker.com/compose/
+[prometheus]: https://prometheus.io

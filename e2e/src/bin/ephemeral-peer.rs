@@ -6,39 +6,86 @@
 #![feature(never_type)]
 
 use std::{
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    net::{SocketAddr, ToSocketAddrs},
     panic,
     time::{Duration, SystemTime},
 };
 
-use futures::{future, StreamExt as _};
-use lazy_static::lazy_static;
+use argh::FromArgs;
+use futures::future;
 use librad::{
     git,
     keys::SecretKey,
     net::{
-        discovery,
+        discovery::{self, Discovery as _},
         peer::{self, Peer},
         protocol,
     },
     paths::Paths,
+    PeerId,
 };
 use radicle_link_e2e::logging;
 use tempfile::tempdir;
 
-lazy_static! {
-    static ref LOCALHOST_ANY: SocketAddr =
-        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0));
+/// A passive peer using temporary storage
+#[derive(FromArgs)]
+struct Options {
+    /// base64-encoded secret key. A random key is generated if empty.
+    #[argh(option, from_str_fn(parse_secret_key))]
+    secret_key: Option<SecretKey>,
+    /// listen address.
+    #[argh(option)]
+    listen: Option<SocketAddr>,
+    /// addresses of peers to use as bootstrap nodes.
+    #[argh(option, from_str_fn(parse_bootstrap_node))]
+    bootstrap: Vec<BoostrapNode>,
+    /// graphite address.
+    #[argh(option)]
+    graphite: Option<String>,
+}
+
+#[derive(Debug)]
+struct BoostrapNode {
+    peer_id: PeerId,
+    addr: String,
+}
+
+fn parse_bootstrap_node(s: &str) -> Result<BoostrapNode, String> {
+    match s.split_once('@') {
+        Some((peer_id, addr)) => {
+            let peer_id = peer_id
+                .parse()
+                .map_err(|e: librad::peer::conversion::Error| e.to_string())?;
+            Ok(BoostrapNode {
+                peer_id,
+                addr: addr.to_owned(),
+            })
+        },
+
+        None => Err("missing peer id".to_owned()),
+    }
+}
+
+fn parse_secret_key(s: &str) -> Result<SecretKey, String> {
+    use radicle_keystore::SecretKeyExt as _;
+
+    base64::decode(s)
+        .map_err(|e| e.to_string())
+        .and_then(|bs| SecretKey::from_bytes_and_meta(bs.into(), &()).map_err(|e| e.to_string()))
 }
 
 #[tokio::main]
 async fn main() {
     logging::init();
 
+    let opts: Options = argh::from_env();
+    tracing::info!("listen: {:?}", opts.listen);
+    tracing::info!("bootstrap: {:?}", opts.bootstrap);
+
     let root = tempdir().unwrap();
     {
         let paths = Paths::from_root(root.path()).unwrap();
-        let key = SecretKey::new();
+        let key = opts.secret_key.unwrap_or_else(SecretKey::new);
 
         // eagerly init so we crash immediately on error
         git::storage::Storage::init(&paths, key.clone()).unwrap();
@@ -47,7 +94,7 @@ async fn main() {
             signer: key,
             protocol: protocol::Config {
                 paths,
-                listen_addr: *LOCALHOST_ANY,
+                listen_addr: opts.listen.unwrap_or_else(|| "0.0.0.0:0".parse().unwrap()),
                 advertised_addrs: None,
                 membership: Default::default(),
                 network: Default::default(),
@@ -57,16 +104,21 @@ async fn main() {
             storage: Default::default(),
         });
         let bound = peer.bind().await.unwrap();
-        let disco = discovery::Mdns::new(
-            peer.peer_id(),
-            bound.listen_addrs().unwrap(),
-            Duration::from_secs(60),
-            Duration::from_secs(60),
+        let disco = discovery::Static::resolve(
+            opts.bootstrap
+                .into_iter()
+                .map(|BoostrapNode { peer_id, addr }| (peer_id, addr)),
         )
         .unwrap();
 
-        let protocol = tokio::spawn(bound.accept(disco.take(10)));
-        let metrics = tokio::spawn(emit_stats(peer));
+        let protocol = tokio::spawn(bound.accept(disco.discover()));
+        let metrics = match opts.graphite {
+            None => tokio::spawn(stdout_stats(peer)),
+            Some(addr) => {
+                let addr = addr.to_socket_addrs().unwrap().next().unwrap();
+                tokio::spawn(graphite_stats(peer, addr))
+            },
+        };
         match future::try_join(protocol, metrics).await {
             Err(e) => {
                 if let Ok(panicked) = e.try_into_panic() {
@@ -83,7 +135,15 @@ async fn main() {
     }
 }
 
-async fn emit_stats(peer: Peer<SecretKey>) -> anyhow::Result<!> {
+async fn stdout_stats(peer: Peer<SecretKey>) -> anyhow::Result<!> {
+    loop {
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        let stats = peer.stats().await;
+        tracing::info!("{}: {:?}", peer.peer_id(), stats);
+    }
+}
+
+async fn graphite_stats(peer: Peer<SecretKey>, graphite_addr: SocketAddr) -> anyhow::Result<!> {
     tracing::debug!("stats collector");
 
     let peer_id_str = peer.peer_id().to_string();
@@ -103,12 +163,14 @@ async fn emit_stats(peer: Peer<SecretKey>) -> anyhow::Result<!> {
         )
     };
 
-    let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await?;
-    sock.connect("127.0.0.1:9109").await?;
+    tracing::info!("connecting to graphite at {}", graphite_addr);
+    let sock = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+    sock.connect(graphite_addr).await?;
+    tracing::info!("connected to graphite at {}", graphite_addr);
     loop {
         tokio::time::sleep(Duration::from_secs(10)).await;
         let stats = peer.stats().await;
-        tracing::info!("stats: {:?}", stats);
+        tracing::info!("{}: {:?}", peer.peer_id(), stats);
 
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
