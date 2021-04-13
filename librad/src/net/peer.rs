@@ -10,7 +10,7 @@ use futures_timer::Delay;
 use thiserror::Error;
 use tokio::task::spawn_blocking;
 
-use super::protocol::{self, gossip};
+use super::protocol::{self, event::LoggedEvent, gossip};
 use crate::{
     git::{self, storage::Fetchers, Urn},
     signer::Signer,
@@ -238,6 +238,12 @@ where
         &self,
     ) -> impl futures::Stream<Item = Result<ProtocolEvent, protocol::RecvError>> {
         self.phone.subscribe()
+    }
+
+    pub fn subscribe_to_log_events(
+        &self,
+    ) -> impl futures::Stream<Item = Result<LoggedEvent, protocol::RecvError>> {
+        self.phone.subscribe_logged_events()
     }
 
     pub async fn using_storage<F, A>(&self, blocking: F) -> Result<A, StorageError>

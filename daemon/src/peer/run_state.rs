@@ -13,6 +13,7 @@ use std::{
 
 use serde::Serialize;
 
+pub use librad::net::protocol::event::LoggedEvent;
 use librad::{
     git::Urn,
     net::{
@@ -89,11 +90,19 @@ pub enum Event {
     },
     /// A state change occurred in the waiting room
     WaitingRoomTransition(WaitingRoomTransition<SystemTime>),
+    /// Logs of sent and received RPC messages
+    RpcEvent(LoggedEvent),
 }
 
 impl From<WaitingRoomTransition<SystemTime>> for Event {
     fn from(transition: WaitingRoomTransition<SystemTime>) -> Self {
         Self::WaitingRoomTransition(transition)
+    }
+}
+
+impl From<LoggedEvent> for Event {
+    fn from(event: LoggedEvent) -> Self {
+        Self::RpcEvent(event)
     }
 }
 
@@ -210,6 +219,7 @@ impl RunState {
             Input::PeerSync(peer_sync_input) => self.handle_peer_sync(&peer_sync_input),
             Input::Request(request_input) => self.handle_request(request_input),
             Input::Stats(stats_input) => self.handle_stats(stats_input),
+            Input::Rpc(ev) => self.handle_rpc(ev),
         };
 
         log::trace!("TRANSITION END: {:?} {:?}", self.status, cmds);
@@ -495,6 +505,10 @@ impl RunState {
                 vec![]
             },
         }
+    }
+
+    fn handle_rpc(&mut self, input: LoggedEvent) -> Vec<Command> {
+        vec![Command::EmitEvent(input.into())]
     }
 
     /// Handle [`waiting_room::Error`]s.

@@ -15,9 +15,10 @@ use crate::net::{
     connection::RemotePeer,
     protocol::{
         broadcast,
+        event,
         gossip,
         info::PeerInfo,
-        io::{codec, peer_advertisement},
+        io::{codec, peer_advertisement, Rpc},
         membership,
         tick,
         ProtocolStorage,
@@ -59,6 +60,9 @@ pub(in crate::net::protocol) async fn gossip<S, T>(
                     advertised_info: peer_advertisement(&state.endpoint),
                     seen_addrs: Default::default(),
                 };
+                state
+                    .phone
+                    .emit_log_event(event::LoggedEvent::GossipReceived(Rpc::Gossip(msg.clone())));
                 match broadcast::apply(
                     &state.membership,
                     &state.storage,

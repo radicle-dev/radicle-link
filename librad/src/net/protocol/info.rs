@@ -6,10 +6,11 @@
 use std::{collections::BTreeSet, convert::TryFrom, option::NoneError};
 
 use minicbor::{Decode, Encode};
+use serde::Serialize;
 
 use crate::peer::PeerId;
 
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Encode, Decode)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Encode, Decode, Serialize)]
 #[repr(u8)]
 pub enum Capability {
     #[n(0)]
@@ -99,7 +100,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, Serialize)]
 #[cbor(array)]
 pub struct GenericPeerInfo<Addr, T>
 where
@@ -115,7 +116,7 @@ where
     pub seen_addrs: BTreeSet<Addr>,
 }
 
-#[derive(Debug, Clone, PartialEq, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, Serialize)]
 #[cbor(array)]
 pub struct PeerAdvertisement<Addr>
 where

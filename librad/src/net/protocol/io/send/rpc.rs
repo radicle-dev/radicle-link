@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 
 use futures::sink::SinkExt as _;
 use futures_codec::FramedWrite;
+use serde::Serialize;
 
 use crate::net::{
     connection::{RemoteAddr as _, RemotePeer},
@@ -15,7 +16,7 @@ use crate::net::{
     upgrade,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize)]
 pub enum Rpc<A, P>
 where
     A: Clone + Ord,

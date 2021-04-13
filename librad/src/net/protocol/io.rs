@@ -3,6 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use crate::net::protocol::event::LoggedEvent;
 use std::net::SocketAddr;
 
 use futures::stream::{self, StreamExt as _};
@@ -43,11 +44,12 @@ where
     }
 
     if let Some((conn, ingress)) = connect(&state.endpoint, peer, addrs).await {
-        let rpc_sent = send_rpc::<_, ()>(
-            &conn,
-            state.membership.hello(peer_advertisement(&state.endpoint)),
-        )
-        .await;
+        let msg: Rpc<_, ()> = state
+            .membership
+            .hello(peer_advertisement(&state.endpoint))
+            .into();
+        let rpc_sent = send_rpc::<_, ()>(&conn, msg.clone()).await;
+        state.phone.emit_log_event(LoggedEvent::HpvSent(msg));
 
         match rpc_sent {
             Err(e) => tracing::warn!(err = ?e, "failed to send membership hello"),

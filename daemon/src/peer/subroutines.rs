@@ -6,6 +6,7 @@
 //! Management of peer subroutine tasks driven by advancing the core state
 //! machine with a stream of inputs, producing commands.
 
+use librad::net::protocol::event::LoggedEvent;
 use std::{
     net::SocketAddr,
     time::{Duration, SystemTime},
@@ -77,6 +78,7 @@ impl Subroutines {
         protocol_events: BoxStream<'static, Result<ProtocolEvent, net::protocol::RecvError>>,
         subscriber: broadcast::Sender<Event>,
         mut control_receiver: mpsc::Receiver<control::Request>,
+        logged_rpc_events: BoxStream<'static, Result<LoggedEvent, net::protocol::RecvError>>,
     ) -> Self {
         let announce_timer = if run_config.announce.interval.is_zero() {
             None
@@ -119,6 +121,20 @@ impl Subroutines {
                             Ok(ev) => Some(Input::Protocol(ev)),
                             Err(err) => {
                                 log::warn!("receive error: {}", err);
+                                None
+                            },
+                        }
+                    })
+                    .boxed(),
+            );
+
+            coalesced.push(
+                logged_rpc_events
+                    .filter_map(|res| async move {
+                        match res {
+                            Ok(ev) => Some(Input::Rpc(ev)),
+                            Err(err) => {
+                                log::warn!("receive error for rpc event log: {}", err);
                                 None
                             },
                         }

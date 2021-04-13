@@ -22,6 +22,7 @@ use crate::PeerId;
 pub struct TinCans {
     pub(super) downstream: tincan::Sender<event::Downstream>,
     pub(super) upstream: tincan::Sender<event::Upstream>,
+    logged_events: tincan::Sender<event::LoggedEvent>,
 }
 
 impl TinCans {
@@ -29,6 +30,7 @@ impl TinCans {
         Self {
             downstream: tincan::channel(16).0,
             upstream: tincan::channel(16).0,
+            logged_events: tincan::channel(16).0,
         }
     }
 
@@ -140,6 +142,18 @@ impl TinCans {
 
     pub(super) fn emit(&self, evt: impl Into<event::Upstream>) {
         self.upstream.send(evt.into()).ok();
+    }
+
+    pub fn subscribe_logged_events(
+        &self,
+    ) -> impl futures::Stream<Item = Result<event::LoggedEvent, RecvError>> {
+        let mut r = self.logged_events.subscribe();
+        async_stream::stream! { loop { yield r.recv().await } }
+    }
+
+    pub(super) fn emit_log_event(&self, evt: impl Into<event::LoggedEvent>) {
+        tracing::info!("Emitting log event");
+        self.logged_events.send(evt.into()).ok();
     }
 }
 

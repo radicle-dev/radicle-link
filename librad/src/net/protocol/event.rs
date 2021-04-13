@@ -5,8 +5,10 @@
 
 use std::{collections::HashMap, net::SocketAddr};
 
-use super::{broadcast, error, gossip, interrogation, membership};
+use super::{broadcast, error, gossip, interrogation, io::Rpc, membership};
 use crate::PeerId;
+
+use serde::Serialize;
 
 #[derive(Clone)]
 pub enum Downstream {
@@ -171,4 +173,12 @@ pub mod upstream {
             }
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub enum LoggedEvent {
+    GossipSent(Rpc<SocketAddr, gossip::Payload>),
+    GossipReceived(Rpc<SocketAddr, gossip::Payload>),
+    HpvSent(Rpc<SocketAddr, ()>),
+    HpvReceived(Rpc<SocketAddr, ()>),
 }
