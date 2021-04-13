@@ -14,11 +14,6 @@ use std::{
 
 use crate::peer::PeerId;
 
-#[cfg(feature = "disco-mdns")]
-mod mdns;
-#[cfg(feature = "disco-mdns")]
-pub use self::mdns::Mdns;
-
 pub trait Discovery {
     type Addr;
     type Stream: futures::Stream<Item = (PeerId, Vec<Self::Addr>)> + Send;
