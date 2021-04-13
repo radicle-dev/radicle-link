@@ -62,10 +62,10 @@ pub enum Error {
     #[error(transparent)]
     Track(#[from] tracking::Error),
 
-    #[error("signer error")]
+    #[error("signer error: {0}")]
     Sign(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
-    #[error("fetch error")]
+    #[error("fetcher error: {0}")]
     Fetch(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error(transparent)]
