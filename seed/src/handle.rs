@@ -15,7 +15,10 @@ use crate::Project;
 #[non_exhaustive]
 pub enum NodeError {
     #[error("request failed: the node disconnected")]
-    RequestFailed,
+    RequestFailedReceive,
+
+    #[error("request failed: the node disconnected")]
+    RequestFailedSend,
 }
 
 /// Handle used to interact with the seed node.
@@ -33,9 +36,9 @@ impl NodeHandle {
         self.channel
             .send(Request::GetMembership(tx))
             .await
-            .map_err(|_| NodeError::RequestFailed)?;
+            .map_err(|_| NodeError::RequestFailedSend)?;
 
-        rx.next().await.ok_or(NodeError::RequestFailed)
+        rx.next().await.ok_or(NodeError::RequestFailedReceive)
     }
 
     /// Get all local projects.
@@ -44,9 +47,9 @@ impl NodeHandle {
         self.channel
             .send(Request::GetProjects(tx))
             .await
-            .map_err(|_| NodeError::RequestFailed)?;
+            .map_err(|_| NodeError::RequestFailedSend)?;
 
-        rx.next().await.ok_or(NodeError::RequestFailed)
+        rx.next().await.ok_or(NodeError::RequestFailedReceive)
     }
 
     /// Get currently connected peers.
@@ -55,9 +58,9 @@ impl NodeHandle {
         self.channel
             .send(Request::GetPeers(tx))
             .await
-            .map_err(|_| NodeError::RequestFailed)?;
+            .map_err(|_| NodeError::RequestFailedSend)?;
 
-        rx.next().await.ok_or(NodeError::RequestFailed)
+        rx.next().await.ok_or(NodeError::RequestFailedReceive)
     }
 }
 
