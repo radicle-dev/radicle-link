@@ -212,7 +212,10 @@ impl Node {
                 }
                 request = requests.next() => {
                     if let Some(r) = request {
-                        Node::handle_request(r, &peer).await?;
+                        match Node::handle_request(r, &peer).await {
+                            Ok(_) => {},
+                            Err(err) => tracing::error!(err = ?err, msg = "request handling errored"),
+                        };
                     }
                     tracing::info!("requests stream ended, seed node will be dropped");
                 }
@@ -254,6 +257,8 @@ impl Node {
             event::upstream::{Endpoint, Gossip},
         };
 
+        tracing::info!(event = ?event, "seed event");
+
         match event {
             ProtocolEvent::Gossip(bx) => {
                 let Gossip::Put {
@@ -268,7 +273,7 @@ impl Node {
                     let urn = &payload.urn;
                     let peer_id = &provider.peer_id;
 
-                    tracing::info!("Discovered new URN {} from peer {}", urn, peer_id);
+                    tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "discovered new URN");
 
                     if mode.is_trackable(peer_id, urn) {
                         // Attempt to track, but keep going if it fails.
