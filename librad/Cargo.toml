@@ -5,10 +5,6 @@ authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 
-[features]
-default = []
-disco-mdns = ["mdns", "madness"]
-
 [dependencies]
 async-stream = "0.3"
 async-trait = "0.1"
@@ -24,7 +20,6 @@ globset = "0.4"
 governor = ">=0.3.2"
 lazy_static = "1"
 libc = "0.2"
-mdns = { version = "3", optional = true }
 multibase = "0.9"
 multihash = "0.11"
 nom = "5"
@@ -88,11 +83,6 @@ features = []
 version = "0.12"
 default-features = false
 features = []
-
-[dependencies.madness]
-git = "https://github.com/meilisearch/madness"
-rev = "12a7386952923990179fe400e0cd932cbdd90dfc"
-optional = true
 
 [dependencies.minicbor]
 version = ">= 0.6, 0"
