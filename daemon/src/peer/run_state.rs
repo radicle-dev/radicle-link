@@ -386,7 +386,7 @@ impl RunState {
             ) => {
                 log::warn!("Cloning failed with: {}", reason);
                 self.waiting_room
-                    .cloning_failed(&urn, remote_peer, SystemTime::now())
+                    .cloning_failed(&urn, remote_peer, SystemTime::now(), reason)
                     .map_or_else(
                         |error| Self::handle_waiting_room_timeout(urn, &error),
                         |_| vec![Command::PersistWaitingRoom(self.waiting_room.clone())],

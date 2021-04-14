@@ -83,7 +83,7 @@ pub enum Request {
         // The id of the remote peer we attempted to clone from.
         remote_peer: PeerId,
         /// The reason the clone failed.
-        reason: String,
+        reason: Box<dyn std::error::Error + Send>,
     },
     /// Query the network for the `Urn`.
     Queried(Urn),
