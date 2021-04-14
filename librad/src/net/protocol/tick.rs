@@ -75,6 +75,7 @@ where
         match tock {
             SendConnected { to, message } => match state.endpoint.get_connection(to) {
                 None => {
+                    tracing::error!(peer_id = ?to, msg = "no cnnection found removing from membership");
                     let membership::TnT { trans, ticks: cont } =
                         state.membership.connection_lost(to);
                     trans.into_iter().for_each(|evt| state.phone.emit(evt));
