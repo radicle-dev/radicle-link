@@ -6,7 +6,7 @@
 use std::{
     hash::BuildHasherDefault,
     sync::{
-        atomic::{AtomicUsize, Ordering::*},
+        atomic::{AtomicUsize, Ordering::SeqCst},
         Arc,
         Weak,
     },
@@ -134,9 +134,7 @@ impl Conntrack {
     /// Will prevent the connection from being dropped due to inactivity.
     pub fn tickle(&self, conn: &ConnectionId) {
         if let Some(tracked) = self.connections.get_mut(conn) {
-            tracked
-                .epoch
-                .fetch_max(self.epoch.load(Acquire) + 1, AcqRel);
+            tracked.epoch.fetch_max(self.epoch.load(SeqCst) + 1, SeqCst);
         }
     }
 
@@ -147,7 +145,7 @@ impl Conntrack {
         let weak = {
             let strong = Arc::new(Tracked {
                 connection: conn.conn.clone(),
-                epoch: Arc::new(AtomicUsize::new(self.epoch.load(Relaxed))),
+                epoch: Arc::new(AtomicUsize::new(self.epoch.load(SeqCst))),
             });
             let weak = Arc::downgrade(&strong);
             self.connections.insert(conn.id(), strong);
@@ -240,13 +238,28 @@ fn spawn_gc(
                 None => break,
                 Some(epoch) => {
                     let prev_epoch = epoch.fetch_add(1, SeqCst);
+                    let curr_epoch = epoch.load(SeqCst);
                     connections.retain(|_, tracked: &mut Arc<Tracked>| {
-                        if tracked.epoch.load(Acquire) <= prev_epoch {
+                        let tracked_epoch = tracked.epoch.load(SeqCst);
+                        tracing::debug!(
+                            conn = ?tracked.connection.stable_id(),
+                            prev_epoch,
+                            curr_epoch,
+                            tracked_epoch,
+                            "GC"
+                        );
+                        if tracked_epoch <= prev_epoch {
                             tracked
                                 .connection
                                 .close((CLOSE_REASON as u32).into(), CLOSE_REASON.reason_phrase());
                             false
                         } else {
+                            // Tickle the connection immediately.
+                            //
+                            // This could otherwise race if the connection was
+                            // tickled just before GC, but remains idle until
+                            // the next sweep.
+                            tracked.epoch.fetch_max(curr_epoch, SeqCst);
                             true
                         }
                     });
