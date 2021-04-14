@@ -6,6 +6,7 @@
 use std::net::SocketAddr;
 
 use futures::stream::{self, StreamExt as _};
+use tracing::Instrument as _;
 
 use super::{
     gossip,
@@ -67,7 +68,12 @@ where
                         .await
                 }
 
-                tokio::spawn(streams::incoming(state.clone(), ingress));
+                tokio::spawn(async move {
+                    let span = tracing::info_span!("discovered-rpc-sent");
+                    streams::incoming(state.clone(), ingress)
+                        .instrument(span)
+                        .await
+                });
             },
         }
     }
