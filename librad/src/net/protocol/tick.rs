@@ -9,7 +9,6 @@ use futures::{
     future::{BoxFuture, FutureExt as _, TryFutureExt as _},
     stream::{FuturesOrdered, StreamExt as _},
 };
-use tracing::Instrument as _;
 
 use super::{error, gossip, io, membership, PeerInfo, ProtocolStorage, State};
 use crate::PeerId;
@@ -63,6 +62,7 @@ where
     }
 }
 
+#[tracing::instrument(skip(state))]
 fn one_tock<S>(
     state: State<S>,
     tock: Tock<SocketAddr, gossip::Payload>,
@@ -109,10 +109,7 @@ where
                         let (conn, ingress) = io::connect_peer_info(&state.endpoint, to.clone())
                             .await
                             .ok_or(error::BestEffortSend::CouldNotConnect { to })?;
-                        tokio::spawn(async move {
-                            let span = tracing::info_span!("tock-attempt-send");
-                            io::streams::incoming(state, ingress).instrument(span).await
-                        });
+                        tokio::spawn(io::streams::incoming(state, ingress));
 
                         Ok(conn)
                     },

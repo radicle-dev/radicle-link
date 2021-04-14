@@ -6,7 +6,6 @@
 use std::net::SocketAddr;
 
 use futures::stream::{self, StreamExt as _};
-use tracing::Instrument as _;
 
 use super::{broadcast, error, event, gossip, io, tick, PeerInfo, ProtocolStorage, State};
 
@@ -87,6 +86,7 @@ where
     }
 }
 
+#[tracing::instrument(skip(request, reply, state))]
 pub(super) async fn interrogation<S>(
     state: State<S>,
     event::downstream::Interrogation {
@@ -104,12 +104,7 @@ pub(super) async fn interrogation<S>(
             None => io::connect(&state.endpoint, peer, addr_hints)
                 .await
                 .map(|(conn, ingress)| {
-                    tokio::spawn(async move {
-                        let span = tracing::info_span!("interrogation");
-                        io::streams::incoming(state.clone(), ingress)
-                            .instrument(span)
-                            .await
-                    });
+                    tokio::spawn(io::streams::incoming(state.clone(), ingress));
                     conn
                 }),
         };
