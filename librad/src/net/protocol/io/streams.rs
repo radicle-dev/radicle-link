@@ -31,6 +31,7 @@ use crate::net::{
 pub(in crate::net::protocol) async fn incoming<S, I>(
     state: State<S>,
     streams: quic::IncomingStreams<I>,
+    whodat: &str,
 ) where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     I: Stream<Item = quic::Result<Either<quic::BidiStream, quic::RecvStream>>> + Unpin,
@@ -45,7 +46,7 @@ pub(in crate::net::protocol) async fn incoming<S, I>(
         futures::select! {
             next_stream = streams.next() => match next_stream {
                 None => {
-                    recv::connection_lost(state, remote_id, "ingress streams are done").await;
+                    recv::connection_lost(state, remote_id, &format!("[{}] ingress streams are done", whodat)).await;
                     break;
                 },
                 Some(stream) => {

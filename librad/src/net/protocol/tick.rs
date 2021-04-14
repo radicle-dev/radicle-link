@@ -109,7 +109,7 @@ where
                         let (conn, ingress) = io::connect_peer_info(&state.endpoint, to.clone())
                             .await
                             .ok_or(error::BestEffortSend::CouldNotConnect { to })?;
-                        tokio::spawn(io::streams::incoming(state, ingress));
+                        tokio::spawn(io::streams::incoming(state, ingress, "one_tock"));
 
                         Ok(conn)
                     },

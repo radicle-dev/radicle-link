@@ -367,7 +367,11 @@ where
                     .instrument(span.clone())
                     .await
                     .map(|(conn, ingress)| {
-                        tokio::spawn(io::streams::incoming(self.clone(), ingress));
+                        tokio::spawn(io::streams::incoming(
+                            self.clone(),
+                            ingress,
+                            "mister git streamer, sir",
+                        ));
                         conn
                     })
             },

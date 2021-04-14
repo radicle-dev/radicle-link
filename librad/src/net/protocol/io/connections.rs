@@ -55,7 +55,7 @@ where
             conn = ingress.next() => match conn {
                 Some(conn) => match conn {
                     Ok((_, streams)) => {
-                        tasks.push(tokio::spawn(streams::incoming(state.clone(), streams)));
+                        tasks.push(tokio::spawn(streams::incoming(state.clone(), streams, "protocol incoming")));
                     },
                     Err(err)=> match err {
                         Connection(_) | PeerId(_) | RemoteIdUnavailable | SelfConnect => {

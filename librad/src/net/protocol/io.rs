@@ -67,7 +67,7 @@ where
                         .await
                 }
 
-                tokio::spawn(streams::incoming(state.clone(), ingress));
+                tokio::spawn(streams::incoming(state.clone(), ingress, "discovered"));
             },
         }
     }

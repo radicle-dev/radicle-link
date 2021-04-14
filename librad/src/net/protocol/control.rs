@@ -99,15 +99,20 @@ pub(super) async fn interrogation<S>(
 {
     let chan = reply.lock().take();
     if let Some(tx) = chan {
-        let may_conn = match state.endpoint.get_connection(peer) {
-            Some(conn) => Some(conn),
-            None => io::connect(&state.endpoint, peer, addr_hints)
-                .await
-                .map(|(conn, ingress)| {
-                    tokio::spawn(io::streams::incoming(state.clone(), ingress));
-                    conn
-                }),
-        };
+        let may_conn =
+            match state.endpoint.get_connection(peer) {
+                Some(conn) => Some(conn),
+                None => io::connect(o & state.endpoint, peer, addr_hints).await.map(
+                    |(conn, ingress)| {
+                        tokio::spawn(io::streams::incoming(
+                            state.clone(),
+                            ingress,
+                            "interrogator",
+                        ));
+                        conn
+                    },
+                ),
+            };
         let resp = match may_conn {
             None => Err(error::Interrogation::NoConnection(peer)),
             Some(conn) => match io::send::request(&conn, request).await {
