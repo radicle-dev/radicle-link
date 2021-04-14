@@ -130,6 +130,63 @@ where
     }
 }
 
+/// Containers that implement an insert function.
+pub trait Insert {
+    type Value;
+    type Result;
+
+    /// Insert a value into the container and returns the result.
+    fn insert(&mut self, value: Self::Value) -> Self::Result;
+}
+
+impl<V> Insert for HashSet<V>
+where
+    V: Eq + Hash,
+{
+    type Value = V;
+    type Result = bool;
+
+    fn insert(&mut self, value: Self::Value) -> Self::Result {
+        HashSet::insert(self, value)
+    }
+}
+
+impl<V> Insert for BTreeSet<V>
+where
+    V: Ord,
+{
+    type Value = V;
+    type Result = bool;
+
+    fn insert(&mut self, value: Self::Value) -> Self::Result {
+        BTreeSet::insert(self, value)
+    }
+}
+
+impl<K, V> Insert for HashMap<K, V>
+where
+    K: Eq + Hash,
+{
+    type Value = (K, V);
+    type Result = Option<V>;
+
+    fn insert(&mut self, (key, value): Self::Value) -> Self::Result {
+        HashMap::insert(self, key, value)
+    }
+}
+
+impl<K, V> Insert for BTreeMap<K, V>
+where
+    K: Ord,
+{
+    type Value = (K, V);
+    type Result = Option<V>;
+
+    fn insert(&mut self, (key, value): Self::Value) -> Self::Result {
+        BTreeMap::insert(self, key, value)
+    }
+}
+
 /// Newtype wrapper around container types, which witnesses that the container
 /// contains at least one element.
 ///
@@ -143,6 +200,16 @@ where
 pub struct NonEmpty<T>(T);
 
 impl<T> NonEmpty<T> {
+    /// Creates a new `NonEmpty` by inserting the first element in the new
+    /// container.
+    pub fn new(v: T::Value) -> Self
+    where
+        T: Default + Insert,
+    {
+        let mut container = T::default();
+        container.insert(v);
+        Self(container)
+    }
     /// Construct a [`NonEmpty`] from a possibly empty type.
     ///
     /// If the argument is empty, ie. [`MaybeEmpty::is_empty`] evaluates to
