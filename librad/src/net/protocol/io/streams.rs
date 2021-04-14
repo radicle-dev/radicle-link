@@ -45,7 +45,7 @@ pub(in crate::net::protocol) async fn incoming<S, I>(
         futures::select! {
             next_stream = streams.next() => match next_stream {
                 None => {
-                    recv::connection_lost(state, remote_id).await;
+                    recv::connection_lost(state, remote_id, "ingress streams are done").await;
                     break;
                 },
                 Some(stream) => {
@@ -60,7 +60,7 @@ pub(in crate::net::protocol) async fn incoming<S, I>(
                         },
                         Err(e) => {
                             tracing::warn!(err = ?e, "ingress stream error");
-                            recv::connection_lost(state, remote_id).await;
+                            recv::connection_lost(state, remote_id, &format!("ingress stream error: {:?}", e)).await;
                             break;
                         }
                     }

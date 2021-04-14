@@ -77,7 +77,7 @@ where
                 None => {
                     tracing::error!(peer_id = ?to, msg = "no cnnection found removing from membership");
                     let membership::TnT { trans, ticks: cont } =
-                        state.membership.connection_lost(to);
+                        state.membership.connection_lost(to, "SendConnected: no connection");
                     trans.into_iter().for_each(|evt| state.phone.emit(evt));
 
                     Err(error::Tock::Reliable(error::ReliableSend {
@@ -90,7 +90,7 @@ where
                     io::send_rpc(&conn, message)
                         .map_err(|e| {
                             let membership::TnT { trans, ticks: cont } =
-                                state.membership.connection_lost(to);
+                                state.membership.connection_lost(to, &format!("SendConnected: send_rpc failure: {}", e));
                             trans.into_iter().for_each(|evt| state.phone.emit(evt));
 
                             error::Tock::Reliable(error::ReliableSend {

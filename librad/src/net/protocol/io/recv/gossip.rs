@@ -42,7 +42,9 @@ pub(in crate::net::protocol) async fn gossip<S, T>(
                 tracing::warn!(err = ?e, "gossip recv error");
                 let info = || peer_advertisement(&state.endpoint);
 
-                let membership::TnT { trans, ticks } = state.membership.connection_lost(remote_id);
+                let membership::TnT { trans, ticks } = state
+                    .membership
+                    .connection_lost(remote_id, &format!("gossip recv err: {:?}", e));
                 trans.into_iter().for_each(|evt| state.phone.emit(evt));
                 for tick in ticks {
                     stream::iter(membership::collect_tocks(&state.membership, &info, tick))

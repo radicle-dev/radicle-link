@@ -42,7 +42,7 @@ pub(in crate::net::protocol) async fn membership<S, T>(
         match x {
             Err(e) => {
                 tracing::warn!(err = ?e, "membership recv error");
-                self::connection_lost(state, remote_id).await;
+                self::connection_lost(state, remote_id, &format!("membership recv: {:?}", e)).await;
                 break;
             },
 
@@ -66,13 +66,16 @@ pub(in crate::net::protocol) async fn membership<S, T>(
     }
 }
 
-pub(in crate::net::protocol) async fn connection_lost<S>(state: State<S>, remote_id: PeerId)
-where
+pub(in crate::net::protocol) async fn connection_lost<S>(
+    state: State<S>,
+    remote_id: PeerId,
+    reason: &str,
+) where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     let info = || peer_advertisement(&state.endpoint);
 
-    let membership::TnT { trans, ticks } = state.membership.connection_lost(remote_id);
+    let membership::TnT { trans, ticks } = state.membership.connection_lost(remote_id, reason);
     trans.into_iter().for_each(|evt| state.phone.emit(evt));
     for tick in ticks {
         stream::iter(membership::collect_tocks(&state.membership, &info, tick))

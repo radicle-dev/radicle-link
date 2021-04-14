@@ -190,8 +190,8 @@ where
 
     #[tracing::instrument(level = "debug", skip(self))]
     #[must_use = "ticks must be interpreted"]
-    pub fn connection_lost(&self, remote_peer: PeerId) -> TnT<Addr> {
-        self.0.write().connection_lost(remote_peer)
+    pub fn connection_lost(&self, remote_peer: PeerId, reason: &str) -> TnT<Addr> {
+        self.0.write().connection_lost(remote_peer, reason)
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
@@ -298,11 +298,11 @@ where
         self.view.is_passive(peer)
     }
 
-    pub fn connection_lost(&mut self, remote_peer: PeerId) -> TnT<Addr> {
+    pub fn connection_lost(&mut self, remote_peer: PeerId, reason: &str) -> TnT<Addr> {
         use Tick::*;
 
-        tracing::debug!("connection lost");
         let demoted = self.view.demote(&remote_peer);
+        tracing::debug!(demoted = ?demoted, reason = ?reason, "connection lost");
         if demoted.is_empty() {
             TnT::default()
         } else {
