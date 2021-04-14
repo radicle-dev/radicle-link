@@ -262,6 +262,20 @@ pub mod error {
         #[error(transparent)]
         Pool(#[from] super::PoolError),
     }
+
+    #[derive(Debug, Error)]
+    pub enum FetchError{
+        #[error("Fetch limit {limit} exceeded. Amount fetched: {amount_fetched} from {remote}. Fetch specs: {fetch_specs:?}, refspecs: {refspecs:?}")]
+        FetchLimitExceeded {
+            limit: usize,
+            amount_fetched: usize,
+            remote: PeerId,
+            fetch_specs: Fetchspecs<PeerId, Revision>,
+            refspecs: Vec<String>,
+        },
+        #[error(transparent)]
+        Git(#[from]git2::Error)
+    }
 }
 
 /// Try to acquire a [`Fetcher`] in an async context, and run the provided
@@ -416,7 +430,13 @@ mod imp {
             urn: Urn,
             remote_peer: PeerId,
         ) -> Result<Self, git2::Error> {
-            let mut remote = storage.as_raw().remote_anonymous(url.as_str())?;
+            let mut remote = match storage.as_raw().remote_anonymous(url.as_str()) {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::error!(?url, error=?e, "Error opening remote");
+                    return Err(e)
+                }
+            };
             remote.connect(git2::Direction::Fetch)?;
             let remote_heads = remote
                 .list()?
@@ -450,7 +470,7 @@ mod imp {
         pub fn fetch(
             &mut self,
             fetchspecs: Fetchspecs<PeerId, Revision>,
-        ) -> Result<FetchResult, git2::Error> {
+        ) -> Result<FetchResult, error::FetchError> {
             let mut updated_tips = BTreeMap::new();
             {
                 let limit = fetchspecs.fetch_limit();
@@ -466,11 +486,13 @@ mod imp {
                 tracing::trace!("{:?}", refspecs);
 
                 let mut callbacks = git2::RemoteCallbacks::new();
+                let mut excessive_transfer_bytes: Option<usize> = None;
                 callbacks.transfer_progress(|prog| {
                     let received_bytes = prog.received_bytes();
                     tracing::trace!("Fetch: received {} bytes", received_bytes);
                     if received_bytes > limit {
                         tracing::error!("Fetch: exceeded {} bytes", limit);
+                        excessive_transfer_bytes = Some(received_bytes);
                         false
                     } else {
                         true
@@ -495,7 +517,7 @@ mod imp {
                     true
                 });
 
-                self.remote.fetch(
+                let res = self.remote.fetch(
                     &refspecs,
                     Some(
                         git2::FetchOptions::new()
@@ -505,7 +527,19 @@ mod imp {
                             .remote_callbacks(callbacks),
                     ),
                     None,
-                )?;
+                );
+
+                if let Some(excessive_transfer_bytes) = excessive_transfer_bytes {
+                    Err(error::FetchError::FetchLimitExceeded{
+                        limit,
+                        remote: self.info.remote_peer,
+                        fetch_specs: fetchspecs,
+                        amount_fetched: excessive_transfer_bytes,
+                        refspecs,
+                    })
+                } else {
+                    res.map_err(|e| e.into())
+                }?;
             }
 
             Ok(FetchResult { updated_tips })
@@ -513,7 +547,7 @@ mod imp {
     }
 
     impl fetch::Fetcher for Fetcher<'_> {
-        type Error = git2::Error;
+        type Error = error::FetchError;
         type PeerId = PeerId;
         type UrnId = Revision;
 

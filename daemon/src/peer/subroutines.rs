@@ -467,7 +467,7 @@ async fn clone(
                 .send(Input::Request(input::Request::Failed {
                     urn,
                     remote_peer,
-                    reason: err.to_string(),
+                    reason: Box::new(err),
                 }))
                 .await
                 .ok();

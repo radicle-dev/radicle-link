@@ -80,7 +80,7 @@ pub struct Requested {
 /// Note that the related data isn't in the `Status` variants. The status is
 /// free to be associated with any external data, e.g. using it as a value in a
 /// `HashMap`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Status {
     /// The status of the related data is: ready to go!
@@ -88,7 +88,10 @@ pub enum Status {
     /// The status of the related data is: in progress!
     InProgress,
     /// The status of the related data is: failed :(
-    Failed,
+    Failed { 
+        #[allow(missing_docs)]
+        reason: String 
+    },
 }
 
 impl Status {
@@ -102,11 +105,24 @@ impl Status {
     /// progress. And finally, the last case is that both `Status`es agree
     /// the `Status` is `Available`.
     #[must_use]
-    pub const fn join(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Failed, _) | (_, Self::Failed) => Self::Failed,
+    pub fn join(&self, other: Self) -> Self {
+        match (self, &other) {
+            (Self::Failed { reason: reason1 }, Self::Failed{reason: reason2}) => {
+                Self::Failed {
+                    reason: format!("{} and {}", reason1, reason2).to_string(),
+                }
+            },
+            (Self::Failed { reason }, _) | (_, Self::Failed { reason }) => Self::Failed{reason: reason.clone()},
             (Self::InProgress, _) | (_, Self::InProgress) => Self::InProgress,
             (Self::Available, Self::Available) => Self::Available,
+        }
+    }
+
+    #[allow(missing_docs)]
+    pub fn is_failed(&self) -> bool {
+        match self {
+            Self::Failed{..} => true,
+            _ => false
         }
     }
 }
@@ -350,7 +366,7 @@ where
             return false;
         }
 
-        self.iter().all(|(_, status)| *status == Status::Failed)
+        self.iter().all(|(_, status)| status.is_failed())
     }
 }
 

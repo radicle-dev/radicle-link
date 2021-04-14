@@ -433,11 +433,17 @@ impl<T, D> WaitingRoom<T, D> {
         urn: &Urn,
         remote_peer: PeerId,
         timestamp: T,
-        reason: String,
+        reason: Box<dyn std::error::Error>,
     ) -> Result<TransitionWithResult<T, ()>, Error>
     where
         T: Clone,
     {
+        let mut reason_str = anyhow::Chain::new(&*reason).fold("".to_string(), |acc, e| {
+            format!("{} ⮩ {}", acc, e).to_string()
+        });
+        if let Some(bt) = reason.backtrace() {
+            reason_str.push_str(&bt.to_string());
+        }
         self.transition(
             |request| match request {
                 SomeRequest::Cloning(request) => Some(request),
@@ -445,11 +451,11 @@ impl<T, D> WaitingRoom<T, D> {
             },
             |previous| {
                 (
-                    previous.failed(remote_peer, timestamp),
+                    previous.failed(remote_peer, reason_str.clone(), timestamp),
                     Event::CloningFailed {
                         urn: urn.clone(),
                         peer: remote_peer,
-                        reason,
+                        reason: reason_str,
                     },
                 )
             },
@@ -770,7 +776,7 @@ mod test {
 
         for remote_peer in &peers[0..NUM_CLONES] {
             waiting_room.cloning(&urn, *remote_peer, ())?;
-            waiting_room.cloning_failed(&urn, *remote_peer, (), "no reason".to_string())?;
+            waiting_room.cloning_failed(&urn, *remote_peer, (), "no reason".into())?;
         }
 
         let mut expected_attempts = Attempts::new();
@@ -818,7 +824,7 @@ mod test {
         for remote_peer in peers {
             waiting_room.found(&urn, remote_peer, 2)?;
             waiting_room.cloning(&urn, remote_peer, 2)?;
-            waiting_room.cloning_failed(&urn, remote_peer, 2, "no reason".to_string())?;
+            waiting_room.cloning_failed(&urn, remote_peer, 2, "no reason".into())?;
         }
 
         assert_matches!(waiting_room.get(&urn), Some(SomeRequest::Requested(_)));

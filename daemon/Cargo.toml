@@ -6,6 +6,7 @@ authors = ["Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 
 [dependencies]
+anyhow = "1.0.40"
 async-stream = "0.3"
 either = "1.6"
 futures = { version = "0.3", features = [ "compat" ] }
