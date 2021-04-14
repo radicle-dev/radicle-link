@@ -65,6 +65,7 @@ impl NodeHandle {
 }
 
 /// User request to the seed node.
+#[derive(Debug)]
 pub enum Request {
     /// Get current membership info.
     GetMembership(chan::Sender<MembershipInfo>),

@@ -193,6 +193,7 @@ impl Node {
         loop {
             select! {
                 event = events.next() => {
+                    tracing::debug!(event = ?event, msg = "seed event");
                     match event {
                         Some(Ok(evt)) => {
                             Node::handle_event(evt, mode, &mut transmit, &peer).await?;
@@ -211,13 +212,13 @@ impl Node {
                     }
                 }
                 request = requests.next() => {
+                    tracing::debug!(request = ?request, msg = "seed request");
                     if let Some(r) = request {
                         match Node::handle_request(r, &peer).await {
                             Ok(_) => {},
                             Err(err) => tracing::error!(err = ?err, msg = "request handling errored"),
                         };
                     }
-                    tracing::info!("requests stream ended, seed node will be dropped");
                 }
             }
         }
