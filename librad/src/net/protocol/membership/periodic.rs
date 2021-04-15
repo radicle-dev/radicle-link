@@ -26,6 +26,7 @@ where
 {
     RandomPromotion { candidates: Vec<PeerInfo<A>> },
     Shuffle(Shuffle<A>),
+    Tickle,
 }
 
 #[tracing::instrument(skip(hpv, tx))]
@@ -38,7 +39,7 @@ where
 {
     let params = hpv.params();
 
-    let shuffle = Interval::new(params.shuffle_interval, Duration::from_secs(5)).filter_map(|()| {
+    let shuffle = Interval::new(params.shuffle_interval, Duration::from_secs(5)).filter_map(|_| {
         let p = hpv.shuffle().map(Periodic::Shuffle);
         if p.is_none() {
             tracing::warn!("nothing to shuffle");
@@ -46,7 +47,7 @@ where
         future::ready(p)
     });
 
-    let promote = Interval::new(params.promote_interval, Duration::from_secs(5)).filter_map(|()| {
+    let promote = Interval::new(params.promote_interval, Duration::from_secs(5)).filter_map(|_| {
         let candidates = hpv.choose_passive_to_promote();
         if candidates.is_empty() {
             tracing::warn!("nothing to promote");
@@ -56,7 +57,17 @@ where
         }
     });
 
-    if let Err(e) = stream::select(shuffle, promote).map(Ok).forward(tx).await {
+    let tickle = Interval::new(Duration::from_secs(15), Duration::from_secs(5))
+        .filter_map(|_| future::ready(Some(Periodic::Tickle)));
+
+    // FIXME(xla): There should be a more elegant way to merge these streams into
+    // one, yet all avenues (select macro, select_all) came with unnecessary
+    // complexity (what's in the box...).
+    if let Err(e) = stream::select(stream::select(promote, shuffle), tickle)
+        .map(Ok)
+        .forward(tx)
+        .await
+    {
         tracing::warn!(err = %e, "periodic tasks error");
     }
     tracing::info!("shutting down")

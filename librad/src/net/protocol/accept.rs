@@ -79,22 +79,27 @@ where
                     .into(),
                 }])
             },
-        })
-        .for_each(|tock| {
-            // Tickle connections in the partial view.
-            //
-            // This is mostly to keep passive connections from being collected. Note
-            // that we're not checking actual liveness, nor interfering with the
-            // membership protocol.
-            tracing::debug!("initiate tickle");
-            for peer in state.membership.known() {
-                if let Some(conn) = state.endpoint.get_connection(peer) {
-                    conn.tickle()
-                }
-            }
 
-            tick::tock(state.clone(), tock)
+            membership::Periodic::Tickle => {
+                // Tickle connections in the partial view.
+                //
+                // This is mostly to keep passive connections from being collected. Note
+                // that we're not checking actual liveness, nor interfering with the
+                // membership protocol.
+                tracing::debug!("initiate tickle");
+                for peer in state.membership.known() {
+                    if let Some(conn) = state.endpoint.get_connection(peer) {
+                        conn.tickle();
+                    }
+                }
+
+                // FIXME(xla): This indicates that while tickling is a periodic task this method
+                // should be reworked to not have this crutch where it piggybacks on the
+                // tick-tock.
+                stream::iter(vec![])
+            },
         })
+        .for_each(|tock| tick::tock(state.clone(), tock))
         .await;
 }
 
