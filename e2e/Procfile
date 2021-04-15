@@ -1,2 +1,2 @@
-bootstrap: cargo run --bin ephemeral-peer -- --secret-key hIfobTmxKMemyXPOC8EmUNdufwi2MsKucEB9EikOyDE --listen 127.0.0.1:12345
-peer: sleep 5; cargo run --bin ephemeral-peer -- --bootstrap hyne66jefcpkobg91qzdy6ysetr8fn3p3d6myce61uwf7s67g3i79e@127.0.0.1:12345
+bootstrap: cargo run --bin ephemeral-peer -- --secret-key hIfobTmxKMemyXPOC8EmUNdufwi2MsKucEB9EikOyDE --listen 127.0.0.1:54321
+peer: sleep 5; cargo run --bin ephemeral-peer -- --bootstrap hyne66jefcpkobg91qzdy6ysetr8fn3p3d6myce61uwf7s67g3i79e@127.0.0.1:54321

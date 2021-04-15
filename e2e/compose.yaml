@@ -36,6 +36,8 @@ services:
       dockerfile: e2e/ephemeral-peer.dockerfile
     image: ephemeral-peer
     init: true
+    ports:
+    - '12345:12345/udp'
     command: |
       ephemeral-peer
         --secret-key hIfobTmxKMemyXPOC8EmUNdufwi2MsKucEB9EikOyDE
@@ -51,8 +53,11 @@ services:
     - 'bootstrap-peer'
     image: ephemeral-peer
     init: true
+    ports:
+    - '12346/udp'
     command: |
       ephemeral-peer
+        --listen 0.0.0.0:12346
         --bootstrap hyne66jefcpkobg91qzdy6ysetr8fn3p3d6myce61uwf7s67g3i79e@bootstrap:12345
         --graphite graphite:9109
     environment:
