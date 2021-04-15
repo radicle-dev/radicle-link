@@ -270,7 +270,9 @@ fn spawn_gc(
                             // This could otherwise race if the connection was
                             // tickled just before GC, but remains idle until
                             // the next sweep.
+                            tracing::info!(conn = ?tracked.connection, epoch = ?curr_epoch, msg = "GC bump epoch");
                             tracked.epoch.fetch_max(curr_epoch, SeqCst);
+                            tracing::info!(new_epoch = tracked.epoch.load(SeqCst), "GC bump epoch");
                             true
                         }
                     });
