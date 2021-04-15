@@ -79,20 +79,34 @@ where
                     .into(),
                 }])
             },
+
+            membership::Periodic::Tickle => {
+                // Tickle connections in the partial view.
+                //
+                // This is mostly to keep passive connections from being collected. Note
+                // that we're not checking actual liveness, nor interfering with the
+                // membership protocol.
+                tracing::debug!("initiating tickle");
+                for peer in state.membership.known() {
+                    if let Some(conn) = state.endpoint.get_connection(peer) {
+                        conn.tickle();
+                    }
+                }
+
+                // There are no tocks to evaluate for this case, there is opportunity to improve
+                // this part as sugested in [comment]:
+                //
+                //      This is fine. If it looks funny to you, then because accept also
+                // evaluates      the tocks. More cleansily, this could be two
+                // functions, one which transforms      the periodic events into
+                // tocks, and another one feeds them to the tock-evaluator.
+                //
+                // [comment]: https://github.com/radicle-dev/radicle-link/pull/615#discussion_r614402283
+                stream::iter(vec![])
+            },
         })
         .for_each(|tock| tick::tock(state.clone(), tock))
         .await;
-
-    // Tickle connections in the partial view.
-    //
-    // This is mostly to keep passive connections from being collected. Note
-    // that we're not checking actual liveness, nor interfering with the
-    // membership protocol.
-    for peer in state.membership.known() {
-        if let Some(conn) = state.endpoint.get_connection(peer) {
-            conn.tickle()
-        }
-    }
 }
 
 #[tracing::instrument(skip(state, rx))]

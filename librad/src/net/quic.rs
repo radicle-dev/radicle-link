@@ -32,7 +32,7 @@ const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(30);
 ///
 /// Only has an effect for responders (servers), which we configure to not send
 /// keep alive probes. Should tolerate the loss of 1-2 keep-alive probes.
-const MAX_IDLE_TIMEOUT: Duration = Duration::from_secs(65);
+pub(in crate::net) const MAX_IDLE_TIMEOUT: Duration = Duration::from_secs(65);
 
 /// Maximum number of connections to a single peer.
 const MAX_PEER_CONNECTIONS: usize = 5;
