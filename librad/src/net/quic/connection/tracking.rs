@@ -133,7 +133,11 @@ impl Conntrack {
     ///
     /// Will prevent the connection from being dropped due to inactivity.
     pub fn tickle(&self, conn: &ConnectionId) {
-        if let Some(tracked) = self.connections.get_mut(conn) {
+        let tracked = self.connections.get_mut(conn);
+        tracing::info!(conn = ?conn, tracked = tracked.is_some(), msg = "tickle");
+
+        if let Some(tracked) = tracked {
+            tracing::info!(conn = ?conn, epoch = ?tracked.epoch, msg = "epoch bump");
             tracked.epoch.fetch_max(self.epoch.load(SeqCst) + 1, SeqCst);
         }
     }
