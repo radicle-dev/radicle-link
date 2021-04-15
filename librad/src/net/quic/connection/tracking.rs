@@ -259,7 +259,7 @@ fn spawn_gc(
                             tracked_epoch,
                             "GC"
                         );
-                        if tracked_epoch < prev_epoch {
+                        if tracked_epoch <= prev_epoch {
                             tracing::info!(connection = ?tracked.connection.stable_id(), "GC closing connection with timeout");
                             tracked
                                 .connection
