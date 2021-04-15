@@ -1,0 +1,64 @@
+version: "3.9"
+services:
+  prometheus:
+    container_name: prometheus
+    image: docker.io/prom/prometheus
+    init: true
+    ports:
+    - "9090:9090"
+    command:
+    - '--config.file=/etc/prometheus/config.yaml'
+    deploy:
+      replicas: 1
+    volumes:
+    - ./prometheus:/etc/prometheus
+    - prom_data:/prometheus
+
+  graphite-exporter:
+    container_name: graphite
+    depends_on:
+    - prometheus
+    image: docker.io/prom/graphite-exporter
+    ports:
+    - 9108
+    - '9109/tcp'
+    - '9109/udp'
+    deploy:
+      replicas: 1
+
+  bootstrap-peer:
+    container_name: bootstrap
+    depends_on:
+    - 'prometheus'
+    - 'graphite-exporter'
+    build:
+      context: ../
+      dockerfile: e2e/ephemeral-peer.dockerfile
+    image: ephemeral-peer
+    init: true
+    command: |
+      ephemeral-peer
+        --secret-key hIfobTmxKMemyXPOC8EmUNdufwi2MsKucEB9EikOyDE
+        --listen 0.0.0.0:12345
+        --graphite graphite:9109
+    environment:
+    - RUST_LOG=debug
+    deploy:
+      replicas: 1
+
+  passive-peer:
+    depends_on:
+    - 'bootstrap-peer'
+    image: ephemeral-peer
+    init: true
+    command: |
+      ephemeral-peer
+        --bootstrap hyne66jefcpkobg91qzdy6ysetr8fn3p3d6myce61uwf7s67g3i79e@bootstrap:12345
+        --graphite graphite:9109
+    environment:
+    - RUST_LOG=debug
+    deploy:
+      replicas: 3
+
+volumes:
+  prom_data:

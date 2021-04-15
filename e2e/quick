@@ -4,9 +4,7 @@ set -eou pipefail
 : ${NUM_PEERS:=3}
 : ${RUST_LOG:=debug}
 
-trap 'podman rm -fi graphite-exporter prometheus' EXIT
 overmind start \
     --formation-port-step=1 \
     --formation peer=${NUM_PEERS} \
-    --timeout 10 \
-    --stop-signals grap=TERM,prom=TERM
+    --timeout 10

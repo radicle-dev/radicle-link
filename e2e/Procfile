@@ -1,3 +1,2 @@
-grap: trap 'podman stop graphite-exporter; podman rm graphite-exporter;' EXIT > /dev/null; podman run --name graphite-exporter --network host --rm docker.io/prom/graphite-exporter --web.listen-address="127.0.0.1:9180"
-prom: trap 'podman stop prometheus; podman rm prometheus;' EXIT > /dev/null; podman run --name prometheus --network host --rm -v $PWD/theus:/etc/prometheus docker.io/prom/prometheus --config.file=/etc/prometheus/config.yaml --web.listen-address="127.0.0.1:9090"
-peer: cargo run --bin ephemeral-peer
+bootstrap: cargo run --bin ephemeral-peer -- --secret-key hIfobTmxKMemyXPOC8EmUNdufwi2MsKucEB9EikOyDE --listen 127.0.0.1:12345
+peer: sleep 5; cargo run --bin ephemeral-peer -- --bootstrap hyne66jefcpkobg91qzdy6ysetr8fn3p3d6myce61uwf7s67g3i79e@127.0.0.1:12345
