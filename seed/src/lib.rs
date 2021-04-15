@@ -7,7 +7,9 @@
 #[macro_use]
 extern crate async_trait;
 
+pub mod cli;
 pub mod event;
+pub mod frontend;
 pub mod handle;
 pub mod project;
 pub mod signer;
