@@ -234,8 +234,14 @@ fn spawn_gc(
         const CLOSE_REASON: CloseReason = CloseReason::Timeout;
         move || loop {
             thread::sleep(MAX_IDLE_TIMEOUT);
+
+            tracing::info!("GC loop");
+
             match Weak::upgrade(&epoch) {
-                None => break,
+                None => {
+                    tracing::info!("GC done");
+                    break;
+                },
                 Some(epoch) => {
                     let prev_epoch = epoch.fetch_add(1, SeqCst);
                     let curr_epoch = epoch.load(SeqCst);
@@ -249,6 +255,7 @@ fn spawn_gc(
                             "GC"
                         );
                         if tracked_epoch <= prev_epoch {
+                            tracing::info!(connection = ?tracked.connection, msg = "closing connection with timeout");
                             tracked
                                 .connection
                                 .close((CLOSE_REASON as u32).into(), CLOSE_REASON.reason_phrase());
@@ -270,6 +277,9 @@ fn spawn_gc(
     thread::spawn({
         move || loop {
             thread::sleep(MAX_IDLE_TIMEOUT * 2);
+
+            tracing::info!("EVICT loop");
+
             match Weak::upgrade(&peer_connections) {
                 None => break,
                 Some(peer_connections) => {
