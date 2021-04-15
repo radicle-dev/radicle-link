@@ -134,11 +134,12 @@ impl Conntrack {
     /// Will prevent the connection from being dropped due to inactivity.
     pub fn tickle(&self, conn: &ConnectionId) {
         let tracked = self.connections.get_mut(conn);
-        tracing::info!(conn = ?conn, tracked = tracked.is_some(), msg = "TICKLE");
+        tracing::info!(conn = ?conn, tracked = tracked.is_some(), "TICKLE");
 
         if let Some(tracked) = tracked {
-            tracing::info!(conn = ?tracked.connection.stable_id(), epoch = ?tracked.epoch, msg = "TICKLE epoch bump");
+            tracing::info!(conn = ?tracked.connection.stable_id(), epoch = ?tracked.epoch, msg = "TICKLE bump epoch");
             tracked.epoch.fetch_max(self.epoch.load(SeqCst) + 1, SeqCst);
+            tracing::info!(conn = ?tracked.connection.stable_id(), epoch = ?self.epoch.load(SeqCst), msg = "TICKLE bumped epoch");
         }
     }
 
@@ -259,10 +260,10 @@ fn spawn_gc(
                             "GC"
                         );
                         if tracked_epoch < prev_epoch {
-                            tracing::info!(connection = ?tracked.connection.stable_id(), msg = "closing connection with timeout");
-                            // tracked
-                            //     .connection
-                            //     .close((CLOSE_REASON as u32).into(), CLOSE_REASON.reason_phrase());
+                            tracing::info!(connection = ?tracked.connection.stable_id(), "GC closing connection with timeout");
+                            tracked
+                                .connection
+                                .close((CLOSE_REASON as u32).into(), CLOSE_REASON.reason_phrase());
                             false
                         } else {
                             // Tickle the connection immediately.
@@ -270,9 +271,9 @@ fn spawn_gc(
                             // This could otherwise race if the connection was
                             // tickled just before GC, but remains idle until
                             // the next sweep.
-                            tracing::info!(conn = ?tracked.connection.stable_id(), epoch = ?curr_epoch, msg = "GC bump epoch");
+                            tracing::info!(conn = ?tracked.connection.stable_id(), epoch = ?curr_epoch, "GC bump epoch");
                             tracked.epoch.fetch_max(curr_epoch, SeqCst);
-                            tracing::info!(conn = ?tracked.connection.stable_id(), new_epoch = tracked.epoch.load(SeqCst), "GC bump epoch");
+                            tracing::info!(conn = ?tracked.connection.stable_id(), new_epoch = tracked.epoch.load(SeqCst), "GC bumped epoch");
                             true
                         }
                     });
