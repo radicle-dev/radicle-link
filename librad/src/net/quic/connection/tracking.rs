@@ -137,9 +137,9 @@ impl Conntrack {
         tracing::info!(conn = ?conn, tracked = tracked.is_some(), "TICKLE");
 
         if let Some(tracked) = tracked {
-            tracing::info!(conn = ?tracked.connection.stable_id(), epoch = ?tracked.epoch, msg = "TICKLE bump epoch");
+            tracing::info!(conn = ?tracked.connection.stable_id(), epoch = ?tracked.epoch, "TICKLE bump epoch");
             tracked.epoch.fetch_max(self.epoch.load(SeqCst) + 1, SeqCst);
-            tracing::info!(conn = ?tracked.connection.stable_id(), epoch = ?self.epoch.load(SeqCst), msg = "TICKLE bumped epoch");
+            tracing::info!(conn = ?tracked.connection.stable_id(), epoch = ?self.epoch.load(SeqCst), "TICKLE bumped epoch");
         }
     }
 
