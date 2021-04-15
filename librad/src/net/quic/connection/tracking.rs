@@ -252,7 +252,7 @@ fn spawn_gc(
                     let curr_epoch = epoch.load(SeqCst);
                     connections.retain(|_, tracked: &mut Arc<Tracked>| {
                         let tracked_epoch = tracked.epoch.load(SeqCst);
-                        tracing::debug!(
+                        tracing::info!(
                             conn = ?tracked.connection.stable_id(),
                             prev_epoch,
                             curr_epoch,
