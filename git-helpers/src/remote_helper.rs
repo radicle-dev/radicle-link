@@ -25,10 +25,21 @@ use radicle_keystore::{
     Keystore,
 };
 
+pub struct Config {
+    /// Signer for radicle artifacts created by pushes.
+    signer: Option<BoxedSigner>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self { signer: None }
+    }
+}
+
 // FIXME: this should be defined elsewhere to be consistent between applications
 const SECRET_KEY_FILE: &str = "librad.key";
 
-pub fn run() -> anyhow::Result<()> {
+pub fn run(config: Config) -> anyhow::Result<()> {
     let url = {
         let args = env::args().skip(1).take(2).collect::<Vec<_>>();
         if args.is_empty() {
@@ -50,7 +61,10 @@ See https://git-scm.com/docs/git-remote-ext for more detail."#
     let mut transport = {
         let profile = Profile::load()?;
         let paths = profile.paths().to_owned();
-        let signer = get_signer(&git_dir, paths.keys_dir(), &url)?;
+        let signer = match config.signer {
+            Some(signer) => signer,
+            None => get_signer(&git_dir, paths.keys_dir(), &url)?,
+        };
         let settings: Box<dyn CanOpenStorage> = Box::new(Settings { paths, signer });
         Ok::<_, anyhow::Error>(LocalTransport::from(settings))
     }?;
