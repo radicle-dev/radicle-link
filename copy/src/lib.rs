@@ -5,6 +5,9 @@
 
 #![feature(never_type)]
 
+#[macro_use]
+extern crate lazy_static;
+
 pub mod error;
 pub use error::Error;
 

@@ -3,7 +3,10 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::path::{Path, PathBuf};
+use std::{
+    convert::TryFrom as _,
+    path::{Path, PathBuf},
+};
 
 use nonempty::NonEmpty;
 
@@ -20,12 +23,17 @@ use librad::{
             Refspec,
         },
     },
-    git_ext::{self, OneLevel, Qualified},
+    git_ext::{self, OneLevel, Qualified, RefLike},
+    identities::payload,
     internal::canonical::Cstring,
     reflike,
     refspec_pattern,
     std_ext::result::ResultExt as _,
 };
+
+lazy_static! {
+    pub static ref DEFAULT_BRANCH: OneLevel = reflike!("main").into();
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -40,6 +48,17 @@ pub enum Error {
 
     #[error(transparent)]
     Git(#[from] git2::Error),
+}
+
+pub fn determine_default_branch(
+    payload: &payload::Project,
+) -> Result<OneLevel, git_ext::name::Error> {
+    payload
+        .default_branch
+        .clone()
+        .map_or(Ok((*DEFAULT_BRANCH).clone()), |branch| {
+            RefLike::try_from(branch.as_str()).map(OneLevel::from)
+        })
 }
 
 /// Equips a repository with a rad remote for the given id. If the directory at

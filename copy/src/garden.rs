@@ -73,6 +73,7 @@ where
         paths: paths.clone(),
         signer,
     };
+    // FIXME: I think we want to confirm no remote exists for this URL already
     let url = LocalUrl::from(project.urn());
     let repo = payload.init(url, transport).map_err(|err| err.into())?;
 

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use librad::{
     git::local::{transport::CanOpenStorage, url::LocalUrl},
-    git_ext::OneLevel,
+    git_ext::{self, OneLevel},
     identities::payload,
     internal::canonical::Cstring,
 };
@@ -26,6 +26,9 @@ pub enum Error {
     Git(#[from] git::Error),
 
     #[error(transparent)]
+    Ref(#[from] git_ext::name::Error),
+
+    #[error(transparent)]
     Io(#[from] io::Error),
 }
 
@@ -33,9 +36,7 @@ pub enum Error {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Plant<V> {
-    description: Option<Cstring>,
-    default_branch: OneLevel,
-    name: Cstring,
+    payload: payload::Project,
     path: PathBuf,
     valid: V,
 }
@@ -44,11 +45,7 @@ impl<V> Sealed for Plant<V> {}
 
 impl<V> AsPayload for Plant<V> {
     fn as_payload(&self) -> payload::Project {
-        payload::Project {
-            default_branch: Some(Cstring::from(self.default_branch.as_str())),
-            description: self.description.clone(),
-            name: self.name.clone(),
-        }
+        self.payload.clone()
     }
 }
 
@@ -65,7 +62,7 @@ impl CreateRepo for Plant<Valid> {
 
 impl<V> Plant<V> {
     pub fn path(&self) -> PathBuf {
-        self.path.join(self.name.to_string())
+        self.path.join(self.payload.name.to_string())
     }
 }
 
@@ -79,10 +76,13 @@ impl Plant<Invalid> {
         name: Cstring,
         path: PathBuf,
     ) -> Self {
+        // FIXME: actually pass the payload
         Self {
-            description,
-            default_branch,
-            name,
+            payload: payload::Project {
+                description,
+                default_branch: Some(default_branch.as_str().into()),
+                name,
+            },
             path,
             valid: PhantomData,
         }
@@ -102,9 +102,7 @@ impl Plant<Valid> {
         }
 
         Ok(Self {
-            description: invalid.description,
-            default_branch: invalid.default_branch,
-            name: invalid.name,
+            payload: invalid.payload,
             path: invalid.path,
             valid: PhantomData,
         })
@@ -115,16 +113,19 @@ impl Plant<Valid> {
         F: CanOpenStorage + Clone + 'static,
     {
         let path = self.path();
-        tracing::debug!("Setting up new repository @ '{}'", path.display());
-        let repo = git::init(path, &self.description, &self.default_branch)?;
+        let default_branch = git::determine_default_branch(&self.payload)?;
+
+        tracing::debug!(path = %path.display(), branch = %default_branch, "setting up new repository");
+
+        let repo: git2::Repository = git::init(path, &self.payload.description, &default_branch)?;
         git::initial_commit(
             &repo,
-            &self.default_branch,
+            &default_branch,
             &git2::Signature::now("Radicle Automated", "Radicle Automated")
                 .map_err(git::Error::Git)?,
         )?;
-        let remote = git::setup_remote(&repo, open_storage, url, &self.default_branch)?;
-        git::set_upstream(&repo, &remote, self.default_branch)?;
+        let remote = git::setup_remote(&repo, open_storage, url, &default_branch)?;
+        git::set_upstream(&repo, &remote, default_branch)?;
 
         Ok(repo)
     }

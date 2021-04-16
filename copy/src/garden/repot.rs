@@ -27,6 +27,9 @@ pub enum Error {
     PathDoesNotExist(PathBuf),
 
     #[error(transparent)]
+    Ref(#[from] git_ext::name::Error),
+
+    #[error(transparent)]
     Validation(#[from] git::validation::Error),
 
     #[error(transparent)]
@@ -44,10 +47,8 @@ pub struct EmptyNameError(PathBuf);
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Repot<V> {
-    description: Option<Cstring>,
-    default_branch: OneLevel,
+    payload: payload::Project,
     path: PathBuf,
-    name: Cstring,
     valid: V,
 }
 
@@ -55,11 +56,7 @@ impl<V> Sealed for Repot<V> {}
 
 impl<V> AsPayload for Repot<V> {
     fn as_payload(&self) -> payload::Project {
-        payload::Project {
-            default_branch: Some(Cstring::from(self.default_branch.as_str())),
-            description: self.description.clone(),
-            name: self.name.clone(),
-        }
+        self.payload.clone()
     }
 }
 
@@ -76,7 +73,7 @@ impl CreateRepo for Repot<Valid> {
 
 impl<V> Repot<V> {
     pub fn name(&self) -> &Cstring {
-        &self.name
+        &self.payload.name
     }
 }
 
@@ -95,11 +92,14 @@ impl Repot<Invalid> {
             .map(ToString::to_string)
             .map(Cstring::from)
             .ok_or_else(|| EmptyNameError(path.clone()))?;
-        Ok(Self {
+        let payload = payload::Project {
             description,
-            default_branch,
-            path,
+            default_branch: Some(default_branch.as_str().into()),
             name,
+        };
+        Ok(Self {
+            payload,
+            path,
             valid: PhantomData,
         })
     }
@@ -107,6 +107,7 @@ impl Repot<Invalid> {
 
 pub struct Valid {
     repo: git2::Repository,
+    default_branch: OneLevel,
 }
 
 impl Repot<Valid> {
@@ -119,17 +120,19 @@ impl Repot<Valid> {
             .or_matches(git_ext::is_not_found_err, || {
                 Err(Error::NotARepo(existing.path.clone()))
             })?;
+        let default_branch = git::determine_default_branch(&existing.payload)?;
 
         {
-            let _default_branch_ref = git::validation::branch(&repo, &existing.default_branch)?;
+            let _default_branch_ref = git::validation::branch(&repo, &default_branch)?;
         }
 
         Ok(Repot {
-            description: existing.description,
-            default_branch: existing.default_branch,
+            payload: existing.payload,
             path: existing.path,
-            name: existing.name,
-            valid: Valid { repo },
+            valid: Valid {
+                repo,
+                default_branch,
+            },
         })
     }
 
@@ -137,13 +140,16 @@ impl Repot<Valid> {
     where
         F: CanOpenStorage + Clone + 'static,
     {
-        let Valid { repo } = self.valid;
+        let Valid {
+            repo,
+            default_branch,
+        } = self.valid;
         tracing::debug!(
             "Setting up existing repository @ '{}'",
             repo.path().display()
         );
         let _remote = git::validation::remote(&repo, &url)?;
-        git::setup_remote(&repo, open_storage, url, &self.default_branch)?;
+        git::setup_remote(&repo, open_storage, url, &default_branch)?;
         Ok(repo)
     }
 }
