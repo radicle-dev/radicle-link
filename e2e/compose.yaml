@@ -44,7 +44,7 @@ services:
         --listen 0.0.0.0:12345
         --graphite graphite:9109
     environment:
-    - RUST_LOG=debug
+    - 'RUST_LOG=${RUST_LOG:-debug}'
     deploy:
       replicas: 1
 
@@ -61,7 +61,7 @@ services:
         --bootstrap hyne66jefcpkobg91qzdy6ysetr8fn3p3d6myce61uwf7s67g3i79e@bootstrap:12345
         --graphite graphite:9109
     environment:
-    - RUST_LOG=debug
+    - 'RUST_LOG=${RUST_LOG:-debug}'
     deploy:
       replicas: 3
 
