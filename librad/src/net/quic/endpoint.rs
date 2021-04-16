@@ -307,6 +307,13 @@ where
     let mut quic_config = quinn::ServerConfigBuilder::default().build();
     quic_config.crypto = Arc::new(tls_config);
     quic_config.transport = Arc::new(transport_config);
+    quic_config
+        // https://tools.ietf.org/html/draft-ietf-quic-transport-11#section-6.5
+        .use_stateless_retry(true)
+        // below are quinn defaults
+        .retry_token_lifetime(15_000_000) // microseconds
+        .migration(true)
+        .concurrent_connections(100_000);
 
     Ok(quic_config)
 }
