@@ -39,7 +39,7 @@ pub fn init() {
     unsafe {
         INIT.call_once(|| {
             let ret =
-                raw_git::git_libgit2_opts(raw_git::GIT_OPT_SET_MWINDOW_FILE_LIMIT as c_int, 256);
+                raw_git::git_libgit2_opts(raw_git::GIT_OPT_SET_MWINDOW_FILE_LIMIT as c_int, 1024);
             if ret < 0 {
                 panic!(
                     "error setting libgit2 option: {}",
