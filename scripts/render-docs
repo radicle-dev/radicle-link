@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#
+# Renders the spec documentation and updates the `docs/spec/out` files.
+#
+# This script must be run from the project root directory.
+# It uses Docker and depending on your system configuration you may need to:
+# 1. have `sudo dockerd` running in a separate shell
+# 2. run this script with `sudo`
+
+IID_FILE=$(mktemp)
+docker build --iidfile "$IID_FILE" .github/actions/pandoc/
+IID=$(cat "$IID_FILE")
+docker run -ti \
+    -v "$(pwd)/:/project" \
+    -w "/project/docs/spec" \
+    --entrypoint "" \
+    "$IID" \
+    make
