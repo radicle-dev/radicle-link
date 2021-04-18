@@ -285,8 +285,8 @@ impl Node {
                                 rev: None,
                                 origin: Some(*peer_id),
                             })
-                            .ok();
-                            transmit.send(event).await.ok();
+                            .unwrap();
+                            transmit.send(event).await.unwrap();
                         }
                     }
                 }
@@ -296,7 +296,7 @@ impl Node {
                     Endpoint::Up { listen_addrs } => Event::Listening(listen_addrs),
                     Endpoint::Down => Event::Disconnected,
                 };
-                transmit.send(event).await.ok();
+                transmit.send(event).await.unwrap();
             },
             ProtocolEvent::Membership(_) => {},
         }
@@ -361,7 +361,7 @@ impl Node {
                         if Node::track_project(&api, urn, &peer).await.is_ok() {
                             let event =
                                 Event::project_tracked(urn.clone(), peer.peer_id, api).await?;
-                            transmit.send(event).await.ok();
+                            transmit.send(event).await.unwrap();
 
                             break;
                         }
