@@ -213,7 +213,7 @@ impl Node {
                     }
                 }
                 request = requests.next() => {
-                    tracing::info!(request = ?request, msg = "seed request");
+                    tracing::debug!(request = ?request, msg = "seed request");
                     if let Some(r) = request {
                         match Node::handle_request(r, &peer).await {
                             Ok(_) => {},
@@ -278,6 +278,7 @@ impl Node {
                     tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "discovered new URN");
 
                     if mode.is_trackable(peer_id, urn) {
+                        tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "TRACKABLE");
                         // Attempt to track, but keep going if it fails.
                         if Node::track_project(&api, urn, &provider).await.is_ok() {
                             let event = Event::project_tracked(urn.clone(), *peer_id, &api).await?;
@@ -287,7 +288,9 @@ impl Node {
                                 origin: Some(*peer_id),
                             })
                             .unwrap();
+                            tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "ANNOUNCED");
                             transmit.send(event).await.unwrap();
+                            tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "SENT");
                         }
                     }
                 }
