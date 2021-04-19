@@ -420,8 +420,11 @@ mod imp {
             urn: Urn,
             remote_peer: PeerId,
         ) -> Result<Self, git2::Error> {
+            tracing::info!("GET REMOTE");
             let mut remote = storage.as_raw().remote_anonymous(url.as_str())?;
+            tracing::info!("GOT REMOTE");
             remote.connect(git2::Direction::Fetch)?;
+            tracing::info!("CONNECT");
             let remote_heads = remote
                 .list()?
                 .iter()
