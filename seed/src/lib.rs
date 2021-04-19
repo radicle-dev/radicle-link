@@ -320,8 +320,8 @@ impl Node {
         let result = {
             let cfg = api.protocol_config().replication;
             let urn = urn.clone();
-            tracing::info!("BEFORE USING STORAGE");
 
+            tracing::info!("BEFORE USING STORAGE");
             api.retrying(
                 fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints),
                 move |storage, fetcher| {

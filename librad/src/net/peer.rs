@@ -258,7 +258,7 @@ where
         fetcher::retrying(
             self.git_store.clone(),
             builder,
-            Duration::from_secs(20),
+            Duration::from_secs(5),
             move |storage, fetcher| f(&storage, fetcher),
         )
         .await
