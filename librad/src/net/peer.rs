@@ -245,8 +245,13 @@ where
         F: FnOnce(&git::storage::Storage) -> A + Send + 'static,
         A: Send + 'static,
     {
+        tracing::info!("REQUESTING STORAGE");
         let storage = self.git_store.get().await?;
-        match spawn_blocking(move || blocking(&storage)).await {
+        tracing::info!("GOT STORAGE");
+        let res = spawn_blocking(move || blocking(&storage)).await;
+        tracing::info!("DONE BLOCKING");
+
+        match res {
             Ok(a) => Ok(a),
             Err(e) => {
                 if e.is_cancelled() {
