@@ -194,7 +194,7 @@ impl Node {
             tracing::info!("SEED LOOP START");
             select! {
                 event = events.next() => {
-                    tracing::debug!(event = ?event, msg = "seed event");
+                    tracing::info!(event = ?event, msg = "seed event");
                     match event {
                         Some(Ok(evt)) => {
                             Node::handle_event(evt, mode, &mut transmit, &peer).await?;
@@ -213,7 +213,7 @@ impl Node {
                     }
                 }
                 request = requests.next() => {
-                    tracing::debug!(request = ?request, msg = "seed request");
+                    tracing::info!(request = ?request, msg = "seed request");
                     if let Some(r) = request {
                         match Node::handle_request(r, &peer).await {
                             Ok(_) => {},
