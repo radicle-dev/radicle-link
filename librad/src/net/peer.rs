@@ -12,7 +12,11 @@ use tokio::task::spawn_blocking;
 
 use super::protocol::{self, gossip};
 use crate::{
-    git::{self, storage::Fetchers, Urn},
+    git::{
+        self,
+        storage::{fetcher, Fetchers},
+        Urn,
+    },
     signer::Signer,
     PeerId,
 };
@@ -238,6 +242,26 @@ where
         &self,
     ) -> impl futures::Stream<Item = Result<ProtocolEvent, protocol::RecvError>> {
         self.phone.subscribe()
+    }
+
+    pub async fn retrying<A, B, E, F>(
+        &self,
+        builder: B,
+        f: F,
+    ) -> Result<A, fetcher::error::Retrying<E>>
+    where
+        A: Send + 'static,
+        B: fetcher::BuildFetcher<Error = E> + Clone + Send + 'static,
+        E: std::error::Error + Send + Sync + 'static,
+        F: Fn(&crate::git::storage::Storage, fetcher::Fetcher) -> A + Send + Sync + 'static,
+    {
+        fetcher::retrying(
+            self.git_store.clone(),
+            builder,
+            Duration::from_secs(20),
+            move |storage, fetcher| f(&storage, fetcher),
+        )
+        .await
     }
 
     pub async fn using_storage<F, A>(&self, blocking: F) -> Result<A, StorageError>

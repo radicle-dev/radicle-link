@@ -321,20 +321,21 @@ impl Node {
             let cfg = api.protocol_config().replication;
             let urn = urn.clone();
             tracing::info!("BEFORE USING STORAGE");
-            api.using_storage(move |storage| {
-                tracing::info!("BUILDING FETCHER");
-                let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
-                    .build(&storage)
-                    .map_err(|e| Error::MkFetcher(e.into()))??;
-                tracing::info!("BUILT FETCHER");
-                replication::replicate(&storage, fetcher, cfg, None)?;
-                tracing::info!("REPLICATED");
-                tracking::track(&storage, &urn, peer_id)?;
-                tracing::info!("TRACKED");
 
-                Ok::<_, Error>(())
-            })
-            .await?
+            api.retrying(
+                fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints),
+                move |storage, fetcher| {
+                    tracing::info!("REPLICATIGN");
+                    replication::replicate(&storage, fetcher, cfg, None)?;
+                    tracing::info!("REPLICATED");
+                    tracking::track(&storage, &urn, peer_id)?;
+                    tracing::info!("TRACKED");
+
+                    Ok::<_, Error>(())
+                },
+            )
+            .await
+            .unwrap()
         };
 
         match &result {
