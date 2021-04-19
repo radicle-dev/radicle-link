@@ -272,27 +272,34 @@ impl Node {
                 // Only if the gossip message was considered uninteresting, is
                 // it interesting: we are not yet tracking the peer / URN
                 if *result == Uninteresting {
-                    let urn = &payload.urn;
-                    let peer_id = &provider.peer_id;
+                    let urn = payload.urn.clone();
+                    let peer_id = provider.peer_id;
 
                     tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "discovered new URN");
 
-                    if mode.is_trackable(peer_id, urn) {
+                    if mode.is_trackable(&peer_id, &urn) {
                         tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "TRACKABLE");
+                        let api = api.clone();
+                        let mut transmit = transmit.clone();
+                        let provider = provider.clone();
                         // Attempt to track, but keep going if it fails.
-                        if Node::track_project(&api, urn, &provider).await.is_ok() {
-                            tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "TRACKED");
-                            let event = Event::project_tracked(urn.clone(), *peer_id, &api).await?;
-                            api.announce(Payload {
-                                urn: urn.clone(),
-                                rev: None,
-                                origin: Some(*peer_id),
-                            })
-                            .unwrap();
-                            tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "ANNOUNCED");
-                            transmit.send(event).await.unwrap();
-                            tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "SENT");
-                        }
+                        tokio::spawn(async move {
+                            if Node::track_project(&api, &urn, &provider).await.is_ok() {
+                                tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "TRACKED");
+                                let event = Event::project_tracked(urn.clone(), peer_id, &api)
+                                    .await
+                                    .unwrap();
+                                api.announce(Payload {
+                                    urn: urn.clone(),
+                                    rev: None,
+                                    origin: Some(peer_id),
+                                })
+                                .unwrap();
+                                tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "ANNOUNCED");
+                                transmit.send(event).await.unwrap();
+                                tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "SENT");
+                            }
+                        });
                     }
                 }
             },
