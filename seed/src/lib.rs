@@ -281,6 +281,7 @@ impl Node {
                         tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "TRACKABLE");
                         // Attempt to track, but keep going if it fails.
                         if Node::track_project(&api, urn, &provider).await.is_ok() {
+                            tracing::info!(urn = ?urn, peer_id = ?peer_id, msg = "TRACKED");
                             let event = Event::project_tracked(urn.clone(), *peer_id, &api).await?;
                             api.announce(Payload {
                                 urn: urn.clone(),
@@ -323,8 +324,11 @@ impl Node {
                 let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
                     .build(&storage)
                     .map_err(|e| Error::MkFetcher(e.into()))??;
+                tracing::info!("BUILDING FETCHER");
                 replication::replicate(&storage, fetcher, cfg, None)?;
+                tracing::info!("REPLICATED");
                 tracking::track(&storage, &urn, peer_id)?;
+                tracing::info!("TRACKED");
 
                 Ok::<_, Error>(())
             })
