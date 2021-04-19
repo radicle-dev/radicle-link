@@ -76,13 +76,16 @@ pub(in crate::net::protocol) async fn gossip<S, T>(
                     },
 
                     Ok((may_event, tocks)) => {
+                        tracing::info!(maybe_event = ?may_event, tocks = tocks.len(), "APPLIED");
                         if let Some(event) = may_event {
                             state.phone.emit(event)
                         }
 
                         stream::iter(tocks)
                             .for_each(|tock| tick::tock(state.clone(), tock))
-                            .await
+                            .await;
+
+                        tracing::info!("TOCKS COMPLETEE");
                     },
                 }
             },
