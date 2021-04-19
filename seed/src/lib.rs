@@ -322,10 +322,11 @@ impl Node {
             let urn = urn.clone();
             tracing::info!("BEFORE USING STORAGE");
             api.using_storage(move |storage| {
+                tracing::info!("BUILDING FETCHER");
                 let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
                     .build(&storage)
                     .map_err(|e| Error::MkFetcher(e.into()))??;
-                tracing::info!("BUILDING FETCHER");
+                tracing::info!("BUILT FETCHER");
                 replication::replicate(&storage, fetcher, cfg, None)?;
                 tracing::info!("REPLICATED");
                 tracking::track(&storage, &urn, peer_id)?;
