@@ -186,6 +186,7 @@ impl AnyUrl {
     ) -> Result<Result<Fetcher<'a>, Info>, git2::Error> {
         use dashmap::mapref::entry::Entry;
 
+        tracing::info!("GET FETCHERS");
         let fetchers = storage.fetchers();
         // The joy of concurrent maps:
         //
@@ -198,15 +199,18 @@ impl AnyUrl {
         // fetcher, and then check again. Worst case we're wasting some bandwidth.
         //
         if let Some(inflight) = fetchers.0.get(&self.urn) {
+            tracing::info!("INFLIGHT");
             return Ok(Err(inflight.value().clone()));
         }
 
+        tracing::info!("WITH URL");
         let fetcher = imp::Fetcher::with_url(
             storage,
             self.url.clone(),
             self.urn.clone(),
             self.remote_peer,
         )?;
+        tracing::info!("WITH URLED");
         match fetchers.0.entry(self.urn.clone()) {
             Entry::Vacant(entry) => {
                 let info = fetcher.info();
