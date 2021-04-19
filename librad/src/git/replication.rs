@@ -359,14 +359,17 @@ where
     F::Error: std::error::Error + Send + Sync + 'static,
 {
     if !storage.has_urn(&urn)? {
+        tracing::info!("PEEK");
         let updated = fetcher
             .fetch(fetch::Fetchspecs::PeekAll { limit })
             .map_err(|e| Error::Fetch(e.into()))?;
+        tracing::info!("FETCHED PEERS");
         let fetched_peers = project::fetched_peers(&updated)?;
 
         let mut tips = updated.updated_tips;
         // We can't fetch `refs/remotes/*/rad/ids/*` since we can't have two globs, so
         // we fetch `refs/remotes/{fetched_peer}/rad/ids/*`.
+        tracing::info!("PEEKE REMOTES");
         let peeked = fetcher
             .fetch(fetch::Fetchspecs::Peek {
                 remotes: fetched_peers.clone(),
