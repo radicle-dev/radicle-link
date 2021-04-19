@@ -642,8 +642,10 @@ mod project {
         let local_peer = storage.peer_id();
         let urn = proj.urn();
         let id_status = self::adopt_latest(storage, &urn, &delegates)?;
+        tracing::info!("ADOPTED LATEST");
 
         self::track_direct(storage, &proj)?;
+        tracing::info!("TRACKED DIRECT");
         let (fetch_result, tracked) = replicate_signed_refs(
             storage,
             fetcher,
@@ -654,11 +656,13 @@ mod project {
                 .map(|delegate| delegate.urn.clone())
                 .collect(),
         )?;
+        tracing::info!("REPLICATED SIGNED REFS");
         for peer in tracked {
             if peer != *local_peer {
                 tracking::track(&storage, &urn, peer)?;
             }
         }
+        tracing::info!("TRACKED PEERS");
 
         Ok(SetupResult {
             updated_tips: fetch_result.updated_tips,
