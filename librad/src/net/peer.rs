@@ -248,7 +248,14 @@ where
         tracing::info!("REQUESTING STORAGE");
         let storage = self.git_store.get().await?;
         tracing::info!("GOT STORAGE");
-        let res = spawn_blocking(move || blocking(&storage)).await;
+        let res = spawn_blocking(move || {
+            tracing::info!("INSIDE SPAWN BLOCKING");
+            let res = blocking(&storage);
+            tracing::info!("AFTER BLOCKING");
+
+            res
+        })
+        .await;
         tracing::info!("DONE BLOCKING");
 
         match res {
