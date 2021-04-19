@@ -432,7 +432,9 @@ The `payload` is encoded as a JSON object using [@whatwg-url] URLs as the keys,
 and JSON objects of the `radicle-link`- or user-specified payload objects as the
 values. Implementations MUST validate that a valid `radicle-link` payload is
 present in the object, and SHOULD preserve user extensions typed as the JSON
-object model. Duplicate URL keys are a deserialisation error.
+object model. The JSON-encoded value of an extension SHOULD NEVER be `null`,
+such entries SHOULD be omitted from the payload. Duplicate URL keys are
+a deserialisation error.
 
 The URL keys serve as namespaces, as well as version identifiers. Versioning
 simplifies schema evolution. However, implementations MUST ensure that they can

@@ -288,6 +288,7 @@ where
         map.serialize_entry(T::namespace(), &self.subject)?;
         self.ext
             .iter()
+            .filter(|(_, v)| !v.is_null())
             .try_for_each(|(k, v)| map.serialize_entry(k, v))?;
         map.end()
     }
@@ -874,6 +875,26 @@ nom is a parser combinators library written in Rust.";
             serde_json::from_str::<ProjectPayload>(json),
             Err(e) if e.to_string().starts_with("multiple subject versions in document")
         ))
+    }
+
+    #[test]
+    fn null_extension() {
+        let json = r#"{
+            "https://radicle.xyz/link/identities/person/v1": {
+                "name": "foo"
+            },
+            "https://semantic.me/ld": null
+        }"#;
+        let payload = serde_json::from_str::<PersonPayload>(json).unwrap();
+
+        let json_actual = serde_json::to_string_pretty(&payload).unwrap();
+
+        let json_expected = r#"{
+  "https://radicle.xyz/link/identities/person/v1": {
+    "name": "foo"
+  }
+}"#;
+        assert_eq!(json_actual, json_expected);
     }
 
     /// All serialisation roundtrips required for payload types

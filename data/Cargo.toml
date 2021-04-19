@@ -7,6 +7,8 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 nonempty = "0.6"
+thiserror = "1.0"
+typenum = "1.13"
 
 [dependencies.minicbor]
 version = ">= 0.6, 0"

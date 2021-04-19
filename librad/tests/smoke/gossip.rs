@@ -29,6 +29,7 @@ use librad_test::{
     rad::{identities::TestProject, testnet},
 };
 use tempfile::tempdir;
+use tokio::task::spawn_blocking;
 
 const NUM_PEERS: usize = 2;
 
@@ -61,41 +62,53 @@ async fn fetches_on_gossip_notify() {
 
         let mastor = reflike!("refs/heads/master");
         let project_repo_path = tempdir().unwrap();
-        let repo = git2::Repository::init(&project_repo_path).unwrap();
-        let url = LocalUrl::from(project.urn());
+        let (commit_id, tag_id) = spawn_blocking({
+            let project_repo_path = project_repo_path.path().to_path_buf();
+            let project_urn = project.urn();
+            let mastor = mastor.clone();
+            let peer1 = peer1.clone();
+            move || {
+                let repo = git2::Repository::init(&project_repo_path).unwrap();
+                let url = LocalUrl::from(project_urn);
 
-        let mut remote = Remote::rad_remote::<_, Fetchspec>(url, None);
+                let mut remote = Remote::rad_remote::<_, Fetchspec>(url, None);
 
-        let commit_id = create_commit(&repo, mastor.clone()).unwrap();
-        let commit = repo.find_object(commit_id, None).unwrap();
+                let commit_id = create_commit(&repo, mastor.clone()).unwrap();
+                let commit = repo.find_object(commit_id, None).unwrap();
 
-        let author = git2::Signature::now("The Animal", "animal@muppets.com").unwrap();
-        let tag_id = repo
-            .tag("MY-TAG", &commit, &author, "MESSAGE", false)
-            .unwrap();
+                let author = git2::Signature::now("The Animal", "animal@muppets.com").unwrap();
+                let tag_id = repo
+                    .tag("MY-TAG", &commit, &author, "MESSAGE", false)
+                    .unwrap();
 
-        remote
-            .push(
-                peer1.clone(),
-                &repo,
-                remote::LocalPushspec::Matching {
-                    pattern: refspec_pattern!("refs/heads/*"),
-                    force: Force::True,
-                },
-            )
-            .unwrap()
-            .for_each(drop);
-        remote
-            .push(
-                peer1.clone(),
-                &repo,
-                remote::LocalPushspec::Matching {
-                    pattern: refspec_pattern!("refs/tags/*"),
-                    force: Force::True,
-                },
-            )
-            .unwrap()
-            .for_each(drop);
+                remote
+                    .push(
+                        peer1.clone(),
+                        &repo,
+                        remote::LocalPushspec::Matching {
+                            pattern: refspec_pattern!("refs/heads/*"),
+                            force: Force::True,
+                        },
+                    )
+                    .unwrap()
+                    .for_each(drop);
+                remote
+                    .push(
+                        peer1,
+                        &repo,
+                        remote::LocalPushspec::Matching {
+                            pattern: refspec_pattern!("refs/tags/*"),
+                            force: Force::True,
+                        },
+                    )
+                    .unwrap()
+                    .for_each(drop);
+
+                (commit_id, tag_id)
+            }
+        })
+        .await
+        .unwrap();
 
         peer1
             .announce(gossip::Payload {
@@ -135,25 +148,25 @@ async fn fetches_on_gossip_notify() {
                 .join(peer1.peer_id())
                 .join(mastor.strip_prefix("refs").unwrap()),
         );
-        let storage = peer2.storage().await.unwrap();
-        let peer2_has_commit = storage
-            .as_ref()
-            .has_commit(&commit_urn, Box::new(commit_id))
-            .unwrap();
-        assert!(peer2_has_commit);
+        peer2
+            .using_storage(move |storage| {
+                let peer2_has_commit = storage
+                    .as_ref()
+                    .has_commit(&commit_urn, Box::new(commit_id))
+                    .unwrap();
+                assert!(peer2_has_commit);
 
-        let remote_tag_ref = Reference::tag(
-            Some(project.urn().into()),
-            peer1.peer_id(),
-            reflike!("MY-TAG"),
-        );
+                let remote_tag_ref = Reference::tag(
+                    Some(project.urn().into()),
+                    peer1.peer_id(),
+                    reflike!("MY-TAG"),
+                );
 
-        let tag_ref = storage
-            .as_ref()
-            .reference(&remote_tag_ref)
-            .unwrap()
+                let tag_ref = storage.reference(&remote_tag_ref).unwrap().unwrap();
+                assert_eq!(tag_ref.target(), Some(tag_id));
+            })
+            .await
             .unwrap();
-        assert_eq!(tag_ref.target(), Some(tag_id));
     })
     .await;
 }
