@@ -3,7 +3,10 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{ops::Deref, time::Duration};
+use std::{
+    ops::{Deref, Index as _},
+    time::Duration,
+};
 
 use futures::StreamExt as _;
 use librad::{
@@ -31,7 +34,13 @@ use librad_test::{
 use tempfile::tempdir;
 use tokio::task::spawn_blocking;
 
-const NUM_PEERS: usize = 2;
+fn config() -> testnet::Config {
+    testnet::Config {
+        num_peers: nonzero!(2usize),
+        min_connected: 2,
+        bootstrap: testnet::Bootstrap::from_env(),
+    }
+}
 
 /// Given two connected peers.
 /// Then create a project for peer1.
@@ -44,17 +53,16 @@ const NUM_PEERS: usize = 2;
 async fn fetches_on_gossip_notify() {
     logging::init();
 
-    let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, |mut peers| async move {
-        let peer1 = peers.pop().unwrap();
-        let peer2 = peers.pop().unwrap();
-
+    let net = testnet::run(config()).await.unwrap();
+    {
+        let peer1 = net.peers().index(0);
+        let peer2 = net.peers().index(1);
         let proj = peer1
             .using_storage(move |storage| TestProject::create(&storage))
             .await
             .unwrap()
             .unwrap();
-        proj.pull(&peer1, &peer2).await.ok().unwrap();
+        proj.pull(peer1, peer2).await.ok().unwrap();
 
         let TestProject { project, owner: _ } = proj;
         let peer1_events = peer2.subscribe();
@@ -66,7 +74,7 @@ async fn fetches_on_gossip_notify() {
             let project_repo_path = project_repo_path.path().to_path_buf();
             let project_urn = project.urn();
             let mastor = mastor.clone();
-            let peer1 = peer1.clone();
+            let peer1 = (*peer1).clone();
             move || {
                 let repo = git2::Repository::init(&project_repo_path).unwrap();
                 let url = LocalUrl::from(project_urn);
@@ -149,26 +157,25 @@ async fn fetches_on_gossip_notify() {
                 .join(mastor.strip_prefix("refs").unwrap()),
         );
         peer2
-            .using_storage(move |storage| {
-                let peer2_has_commit = storage
-                    .as_ref()
-                    .has_commit(&commit_urn, Box::new(commit_id))
-                    .unwrap();
-                assert!(peer2_has_commit);
+            .using_storage({
+                let peer1_id = peer1.peer_id();
+                move |storage| {
+                    let peer2_has_commit = storage
+                        .as_ref()
+                        .has_commit(&commit_urn, Box::new(commit_id))
+                        .unwrap();
+                    assert!(peer2_has_commit);
 
-                let remote_tag_ref = Reference::tag(
-                    Some(project.urn().into()),
-                    peer1.peer_id(),
-                    reflike!("MY-TAG"),
-                );
+                    let remote_tag_ref =
+                        Reference::tag(Some(project.urn().into()), peer1_id, reflike!("MY-TAG"));
 
-                let tag_ref = storage.reference(&remote_tag_ref).unwrap().unwrap();
-                assert_eq!(tag_ref.target(), Some(tag_id));
+                    let tag_ref = storage.reference(&remote_tag_ref).unwrap().unwrap();
+                    assert_eq!(tag_ref.target(), Some(tag_id));
+                }
             })
             .await
             .unwrap();
-    })
-    .await;
+    }
 }
 
 /// Given that a) a peer 1 holds a given URN and b) that same peer is a seed of
@@ -181,11 +188,10 @@ async fn fetches_on_gossip_notify() {
 async fn ask_and_clone() {
     logging::init();
 
-    let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, |mut peers| async move {
-        let peer1 = peers.pop().unwrap();
-        let peer2 = peers.pop().unwrap();
-
+    let net = testnet::run(config()).await.unwrap();
+    {
+        let peer1 = &net.peers()[0];
+        let peer2 = &net.peers()[1];
         let proj = peer1
             .using_storage(move |storage| TestProject::create(&storage))
             .await
@@ -216,19 +222,18 @@ async fn ask_and_clone() {
 
         assert_eq!(
             false,
-            has_urn(&peer2, project_urn.clone()).await,
+            has_urn(peer2, project_urn.clone()).await,
             "expected peer2 to not have URN {} yet",
             project_urn
         );
 
-        proj.pull(&peer1, &peer2).await.ok().unwrap();
+        proj.pull(peer1, peer2).await.ok().unwrap();
 
         assert_eq!(
             true,
-            has_urn(&peer2, project_urn.clone()).await,
+            has_urn(peer2, project_urn.clone()).await,
             "expected peer2 to have URN {}",
             project_urn
         )
-    })
-    .await;
+    }
 }

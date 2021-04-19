@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::convert::TryFrom as _;
+use std::{convert::TryFrom as _, ops::Index as _};
 
 use librad::git::{
     identities,
@@ -16,16 +16,22 @@ use librad_test::{
     rad::{identities::TestProject, testnet},
 };
 
-const NUM_PEERS: usize = 2;
+fn config() -> testnet::Config {
+    testnet::Config {
+        num_peers: nonzero!(2usize),
+        min_connected: 2,
+        bootstrap: testnet::Bootstrap::from_env(),
+    }
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn can_add_maintainer() {
     logging::init();
 
-    let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, |mut apis| async move {
-        let peer1 = apis.pop().unwrap();
-        let peer2 = apis.pop().unwrap();
+    let net = testnet::run(config()).await.unwrap();
+    {
+        let peer1 = net.peers().index(0);
+        let peer2 = net.peers().index(1);
 
         let proj = {
             let proj = peer1
@@ -33,7 +39,7 @@ async fn can_add_maintainer() {
                 .await
                 .unwrap()
                 .unwrap();
-            proj.pull(&peer1, &peer2).await.ok().unwrap();
+            proj.pull(peer1, peer2).await.ok().unwrap();
             proj
         };
 
@@ -63,7 +69,7 @@ async fn can_add_maintainer() {
             .unwrap()
             .unwrap();
 
-        proj.pull(&peer1, &peer2).await.ok().unwrap();
+        proj.pull(peer1, peer2).await.ok().unwrap();
         let verified = peer2
             .using_storage({
                 let urn = proj.project.urn();
@@ -96,6 +102,5 @@ async fn can_add_maintainer() {
                 verified.unwrap().delegations().iter().direct().next()
             );
         }
-    })
-    .await;
+    }
 }

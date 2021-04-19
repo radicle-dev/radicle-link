@@ -3,21 +3,30 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::ops::Index as _;
+
 use librad::{identities::SomeUrn, net::protocol::PeerAdvertisement};
 use librad_test::{
     logging,
     rad::{identities::TestProject, testnet},
 };
 
+fn config() -> testnet::Config {
+    testnet::Config {
+        num_peers: nonzero!(2usize),
+        min_connected: 2,
+        bootstrap: testnet::Bootstrap::from_env(),
+    }
+}
+
 #[tokio::test]
 async fn responds() {
     logging::init();
 
-    let peers = testnet::setup(2).await.unwrap();
-    testnet::run_on_testnet(peers, 2, |mut peers| async move {
-        let responder = peers.pop().unwrap();
-        let requester = peers.pop().unwrap();
-
+    let net = testnet::run(config()).await.unwrap();
+    {
+        let responder = net.peers().index(0);
+        let requester = net.peers().index(1);
         let TestProject { project, owner } = responder
             .using_storage(move |s| TestProject::create(&s))
             .await
@@ -41,6 +50,5 @@ async fn responds() {
         for urn in &[SomeUrn::Git(project.urn()), SomeUrn::Git(owner.urn())] {
             assert!(urns.contains(urn))
         }
-    })
-    .await;
+    }
 }
