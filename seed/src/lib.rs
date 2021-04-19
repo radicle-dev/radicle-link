@@ -191,6 +191,7 @@ impl Node {
         Node::initialize_tracker(mode, &peer, &mut transmit).await?;
 
         loop {
+            tracing::info!("SEED LOOP START");
             select! {
                 event = events.next() => {
                     tracing::debug!(event = ?event, msg = "seed event");
