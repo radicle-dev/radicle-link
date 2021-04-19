@@ -139,7 +139,7 @@ impl TinCans {
     }
 
     pub(super) fn emit(&self, evt: impl Into<event::Upstream>) {
-        self.upstream.send(evt.into()).ok();
+        self.upstream.send(evt.into()).unwrap();
     }
 }
 
