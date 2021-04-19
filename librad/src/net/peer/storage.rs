@@ -63,8 +63,7 @@ impl Storage {
                     Ok(())
                 }
             })
-            .await
-            .expect("has_commit panicked")?;
+            .await??;
         }
 
         let (remote_peer, addr_hints) = from.into();
@@ -98,16 +97,12 @@ impl Storage {
             },
         })
         .await
-        .expect("`Storage::git_has` panicked")
+        .unwrap_or(false)
     }
 
     async fn is_tracked(&self, urn: Urn, peer: PeerId) -> Result<bool, Error> {
         let git = self.pool.get().await?;
-        Ok(
-            spawn_blocking(move || tracking::is_tracked(&git, &urn, peer))
-                .await
-                .expect("`Storage::is_tracked` panicked")?,
-        )
+        Ok(spawn_blocking(move || tracking::is_tracked(&git, &urn, peer)).await??)
     }
 }
 
