@@ -470,14 +470,14 @@ mod imp {
                     .into_iter()
                     .map(|spec| spec.to_string())
                     .collect::<Vec<_>>();
-                tracing::trace!("{:?}", refspecs);
+                tracing::info!("{:?}", refspecs);
 
                 let mut callbacks = git2::RemoteCallbacks::new();
                 callbacks.transfer_progress(|prog| {
                     let received_bytes = prog.received_bytes();
                     tracing::trace!("Fetch: received {} bytes", received_bytes);
                     if received_bytes > limit {
-                        tracing::error!("Fetch: exceeded {} bytes", limit);
+                        tracing::info!("Fetch: exceeded {} bytes", limit);
                         false
                     } else {
                         true
@@ -491,7 +491,7 @@ mod imp {
                 //
                 // Upstream issue: https://github.com/libgit2/libgit2/issues/5799.
                 callbacks.update_tips(|name, old, new| {
-                    tracing::debug!("Fetch: updating tip {}: {} -> {}", name, old, new);
+                    tracing::info!("Fetch: updating tip {}: {} -> {}", name, old, new);
                     match RefLike::try_from(name) {
                         Ok(refname) => {
                             updated_tips.insert(refname, new.into());
@@ -502,6 +502,7 @@ mod imp {
                     true
                 });
 
+                tracing::info!("REMOTE FETCH");
                 self.remote.fetch(
                     &refspecs,
                     Some(
