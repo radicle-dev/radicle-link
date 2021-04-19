@@ -192,6 +192,7 @@ where
         urn.clone(),
         remote_peer,
     )?;
+    tracing::info!("DETERMINED MODE");
     let (result, mut remove) = match next {
         ModeInternal::Clone {
             urn,
@@ -201,12 +202,14 @@ where
             let (allowed, id_status) = match identity {
                 SomeIdentity::Project(proj) => {
                     let delegates = project::delegate_views(storage, proj, Some(remote_peer))?;
+                    tracing::info!("PROJECT DELEGATES");
                     let mut allowed = delegates.keys().copied().collect::<BTreeSet<_>>();
                     let rad_id = unsafe_into_urn(
                         Reference::rad_id(Namespace::from(&urn)).with_remote(remote_peer),
                     );
                     let proj = identities::project::verify(storage, &rad_id)?
                         .ok_or(Error::MissingIdentity)?;
+                    tracing::info!("VERIFIED");
                     let project::SetupResult {
                         updated_tips: mut project_tips,
                         identity: id_status,
@@ -218,8 +221,10 @@ where
                         &rad_id,
                         proj,
                     )?;
+                    tracing::info!("PROJECT ENSURED SETUP");
                     updated_tips.append(&mut project_tips);
                     let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
+                    tracing::info!("PROJECT TRACKED");
                     allowed.extend(tracked);
 
                     (allowed, id_status)
@@ -243,6 +248,7 @@ where
             if let Some(local_id) = whoami {
                 local_id.link(storage, &urn)?;
             }
+            tracing::info!("LINKED");
 
             Ok::<_, Error>((
                 ReplicateResult {
