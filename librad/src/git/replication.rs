@@ -179,12 +179,15 @@ where
     F: fetch::Fetcher<PeerId = PeerId, UrnId = Revision>,
     F::Error: std::error::Error + Send + Sync + 'static,
 {
+    tracing::info!("GET REMOTE PEER");
     let remote_peer = *fetcher.remote_peer();
+    tracing::info!("GET PEER ID");
     let local_peer_id = storage.peer_id();
     if local_peer_id == &remote_peer {
         return Err(Error::SelfReplication);
     }
     let urn = Urn::new(fetcher.urn().id);
+    tracing::info!("DETERMINE MODE");
     let (mut updated_tips, next) = determine_mode(
         storage,
         &mut fetcher,
