@@ -700,9 +700,10 @@ mod project {
                 Err(e) => Some(Err(e)),
             })
             .collect::<Result<BTreeMap<_, _>, _>>()?;
+        tracing::info!("COLLECT SIGREFS");
 
         // Fetch all the rest
-        tracing::debug!("fetching heads: {:?}, {:?}", tracked_sigrefs, delegates);
+        tracing::info!("fetching heads: {:?}, {:?}", tracked_sigrefs, delegates);
         let res = fetcher
             .fetch(fetch::Fetchspecs::Replicate {
                 tracked_sigrefs: tracked_sigrefs.clone(),
@@ -710,8 +711,10 @@ mod project {
                 limit,
             })
             .map_err(|e| Error::Fetch(e.into()))?;
+        tracing::info!("FETCHED HEADS");
 
         Refs::update(storage, &urn)?;
+        tracing::info!("UPDATED REFS");
         Ok((
             res,
             tracked_sigrefs
