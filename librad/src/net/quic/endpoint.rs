@@ -246,7 +246,7 @@ fn alpn(network: Network) -> Alpn {
         Network::Main => alpn,
         Network::Custom(id) => {
             alpn.push(b'/');
-            alpn.extend(id);
+            alpn.extend(id.as_ref());
             alpn
         },
     }

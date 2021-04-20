@@ -121,7 +121,7 @@ where
         listen_addr,
         advertised_addrs: None,
         membership: Default::default(),
-        network: Network::Custom(b"localtestnet"),
+        network: Network::Custom(b"localtestnet".as_ref().into()),
         replication: Default::default(),
         fetch: Default::default(),
     };
