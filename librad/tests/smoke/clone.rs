@@ -101,7 +101,7 @@ async fn when_disconnected() {
 }
 
 #[tokio::test]
-#[should_panic(expected = "No connection")]
+#[should_panic(expected = "git p2p transport: no connection to")]
 async fn when_disconnected_and_no_addr_hints() {
     logging::init();
 
