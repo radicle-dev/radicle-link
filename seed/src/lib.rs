@@ -94,7 +94,7 @@ impl From<fetcher::Info> for Error {
 }
 
 /// Seed operational mode.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Mode {
     /// Track everything we see, no matter where it comes from.
     TrackEverything,
@@ -164,7 +164,7 @@ impl Node {
         let peer = Peer::new(peer_config);
         let mut events = peer.subscribe().boxed().fuse();
         let mut requests = self.requests;
-        let mode = &node_config.mode;
+        let mode = node_config.mode.clone();
 
         // Spawn the background peer thread.
         tokio::spawn({
@@ -188,18 +188,24 @@ impl Node {
         });
 
         // Track already-known URNs.
-        Node::initialize_tracker(mode, &peer, &mut transmit).await?;
+        Node::initialize_tracker(&mode, &peer, &mut transmit).await?;
 
         loop {
             select! {
                 event = events.next() => {
                     match event {
                         Some(Ok(evt)) => {
-                            Node::handle_event(evt, mode, &mut transmit, &peer).await?;
+                            tokio::spawn({
+                                let mode = mode.clone();
+                                let mut transmit = transmit.clone();
+                                let peer = peer.clone();
+                                async move { Node::handle_event(evt, &mode, &mut transmit, &peer).await }
+                            });
                         },
                         // There might be intermittent errors due to restarting.
                         // We can just ignore them.
-                        Some(Err(_)) => {
+                        Some(Err(e)) => {
+                            tracing::error!(err = ?e, "events error");
                             continue;
                         },
                         // We're done when you're done.
