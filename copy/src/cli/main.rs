@@ -17,7 +17,7 @@ use librad::{
         storage::Storage,
         Urn,
     },
-    git_ext::{OneLevel, RefLike},
+    identities::payload,
     keys::{PublicKey, SecretKey},
     profile::Profile,
     signer::{BoxedSigner, SomeSigner},
@@ -53,7 +53,11 @@ pub fn main() -> anyhow::Result<()> {
             }) => {
                 use crate::garden::plant::Plant;
 
-                let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
+                let payload = payload::Project {
+                    name,
+                    description,
+                    default_branch,
+                };
                 let raw = Plant::new(description, default_branch, name, path);
                 let valid = Plant::validate(raw)?;
                 let path = valid.path();
@@ -61,15 +65,10 @@ pub fn main() -> anyhow::Result<()> {
 
                 project_success(&project.urn(), path);
             },
-            garden::Options::Repot(garden::Repot {
-                description,
-                default_branch,
-                path,
-                ..
-            }) => {
+            garden::Options::Repot(repot_data) => {
                 use crate::garden::repot::Repot;
 
-                let default_branch = OneLevel::from(RefLike::try_from(default_branch.as_str())?);
+                let payload = payload::Project::try_from(repot_data)?;
                 let raw = Repot::new(description, default_branch, path.clone())?;
                 let valid = Repot::validate(raw)?;
                 let project = repot(paths.clone(), signer, &storage, whoami, valid)?;

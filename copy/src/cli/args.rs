@@ -72,7 +72,12 @@ pub struct Garden {
 }
 
 pub mod garden {
+    use std::convert::TryFrom;
+
+    use librad::identities::payload;
+
     use super::*;
+
     #[derive(Debug, FromArgs)]
     #[argh(subcommand)]
     pub enum Options {
@@ -92,7 +97,7 @@ pub mod garden {
         pub description: Option<Cstring>,
         /// the default branch name for the project
         #[argh(option, from_str_fn(Cstring::from))]
-        pub default_branch: Cstring,
+        pub default_branch: Option<Cstring>,
         /// the name of the project
         #[argh(option, from_str_fn(Cstring::from))]
         pub name: Cstring,
@@ -114,7 +119,7 @@ pub mod garden {
         pub description: Option<Cstring>,
         /// the default branch name for the project
         #[argh(option, from_str_fn(Cstring::from))]
-        pub default_branch: Cstring,
+        pub default_branch: Option<Cstring>,
         /// the directory of the existing git repository
         #[argh(option)]
         pub path: PathBuf,
@@ -142,5 +147,29 @@ pub mod garden {
         /// the path where we are creating the working copy
         #[argh(option)]
         pub path: PathBuf,
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("could not determine the name of the project from the given path `{0}`")]
+    pub struct EmptyNameError(PathBuf);
+
+    impl TryFrom<Repot> for payload::Project {
+        type Error = EmptyNameError;
+
+        fn try_from(repot: Repot) -> Result<Self, Self::Error> {
+            let name = repot
+                .path
+                .components()
+                .next_back()
+                .and_then(|component| component.as_os_str().to_str())
+                .map(ToString::to_string)
+                .map(Cstring::from)
+                .ok_or_else(|| EmptyNameError(repot.path.clone()))?;
+            Ok(payload::Project {
+                name,
+                description: repot.description,
+                default_branch: repot.default_branch,
+            })
+        }
     }
 }

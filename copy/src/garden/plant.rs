@@ -9,9 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use librad::{
     git::local::{transport::CanOpenStorage, url::LocalUrl},
-    git_ext::{self, OneLevel},
+    git_ext,
     identities::payload,
-    internal::canonical::Cstring,
 };
 
 use super::{AsPayload, CreateRepo};
@@ -70,19 +69,9 @@ pub type Invalid = PhantomData<!>;
 pub type Valid = PhantomData<!>;
 
 impl Plant<Invalid> {
-    pub fn new(
-        description: Option<Cstring>,
-        default_branch: OneLevel,
-        name: Cstring,
-        path: PathBuf,
-    ) -> Self {
-        // FIXME: actually pass the payload
+    pub fn new(payload: payload::Project, path: PathBuf) -> Self {
         Self {
-            payload: payload::Project {
-                description,
-                default_branch: Some(default_branch.as_str().into()),
-                name,
-            },
+            payload,
             path,
             valid: PhantomData,
         }

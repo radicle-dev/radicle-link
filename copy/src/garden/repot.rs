@@ -39,10 +39,6 @@ pub enum Error {
     GitInternal(#[from] git::Error),
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("could not determine the name of the project from the given path `{0}`")]
-pub struct EmptyNameError(PathBuf);
-
 /// For construction, use [`Repot::new`] followed by [`Repot::validate`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,31 +73,15 @@ impl<V> Repot<V> {
     }
 }
 
-type Invalid = PhantomData<!>;
+pub type Invalid = PhantomData<!>;
 
 impl Repot<Invalid> {
-    pub fn new(
-        description: Option<Cstring>,
-        default_branch: OneLevel,
-        path: PathBuf,
-    ) -> Result<Self, EmptyNameError> {
-        let name = path
-            .components()
-            .next_back()
-            .and_then(|component| component.as_os_str().to_str())
-            .map(ToString::to_string)
-            .map(Cstring::from)
-            .ok_or_else(|| EmptyNameError(path.clone()))?;
-        let payload = payload::Project {
-            description,
-            default_branch: Some(default_branch.as_str().into()),
-            name,
-        };
-        Ok(Self {
+    pub fn new(payload: payload::Project, path: PathBuf) -> Self {
+        Self {
             payload,
             path,
             valid: PhantomData,
-        })
+        }
     }
 }
 
