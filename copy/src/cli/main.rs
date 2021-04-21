@@ -58,20 +58,19 @@ pub fn main() -> anyhow::Result<()> {
                     description,
                     default_branch,
                 };
-                let raw = Plant::new(description, default_branch, name, path);
-                let valid = Plant::validate(raw)?;
-                let path = valid.path();
-                let project = plant(paths.clone(), signer, &storage, whoami, valid)?;
+                let raw = Plant::new(payload, path);
+                let path = raw.path();
+                let project = plant(paths.clone(), signer, &storage, whoami, raw)?;
 
                 project_success(&project.urn(), path);
             },
             garden::Options::Repot(repot_data) => {
                 use crate::garden::repot::Repot;
 
+                let path = repot_data.path.clone();
                 let payload = payload::Project::try_from(repot_data)?;
-                let raw = Repot::new(description, default_branch, path.clone())?;
-                let valid = Repot::validate(raw)?;
-                let project = repot(paths.clone(), signer, &storage, whoami, valid)?;
+                let raw = Repot::new(payload, path.clone());
+                let project = repot(paths.clone(), signer, &storage, whoami, raw)?;
 
                 project_success(&project.urn(), path);
             },

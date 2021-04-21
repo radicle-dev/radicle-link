@@ -275,6 +275,11 @@ pub mod validation {
         url: &LocalUrl,
     ) -> Result<Option<Remote<LocalUrl>>, Error> {
         match Remote::<LocalUrl>::find(repo, reflike!("rad")) {
+            Err(remote::FindError::ParseUrl(_)) => {
+                tracing::warn!("an invalid URL was found loading `rad`, moving it to `rad_old`");
+                repo.remote_rename("rad", "rad_old")?;
+                Ok(None)
+            },
             Err(err) => Err(Error::Remote(err)),
             Ok(Some(remote)) if remote.url != *url => Err(Error::UrlMismatch {
                 expected: url.clone(),

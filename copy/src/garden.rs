@@ -62,19 +62,22 @@ where
     P: AsPayload + CreateRepo,
     P::Error: Into<super::Error>,
 {
-    let project = identities::project::create::<payload::Project>(
-        storage,
-        whoami.clone(),
-        payload.as_payload(),
-        Indirect::from(whoami.into_inner().into_inner()),
-    )?;
+    let proj = payload.as_payload();
+    let delegation = Indirect::from(whoami.clone().into_inner().into_inner());
+    let urn = identities::project::urn(storage, proj.clone(), delegation.clone())?;
+
+    let project = identities::project::get(storage, &urn)
+        .transpose()
+        .unwrap_or_else(|| {
+            identities::project::create::<payload::Project>(storage, whoami, proj, delegation)
+        })?;
 
     let transport = transport::Settings {
         paths: paths.clone(),
         signer,
     };
-    // FIXME: I think we want to confirm no remote exists for this URL already
-    let url = LocalUrl::from(project.urn());
+
+    let url = LocalUrl::from(urn);
     let repo = payload.init(url, transport).map_err(|err| err.into())?;
 
     let path = include::update(storage, &paths, &project)?;
@@ -91,8 +94,9 @@ pub fn plant(
     signer: BoxedSigner,
     storage: &Storage,
     whoami: LocalIdentity,
-    payload: plant::Plant<plant::Valid>,
+    payload: plant::Plant<plant::Invalid>,
 ) -> Result<Project, super::Error> {
+    let payload = plant::Plant::validate(payload)?;
     init(paths, signer, storage, whoami, payload)
 }
 
@@ -104,8 +108,16 @@ pub fn repot(
     signer: BoxedSigner,
     storage: &Storage,
     whoami: LocalIdentity,
-    payload: repot::Repot<repot::Valid>,
+    payload: repot::Repot<repot::Invalid>,
 ) -> Result<Project, super::Error> {
+    let delegation = Indirect::from(whoami.clone().into_inner().into_inner());
+    let url = LocalUrl::from(identities::project::urn(
+        storage,
+        payload.as_payload(),
+        delegation,
+    )?);
+
+    let payload = repot::Repot::validate(payload, url)?;
     init(paths, signer, storage, whoami, payload)
 }
 

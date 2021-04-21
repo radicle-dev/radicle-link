@@ -91,7 +91,7 @@ pub struct Valid {
 }
 
 impl Repot<Valid> {
-    pub fn validate(existing: Repot<Invalid>) -> Result<Self, Error> {
+    pub fn validate(existing: Repot<Invalid>, url: LocalUrl) -> Result<Self, Error> {
         if !existing.path.exists() {
             return Err(Error::PathDoesNotExist(existing.path));
         }
@@ -104,6 +104,7 @@ impl Repot<Valid> {
 
         {
             let _default_branch_ref = git::validation::branch(&repo, &default_branch)?;
+            let _remote = git::validation::remote(&repo, &url)?;
         }
 
         Ok(Repot {

@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use librad::git::identities;
+use librad::git::{identities, storage};
 
 use crate::{
     garden::{graft, plant, repot},
@@ -26,4 +26,7 @@ pub enum Error {
 
     #[error(transparent)]
     Include(#[from] include::Error),
+
+    #[error(transparent)]
+    Storage(#[from] storage::Error),
 }
