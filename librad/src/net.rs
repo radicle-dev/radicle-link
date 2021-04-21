@@ -3,6 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::{borrow::Cow, str::FromStr};
+
 pub mod connection;
 pub mod discovery;
 pub mod peer;
@@ -42,14 +44,27 @@ pub const PROTOCOL_VERSION: u8 = 2;
 /// should be kept short.
 ///
 /// [ALPN]: https://tools.ietf.org/html/rfc7301
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Network {
     Main,
-    Custom(&'static [u8]),
+    Custom(Cow<'static, [u8]>),
 }
 
 impl Default for Network {
     fn default() -> Self {
         Self::Main
+    }
+}
+
+impl FromStr for Network {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = s.as_bytes();
+        if bytes.len() > 32 {
+            Err("network name should not exceed 32 bytes")
+        } else {
+            Ok(Self::Custom(Cow::Owned(bytes.to_owned())))
+        }
     }
 }

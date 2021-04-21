@@ -152,9 +152,11 @@ where
         Rng: Send + Sync + 'static,
         Addr: Send + Sync + 'static,
     {
+        use tracing::Instrument as _;
+
         let this = Self(Arc::new(RwLock::new(HpvInner::new(local_id, rng, params))));
         let (tx, rx) = mpsc::channel(1);
-        tokio::spawn(periodic_tasks(this.clone(), tx));
+        tokio::spawn(periodic_tasks(this.clone(), tx).in_current_span());
 
         (this, rx)
     }

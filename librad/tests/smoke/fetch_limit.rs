@@ -3,6 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::ops::Index as _;
+
 use librad::git::tracking;
 use librad_test::{
     logging,
@@ -16,17 +18,20 @@ use librad_test::{
 async fn replication_does_not_exceed_limit() {
     logging::init();
 
-    const NUM_PEERS: usize = 6;
-
-    let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, |mut peers| async move {
-        let peer1 = peers.pop().unwrap();
-        let peer2 = peers.pop().unwrap();
-        let peer3 = peers.pop().unwrap();
-        let peer4 = peers.pop().unwrap();
-        let peer5 = peers.pop().unwrap();
-        let peer6 = peers.pop().unwrap();
-
+    let net = testnet::run(testnet::Config {
+        num_peers: nonzero!(6usize),
+        min_connected: 6,
+        bootstrap: testnet::Bootstrap::from_env(),
+    })
+    .await
+    .unwrap();
+    {
+        let peer1 = net.peers().index(0);
+        let peer2 = net.peers().index(1);
+        let peer3 = net.peers().index(2);
+        let peer4 = net.peers().index(3);
+        let peer5 = net.peers().index(4);
+        let peer6 = net.peers().index(5);
         let proj = peer1
             .using_storage({
                 let remotes = vec![
@@ -47,11 +52,10 @@ async fn replication_does_not_exceed_limit() {
             .unwrap()
             .unwrap();
 
-        for peer in vec![peer2, peer3, peer4, peer5].iter() {
-            proj.pull(&peer1, peer).await.ok().unwrap();
-            proj.pull(peer, &peer1).await.ok().unwrap();
+        for &peer in &[peer2, peer3, peer4, peer5] {
+            proj.pull(peer1, peer).await.ok().unwrap();
+            proj.pull(peer, peer1).await.ok().unwrap();
         }
-        proj.pull(&peer1, &peer6).await.ok().unwrap();
-    })
-    .await;
+        proj.pull(peer1, peer6).await.ok().unwrap();
+    }
 }

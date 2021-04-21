@@ -5,4 +5,7 @@
 
 #![feature(bool_to_option)]
 
+#[macro_use]
+extern crate nonzero_ext;
+
 mod smoke;

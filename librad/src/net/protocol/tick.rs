@@ -9,6 +9,7 @@ use futures::{
     future::{BoxFuture, FutureExt as _, TryFutureExt as _},
     stream::{FuturesOrdered, StreamExt as _},
 };
+use tracing::Instrument as _;
 
 use super::{error, gossip, io, membership, PeerInfo, ProtocolStorage, State};
 use crate::PeerId;
@@ -109,7 +110,7 @@ where
                         let (conn, ingress) = io::connect_peer_info(&state.endpoint, to.clone())
                             .await
                             .ok_or(error::BestEffortSend::CouldNotConnect { to })?;
-                        tokio::spawn(io::streams::incoming(state, ingress, "one_tock"));
+                        tokio::spawn(io::streams::incoming(state, ingress, "one_tock").in_current_span());
 
                         Ok(conn)
                     },

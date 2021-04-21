@@ -532,9 +532,8 @@ impl TryFrom<&Urn> for Reference<Namespace<ext::Oid>, PeerId, One> {
 
                         let category = match iter.next() {
                             None => Err(FromUrnError::Missing("category")),
-                            Some(x) if x == "heads" => Ok(RefsCategory::Heads),
-                            Some(x) if x == "rad" => Ok(RefsCategory::Rad),
-                            Some(x) => Err(FromUrnError::InvalidCategory(x.to_owned())),
+                            Some(x) => RefsCategory::parse(x)
+                                .ok_or_else(|| FromUrnError::InvalidCategory(x.to_owned())),
                         }?;
 
                         let name = iter.map(|x| ext::RefLike::try_from(x).unwrap()).collect();

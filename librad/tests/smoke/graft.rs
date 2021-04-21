@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::time::Duration;
+use std::{ops::Index as _, time::Duration};
 
 use librad::{
     git::{tracking, util},
@@ -15,21 +15,28 @@ use librad_test::{
     rad::{identities::TestProject, testnet},
 };
 
+fn config() -> testnet::Config {
+    testnet::Config {
+        num_peers: nonzero!(2usize),
+        min_connected: 2,
+        bootstrap: testnet::Bootstrap::from_env(),
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mutual_fetch() {
     logging::init();
 
-    let peers = testnet::setup(2).await.unwrap();
-    testnet::run_on_testnet(peers, 2, |mut peers| async move {
-        let alice = peers.pop().unwrap();
-        let bob = peers.pop().unwrap();
-
+    let net = testnet::run(config()).await.unwrap();
+    {
+        let alice = net.peers().index(0);
+        let bob = net.peers().index(1);
         let project = alice
             .using_storage(move |s| TestProject::create(&s))
             .await
             .unwrap()
             .unwrap();
-        project.pull(&alice, &bob).await.unwrap();
+        project.pull(alice, bob).await.unwrap();
 
         // Set up tracking
         alice
@@ -85,7 +92,7 @@ async fn mutual_fetch() {
             .unwrap();
 
         // Pull again
-        project.pull(&alice, &bob).await.unwrap();
+        project.pull(alice, bob).await.unwrap();
         // Wait for alice to fetch back
         tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -120,6 +127,5 @@ async fn mutual_fetch() {
 
         assert!(alice_has_bob, "alice is missing bob's commit");
         assert!(bob_has_alice, "bob is missing alice's commit");
-    })
-    .await
+    }
 }

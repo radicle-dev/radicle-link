@@ -20,6 +20,7 @@ use librad::{
         discovery::{self, Discovery as _},
         peer::{self, Peer},
         protocol,
+        Network,
     },
     paths::Paths,
     PeerId,
@@ -30,6 +31,9 @@ use tempfile::tempdir;
 /// A passive peer using temporary storage
 #[derive(FromArgs)]
 struct Options {
+    /// the network to join
+    #[argh(option, default = "Network::Custom(b\"localtestnet\".as_ref().into())")]
+    network: Network,
     /// base64-encoded secret key. A random key is generated if empty.
     #[argh(option, from_str_fn(parse_secret_key))]
     secret_key: Option<SecretKey>,
@@ -97,7 +101,7 @@ async fn main() {
                 listen_addr: opts.listen.unwrap_or_else(|| "0.0.0.0:0".parse().unwrap()),
                 advertised_addrs: None,
                 membership: Default::default(),
-                network: Default::default(),
+                network: opts.network,
                 replication: Default::default(),
                 fetch: Default::default(),
             },

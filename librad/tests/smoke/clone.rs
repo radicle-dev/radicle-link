@@ -3,6 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::ops::Index as _;
+
 use librad::{
     self,
     git::{
@@ -20,7 +22,21 @@ use librad_test::{
     },
 };
 
-const NUM_PEERS: usize = 2;
+fn default_config() -> testnet::Config {
+    testnet::Config {
+        num_peers: nonzero!(3usize),
+        min_connected: 3,
+        bootstrap: testnet::Bootstrap::from_env(),
+    }
+}
+
+fn disconnected_config() -> testnet::Config {
+    testnet::Config {
+        min_connected: 0,
+        bootstrap: testnet::Bootstrap::None,
+        ..default_config()
+    }
+}
 
 /// Fetching from a peer that does not have the identity should leave the
 /// `rad/*` refs intact.
@@ -28,14 +44,16 @@ const NUM_PEERS: usize = 2;
 async fn not_present() {
     logging::init();
 
-    let peers = testnet::setup(3).await.unwrap();
-    testnet::run_on_testnet(peers, 3, |mut peers| async move {
-        let maintainer = Host::init(peers.pop().unwrap()).await;
-        let contributor = Leecher(peers.pop().unwrap());
-        let voyeur = peers.pop().unwrap();
+    let net = testnet::run(default_config()).await.unwrap();
+    {
+        let maintainer = Host::init(net.peers().index(0)).await;
+        let contributor = Leecher(net.peers().index(1));
+        let voyeur = net.peers().index(2);
 
         let urn = maintainer.project.project.urn().clone();
         let maintainer_id = maintainer.peer.peer_id();
+        let voyeur_id = voyeur.peer_id();
+        let voyeur_addrs = voyeur.listen_addrs().iter().copied().collect::<Vec<_>>();
 
         contributor.clone_from(maintainer, true).await;
 
@@ -51,14 +69,10 @@ async fn not_present() {
                     "`refs/remotes/<maintainer>/rad/self` should exist before"
                 );
 
-                let fetcher = fetcher::PeerToPeer::new(
-                    urn.clone(),
-                    voyeur.peer_id(),
-                    voyeur.listen_addrs().iter().copied(),
-                )
-                .build(&storage)
-                .unwrap()
-                .unwrap();
+                let fetcher = fetcher::PeerToPeer::new(urn.clone(), voyeur_id, voyeur_addrs)
+                    .build(&storage)
+                    .unwrap()
+                    .unwrap();
                 let res = replication::replicate(&storage, fetcher, cfg, None);
                 assert!(res.is_ok());
 
@@ -72,32 +86,29 @@ async fn not_present() {
             })
             .await
             .unwrap();
-    })
-    .await;
+    }
 }
 
 #[tokio::test]
 async fn when_connected() {
     logging::init();
 
-    let peers = testnet::setup(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, NUM_PEERS, |mut peers| async move {
-        let host = Host::init(peers.pop().unwrap()).await;
-        Leecher(peers.pop().unwrap()).clone_from(host, false).await
-    })
-    .await;
+    let net = testnet::run(default_config()).await.unwrap();
+    {
+        let host = Host::init(&net.peers()[0]).await;
+        Leecher(&net.peers()[1]).clone_from(host, false).await
+    }
 }
 
 #[tokio::test]
 async fn when_disconnected() {
     logging::init();
 
-    let peers = testnet::setup_disconnected(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, 0, |mut peers| async move {
-        let host = Host::init(peers.pop().unwrap()).await;
-        Leecher(peers.pop().unwrap()).clone_from(host, true).await
-    })
-    .await;
+    let net = testnet::run(disconnected_config()).await.unwrap();
+    {
+        let host = Host::init(&net.peers()[0]).await;
+        Leecher(&net.peers()[1]).clone_from(host, true).await
+    }
 }
 
 #[tokio::test]
@@ -105,21 +116,20 @@ async fn when_disconnected() {
 async fn when_disconnected_and_no_addr_hints() {
     logging::init();
 
-    let peers = testnet::setup_disconnected(NUM_PEERS).await.unwrap();
-    testnet::run_on_testnet(peers, 0, |mut peers| async move {
-        let host = Host::init(peers.pop().unwrap()).await;
-        Leecher(peers.pop().unwrap()).clone_from(host, false).await
-    })
-    .await;
+    let net = testnet::run(disconnected_config()).await.unwrap();
+    {
+        let host = Host::init(&net.peers()[0]).await;
+        Leecher(&net.peers()[1]).clone_from(host, false).await
+    }
 }
 
-struct Host {
+struct Host<'a> {
     project: TestProject,
-    peer: RunningTestPeer,
+    peer: &'a RunningTestPeer,
 }
 
-impl Host {
-    async fn init(peer: RunningTestPeer) -> Self {
+impl<'a> Host<'a> {
+    async fn init(peer: &'a RunningTestPeer) -> Host<'a> {
         let project = peer
             .using_storage(move |storage| TestProject::create(&storage))
             .await
@@ -130,19 +140,22 @@ impl Host {
     }
 }
 
-struct Leecher(RunningTestPeer);
+struct Leecher<'a>(&'a RunningTestPeer);
 
-impl Leecher {
-    async fn clone_from(&self, host: Host, supply_addr_hints: bool) {
+impl Leecher<'_> {
+    async fn clone_from(&self, host: Host<'_>, supply_addr_hints: bool) {
         let cfg = self.0.protocol_config().replication;
+        let urn = host.project.project.urn();
+        let owner = host.project.owner;
+        let host_peer = host.peer.peer_id();
+        let host_addrs = host.peer.listen_addrs().iter().copied().collect::<Vec<_>>();
         self.0
             .using_storage(move |storage| {
-                let urn = host.project.project.urn();
                 let fetcher = fetcher::PeerToPeer::new(
                     urn.clone(),
-                    host.peer.peer_id(),
+                    host_peer,
                     supply_addr_hints
-                        .then_some(host.peer.listen_addrs().iter().copied())
+                        .then_some(host_addrs)
                         .into_iter()
                         .flatten(),
                 )
@@ -154,16 +167,12 @@ impl Leecher {
                 // check rad/self of peer1 exists
                 assert!(
                     storage
-                        .has_ref(&Reference::rad_self(
-                            Namespace::from(&urn),
-                            host.peer.peer_id()
-                        ))
+                        .has_ref(&Reference::rad_self(Namespace::from(&urn), host_peer))
                         .unwrap(),
                     "`refs/remotes/<peer1>/rad/self` should exist"
                 );
 
                 // check we have a top-level namespace for `owner`
-                let owner = host.project.owner;
                 let urn = owner.urn();
                 assert_eq!(
                     Some(owner),

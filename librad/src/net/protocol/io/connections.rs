@@ -10,6 +10,7 @@ use futures::{
     future::{self, TryFutureExt as _},
     stream::{FuturesUnordered, Stream, StreamExt as _},
 };
+use tracing::Instrument as _;
 
 use crate::{
     net::{
@@ -55,7 +56,7 @@ where
             conn = ingress.next() => match conn {
                 Some(conn) => match conn {
                     Ok((_, streams)) => {
-                        tasks.push(tokio::spawn(streams::incoming(state.clone(), streams, "protocol incoming")));
+                        tasks.push(tokio::spawn(streams::incoming(state.clone(), streams, "protocol incoming").in_current_span()));
                     },
                     Err(err)=> match err {
                         Connection(_) | PeerId(_) | RemoteIdUnavailable | SelfConnect => {
