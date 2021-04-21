@@ -6,6 +6,7 @@
 use std::env;
 
 use log::{log_enabled, Level};
+use tracing::subscriber::set_global_default as set_subscriber;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 /// Initialise logging / tracing
@@ -14,27 +15,35 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 /// output. Use `RUST_LOG` with care, as this may create unwanted memory
 /// pressure. Note, however, that if `RUST_LOG` is not set, we set the level to
 /// `error` by default in order to surface errors on CI.
+///
+/// The `TRACING_FMT` environment variable can be used to control the log
+/// formatting. Supported values:
+///
+/// * "pretty": [`tracing_subscriber::fmt::format::Pretty`]
+/// * "compact": [`tracing_subscriber::fmt::format::Compact`]
+/// * "json": [`tracing_subscriber::fmt::format::Json`]
+///
+/// If the variable is not set, or set to any other value, the
+/// [`tracing_subscriber::fmt::format::Full`] format is used.
 pub fn init() {
     if env_logger::builder().is_test(true).try_init().is_ok() {
         if env::var("RUST_LOG").is_err() {
             env::set_var("RUST_LOG", "error");
         }
 
+        let mut builder = FmtSubscriber::builder().with_env_filter(EnvFilter::from_default_env());
         if log_enabled!(target: "librad", Level::Trace) {
-            let subscriber = FmtSubscriber::builder()
-                .with_env_filter(EnvFilter::from_default_env())
-                .finish();
-
-            tracing::subscriber::set_global_default(subscriber)
-                .expect("setting tracing default failed");
-        } else {
-            let subscriber = FmtSubscriber::builder()
-                .with_env_filter(EnvFilter::from_default_env())
-                .compact()
-                .finish();
-
-            tracing::subscriber::set_global_default(subscriber)
-                .expect("setting tracing default failed");
+            builder = builder.with_thread_ids(true);
+        } else if env::var("TRACING_FMT").is_err() {
+            env::set_var("TRACING_FMT", "compact")
         }
+
+        match env::var("TRACING_FMT").ok().as_deref() {
+            Some("pretty") => set_subscriber(builder.pretty().finish()),
+            Some("compact") => set_subscriber(builder.compact().finish()),
+            Some("json") => set_subscriber(builder.json().flatten_event(true).finish()),
+            _ => set_subscriber(builder.finish()),
+        }
+        .expect("setting tracing subscriber failed")
     }
 }

@@ -7,6 +7,7 @@ use std::{net::SocketAddr, panic};
 
 use either::Either;
 use futures::stream::{FuturesUnordered, Stream, StreamExt as _};
+use tracing::Instrument as _;
 
 use super::recv;
 use crate::net::{
@@ -53,8 +54,8 @@ pub(in crate::net::protocol) async fn incoming<S, I>(
                     match stream {
                         Ok(s) => {
                             let task = match s {
-                                Left(bidi) => tokio::spawn(incoming::bidi(state.clone(), bidi)),
-                                Right(uni) => tokio::spawn(incoming::uni(state.clone(), uni)),
+                                Left(bidi) => tokio::spawn(incoming::bidi(state.clone(), bidi).in_current_span()),
+                                Right(uni) => tokio::spawn(incoming::uni(state.clone(), uni).in_current_span()),
                             };
                             tasks.push(task)
                         },

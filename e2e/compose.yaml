@@ -45,6 +45,7 @@ services:
         --graphite graphite:9109
     environment:
     - 'RUST_LOG=${RUST_LOG:-debug}'
+    - 'TRACING_FMT=${TRACING_FMT:-compact}'
     deploy:
       replicas: 1
 
@@ -62,6 +63,7 @@ services:
         --graphite graphite:9109
     environment:
     - 'RUST_LOG=${RUST_LOG:-debug}'
+    - 'TRACING_FMT=${TRACING_FMT:-compact}'
     deploy:
       replicas: 3
 

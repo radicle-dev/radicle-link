@@ -190,6 +190,10 @@ where
     })
 }
 
+#[tracing::instrument(
+    skip(phone, state, incoming, periodic, disco),
+    fields(peer_id = %state.local_id),
+)]
 pub fn accept<Store, Disco>(
     Bound {
         phone,
@@ -208,18 +212,23 @@ where
         .register_stream_factory(state.local_id, Arc::downgrade(&_git_factory));
 
     let tasks = [
-        tokio::spawn(accept::disco(state.clone(), disco)),
-        tokio::spawn(accept::periodic(state.clone(), periodic)),
-        tokio::spawn(accept::ground_control(
-            state.clone(),
-            async_stream::stream! {
-                let mut r = phone.downstream.subscribe();
-                loop { yield r.recv().await; }
-            }
-            .boxed(),
-        )),
+        tokio::spawn(accept::disco(state.clone(), disco).in_current_span()),
+        tokio::spawn(accept::periodic(state.clone(), periodic).in_current_span()),
+        tokio::spawn(
+            accept::ground_control(
+                state.clone(),
+                async_stream::stream! {
+                    let mut r = phone.downstream.subscribe();
+                    loop { yield r.recv().await; }
+                }
+                .boxed(),
+            )
+            .in_current_span(),
+        ),
     ];
-    let main = io::connections::incoming(state.clone(), incoming).boxed();
+    let main = io::connections::incoming(state.clone(), incoming)
+        .in_current_span()
+        .boxed();
 
     Accept {
         _git_factory,
@@ -367,7 +376,9 @@ where
                     .instrument(span.clone())
                     .await
                     .map(|(conn, ingress)| {
-                        tokio::spawn(io::streams::incoming(self.clone(), ingress));
+                        tokio::spawn(
+                            io::streams::incoming(self.clone(), ingress).instrument(span.clone()),
+                        );
                         conn
                     })
             },

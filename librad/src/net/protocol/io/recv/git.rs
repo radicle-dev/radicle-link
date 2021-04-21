@@ -11,6 +11,7 @@ use futures::{
     stream::{FuturesUnordered, StreamExt as _},
 };
 use thiserror::Error;
+use tracing::Instrument as _;
 
 use crate::{
     git::{p2p::header::Header, Urn},
@@ -53,7 +54,9 @@ where
                 }
                 state.nonces.insert(*n)
             }
-            tasks.push(tokio::spawn(srv.run().err_into::<Error>()));
+            tasks.push(tokio::spawn(
+                srv.run().err_into::<Error>().in_current_span(),
+            ));
 
             let results = tasks.take(2).collect::<Vec<_>>().await;
             for res in results {
@@ -85,8 +88,6 @@ fn spawn_rere<S>(
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
-    use tracing::Instrument as _;
-
     tokio::spawn({
         let pool = state.storage.clone();
         let config = graft::config::Rere {
