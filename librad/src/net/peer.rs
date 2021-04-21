@@ -296,6 +296,19 @@ where
         }
     }
 
+    /// Borrow a [`git::storage::Storage`] from the pool directly.
+    ///
+    /// # WARNING
+    ///
+    /// Operations on [`git::storage::Storage`] are ususally blocking, and thus
+    /// require to be spawned to a dedicated thread pool in an async
+    /// context. [`Self::using_storage`] takes care of that, while the
+    /// consumer of this method's return value is responsible for spawning
+    /// themselves.
+    ///
+    /// Also note that the consumer is responsible for dropping the returned
+    /// value in a timely fashion after it is no longer needed, in order to
+    /// return the [`git::storage::Storage`] to the pool.
     pub async fn storage(
         &self,
     ) -> Result<impl AsRef<git::storage::Storage>, PoolError<git::storage::Error>> {

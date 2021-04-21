@@ -209,6 +209,7 @@ impl<T> NonEmpty<T> {
         container.insert(v);
         Self(container)
     }
+
     /// Construct a [`NonEmpty`] from a possibly empty type.
     ///
     /// If the argument is empty, ie. [`MaybeEmpty::is_empty`] evaluates to

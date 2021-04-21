@@ -18,7 +18,7 @@ use futures_timer::Delay;
 use rand::Rng as _;
 
 use super::{Hpv, Shuffle};
-use crate::net::protocol::info::PeerInfo;
+use crate::net::{protocol::info::PeerInfo, quic::MAX_IDLE_TIMEOUT};
 
 pub enum Periodic<A>
 where
@@ -57,12 +57,15 @@ where
         }
     });
 
-    let tickle = Interval::new(Duration::from_secs(15), Duration::from_secs(5))
-        .filter_map(|_| future::ready(Some(Periodic::Tickle)));
-
     // FIXME(xla): There should be a more elegant way to merge these streams into
     // one, yet all avenues (select macro, select_all) came with unnecessary
     // complexity (what's in the box...).
+    let tickle = Interval::new(MAX_IDLE_TIMEOUT.div_f32(2.0), Duration::from_secs(5))
+        .filter_map(|_| future::ready(Some(Periodic::Tickle)));
+
+    // Wrapping the `select` calls is the most effective to combine the three
+    // interval streams into one. All other means (select macro, select_all)
+    // incur significant overhead.
     if let Err(e) = stream::select(stream::select(promote, shuffle), tickle)
         .map(Ok)
         .forward(tx)

@@ -32,6 +32,12 @@ source file. The template for this header can be found [here][header-template].
 If you are creating a new file in the repository you will have to add this
 header to the file.
 
+## Modifying the specs
+
+When any of the spec files is modified, e.g. one from `docs/spec/sections`,
+the docs need to be re-rendered and the files in `docs/spec/out` need to be
+updated. To do this, run `scripts/render-docs`.
+
 [dco]: ./DCO
 [fixing-dco]: https://docs.github.com/en/free-pro-team@latest/github/building-a-strong-community/creating-a-pull-request-template-for-your-repository
 [header-template]: ./.license-header-template

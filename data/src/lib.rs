@@ -3,6 +3,17 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+pub mod bounded;
+pub use crate::bounded::{
+    Bounded,
+    BoundedHashMap,
+    BoundedHashSet,
+    BoundedOrderedMap,
+    BoundedOrderedSet,
+    BoundedVec,
+    Within,
+};
+
 pub mod nonempty;
 pub use crate::nonempty::{
     NonEmpty,
