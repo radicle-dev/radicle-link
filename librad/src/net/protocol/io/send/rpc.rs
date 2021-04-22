@@ -16,27 +16,18 @@ use crate::net::{
 };
 
 #[derive(Debug)]
-pub enum Rpc<A, P>
-where
-    A: Clone + Ord,
-{
+pub enum Rpc<A, P> {
     Membership(membership::Message<A>),
     Gossip(broadcast::Message<A, P>),
 }
 
-impl<A, P> From<membership::Message<A>> for Rpc<A, P>
-where
-    A: Clone + Ord,
-{
+impl<A, P> From<membership::Message<A>> for Rpc<A, P> {
     fn from(m: membership::Message<A>) -> Self {
         Self::Membership(m)
     }
 }
 
-impl<A, P> From<broadcast::Message<A, P>> for Rpc<A, P>
-where
-    A: Clone + Ord,
-{
+impl<A, P> From<broadcast::Message<A, P>> for Rpc<A, P> {
     fn from(m: broadcast::Message<A, P>) -> Self {
         Self::Gossip(m)
     }

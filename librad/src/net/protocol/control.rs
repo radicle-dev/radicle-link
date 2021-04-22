@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::net::SocketAddr;
+use std::{iter, net::SocketAddr};
 
 use futures::stream::{self, StreamExt as _};
 use tracing::Instrument as _;
@@ -19,7 +19,7 @@ where
     let origin = PeerInfo {
         peer_id: state.local_id,
         advertised_info: io::peer_advertisement(&state.endpoint),
-        seen_addrs: Default::default(),
+        seen_addrs: iter::empty().into(),
     };
     // TODO: answer `Want`s from a provider cache
     let rpc = match evt {

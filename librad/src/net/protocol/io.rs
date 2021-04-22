@@ -3,8 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::net::SocketAddr;
+use std::{iter, net::SocketAddr};
 
+use data::BoundedVec;
 use futures::stream::{self, StreamExt as _};
 use tracing::Instrument as _;
 
@@ -58,7 +59,7 @@ where
                     state.membership.connection_established(PartialPeerInfo {
                         peer_id: peer,
                         advertised_info: None,
-                        seen_addrs: vec![conn.remote_addr()].into_iter().collect(),
+                        seen_addrs: BoundedVec::singleton(conn.remote_addr()),
                     });
 
                 trans.into_iter().for_each(|evt| state.phone.emit(evt));
@@ -75,11 +76,12 @@ where
 }
 
 pub(super) fn peer_advertisement(endpoint: &quic::Endpoint) -> PeerAdvertisement<SocketAddr> {
-    let listen_addrs = endpoint
-        .advertised_addrs()
-        .expect("unable to obtain listen addrs")
-        .into_iter()
-        .collect();
+    let mut listen_addrs = BoundedVec::from(iter::empty());
+    listen_addrs.extend_fill(
+        endpoint
+            .advertised_addrs()
+            .expect("unable to obtain listen addrs"),
+    );
     PeerAdvertisement {
         listen_addrs,
         capabilities: Default::default(),

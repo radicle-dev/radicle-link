@@ -15,10 +15,7 @@ use super::{error, gossip, io, membership, PeerInfo, ProtocolStorage, State};
 use crate::PeerId;
 
 #[derive(Debug)]
-pub(super) enum Tock<A, P>
-where
-    A: Clone + Ord,
-{
+pub(super) enum Tock<A, P> {
     /// Send to connected peer, or notify of connection loss
     SendConnected { to: PeerId, message: io::Rpc<A, P> },
 

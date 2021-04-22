@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::net::SocketAddr;
+use std::{iter, net::SocketAddr};
 
 use futures::{
     io::AsyncRead,
@@ -57,7 +57,7 @@ pub(in crate::net::protocol) async fn gossip<S, T>(
                 let peer_info = || PeerInfo {
                     peer_id: state.local_id,
                     advertised_info: peer_advertisement(&state.endpoint),
-                    seen_addrs: Default::default(),
+                    seen_addrs: iter::empty().into(),
                 };
                 match broadcast::apply(
                     &state.membership,

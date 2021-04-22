@@ -14,10 +14,7 @@ mod storage;
 pub use storage::{LocalStorage, PutResult};
 
 #[derive(Clone, Debug, PartialEq, minicbor::Encode, minicbor::Decode)]
-pub enum Message<Addr, Payload>
-where
-    Addr: Clone + Ord,
-{
+pub enum Message<Addr, Payload> {
     #[n(0)]
     #[cbor(array)]
     Have {
@@ -49,7 +46,7 @@ pub(super) trait ErrorRateLimited {
 #[derive(Debug, Error)]
 pub enum Error<A, P>
 where
-    A: Clone + Debug + Ord,
+    A: Debug,
     P: Debug,
 {
     #[error("unsolicited message from {remote_id}")]
@@ -71,7 +68,7 @@ where
     M: Membership,
     S: LocalStorage<A, Update = P> + ErrorRateLimited,
     F: Fn() -> PeerInfo<A>,
-    A: Clone + Debug + Ord + Send + 'static,
+    A: Clone + Debug + Send + 'static,
     P: Clone + Debug,
 {
     use tick::Tock::*;

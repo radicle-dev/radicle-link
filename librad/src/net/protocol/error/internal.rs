@@ -42,7 +42,7 @@ impl From<CborCodecError> for Gossip {
 }
 
 #[derive(Debug, Error)]
-pub enum Tock<A: Clone + Ord + Debug + 'static> {
+pub enum Tock<A: Debug + 'static> {
     #[error(transparent)]
     Reliable(#[from] ReliableSend<A>),
 
@@ -52,7 +52,7 @@ pub enum Tock<A: Clone + Ord + Debug + 'static> {
 
 #[derive(Debug, Error)]
 #[error("reliable send failed")]
-pub struct ReliableSend<A: Clone + Ord + Debug + 'static> {
+pub struct ReliableSend<A: Debug + 'static> {
     pub cont: Vec<membership::Tick<A>>,
     pub source: ReliableSendSource,
 }
@@ -67,7 +67,7 @@ pub enum ReliableSendSource {
 }
 
 #[derive(Debug, Error)]
-pub enum BestEffortSend<A: Clone + Ord + Debug + 'static> {
+pub enum BestEffortSend<A: Debug + 'static> {
     #[error("could not connect to {}", to.peer_id)]
     CouldNotConnect { to: PeerInfo<A> },
 

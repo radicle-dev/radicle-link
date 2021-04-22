@@ -5,7 +5,7 @@
 
 use std::ops::Index as _;
 
-use librad::{identities::SomeUrn, net::protocol::PeerAdvertisement};
+use librad::{data::BoundedVec, identities::SomeUrn, net::protocol::PeerAdvertisement};
 use librad_test::{
     logging,
     rad::{identities::TestProject, testnet},
@@ -37,7 +37,10 @@ async fn responds() {
             requester.interrogate((responder.peer_id(), responder.listen_addrs().to_vec()));
         assert_eq!(
             PeerAdvertisement {
-                listen_addrs: responder.listen_addrs().iter().copied().collect(),
+                listen_addrs: BoundedVec::try_from_length(
+                    responder.listen_addrs().iter().copied().collect()
+                )
+                .unwrap(),
                 capabilities: Default::default(),
             },
             interrogation.peer_advertisement().await.unwrap()

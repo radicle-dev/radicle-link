@@ -13,20 +13,14 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-pub enum Transition<A>
-where
-    A: Clone + Ord,
-{
+pub enum Transition<A> {
     Promoted(PartialPeerInfo<A>),
     Demoted(PeerInfo<A>),
     Evicted(PartialPeerInfo<A>),
 }
 
 #[derive(Debug)]
-pub(super) struct PartialView<Rng, Addr>
-where
-    Addr: Clone + Ord,
-{
+pub(super) struct PartialView<Rng, Addr> {
     local_id: PeerId,
     rng: Rng,
     max_active: usize,
@@ -38,7 +32,7 @@ where
 impl<R, A> PartialView<R, A>
 where
     R: rand::Rng,
-    A: Clone + Ord,
+    A: Clone + PartialEq,
 {
     pub fn new(local_id: PeerId, rng: R, max_active: usize, max_passive: usize) -> Self {
         Self {
@@ -165,8 +159,16 @@ where
                 },
                 Occupied(mut entry) => {
                     let prev_info = entry.get_mut();
+                    let prev_addrs = prev_info
+                        .seen_addrs
+                        .iter()
+                        .filter(|addr| !info.seen_addrs.contains(addr))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    info.seen_addrs.extend_fill(prev_addrs);
+
                     prev_info.advertised_info = info.advertised_info;
-                    prev_info.seen_addrs.append(&mut info.seen_addrs);
+                    prev_info.seen_addrs = info.seen_addrs;
                 },
             }
 
@@ -234,10 +236,10 @@ mod test {
         PartialPeerInfo {
             peer_id,
             advertised_info: Some(PeerAdvertisement {
-                listen_addrs: BTreeSet::new(),
+                listen_addrs: iter::empty().into(),
                 capabilities: BTreeSet::new(),
             }),
-            seen_addrs: BTreeSet::new(),
+            seen_addrs: iter::empty().into(),
         }
     }
 

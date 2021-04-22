@@ -20,10 +20,7 @@ use rand::Rng as _;
 use super::{Hpv, Shuffle};
 use crate::net::{protocol::info::PeerInfo, quic::MAX_IDLE_TIMEOUT};
 
-pub enum Periodic<A>
-where
-    A: Clone + Ord,
-{
+pub enum Periodic<A> {
     RandomPromotion { candidates: Vec<PeerInfo<A>> },
     Shuffle(Shuffle<A>),
     Tickle,
@@ -33,7 +30,7 @@ where
 pub(super) async fn periodic_tasks<Rng, Addr, T>(hpv: Hpv<Rng, Addr>, tx: T)
 where
     Rng: rand::Rng + Clone,
-    Addr: Clone + Debug + Ord + Send + Sync + 'static,
+    Addr: Clone + Debug + PartialEq + Send + Sync + 'static,
     T: futures::Sink<Periodic<Addr>>,
     T::Error: Display,
 {

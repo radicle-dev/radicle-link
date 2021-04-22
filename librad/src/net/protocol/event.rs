@@ -101,10 +101,7 @@ pub mod upstream {
     }
 
     #[derive(Clone, Debug)]
-    pub enum Gossip<Addr, Payload>
-    where
-        Addr: Clone + Ord,
-    {
+    pub enum Gossip<Addr, Payload> {
         /// Triggered after applying a `Have` to [`broadcast::LocalStorage`].
         Put {
             /// The peer who announced the `Have`

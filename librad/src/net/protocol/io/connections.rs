@@ -3,13 +3,14 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeSet, net::SocketAddr, panic};
+use std::{net::SocketAddr, panic};
 
 use either::Either;
 use futures::{
     future::{self, TryFutureExt as _},
     stream::{FuturesUnordered, Stream, StreamExt as _},
 };
+use indexmap::IndexSet;
 use tracing::Instrument as _;
 
 use crate::{
@@ -105,10 +106,9 @@ pub async fn connect_peer_info(
     >,
 )> {
     let addrs = peer_info
-        .advertised_info
-        .listen_addrs
+        .seen_addrs
         .into_iter()
-        .chain(peer_info.seen_addrs.into_iter());
+        .chain(peer_info.advertised_info.listen_addrs);
     connect(endpoint, peer_info.peer_id, addrs).await
 }
 
@@ -131,7 +131,7 @@ where
         !(ip.is_unspecified() || ip.is_documentation() || ip.is_multicast())
     }
 
-    let addrs = addrs.into_iter().filter(routable).collect::<BTreeSet<_>>();
+    let addrs = addrs.into_iter().filter(routable).collect::<IndexSet<_>>();
     if addrs.is_empty() {
         tracing::warn!("no routable addrs");
         None

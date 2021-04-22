@@ -10,6 +10,7 @@ use std::{
     sync::Arc,
 };
 
+use data::BoundedVec;
 use futures::channel::mpsc;
 use parking_lot::RwLock;
 use rand::seq::IteratorRandom as _;
@@ -28,10 +29,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct Shuffle<Addr>
-where
-    Addr: Clone + Ord,
-{
+pub struct Shuffle<Addr> {
     pub recipient: PeerId,
     pub sample: Vec<PeerInfo<Addr>>,
     pub ttl: usize,
@@ -47,18 +45,12 @@ where
 /// one type, indicating transitions on the partial view of the network the
 /// respective operations yielded as side-effects.
 #[derive(Debug)]
-pub struct TnT<A>
-where
-    A: Clone + Ord,
-{
+pub struct TnT<A> {
     pub trans: Vec<Transition<A>>,
     pub ticks: Vec<Tick<A>>,
 }
 
-impl<A> TnT<A>
-where
-    A: Clone + Ord,
-{
+impl<A> TnT<A> {
     pub fn with_tick(self, tick: impl Into<Option<Tick<A>>>) -> Self {
         Self {
             ticks: tick.into().into_iter().collect(),
@@ -67,10 +59,7 @@ where
     }
 }
 
-impl<A> Default for TnT<A>
-where
-    A: Clone + Ord,
-{
+impl<A> Default for TnT<A> {
     fn default() -> Self {
         Self {
             trans: Vec::default(),
@@ -80,10 +69,7 @@ where
 }
 
 // `Default` + `Mul<Self>` = Monoid, innit?
-impl<A> Mul<Self> for TnT<A>
-where
-    A: Clone + Ord,
-{
+impl<A> Mul<Self> for TnT<A> {
     type Output = Self;
 
     fn mul(mut self, rhs: Self) -> Self {
@@ -93,10 +79,7 @@ where
     }
 }
 
-impl<A> FromIterator<Transition<A>> for TnT<A>
-where
-    A: Clone + Ord,
-{
+impl<A: Clone> FromIterator<Transition<A>> for TnT<A> {
     fn from_iter<T>(iter: T) -> Self
     where
         T: IntoIterator<Item = Transition<A>>,
@@ -107,10 +90,7 @@ where
     }
 }
 
-impl<A> FromIterator<Tick<A>> for TnT<A>
-where
-    A: Clone + Ord,
-{
+impl<A> FromIterator<Tick<A>> for TnT<A> {
     fn from_iter<T>(iter: T) -> Self
     where
         T: IntoIterator<Item = Tick<A>>,
@@ -122,10 +102,7 @@ where
     }
 }
 
-impl<A> Extend<Tick<A>> for TnT<A>
-where
-    A: Clone + Ord,
-{
+impl<A> Extend<Tick<A>> for TnT<A> {
     fn extend<T>(&mut self, iter: T)
     where
         T: IntoIterator<Item = Tick<A>>,
@@ -138,14 +115,12 @@ where
 ///
 /// [HyParView]: https://asc.di.fct.unl.pt/~jleitao/pdf/dsn07-leitao.pdf
 #[derive(Clone)]
-pub struct Hpv<Rng, Addr>(Arc<RwLock<HpvInner<Rng, Addr>>>)
-where
-    Addr: Clone + Ord;
+pub struct Hpv<Rng, Addr>(Arc<RwLock<HpvInner<Rng, Addr>>>);
 
 impl<Rng, Addr> Hpv<Rng, Addr>
 where
     Rng: rand::Rng + Clone,
-    Addr: Clone + Debug + Ord,
+    Addr: Clone + Debug + PartialEq,
 {
     pub fn new(local_id: PeerId, rng: Rng, params: Params) -> (Self, mpsc::Receiver<Periodic<Addr>>)
     where
@@ -243,10 +218,7 @@ where
     }
 }
 
-struct HpvInner<Rng, Addr>
-where
-    Addr: Clone + Ord,
-{
+struct HpvInner<Rng, Addr> {
     local_id: PeerId,
     params: Params,
     rng: Rng,
@@ -256,7 +228,7 @@ where
 impl<Rng, Addr> HpvInner<Rng, Addr>
 where
     Rng: rand::Rng + Clone,
-    Addr: Clone + Debug + Ord,
+    Addr: Clone + Debug + PartialEq,
 {
     pub fn new(local_id: PeerId, rng: Rng, params: Params) -> Self {
         let view = PartialView::new(local_id, rng.clone(), params.max_active, params.max_passive);
@@ -460,7 +432,14 @@ where
                 ttl,
             } if ttl > 0 => {
                 if origin.peer_id == remote_peer {
-                    origin.seen_addrs.insert(remote_addr);
+                    let mut seen_addrs = BoundedVec::singleton(remote_addr.clone());
+                    seen_addrs.extend_fill(
+                        origin
+                            .seen_addrs
+                            .into_iter()
+                            .filter(|addr| addr != &remote_addr),
+                    );
+                    origin.seen_addrs = seen_addrs;
                 }
 
                 let tick = self
@@ -523,13 +502,10 @@ fn peer_info_from<Addr>(
     remote_peer: PeerId,
     advertised: PeerAdvertisement<Addr>,
     remote_addr: Addr,
-) -> PeerInfo<Addr>
-where
-    Addr: Clone + Ord,
-{
+) -> PeerInfo<Addr> {
     PeerInfo {
         peer_id: remote_peer,
         advertised_info: advertised,
-        seen_addrs: [remote_addr].iter().cloned().collect(),
+        seen_addrs: BoundedVec::singleton(remote_addr),
     }
 }

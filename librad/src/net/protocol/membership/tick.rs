@@ -7,10 +7,7 @@ use super::{partial_view::Transition, rpc::Message};
 use crate::{net::protocol::info::PeerInfo, PeerId};
 
 #[derive(Debug)]
-pub enum Tick<Addr>
-where
-    Addr: Clone + Ord,
-{
+pub enum Tick<Addr> {
     /// Deliver `message` to all `recipients`.
     ///
     /// Failed recipients must be evicted from the active view.
@@ -43,10 +40,7 @@ where
     Forget { peer: PeerId },
 }
 
-impl<A> From<Transition<A>> for Option<Tick<A>>
-where
-    A: Clone + Ord,
-{
+impl<A> From<Transition<A>> for Option<Tick<A>> {
     fn from(t: Transition<A>) -> Self {
         use Tick::*;
         use Transition::*;

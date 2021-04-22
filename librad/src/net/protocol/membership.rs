@@ -40,7 +40,7 @@ pub(super) fn apply<R, A, F, P>(
 ) -> Result<(Vec<Transition<A>>, Vec<Tock<A, P>>), Error>
 where
     R: rand::Rng + Clone,
-    A: Clone + Debug + Ord,
+    A: Clone + Debug + PartialEq,
     F: Fn() -> PeerAdvertisement<A>,
 {
     hpv.apply(remote_id, remote_addr, message)
@@ -58,7 +58,7 @@ where
 pub(super) fn collect_tocks<R, A, F, P>(hpv: &Hpv<R, A>, info: &F, tick: Tick<A>) -> Vec<Tock<A, P>>
 where
     R: rand::Rng + Clone,
-    A: Clone + Debug + Ord,
+    A: Clone + Debug + PartialEq,
     F: Fn() -> PeerAdvertisement<A>,
 {
     use Tick::*;
