@@ -7,6 +7,7 @@ use std::{
     borrow::Borrow,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     hash::{BuildHasher, Hash},
+    iter::{self, FromIterator},
     ops::Deref,
 };
 
@@ -130,63 +131,6 @@ where
     }
 }
 
-/// Containers that implement an insert function.
-pub trait Insert {
-    type Value;
-    type Result;
-
-    /// Insert a value into the container and returns the result.
-    fn insert(&mut self, value: Self::Value) -> Self::Result;
-}
-
-impl<V> Insert for HashSet<V>
-where
-    V: Eq + Hash,
-{
-    type Value = V;
-    type Result = bool;
-
-    fn insert(&mut self, value: Self::Value) -> Self::Result {
-        HashSet::insert(self, value)
-    }
-}
-
-impl<V> Insert for BTreeSet<V>
-where
-    V: Ord,
-{
-    type Value = V;
-    type Result = bool;
-
-    fn insert(&mut self, value: Self::Value) -> Self::Result {
-        BTreeSet::insert(self, value)
-    }
-}
-
-impl<K, V> Insert for HashMap<K, V>
-where
-    K: Eq + Hash,
-{
-    type Value = (K, V);
-    type Result = Option<V>;
-
-    fn insert(&mut self, (key, value): Self::Value) -> Self::Result {
-        HashMap::insert(self, key, value)
-    }
-}
-
-impl<K, V> Insert for BTreeMap<K, V>
-where
-    K: Ord,
-{
-    type Value = (K, V);
-    type Result = Option<V>;
-
-    fn insert(&mut self, (key, value): Self::Value) -> Self::Result {
-        BTreeMap::insert(self, key, value)
-    }
-}
-
 /// Newtype wrapper around container types, which witnesses that the container
 /// contains at least one element.
 ///
@@ -201,13 +145,11 @@ pub struct NonEmpty<T>(T);
 
 impl<T> NonEmpty<T> {
     /// Construct a [`NonEmpty`] with exactly one element.
-    pub fn new(v: T::Value) -> Self
+    pub fn new<V>(v: V) -> Self
     where
-        T: Default + Insert,
+        T: FromIterator<V>,
     {
-        let mut container = T::default();
-        container.insert(v);
-        Self(container)
+        iter::once(v).into()
     }
 
     /// Construct a [`NonEmpty`] from a possibly empty type.
@@ -223,28 +165,6 @@ impl<T> NonEmpty<T> {
         } else {
             Some(Self(maybe_empty))
         }
-    }
-
-    /// Construct a [`NonEmpty`] with an inner type satisfying [`Set`], and
-    /// exactly one element.
-    pub fn singleton_set<V>(v: V) -> Self
-    where
-        T: Set<Value = V> + Default,
-    {
-        let mut inner = T::default();
-        inner.insert(v);
-        Self(inner)
-    }
-
-    /// Construct a [`NonEmpty`] with an inner type satisfying [`Map`], and
-    /// exactly one element.
-    pub fn singleton_map<K, V>(k: K, v: V) -> Self
-    where
-        T: Map<Key = K, Value = V> + Default,
-    {
-        let mut inner = T::default();
-        inner.insert(k, v);
-        Self(inner)
     }
 
     /// Consumes the [`NonEmpty`], returning the wrapped value.
@@ -315,6 +235,15 @@ where
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
+    }
+}
+
+impl<V, T> From<iter::Once<V>> for NonEmpty<T>
+where
+    T: FromIterator<V>,
+{
+    fn from(once: iter::Once<V>) -> Self {
+        Self(once.collect())
     }
 }
 

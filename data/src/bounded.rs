@@ -3,16 +3,16 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#[cfg(any(feature = "serde", feature = "minicbor"))]
-use std::iter::FromIterator;
 use std::{
+    borrow::Borrow as _,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    iter::{self, FromIterator},
     marker::PhantomData,
     ops::Deref,
 };
 
 use thiserror::Error;
-use typenum::{IsLessOrEqual, Unsigned, U0};
+use typenum::{IsGreaterOrEqual, IsLessOrEqual, Unsigned, U0, U1};
 
 /// Types which have a length.
 pub trait Length {
@@ -81,6 +81,7 @@ pub enum Error {
 ///
 /// Note that this type doesn't track the actual length on the type level, and
 /// so is immutable. Its main use is for validating untrusted input.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Within<N, M, T> {
     inner: T,
     _min: PhantomData<N>,
@@ -112,6 +113,16 @@ impl<N, M, T> Within<N, M, T> {
         }
     }
 
+    /// Construct a value of [`Length`] 1, provided the range bounds allow it.
+    pub fn singleton<V>(v: V) -> Self
+    where
+        N: IsLessOrEqual<U1>,
+        M: IsGreaterOrEqual<U1>,
+        T: FromIterator<V>,
+    {
+        iter::once(v).into()
+    }
+
     /// Consumes the [`Within`], returning the wrapped value.
     pub fn into_inner(self) -> T {
         self.inner
@@ -123,6 +134,45 @@ impl<N, M, T> Deref for Within<N, M, T> {
 
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+impl<'a, N, M, T> IntoIterator for &'a Within<N, M, T>
+where
+    &'a T: IntoIterator,
+{
+    type Item = <&'a T as IntoIterator>::Item;
+    type IntoIter = <&'a T as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.borrow().into_iter()
+    }
+}
+
+impl<N, M, T> IntoIterator for Within<N, M, T>
+where
+    T: IntoIterator,
+{
+    type Item = <T as IntoIterator>::Item;
+    type IntoIter = <T as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
+}
+
+impl<N, M, V, T> From<iter::Once<V>> for Within<N, M, T>
+where
+    N: IsLessOrEqual<U1>,
+    M: IsGreaterOrEqual<U1>,
+    T: FromIterator<V>,
+{
+    fn from(once: iter::Once<V>) -> Self {
+        Self {
+            inner: once.collect(),
+            _min: PhantomData,
+            _max: PhantomData,
+        }
     }
 }
 
@@ -144,6 +194,19 @@ pub type BoundedOrderedMap<N, K, V> = Bounded<N, BTreeMap<K, V>>;
 
 /// Alias for a [`Bounded`] [`HashMap`].
 pub type BoundedHashMap<N, K, V, S> = Bounded<N, HashMap<K, V, S>>;
+
+impl<N, V, T> From<iter::Empty<V>> for Bounded<N, T>
+where
+    T: FromIterator<V>,
+{
+    fn from(empty: iter::Empty<V>) -> Self {
+        Self {
+            inner: empty.collect(),
+            _min: PhantomData,
+            _max: PhantomData,
+        }
+    }
+}
 
 /// Instead of returning an error when the deserialized value exceeds the
 /// maximum length, truncate it to the maximum length.
