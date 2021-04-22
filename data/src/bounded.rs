@@ -123,6 +123,21 @@ impl<N, M, T> Within<N, M, T> {
         iter::once(v).into()
     }
 
+    /// Extend the inner collection with the values of an iterator.
+    ///
+    /// To maintain the upper bound `M`, the given iterator may not be consumed
+    /// fully.
+    pub fn extend_fill<I, V>(&mut self, iter: I)
+    where
+        M: Unsigned,
+        I: IntoIterator<Item = V>,
+        T: Length + Extend<V>,
+    {
+        let len = self.inner.length();
+        let max = M::USIZE;
+        self.inner.extend(iter.into_iter().take(max - len));
+    }
+
     /// Consumes the [`Within`], returning the wrapped value.
     pub fn into_inner(self) -> T {
         self.inner
