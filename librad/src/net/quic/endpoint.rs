@@ -284,8 +284,6 @@ where
         .max_idle_timeout(Some(super::MAX_IDLE_TIMEOUT))
         .expect("idle timeout is in vetted range");
 
-    transport_config.max_concurrent_bidi_streams(500).expect("could not set max concurrent bidi streams");
-
     let mut quic_config = quinn::ClientConfigBuilder::default().build();
     quic_config.crypto = Arc::new(tls_config);
     quic_config.transport = Arc::new(transport_config);

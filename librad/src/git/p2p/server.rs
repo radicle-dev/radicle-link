@@ -175,6 +175,7 @@ impl UploadPack {
         ])
         .current_dir(repo_path)
         .stdout(Stdio::piped())
+        .stdin(Stdio::piped())
         .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()
@@ -211,10 +212,15 @@ impl UploadPack {
         match self {
             Self::AdvertiseRefs(mut child) => {
                 let mut stdout = child.stdout.take().unwrap().compat();
+                let mut stdin = child.stdin.take().unwrap().compat_write();
 
                 send.write_all(UPLOAD_PACK_HEADER).await?;
-                futures::try_join!(futures::io::copy(&mut stdout, &mut send), child.wait())
-                    .and_then(|(_, status)| {
+                futures::try_join!(
+                    futures::io::copy(&mut recv, &mut stdin),
+                    futures::io::copy(&mut stdout, &mut send), 
+                    child.wait()
+                )
+                    .and_then(|(_, _, status)| {
                         if !status.success() {
                             Err(io::Error::new(
                                 io::ErrorKind::Other,
