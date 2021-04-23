@@ -4,15 +4,20 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
+    collections::BTreeSet,
     io,
-    net::{IpAddr, SocketAddr},
-    sync::Arc,
+    net::{SocketAddr, UdpSocket},
+    pin::Pin,
+    sync::{Arc, Weak},
 };
 
 use futures::stream::{BoxStream, StreamExt as _, TryStreamExt as _};
+use if_watch::IfWatcher;
 use nonempty::NonEmpty;
-use pnet_datalink::interfaces as network_interfaces;
+use parking_lot::RwLock;
 use quinn::{NewConnection, TransportConfig};
+use socket2::{Domain, Protocol, Socket, Type};
+use tracing::Instrument as _;
 
 use super::{BoxedIncomingStreams, Connection, Conntrack, Error, Result};
 use crate::{
@@ -43,7 +48,7 @@ impl<'a> LocalPeer for BoundEndpoint<'a> {
 impl<'a> LocalAddr for BoundEndpoint<'a> {
     type Addr = SocketAddr;
 
-    fn listen_addrs(&self) -> io::Result<Vec<SocketAddr>> {
+    fn listen_addrs(&self) -> Vec<SocketAddr> {
         self.endpoint.listen_addrs()
     }
 }
@@ -52,7 +57,7 @@ impl<'a> LocalAddr for BoundEndpoint<'a> {
 pub struct Endpoint {
     peer_id: PeerId,
     endpoint: quinn::Endpoint,
-    advertised_addrs: Option<NonEmpty<SocketAddr>>,
+    listen_addrs: Arc<RwLock<BTreeSet<SocketAddr>>>,
     conntrack: Conntrack,
     refcount: Arc<()>,
 }
@@ -69,12 +74,27 @@ impl Endpoint {
         S::Error: std::error::Error + Send + Sync + 'static,
     {
         let peer_id = PeerId::from_signer(&signer);
-        let (endpoint, incoming) = make_endpoint(signer, listen_addr, alpn(network)).await?;
+
+        let sock = bind_socket(listen_addr)?;
+        let listen_addr = sock.local_addr()?;
+        let addrs = {
+            let listen_addrs = Arc::new(RwLock::new(BTreeSet::new()));
+            match advertised_addrs {
+                Some(addrs) => listen_addrs.write().extend(addrs),
+                None if listen_addr.ip().is_unspecified() => {
+                    ifwatch(listen_addr, Arc::downgrade(&listen_addrs)).await?
+                },
+                None => listen_addrs.write().extend(Some(listen_addr)),
+            }
+            listen_addrs
+        };
+
+        let (endpoint, incoming) = make_endpoint(signer, sock, alpn(network)).await?;
         let conntrack = Conntrack::new();
         let endpoint = Endpoint {
             peer_id,
             endpoint,
-            advertised_addrs,
+            listen_addrs: addrs,
             conntrack: conntrack.clone(),
             refcount: Arc::new(()),
         };
@@ -100,47 +120,8 @@ impl Endpoint {
         Ok(BoundEndpoint { endpoint, incoming })
     }
 
-    pub fn advertised_addrs(&self) -> io::Result<Vec<SocketAddr>> {
-        match self.advertised_addrs {
-            None => self.listen_addrs(),
-            Some(ref x) => Ok(x.clone().into()),
-        }
-    }
-
-    pub fn listen_addrs(&self) -> io::Result<Vec<SocketAddr>> {
-        // FIXME: can this really fail?
-        let local_addr = self.endpoint.local_addr()?;
-        let local_ip = local_addr.ip();
-
-        fn same_family(a: &IpAddr, b: &IpAddr) -> bool {
-            matches!(
-                (a, b),
-                (IpAddr::V4(_), IpAddr::V4(_)) | (IpAddr::V6(_), IpAddr::V6(_))
-            )
-        }
-
-        let addrs = if local_ip.is_unspecified() {
-            network_interfaces()
-                .iter()
-                .filter(|iface| {
-                    iface.is_up()
-                        && iface
-                            .ips
-                            .iter()
-                            .any(|net| same_family(&net.ip(), &local_ip))
-                })
-                .flat_map(|iface| {
-                    iface
-                        .ips
-                        .iter()
-                        .map(|net| SocketAddr::new(net.ip(), local_addr.port()))
-                })
-                .collect()
-        } else {
-            vec![local_addr]
-        };
-
-        Ok(addrs)
+    pub fn listen_addrs(&self) -> Vec<SocketAddr> {
+        self.listen_addrs.read().iter().copied().collect()
     }
 
     pub fn connections_total(&self) -> usize {
@@ -214,9 +195,87 @@ impl LocalPeer for Endpoint {
 impl LocalAddr for Endpoint {
     type Addr = SocketAddr;
 
-    fn listen_addrs(&self) -> io::Result<Vec<SocketAddr>> {
+    fn listen_addrs(&self) -> Vec<SocketAddr> {
         self.listen_addrs()
     }
+}
+
+// TODO: tune buffer sizes
+fn bind_socket(listen_addr: SocketAddr) -> Result<UdpSocket> {
+    let sock = Socket::new(
+        Domain::for_address(listen_addr),
+        Type::DGRAM,
+        Some(Protocol::UDP),
+    )?;
+    if listen_addr.is_ipv6() {
+        sock.set_only_v6(false)?;
+    }
+    sock.bind(&socket2::SockAddr::from(listen_addr))?;
+    Ok(sock.into())
+}
+
+#[tracing::instrument(skip(listen_addrs))]
+async fn ifwatch(
+    bound_addr: SocketAddr,
+    listen_addrs: Weak<RwLock<BTreeSet<SocketAddr>>>,
+) -> io::Result<()> {
+    use if_watch::{IfEvent::*, IpNet};
+
+    fn same_family(a: &SocketAddr, b: &IpNet) -> bool {
+        a.is_ipv4() && b.addr().is_ipv4() || a.is_ipv6() && b.addr().is_ipv6()
+    }
+
+    let mut watcher = IfWatcher::new().await?;
+    tokio::spawn(
+        async move {
+            loop {
+                match Pin::new(&mut watcher).await {
+                    Err(e) => {
+                        tracing::warn!(err = ?e, "ifwatcher error");
+                        match listen_addrs.upgrade() {
+                            None => {
+                                tracing::info!("endpoint lost");
+                                break;
+                            },
+                            Some(addrs) => addrs.write().clear(),
+                        }
+                    },
+                    Ok(evt) => match listen_addrs.upgrade() {
+                        None => {
+                            tracing::info!("endpoint lost");
+                            break;
+                        },
+                        Some(addrs) => match evt {
+                            Up(net) => {
+                                tracing::debug!("if up {}", net);
+                                let new_addr = if same_family(&bound_addr, &net) {
+                                    Some(SocketAddr::new(net.addr(), bound_addr.port()))
+                                } else {
+                                    None
+                                };
+
+                                if let Some(addr) = new_addr {
+                                    tracing::info!("adding listen addr {}", addr);
+                                    addrs.write().insert(addr);
+                                }
+                            },
+                            Down(net) => {
+                                tracing::debug!("if down {}", net);
+                                if same_family(&bound_addr, &net) {
+                                    let addr = SocketAddr::new(net.addr(), bound_addr.port());
+                                    tracing::info!("removing listen addr {}", addr);
+                                    addrs.write().remove(&addr);
+                                }
+                            },
+                        },
+                    },
+                }
+            }
+        }
+        .in_current_span(),
+    );
+
+    Ok(())
 }
 
 /// Try to extract the remote identity from a newly established connection
@@ -254,7 +313,7 @@ fn alpn(network: Network) -> Alpn {
 
 async fn make_endpoint<S>(
     signer: S,
-    listen_addr: SocketAddr,
+    sock: UdpSocket,
     alpn: Alpn,
 ) -> Result<(quinn::Endpoint, quinn::Incoming)>
 where
@@ -265,7 +324,7 @@ where
     builder.default_client_config(make_client_config(signer.clone(), alpn.clone())?);
     builder.listen(make_server_config(signer, alpn)?);
 
-    Ok(builder.bind(&listen_addr)?)
+    Ok(builder.with_socket(sock)?)
 }
 
 fn make_client_config<S>(signer: S, alpn: Vec<u8>) -> Result<quinn::ClientConfig>

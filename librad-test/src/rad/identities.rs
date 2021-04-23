@@ -60,7 +60,7 @@ impl TestProject {
         S: Signer + Clone,
     {
         let remote_peer = from.local_peer_id();
-        let remote_addrs = from.listen_addrs()?;
+        let remote_addrs = from.listen_addrs();
         let urn = self.project.urn();
         let cfg = to.protocol_config().replication;
         let res = to

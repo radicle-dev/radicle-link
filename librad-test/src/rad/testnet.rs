@@ -6,7 +6,6 @@
 use std::{
     collections::BTreeMap,
     env,
-    io,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs as _},
     num::NonZeroUsize,
     ops::Deref,
@@ -48,7 +47,7 @@ pub struct BoundTestPeer {
 }
 
 impl BoundTestPeer {
-    pub fn listen_addrs(&self) -> io::Result<Vec<SocketAddr>> {
+    pub fn listen_addrs(&self) -> Vec<SocketAddr> {
         self.bound.listen_addrs()
     }
 }
@@ -62,7 +61,7 @@ impl LocalPeer for BoundTestPeer {
 impl LocalAddr for BoundTestPeer {
     type Addr = SocketAddr;
 
-    fn listen_addrs(&self) -> io::Result<Vec<Self::Addr>> {
+    fn listen_addrs(&self) -> Vec<Self::Addr> {
         self.bound.listen_addrs()
     }
 }
@@ -98,8 +97,8 @@ impl LocalPeer for RunningTestPeer {
 impl LocalAddr for RunningTestPeer {
     type Addr = SocketAddr;
 
-    fn listen_addrs(&self) -> io::Result<Vec<Self::Addr>> {
-        Ok(self.listen_addrs.clone())
+    fn listen_addrs(&self) -> Vec<Self::Addr> {
+        self.listen_addrs.clone()
     }
 }
 
@@ -240,7 +239,7 @@ async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
             let bootstrap_node = boot::<Option<_>, Option<_>>(None).await?;
             let bootstrap = Some((
                 bootstrap_node.bound.peer_id(),
-                bootstrap_node.listen_addrs().unwrap(),
+                bootstrap_node.listen_addrs(),
             ));
             peers.push(bootstrap_node);
 
@@ -254,7 +253,7 @@ async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
             let mut bootstrap: Option<(PeerId, Vec<SocketAddr>)> = None;
             for _ in 0..num_peers {
                 let peer = boot(bootstrap.take()).await?;
-                bootstrap = Some((peer.bound.peer_id(), peer.bound.listen_addrs().unwrap()));
+                bootstrap = Some((peer.bound.peer_id(), peer.bound.listen_addrs()));
                 peers.push(peer);
             }
         },
@@ -312,7 +311,7 @@ pub async fn run(config: Config) -> anyhow::Result<Testnet> {
                 let running = RunningTestPeer {
                     _tmp: tmp,
                     peer,
-                    listen_addrs: bound.listen_addrs().unwrap(),
+                    listen_addrs: bound.listen_addrs(),
                 };
                 let bound_task = spawn(bound.accept(disco.discover()));
 

@@ -77,11 +77,7 @@ where
 
 pub(super) fn peer_advertisement(endpoint: &quic::Endpoint) -> PeerAdvertisement<SocketAddr> {
     let mut listen_addrs = BoundedVec::from(iter::empty());
-    listen_addrs.extend_fill(
-        endpoint
-            .advertised_addrs()
-            .expect("unable to obtain listen addrs"),
-    );
+    listen_addrs.extend_fill(endpoint.listen_addrs());
     PeerAdvertisement {
         listen_addrs,
         capabilities: Default::default(),

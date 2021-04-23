@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{io, ops::Deref};
+use std::ops::Deref;
 
 use futures::io::{AsyncRead, AsyncWrite};
 use futures_codec::FramedWrite;
@@ -17,7 +17,7 @@ pub trait LocalPeer {
 pub trait LocalAddr {
     type Addr;
 
-    fn listen_addrs(&self) -> io::Result<Vec<Self::Addr>>;
+    fn listen_addrs(&self) -> Vec<Self::Addr>;
 }
 
 pub trait LocalInfo: LocalPeer + LocalAddr {}
@@ -78,7 +78,7 @@ impl CloseReason {
 pub(crate) mod mock {
     use super::*;
 
-    use std::pin::Pin;
+    use std::{io, pin::Pin};
 
     use futures::{
         io::{AsyncRead, AsyncReadExt, AsyncWrite, ReadHalf, WriteHalf},

@@ -109,7 +109,7 @@ impl<S> Bound<S> {
         self.state.local_id
     }
 
-    pub fn listen_addrs(&self) -> std::io::Result<Vec<SocketAddr>> {
+    pub fn listen_addrs(&self) -> Vec<SocketAddr> {
         self.state.endpoint.listen_addrs()
     }
 
@@ -134,7 +134,7 @@ impl<S> LocalPeer for Bound<S> {
 impl<S> LocalAddr for Bound<S> {
     type Addr = SocketAddr;
 
-    fn listen_addrs(&self) -> std::io::Result<Vec<Self::Addr>> {
+    fn listen_addrs(&self) -> Vec<Self::Addr> {
         self.state.endpoint.listen_addrs()
     }
 }

@@ -85,16 +85,5 @@ jobs:
       - name: Install Rust
         run: rustup update nightly-2021-03-25 --no-self-update && rustup default nightly-2021-03-25
         shell: bash
-      - name: Install winpcap
-        run: choco install winpcap
-        shell: bash
-      - name: Supplant Packet.lib
-        run: |
-            mkdir D:/dl &&
-            curl -o D:/dl/wpd.zip https://www.winpcap.org/install/bin/WpdPack_4_1_2.zip &&
-            cd D:/dl &&
-            unzip wpd.zip &&
-            cp WpdPack/Lib/x64/Packet.lib C:/Rust/.rustup/toolchains/nightly-2021-03-25-x86_64-pc-windows-msvc/lib/rustlib/x86_64-pc-windows-msvc/lib/
-        shell: bash
       - run: ./ci/test-fast
         shell: bash

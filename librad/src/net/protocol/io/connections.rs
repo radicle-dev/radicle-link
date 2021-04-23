@@ -46,7 +46,7 @@ where
 {
     use quic::Error::*;
 
-    let listen_addrs = state.endpoint.listen_addrs()?;
+    let listen_addrs = state.endpoint.listen_addrs();
     state.phone.emit(event::Endpoint::Up { listen_addrs });
 
     let mut tasks = FuturesUnordered::new();

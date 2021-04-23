@@ -33,19 +33,6 @@ For an up-to-date specification of the build and development toolchain, see the
 
 To compile, run `cargo build`.
 
-### Windows
-
-This [project uses libpnet](https://github.com/libpnet/libpnet#windows), which requires setting up
-winpcap dev tools to link to packet.
-
-If it fails to build with a `LINK : fatal error LNK1181 ...Packet.lib...`, then remember to set the env
-var to point to the appropriate folder which cointains Packet.lib from winpact dev tools.
-
-```powershell
-$env:LIB="C:\Users\myuser\Downloads\WpdPack_4_1_2\WpdPack\Lib\x64"
-cargo build
-```
-
 ## License
 
 Unless otherwise noted, all source code in this repository is licensed under the
