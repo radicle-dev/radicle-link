@@ -132,6 +132,7 @@ impl CertResolver {
                 })
                 .ok()
         } else {
+            tracing::warn!("ed25519 not in presented signature schemes");
             None
         }
     }
@@ -155,14 +156,26 @@ impl ResolvesClientCert for CertResolver {
 impl ResolvesServerCert for CertResolver {
     #[tracing::instrument(skip(self, client_hello))]
     fn resolve(&self, client_hello: ClientHello) -> Option<CertifiedKey> {
-        client_hello.server_name().and_then(|sni| {
-            let peer_id = PeerId::try_from(sni).ok()?;
-            if peer_id == PeerId::from_signer(&self.signer) {
-                self.certified_key(client_hello.sigschemes())
-            } else {
+        client_hello
+            .server_name()
+            .or_else(|| {
+                tracing::warn!("client missing sni");
                 None
-            }
-        })
+            })
+            .and_then(|sni| {
+                let peer_id = PeerId::try_from(sni)
+                    .map_err(|e| {
+                        tracing::warn!(err = ?e, "invalid sni");
+                        e
+                    })
+                    .ok()?;
+                if peer_id == PeerId::from_signer(&self.signer) {
+                    self.certified_key(client_hello.sigschemes())
+                } else {
+                    tracing::warn!("sni doesn't match local peer id");
+                    None
+                }
+            })
     }
 }
 
