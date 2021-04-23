@@ -207,7 +207,7 @@ mod test {
 
     use crate::{
         net::protocol::info::PeerAdvertisement,
-        peer::{tests::gen_peer_id, PeerId},
+        peer::{gen::gen_peer_id, PeerId},
     };
 
     fn gen_peers() -> impl Strategy<Value = (PeerId, Vec<PeerId>)> {

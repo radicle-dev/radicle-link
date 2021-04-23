@@ -17,8 +17,8 @@ use super::{delegation::Delegations, payload::Payload, sealed, sign::Signatures,
 
 pub mod error;
 
-#[cfg(test)]
-pub(crate) mod gen;
+#[cfg(any(test, feature = "prop"))]
+pub mod gen;
 #[cfg(test)]
 pub(crate) mod tests;
 

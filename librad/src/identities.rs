@@ -14,8 +14,8 @@ pub use urn::Urn;
 
 mod sealed;
 
-#[cfg(test)]
-pub(crate) mod gen;
+#[cfg(any(test, feature = "prop"))]
+pub mod gen;
 
 pub use git::*;
 

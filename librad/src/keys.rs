@@ -22,6 +22,10 @@ use keystore::{sign, SecretKeyExt};
 pub const PUBLICKEYBYTES: usize = std::mem::size_of::<ed25519::VerificationKeyBytes>();
 pub use keystore::SecStr;
 
+#[cfg(any(test, feature = "prop"))]
+pub mod gen;
+pub mod risky;
+
 /// Version of the signature scheme in use
 ///
 /// This is used for future-proofing serialisation. For ergonomics reasons, we
@@ -67,7 +71,6 @@ impl SecretKey {
         Self(sk)
     }
 
-    #[cfg(test)]
     pub fn from_seed(seed: [u8; 32]) -> Self {
         Self(ed25519::SigningKey::from(seed))
     }
@@ -432,17 +435,8 @@ pub mod tests {
     use super::*;
 
     use librad_test::roundtrip::*;
-    use proptest::prelude::*;
 
     const DATA_TO_SIGN: &[u8] = b"alors monsieur";
-
-    pub fn gen_secret_key() -> impl Strategy<Value = SecretKey> {
-        any::<[u8; 32]>().prop_map(SecretKey::from_seed)
-    }
-
-    pub fn gen_public_key() -> impl Strategy<Value = PublicKey> {
-        gen_secret_key().prop_map(|sk| sk.public())
-    }
 
     #[test]
     fn test_sign_verify_via_signature() {

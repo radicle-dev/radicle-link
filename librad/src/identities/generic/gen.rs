@@ -5,7 +5,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt::{self, Display},
+    fmt::{self, Debug, Display},
     iter,
 };
 
@@ -16,7 +16,7 @@ use proptest::prelude::*;
 use super::*;
 use crate::{
     identities::delegation,
-    keys::{tests::gen_secret_key, PublicKey, SecretKey, Signature},
+    keys::{gen::gen_secret_key, risky, PublicKey, SecretKey, Signature},
 };
 
 /// A completely irrelevant value.
@@ -168,13 +168,14 @@ where
 }
 
 /// [`Identity`] with some fixed values.
-pub fn gen_identity_with<R>(
-    signing_keys: VecOf2<SecretKey>,
+pub fn gen_identity_with<K, R>(
+    signing_keys: VecOf2<K>,
     root: R,
     revision: R,
     replaces: Option<R>,
 ) -> impl Strategy<Value = ArbitraryIdentity<R>>
 where
+    K: AsRef<SecretKey> + Clone + Debug,
     R: Arbitrary + Clone + Debug + Display + Ord + AsRef<[u8]>,
 {
     (
@@ -206,10 +207,11 @@ where
 }
 
 /// Like [`gen_root_identity`], but with a fixed set of keys.
-pub fn gen_root_identity_with<R>(
-    signing_keys: VecOf2<SecretKey>,
+pub fn gen_root_identity_with<K, R>(
+    signing_keys: VecOf2<K>,
 ) -> impl Strategy<Value = ArbitraryIdentity<R>>
 where
+    K: AsRef<SecretKey> + Clone + Debug,
     R: Arbitrary + Clone + Debug + Display + Ord + AsRef<[u8]>,
 {
     (Just(signing_keys), any::<R>(), any::<R>()).prop_flat_map(|(signing_keys, root, revision)| {
@@ -276,13 +278,21 @@ pub fn gen_history(
     })
 }
 
-fn mk_direct(
-    signing_keys: &[SecretKey],
+fn mk_direct<K>(
+    signing_keys: &[K],
     data_to_sign: impl AsRef<[u8]>,
-) -> (Signatures, delegation::Direct) {
+) -> (Signatures, delegation::Direct)
+where
+    K: AsRef<SecretKey>,
+{
     let signatures: Signatures = signing_keys
         .iter()
-        .map(|key| (key.public(), key.sign(data_to_sign.as_ref())))
+        .map(|key| {
+            (
+                key.as_ref().public(),
+                key.as_ref().sign(data_to_sign.as_ref()),
+            )
+        })
         .collect::<BTreeMap<_, _>>()
         .into();
 
@@ -295,8 +305,8 @@ fn mk_direct(
     (signatures, delegations)
 }
 
-fn mk_indirect_with<R>(
-    signing_keys: VecOf2<SecretKey>,
+fn mk_indirect_with<K, R>(
+    signing_keys: VecOf2<K>,
     revision_to_sign: R,
     inner_root: R,
     inner_revision: R,
@@ -304,6 +314,7 @@ fn mk_indirect_with<R>(
     num_keys_indirect: usize,
 ) -> (Signatures, delegation::Indirect<Boring, R, Boring>)
 where
+    K: AsRef<SecretKey>,
     R: Clone + Debug + Display + Ord + AsRef<[u8]>,
 {
     // First chunk shall be indirect
@@ -355,11 +366,12 @@ where
 /// Returns the [`Signatures`] made, maintaining the invariant that only one of
 /// them is owned by the [`delegation::Indirect`] (ie. no
 /// [`delegation::indirect::error::DoubleVote`] can occur).
-pub fn gen_indirect<R>(
-    signing_keys: VecOf2<SecretKey>,
+pub fn gen_indirect<K, R>(
+    signing_keys: VecOf2<K>,
     revision_to_sign: R,
 ) -> impl Strategy<Value = (Signatures, delegation::Indirect<Boring, R, Boring>)>
 where
+    K: AsRef<SecretKey> + Clone + Debug,
     R: Arbitrary + Clone + Debug + Display + Ord + AsRef<[u8]>,
 {
     let num_keys = signing_keys.len();
@@ -393,11 +405,12 @@ where
 }
 
 /// Delegations of some type, with fixed parameters.
-pub fn gen_delegations_with<R>(
-    signing_keys: VecOf2<SecretKey>,
+pub fn gen_delegations_with<K, R>(
+    signing_keys: VecOf2<K>,
     revision: R,
 ) -> impl Strategy<Value = (Signatures, SomeDelegations<Boring, R, Boring>)>
 where
+    K: AsRef<SecretKey> + Clone + Debug,
     R: Arbitrary + Clone + Debug + Display + Ord + AsRef<[u8]>,
 {
     prop_oneof![
@@ -409,6 +422,6 @@ where
     ]
 }
 
-pub fn gen_signing_keys() -> impl Strategy<Value = VecOf2<SecretKey>> {
+pub fn gen_signing_keys() -> impl Strategy<Value = VecOf2<risky::RESKey>> {
     gen_vecof2(gen_secret_key(), 8)
 }

@@ -145,7 +145,7 @@ where
 #[serde(transparent)]
 pub struct Cstring(String);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "prop"))]
 impl Arbitrary for Cstring {
     type Parameters = ();
     type Strategy = prop::strategy::Map<&'static str, fn(String) -> Self>;

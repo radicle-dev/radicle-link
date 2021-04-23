@@ -62,16 +62,6 @@ pub struct Person {
 
 impl sealed::Sealed for Person {}
 
-#[cfg(test)]
-impl Arbitrary for Person {
-    type Parameters = ();
-    type Strategy = prop::strategy::Map<<Cstring as Arbitrary>::Strategy, fn(Cstring) -> Self>;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        any::<Cstring>().prop_map(|name| Person { name })
-    }
-}
-
 /// Structure `radicle-link` expects to be part of a [`Payload`] describing a
 /// project identity.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -82,36 +72,6 @@ pub struct Project {
 }
 
 impl sealed::Sealed for Project {}
-
-#[cfg(test)]
-impl Arbitrary for Project {
-    type Parameters = ();
-    // Silly clippy: this _is_ a type definition
-    #[allow(clippy::type_complexity)]
-    type Strategy = prop::strategy::Map<
-        (
-            <Cstring as Arbitrary>::Strategy,
-            <Option<Cstring> as Arbitrary>::Strategy,
-            <Option<Cstring> as Arbitrary>::Strategy,
-        ),
-        fn((Cstring, Option<Cstring>, Option<Cstring>)) -> Self,
-    >;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        Strategy::prop_map(
-            (
-                any::<Cstring>(),
-                any::<Option<Cstring>>(),
-                any::<Option<Cstring>>(),
-            ),
-            |(name, description, default_branch)| Project {
-                name,
-                description,
-                default_branch,
-            },
-        )
-    }
-}
 
 /// Namespace attached to a member type of the [`Payload`] "open" coproduct.
 ///
@@ -384,7 +344,7 @@ where
 /// This is just a set of [`PublicKey`]s. Note that it is a deserialisation
 /// error if duplicate elements are found in the input.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
-pub struct PersonDelegations(BTreeSet<PublicKey>);
+pub struct PersonDelegations(pub(super) BTreeSet<PublicKey>);
 
 impl Deref for PersonDelegations {
     type Target = BTreeSet<PublicKey>;
@@ -460,7 +420,7 @@ impl<'de> serde::Deserialize<'de> for PersonDelegations {
 /// Note that the type is serialised without any variant tagging.
 #[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub struct KeyOrUrn<R> {
-    inner: Either<PublicKey, Urn<R>>,
+    pub(super) inner: Either<PublicKey, Urn<R>>,
 }
 
 impl<R> From<Either<PublicKey, Urn<R>>> for KeyOrUrn<R> {
@@ -512,7 +472,7 @@ where
 /// it contains duplicate _keys_.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProjectDelegations<R: Ord> {
-    inner: BTreeSet<KeyOrUrn<R>>,
+    pub(super) inner: BTreeSet<KeyOrUrn<R>>,
 }
 
 impl<R: Ord> IntoIterator for ProjectDelegations<R> {
@@ -607,109 +567,16 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        identities::gen::gen_oid,
-        keys::{tests::gen_public_key, SecretKey},
+        identities::gen::{
+            gen_key_or_urn,
+            gen_payload,
+            gen_person_delegations,
+            gen_project_delegations,
+            UpstreamProject,
+            UpstreamUser,
+        },
+        keys::SecretKey,
     };
-
-    lazy_static! {
-        static ref UPSTREAM_USER_NAMESPACE: Url =
-            Url::parse("https://radicle.xyz/upstream/user/v1").unwrap();
-        static ref UPSTREAM_PROJECT_NAMESPACE: Url =
-            Url::parse("https://radicle.xyz/upstream/project/v1").unwrap();
-    }
-
-    #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-    struct UpstreamUser {
-        #[serde(rename = "radicle-registry-name")]
-        registered_as: Cstring,
-    }
-
-    impl Arbitrary for UpstreamUser {
-        type Parameters = ();
-        type Strategy = prop::strategy::Map<<Cstring as Arbitrary>::Strategy, fn(Cstring) -> Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            any::<Cstring>().prop_map(|registered_as| Self { registered_as })
-        }
-    }
-
-    impl HasNamespace for UpstreamUser {
-        fn namespace() -> &'static Url {
-            &UPSTREAM_USER_NAMESPACE
-        }
-    }
-
-    #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-    struct UpstreamProject {
-        #[serde(rename = "radicle-registry-name")]
-        registered_as: Cstring,
-    }
-
-    impl Arbitrary for UpstreamProject {
-        type Parameters = ();
-        type Strategy = prop::strategy::Map<<Cstring as Arbitrary>::Strategy, fn(Cstring) -> Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            any::<Cstring>().prop_map(|registered_as| Self { registered_as })
-        }
-    }
-
-    impl HasNamespace for UpstreamProject {
-        fn namespace() -> &'static Url {
-            &UPSTREAM_PROJECT_NAMESPACE
-        }
-    }
-
-    fn gen_person_payload() -> impl Strategy<Value = PersonPayload> {
-        (any::<Person>(), proptest::option::of(any::<UpstreamUser>())).prop_map(|(person, up)| {
-            let mut p = PersonPayload::new(person);
-            if let Some(up) = up {
-                p.set_ext(up).unwrap();
-            }
-            p
-        })
-    }
-
-    fn gen_project_payload() -> impl Strategy<Value = ProjectPayload> {
-        (
-            any::<Project>(),
-            proptest::option::of(any::<UpstreamProject>()),
-        )
-            .prop_map(|(project, up)| {
-                let mut p = ProjectPayload::new(project);
-                if let Some(up) = up {
-                    p.set_ext(up).unwrap();
-                }
-                p
-            })
-    }
-
-    fn gen_payload() -> impl Strategy<Value = SomePayload> {
-        prop_oneof![
-            gen_person_payload().prop_map(SomePayload::Person),
-            gen_project_payload().prop_map(SomePayload::Project)
-        ]
-    }
-
-    fn gen_person_delegations() -> impl Strategy<Value = PersonDelegations> {
-        proptest::collection::btree_set(gen_public_key(), 1..32).prop_map(PersonDelegations)
-    }
-
-    fn gen_key_or_urn() -> impl Strategy<Value = KeyOrUrn<Oid>> {
-        prop_oneof![
-            gen_public_key().prop_map(|pk| KeyOrUrn {
-                inner: Either::Left(pk)
-            }),
-            gen_oid(git2::ObjectType::Tree).prop_map(|oid| KeyOrUrn {
-                inner: Either::Right(Urn::new(oid))
-            })
-        ]
-    }
-
-    fn gen_project_delegations() -> impl Strategy<Value = ProjectDelegations<Oid>> {
-        proptest::collection::btree_set(gen_key_or_urn(), 1..64)
-            .prop_map(|inner| ProjectDelegations { inner })
-    }
 
     #[test]
     fn person_example() {
