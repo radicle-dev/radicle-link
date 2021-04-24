@@ -350,12 +350,14 @@ where
     F::Error: std::error::Error + Send + Sync + 'static,
 {
     if !storage.has_urn(&urn)? {
-        let updated = fetcher
+        let mut updated = fetcher
             .fetch(fetch::Fetchspecs::PeekAll { limit })
             .map_err(|e| Error::Fetch(e.into()))?;
-        let fetched_peers = project::fetched_peers(&updated)?;
+        let (fetched_peers, pruned_tips) = project::fetched_peers(&updated)?;
+        updated.updated_tips = pruned_tips;
 
         let mut tips = updated.updated_tips;
+
         // We can't fetch `refs/remotes/*/rad/ids/*` since we can't have two globs, so
         // we fetch `refs/remotes/{fetched_peer}/rad/ids/*`.
         let peeked = fetcher
@@ -851,26 +853,33 @@ mod project {
     }
 
     /// Using the fetched references we parse out the set of `PeerId`s that were
-    /// fetched.
-    pub fn fetched_peers(result: &fetch::FetchResult) -> Result<BTreeSet<PeerId>, Error> {
+    /// fetched. We also return a pruned set of references, excluding those
+    /// which could not be parsed as valid `PeerId`s.
+    pub fn fetched_peers(
+        result: &fetch::FetchResult,
+    ) -> Result<(BTreeSet<PeerId>, BTreeMap<ext::RefLike, ext::Oid>), Error> {
         use std::str::FromStr;
 
         let mut peers = BTreeSet::new();
+        let mut pruned_tips = result.updated_tips.clone();
         for reference in result.updated_tips.keys() {
             let path: ext::RefLike = match Urn::try_from(reference.clone()).map(|urn| urn.path) {
                 Ok(Some(path)) => path,
                 Ok(None) | Err(_) => {
-                    /* FIXME: prune reference */
+                    pruned_tips.remove(reference);
                     continue;
                 },
             };
             let suffix = match path.strip_prefix(reflike!("refs/remotes")) {
                 Ok(suffix) => suffix,
-                Err(_) => continue,
+                Err(_) => {
+                    pruned_tips.remove(reference);
+                    continue;
+                },
             };
             let peer = match suffix.as_str().split('/').next().map(PeerId::from_str) {
                 None | Some(Err(_)) => {
-                    /* FIXME: prune reference */
+                    pruned_tips.remove(reference);
                     continue;
                 },
                 Some(Ok(remote)) => remote,
@@ -878,7 +887,7 @@ mod project {
             peers.insert(peer);
         }
 
-        Ok(peers)
+        Ok((peers, pruned_tips))
     }
 
     pub fn all_delegates(proj: &Project) -> BTreeSet<PeerId> {
