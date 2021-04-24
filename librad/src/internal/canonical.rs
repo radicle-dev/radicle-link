@@ -14,7 +14,7 @@ use serde_bytes::ByteBuf;
 use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "prop"))]
 use proptest::prelude::*;
 
 pub mod formatter;

@@ -59,7 +59,7 @@ impl From<Direct> for BTreeSet<PublicKey> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "prop"))]
 impl From<BTreeSet<PublicKey>> for Direct {
     fn from(set: BTreeSet<PublicKey>) -> Self {
         Self(set)

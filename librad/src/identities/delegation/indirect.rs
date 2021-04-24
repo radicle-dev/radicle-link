@@ -58,7 +58,7 @@ pub struct Indirect<T, R, C> {
 // also not a hard guarantee the `Identity` invariants are maintained (namely
 // the content hashes). So, let's keep this impl to tests, and assume `root` and
 // `revision` identify the stored `IndirectlyDelegating`.
-#[cfg(test)]
+#[cfg(any(test, feature = "prop"))]
 impl<T, R, C> PartialEq for Indirect<T, R, C>
 where
     R: Ord,
