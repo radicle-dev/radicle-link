@@ -53,6 +53,7 @@ pub mod convert;
 pub mod keystore;
 pub mod peer;
 pub use peer::{Control as PeerControl, Event as PeerEvent, Peer, RunConfig, Status as PeerStatus};
+pub mod patch;
 pub mod project;
 pub mod request;
 pub mod state;
