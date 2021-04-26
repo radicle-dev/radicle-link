@@ -22,7 +22,7 @@ use std::{
 
 use futures::{
     self,
-    io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt, BufReader},
 };
 use git2::transport::Service;
 use git_ext::{into_io_err, RefLike, References, UPLOAD_PACK_HEADER};
@@ -213,17 +213,30 @@ impl UploadPack {
                 let mut stdout = child.stdout.take().unwrap().compat();
 
                 send.write_all(UPLOAD_PACK_HEADER).await?;
-                futures::try_join!(futures::io::copy(&mut stdout, &mut send), child.wait())
-                    .and_then(|(_, status)| {
-                        if !status.success() {
-                            Err(io::Error::new(
-                                io::ErrorKind::Other,
-                                format!("upload-pack ls exited non-zero: {:?}", status),
-                            ))
-                        } else {
-                            Ok(())
-                        }
-                    })
+                let res =
+                    futures::try_join!(futures::io::copy(&mut stdout, &mut send), child.wait());
+
+                // Drive the `RecvStream` to its end to ensure all control messages are received
+                // and corresponding responses are scheduled. If this is not done crucial finish
+                // transitions are missing which determine if control messages to increase the
+                // mutual max stream counter are sent. It will manifest in one end not being
+                // able to open new streams, which in turn is not surfaced as
+                // hard error at this point by the quic lib.
+                //
+                // As there is no data expected on the `RecvStream` the expectation is that this
+                // completes with an ordinary EOF.
+                let mut buf = [0; 1];
+                recv.read(&mut buf).await?;
+
+                let (_, status) = res?;
+                if !status.success() {
+                    Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("upload-pack ls exited non-zero: {:?}", status),
+                    ))
+                } else {
+                    Ok(())
+                }
             },
 
             Self::UploadPack(mut child) => {

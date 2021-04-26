@@ -50,6 +50,26 @@ impl TestProject {
         })
     }
 
+    pub fn from_project_payload(
+        storage: &Storage,
+        owner: Person,
+        payload: payload::Project,
+    ) -> anyhow::Result<Self> {
+        let local_id = identities::local::load(storage, owner.urn())?
+            .expect("local id must exist as we just created it");
+        let proj = identities::project::create(
+            storage,
+            local_id,
+            payload,
+            delegation::Indirect::from(owner.clone()),
+        )?;
+
+        Ok(Self {
+            owner,
+            project: proj,
+        })
+    }
+
     /// Pull (fetch or clone) the project from known running peer `A` to peer
     /// `B`.
     pub async fn pull<A, B, S>(&self, from: &A, to: &B) -> anyhow::Result<ReplicateResult>
