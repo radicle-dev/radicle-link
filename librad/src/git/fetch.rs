@@ -14,9 +14,10 @@ pub use specs::Fetchspecs;
 
 /// 1KiB for use in [`Limit`] combinations.
 pub const ONE_KB: usize = 1024;
-/// 5KiB for use in [`Limit`], specifically for the `peek` field, when we would
-/// like to fetch `rad/id` , `rad/self`, `rad/ids/*` references.
-pub const TEN_KB: usize = ONE_KB * 10;
+/// 5Mb for use in [`Limit`], specifically for the `peek` field, when we would
+/// like to fetch `rad/id` , `rad/self`, `rad/ids/*` references. This limit is
+/// based on the analysis in https://github.com/radicle-dev/radicle-upstream/issues/1795
+pub const FIVE_MB: usize = ONE_KB * 5000;
 /// 5GB for use in [`Limit`], specifically for the `data` field, when we would
 /// like to fetch `rad/*` as well as `refs/heads/*` references.
 pub const FIVE_GB: usize = ONE_KB * ONE_KB * ONE_KB * 5;
@@ -24,7 +25,7 @@ pub const FIVE_GB: usize = ONE_KB * ONE_KB * ONE_KB * 5;
 /// Limits used for guarding against fetching large amounts of data from the
 /// network.
 ///
-/// The default values are [`TEN_KB`], [`FIVE_GB`], respectively.
+/// The default values are [`FIVE_MB`], [`FIVE_GB`], respectively.
 #[derive(Clone, Copy, Debug)]
 pub struct Limit {
     /// Limit the amount of data we fetch using [`Fetchspecs::PeekAll`] and
@@ -37,7 +38,7 @@ pub struct Limit {
 impl Default for Limit {
     fn default() -> Self {
         Self {
-            peek: TEN_KB,
+            peek: FIVE_MB,
             data: FIVE_GB,
         }
     }
