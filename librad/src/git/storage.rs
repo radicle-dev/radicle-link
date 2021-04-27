@@ -151,9 +151,10 @@ impl Storage {
         &self.backend.path()
     }
 
-    #[tracing::instrument(level = "debug", skip(self), err)]
+    #[tracing::instrument(level = "error", skip(self), err)]
     pub fn has_urn(&self, urn: &Urn) -> Result<bool, Error> {
-        self.has_ref(&Reference::try_from(urn)?)
+        let reference = Reference::try_from(urn)?;
+        self.has_ref(&reference)
     }
 
     #[tracing::instrument(level = "debug", skip(self), err)]

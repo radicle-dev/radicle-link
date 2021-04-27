@@ -207,7 +207,7 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
             });
             let head = has.rev.as_ref().map(|gossip::Rev::Git(head)| *head);
 
-            tracing::warn!(urn = ?urn, head = ?head, "IS TRACKED");
+            tracing::warn!(urn = ?urn, head = ?head, has = ?has, "IS TRACKED");
 
             match self
                 .git_fetch((provider, addr_hints), urn.clone(), head)
