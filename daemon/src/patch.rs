@@ -1,3 +1,8 @@
+// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+//
+// This file is part of radicle-link, distributed under the GPLv3 with Radicle
+// Linking Exception. For full terms see the included LICENSE file.
+
 //! [`list`] all the [`Patch`]es for project.
 
 use either::Either;
@@ -10,18 +15,20 @@ use radicle_git_ext::RefspecPattern;
 
 use crate::{
     project::{self, peer},
-    state, Person,
+    state,
+    Person,
 };
 
 const TAG_PREFIX: &str = "radicle-patch/";
 
-/// A patch is a change set that a user wants the maintainer to merge into a projects default
-/// branch.
+/// A patch is a change set that a user wants the maintainer to merge into a
+/// projects default branch.
 ///
 /// A patch is represented by an annotated tag, prefixed with `radicle-patch/`.
 #[derive(Debug, Clone)]
 pub struct Patch {
-    /// ID of a patch. This is the portion of the tag name followin the `radicle-patch/` prefix.
+    /// ID of a patch. This is the portion of the tag name followin the
+    /// `radicle-patch/` prefix.
     pub id: String,
     /// Peer that the patch originated from
     pub peer: project::Peer<peer::Status<Person>>,
@@ -29,14 +36,15 @@ pub struct Patch {
     pub message: Option<String>,
     /// Head commit that this
     pub commit: git2::Oid,
-    /// The merge base of [`Patch::commit`] and the head commit of the first maintainers default
-    /// branch.
+    /// The merge base of [`Patch::commit`] and the head commit of the first
+    /// maintainers default branch.
     pub merge_base: Option<git2::Oid>,
 }
 
 impl Patch {
-    /// Returns true if [`Patch::commit`] is contained in the base branch history. This is the case
-    /// when [`Patch::commit`] is the same as [`Patch::merge_base`].
+    /// Returns true if [`Patch::commit`] is contained in the base branch
+    /// history. This is the case when [`Patch::commit`] is the same as
+    /// [`Patch::merge_base`].
     #[must_use]
     pub fn merged(&self) -> bool {
         self.merge_base == Some(self.commit)
@@ -71,9 +79,10 @@ pub async fn list(
             })
             .next()
             .expect("missing delegation");
-        // the `remote` for `get_branch` is set to the first maintainer, if the current `peer`
-        // is that maintainer, `get_branch` will catch that and search the local peers directories.
-        // The `branch` is set to `None` as `get_branch` will then fall back to the default branch.
+        // the `remote` for `get_branch` is set to the first maintainer, if the current
+        // `peer` is that maintainer, `get_branch` will catch that and search
+        // the local peers directories. The `branch` is set to `None` as
+        // `get_branch` will then fall back to the default branch.
         let default_branch =
             state::get_branch(peer, project_urn.clone(), Some(maintainer), None).await?;
         monorepo
