@@ -154,6 +154,7 @@ impl Storage {
     #[tracing::instrument(level = "error", skip(self), err)]
     pub fn has_urn(&self, urn: &Urn) -> Result<bool, Error> {
         let reference = Reference::try_from(urn)?;
+        tracing::warn!(urn = ?urn, reference = ?reference, "HAS URN");
         self.has_ref(&reference)
     }
 
