@@ -50,7 +50,7 @@ impl Storage {
     ) -> Result<replication::ReplicateResult, Error> {
         let urn = {
             let git = self.pool.get().await?;
-            urn_context_ref(*git.peer_id(), urn)
+            urn_context_ref(*git.peer_id(), urn).map_err(|_| Error::Reference)?
         };
         let head = head.into().map(ext::Oid::from);
 
@@ -88,7 +88,10 @@ impl Storage {
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
         let git = self.pool.get().await.unwrap();
-        let urn = urn_context_ref(*git.peer_id(), urn);
+        let urn = match urn_context_ref(*git.peer_id(), urn) {
+            Ok(urn) => urn,
+            Err(_) => return false,
+        };
         let head = head.into().map(ext::Oid::from);
         spawn_blocking(move || match head {
             None => git.has_urn(&urn).unwrap_or(false),

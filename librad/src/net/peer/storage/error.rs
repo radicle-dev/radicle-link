@@ -25,6 +25,9 @@ pub enum Error {
     #[error("unable to obtain fetcher")]
     Fetcher(#[from] fetcher::error::Retrying<git2::Error>),
 
+    #[error("malformed reference")]
+    Reference,
+
     #[error(transparent)]
     Store(#[from] git::storage::Error),
 
