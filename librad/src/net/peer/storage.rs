@@ -189,8 +189,6 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
 
         let (provider, addr_hints) = provider.into();
 
-        tracing::info!(provider = ?provider, has = ?has, "put");
-
         // If the `has` doesn't tell us to look into a specific remote-tracking
         // branch, assume we want the `provider`'s.
         let origin = has.origin.unwrap_or(provider);
@@ -208,6 +206,8 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
                 value: has.urn.clone(),
             });
             let head = has.rev.as_ref().map(|gossip::Rev::Git(head)| *head);
+
+            tracing::warn!(urn = ?urn, head = ?head, "IS TRACKED");
 
             match self
                 .git_fetch((provider, addr_hints), urn.clone(), head)
