@@ -267,7 +267,7 @@ impl Storage {
     pub fn tip(&self, urn: &Urn, kind: git2::ObjectType) -> Result<Option<git2::Object>, Error> {
         let reference = self
             .backend
-            .find_reference(RefLike::from(&Reference::try_from(urn)?).as_str())
+            .find_reference(&Reference::try_from(urn)?.to_string())
             .map(Some)
             .or_matches::<Error, _, _>(is_not_found_err, || Ok(None))?;
 

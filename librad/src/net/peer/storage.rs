@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{net::SocketAddr, time::Duration};
+use std::{convert::TryFrom as _, net::SocketAddr, time::Duration};
 
 use either::Either::{self, Left, Right};
 use git_ext::{self as ext, reference};
@@ -14,6 +14,7 @@ use crate::{
         replication,
         storage::{self, fetcher, Pool, PoolError, PooledRef},
         tracking,
+        types::{reference::FromUrnError, Reference},
         Urn,
     },
     identities::urn,
@@ -49,7 +50,7 @@ impl Storage {
     ) -> Result<replication::ReplicateResult, Error> {
         let urn = {
             let git = self.pool.get().await?;
-            urn_context(*git.peer_id(), urn)
+            urn_context_ref(*git.peer_id(), urn)
         };
         let head = head.into().map(ext::Oid::from);
 
@@ -87,7 +88,7 @@ impl Storage {
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
         let git = self.pool.get().await.unwrap();
-        let urn = urn_context(*git.peer_id(), urn);
+        let urn = urn_context_ref(*git.peer_id(), urn);
         let head = head.into().map(ext::Oid::from);
         spawn_blocking(move || match head {
             None => git.has_urn(&urn).unwrap_or(false),
@@ -103,6 +104,36 @@ impl Storage {
     async fn is_tracked(&self, urn: Urn, peer: PeerId) -> Result<bool, Error> {
         let git = self.pool.get().await?;
         Ok(spawn_blocking(move || tracking::is_tracked(&git, &urn, peer)).await??)
+    }
+}
+
+/*
+main
+heads/main
+refs/heads/main
+refs/rad/id
+refs/tags/foo
+
+-- could we have?
+~refs/remotes/hrnk/heads/main~
+ */
+
+fn urn_context_ref(
+    local_peer_id: PeerId,
+    urn: Either<Urn, Originates<Urn>>,
+) -> Result<Urn, FromUrnError> {
+    fn remote(urn: &Urn, peer: PeerId) -> Result<Urn, FromUrnError> {
+        Reference::try_from(urn).map(|r| Urn::try_from(r.with_remote(peer)).expect("qed."))
+    }
+
+    fn local(urn: &Urn) -> Result<Urn, FromUrnError> {
+        Reference::try_from(urn).map(|r| Urn::try_from(r).expect("qed."))
+    }
+
+    match urn {
+        Left(urn) => local(&urn),
+        Right(Originates { from, value: urn }) if from == local_peer_id => local(&urn),
+        Right(Originates { from, value: urn }) => remote(&urn, from),
     }
 }
 
@@ -261,7 +292,7 @@ mod tests {
         #[test]
         fn direct_empty() {
             let urn = Urn::new(*ZERO_OID);
-            let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
+            let ctx = urn_context_ref(*LOCAL_PEER_ID, Left(urn.clone()));
             assert_eq!(
                 urn.with_path(ext::RefLike::from(urn::DEFAULT_PATH.clone())),
                 ctx
@@ -271,21 +302,21 @@ mod tests {
         #[test]
         fn direct_onelevel() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("ban/ana"));
-            let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
+            let ctx = urn_context_ref(*LOCAL_PEER_ID, Left(urn.clone()));
             assert_eq!(urn.with_path(reflike!("refs/heads/ban/ana")), ctx)
         }
 
         #[test]
         fn direct_qualified() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("refs/heads/next"));
-            let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
+            let ctx = urn_context_ref(*LOCAL_PEER_ID, Left(urn.clone()));
             assert_eq!(urn, ctx)
         }
 
         #[test]
         fn remote_empty() {
             let urn = Urn::new(*ZERO_OID);
-            let ctx = urn_context(
+            let ctx = urn_context_ref(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *OTHER_PEER_ID,
@@ -307,7 +338,7 @@ mod tests {
         #[test]
         fn remote_onelevel() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("ban/ana"));
-            let ctx = urn_context(
+            let ctx = urn_context_ref(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *OTHER_PEER_ID,
@@ -327,7 +358,7 @@ mod tests {
         #[test]
         fn remote_qualified() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("refs/heads/next"));
-            let ctx = urn_context(
+            let ctx = urn_context_ref(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *OTHER_PEER_ID,
@@ -347,7 +378,7 @@ mod tests {
         #[test]
         fn self_origin_empty() {
             let urn = Urn::new(*ZERO_OID);
-            let ctx = urn_context(
+            let ctx = urn_context_ref(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *LOCAL_PEER_ID,
@@ -363,7 +394,7 @@ mod tests {
         #[test]
         fn self_origin_onelevel() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("ban/ana"));
-            let ctx = urn_context(
+            let ctx = urn_context_ref(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *LOCAL_PEER_ID,
@@ -376,7 +407,7 @@ mod tests {
         #[test]
         fn self_origin_qualified() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("refs/heads/next"));
-            let ctx = urn_context(
+            let ctx = urn_context_ref(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *LOCAL_PEER_ID,
