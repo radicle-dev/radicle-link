@@ -207,12 +207,13 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
             });
             let head = has.rev.as_ref().map(|gossip::Rev::Git(head)| *head);
 
-            tracing::warn!(urn = ?urn, head = ?head, has = ?has, "IS TRACKED");
-
-            match self
+            let res = self
                 .git_fetch((provider, addr_hints), urn.clone(), head)
-                .await
-            {
+                .await;
+
+            tracing::warn!(urn = ?urn, head = ?head, has = ?has, res = ?res, "IS TRACKED");
+
+            match res {
                 Ok(_) => {
                     // Verify that the announced data is stored locally now.
                     //
