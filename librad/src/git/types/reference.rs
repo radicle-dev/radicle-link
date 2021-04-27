@@ -520,6 +520,7 @@ impl TryFrom<&Urn> for Reference<Namespace<ext::Oid>, PeerId, One> {
 
             Some(path) => {
                 let path = ext::reference::Qualified::from(path.clone());
+                println!("path: {}", path);
                 let mut iter = path.split('/').skip_while(|&x| x == "refs");
 
                 match iter.next() {

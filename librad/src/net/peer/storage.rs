@@ -50,7 +50,7 @@ impl Storage {
     ) -> Result<replication::ReplicateResult, Error> {
         let urn = {
             let git = self.pool.get().await?;
-            urn_context_ref(*git.peer_id(), urn).map_err(|_| Error::Reference)?
+            urn_context(*git.peer_id(), urn)
         };
         let head = head.into().map(ext::Oid::from);
 
@@ -88,10 +88,7 @@ impl Storage {
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
         let git = self.pool.get().await.unwrap();
-        let urn = match urn_context_ref(*git.peer_id(), urn) {
-            Ok(urn) => urn,
-            Err(_) => return false,
-        };
+        let urn = urn_context(*git.peer_id(), urn);
         let head = head.into().map(ext::Oid::from);
         spawn_blocking(move || match head {
             None => git.has_urn(&urn).unwrap_or(false),
@@ -295,7 +292,7 @@ mod tests {
         #[test]
         fn direct_empty() {
             let urn = Urn::new(*ZERO_OID);
-            let ctx = urn_context_ref(*LOCAL_PEER_ID, Left(urn.clone()));
+            let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
             assert_eq!(
                 urn.with_path(ext::RefLike::from(urn::DEFAULT_PATH.clone())),
                 ctx
@@ -305,28 +302,28 @@ mod tests {
         #[test]
         fn fuckup() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("heads/main"));
-            let ctx = urn_context_ref(*LOCAL_PEER_ID, Left(urn.clone()));
+            let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
             assert_eq!(urn.with_path(reflike!("refs/heads/main")), ctx)
         }
 
         #[test]
         fn direct_onelevel() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("ban/ana"));
-            let ctx = urn_context_ref(*LOCAL_PEER_ID, Left(urn.clone()));
+            let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
             assert_eq!(urn.with_path(reflike!("refs/heads/ban/ana")), ctx)
         }
 
         #[test]
         fn direct_qualified() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("refs/heads/next"));
-            let ctx = urn_context_ref(*LOCAL_PEER_ID, Left(urn.clone()));
+            let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
             assert_eq!(urn, ctx)
         }
 
         #[test]
         fn remote_empty() {
             let urn = Urn::new(*ZERO_OID);
-            let ctx = urn_context_ref(
+            let ctx = urn_context(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *OTHER_PEER_ID,
@@ -348,7 +345,7 @@ mod tests {
         #[test]
         fn remote_onelevel() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("ban/ana"));
-            let ctx = urn_context_ref(
+            let ctx = urn_context(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *OTHER_PEER_ID,
@@ -368,7 +365,7 @@ mod tests {
         #[test]
         fn remote_qualified() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("refs/heads/next"));
-            let ctx = urn_context_ref(
+            let ctx = urn_context(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *OTHER_PEER_ID,
@@ -388,7 +385,7 @@ mod tests {
         #[test]
         fn self_origin_empty() {
             let urn = Urn::new(*ZERO_OID);
-            let ctx = urn_context_ref(
+            let ctx = urn_context(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *LOCAL_PEER_ID,
@@ -404,7 +401,7 @@ mod tests {
         #[test]
         fn self_origin_onelevel() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("ban/ana"));
-            let ctx = urn_context_ref(
+            let ctx = urn_context(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *LOCAL_PEER_ID,
@@ -417,7 +414,7 @@ mod tests {
         #[test]
         fn self_origin_qualified() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("refs/heads/next"));
-            let ctx = urn_context_ref(
+            let ctx = urn_context(
                 *LOCAL_PEER_ID,
                 Right(Originates {
                     from: *LOCAL_PEER_ID,

@@ -403,6 +403,8 @@ impl From<RefLike> for Qualified {
     fn from(RefLike(path): RefLike) -> Self {
         if path.starts_with("refs/") {
             Self(path)
+        } else if path.starts_with("heads/") || path.starts_with("tags/") {
+            Self(format!("refs/{}", path))
         } else {
             Self(format!("refs/heads/{}", path))
         }
