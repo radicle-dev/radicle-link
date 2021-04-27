@@ -225,7 +225,8 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
                     // tracking them, and there was no error, but the data is
                     // still not there. In this case, returning `Stale` will
                     // just terminate the broadcast here.
-                    if self.git_has(urn, head).await {
+                    if self.git_has(urn.clone(), head).await {
+                        tracing::warn!(urn = ?urn, head = ?head, "PUT IS TRACK GIT HAS");
                         PutResult::Applied(gossip::Payload {
                             origin: Some(origin),
                             ..has
