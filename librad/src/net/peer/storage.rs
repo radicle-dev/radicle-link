@@ -303,6 +303,13 @@ mod tests {
         }
 
         #[test]
+        fn fuckup() {
+            let urn = Urn::new(*ZERO_OID).with_path(reflike!("heads/main"));
+            let ctx = urn_context_ref(*LOCAL_PEER_ID, Left(urn.clone()));
+            assert_eq!(urn.with_path(reflike!("refs/heads/main")), ctx)
+        }
+
+        #[test]
         fn direct_onelevel() {
             let urn = Urn::new(*ZERO_OID).with_path(reflike!("ban/ana"));
             let ctx = urn_context_ref(*LOCAL_PEER_ID, Left(urn.clone()));
