@@ -54,11 +54,15 @@ impl Storage {
         };
         let head = head.into().map(ext::Oid::from);
 
+        tracing::warn!("git fetch");
+
         if let Some(head) = head {
             let git = self.pool.get().await?;
             let urn = urn.clone();
             spawn_blocking(move || {
-                if git.has_commit(&urn, head)? || git.has_tag(&urn, head)? {
+                if git.has_commit(&urn, head).expect("git fetch has commit")
+                    || git.has_tag(&urn, head)?
+                {
                     Err(Error::KnownObject(*head))
                 } else {
                     Ok(())
