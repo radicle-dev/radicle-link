@@ -93,6 +93,7 @@ where
     match message {
         Have { origin, val } => {
             let res = (*storage).put(origin.clone(), val.clone()).await;
+            tracing::error!(origin = ?origin, res = ?res, "BROADCAST APPLY");
             let event = event::Gossip::Put {
                 provider: origin.clone(),
                 payload: val.clone(),
