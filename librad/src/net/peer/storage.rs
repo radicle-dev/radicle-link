@@ -185,6 +185,8 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
 
         let (provider, addr_hints) = provider.into();
 
+        tracing::info!(provider = ?provider, has = ?has, "put");
+
         // If the `has` doesn't tell us to look into a specific remote-tracking
         // branch, assume we want the `provider`'s.
         let origin = has.origin.unwrap_or(provider);
