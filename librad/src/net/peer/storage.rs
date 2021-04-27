@@ -54,7 +54,7 @@ impl Storage {
         };
         let head = head.into().map(ext::Oid::from);
 
-        tracing::warn!("git fetch");
+        tracing::warn!(head = ?head, urn = ?urn, "git fetch");
 
         if let Some(head) = head {
             let git = self.pool.get().await?;
