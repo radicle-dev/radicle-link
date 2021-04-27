@@ -179,10 +179,16 @@ impl Storage {
         Oid: AsRef<git2::Oid> + Debug,
     {
         let (oid, kind) = match self.find_object(oid)? {
-            None => return Ok(false),
+            None => {
+                tracing::debug!("object not found");
+                return Ok(false);
+            },
             Some(object) => match object.kind() {
                 Some(git2::ObjectType::Commit) => (object.id(), git2::ObjectType::Commit),
-                _ => return Ok(false),
+                _ => {
+                    tracing::debug!("object not a commit");
+                    return Ok(false);
+                },
             },
         };
 
@@ -194,7 +200,10 @@ impl Storage {
                 )
             })
             .transpose()?
-            .unwrap_or(false))
+            .unwrap_or({
+                tracing::debug!("could not find tip");
+                false
+            }))
     }
 
     /// Check the existence of `oid` as a **tag**.
