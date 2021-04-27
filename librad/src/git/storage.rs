@@ -193,6 +193,7 @@ impl Storage {
         };
 
         let tip = self.tip(urn, kind)?;
+        tracing::debug!("tip: {:?}, oid: {:?}", tip, oid);
         Ok(tip
             .map(|tip| {
                 Ok::<_, git2::Error>(
