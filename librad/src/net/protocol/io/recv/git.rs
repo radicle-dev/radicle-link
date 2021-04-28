@@ -53,7 +53,8 @@ where
                     if let Some(n) = nonce {
                         // Only rere if we have a fresh nonce
                         if !state.nonces.contains(&n) {
-                            return rere(state.clone(), repo, remote_peer, remote_addr).await;
+                            // return rere(state.clone(), repo, remote_peer,
+                            // remote_addr).await;
                         }
                     }
 
