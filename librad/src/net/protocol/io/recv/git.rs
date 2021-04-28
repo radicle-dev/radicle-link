@@ -50,7 +50,8 @@ where
             // Only rere if we have a fresh nonce
             if let Some(n) = nonce {
                 if !state.nonces.contains(n) {
-                    tasks.push(spawn_rere(&state, repo.clone(), remote_peer, remote_addr))
+                    // tasks.push(spawn_rere(&state, repo.clone(), remote_peer,
+                    // remote_addr))
                 }
                 state.nonces.insert(*n)
             }
@@ -58,7 +59,7 @@ where
                 srv.run().err_into::<Error>().in_current_span(),
             ));
 
-            let results = tasks.take(2).collect::<Vec<_>>().await;
+            let results = tasks.take(1).collect::<Vec<_>>().await;
             for res in results {
                 match res {
                     Err(e) => {
