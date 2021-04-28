@@ -7,6 +7,7 @@ mod clone;
 mod fetch_limit;
 mod gossip;
 mod graft;
+mod history_rewrite;
 mod interrogation;
 mod regression;
 mod saturation;

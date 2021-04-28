@@ -362,7 +362,7 @@ pub mod refspecs {
                     Refspec {
                         src,
                         dst,
-                        force: Force::False,
+                        force: Force::True,
                     }
                     .into_fetchspec()
                 })
