@@ -140,6 +140,8 @@ impl UploadPack {
         let mut git = Command::new("git");
         git.args(&["-c", "uploadpack.hiderefs=refs/"])
             .arg("-c")
+            .arg("uploadpack.allowanysha1inwant=true")
+            .arg("-c")
             .arg(format!(
                 "uploadpack.hiderefs=!{}",
                 reflike!("refs/namespaces").join(&namespace)
@@ -184,6 +186,8 @@ impl UploadPack {
     #[tracing::instrument(level = "debug", err)]
     fn upload_pack(repo_path: &Path) -> io::Result<Self> {
         let mut git = Command::new("git");
+        git.arg("-c").arg("uploadpack.allowanysha1inwant=true");
+
         git_tracing(&mut git);
         git.args(&[
             "upload-pack",

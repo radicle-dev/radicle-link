@@ -120,9 +120,9 @@ async fn sigrefs_dont_get_overwritten() {
     );
 
     println!("PULLING PEER 1");
-    proj.pull(peer1, peer2).await.ok().unwrap();
+    proj.pull(peer1, peer2).await.unwrap();
     println!("PULLING PEER 2");
-    proj.pull(peer2, peer3).await.ok().unwrap();
+    proj.pull(peer2, peer3).await.unwrap();
 
     println!("GETTING SIGREFS 2");
     let sigrefs = peer2
