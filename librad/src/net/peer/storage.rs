@@ -283,6 +283,13 @@ mod tests {
         }
 
         #[test]
+        fn missing_refs() {
+            let urn = Urn::new(*ZERO_OID).with_path(reflike!("heads/main"));
+            let ctx = urn_context(*LOCAL_PEER_ID, Left(urn.clone()));
+            assert_eq!(urn.with_path(reflike!("refs/heads/main")), ctx)
+        }
+
+        #[test]
         fn remote_empty() {
             let urn = Urn::new(*ZERO_OID);
             let ctx = urn_context(
