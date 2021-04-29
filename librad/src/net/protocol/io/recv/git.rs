@@ -97,7 +97,9 @@ where
         let span = tracing::info_span!("rere", urn = %urn, remote_peer = %remote_peer);
         async move {
             tracing::info!("attempting rere");
+            let span = tracing::info_span!("rere", urn = %urn, remote_peer = %remote_peer);
             graft::rere(pool, config, urn, remote_peer, Some(remote_addr))
+                .instrument(span)
                 .await
                 .map_err(Error::from)
                 .map(|res| match res {
