@@ -104,7 +104,7 @@ where
                 .map_err(Error::from)
                 .map(|res| match res {
                     None => tracing::info!("rere didn't fetch"),
-                    Some(xs) => tracing::info!("rere fetched {} refs", xs.updated_tips.len()),
+                    Some(xs) => tracing::info!("rere fetched {:#?} refs", xs.updated_tips),
                 })
         }
         .instrument(span)
