@@ -362,7 +362,7 @@ pub mod refspecs {
                     Refspec {
                         src,
                         dst,
-                        force: Force::True,
+                        force: Force::False,
                     }
                     .into_fetchspec()
                 })
@@ -599,17 +599,17 @@ mod tests {
             [
                 // First, lolek + bolek's heads (forced)
                 format!(
-                    "+{}:{}",
+                    "{}:{}",
                     PROJECT_NAMESPACE.join(reflike!("refs/remotes/bolek/heads/mister")),
                     PROJECT_NAMESPACE.join(reflike!("refs/remotes/bolek/heads/mister"))
                 ),
                 format!(
-                    "+{}:{}",
+                    "{}:{}",
                     PROJECT_NAMESPACE.join(reflike!("refs/remotes/bolek/heads/next")),
                     PROJECT_NAMESPACE.join(reflike!("refs/remotes/bolek/heads/next"))
                 ),
                 format!(
-                    "+{}:{}",
+                    "{}:{}",
                     PROJECT_NAMESPACE.join(reflike!("refs/remotes/lolek/heads/mister")),
                     PROJECT_NAMESPACE.join(reflike!("refs/remotes/lolek/heads/mister"))
                 ),
