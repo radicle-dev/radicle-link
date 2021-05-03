@@ -20,7 +20,7 @@ fn replication_does_not_exceed_limit() {
 
     let net = testnet::run(testnet::Config {
         num_peers: nonzero!(6usize),
-        min_connected: 6,
+        min_connected: 3,
         bootstrap: testnet::Bootstrap::from_env(),
     })
     .unwrap();

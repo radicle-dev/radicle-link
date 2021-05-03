@@ -6,7 +6,7 @@
 use std::{io, net::SocketAddr};
 
 use futures::{
-    future::TryFutureExt as _,
+    future::{self, TryFutureExt as _},
     io::{AsyncRead, AsyncWrite},
     stream::{FuturesUnordered, StreamExt as _},
 };
@@ -18,7 +18,7 @@ use crate::{
     git::{p2p::header::Header, replication::ReplicateResult, Urn},
     net::{
         connection::{Duplex, RemoteInfo},
-        protocol::{gossip, io::graft, ProtocolStorage, State},
+        protocol::{self, control, gossip, io::graft, ProtocolStorage, State},
         upgrade::{self, Upgraded},
     },
     PeerId,
@@ -86,6 +86,8 @@ fn spawn_rere<S>(
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
+    use protocol::event::downstream::Gossip::Announce;
+
     let spawner = state.spawner.clone();
     spawner.spawn({
         let spawner = spawner.clone();
@@ -108,9 +110,36 @@ where
             .await
             .map_err(Error::from)?
             .map(|ReplicateResult { updated_tips, .. }| updated_tips);
+
             match updated_tips {
                 None => tracing::info!("rere skipped"),
-                Some(xs) => tracing::info!("rere updated {} refs", xs.len()),
+                Some(xs) => {
+                    tracing::info!("rere updated {} refs", xs.len());
+                    if !xs.is_empty() {
+                        tracing::trace!("refs updated by rere: {:?}", xs);
+                    }
+                    xs.into_iter()
+                        .map(|(refl, head)| {
+                            control::gossip(
+                                &state,
+                                Announce(gossip::Payload {
+                                    urn: urn.clone(),
+                                    rev: Some(head.into()),
+                                    origin: refl
+                                        .split('/')
+                                        .skip_while(|&x| x != "remotes")
+                                        .skip(1)
+                                        .take(1)
+                                        .next()
+                                        .and_then(|remote| remote.parse().ok()),
+                                }),
+                                Some(remote_peer),
+                            )
+                        })
+                        .collect::<FuturesUnordered<_>>()
+                        .for_each(future::ready)
+                        .await
+                },
             }
 
             Ok(())
