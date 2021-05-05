@@ -11,11 +11,9 @@ use futures::{
     stream::{FuturesUnordered, StreamExt as _},
 };
 use thiserror::Error;
-use tracing::Instrument as _;
 
 use crate::{
-    executor,
-    git::{p2p::header::Header, replication::ReplicateResult, Urn},
+    git::{replication::ReplicateResult, Urn},
     net::{
         connection::{Duplex, RemoteInfo},
         protocol::{self, control, gossip, io::graft, ProtocolStorage, State},
@@ -46,104 +44,97 @@ where
     match state.git.service(recv, send).await {
         Err(e) => tracing::warn!(err = ?e, "git service setup error"),
         Ok(srv) => {
-            let tasks = FuturesUnordered::new();
-            let Header { repo, nonce, .. } = &srv.header;
-            // Only rere if we have a fresh nonce
-            if let Some(n) = nonce {
-                if !state.nonces.contains(n) {
-                    tasks.push(spawn_rere(
-                        state.clone(),
-                        repo.clone(),
-                        remote_peer,
-                        remote_addr,
-                    ))
-                }
-                state.nonces.insert(*n)
-            }
-            tasks.push(state.spawner.spawn(srv.run().err_into::<Error>()));
+            let repo = srv.header.repo.clone();
+            let nonce = srv.header.nonce;
+            let res = srv
+                .run()
+                .err_into::<Error>()
+                .and_then(|()| async {
+                    if let Some(n) = nonce {
+                        // Only rere if we have a fresh nonce
+                        if !state.nonces.contains(&n) {
+                            return rere(state.clone(), repo, remote_peer, remote_addr).await;
+                        }
+                    }
 
-            let results = tasks.take(2).collect::<Vec<_>>().await;
-            for res in results {
-                match res {
-                    Err(e) => {
-                        let _ = e.into_cancelled();
-                        tracing::info!("cancelled task")
-                    },
-                    Ok(Ok(())) => tracing::debug!("task done"),
-                    Ok(Err(e)) => tracing::warn!(err = ?e, "task error"),
-                }
+                    Ok(())
+                })
+                .await;
+
+            if let Some(n) = nonce {
+                state.nonces.insert(n);
+            }
+
+            if let Err(e) = res {
+                tracing::warn!(err = ?e, "recv git error")
             }
         },
     }
 }
 
-fn spawn_rere<S>(
+#[tracing::instrument(
+    skip(state, urn, remote_peer, remote_addr),
+    fields(urn = %urn, remote_peer = %remote_peer)
+)]
+async fn rere<S>(
     state: State<S>,
     urn: Urn,
     remote_peer: PeerId,
     remote_addr: SocketAddr,
-) -> executor::JoinHandle<Result<(), Error>>
+) -> Result<(), Error>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     use protocol::event::downstream::Gossip::Announce;
 
-    let spawner = state.spawner.clone();
-    spawner.spawn({
-        let spawner = spawner.clone();
-        let pool = state.storage.clone();
-        let config = graft::config::Rere {
-            replication: state.config.replication,
-            fetch_slot_wait_timeout: state.config.fetch.fetch_slot_wait_timeout,
-        };
-        let span = tracing::info_span!("rere", urn = %urn, remote_peer = %remote_peer);
-        async move {
-            tracing::info!("attempting rere");
-            let updated_tips = graft::rere(
-                &spawner,
-                &pool,
-                config,
-                urn.clone(),
-                remote_peer,
-                Some(remote_addr),
-            )
-            .await
-            .map_err(Error::from)?
-            .map(|ReplicateResult { updated_tips, .. }| updated_tips);
+    tracing::info!("attempting rere");
 
-            match updated_tips {
-                None => tracing::info!("rere skipped"),
-                Some(xs) => {
-                    tracing::info!("rere updated {} refs", xs.len());
-                    if !xs.is_empty() {
-                        tracing::trace!("refs updated by rere: {:?}", xs);
-                    }
-                    xs.into_iter()
-                        .map(|(refl, head)| {
-                            control::gossip(
-                                &state,
-                                Announce(gossip::Payload {
-                                    urn: urn.clone(),
-                                    rev: Some(head.into()),
-                                    origin: refl
-                                        .split('/')
-                                        .skip_while(|&x| x != "remotes")
-                                        .skip(1)
-                                        .take(1)
-                                        .next()
-                                        .and_then(|remote| remote.parse().ok()),
-                                }),
-                                Some(remote_peer),
-                            )
-                        })
-                        .collect::<FuturesUnordered<_>>()
-                        .for_each(future::ready)
-                        .await
-                },
+    let config = graft::config::Rere {
+        replication: state.config.replication,
+        fetch_slot_wait_timeout: state.config.fetch.fetch_slot_wait_timeout,
+    };
+    let updated_tips = graft::rere(
+        &state.spawner,
+        &state.storage,
+        config,
+        urn.clone(),
+        remote_peer,
+        Some(remote_addr),
+    )
+    .await
+    .map_err(Error::from)?
+    .map(|ReplicateResult { updated_tips, .. }| updated_tips);
+
+    match updated_tips {
+        None => tracing::info!("rere skipped"),
+        Some(xs) => {
+            tracing::info!("rere updated {} refs", xs.len());
+            if !xs.is_empty() {
+                tracing::trace!("refs updated by rere: {:?}", xs);
             }
+            xs.into_iter()
+                .map(|(refl, head)| {
+                    control::gossip(
+                        &state,
+                        Announce(gossip::Payload {
+                            urn: urn.clone(),
+                            rev: Some(head.into()),
+                            origin: refl
+                                .split('/')
+                                .skip_while(|&x| x != "remotes")
+                                .skip(1)
+                                .take(1)
+                                .next()
+                                .and_then(|remote| remote.parse().ok()),
+                        }),
+                        Some(remote_peer),
+                    )
+                })
+                .collect::<FuturesUnordered<_>>()
+                .for_each(future::ready)
+                .await
+        },
+    }
 
-            Ok(())
-        }
-        .instrument(span)
-    })
+    Ok(())
 }

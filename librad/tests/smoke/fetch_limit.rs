@@ -52,8 +52,8 @@ fn replication_does_not_exceed_limit() {
             .unwrap();
 
         for &peer in &[peer2, peer3, peer4, peer5] {
-            proj.pull(peer1, peer).await.ok().unwrap();
-            proj.pull(peer, peer1).await.ok().unwrap();
+            proj.pull(peer1, peer).await.unwrap();
+            proj.pull(peer, peer1).await.unwrap();
         }
         proj.pull(peer1, peer6).await.ok().unwrap();
     })
