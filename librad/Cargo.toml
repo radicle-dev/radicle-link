@@ -125,10 +125,6 @@ features = ["derive"]
 version = "1.1"
 features = ["rt-multi-thread", "process", "net", "time"]
 
-[dependencies.tokio-stream]
-version = "0.1"
-features = ["sync"]
-
 [dependencies.tokio-util]
 version = "0.6"
 features = ["compat"]

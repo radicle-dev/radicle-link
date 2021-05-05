@@ -5,6 +5,7 @@
 
 use std::{
     collections::HashMap,
+    fmt::{self, Debug},
     hash::BuildHasherDefault,
     net::SocketAddr,
     sync::{
@@ -56,6 +57,16 @@ pub struct Conntrack {
 impl Default for Conntrack {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Debug for Conntrack {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Conntrack")
+            .field("epoch", &self.epoch)
+            .field("connections", &self.connections.len())
+            .field("peer_connections", &self.peer_connections.len())
+            .finish()
     }
 }
 

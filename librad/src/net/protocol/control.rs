@@ -5,9 +5,24 @@
 
 use std::{iter, net::SocketAddr};
 
-use futures::stream::{self, StreamExt as _};
+use futures::{
+    channel::oneshot,
+    stream::{self, BoxStream, StreamExt as _},
+};
 
-use super::{broadcast, error, event, gossip, io, tick, PeerInfo, ProtocolStorage, State};
+use super::{
+    broadcast,
+    error,
+    event,
+    gossip,
+    graft,
+    io,
+    quic,
+    tick,
+    PeerInfo,
+    ProtocolStorage,
+    State,
+};
 use crate::PeerId;
 
 pub(super) async fn gossip<S>(
@@ -102,18 +117,7 @@ pub(super) async fn interrogation<S>(
 {
     let chan = reply.lock().take();
     if let Some(tx) = chan {
-        let may_conn = match state.endpoint.get_connection(peer) {
-            Some(conn) => Some(conn),
-            None => io::connect(&state.endpoint, peer, addr_hints)
-                .await
-                .map(|(conn, ingress)| {
-                    state
-                        .spawner
-                        .spawn(io::streams::incoming(state.clone(), ingress))
-                        .detach();
-                    conn
-                }),
-        };
+        let may_conn = io::connections::get_or_connect(&state, peer, addr_hints).await;
         let resp = match may_conn {
             None => Err(error::Interrogation::NoConnection(peer)),
             Some(conn) => match io::send::request(&conn, request).await {
@@ -121,6 +125,60 @@ pub(super) async fn interrogation<S>(
                 Ok(resp) => resp.ok_or(error::Interrogation::NoResponse(peer)),
             },
         };
+        tx.send(resp).ok();
+    }
+}
+
+pub(super) async fn graft<S>(
+    state: &mut State<S>,
+    event::downstream::Graft {
+        peer: (peer, addr_hints),
+        reply,
+    }: event::downstream::Graft,
+) where
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+{
+    // When global grafting is disabled, we still need to funnel through some
+    // chans in order to get an owned stream back.
+    async fn disabled<S>(
+        state: State<S>,
+        conn: quic::Connection,
+    ) -> Result<BoxStream<'static, io::graft::Progress>, error::Graft>
+    where
+        S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    {
+        use graft::Grafting as _;
+
+        let (tx, rx) = oneshot::channel();
+        let cfg = io::graft::Config::from(state.config);
+        state
+            .spawner
+            .clone()
+            .spawn({
+                let task = io::graft::Grafting::new(state, cfg).graft(None);
+                async move { graft::schedule(&task, conn, tx).await }
+            })
+            .detach();
+
+        Ok(rx
+            .await
+            .map_err(|_: oneshot::Canceled| error::Graft::Stopped)??
+            .boxed())
+    }
+
+    let go = async {
+        let conn = io::connections::get_or_connect(state, peer, addr_hints)
+            .await
+            .ok_or(error::Graft::NoConnection(peer))?;
+        match state.graftq.as_mut() {
+            Some(queue) => Ok(queue.push(conn)?.await??.boxed()),
+            None => disabled(state.clone(), conn).await,
+        }
+    };
+
+    let chan = reply.lock().take();
+    if let Some(tx) = chan {
+        let resp = go.await;
         tx.send(resp).ok();
     }
 }

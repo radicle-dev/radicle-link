@@ -104,6 +104,7 @@ async fn main() {
                 network: opts.network,
                 replication: Default::default(),
                 fetch: Default::default(),
+                graft: Default::default(),
             },
             storage: Default::default(),
         });

@@ -14,14 +14,7 @@ use indexmap::IndexSet;
 
 use crate::{
     net::{
-        protocol::{
-            event::upstream as event,
-            gossip,
-            info::PeerInfo,
-            io::streams,
-            ProtocolStorage,
-            State,
-        },
+        protocol::{self, event::upstream as event, gossip, io, ProtocolStorage, State},
         quic,
     },
     PeerId,
@@ -34,7 +27,7 @@ use crate::{
 /// Panics if one of the tasks spawned by this function panics.
 #[tracing::instrument(skip(state, ingress))]
 pub(in crate::net::protocol) async fn incoming<S, I>(
-    state: State<S>,
+    mut state: State<S>,
     ingress: I,
 ) -> Result<!, quic::Error>
 where
@@ -43,6 +36,7 @@ where
         Item = quic::Result<(quic::Connection, quic::BoxedIncomingStreams<'static>)>,
     >,
 {
+    use protocol::graft::Source;
     use quic::Error::*;
 
     let listen_addrs = state.endpoint.listen_addrs();
@@ -55,8 +49,9 @@ where
         futures::select! {
             conn = ingress.next() => match conn {
                 Some(conn) => match conn {
-                    Ok((_, streams)) => {
-                        tasks.push(state.spawner.spawn(streams::incoming(state.clone(), streams)));
+                    Ok((conn, streams)) => {
+                        state.graft_trigger(conn, Source::Incoming);
+                        tasks.push(state.spawner.spawn(io::streams::incoming(state.clone(), streams)));
                     },
                     Err(err)=> match err {
                         Connection(_) | PeerId(_) | RemoteIdUnavailable | SelfConnect => {
@@ -91,20 +86,58 @@ where
     Err(quic::Error::Shutdown)
 }
 
-pub async fn connect_peer_info(
-    endpoint: &quic::Endpoint,
-    peer_info: PeerInfo<SocketAddr>,
-) -> Option<(
-    quic::Connection,
-    quic::IncomingStreams<
-        impl Stream<Item = quic::Result<Either<quic::BidiStream, quic::RecvStream>>>,
-    >,
-)> {
-    let addrs = peer_info
-        .seen_addrs
-        .into_iter()
-        .chain(peer_info.advertised_info.listen_addrs);
-    connect(endpoint, peer_info.peer_id, addrs).await
+struct Maybe<T>(Option<T>);
+
+impl<T> Maybe<T> {
+    async fn or_else<F, Fut>(self, f: F) -> Maybe<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Option<T>>,
+    {
+        match self.0 {
+            None => Self(f().await),
+            Some(x) => Self(Some(x)),
+        }
+    }
+
+    fn into_inner(self) -> Option<T> {
+        self.0
+    }
+}
+
+pub(in crate::net::protocol) async fn get_or_connect<S, Addrs>(
+    state: &State<S>,
+    remote_id: PeerId,
+    addrs: Addrs,
+) -> Option<quic::Connection>
+where
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    Addrs: IntoIterator<Item = SocketAddr> + 'static,
+{
+    Maybe(state.endpoint.get_connection(remote_id))
+        .or_else(|| connect_accept(state.clone(), remote_id, addrs))
+        .await
+        .into_inner()
+}
+
+pub(in crate::net::protocol) async fn connect_accept<S, Addrs>(
+    state: State<S>,
+    remote_id: PeerId,
+    addrs: Addrs,
+) -> Option<quic::Connection>
+where
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    Addrs: IntoIterator<Item = SocketAddr> + 'static,
+{
+    connect(&state.endpoint, remote_id, addrs)
+        .await
+        .map(|(conn, ingress)| {
+            let spawner = state.spawner.clone();
+            spawner
+                .spawn(super::streams::incoming(state, ingress))
+                .detach();
+            conn
+        })
 }
 
 #[tracing::instrument(skip(endpoint, addrs))]

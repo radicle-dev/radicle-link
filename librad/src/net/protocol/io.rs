@@ -24,7 +24,7 @@ use crate::{
 mod codec;
 
 pub(super) mod connections;
-pub(super) use connections::{connect, connect_peer_info};
+pub(super) use connections::connect;
 
 pub mod graft;
 pub(super) mod recv;
@@ -35,15 +35,18 @@ pub use send::{rpc::Rpc, send_rpc};
 pub(super) mod streams;
 
 #[tracing::instrument(skip(state, peer, addrs), fields(remote_id = %peer))]
-pub(super) async fn discovered<S>(state: State<S>, peer: PeerId, addrs: Vec<SocketAddr>)
+pub(super) async fn discovered<S>(mut state: State<S>, peer: PeerId, addrs: Vec<SocketAddr>)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
+    use super::graft::Source;
+
     if state.endpoint.get_connection(peer).is_some() {
         return;
     }
 
     if let Some((conn, ingress)) = connect(&state.endpoint, peer, addrs).await {
+        state.graft_trigger(conn.clone(), Source::Discovery);
         let rpc_sent = send_rpc::<_, ()>(
             &conn,
             state.membership.hello(peer_advertisement(&state.endpoint)),

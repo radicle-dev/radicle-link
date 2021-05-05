@@ -3,6 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::fmt::{self, Debug};
+
 use sized_vec::Vec as SVec;
 use thiserror::Error;
 use typenum::{IsLessOrEqual, Unsigned, U10000};
@@ -89,6 +91,16 @@ impl Clone for Xor {
                 fingerprints: self.inner.fingerprints.clone(),
             },
         }
+    }
+}
+
+impl Debug for Xor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Xor")
+            .field("seed", &self.inner.seed)
+            .field("block_length", &self.inner.block_length)
+            .field("fingerprints", &self.inner.fingerprints)
+            .finish()
     }
 }
 

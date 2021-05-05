@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeSet, convert::TryFrom, option::NoneError};
+use std::{collections::BTreeSet, convert::TryFrom, iter, option::NoneError};
 
 use data::BoundedVec;
 use minicbor::{Decode, Encode};
@@ -97,6 +97,21 @@ pub struct GenericPeerInfo<Addr, T> {
 
     #[n(2)]
     pub seen_addrs: BoundedVec<U16, Addr>,
+}
+
+impl<A> IntoIterator for GenericPeerInfo<A, PeerAdvertisement<A>> {
+    type Item = A;
+    #[allow(clippy::type_complexity)]
+    type IntoIter = iter::Chain<
+        <BoundedVec<U16, A> as IntoIterator>::IntoIter,
+        <BoundedVec<U16, A> as IntoIterator>::IntoIter,
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.seen_addrs
+            .into_iter()
+            .chain(self.advertised_info.listen_addrs)
+    }
 }
 
 // XXX: derive fails to add the trait bound on Addr

@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use futures::{channel::mpsc, future::FutureExt as _, stream::StreamExt as _};
+use futures::{channel::mpsc, future::FutureExt as _};
 use nonempty::NonEmpty;
 use rand_pcg::Pcg64Mcg;
 
@@ -40,6 +40,7 @@ pub mod broadcast;
 pub mod error;
 pub mod event;
 pub mod gossip;
+pub mod graft;
 pub mod interrogation;
 pub mod io;
 pub mod membership;
@@ -69,6 +70,7 @@ pub struct Config {
     pub network: Network,
     pub replication: replication::Config,
     pub fetch: config::Fetch,
+    pub graft: Option<graft::Config>,
     // TODO: transport, ...
 }
 
@@ -98,6 +100,7 @@ pub struct Bound<S> {
     state: State<S>,
     incoming: quic::IncomingConnections<'static>,
     periodic: mpsc::Receiver<membership::Periodic<SocketAddr>>,
+    graft: Option<io::graft::Scheduler<S>>,
 }
 
 impl<S> Bound<S> {
@@ -163,6 +166,18 @@ where
         config.membership,
     );
     let storage = Storage::from(storage);
+    let (graftq, build_sched) = config
+        .graft
+        .map(|cfg| {
+            graft::Queue::new(
+                Arc::clone(&spawner),
+                cfg,
+                io::graft::Env::new(membership.clone()),
+            )
+        })
+        .map(|(a, b)| (Some(a), Some(b)))
+        .unwrap_or((None, None));
+
     let state = State {
         local_id,
         endpoint,
@@ -176,19 +191,27 @@ where
         },
         nonces: nonce::NonceBag::new(Duration::from_secs(300)), // TODO: config
         caches: cache::Caches::default(),
+        graftq,
         spawner,
     };
+
+    let graft = build_sched.map(|sched| {
+        let state = state.clone();
+        let cfg = io::graft::Config::from(state.config);
+        sched.build(io::graft::Grafting::new(state, cfg))
+    });
 
     Ok(Bound {
         phone,
         state,
         incoming,
         periodic,
+        graft,
     })
 }
 
 #[tracing::instrument(
-    skip(phone, state, incoming, periodic, disco),
+    skip(phone, state, incoming, periodic, graft, disco),
     fields(peer_id = %state.local_id),
 )]
 pub fn accept<Store, Disco>(
@@ -197,6 +220,7 @@ pub fn accept<Store, Disco>(
         state,
         incoming,
         periodic,
+        graft,
     }: Bound<Store>,
     disco: Disco,
 ) -> impl Future<Output = Result<!, quic::Error>>
@@ -220,10 +244,12 @@ where
                 async_stream::stream! {
                     let mut r = phone.downstream.subscribe();
                     loop { yield r.recv().await; }
-                }
-                .boxed(),
+                },
             ))
             .detach();
+        if let Some(sched) = graft {
+            spawner.spawn(sched.run()).detach();
+        }
     }
     let endpoint = state.endpoint.clone();
     let main = spawner.spawn(io::connections::incoming(state, incoming));

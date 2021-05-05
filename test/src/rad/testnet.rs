@@ -20,13 +20,13 @@ use futures::{
 use tempfile::{tempdir, TempDir};
 
 use librad::{
-    git,
+    git::{self, replication},
     keys::SecretKey,
     net::{
         connection::{LocalAddr, LocalPeer},
         discovery::{self, Discovery as _},
         peer::{self, Peer},
-        protocol,
+        protocol::{self, graft, membership},
         quic,
         Network,
     },
@@ -101,7 +101,7 @@ impl LocalAddr for RunningTestPeer {
     }
 }
 
-async fn boot<I, J>(seeds: I) -> anyhow::Result<BoundTestPeer>
+async fn boot<I, J>(seeds: I, overrides: ProtocolOverrides) -> anyhow::Result<BoundTestPeer>
 where
     I: IntoIterator<Item = (PeerId, J)>,
     J: IntoIterator<Item = SocketAddr>,
@@ -118,10 +118,13 @@ where
         paths,
         listen_addr,
         advertised_addrs: None,
-        membership: Default::default(),
-        network: Network::Custom(b"localtestnet".as_ref().into()),
-        replication: Default::default(),
-        fetch: Default::default(),
+        membership: overrides.membership.unwrap_or_default(),
+        network: overrides
+            .network
+            .unwrap_or_else(|| Network::Custom(b"localtestnet".as_ref().into())),
+        replication: overrides.replication.unwrap_or_default(),
+        fetch: overrides.fetch.unwrap_or_default(),
+        graft: overrides.graft.unwrap_or_default(),
     };
     let disco = seeds.into_iter().collect::<discovery::Static>();
     let peer = Peer::new(peer::Config {
@@ -137,6 +140,15 @@ where
         disco,
         tmp,
     })
+}
+
+#[derive(Clone, Default)]
+pub struct ProtocolOverrides {
+    pub membership: Option<membership::Params>,
+    pub network: Option<Network>,
+    pub replication: Option<replication::Config>,
+    pub fetch: Option<protocol::config::Fetch>,
+    pub graft: Option<Option<graft::Config>>,
 }
 
 /// How to bootstrap the test network.
@@ -220,6 +232,7 @@ pub struct Config {
     pub num_peers: NonZeroUsize,
     pub min_connected: usize,
     pub bootstrap: Bootstrap,
+    pub overrides: ProtocolOverrides,
 }
 
 async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
@@ -229,13 +242,14 @@ async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
     match config.bootstrap {
         Bootstrap::None => {
             for _ in 0..num_peers {
-                let peer = boot::<Option<_>, Option<_>>(None).await?;
+                let peer = boot::<Option<_>, Option<_>>(None, config.overrides.clone()).await?;
                 peers.push(peer);
             }
         },
 
         Bootstrap::First => {
-            let bootstrap_node = boot::<Option<_>, Option<_>>(None).await?;
+            let bootstrap_node =
+                boot::<Option<_>, Option<_>>(None, config.overrides.clone()).await?;
             let bootstrap = Some((
                 bootstrap_node.bound.peer_id(),
                 bootstrap_node.listen_addrs(),
@@ -243,7 +257,7 @@ async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
             peers.push(bootstrap_node);
 
             for _ in 1..num_peers {
-                let peer = boot(bootstrap.clone()).await?;
+                let peer = boot(bootstrap.clone(), config.overrides.clone()).await?;
                 peers.push(peer);
             }
         },
@@ -251,7 +265,7 @@ async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
         Bootstrap::Prev => {
             let mut bootstrap: Option<(PeerId, Vec<SocketAddr>)> = None;
             for _ in 0..num_peers {
-                let peer = boot(bootstrap.take()).await?;
+                let peer = boot(bootstrap.take(), config.overrides.clone()).await?;
                 bootstrap = Some((peer.bound.peer_id(), peer.bound.listen_addrs()));
                 peers.push(peer);
             }
@@ -259,7 +273,7 @@ async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
 
         Bootstrap::Fixed(bootstrap) => {
             for _ in 0..num_peers {
-                let peer = boot(bootstrap.clone()).await?;
+                let peer = boot(bootstrap.clone(), config.overrides.clone()).await?;
                 peers.push(peer);
             }
         },

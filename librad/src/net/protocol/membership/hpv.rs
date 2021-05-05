@@ -116,7 +116,10 @@ impl<A> Extend<Tick<A>> for TnT<A> {
 ///
 /// [HyParView]: https://asc.di.fct.unl.pt/~jleitao/pdf/dsn07-leitao.pdf
 #[derive(Clone)]
-pub struct Hpv<Rng, Addr>(Arc<RwLock<HpvInner<Rng, Addr>>>);
+pub struct Hpv<Rng, Addr> {
+    params: Params,
+    inner: Arc<RwLock<HpvInner<Rng, Addr>>>,
+}
 
 impl<Rng, Addr> Hpv<Rng, Addr>
 where
@@ -133,7 +136,10 @@ where
         Rng: Send + Sync + 'static,
         Addr: Send + Sync + 'static,
     {
-        let this = Self(Arc::new(RwLock::new(HpvInner::new(local_id, rng, params))));
+        let this = Self {
+            params: params.clone(),
+            inner: Arc::new(RwLock::new(HpvInner::new(local_id, rng, params))),
+        };
         let (tx, rx) = mpsc::channel(1);
         spawner.spawn(periodic_tasks(this.clone(), tx)).detach();
 
@@ -141,57 +147,57 @@ where
     }
 
     pub fn view_stats(&self) -> (usize, usize) {
-        let guard = self.0.read();
+        let guard = self.inner.read();
         (guard.num_active(), guard.num_passive())
     }
 
     pub fn active(&self) -> Vec<PeerId> {
-        self.0.read().active().collect()
+        self.inner.read().active().collect()
     }
 
     pub fn is_active(&self, peer: &PeerId) -> bool {
-        self.0.read().is_active(peer)
+        self.inner.read().is_active(peer)
     }
 
     pub fn is_passive(&self, peer: &PeerId) -> bool {
-        self.0.read().is_passive(peer)
+        self.inner.read().is_passive(peer)
     }
 
     pub fn is_known(&self, peer: &PeerId) -> bool {
-        self.0.read().is_known(peer)
+        self.inner.read().is_known(peer)
     }
 
     pub fn known(&self) -> Vec<PeerId> {
-        self.0.read().known().collect()
+        self.inner.read().known().collect()
     }
 
     pub fn passive(&self) -> Vec<PeerId> {
-        self.0.read().passive().collect()
+        self.inner.read().passive().collect()
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
     #[must_use = "ticks must be interpreted"]
     pub fn connection_lost(&self, remote_peer: PeerId) -> TnT<Addr> {
-        self.0.write().connection_lost(remote_peer)
+        self.inner.write().connection_lost(remote_peer)
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
     #[must_use = "ticks must be interpreted"]
     pub fn connection_established(&self, info: PartialPeerInfo<Addr>) -> TnT<Addr> {
-        self.0.write().connection_established(info)
+        self.inner.write().connection_established(info)
     }
 
     #[must_use = "shuffles must be dispatched"]
     pub(super) fn shuffle(&self) -> Option<Shuffle<Addr>> {
-        self.0.write().shuffle()
+        self.inner.write().shuffle()
     }
 
     pub(super) fn choose_passive_to_promote(&self) -> Vec<PeerInfo<Addr>> {
-        self.0.write().choose_passive_to_promote()
+        self.inner.write().choose_passive_to_promote()
     }
 
     pub fn broadcast_recipients(&self, exclude: impl Into<Option<PeerId>>) -> Vec<PeerId> {
-        self.0.read().broadcast_recipients(exclude.into())
+        self.inner.read().broadcast_recipients(exclude.into())
     }
 
     #[tracing::instrument(skip(self))]
@@ -202,7 +208,7 @@ where
         remote_addr: Addr,
         rpc: rpc::Message<Addr>,
     ) -> Result<TnT<Addr>, Error> {
-        self.0.write().apply(remote_peer, remote_addr, rpc)
+        self.inner.write().apply(remote_peer, remote_addr, rpc)
     }
 
     pub fn hello(&self, local_info: PeerAdvertisement<Addr>) -> rpc::Message<Addr> {
@@ -217,8 +223,8 @@ where
         }
     }
 
-    pub(super) fn params(&self) -> Params {
-        self.0.read().params.clone()
+    pub fn params(&self) -> &Params {
+        &self.params
     }
 }
 

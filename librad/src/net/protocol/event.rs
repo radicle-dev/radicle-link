@@ -5,7 +5,9 @@
 
 use std::{collections::HashMap, net::SocketAddr};
 
-use super::{broadcast, error, gossip, interrogation, membership};
+use futures::stream::BoxStream;
+
+use super::{broadcast, error, gossip, interrogation, io, membership};
 use crate::PeerId;
 
 #[derive(Clone)]
@@ -13,6 +15,7 @@ pub enum Downstream {
     Gossip(downstream::Gossip),
     Info(downstream::Info),
     Interrogation(downstream::Interrogation),
+    Graft(downstream::Graft),
 }
 
 pub mod downstream {
@@ -67,6 +70,12 @@ pub mod downstream {
         pub request: interrogation::Request,
         pub reply:
             Reply<Result<interrogation::Response<'static, SocketAddr>, error::Interrogation>>,
+    }
+
+    #[derive(Clone)]
+    pub struct Graft {
+        pub peer: (PeerId, Vec<SocketAddr>),
+        pub reply: Reply<Result<BoxStream<'static, io::graft::Progress>, error::Graft>>,
     }
 }
 

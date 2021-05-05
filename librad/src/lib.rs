@@ -15,6 +15,7 @@
 #![feature(drain_filter)]
 #![feature(ip)]
 #![feature(never_type)]
+#![feature(result_flattening)]
 #![feature(try_trait)]
 
 #[macro_use]

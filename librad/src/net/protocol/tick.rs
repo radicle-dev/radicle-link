@@ -10,7 +10,7 @@ use futures::{
     stream::{FuturesOrdered, StreamExt as _},
 };
 
-use super::{error, gossip, io, membership, PeerInfo, ProtocolStorage, State};
+use super::{error, gossip, graft, io, membership, PeerInfo, ProtocolStorage, State};
 use crate::PeerId;
 
 #[derive(Debug)]
@@ -60,7 +60,7 @@ where
 }
 
 fn one_tock<S>(
-    state: State<S>,
+    mut state: State<S>,
     tock: Tock<SocketAddr, gossip::Payload>,
 ) -> BoxFuture<'static, Result<(), error::Tock<SocketAddr>>>
 where
@@ -100,20 +100,16 @@ where
 
             AttemptSend { to, message } => {
                 let conn = match state.endpoint.get_connection(to.peer_id) {
+                    Some(conn) => conn,
                     None => {
-                        let (conn, ingress) = io::connect_peer_info(&state.endpoint, to.clone())
-                            .await
-                            .ok_or(error::BestEffortSend::CouldNotConnect { to })?;
-                        state
-                            .spawner
-                            .clone()
-                            .spawn(io::streams::incoming(state, ingress))
-                            .detach();
-
-                        Ok(conn)
+                        let conn =
+                            io::connections::connect_accept(state.clone(), to.peer_id, to.clone())
+                                .await
+                                .ok_or(error::BestEffortSend::CouldNotConnect { to })?;
+                        state.graft_trigger(conn.clone(), graft::Source::Outgoing);
+                        conn
                     },
-                    Some(conn) => Ok::<_, error::Tock<SocketAddr>>(conn),
-                }?;
+                };
                 Ok(io::send_rpc(&conn, message)
                     .await
                     .map_err(error::BestEffortSend::SendGossip)?)
