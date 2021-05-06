@@ -10,11 +10,10 @@
 // much.
 #![allow(clippy::wildcard_enum_match_arm)]
 
-use librad::peer::PeerId;
+use librad::PeerId;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    event::Event,
     Attempts,
     Cancelled,
     Cloned,
@@ -27,10 +26,11 @@ use super::{
     Request,
     RequestState,
     Requested,
-    Status,
     TimedOut,
     Urn,
 };
+
+use super::Status;
 
 /// Since a `Request` is parameterised over its state, it makes it difficult to
 /// talk about a `Request` in general without the compiler complaining at us.
@@ -218,11 +218,11 @@ impl<T> SomeRequest<T> {
     /// then we follow that transition.
     ///
     /// If not we leave the `SomeRequest` as is.
-    pub(super) fn transition<Prev, Next>(
+    pub fn transition<Prev, Next>(
         self,
         matcher: impl FnOnce(SomeRequest<T>) -> Option<Prev>,
-        transition: impl FnOnce(Prev) -> (Next, Event),
-    ) -> Either<SomeRequest<T>, (Next, Event)>
+        transition: impl FnOnce(Prev) -> Next,
+    ) -> Either<SomeRequest<T>, Next>
     where
         T: Clone,
     {

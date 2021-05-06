@@ -26,17 +26,12 @@ use librad::{
     },
     peer::PeerId,
 };
-use waiting_room::TransitionWithResult;
 
 use crate::{
     convert::MaybeFrom,
     peer::{announcement, control},
-    request::{
-        waiting_room::{self, Transition as WaitingRoomTransition, WaitingRoom},
-        Event as RequestEvent,
-    },
+    request::waiting_room::{self, WaitingRoom},
 };
-use either::Either;
 
 pub mod command;
 pub use command::Command;
@@ -47,8 +42,9 @@ pub use config::Config;
 pub mod input;
 pub use input::Input;
 
-mod waiting_room_step;
-use waiting_room_step::WaitingRoomStep;
+mod running_waiting_room;
+pub use running_waiting_room::Event as WaitingRoomEvent;
+use running_waiting_room::{RunningWaitingRoom, WaitingRoomTransition};
 
 /// Events external subscribers can observe for internal peer operations.
 #[allow(clippy::large_enum_variant)]
@@ -169,7 +165,7 @@ pub struct RunState {
     stats: net::protocol::event::downstream::Stats,
     syncs: HashSet<PeerId>,
     /// Current set of requests.
-    waiting_room: WaitingRoom<SystemTime, Duration>,
+    waiting_room: RunningWaitingRoom,
 }
 
 impl RunState {
@@ -182,7 +178,9 @@ impl RunState {
             stats: downstream::Stats::default(),
             status,
             syncs,
-            waiting_room: WaitingRoom::new(waiting_room::Config::default()),
+            waiting_room: RunningWaitingRoom::new(
+                WaitingRoom::new(waiting_room::Config::default()),
+            ),
         }
     }
 
@@ -195,7 +193,7 @@ impl RunState {
             stats: downstream::Stats::default(),
             status: Status::Stopped,
             syncs: HashSet::new(),
-            waiting_room,
+            waiting_room: RunningWaitingRoom::new(waiting_room),
         }
     }
 
@@ -237,53 +235,10 @@ impl RunState {
     fn handle_control(&mut self, input: input::Control) -> Vec<Command> {
         match input {
             input::Control::CancelRequest(urn, timestamp, sender) => {
-                let cancel_result =
-                    self.waiting_room
-                        .canceled(&urn, timestamp)
-                        .map(|transition1| {
-                            let transition2 = self.waiting_room.remove(&urn, timestamp);
-                            (
-                                transition2.result.clone(),
-                                (transition1.transition(), transition2.transition()),
-                            )
-                        });
-                match cancel_result {
-                    Ok((request, (transition1, transition2))) => vec![
-                        Command::Control(command::Control::Respond(
-                            control::Response::CancelSearch(sender, Ok(request)),
-                        )),
-                        Command::PersistWaitingRoom(self.waiting_room.clone()),
-                        Command::EmitEvent(transition1.into()),
-                        Command::EmitEvent(transition2.into()),
-                    ],
-                    Err(e) => vec![
-                        Command::Control(command::Control::Respond(
-                            control::Response::CancelSearch(sender, Err(e)),
-                        )),
-                        Command::PersistWaitingRoom(self.waiting_room.clone()),
-                    ],
-                }
+                self.waiting_room.cancel(urn, timestamp, sender)
             },
             input::Control::CreateRequest(urn, time, sender) => {
-                let request = self.waiting_room.request(&urn, time);
-                match request {
-                    Either::Left(transition) => vec![
-                        Command::Control(command::Control::Respond(
-                            control::Response::StartSearch(
-                                sender,
-                                Either::Left(transition.result.clone()),
-                            ),
-                        )),
-                        Command::EmitEvent(Event::RequestCreated(urn)),
-                        Command::EmitEvent(transition.transition().into()),
-                    ],
-                    Either::Right(request) => vec![
-                        Command::Control(command::Control::Respond(
-                            control::Response::StartSearch(sender, Either::Right(request)),
-                        )),
-                        Command::EmitEvent(Event::RequestCreated(urn)),
-                    ],
-                }
+                self.waiting_room.request(urn, time, sender)
             },
             input::Control::GetRequest(urn, sender) => {
                 vec![Command::Control(command::Control::Respond(
@@ -364,15 +319,7 @@ impl RunState {
                         provider: PeerInfo { peer_id, .. },
                         result,
                     } => {
-                        let transition = self.waiting_room.found(&urn, peer_id, SystemTime::now());
-                        if let Ok(transition) = transition.map(TransitionWithResult::transition) {
-                            if let RequestEvent::TimedOut { ref urn, .. } = transition.event {
-                                cmds.push(Command::Request(command::Request::TimedOut(
-                                    urn.clone(),
-                                )));
-                                cmds.push(Command::EmitEvent(transition.into()));
-                            }
-                        }
+                        cmds.extend(self.waiting_room.found(&urn, peer_id, SystemTime::now()));
 
                         if let PutResult::Applied(_) = result {
                             cmds.push(Command::Include(urn));
@@ -392,59 +339,17 @@ impl RunState {
         match (&self.status, input) {
             // Check for new query and clone requests.
             (Status::Online { .. }, input::Request::Tick) => {
-                let mut step = WaitingRoomStep::new(&mut self.waiting_room);
-                let mut cmds = Vec::with_capacity(3);
-
-                if let Some(urn) = self.waiting_room.next_query(SystemTime::now()) {
-                    cmds.push(Command::Request(command::Request::Query(urn)));
-                    cmds.push(Command::PersistWaitingRoom(self.waiting_room.clone()));
-                }
-                if let Some((urn, remote_peer)) = self.waiting_room.next_clone() {
-                    cmds.push(Command::Request(command::Request::Clone(urn, remote_peer)));
-                    cmds.push(Command::PersistWaitingRoom(self.waiting_room.clone()));
-                }
-                //cmds.push(Command::EmitEvent(
-                    //self.waiting_room.tick(SystemTime::now()).into(),
-                //));
-                cmds
+                self.waiting_room.tick(SystemTime::now())
             },
-            // FIXME(xla): Come up with a strategy for the results returned by the waiting room.
-            (_, input::Request::Cloning(urn, remote_peer)) => self
-                .waiting_room
-                .cloning(&urn, remote_peer, SystemTime::now())
-                .map_or_else(
-                    |error| Self::handle_waiting_room_error(&error),
-                    |t| {
-                        Self::waiting_room_events_to_commands(
-                            self.waiting_room.clone(),
-                            t.transition(),
-                        )
-                    },
-                ),
-            (_, input::Request::Cloned(urn, remote_peer)) => self
-                .waiting_room
-                .cloned(&urn, remote_peer, SystemTime::now())
-                .map_or_else(
-                    |error| Self::handle_waiting_room_error(&error),
-                    |t| {
-                        Self::waiting_room_events_to_commands(
-                            self.waiting_room.clone(),
-                            t.transition(),
-                        )
-                    },
-                ),
-            (_, input::Request::Queried(urn)) => self
-                .waiting_room
-                .queried(&urn, SystemTime::now())
-                .map_or_else(
-                    |error| Self::handle_waiting_room_error(&error),
-                    |t| {
-                        Self::waiting_room_events_to_commands(
-                            self.waiting_room.clone(),
-                            t.transition(),
-                        )
-                    },
-                ),
+            (_, input::Request::Cloning(urn, remote_peer)) => {
+                self.waiting_room
+                    .cloning(&urn, remote_peer, SystemTime::now())
+            },
+            (_, input::Request::Cloned(urn, remote_peer)) => {
+                self.waiting_room
+                    .cloned(&urn, remote_peer, SystemTime::now())
+            },
+            (_, input::Request::Queried(urn)) => self.waiting_room.queried(&urn, SystemTime::now()),
             (
                 _,
                 input::Request::Failed {
@@ -456,15 +361,6 @@ impl RunState {
                 log::warn!("Cloning failed with: {}", reason);
                 self.waiting_room
                     .cloning_failed(&urn, remote_peer, SystemTime::now(), reason)
-                    .map_or_else(
-                        |error| Self::handle_waiting_room_error(&error),
-                        |t| {
-                            Self::waiting_room_events_to_commands(
-                                self.waiting_room.clone(),
-                                t.transition(),
-                            )
-                        },
-                    )
             },
             _ => vec![],
         }
@@ -499,25 +395,6 @@ impl RunState {
                 vec![]
             },
         }
-    }
-
-    /// Handle [`waiting_room::Error`]s.
-    fn handle_waiting_room_error(error: &waiting_room::Error) -> Vec<Command> {
-        log::warn!("WaitingRoom::Error : {}", error);
-        Vec::new()
-    }
-
-    fn waiting_room_events_to_commands(
-        waiting_room: WaitingRoom<SystemTime, Duration>,
-        transition: WaitingRoomTransition<SystemTime>,
-    ) -> Vec<Command> {
-        let mut commands = Vec::with_capacity(3);
-        commands.push(Command::PersistWaitingRoom(waiting_room));
-        if let RequestEvent::TimedOut { ref urn, .. } = transition.event {
-            commands.push(Command::Request(command::Request::TimedOut(urn.clone())));
-        };
-        commands.push(Command::EmitEvent(transition.into()));
-        commands
     }
 }
 
@@ -736,7 +613,7 @@ mod test {
                         }),
                     }
                 ))))
-                .first(),
+                .last(),
             Some(Command::Include(_))
         );
 
