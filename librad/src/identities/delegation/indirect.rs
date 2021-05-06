@@ -52,39 +52,6 @@ pub struct Indirect<T, R, C> {
     delegations: BTreeMap<PublicKey, Option<usize>>,
 }
 
-// `self.identities` is stored in insertion order, so we can't just derive
-// `PartialEq`. It turns out that making `Identity` `Ord` (or `Hash`) is quite
-// invasive, plus that we would need to store an extra unordered set. There is
-// also not a hard guarantee the `Identity` invariants are maintained (namely
-// the content hashes). So, let's keep this impl to tests, and assume `root` and
-// `revision` identify the stored `IndirectlyDelegating`.
-#[cfg(test)]
-impl<T, R, C> PartialEq for Indirect<T, R, C>
-where
-    R: Ord,
-    C: Ord,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.delegations.len() == other.delegations.len()
-            && self.identities.len() == other.identities.len()
-            && self
-                .delegations
-                .keys()
-                .zip(other.delegations.keys())
-                .all(|(a, b)| a == b)
-            && self
-                .identities
-                .iter()
-                .map(|id| (&id.root, &id.revision))
-                .collect::<BTreeSet<_>>()
-                == other
-                    .identities
-                    .iter()
-                    .map(|id| (&id.root, &id.revision))
-                    .collect::<BTreeSet<_>>()
-    }
-}
-
 impl<T, R, C> Indirect<T, R, C> {
     /// Build `Self` from an iterator of either [`PublicKey`]s or
     /// [`IndirectlyDelegating`] identities.
@@ -333,3 +300,33 @@ impl<T, R, C> Delegations for Indirect<T, R, C> {
 }
 
 impl<T, R, C> sealed::Sealed for Indirect<T, R, C> {}
+
+pub mod test {
+    use super::*;
+
+    // `self.identities` is stored in insertion order, so we can't just derive
+    // `PartialEq`. It turns out that making `Identity` `Ord` (or `Hash`) is quite
+    // invasive, plus that we would need to store an extra unordered set. There is
+    // also not a hard guarantee the `Identity` invariants are maintained (namely
+    // the content hashes). So, let's keep this impl to tests, and assume `root` and
+    // `revision` identify the stored `IndirectlyDelegating`.
+    pub fn eq<T, R: Ord, C: Ord>(this: &Indirect<T, R, C>, other: &Indirect<T, R, C>) -> bool {
+        this.delegations.len() == other.delegations.len()
+            && this.identities.len() == other.identities.len()
+            && this
+                .delegations
+                .keys()
+                .zip(other.delegations.keys())
+                .all(|(a, b)| a == b)
+            && this
+                .identities
+                .iter()
+                .map(|id| (&id.root, &id.revision))
+                .collect::<BTreeSet<_>>()
+                == other
+                    .identities
+                    .iter()
+                    .map(|id| (&id.root, &id.revision))
+                    .collect::<BTreeSet<_>>()
+    }
+}

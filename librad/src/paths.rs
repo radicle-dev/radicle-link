@@ -64,7 +64,7 @@ impl Paths {
         &self.git_includes_dir
     }
 
-    fn all_dirs(&self) -> impl Iterator<Item = &Path> {
+    pub fn all_dirs(&self) -> impl Iterator<Item = &Path> {
         // Nb. this pattern match is here to keep the map consistent with the
         // struct fields
         let Self {
@@ -98,30 +98,4 @@ pub(crate) fn project_dirs() -> Result<ProjectDirs, io::Error> {
             "Couldn't determine application directories.",
         )
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    /// Note: not testing the system paths flavour, as that would only be
-    /// meaningful on a pristine system with properly set $HOME.
-    #[test]
-    fn test_initialises_paths() {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp.path()).unwrap();
-        assert!(paths.all_dirs().all(|path| path.exists()))
-    }
-
-    /// Test we indeed create everything under the root dir -
-    /// airquotes-chroot-airquotes.
-    #[test]
-    fn test_chroot() {
-        let tmp = tempdir().unwrap();
-        let paths = Paths::from_root(tmp.path()).unwrap();
-        assert!(paths
-            .all_dirs()
-            .all(|path| { path.ancestors().any(|parent| parent == tmp.path()) }))
-    }
 }

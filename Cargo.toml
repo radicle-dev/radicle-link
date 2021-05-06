@@ -7,8 +7,8 @@ members = [
   "git-ext",
   "git-helpers",
   "librad",
-  "librad-test",
   "macros",
+  "radicle-link-test",
   "seed",
   "std-ext",
 ]

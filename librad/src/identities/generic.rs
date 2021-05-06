@@ -17,11 +17,6 @@ use super::{delegation::Delegations, payload::Payload, sealed, sign::Signatures,
 
 pub mod error;
 
-#[cfg(test)]
-pub(crate) mod gen;
-#[cfg(test)]
-pub(crate) mod tests;
-
 /// The identity document, carrying metadata `T` and trust delegations `D`.
 ///
 /// In `git`, this is represented as a `blob`, where the previous revision

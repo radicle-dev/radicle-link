@@ -26,7 +26,7 @@ mod codec;
 pub(super) mod connections;
 pub(super) use connections::{connect, connect_peer_info};
 
-pub(super) mod graft;
+pub mod graft;
 pub(super) mod recv;
 
 pub mod send;

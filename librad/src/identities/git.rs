@@ -31,9 +31,6 @@ pub use generic::Verifying;
 mod load;
 mod sign;
 
-#[cfg(test)]
-pub(crate) mod tests;
-
 use iter::Iter;
 use load::ByOid;
 
@@ -99,6 +96,12 @@ impl<'a, T: 'a> From<&'a git2::Repository> for Identities<'a, T> {
             repo,
             _marker: PhantomData,
         }
+    }
+}
+
+impl<'a, T: 'a> From<&Identities<'a, T>> for Identities<'a, T> {
+    fn from(other: &Identities<'a, T>) -> Self {
+        Identities::from(other.repo)
     }
 }
 

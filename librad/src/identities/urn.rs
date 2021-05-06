@@ -374,15 +374,8 @@ where
     }
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
+pub mod test {
     use super::*;
-
-    use git_ext::Oid;
-    use librad_test::roundtrip::*;
-    use proptest::prelude::*;
-
-    use crate::identities::gen::gen_oid;
 
     /// Fake `id` of a `Urn<FakeId>`.
     ///
@@ -412,76 +405,5 @@ pub(crate) mod tests {
         fn from(id: &FakeId) -> Self {
             multihash::wrap(multihash::Code::Identity, &id.0.to_be_bytes())
         }
-    }
-
-    fn gen_urn() -> impl Strategy<Value = Urn<Oid>> {
-        (
-            gen_oid(git2::ObjectType::Tree),
-            prop::option::of(prop::collection::vec("[a-z0-9]+", 1..3)),
-        )
-            .prop_map(|(id, path)| {
-                let path = path.map(|elems| {
-                    ext::RefLike::try_from(elems.join("/")).unwrap_or_else(|e| {
-                        panic!(
-                            "Unexpected error generating a RefLike from `{}`: {}",
-                            elems.join("/"),
-                            e
-                        )
-                    })
-                });
-                Urn { id, path }
-            })
-    }
-
-    /// All serialisation roundtrips [`Urn`] must pass
-    fn trippin<R, E>(urn: Urn<R>)
-    where
-        R: Clone + Debug + PartialEq + TryFrom<Multihash, Error = E> + HasProtocol,
-        for<'a> R: TryFrom<MultihashRef<'a>>,
-        for<'a> &'a R: Into<Multihash>,
-        E: std::error::Error + 'static,
-    {
-        str_roundtrip(urn.clone());
-        json_roundtrip(urn.clone());
-        cbor_roundtrip(urn);
-    }
-
-    proptest! {
-        #[test]
-        fn roundtrip(urn in gen_urn()) {
-            trippin(urn)
-        }
-    }
-
-    #[test]
-    fn is_reflike() {
-        assert_eq!(
-            "hnrkyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
-            ext::RefLike::from(Urn::new(ext::Oid::from(git2::Oid::zero()))).as_str()
-        )
-    }
-
-    #[test]
-    fn is_reflike_with_path() {
-        assert_eq!(
-            "hnrkyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/refs/heads/lolek/bolek",
-            ext::RefLike::from(Urn {
-                id: ext::Oid::from(git2::Oid::zero()),
-                path: Some(ext::RefLike::try_from("lolek/bolek").unwrap())
-            })
-            .as_str()
-        )
-    }
-
-    #[test]
-    fn is_reflike_with_qualified_path() {
-        assert_eq!(
-            "hnrkyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/refs/remotes/lolek/bolek",
-            ext::RefLike::from(Urn {
-                id: ext::Oid::from(git2::Oid::zero()),
-                path: Some(ext::RefLike::try_from("refs/remotes/lolek/bolek").unwrap())
-            })
-            .as_str()
-        )
     }
 }

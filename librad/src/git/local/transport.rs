@@ -301,7 +301,7 @@ where
     Ok(remotes.into_iter())
 }
 
-fn visible_remotes_glob(urn: &Urn) -> impl glob::Pattern + Debug {
+pub fn visible_remotes_glob(urn: &Urn) -> impl glob::Pattern + Debug {
     globset::Glob::new(&format!(
         "{}/*/{{heads,tags}}/*",
         reflike!("refs/namespaces")
@@ -310,38 +310,4 @@ fn visible_remotes_glob(urn: &Urn) -> impl glob::Pattern + Debug {
     ))
     .unwrap()
     .compile_matcher()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::git::storage::glob::Pattern as _;
-
-    #[test]
-    fn visible_remotes_glob_seems_legit() {
-        let urn = Urn::new(git2::Oid::zero().into());
-        let glob = visible_remotes_glob(&urn);
-
-        assert!(glob.matches(
-            reflike!("refs/namespaces")
-                .join(Namespace::from(&urn))
-                .join(reflike!("refs/remotes/lolek/heads/next"))
-                .as_str()
-        ));
-        assert!(glob.matches(
-            reflike!("refs/namespaces")
-                .join(Namespace::from(&urn))
-                .join(reflike!("refs/remotes/bolek/tags/v0.99"))
-                .as_str()
-        ));
-        assert!(!glob.matches("refs/heads/master"));
-        assert!(!glob.matches("refs/namespaces/othernamespace/refs/remotes/tola/heads/next"));
-        assert!(!glob.matches(
-            reflike!("refs/namespaces")
-                .join(Namespace::from(&urn))
-                .join(reflike!("refs/heads/hidden"))
-                .as_str()
-        ));
-    }
 }

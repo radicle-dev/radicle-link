@@ -153,5 +153,5 @@ proptest = "0"
 sha-1 = "0.9"
 tracing-subscriber = ">= 0.2"
 
-[dev-dependencies.librad-test]
-path = "../librad-test"
+[dev-dependencies.radicle-link-test]
+path = "../radicle-link-test"

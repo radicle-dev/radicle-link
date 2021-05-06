@@ -32,5 +32,5 @@ either = "1"
 futures = ">= 0.3"
 tempfile = "3"
 
-[dev-dependencies.librad-test]
-path = "../librad-test"
+[dev-dependencies.radicle-link-test]
+path = "../radicle-link-test"

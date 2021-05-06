@@ -103,17 +103,3 @@ impl From<LocalUrl> for Urn {
         url.urn
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::git::Urn;
-    use librad_test::roundtrip::str_roundtrip;
-
-    #[test]
-    fn trip() {
-        let url = LocalUrl::from(Urn::new(git2::Oid::zero().into()));
-        str_roundtrip(url)
-    }
-}

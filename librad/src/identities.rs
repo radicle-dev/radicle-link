@@ -14,9 +14,6 @@ pub use urn::Urn;
 
 mod sealed;
 
-#[cfg(test)]
-pub(crate) mod gen;
-
 pub use git::*;
 
 #[derive(Clone, Debug, minicbor::Encode, minicbor::Decode)]

@@ -5,6 +5,8 @@
 
 use std::collections::BTreeSet;
 
+use either::Either::{self, *};
+
 use crate::keys::PublicKey;
 
 use super::{generic, payload, sealed};
@@ -60,5 +62,42 @@ where
 
     fn quorum_threshold(&self) -> usize {
         self.doc.quorum_threshold()
+    }
+}
+
+/// "Existentialised" delegations.
+#[derive(Clone, Debug)]
+pub enum SomeDelegations<T, R: Ord, C: Ord> {
+    Direct(Direct),
+    Indirect(Indirect<T, R, C>),
+}
+
+impl<T, R: Ord, C: Ord> Delegations for SomeDelegations<T, R, C> {
+    type Error = Either<<Direct as Delegations>::Error, <Indirect<T, R, C> as Delegations>::Error>;
+
+    fn eligible(&self, votes: BTreeSet<&PublicKey>) -> Result<BTreeSet<&PublicKey>, Self::Error> {
+        match self {
+            SomeDelegations::Direct(direct) => Ok(direct.eligible(votes)),
+            SomeDelegations::Indirect(indirect) => indirect.eligible(votes).map_err(Right),
+        }
+    }
+
+    fn quorum_threshold(&self) -> usize {
+        match self {
+            SomeDelegations::Direct(direct) => direct.quorum_threshold(),
+            SomeDelegations::Indirect(indirect) => indirect.quorum_threshold(),
+        }
+    }
+}
+
+impl<T, R: Ord, C: Ord> sealed::Sealed for SomeDelegations<T, R, C> {}
+
+impl<T, R: Ord, C: Ord> PartialEq for SomeDelegations<T, R, C> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Direct(this), Self::Direct(that)) => this == that,
+            (Self::Indirect(this), Self::Indirect(that)) => indirect::test::eq(this, that),
+            (_, _) => false,
+        }
     }
 }
