@@ -318,21 +318,29 @@ impl<T, D> WaitingRoom<T, D> {
     ///
     ///   * If the `urn` was not in the `WaitingRoom`.
     ///   * If the underlying `Request` was not in the expected state.
+    #[allow(clippy::clippy::needless_pass_by_value)]
     pub fn cloning_failed(
         &mut self,
         urn: &Urn,
         remote_peer: PeerId,
         timestamp: T,
+        reason: Box<dyn std::error::Error>,
     ) -> Result<(), Error>
     where
         T: Clone,
     {
+        #[allow(clippy::non_ascii_literal)]
+        let mut reason_str = anyhow::Chain::new(reason.as_ref())
+            .fold("".to_string(), |acc, e| format!("{} ⮩ {}", acc, e));
+        if let Some(bt) = reason.backtrace() {
+            reason_str.push_str(&bt.to_string());
+        }
         self.transition(
             |request| match request {
                 SomeRequest::Cloning(request) => Some(request),
                 _ => None,
             },
-            |previous| Either::Right(previous.failed(remote_peer, timestamp)),
+            |previous| Either::Right(previous.failed(remote_peer, reason_str.clone(), timestamp)),
             urn,
         )
     }
@@ -633,7 +641,7 @@ mod test {
 
         for remote_peer in &peers[0..NUM_CLONES] {
             waiting_room.cloning(&urn, *remote_peer, ())?;
-            waiting_room.cloning_failed(&urn, *remote_peer, ())?;
+            waiting_room.cloning_failed(&urn, *remote_peer, (), "no reason".into())?;
         }
 
         assert_eq!(
@@ -676,7 +684,7 @@ mod test {
         for remote_peer in peers {
             waiting_room.found(&urn, remote_peer, 2)?;
             waiting_room.cloning(&urn, remote_peer, 2)?;
-            waiting_room.cloning_failed(&urn, remote_peer, 2)?;
+            waiting_room.cloning_failed(&urn, remote_peer, 2, "no reason".into())?;
         }
 
         assert_matches!(waiting_room.get(&urn), Some(SomeRequest::Requested(_)));

@@ -84,8 +84,8 @@ pub enum Event {
     Tick,
 }
 
-/// `RunningWaitingRoom` is an adapter from the interface of `WaitingRoom` to the
-/// language of commands which is spoken by `RunState`. Whenever `RunState`
+/// `RunningWaitingRoom` is an adapter from the interface of `WaitingRoom` to
+/// the language of commands which is spoken by `RunState`. Whenever `RunState`
 /// needs to talk to `WaitingRoom` it does so via a wrapper method on
 /// `RunningWaitingRoom`. These wrapper methods contain the logic to convert
 /// the values  returned by `WaitingRoom` methods into `Vec<Command>`.
@@ -267,7 +267,7 @@ impl RunningWaitingRoom {
         urn: &Urn,
         remote_peer: PeerId,
         timestamp: SystemTime,
-        reason: String,
+        reason: Box<dyn std::error::Error>,
     ) -> Vec<Command> {
         Self::simple_command_helper(
             &mut self.waiting_room,
@@ -275,10 +275,10 @@ impl RunningWaitingRoom {
             Event::CloningFailed {
                 urn: urn.clone(),
                 peer: remote_peer,
-                reason,
+                reason: reason.to_string(),
             },
             timestamp,
-            |w| w.cloning_failed(urn, remote_peer, timestamp),
+            |w| w.cloning_failed(urn, remote_peer, timestamp, reason),
         )
     }
 
