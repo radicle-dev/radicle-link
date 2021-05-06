@@ -19,7 +19,7 @@ mod params;
 pub use params::Params;
 
 mod partial_view;
-pub use partial_view::Transition;
+pub use partial_view::{PartialView, Transition};
 
 mod periodic;
 pub use periodic::Periodic;

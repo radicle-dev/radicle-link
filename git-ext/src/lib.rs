@@ -20,11 +20,3 @@ pub use reference::*;
 pub use revwalk::*;
 pub use transport::*;
 pub use tree::Tree;
-
-#[cfg(test)]
-#[macro_use]
-extern crate assert_matches;
-
-#[cfg(test)]
-#[macro_use]
-extern crate lazy_static;

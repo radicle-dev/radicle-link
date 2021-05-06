@@ -41,6 +41,7 @@ pub mod error;
 pub mod event;
 pub mod gossip;
 pub mod interrogation;
+pub mod io;
 pub mod membership;
 
 mod info;
@@ -49,7 +50,6 @@ pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
 mod accept;
 mod cache;
 mod control;
-mod io;
 mod nonce;
 mod tick;
 

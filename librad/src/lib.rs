@@ -44,11 +44,4 @@ pub mod signer;
 pub use peer::PeerId;
 pub use radicle_macros::*;
 
-#[cfg(test)]
-#[macro_use]
-extern crate futures_await_test;
-#[cfg(test)]
-#[macro_use]
-extern crate assert_matches;
-
 pub(crate) mod executor;

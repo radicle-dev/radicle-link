@@ -23,7 +23,7 @@ use librad::{
     git::Urn,
     net::{self, peer::ProtocolEvent},
     peer::PeerId,
-    signer::BoxedSigner,
+    signer::Signer,
 };
 
 use crate::{
@@ -44,7 +44,7 @@ use super::{
 };
 
 /// Management of "subroutine" tasks.
-pub struct Subroutines {
+pub struct Subroutines<S> {
     /// Set of handles of spawned subroutine tasks. Draining them will ensure
     /// resources are release.
     pending_tasks: FuturesUnordered<JoinHandle<()>>,
@@ -52,7 +52,7 @@ pub struct Subroutines {
     inputs: SelectAll<BoxStream<'static, Input>>,
 
     /// [`net::peer::Peer`] for suborutine task fulfillment.
-    peer: net::peer::Peer<BoxedSigner>,
+    peer: net::peer::Peer<S>,
     /// [`kv::Store`] for suborutine task fulfillment.
     store: kv::Store,
 
@@ -67,10 +67,13 @@ pub struct Subroutines {
     subscriber: broadcast::Sender<Event>,
 }
 
-impl Subroutines {
+impl<S> Subroutines<S>
+where
+    S: Clone + Signer,
+{
     /// Constructs a new subroutines manager.
     pub fn new(
-        peer: net::peer::Peer<BoxedSigner>,
+        peer: net::peer::Peer<S>,
         mut listen_addrs: watch::Receiver<Vec<SocketAddr>>,
         store: kv::Store,
         run_config: &RunConfig,
@@ -319,7 +322,7 @@ impl Subroutines {
     }
 }
 
-impl Drop for Subroutines {
+impl<S> Drop for Subroutines<S> {
     fn drop(&mut self) {
         for task in self.pending_tasks.iter_mut() {
             task.abort()
@@ -329,11 +332,10 @@ impl Drop for Subroutines {
 
 /// Run the announcement of updated refs for local projects. On completion
 /// report back with the success or failure.
-async fn announce(
-    peer: net::peer::Peer<BoxedSigner>,
-    store: kv::Store,
-    sender: mpsc::Sender<Input>,
-) {
+async fn announce<S>(peer: net::peer::Peer<S>, store: kv::Store, sender: mpsc::Sender<Input>)
+where
+    S: Clone + Signer,
+{
     match announcement::run(&peer, store).await {
         Ok(updates) => {
             sender
@@ -363,7 +365,10 @@ async fn control_respond(cmd: control::Response) {
     };
 }
 
-async fn get_stats(peer: net::peer::Peer<BoxedSigner>, sender: mpsc::Sender<Input>) {
+async fn get_stats<S>(peer: net::peer::Peer<S>, sender: mpsc::Sender<Input>)
+where
+    S: Clone + Signer,
+{
     let stats = peer.stats().await;
 
     sender
@@ -381,7 +386,10 @@ async fn persist_waiting_room(waiting_room: WaitingRoom<SystemTime, Duration>, s
 
 /// Run the sync with a single peer to reach state parity for locally tracked
 /// projects. On completion report back with the success or failure.
-async fn sync(peer: net::peer::Peer<BoxedSigner>, peer_id: PeerId, sender: mpsc::Sender<Input>) {
+async fn sync<S>(peer: net::peer::Peer<S>, peer_id: PeerId, sender: mpsc::Sender<Input>)
+where
+    S: Clone + Signer,
+{
     sender
         .send(Input::PeerSync(input::Sync::Started(peer_id)))
         .await
@@ -405,7 +413,10 @@ async fn sync(peer: net::peer::Peer<BoxedSigner>, peer_id: PeerId, sender: mpsc:
 }
 
 /// Send a query on the network for the given urn.
-async fn query(urn: Urn, peer: net::peer::Peer<BoxedSigner>, sender: mpsc::Sender<Input>) {
+async fn query<S>(urn: Urn, peer: net::peer::Peer<S>, sender: mpsc::Sender<Input>)
+where
+    S: Clone + Signer,
+{
     gossip::query(&peer, &urn, None);
     sender
         .send(Input::Request(input::Request::Queried(urn)))
@@ -415,12 +426,14 @@ async fn query(urn: Urn, peer: net::peer::Peer<BoxedSigner>, sender: mpsc::Sende
 
 /// Run a clone for the given `url`. On completion report back with the success
 /// or failure.
-async fn clone(
+async fn clone<S>(
     urn: Urn,
     remote_peer: PeerId,
-    peer: net::peer::Peer<BoxedSigner>,
+    peer: net::peer::Peer<S>,
     sender: mpsc::Sender<Input>,
-) {
+) where
+    S: Clone + Signer,
+{
     sender
         .send(Input::Request(input::Request::Cloning(
             urn.clone(),

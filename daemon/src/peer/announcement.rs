@@ -12,7 +12,7 @@ use librad::{
     git_ext::{Oid, RefLike},
     identities::urn::ParseError,
     net::peer::Peer,
-    signer::BoxedSigner,
+    signer::Signer,
 };
 use tokio::task::spawn_blocking;
 
@@ -55,7 +55,10 @@ pub type Updates = HashSet<Announcement>;
 /// # Errors
 ///
 /// * if the announcemnet of one of the project heads failed
-async fn announce(peer: &Peer<BoxedSigner>, updates: impl Iterator<Item = &Announcement> + Send) {
+async fn announce<S>(peer: &Peer<S>, updates: impl Iterator<Item = &Announcement> + Send)
+where
+    S: Clone + Signer,
+{
     for (urn, hash) in updates {
         gossip::announce(peer, urn, Some(*hash));
     }
@@ -68,7 +71,10 @@ async fn announce(peer: &Peer<BoxedSigner>, updates: impl Iterator<Item = &Annou
 ///
 /// * if listing of the projects fails
 /// * if listing of the Refs for a project fails
-async fn build(peer: &Peer<BoxedSigner>) -> Result<Updates, Error> {
+async fn build<S>(peer: &Peer<S>) -> Result<Updates, Error>
+where
+    S: Clone + Signer,
+{
     let mut list: Updates = HashSet::new();
 
     match state::list_projects(peer).await {
@@ -124,7 +130,10 @@ fn load(store: &kv::Store) -> Result<Updates, Error> {
 ///
 /// * if it can't build the new list of updates
 /// * access to the storage fails
-pub async fn run(peer: &Peer<BoxedSigner>, store: kv::Store) -> Result<Updates, Error> {
+pub async fn run<S>(peer: &Peer<S>, store: kv::Store) -> Result<Updates, Error>
+where
+    S: Clone + Signer,
+{
     let old = spawn_blocking({
         let store = store.clone();
         move || load(&store)

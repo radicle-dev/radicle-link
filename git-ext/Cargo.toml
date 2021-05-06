@@ -29,14 +29,3 @@ optional = true
 
 [dependencies.radicle-std-ext]
 path = "../std-ext"
-
-[dev-dependencies]
-anyhow = "1"
-assert_matches = "1"
-lazy_static = "1"
-pretty_assertions = "0"
-regex = "1"
-serde_json = "1"
-
-[dev-dependencies.librad-test]
-path = "../librad-test"
