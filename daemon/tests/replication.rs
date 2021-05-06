@@ -39,7 +39,7 @@ use common::{
     started,
 };
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn can_clone_project() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
@@ -122,7 +122,7 @@ async fn can_clone_project() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn can_clone_user() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
@@ -175,7 +175,7 @@ async fn can_clone_user() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn can_fetch_project_changes() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
@@ -318,7 +318,7 @@ async fn can_fetch_project_changes() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn can_sync_on_startup() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
@@ -387,7 +387,7 @@ async fn can_sync_on_startup() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn can_create_working_copy_of_peer() -> Result<(), Box<dyn std::error::Error + 'static>> {
     init_logging();
 
@@ -534,7 +534,7 @@ async fn can_create_working_copy_of_peer() -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn track_peer() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
     let alice_tmp_dir = tempfile::tempdir()?;

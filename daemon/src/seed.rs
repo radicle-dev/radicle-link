@@ -94,7 +94,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_resolve_seeds() -> Result<(), super::Error> {
         let seeds = super::resolve(&[
             "hydsst3z3d5bc6pxq4gz1g4cu6sgbx38czwf3bmmk3ouz4ibjbbtds@localhost:9999",
