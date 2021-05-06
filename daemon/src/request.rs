@@ -258,7 +258,7 @@ impl<T> Request<Found, T> {
         let mut peers = self.state.peers;
         peers
             .entry(peer)
-            .and_modify(|status| *status = status.join(Status::InProgress))
+            .and_modify(|status| *status = status.join(&Status::InProgress))
             .or_insert(Status::InProgress);
         let this = Request {
             urn: self.urn,
@@ -305,13 +305,18 @@ impl<T> Request<Cloning, T> {
     pub fn failed(
         self,
         peer: PeerId,
+        reason: String,
         timestamp: T,
     ) -> Either<Request<Requested, T>, Request<Found, T>> {
         let mut peers = self.state.peers;
         peers
             .entry(peer)
-            .and_modify(|status| *status = status.join(Status::Failed))
-            .or_insert(Status::Failed);
+            .and_modify(|status| {
+                *status = status.join(&Status::Failed {
+                    reason: reason.clone(),
+                })
+            })
+            .or_insert(Status::Failed { reason });
         Request {
             urn: self.urn,
             attempts: self.attempts,
