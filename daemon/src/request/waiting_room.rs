@@ -265,19 +265,6 @@ impl<T, D> WaitingRoom<T, D> {
         }
     }
 
-    /// Create a transition where the before and after state are the same
-    pub fn tick(&self, timestamp: T) -> Transition<T>
-    where
-        T: Clone,
-    {
-        Transition {
-            state_before: self.requests.clone(),
-            state_after: self.requests.clone(),
-            event: Event::Tick,
-            timestamp,
-        }
-    }
-
     /// Tell the `WaitingRoom` that a query was made for the given `urn`.
     ///
     /// If the underlying `Request` was in the `Created` state then it will
@@ -590,6 +577,16 @@ impl<T, D> WaitingRoom<T, D> {
         R: Into<SomeRequest<T>>,
     {
         self.requests.insert(urn.id, request.into());
+    }
+}
+
+impl<T, D> WaitingRoom<T, D> 
+where 
+    T: Clone
+{
+    /// Get the current state of the waiting room
+    pub fn requests(&self) -> HashMap<Revision, SomeRequest<T>> {
+        self.requests.clone()
     }
 }
 

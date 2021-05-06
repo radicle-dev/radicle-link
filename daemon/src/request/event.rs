@@ -69,6 +69,4 @@ pub enum Event {
         /// The attempts that were made before the timeout
         attempts: Attempts,
     },
-    /// The waiting room was ticked - this is effectively a NOOP
-    Tick,
 }

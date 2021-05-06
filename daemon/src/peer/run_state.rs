@@ -47,6 +47,9 @@ pub use config::Config;
 pub mod input;
 pub use input::Input;
 
+mod waiting_room_step;
+use waiting_room_step::WaitingRoomStep;
+
 /// Events external subscribers can observe for internal peer operations.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
@@ -389,6 +392,7 @@ impl RunState {
         match (&self.status, input) {
             // Check for new query and clone requests.
             (Status::Online { .. }, input::Request::Tick) => {
+                let mut step = WaitingRoomStep::new(&mut self.waiting_room);
                 let mut cmds = Vec::with_capacity(3);
 
                 if let Some(urn) = self.waiting_room.next_query(SystemTime::now()) {
@@ -399,9 +403,9 @@ impl RunState {
                     cmds.push(Command::Request(command::Request::Clone(urn, remote_peer)));
                     cmds.push(Command::PersistWaitingRoom(self.waiting_room.clone()));
                 }
-                cmds.push(Command::EmitEvent(
-                    self.waiting_room.tick(SystemTime::now()).into(),
-                ));
+                //cmds.push(Command::EmitEvent(
+                    //self.waiting_room.tick(SystemTime::now()).into(),
+                //));
                 cmds
             },
             // FIXME(xla): Come up with a strategy for the results returned by the waiting room.
