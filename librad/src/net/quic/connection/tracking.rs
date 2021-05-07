@@ -4,7 +4,9 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
+    collections::HashMap,
     hash::BuildHasherDefault,
+    net::SocketAddr,
     sync::{
         atomic::{AtomicUsize, Ordering::SeqCst},
         Arc,
@@ -84,12 +86,22 @@ impl Conntrack {
         self.connections.len()
     }
 
-    /// Get the number of peers to which connections exist.
+    /// Get the peers to which connections exist.
     ///
-    /// This number is an estimate, as liveness of the connections is not
+    /// This is an estimate, as liveness of the connections is not
     /// checked.
-    pub fn num_peers(&self) -> usize {
-        self.peer_connections.len()
+    pub fn connected_peers(&self) -> HashMap<PeerId, Vec<SocketAddr>> {
+        self.peer_connections
+            .iter()
+            .map(|r| {
+                let addrs = r
+                    .value()
+                    .iter()
+                    .filter_map(|c| c.upgrade().map(|c| c.connection.remote_address()))
+                    .collect();
+                (*r.key(), addrs)
+            })
+            .collect()
     }
 
     /// Get the currently-connected peers.

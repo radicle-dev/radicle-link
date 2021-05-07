@@ -364,11 +364,10 @@ async fn control_respond(cmd: control::Response) {
 }
 
 async fn get_stats(peer: net::peer::Peer<BoxedSigner>, sender: mpsc::Sender<Input>) {
-    let connected_peers = peer.connected_peers().await;
     let stats = peer.stats().await;
 
     sender
-        .send(Input::Stats(input::Stats::Values(connected_peers, stats)))
+        .send(Input::Stats(input::Stats::Values(stats)))
         .await
         .ok();
 }

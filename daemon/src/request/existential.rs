@@ -10,6 +10,7 @@
 // much.
 #![allow(clippy::wildcard_enum_match_arm)]
 
+use librad::PeerId;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -28,6 +29,8 @@ use super::{
     TimedOut,
     Urn,
 };
+
+use super::Status;
 
 /// Since a `Request` is parameterised over its state, it makes it difficult to
 /// talk about a `Request` in general without the compiler complaining at us.
@@ -226,6 +229,19 @@ impl<T> SomeRequest<T> {
         match matcher(self.clone()) {
             Some(previous) => Either::Right(transition(previous)),
             None => Either::Left(self),
+        }
+    }
+
+    /// Get any peers associated with this request
+    pub fn peers(&self) -> Option<&std::collections::HashMap<PeerId, Status>> {
+        match self {
+            SomeRequest::Created(_)
+            | SomeRequest::Requested(_)
+            | SomeRequest::Cloned(_)
+            | SomeRequest::Cancelled(_)
+            | SomeRequest::TimedOut(..) => None,
+            SomeRequest::Found(f) => Some(&f.peers),
+            SomeRequest::Cloning(c) => Some(&c.peers),
         }
     }
 }
