@@ -316,6 +316,11 @@ where
 
     pub fn choose_passive_to_promote(&mut self) -> Vec<PeerInfo<Addr>> {
         let n = self.params.max_active - self.num_active();
+        tracing::warn!(
+            amount = n,
+            num_passive = self.view.num_passive(),
+            "choose passive to promote"
+        );
         self.view.passive_info().choose_multiple(&mut self.rng, n)
     }
 
