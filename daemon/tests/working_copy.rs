@@ -17,7 +17,7 @@ use pretty_assertions::assert_eq;
 mod common;
 use common::{build_peer, init_logging, shia_le_pathbuf};
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn upstream_for_default() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
@@ -53,7 +53,7 @@ async fn upstream_for_default() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn checkout_twice_fails() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 

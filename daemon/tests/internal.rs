@@ -14,7 +14,7 @@ use radicle_daemon::{PeerEvent, RunConfig};
 mod common;
 use common::*;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn can_observe_timers() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
