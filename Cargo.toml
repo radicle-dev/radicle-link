@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "copy",
+  "daemon",
   "data",
   "e2e",
   "git-ext",
@@ -10,5 +11,4 @@ members = [
   "macros",
   "seed",
   "std-ext",
-  "tracker",
 ]
