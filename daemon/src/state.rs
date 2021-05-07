@@ -12,6 +12,7 @@ use std::{
 };
 
 use either::Either;
+use tokio::task::spawn_blocking;
 
 use librad::{
     git::{
@@ -444,16 +445,21 @@ pub async fn init_project(
         project.subject().name
     );
 
-    let repo = repository
-        .setup_repo(
-            settings(peer),
-            project
-                .subject()
-                .description
-                .as_deref()
-                .unwrap_or(&String::default()),
-        )
-        .map_err(crate::project::create::Error::from)?;
+    let repo = spawn_blocking({
+        let peer = peer.clone();
+        let desc = project
+            .subject()
+            .description
+            .as_deref()
+            .cloned()
+            .unwrap_or_default();
+        move || {
+            repository
+                .setup_repo(settings(&peer), &desc)
+                .map_err(crate::project::create::Error::from)
+        }
+    })
+    .await??;
     let include_path = update_include(peer, project.urn()).await?;
     include::set_include_path(&repo, include_path)?;
     gossip::announce(peer, &project.urn(), None);
