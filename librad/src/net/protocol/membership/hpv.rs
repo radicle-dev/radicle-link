@@ -234,7 +234,7 @@ where
         let view = PartialView::new(local_id, rng.clone(), params.max_active, params.max_passive);
         Self {
             local_id,
-            params: Default::default(),
+            params,
             rng,
             view,
         }
@@ -315,7 +315,15 @@ where
     }
 
     pub fn choose_passive_to_promote(&mut self) -> Vec<PeerInfo<Addr>> {
-        let n = self.params.max_active - self.num_active();
+        assert!(
+            self.params.max_active >= self.num_active(),
+            "number of active peers is larger than the configured max"
+        );
+        let n = self
+            .params
+            .max_active
+            .checked_sub(self.num_active())
+            .unwrap_or(1);
         tracing::warn!(
             max_active = self.params.max_active,
             num_active = self.num_active(),
