@@ -148,8 +148,6 @@ pub enum Status {
     /// has connected to.
     #[serde(rename_all = "camelCase")]
     Online {
-        /// Number of connected peers.
-        connected: usize,
         /// Connected peers
         connected_peers: HashMap<PeerId, Vec<SocketAddr>>,
     },
@@ -377,13 +375,11 @@ impl RunState {
                     },
                     Status::Offline if !stats.connected_peers.is_empty() => {
                         self.status = Status::Online {
-                            connected: stats.connected_peers.len(),
                             connected_peers: stats.connected_peers.clone(),
                         };
                     },
                     Status::Started if !stats.connected_peers.is_empty() => {
                         self.status = Status::Online {
-                            connected: stats.connected_peers.len(),
                             connected_peers: stats.connected_peers.clone(),
                         };
                     },
@@ -474,7 +470,6 @@ mod test {
     fn transition_to_offline_when_last_peer_disconnects() {
         let peer_id = PeerId::from(SecretKey::new());
         let status = Status::Online {
-            connected: 0,
             connected_peers: HashMap::new(),
         };
         let mut state =
@@ -490,7 +485,6 @@ mod test {
     fn issue_announce_while_online_and_active_membering() {
         let peer_id = PeerId::from(SecretKey::new());
         let status = Status::Online {
-            connected: 1,
             connected_peers: one_connected_peer(peer_id),
         };
         let mut state = RunState::construct(HashSet::new(), status, HashSet::new());
@@ -513,7 +507,6 @@ mod test {
     fn dont_announce_with_inactive_member() {
         let peer_id = PeerId::from(SecretKey::new());
         let status = Status::Online {
-            connected: 1,
             connected_peers: one_connected_peer(peer_id),
         };
         let mut state = RunState::construct(HashSet::new(), status, HashSet::new());
@@ -543,10 +536,7 @@ mod test {
         let urn: Urn = Urn::new(Oid::from_str("7ab8629dd6da14dcacde7f65b3d58cd291d7e235")?);
 
         let connected_peers = one_connected_peer(PeerId::from(SecretKey::new()));
-        let status = Status::Online {
-            connected: 1,
-            connected_peers,
-        };
+        let status = Status::Online { connected_peers };
         let (response_sender, _) = oneshot::channel();
         let mut state = RunState::construct(HashSet::new(), status, HashSet::new());
         state.transition(Input::Control(input::Control::CreateRequest(
@@ -573,10 +563,7 @@ mod test {
         let addr = "127.0.0.0:80".parse()?;
 
         let connected_peers = one_connected_peer(PeerId::from(SecretKey::new()));
-        let status = Status::Online {
-            connected: 0,
-            connected_peers,
-        };
+        let status = Status::Online { connected_peers };
         let (response_sender, _) = oneshot::channel();
         let mut state = RunState::construct(HashSet::new(), status, HashSet::new());
 
@@ -642,7 +629,6 @@ mod test {
         }
 
         let status = Status::Online {
-            connected: num_peers,
             connected_peers: connected_peers.clone(),
         };
         let mut state = RunState::construct(
