@@ -234,7 +234,7 @@ where
         let view = PartialView::new(local_id, rng.clone(), params.max_active, params.max_passive);
         Self {
             local_id,
-            params: Default::default(),
+            params,
             rng,
             view,
         }
