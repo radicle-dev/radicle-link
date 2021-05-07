@@ -293,8 +293,6 @@ impl RunningWaitingRoom {
         F: FnOnce(&mut WaitingRoom<SystemTime, Duration>) -> Result<(), WaitingRoomError>,
     {
         let state_before = waiting_room.requests();
-        // FIXME(alexjg): Come up with a strategy for the results returned by the
-        // waiting room.
         let result = f(waiting_room);
         let state_after = waiting_room.requests();
         let mut commands = Vec::with_capacity(4);
@@ -328,6 +326,7 @@ impl RunningWaitingRoom {
                 commands.push(Command::Request(command::Request::TimedOut(urn.clone())));
                 commands
             },
+            // FIXME(alexjg): Figure out how to report this error to the client
             Err(error) => {
                 log::warn!("WaitingRoom::Error : {}", error);
                 Vec::new()
