@@ -137,16 +137,16 @@ impl RunningWaitingRoom {
     pub fn request(
         &mut self,
         urn: Urn,
-        time: SystemTime,
+        timestamp: SystemTime,
         sender: Sender<Either<SomeRequest<SystemTime>, SomeRequest<SystemTime>>>,
     ) -> Vec<Command> {
         let state_before = self.waiting_room.requests();
-        let request = self.waiting_room.request(&urn, time);
+        let request = self.waiting_room.request(&urn, timestamp);
         let state_after = self.waiting_room.requests();
         match request {
             Either::Left(request) => {
                 let transition = WaitingRoomTransition {
-                    timestamp: time,
+                    timestamp,
                     state_before,
                     state_after,
                     event: Event::Created { urn: urn.clone() },
@@ -192,11 +192,11 @@ impl RunningWaitingRoom {
         )
     }
 
-    pub fn tick(&mut self, now: SystemTime) -> Vec<Command> {
+    pub fn tick(&mut self, timestamp: SystemTime) -> Vec<Command> {
         let mut cmds = Vec::with_capacity(3);
         let state_before = self.waiting_room.requests();
 
-        if let Some(urn) = self.waiting_room.next_query(now) {
+        if let Some(urn) = self.waiting_room.next_query(timestamp) {
             cmds.push(Command::Request(command::Request::Query(urn)));
             cmds.push(Command::PersistWaitingRoom(self.waiting_room.clone()));
         }
@@ -207,7 +207,7 @@ impl RunningWaitingRoom {
 
         let state_after = self.waiting_room.requests();
         let transition = WaitingRoomTransition {
-            timestamp: now,
+            timestamp,
             state_before,
             state_after,
             event: Event::Tick,
