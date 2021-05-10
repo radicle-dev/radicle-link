@@ -7,15 +7,12 @@
 #[macro_use]
 extern crate async_trait;
 
-pub mod event;
-pub mod handle;
-pub mod project;
-pub mod signer;
-
 use std::{collections::HashSet, net::SocketAddr, time::Duration};
 
-use futures::{channel::mpsc as chan, select, sink::SinkExt as _, stream::StreamExt as _};
+use futures::{select, stream::StreamExt as _};
 use thiserror::Error;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 use librad::{
     git::{
@@ -39,6 +36,11 @@ pub use crate::{
     project::Project,
     signer::Signer,
 };
+
+pub mod event;
+pub mod handle;
+pub mod project;
+pub mod signer;
 
 #[derive(Error, Debug)]
 #[non_exhaustive]
@@ -71,10 +73,10 @@ pub enum Error {
     Node(#[from] NodeError),
 
     #[error(transparent)]
-    Channel(#[from] chan::SendError),
-
-    #[error(transparent)]
     Profile(#[from] profile::Error),
+
+    #[error("sending reply failed for {0}")]
+    Reply(String),
 }
 
 impl From<identities::Error> for Error {
@@ -117,59 +119,82 @@ impl Mode {
 
 /// Node configuration.
 pub struct NodeConfig {
-    /// Operational mode. Determines the tracking rules for this seed node.
-    pub mode: Mode,
     /// List of bootstrap peers
     pub bootstrap: Vec<(PeerId, SocketAddr)>,
+    /// Knobs to tune timeouts and internal queues.
+    pub limits: Limits,
+    /// Operational mode. Determines the tracking rules for this seed node.
+    pub mode: Mode,
 }
 
 impl Default for NodeConfig {
     fn default() -> Self {
         Self {
-            mode: Mode::TrackEverything,
             bootstrap: vec![],
+            limits: Default::default(),
+            mode: Mode::TrackEverything,
+        }
+    }
+}
+
+pub struct Limits {
+    /// Amount of in-flight requests.
+    pub request_queue_size: usize,
+    /// Duration after which a request is considered failed.
+    pub request_timeout: Duration,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            request_queue_size: 64,
+            request_timeout: Duration::from_secs(3),
         }
     }
 }
 
 /// Seed node instance.
 pub struct Node {
+    /// Config that was passed during Node construction.
+    config: NodeConfig,
     /// Sender end of user requests.
-    handle: chan::UnboundedSender<Request>,
+    handle: mpsc::Sender<Request>,
     /// Receiver end of user requests.
-    requests: chan::UnboundedReceiver<Request>,
+    requests: mpsc::Receiver<Request>,
 }
 
 impl Node {
     /// Create a new seed node.
-    pub fn new() -> Result<Self, Error> {
-        let (handle, requests) = chan::unbounded::<Request>();
+    pub fn new(config: NodeConfig) -> Result<Self, Error> {
+        let (handle, requests) = mpsc::channel::<Request>(config.limits.request_queue_size);
 
-        Ok(Node { handle, requests })
+        Ok(Node {
+            config,
+            handle,
+            requests,
+        })
     }
 
     /// Create a new handle.
     pub fn handle(&self) -> NodeHandle {
-        NodeHandle::new(self.handle.clone())
+        NodeHandle::new(self.handle.clone(), self.config.limits.request_timeout)
     }
 
     /// Run the seed node. This function runs indefinitely until a fatal error
     /// occurs.
     pub async fn run(
         self,
-        node_config: NodeConfig,
         peer_config: peer::Config<Signer>,
-        mut transmit: chan::Sender<Event>,
+        mut transmit: mpsc::Sender<Event>,
     ) -> Result<(), Error> {
         let peer = Peer::new(peer_config);
         let mut events = peer.subscribe().boxed().fuse();
-        let mut requests = self.requests;
-        let mode = &node_config.mode;
+        let mut requests = ReceiverStream::new(self.requests).fuse();
 
         // Spawn the background peer thread.
         tokio::spawn({
             let peer = peer.clone();
-            let disco = discovery::Static::resolve(node_config.bootstrap.clone())?;
+            let disco = discovery::Static::resolve(self.config.bootstrap.clone())?;
             async move {
                 loop {
                     match peer.bind().await {
@@ -188,14 +213,14 @@ impl Node {
         });
 
         // Track already-known URNs.
-        Node::initialize_tracker(mode, &peer, &mut transmit).await?;
+        Node::initialize_tracker(&self.config.mode, &peer, &mut transmit).await?;
 
         loop {
             select! {
                 event = events.next() => {
                     match event {
                         Some(Ok(evt)) => {
-                            Node::handle_event(evt, mode, &mut transmit, &peer).await?;
+                            Node::handle_event(evt, &self.config.mode, &mut transmit, &peer).await?;
                         },
                         // There might be intermittent errors due to restarting.
                         // We can just ignore them.
@@ -210,7 +235,9 @@ impl Node {
                 }
                 request = requests.next() => {
                     if let Some(r) = request {
-                        Node::handle_request(r, &peer).await?;
+                        if let Err(err) =  Node::handle_request(r, &peer).await {
+                            tracing::error!(err = ?err, "request fulfilment failed");
+                        }
                     }
                 }
             }
@@ -222,20 +249,25 @@ impl Node {
     /// Handle user requests.
     async fn handle_request(request: Request, api: &Peer<Signer>) -> Result<(), Error> {
         match request {
-            Request::GetMembership(mut reply) => {
+            Request::GetMembership(reply) => {
                 let info = api.membership().await;
-                reply.send(info).await?;
+                reply
+                    .send(info)
+                    .map_err(|_| Error::Reply("GetMembership".to_string()))
             },
-            Request::GetPeers(mut reply) => {
+            Request::GetPeers(reply) => {
                 let peers = api.connected_peers().await;
-                reply.send(peers).await?;
+                reply
+                    .send(peers)
+                    .map_err(|_| Error::Reply("GetPeers".to_string()))
             },
-            Request::GetProjects(mut reply) => {
+            Request::GetProjects(reply) => {
                 let projs = project::get_projects(api).await?;
-                reply.send(projs).await?;
+                reply
+                    .send(projs)
+                    .map_err(|_| Error::Reply("GetProjects".to_string()))
             },
         }
-        Ok(())
     }
 
     /// Handle gossip events. As soon as a peer announces something of interest,
@@ -243,7 +275,7 @@ impl Node {
     async fn handle_event(
         event: ProtocolEvent,
         mode: &Mode,
-        transmit: &mut chan::Sender<Event>,
+        transmit: &mut mpsc::Sender<Event>,
         api: &Peer<Signer>,
     ) -> Result<(), Error> {
         use protocol::{
@@ -338,7 +370,7 @@ impl Node {
     async fn initialize_tracker(
         mode: &Mode,
         api: &Peer<Signer>,
-        transmit: &mut chan::Sender<Event>,
+        transmit: &mut mpsc::Sender<Event>,
     ) -> Result<(), Error> {
         // Start by tracking specified projects if we need to.
         match &mode {
