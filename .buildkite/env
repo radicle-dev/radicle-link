@@ -13,4 +13,11 @@ if [[ "${CI:-}" == "true" ]]; then
 
     mkdir -p "$CACHE_DIR" "$CARGO_HOME" "$TARGET_CACHE_DIR"
     ln -sf "$TARGET_CACHE_DIR" target
+
+    cache_avail=$(df --output=avail|sed -n 2p)
+    min_cache_avail=$(( 2 * 1024 * 1024 )) # 25%
+    if [[ $cache_avail -le $min_cache_avail ]]; then
+        echo "Freeing space under /cache"
+        rm -rf "${CACHE_DIR:?}/*"
+    fi
 fi
