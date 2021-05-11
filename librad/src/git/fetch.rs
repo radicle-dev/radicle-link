@@ -16,7 +16,7 @@ pub use specs::Fetchspecs;
 pub const ONE_KB: usize = 1024;
 /// 5Mb for use in [`Limit`], specifically for the `peek` field, when we would
 /// like to fetch `rad/id` , `rad/self`, `rad/ids/*` references. This limit is
-/// based on the analysis in https://github.com/radicle-dev/radicle-upstream/issues/1795
+/// based on the analysis in <https://github.com/radicle-dev/radicle-upstream/issues/1795>
 pub const FIVE_MB: usize = ONE_KB * 5000;
 /// 5GB for use in [`Limit`], specifically for the `data` field, when we would
 /// like to fetch `rad/*` as well as `refs/heads/*` references.

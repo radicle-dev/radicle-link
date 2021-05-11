@@ -12,6 +12,18 @@ pub enum Rev {
     Git(git2::Oid),
 }
 
+impl From<git2::Oid> for Rev {
+    fn from(oid: git2::Oid) -> Self {
+        Self::Git(oid)
+    }
+}
+
+impl From<git_ext::Oid> for Rev {
+    fn from(oid: git_ext::Oid) -> Self {
+        Self::Git(oid.into())
+    }
+}
+
 impl Encode for Rev {
     fn encode<W: minicbor::encode::Write>(
         &self,

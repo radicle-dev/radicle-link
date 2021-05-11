@@ -7,7 +7,6 @@ use std::{iter, net::SocketAddr};
 
 use data::BoundedVec;
 use futures::stream::{self, StreamExt as _};
-use tracing::Instrument as _;
 
 use super::{
     gossip,
@@ -69,7 +68,10 @@ where
                         .await
                 }
 
-                tokio::spawn(streams::incoming(state.clone(), ingress).in_current_span());
+                state
+                    .spawner
+                    .spawn(streams::incoming(state.clone(), ingress))
+                    .detach();
             },
         }
     }

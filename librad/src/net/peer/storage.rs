@@ -3,13 +3,13 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use either::Either::{self, Left, Right};
 use git_ext::{self as ext, reference};
-use tokio::task::spawn_blocking;
 
 use crate::{
+    executor,
     git::{
         replication,
         storage::{self, fetcher, Pool, PoolError, PooledRef},
@@ -34,11 +34,16 @@ pub struct Config {
 pub struct Storage {
     pool: Pool,
     config: Config,
+    spawner: Arc<executor::Spawner>,
 }
 
 impl Storage {
-    pub fn new(pool: Pool, config: Config) -> Self {
-        Self { pool, config }
+    pub fn new(spawner: Arc<executor::Spawner>, pool: Pool, config: Config) -> Self {
+        Self {
+            pool,
+            config,
+            spawner,
+        }
     }
 
     async fn git_fetch(
@@ -56,20 +61,22 @@ impl Storage {
         if let Some(head) = head {
             let git = self.pool.get().await?;
             let urn = urn.clone();
-            spawn_blocking(move || {
-                if git.has_commit(&urn, head)? || git.has_tag(&urn, head)? {
-                    Err(Error::KnownObject(*head))
-                } else {
-                    Ok(())
-                }
-            })
-            .await??;
+            self.spawner
+                .spawn_blocking(move || {
+                    if git.has_commit(&urn, head)? || git.has_tag(&urn, head)? {
+                        Err(Error::KnownObject(*head))
+                    } else {
+                        Ok(())
+                    }
+                })
+                .await??;
         }
 
         let (remote_peer, addr_hints) = from.into();
         let config = self.config;
         fetcher::retrying(
-            self.pool.clone(),
+            &self.spawner,
+            &self.pool,
             fetcher::PeerToPeer::new(urn.clone(), remote_peer, addr_hints),
             config.fetch_slot_wait_timeout,
             move |storage, fetcher| {
@@ -89,20 +96,24 @@ impl Storage {
         let git = self.pool.get().await.unwrap();
         let urn = urn_context(*git.peer_id(), urn);
         let head = head.into().map(ext::Oid::from);
-        spawn_blocking(move || match head {
-            None => git.has_urn(&urn).unwrap_or(false),
-            Some(head) => {
-                git.has_commit(&urn, head).unwrap_or(false)
-                    || git.has_tag(&urn, head).unwrap_or(false)
-            },
-        })
-        .await
-        .unwrap_or(false)
+        self.spawner
+            .spawn_blocking(move || match head {
+                None => git.has_urn(&urn).unwrap_or(false),
+                Some(head) => {
+                    git.has_commit(&urn, head).unwrap_or(false)
+                        || git.has_tag(&urn, head).unwrap_or(false)
+                },
+            })
+            .await
+            .unwrap_or(false)
     }
 
     async fn is_tracked(&self, urn: Urn, peer: PeerId) -> Result<bool, Error> {
         let git = self.pool.get().await?;
-        Ok(spawn_blocking(move || tracking::is_tracked(&git, &urn, peer)).await??)
+        Ok(self
+            .spawner
+            .spawn_blocking(move || tracking::is_tracked(&git, &urn, peer))
+            .await??)
     }
 }
 

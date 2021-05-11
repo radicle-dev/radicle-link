@@ -3,12 +3,12 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::panic;
-
 use thiserror::Error;
-use tokio::task::JoinError;
 
-use crate::git::{self, replication, storage::fetcher, tracking};
+use crate::{
+    executor,
+    git::{self, replication, storage::fetcher, tracking},
+};
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -31,18 +31,12 @@ pub enum Error {
     #[error(transparent)]
     Pool(#[from] deadpool::managed::PoolError<git::storage::Error>),
 
-    #[error("spawned task was cancelled")]
-    Cancelled,
+    #[error(transparent)]
+    Task(executor::Cancelled),
 }
 
-impl From<JoinError> for Error {
-    fn from(e: JoinError) -> Self {
-        if e.is_cancelled() {
-            Self::Cancelled
-        } else if e.is_panic() {
-            panic::resume_unwind(e.into_panic())
-        } else {
-            panic!("unexpected task error: {:?}", e)
-        }
+impl From<executor::JoinError> for Error {
+    fn from(e: executor::JoinError) -> Self {
+        Self::Task(e.into_cancelled())
     }
 }

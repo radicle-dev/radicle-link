@@ -24,6 +24,7 @@ use super::{
     Tick,
 };
 use crate::{
+    executor,
     net::protocol::info::{PartialPeerInfo, PeerAdvertisement, PeerInfo},
     PeerId,
 };
@@ -122,16 +123,19 @@ where
     Rng: rand::Rng + Clone,
     Addr: Clone + Debug + PartialEq,
 {
-    pub fn new(local_id: PeerId, rng: Rng, params: Params) -> (Self, mpsc::Receiver<Periodic<Addr>>)
+    pub fn new(
+        spawner: &executor::Spawner,
+        local_id: PeerId,
+        rng: Rng,
+        params: Params,
+    ) -> (Self, mpsc::Receiver<Periodic<Addr>>)
     where
         Rng: Send + Sync + 'static,
         Addr: Send + Sync + 'static,
     {
-        use tracing::Instrument as _;
-
         let this = Self(Arc::new(RwLock::new(HpvInner::new(local_id, rng, params))));
         let (tx, rx) = mpsc::channel(1);
-        tokio::spawn(periodic_tasks(this.clone(), tx).in_current_span());
+        spawner.spawn(periodic_tasks(this.clone(), tx)).detach();
 
         (this, rx)
     }

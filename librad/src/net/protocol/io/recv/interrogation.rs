@@ -6,7 +6,6 @@
 use std::{
     borrow::Cow,
     net::SocketAddr,
-    panic,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -96,35 +95,33 @@ pub(in crate::net::protocol) async fn interrogation<S, T>(
                         Cow::from(&*INTERNAL_ERROR)
                     },
                     Ok(storage) => {
-                        let res = tokio::task::spawn_blocking(move || {
-                            handle_request(
-                                &state.endpoint,
-                                &storage,
-                                &state.caches.interrogation,
-                                remote_addr,
-                                req,
-                            )
-                            .map(Cow::from)
-                            .unwrap_or_else(|e| {
-                                tracing::error!(err = ?e, "error handling request");
-                                match e {
-                                    Error::Refreshing | Error::BuildUrns(_) => {
-                                        Cow::from(&*UNAVAILABLE_ERROR)
-                                    },
-                                    Error::Cbor(_) => Cow::from(&*INTERNAL_ERROR),
-                                }
+                        let res = state
+                            .spawner
+                            .clone()
+                            .spawn_blocking(move || {
+                                handle_request(
+                                    &state.endpoint,
+                                    &storage,
+                                    &state.caches.interrogation,
+                                    remote_addr,
+                                    req,
+                                )
+                                .map(Cow::from)
+                                .unwrap_or_else(|e| {
+                                    tracing::error!(err = ?e, "error handling request");
+                                    match e {
+                                        Error::Refreshing | Error::BuildUrns(_) => {
+                                            Cow::from(&*UNAVAILABLE_ERROR)
+                                        },
+                                        Error::Cbor(_) => Cow::from(&*INTERNAL_ERROR),
+                                    }
+                                })
                             })
-                        })
-                        .await;
+                            .await;
                         match res {
                             Err(e) => {
-                                if e.is_panic() {
-                                    panic::resume_unwind(e.into_panic())
-                                } else if e.is_cancelled() {
-                                    return;
-                                } else {
-                                    unreachable!("unexpected task error: {:?}", e)
-                                }
+                                drop(e.into_cancelled());
+                                return;
                             },
                             Ok(resp) => resp,
                         }

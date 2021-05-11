@@ -14,8 +14,8 @@ use librad_test::{
 /// Stress test the limits that are set for fetching when using `replicate`.
 /// The `fetch::Limit` contains a base limit and should be scaled by the number
 /// of remotes that the fetcher is fetching from.
-#[tokio::test]
-async fn replication_does_not_exceed_limit() {
+#[test]
+fn replication_does_not_exceed_limit() {
     logging::init();
 
     let net = testnet::run(testnet::Config {
@@ -23,9 +23,8 @@ async fn replication_does_not_exceed_limit() {
         min_connected: 6,
         bootstrap: testnet::Bootstrap::from_env(),
     })
-    .await
     .unwrap();
-    {
+    net.enter(async {
         let peer1 = net.peers().index(0);
         let peer2 = net.peers().index(1);
         let peer3 = net.peers().index(2);
@@ -57,5 +56,5 @@ async fn replication_does_not_exceed_limit() {
             proj.pull(peer, peer1).await.ok().unwrap();
         }
         proj.pull(peer1, peer6).await.ok().unwrap();
-    }
+    })
 }

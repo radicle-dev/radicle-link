@@ -5,6 +5,7 @@
 
 use std::{net::SocketAddr, ops::Deref, sync::Arc};
 
+use futures::future::TryFutureExt as _;
 use governor::{Quota, RateLimiter};
 use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
@@ -12,6 +13,7 @@ use tracing::Instrument as _;
 
 use super::{broadcast, cache, config, gossip, io, membership, nonce, ProtocolStorage, TinCans};
 use crate::{
+    executor,
     git::{
         p2p::{
             server::GitServer,
@@ -23,7 +25,6 @@ use crate::{
     net::{quic, upgrade},
     PeerId,
 };
-use futures::future::TryFutureExt as _;
 
 #[derive(Clone, Copy)]
 pub(super) struct StateConfig {
@@ -45,6 +46,7 @@ pub(super) struct State<S> {
     pub config: StateConfig,
     pub nonces: nonce::NonceBag,
     pub caches: cache::Caches,
+    pub spawner: Arc<executor::Spawner>,
 }
 
 #[async_trait]
@@ -67,9 +69,12 @@ where
                     .instrument(span.clone())
                     .await
                     .map(|(conn, ingress)| {
-                        tokio::spawn(
-                            io::streams::incoming(self.clone(), ingress).instrument(span.clone()),
-                        );
+                        self.spawner
+                            .spawn(
+                                io::streams::incoming(self.clone(), ingress)
+                                    .instrument(span.clone()),
+                            )
+                            .detach();
                         conn
                     })
             },

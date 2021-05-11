@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{io, net::SocketAddr, panic};
+use std::{io, net::SocketAddr};
 
 use futures::{
     future::TryFutureExt as _,
@@ -14,7 +14,8 @@ use thiserror::Error;
 use tracing::Instrument as _;
 
 use crate::{
-    git::{p2p::header::Header, Urn},
+    executor,
+    git::{p2p::header::Header, replication::ReplicateResult, Urn},
     net::{
         connection::{Duplex, RemoteInfo},
         protocol::{gossip, io::graft, ProtocolStorage, State},
@@ -50,27 +51,24 @@ where
             // Only rere if we have a fresh nonce
             if let Some(n) = nonce {
                 if !state.nonces.contains(n) {
-                    tasks.push(spawn_rere(&state, repo.clone(), remote_peer, remote_addr))
+                    tasks.push(spawn_rere(
+                        state.clone(),
+                        repo.clone(),
+                        remote_peer,
+                        remote_addr,
+                    ))
                 }
                 state.nonces.insert(*n)
             }
-            tasks.push(tokio::spawn(
-                srv.run().err_into::<Error>().in_current_span(),
-            ));
+            tasks.push(state.spawner.spawn(srv.run().err_into::<Error>()));
 
             let results = tasks.take(2).collect::<Vec<_>>().await;
             for res in results {
                 match res {
                     Err(e) => {
-                        if e.is_panic() {
-                            panic::resume_unwind(e.into_panic())
-                        } else if e.is_cancelled() {
-                            tracing::info!("cancelled task")
-                        } else {
-                            unreachable!("unexpected task error: {:?}", e)
-                        }
+                        let _ = e.into_cancelled();
+                        tracing::info!("cancelled task")
                     },
-
                     Ok(Ok(())) => tracing::debug!("task done"),
                     Ok(Err(e)) => tracing::warn!(err = ?e, "task error"),
                 }
@@ -80,15 +78,17 @@ where
 }
 
 fn spawn_rere<S>(
-    state: &State<S>,
+    state: State<S>,
     urn: Urn,
     remote_peer: PeerId,
     remote_addr: SocketAddr,
-) -> tokio::task::JoinHandle<Result<(), Error>>
+) -> executor::JoinHandle<Result<(), Error>>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
-    tokio::spawn({
+    let spawner = state.spawner.clone();
+    spawner.spawn({
+        let spawner = spawner.clone();
         let pool = state.storage.clone();
         let config = graft::config::Rere {
             replication: state.config.replication,
@@ -97,13 +97,23 @@ where
         let span = tracing::info_span!("rere", urn = %urn, remote_peer = %remote_peer);
         async move {
             tracing::info!("attempting rere");
-            graft::rere(pool, config, urn, remote_peer, Some(remote_addr))
-                .await
-                .map_err(Error::from)
-                .map(|res| match res {
-                    None => tracing::info!("rere didn't fetch"),
-                    Some(xs) => tracing::info!("rere fetched {} refs", xs.updated_tips.len()),
-                })
+            let updated_tips = graft::rere(
+                &spawner,
+                &pool,
+                config,
+                urn.clone(),
+                remote_peer,
+                Some(remote_addr),
+            )
+            .await
+            .map_err(Error::from)?
+            .map(|ReplicateResult { updated_tips, .. }| updated_tips);
+            match updated_tips {
+                None => tracing::info!("rere skipped"),
+                Some(xs) => tracing::info!("rere updated {} refs", xs.len()),
+            }
+
+            Ok(())
         }
         .instrument(span)
     })

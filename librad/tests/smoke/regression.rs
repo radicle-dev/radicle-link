@@ -16,8 +16,8 @@ use librad_test::{
 
 /// https://github.com/radicle-dev/radicle-link/issues/250
 /// Fixed in: 577e9943fa704895b47fe4e1c862bf0bd51d58a9
-#[tokio::test]
-async fn list_identities_returns_only_local_projects() {
+#[test]
+fn list_identities_returns_only_local_projects() {
     logging::init();
 
     let net = testnet::run(testnet::Config {
@@ -25,9 +25,8 @@ async fn list_identities_returns_only_local_projects() {
         min_connected: 3,
         bootstrap: testnet::Bootstrap::from_env(),
     })
-    .await
     .unwrap();
-    {
+    net.enter(async {
         let peer1 = net.peers().index(0);
         let peer2 = net.peers().index(1);
         let peer3 = net.peers().index(2);
@@ -49,5 +48,5 @@ async fn list_identities_returns_only_local_projects() {
             .unwrap();
 
         assert_eq!(2, all_identities.len());
-    }
+    })
 }

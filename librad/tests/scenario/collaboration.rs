@@ -24,12 +24,12 @@ fn config() -> testnet::Config {
     }
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn can_add_maintainer() {
+#[test]
+fn can_add_maintainer() {
     logging::init();
 
-    let net = testnet::run(config()).await.unwrap();
-    {
+    let net = testnet::run(config()).unwrap();
+    net.enter(async {
         let peer1 = net.peers().index(0);
         let peer2 = net.peers().index(1);
 
@@ -102,5 +102,5 @@ async fn can_add_maintainer() {
                 verified.unwrap().delegations().iter().direct().next()
             );
         }
-    }
+    })
 }

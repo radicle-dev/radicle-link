@@ -3,11 +3,10 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{net::SocketAddr, panic};
+use std::net::SocketAddr;
 
 use either::Either;
 use futures::stream::{FuturesUnordered, Stream, StreamExt as _};
-use tracing::Instrument as _;
 
 use super::recv;
 use crate::net::{
@@ -21,7 +20,7 @@ use crate::net::{
 ///
 /// # Panics
 ///
-/// Panics if one of the tasks [`tokio::spawn`]ed by this function panics.
+/// Panics if one of the tasks spawned by this function panics.
 #[tracing::instrument(
     skip(state, streams),
     fields(
@@ -54,8 +53,8 @@ pub(in crate::net::protocol) async fn incoming<S, I>(
                     match stream {
                         Ok(s) => {
                             let task = match s {
-                                Left(bidi) => tokio::spawn(incoming::bidi(state.clone(), bidi).in_current_span()),
-                                Right(uni) => tokio::spawn(incoming::uni(state.clone(), uni).in_current_span()),
+                                Left(bidi) => state.spawner.spawn(incoming::bidi(state.clone(), bidi)),
+                                Right(uni) => state.spawner.spawn(incoming::uni(state.clone(), uni)),
                             };
                             tasks.push(task)
                         },
@@ -70,9 +69,7 @@ pub(in crate::net::protocol) async fn incoming<S, I>(
 
             res = tasks.next() => {
                 if let Some(Err(e)) = res {
-                    if let Ok(panik) = e.try_into_panic() {
-                        panic::resume_unwind(panik)
-                    }
+                    drop(e.into_cancelled())
                 }
             },
 
@@ -82,9 +79,7 @@ pub(in crate::net::protocol) async fn incoming<S, I>(
     tracing::debug!("ingress streams done, draining tasks");
     while let Some(res) = tasks.next().await {
         if let Err(e) = res {
-            if let Ok(panik) = e.try_into_panic() {
-                panic::resume_unwind(panik)
-            }
+            drop(e.into_cancelled())
         }
     }
     tracing::debug!("tasks drained");

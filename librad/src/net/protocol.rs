@@ -13,14 +13,9 @@ use std::{
     time::Duration,
 };
 
-use futures::{
-    channel::mpsc,
-    future::{BoxFuture, FutureExt as _},
-    stream::StreamExt as _,
-};
+use futures::{channel::mpsc, future::FutureExt as _, stream::StreamExt as _};
 use nonempty::NonEmpty;
 use rand_pcg::Pcg64Mcg;
-use tracing::Instrument as _;
 
 use super::{
     connection::{LocalAddr, LocalPeer},
@@ -29,6 +24,7 @@ use super::{
     Network,
 };
 use crate::{
+    executor,
     git::{
         self,
         p2p::{server::GitServer, transport::GitStreamFactory},
@@ -149,16 +145,19 @@ where
     Sign: Signer + Clone + Send + Sync + 'static,
     Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
+    let spawner = Arc::new(executor::Spawner::new("protocol"));
     let local_id = PeerId::from_signer(&signer);
     let git = GitServer::new(&config.paths);
     let quic::BoundEndpoint { endpoint, incoming } = quic::Endpoint::bind(
         signer,
+        &spawner,
         config.listen_addr,
         config.advertised_addrs,
         config.network,
     )
     .await?;
     let (membership, periodic) = membership::Hpv::<_, SocketAddr>::new(
+        &spawner,
         local_id,
         Pcg64Mcg::new(rand::random()),
         config.membership,
@@ -177,6 +176,7 @@ where
         },
         nonces: nonce::NonceBag::new(Duration::from_secs(300)), // TODO: config
         caches: cache::Caches::default(),
+        spawner,
     };
 
     Ok(Bound {
@@ -208,54 +208,54 @@ where
     git::p2p::transport::register()
         .register_stream_factory(state.local_id, Arc::downgrade(&_git_factory));
 
-    let tasks = [
-        tokio::spawn(accept::disco(state.clone(), disco).in_current_span()),
-        tokio::spawn(accept::periodic(state.clone(), periodic).in_current_span()),
-        tokio::spawn(
-            accept::ground_control(
+    let spawner = state.spawner.clone();
+    {
+        spawner.spawn(accept::disco(state.clone(), disco)).detach();
+        spawner
+            .spawn(accept::periodic(state.clone(), periodic))
+            .detach();
+        spawner
+            .spawn(accept::ground_control(
                 state.clone(),
                 async_stream::stream! {
                     let mut r = phone.downstream.subscribe();
                     loop { yield r.recv().await; }
                 }
                 .boxed(),
-            )
-            .in_current_span(),
-        ),
-    ];
-    let main = io::connections::incoming(state.clone(), incoming)
-        .in_current_span()
-        .boxed();
+            ))
+            .detach();
+    }
+    let endpoint = state.endpoint.clone();
+    let main = spawner.spawn(io::connections::incoming(state, incoming));
 
     Accept {
-        _git_factory,
-        endpoint: state.endpoint,
-        tasks,
+        endpoint,
         main,
+        _git_factory,
     }
 }
 
 struct Accept {
-    _git_factory: Arc<Box<dyn GitStreamFactory>>,
     endpoint: quic::Endpoint,
-    tasks: [tokio::task::JoinHandle<()>; 3],
-    main: BoxFuture<'static, Result<!, quic::Error>>,
+    main: executor::JoinHandle<Result<!, quic::Error>>,
+    _git_factory: Arc<Box<dyn GitStreamFactory>>,
 }
 
 impl Future for Accept {
     type Output = Result<!, quic::Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        self.main.poll_unpin(cx)
+        match self.main.poll_unpin(cx) {
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e.into())),
+            Poll::Ready(Ok(k)) => Poll::Ready(k),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
 impl Drop for Accept {
     fn drop(&mut self) {
         self.endpoint.shutdown();
-        for task in &self.tasks {
-            task.abort()
-        }
     }
 }
 

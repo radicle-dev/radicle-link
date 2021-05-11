@@ -49,12 +49,12 @@ fn config() -> testnet::Config {
 /// peer1. Then wait for peer2 to receive announcements for the project.
 /// Assert that peer2’s monorepo contains the commit, the branch and the tag
 /// from peer1.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn fetches_on_gossip_notify() {
+#[test]
+fn fetches_on_gossip_notify() {
     logging::init();
 
-    let net = testnet::run(config()).await.unwrap();
-    {
+    let net = testnet::run(config()).unwrap();
+    net.enter(async {
         let peer1 = net.peers().index(0);
         let peer2 = net.peers().index(1);
         let proj = peer1
@@ -175,7 +175,7 @@ async fn fetches_on_gossip_notify() {
             })
             .await
             .unwrap();
-    }
+    })
 }
 
 /// Given that a) a peer 1 holds a given URN and b) that same peer is a seed of
@@ -184,12 +184,12 @@ async fn fetches_on_gossip_notify() {
 ///
 /// Following that, verify that cloning from the returned PeerId means we have
 /// the URN in our monorepo.
-#[tokio::test]
-async fn ask_and_clone() {
+#[test]
+fn ask_and_clone() {
     logging::init();
 
-    let net = testnet::run(config()).await.unwrap();
-    {
+    let net = testnet::run(config()).unwrap();
+    net.enter(async {
         let peer1 = &net.peers()[0];
         let peer2 = &net.peers()[1];
         let proj = peer1
@@ -235,5 +235,5 @@ async fn ask_and_clone() {
             "expected peer2 to have URN {}",
             project_urn
         )
-    }
+    })
 }
