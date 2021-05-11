@@ -334,7 +334,7 @@ async fn announce(
     store: kv::Store,
     sender: mpsc::Sender<Input>,
 ) {
-    match announcement::run(&peer, &store).await {
+    match announcement::run(&peer, store).await {
         Ok(updates) => {
             sender
                 .send(Input::Announce(input::Announce::Succeeded(updates)))
