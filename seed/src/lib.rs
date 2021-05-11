@@ -96,7 +96,7 @@ impl From<fetcher::Info> for Error {
 }
 
 /// Seed operational mode.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Mode {
     /// Track everything we see, no matter where it comes from.
     TrackEverything,
@@ -220,11 +220,19 @@ impl Node {
                 event = events.next() => {
                     match event {
                         Some(Ok(evt)) => {
-                            Node::handle_event(evt, &self.config.mode, &mut transmit, &peer).await?;
+                            let mode = self.config.mode.clone();
+                            let peer = peer.clone();
+                            let mut transmit = transmit.clone();
+                            tokio::spawn(async move {
+                                if let Err(err) = Node::handle_event(evt, mode, &mut transmit, &peer).await {
+                                    tracing::error!(err = ?err, "event fulfilment failed");
+                                }
+                            });
                         },
                         // There might be intermittent errors due to restarting.
                         // We can just ignore them.
-                        Some(Err(_)) => {
+                        Some(Err(err)) => {
+                            tracing::error!(err = ?err, "event loop");
                             continue;
                         },
                         // We're done when you're done.
@@ -235,9 +243,13 @@ impl Node {
                 }
                 request = requests.next() => {
                     if let Some(r) = request {
-                        if let Err(err) =  Node::handle_request(r, &peer).await {
-                            tracing::error!(err = ?err, "request fulfilment failed");
-                        }
+                        let peer = peer.clone();
+
+                        tokio::spawn(async move {
+                            if let Err(err) =  Node::handle_request(r, &peer).await {
+                                tracing::error!(err = ?err, "request fulfilment failed");
+                            }
+                        });
                     }
                 }
             }
@@ -274,7 +286,7 @@ impl Node {
     /// we check if we should track it.
     async fn handle_event(
         event: ProtocolEvent,
-        mode: &Mode,
+        mode: Mode,
         transmit: &mut mpsc::Sender<Event>,
         api: &Peer<Signer>,
     ) -> Result<(), Error> {
