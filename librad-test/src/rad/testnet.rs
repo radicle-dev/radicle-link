@@ -6,6 +6,7 @@
 use std::{
     collections::BTreeMap,
     env,
+    future::Future,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs as _},
     num::NonZeroUsize,
     ops::Deref,
@@ -16,7 +17,6 @@ use futures::{
     stream::{StreamExt as _, TryStreamExt as _},
 };
 use tempfile::{tempdir, TempDir};
-use tokio::task::{spawn, JoinHandle};
 
 use librad::{
     git,
@@ -31,7 +31,6 @@ use librad::{
     },
     paths::Paths,
     peer::PeerId,
-    std_ext::iter::IteratorExt as _,
 };
 
 lazy_static! {
@@ -69,7 +68,6 @@ impl LocalAddr for BoundTestPeer {
 pub struct RunningTestPeer {
     peer: Peer<SecretKey>,
     listen_addrs: Vec<SocketAddr>,
-    _tmp: TempDir,
 }
 
 // No, this is not sound, but conveniently allows to write tests as if this was
@@ -270,13 +268,19 @@ async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
 }
 
 pub struct Testnet {
+    tasks: Vec<tokio::task::JoinHandle<Result<!, quic::Error>>>,
     peers: Vec<RunningTestPeer>,
-    tasks: Vec<JoinHandle<Result<!, quic::Error>>>,
+    rt: tokio::runtime::Runtime,
+    _tmp: Vec<TempDir>,
 }
 
 impl Testnet {
     pub fn peers(&self) -> &[RunningTestPeer] {
         self.as_ref()
+    }
+
+    pub fn enter<F: Future>(&self, fut: F) -> F::Output {
+        self.rt.block_on(fut)
     }
 }
 
@@ -288,43 +292,47 @@ impl AsRef<[RunningTestPeer]> for Testnet {
 
 impl Drop for Testnet {
     fn drop(&mut self) {
+        self.tasks.drain(..).for_each(|t| t.abort());
         self.peers.drain(..).for_each(drop);
-        for task in &self.tasks {
-            task.abort()
-        }
     }
 }
 
-pub async fn run(config: Config) -> anyhow::Result<Testnet> {
+pub fn run(config: Config) -> anyhow::Result<Testnet> {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
     let min_connected = config.min_connected;
-    let peers = bootstrap(config).await?;
-    let (running, bound_tasks, events) = peers
-        .into_iter()
-        .map(
-            |BoundTestPeer {
-                 tmp,
-                 peer,
-                 bound,
-                 disco,
-             }| {
-                let events = peer.subscribe();
-                let running = RunningTestPeer {
-                    _tmp: tmp,
-                    peer,
-                    listen_addrs: bound.listen_addrs(),
-                };
-                let bound_task = spawn(bound.accept(disco.discover()));
+    let bootstrapped = rt.block_on(bootstrap(config))?;
+    let num_peers = bootstrapped.len();
 
-                (running, bound_task, events)
-            },
-        )
-        .unzip3::<_, _, _, Vec<_>, Vec<_>, Vec<_>>();
+    let mut tasks = Vec::with_capacity(num_peers);
+    let mut peers = Vec::with_capacity(num_peers);
+    let mut tmps = Vec::with_capacity(num_peers);
+    let mut events = Vec::with_capacity(num_peers);
 
-    wait_converged(events, min_connected).await;
+    for bound in bootstrapped {
+        let BoundTestPeer {
+            tmp,
+            peer,
+            bound,
+            disco,
+        } = bound;
+        events.push(peer.subscribe());
+        peers.push(RunningTestPeer {
+            peer,
+            listen_addrs: bound.listen_addrs(),
+        });
+        tasks.push(rt.spawn(bound.accept(disco.discover())));
+        tmps.push(tmp);
+    }
+    rt.block_on(wait_converged(events, min_connected));
 
     Ok(Testnet {
-        peers: running,
-        tasks: bound_tasks,
+        tasks,
+        peers,
+        rt,
+        _tmp: tmps,
     })
 }
 

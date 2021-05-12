@@ -23,12 +23,12 @@ fn config() -> testnet::Config {
     }
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn mutual_fetch() {
+#[test]
+fn mutual_fetch() {
     logging::init();
 
-    let net = testnet::run(config()).await.unwrap();
-    {
+    let net = testnet::run(config()).unwrap();
+    net.enter(async {
         let alice = net.peers().index(0);
         let bob = net.peers().index(1);
         let project = alice
@@ -127,5 +127,5 @@ async fn mutual_fetch() {
 
         assert!(alice_has_bob, "alice is missing bob's commit");
         assert!(bob_has_alice, "bob is missing alice's commit");
-    }
+    })
 }

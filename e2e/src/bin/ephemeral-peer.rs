@@ -182,7 +182,7 @@ async fn graphite_stats(peer: Peer<SecretKey>, graphite_addr: SocketAddr) -> any
 
         for (metric, value) in &[
             (CONNECTIONS_TOTAL, stats.connections_total),
-            (CONNECTED_PEERS, stats.connected_peers),
+            (CONNECTED_PEERS, stats.connected_peers.len()),
             (MEMBERSHIP_ACTIVE, stats.membership_active),
             (MEMBERSHIP_PASSIVE, stats.membership_passive),
         ] {

@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use crate::peer;
+use crate::{executor, peer};
 use std::io;
 use thiserror::Error;
 
@@ -38,6 +38,15 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] io::Error),
+
+    #[error(transparent)]
+    Task(executor::Cancelled),
+}
+
+impl From<executor::JoinError> for Error {
+    fn from(e: executor::JoinError) -> Self {
+        Self::Task(e.into_cancelled())
+    }
 }
 
 #[derive(Debug, Error)]

@@ -14,6 +14,7 @@ use librad::{
     net::peer::Peer,
     signer::BoxedSigner,
 };
+use tokio::task::spawn_blocking;
 
 use crate::{peer::gossip, state};
 
@@ -36,6 +37,10 @@ pub enum Error {
     /// Error occurred when interacting with [`Peer`].
     #[error(transparent)]
     State(#[from] state::Error),
+
+    /// Error in spawned task.
+    #[error(transparent)]
+    Task(#[from] tokio::task::JoinError),
 }
 
 /// An update and all the required information that can be announced on the
@@ -119,15 +124,19 @@ fn load(store: &kv::Store) -> Result<Updates, Error> {
 ///
 /// * if it can't build the new list of updates
 /// * access to the storage fails
-pub async fn run(peer: &Peer<BoxedSigner>, store: &kv::Store) -> Result<Updates, Error> {
-    let old = load(store)?;
+pub async fn run(peer: &Peer<BoxedSigner>, store: kv::Store) -> Result<Updates, Error> {
+    let old = spawn_blocking({
+        let store = store.clone();
+        move || load(&store)
+    })
+    .await??;
     let new = build(peer).await?;
     let updates = diff(&old, &new);
 
     announce(peer, updates.iter()).await;
 
     if !updates.is_empty() {
-        save(store, new.clone()).map_err(Error::from)?;
+        spawn_blocking(move || save(&store, new.clone())).await??;
     }
 
     Ok(updates)

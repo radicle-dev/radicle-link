@@ -6,12 +6,15 @@
 use std::{iter, net::SocketAddr};
 
 use futures::stream::{self, StreamExt as _};
-use tracing::Instrument as _;
 
 use super::{broadcast, error, event, gossip, io, tick, PeerInfo, ProtocolStorage, State};
+use crate::PeerId;
 
-pub(super) async fn gossip<S>(state: &State<S>, evt: event::downstream::Gossip)
-where
+pub(super) async fn gossip<S>(
+    state: &State<S>,
+    evt: event::downstream::Gossip,
+    exclude: Option<PeerId>,
+) where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
 {
     use event::downstream::Gossip;
@@ -35,7 +38,7 @@ where
     stream::iter(
         state
             .membership
-            .broadcast_recipients(None)
+            .broadcast_recipients(exclude)
             .into_iter()
             .map(|to| tick::Tock::SendConnected {
                 to,
@@ -104,7 +107,10 @@ pub(super) async fn interrogation<S>(
             None => io::connect(&state.endpoint, peer, addr_hints)
                 .await
                 .map(|(conn, ingress)| {
-                    tokio::spawn(io::streams::incoming(state.clone(), ingress).in_current_span());
+                    state
+                        .spawner
+                        .spawn(io::streams::incoming(state.clone(), ingress))
+                        .detach();
                     conn
                 }),
         };

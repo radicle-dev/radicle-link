@@ -6,6 +6,7 @@
 use std::{collections::BTreeSet, iter, net::SocketAddr, str::FromStr, time::Duration};
 
 use crate::{
+    executor,
     git::{
         fetch::{Fetcher as _, RemoteHeads},
         refs::{self, Refs, Remotes},
@@ -68,9 +69,10 @@ pub mod config {
 /// recursively. Using this function thus requires to inspect the git header for
 /// the presence of a nonce (or else skip the rere), and to keep track of recent
 /// nonces in case of nonce re-use.
-#[tracing::instrument(level = "debug", skip(storage, config, addr_hints), err)]
+#[tracing::instrument(level = "debug", skip(spawner, storage, config, addr_hints), err)]
 pub async fn rere<S, Addrs>(
-    storage: S,
+    spawner: &executor::Spawner,
+    storage: &S,
     config: config::Rere,
     urn: Urn,
     remote_peer: PeerId,
@@ -81,6 +83,7 @@ where
     Addrs: IntoIterator<Item = SocketAddr>,
 {
     fetcher::retrying(
+        spawner,
         storage,
         fetcher::PeerToPeer::new(urn.clone(), remote_peer, addr_hints).nonced(false),
         config.fetch_slot_wait_timeout,

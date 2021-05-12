@@ -19,12 +19,12 @@ fn config() -> testnet::Config {
     }
 }
 
-#[tokio::test]
-async fn responds() {
+#[test]
+fn responds() {
     logging::init();
 
-    let net = testnet::run(config()).await.unwrap();
-    {
+    let net = testnet::run(config()).unwrap();
+    net.enter(async {
         let responder = net.peers().index(0);
         let requester = net.peers().index(1);
         let TestProject { project, owner } = responder
@@ -53,5 +53,5 @@ async fn responds() {
         for urn in &[SomeUrn::Git(project.urn()), SomeUrn::Git(owner.urn())] {
             assert!(urns.contains(urn))
         }
-    }
+    })
 }

@@ -19,6 +19,7 @@ steps:
   - wait
 
   - label: "Build + Test"
+    timeout_in_minutes: 20
     if: |
         build.pull_request.repository.fork == null ||
         build.pull_request.repository.fork == false
@@ -31,6 +32,7 @@ steps:
     env: *build-docker
 
   - label: "fmt + clip"
+    timeout_in_minutes: 5
     if: |
         build.pull_request.repository.fork == null ||
         build.pull_request.repository.fork == false
@@ -43,6 +45,7 @@ steps:
     env: *build-docker
 
   - label: "Deny"
+    timeout_in_minutes: 1
     if: |
         build.pull_request.repository.fork == null ||
         build.pull_request.repository.fork == false
@@ -55,6 +58,7 @@ steps:
     env: *build-docker
 
   - label: "Docs"
+    timeout_in_minutes: 10
     if: |
         build.pull_request.repository.fork == null ||
         build.pull_request.repository.fork == false

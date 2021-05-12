@@ -12,6 +12,7 @@ use std::{
 };
 
 use either::Either;
+use tokio::task::spawn_blocking;
 
 use librad::{
     git::{
@@ -444,18 +445,23 @@ pub async fn init_project(
         project.subject().name
     );
 
-    let repo = repository
-        .setup_repo(
-            settings(peer),
-            project
-                .subject()
-                .description
-                .as_deref()
-                .unwrap_or(&String::default()),
-        )
-        .map_err(crate::project::create::Error::from)?;
+    let repo = spawn_blocking({
+        let peer = peer.clone();
+        let desc = project
+            .subject()
+            .description
+            .as_deref()
+            .cloned()
+            .unwrap_or_default();
+        move || {
+            repository
+                .setup_repo(settings(&peer), &desc)
+                .map_err(crate::project::create::Error::from)
+        }
+    })
+    .await??;
     let include_path = update_include(peer, project.urn()).await?;
-    include::set_include_path(&repo, include_path)?;
+    spawn_blocking(move || include::set_include_path(&repo, include_path)).await??;
     gossip::announce(peer, &project.urn(), None);
 
     Ok(project)
@@ -693,7 +699,7 @@ where
 
     let settings = settings(peer);
     log::debug!("Cloning");
-    let path = checkout.run(settings, ownership).map_err(Error::from)?;
+    let path = spawn_blocking(move || checkout.run(settings, ownership)).await??;
 
     Ok(path)
 }
@@ -707,17 +713,25 @@ where
 pub async fn update_include(peer: &Peer<BoxedSigner>, urn: Urn) -> Result<PathBuf, Error> {
     let local_url = LocalUrl::from(urn.clone());
     let tracked = tracked(peer, urn).await?;
-    let include = Include::from_tracked_persons(
-        paths(peer).git_includes_dir().to_path_buf(),
-        local_url,
-        tracked
-            .into_iter()
-            .filter_map(|peer| {
-                crate::project::Peer::replicated_remote(peer)
-                    .map(|(p, u)| RefLike::try_from(u.subject().name.to_string()).map(|r| (r, p)))
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-    );
+    let include = spawn_blocking({
+        let path = paths(peer).git_includes_dir().to_path_buf();
+        move || {
+            let inc = Include::from_tracked_persons(
+                path,
+                local_url,
+                tracked
+                    .into_iter()
+                    .filter_map(|peer| {
+                        crate::project::Peer::replicated_remote(peer).map(|(p, u)| {
+                            RefLike::try_from(u.subject().name.to_string()).map(|r| (r, p))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+            Ok::<_, Error>(inc)
+        }
+    })
+    .await??;
     let include_path = include.file_path();
     log::info!("creating include file @ '{:?}'", include_path);
     include.save()?;

@@ -4,7 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     io,
     net::{SocketAddr, UdpSocket},
     pin::Pin,
@@ -17,10 +17,10 @@ use nonempty::NonEmpty;
 use parking_lot::RwLock;
 use quinn::{NewConnection, TransportConfig};
 use socket2::{Domain, Protocol, Socket, Type};
-use tracing::Instrument as _;
 
 use super::{BoxedIncomingStreams, Connection, Conntrack, Error, Result};
 use crate::{
+    executor,
     net::{
         connection::{CloseReason, LocalAddr, LocalPeer},
         tls,
@@ -65,6 +65,7 @@ pub struct Endpoint {
 impl Endpoint {
     pub async fn bind<'a, S>(
         signer: S,
+        spawner: &executor::Spawner,
         listen_addr: SocketAddr,
         advertised_addrs: Option<NonEmpty<SocketAddr>>,
         network: Network,
@@ -82,7 +83,7 @@ impl Endpoint {
             match advertised_addrs {
                 Some(addrs) => listen_addrs.write().extend(addrs),
                 None if listen_addr.ip().is_unspecified() => {
-                    ifwatch(listen_addr, Arc::downgrade(&listen_addrs)).await?
+                    ifwatch(spawner, listen_addr, Arc::downgrade(&listen_addrs)).await?
                 },
                 None => listen_addrs.write().extend(Some(listen_addr)),
             }
@@ -128,8 +129,8 @@ impl Endpoint {
         self.conntrack.total()
     }
 
-    pub fn connected_peers(&self) -> usize {
-        self.conntrack.num_peers()
+    pub fn connected_peers(&self) -> HashMap<PeerId, Vec<SocketAddr>> {
+        self.conntrack.connected_peers()
     }
 
     pub fn peers(&self) -> Vec<PeerId> {
@@ -214,8 +215,9 @@ fn bind_socket(listen_addr: SocketAddr) -> Result<UdpSocket> {
     Ok(sock.into())
 }
 
-#[tracing::instrument(skip(listen_addrs))]
+#[tracing::instrument(skip(spawner, listen_addrs))]
 async fn ifwatch(
+    spawner: &executor::Spawner,
     bound_addr: SocketAddr,
     listen_addrs: Weak<RwLock<BTreeSet<SocketAddr>>>,
 ) -> io::Result<()> {
@@ -226,8 +228,8 @@ async fn ifwatch(
     }
 
     let mut watcher = IfWatcher::new().await?;
-    tokio::spawn(
-        async move {
+    spawner
+        .spawn(async move {
             loop {
                 match Pin::new(&mut watcher).await {
                     Err(e) => {
@@ -271,9 +273,8 @@ async fn ifwatch(
                     },
                 }
             }
-        }
-        .in_current_span(),
-    );
+        })
+        .detach();
 
     Ok(())
 }

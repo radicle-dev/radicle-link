@@ -13,7 +13,7 @@ use librad::{
     net,
     peer::PeerId,
 };
-use std::convert::Infallible;
+use std::{convert::Infallible, panic};
 
 /// Errors that may occur when interacting with [`librad::net::peer::Peer`].
 #[derive(Debug, thiserror::Error)]
@@ -125,6 +125,10 @@ pub enum Error {
     /// A document payload extension was malformed
     #[error(transparent)]
     MalformedPayloadExt(#[from] librad::identities::payload::ExtError),
+
+    /// A spawned task was cancelled
+    #[error("spawned task cancelled")]
+    TaskCancelled,
 }
 
 impl From<Infallible> for Error {
@@ -136,6 +140,18 @@ impl From<Infallible> for Error {
 impl From<librad::git::identities::Error> for Error {
     fn from(err: librad::git::identities::Error) -> Self {
         Self::Identities(Box::new(err))
+    }
+}
+
+impl From<tokio::task::JoinError> for Error {
+    fn from(err: tokio::task::JoinError) -> Self {
+        if err.is_cancelled() {
+            Self::TaskCancelled
+        } else if err.is_panic() {
+            panic::resume_unwind(err.into_panic())
+        } else {
+            unreachable!("unexpected join error: {:?}", err)
+        }
     }
 }
 

@@ -40,12 +40,12 @@ fn disconnected_config() -> testnet::Config {
 
 /// Fetching from a peer that does not have the identity should leave the
 /// `rad/*` refs intact.
-#[tokio::test]
-async fn not_present() {
+#[test]
+fn not_present() {
     logging::init();
 
-    let net = testnet::run(default_config()).await.unwrap();
-    {
+    let net = testnet::run(default_config()).unwrap();
+    net.enter(async {
         let maintainer = Host::init(net.peers().index(0)).await;
         let contributor = Leecher(net.peers().index(1));
         let voyeur = net.peers().index(2);
@@ -86,41 +86,41 @@ async fn not_present() {
             })
             .await
             .unwrap();
-    }
+    })
 }
 
-#[tokio::test]
-async fn when_connected() {
+#[test]
+fn when_connected() {
     logging::init();
 
-    let net = testnet::run(default_config()).await.unwrap();
-    {
+    let net = testnet::run(default_config()).unwrap();
+    net.enter(async {
         let host = Host::init(&net.peers()[0]).await;
         Leecher(&net.peers()[1]).clone_from(host, false).await
-    }
+    })
 }
 
-#[tokio::test]
-async fn when_disconnected() {
+#[test]
+fn when_disconnected() {
     logging::init();
 
-    let net = testnet::run(disconnected_config()).await.unwrap();
-    {
+    let net = testnet::run(disconnected_config()).unwrap();
+    net.enter(async {
         let host = Host::init(&net.peers()[0]).await;
         Leecher(&net.peers()[1]).clone_from(host, true).await
-    }
+    })
 }
 
-#[tokio::test]
+#[test]
 #[should_panic(expected = "git p2p transport: no connection to")]
-async fn when_disconnected_and_no_addr_hints() {
+fn when_disconnected_and_no_addr_hints() {
     logging::init();
 
-    let net = testnet::run(disconnected_config()).await.unwrap();
-    {
+    let net = testnet::run(disconnected_config()).unwrap();
+    net.enter(async {
         let host = Host::init(&net.peers()[0]).await;
         Leecher(&net.peers()[1]).clone_from(host, false).await
-    }
+    })
 }
 
 struct Host<'a> {

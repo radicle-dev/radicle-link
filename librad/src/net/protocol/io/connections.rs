@@ -11,7 +11,6 @@ use futures::{
     stream::{FuturesUnordered, Stream, StreamExt as _},
 };
 use indexmap::IndexSet;
-use tracing::Instrument as _;
 
 use crate::{
     net::{
@@ -32,7 +31,7 @@ use crate::{
 ///
 /// # Panics
 ///
-/// Panics if one of the tasks [`tokio::spawn`]ed by this function panics.
+/// Panics if one of the tasks spawned by this function panics.
 #[tracing::instrument(skip(state, ingress), err)]
 pub(in crate::net::protocol) async fn incoming<S, I>(
     state: State<S>,
@@ -57,13 +56,13 @@ where
             conn = ingress.next() => match conn {
                 Some(conn) => match conn {
                     Ok((_, streams)) => {
-                        tasks.push(tokio::spawn(streams::incoming(state.clone(), streams).in_current_span()));
+                        tasks.push(state.spawner.spawn(streams::incoming(state.clone(), streams)));
                     },
                     Err(err)=> match err {
                         Connection(_) | PeerId(_) | RemoteIdUnavailable | SelfConnect => {
                             tracing::warn!(err = %err, "ingress connections error");
                         },
-                        Connect(_) | Endpoint(_) | Io(_) | Shutdown | Signer(_) => {
+                        Connect(_) | Endpoint(_) | Io(_) | Shutdown | Signer(_) | Task(_) => {
                             tracing::error!(err = %err, "ingress connections error");
                             break;
                         },
@@ -76,9 +75,7 @@ where
 
             task = tasks.next() => {
                 if let Some(Err(e)) = task {
-                    if let Ok(panik) = e.try_into_panic() {
-                        panic::resume_unwind(panik)
-                    }
+                    drop(e.into_cancelled())
                 }
             }
         }
@@ -86,9 +83,7 @@ where
     tracing::debug!("ingress connections done, draining tasks");
     while let Some(res) = tasks.next().await {
         if let Err(e) = res {
-            if let Ok(panik) = e.try_into_panic() {
-                panic::resume_unwind(panik)
-            }
+            drop(e.into_cancelled())
         }
     }
     tracing::debug!("tasks drained");

@@ -40,19 +40,12 @@ use std::{
     future::Future,
     io::{self, Read, Write},
     net::SocketAddr,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-        Once,
-        RwLock,
-        Weak,
-    },
+    sync::{Arc, Once, RwLock, Weak},
 };
 
 use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Transport};
 use git_ext::into_git_err;
-use tokio::runtime::{self, Runtime};
 
 use super::{header::Header, url::GitUrl};
 use crate::{identities::git::Urn, peer::PeerId};
@@ -61,17 +54,6 @@ type Factories = Arc<RwLock<HashMap<PeerId, Weak<Box<dyn GitStreamFactory>>>>>;
 
 lazy_static! {
     static ref FACTORIES: Factories = Arc::new(RwLock::new(HashMap::with_capacity(1)));
-    static ref EXECUTOR: Runtime = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name_fn(|| {
-            static COUNTER: AtomicUsize = AtomicUsize::new(0);
-            let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-            format!("librad-libgit-worker-{}", id)
-        })
-        .on_thread_start(|| tracing::trace!("starting executor thread"))
-        .on_thread_stop(|| tracing::trace!("stopping executor thread"))
-        .build()
-        .unwrap();
 }
 
 /// The underlying [`AsyncRead`] + [`AsyncWrite`] of a [`RadSubTransport`]
@@ -246,11 +228,7 @@ where
     F: Future,
 {
     tracing::trace!("task submitted");
-    // Unsure how this actually works. Obtaining an "independent" handle appears
-    // to be the safest option, as the documented guarantees are that we can
-    // clone and share it between threads.
-    let hdl = EXECUTOR.handle().clone();
-    let out = hdl.block_on(fut);
+    let out = futures::executor::block_on(fut);
     tracing::trace!("task completed");
     out
 }

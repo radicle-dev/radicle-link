@@ -3,15 +3,15 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{net::SocketAddr, panic, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use futures::{future, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use futures_timer::Delay;
 use thiserror::Error;
-use tokio::task::spawn_blocking;
 
 use super::protocol::{self, gossip};
 use crate::{
+    executor,
     git::{self, storage::Fetchers, Urn},
     signer::Signer,
     PeerId,
@@ -89,8 +89,8 @@ pub mod config {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum StorageError {
-    #[error("the spawned blocking task was cancelled")]
-    Cancelled,
+    #[error(transparent)]
+    Task(executor::Cancelled),
 
     #[error(transparent)]
     Storage(#[from] git::storage::Error),
@@ -105,12 +105,19 @@ impl From<PoolError<git::storage::Error>> for StorageError {
     }
 }
 
+impl From<executor::JoinError> for StorageError {
+    fn from(e: executor::JoinError) -> Self {
+        Self::Task(e.into_cancelled())
+    }
+}
+
 #[derive(Clone)]
 pub struct Peer<S> {
     config: Config<S>,
     phone: protocol::TinCans,
     peer_store: PeerStorage,
     git_store: git::storage::Pool,
+    spawner: Arc<executor::Spawner>,
 }
 
 impl<S> Peer<S>
@@ -118,9 +125,11 @@ where
     S: Signer + Clone,
 {
     pub fn new(config: Config<S>) -> Self {
+        let spawner = Arc::new(executor::Spawner::new("peer"));
         let phone = protocol::TinCans::default();
         let fetchers = Fetchers::default();
         let peer_store = PeerStorage::new(
+            spawner.clone(),
             git::storage::Pool::new(
                 git::storage::pool::Config::with_fetchers(
                     config.protocol.paths.clone(),
@@ -148,6 +157,7 @@ where
             phone,
             peer_store,
             git_store,
+            spawner,
         }
     }
 
@@ -248,18 +258,10 @@ where
         A: Send + 'static,
     {
         let storage = self.git_store.get().await?;
-        match spawn_blocking(move || blocking(&storage)).await {
-            Ok(a) => Ok(a),
-            Err(e) => {
-                if e.is_cancelled() {
-                    Err(StorageError::Cancelled)
-                } else if e.is_panic() {
-                    panic::resume_unwind(e.into_panic())
-                } else {
-                    panic!("unknown error awaiting spawned blocking task: {:?}", e)
-                }
-            },
-        }
+        Ok(self
+            .spawner
+            .spawn_blocking(move || blocking(&storage))
+            .await?)
     }
 
     /// Borrow a [`git::storage::Storage`] from the pool directly.

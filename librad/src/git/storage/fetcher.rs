@@ -8,7 +8,6 @@ use std::{
     convert::TryFrom,
     hash::BuildHasherDefault,
     net::SocketAddr,
-    panic,
     time::Duration,
 };
 
@@ -19,6 +18,7 @@ use url::Url;
 
 use super::{PoolError, Storage};
 use crate::{
+    executor,
     git::{
         fetch::{self, FetchResult, Fetchspecs, RemoteHeads},
         p2p::url::GitUrlRef,
@@ -246,6 +246,7 @@ impl BuildFetcher for AnyUrl {
 
 pub mod error {
     use super::*;
+    use crate::executor::{Cancelled, JoinError};
     use thiserror::Error;
 
     #[derive(Debug, Error)]
@@ -253,14 +254,23 @@ pub mod error {
         #[error("fetch of {urn} from {remote_peer} already in-flight")]
         Concurrent { urn: Urn, remote_peer: PeerId },
 
-        #[error("task was cancelled")]
-        Cancelled,
+        #[error(transparent)]
+        Task(Cancelled),
 
         #[error("unable to create fetcher")]
         MkFetcher(#[source] E),
 
         #[error(transparent)]
         Pool(#[from] super::PoolError),
+    }
+
+    impl<E> From<JoinError> for Retrying<E>
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        fn from(e: JoinError) -> Self {
+            Self::Task(e.into_cancelled())
+        }
     }
 
     #[derive(Debug, Error)]
@@ -295,7 +305,8 @@ pub mod error {
 /// strategy increases the sleep interval after each attempt, so is biased
 /// towards more recent requests for the same resource.
 pub async fn retrying<P, B, E, F, A>(
-    pool: P,
+    spawner: &executor::Spawner,
+    pool: &P,
     builder: B,
     timeout: Duration,
     f: F,
@@ -309,20 +320,20 @@ where
 {
     use backoff::{backoff::Backoff as _, ExponentialBackoff};
 
-    enum Inner<P, B, F, E>
+    enum Inner<B, F, E>
     where
         E: std::error::Error + Send + Sync + 'static,
     {
         Fatal(error::Retrying<E>),
-        Retry {
-            p: P,
-            b: B,
-            f: F,
-            err: error::Retrying<E>,
-        },
+        Retry { b: B, f: F, err: error::Retrying<E> },
     }
 
-    async fn go<P, B, F, A, E>(pool: P, builder: B, f: F) -> Result<A, Inner<P, B, F, E>>
+    async fn go<P, B, F, A, E>(
+        spawner: &executor::Spawner,
+        pool: &P,
+        builder: B,
+        f: F,
+    ) -> Result<A, Inner<B, F, E>>
     where
         P: super::Pooled + Send + 'static,
         B: BuildFetcher<Error = E> + Send + 'static,
@@ -335,47 +346,34 @@ where
             .await
             .map_err(error::Retrying::from)
             .map_err(Inner::Fatal)?;
-        let task = tokio::task::spawn_blocking(move || {
-            let fetcher = builder
-                .build_fetcher(&storage)
-                .map_err(error::Retrying::MkFetcher)
-                .map_err(Inner::Fatal)?;
+        let task = spawner
+            .spawn_blocking(move || {
+                let fetcher = builder
+                    .build_fetcher(&storage)
+                    .map_err(error::Retrying::MkFetcher)
+                    .map_err(Inner::Fatal)?;
 
-            match fetcher {
-                Ok(fetcher) => Ok(f(&storage, fetcher)),
-                Err(info) => {
-                    let keep_going = &info.remote_peer != builder.remote_peer();
-                    let err = error::Retrying::Concurrent {
-                        urn: info.urn,
-                        remote_peer: info.remote_peer,
-                    };
+                match fetcher {
+                    Ok(fetcher) => Ok(f(&storage, fetcher)),
+                    Err(info) => {
+                        let keep_going = &info.remote_peer != builder.remote_peer();
+                        let err = error::Retrying::Concurrent {
+                            urn: info.urn,
+                            remote_peer: info.remote_peer,
+                        };
 
-                    if keep_going {
-                        Err(Inner::Retry {
-                            p: pool,
-                            b: builder,
-                            f,
-                            err,
-                        })
-                    } else {
-                        Err(Inner::Fatal(err))
-                    }
-                },
-            }
-        })
-        .await;
+                        if keep_going {
+                            Err(Inner::Retry { b: builder, f, err })
+                        } else {
+                            Err(Inner::Fatal(err))
+                        }
+                    },
+                }
+            })
+            .await;
 
         match task {
-            Err(e) => {
-                if e.is_cancelled() {
-                    Err(Inner::Fatal(error::Retrying::Cancelled))
-                } else if e.is_panic() {
-                    panic::resume_unwind(e.into_panic())
-                } else {
-                    unreachable!("unexpected task error: {:?}", e)
-                }
-            },
-
+            Err(e) => Err(Inner::Fatal(error::Retrying::from(e))),
             Ok(x) => x,
         }
     }
@@ -387,10 +385,10 @@ where
         max_elapsed_time: Some(timeout),
         ..Default::default()
     };
-    let mut fut = go(pool, builder, f);
+    let mut fut = go(spawner, pool, builder, f);
     loop {
         match fut.await {
-            Err(Inner::Retry { p, b, f, err }) => match policy.next_backoff() {
+            Err(Inner::Retry { b, f, err }) => match policy.next_backoff() {
                 None => return Err(err),
                 Some(next) => {
                     tracing::info!(
@@ -399,7 +397,7 @@ where
                         "unable to obtain fetcher, retrying in {:?}", next
                     );
                     tokio::time::sleep(next).await;
-                    fut = go(p, b, f);
+                    fut = go(spawner, pool, b, f);
                     continue;
                 },
             },

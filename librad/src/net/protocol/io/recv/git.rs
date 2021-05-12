@@ -3,21 +3,20 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{io, net::SocketAddr, panic};
+use std::{io, net::SocketAddr};
 
 use futures::{
-    future::TryFutureExt as _,
+    future::{self, TryFutureExt as _},
     io::{AsyncRead, AsyncWrite},
     stream::{FuturesUnordered, StreamExt as _},
 };
 use thiserror::Error;
-use tracing::Instrument as _;
 
 use crate::{
-    git::{p2p::header::Header, Urn},
+    git::{replication::ReplicateResult, Urn},
     net::{
         connection::{Duplex, RemoteInfo},
-        protocol::{gossip, io::graft, ProtocolStorage, State},
+        protocol::{self, control, gossip, io::graft, ProtocolStorage, State},
         upgrade::{self, Upgraded},
     },
     PeerId,
@@ -45,67 +44,98 @@ where
     match state.git.service(recv, send).await {
         Err(e) => tracing::warn!(err = ?e, "git service setup error"),
         Ok(srv) => {
-            let tasks = FuturesUnordered::new();
-            let Header { repo, nonce, .. } = &srv.header;
-            // Only rere if we have a fresh nonce
-            if let Some(n) = nonce {
-                if !state.nonces.contains(n) {
-                    // tasks.push(spawn_rere(&state, repo.clone(), remote_peer,
-                    // remote_addr))
-                }
-                state.nonces.insert(*n)
-            }
-            tasks.push(tokio::spawn(
-                srv.run().err_into::<Error>().in_current_span(),
-            ));
-
-            let results = tasks.take(1).collect::<Vec<_>>().await;
-            for res in results {
-                match res {
-                    Err(e) => {
-                        if e.is_panic() {
-                            panic::resume_unwind(e.into_panic())
-                        } else if e.is_cancelled() {
-                            tracing::info!("cancelled task")
-                        } else {
-                            unreachable!("unexpected task error: {:?}", e)
+            let repo = srv.header.repo.clone();
+            let nonce = srv.header.nonce;
+            let res = srv
+                .run()
+                .err_into::<Error>()
+                .and_then(|()| async {
+                    if let Some(n) = nonce {
+                        // Only rere if we have a fresh nonce
+                        if !state.nonces.contains(&n) {
+                            // return rere(state.clone(), repo, remote_peer,
+                            // remote_addr).await;
                         }
-                    },
+                    }
 
-                    Ok(Ok(())) => tracing::debug!("task done"),
-                    Ok(Err(e)) => tracing::warn!(err = ?e, "task error"),
-                }
+                    Ok(())
+                })
+                .await;
+
+            if let Some(n) = nonce {
+                state.nonces.insert(n);
+            }
+
+            if let Err(e) = res {
+                tracing::warn!(err = ?e, "recv git error")
             }
         },
     }
 }
 
-fn spawn_rere<S>(
-    state: &State<S>,
+#[tracing::instrument(
+    skip(state, urn, remote_peer, remote_addr),
+    fields(urn = %urn, remote_peer = %remote_peer)
+)]
+async fn rere<S>(
+    state: State<S>,
     urn: Urn,
     remote_peer: PeerId,
     remote_addr: SocketAddr,
-) -> tokio::task::JoinHandle<Result<(), Error>>
+) -> Result<(), Error>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
-    tokio::spawn({
-        let pool = state.storage.clone();
-        let config = graft::config::Rere {
-            replication: state.config.replication,
-            fetch_slot_wait_timeout: state.config.fetch.fetch_slot_wait_timeout,
-        };
-        let span = tracing::info_span!("rere", urn = %urn, remote_peer = %remote_peer);
-        async move {
-            tracing::info!("attempting rere");
-            graft::rere(pool, config, urn, remote_peer, Some(remote_addr))
-                .await
-                .map_err(Error::from)
-                .map(|res| match res {
-                    None => tracing::info!("rere didn't fetch"),
-                    Some(xs) => tracing::info!("rere fetched {} refs", xs.updated_tips.len()),
+    use protocol::event::downstream::Gossip::Announce;
+
+    tracing::info!("attempting rere");
+
+    let config = graft::config::Rere {
+        replication: state.config.replication,
+        fetch_slot_wait_timeout: state.config.fetch.fetch_slot_wait_timeout,
+    };
+    let updated_tips = graft::rere(
+        &state.spawner,
+        &state.storage,
+        config,
+        urn.clone(),
+        remote_peer,
+        Some(remote_addr),
+    )
+    .await
+    .map_err(Error::from)?
+    .map(|ReplicateResult { updated_tips, .. }| updated_tips);
+
+    match updated_tips {
+        None => tracing::info!("rere skipped"),
+        Some(xs) => {
+            tracing::info!("rere updated {} refs", xs.len());
+            if !xs.is_empty() {
+                tracing::trace!("refs updated by rere: {:?}", xs);
+            }
+            xs.into_iter()
+                .map(|(refl, head)| {
+                    control::gossip(
+                        &state,
+                        Announce(gossip::Payload {
+                            urn: urn.clone(),
+                            rev: Some(head.into()),
+                            origin: refl
+                                .split('/')
+                                .skip_while(|&x| x != "remotes")
+                                .skip(1)
+                                .take(1)
+                                .next()
+                                .and_then(|remote| remote.parse().ok()),
+                        }),
+                        Some(remote_peer),
+                    )
                 })
-        }
-        .instrument(span)
-    })
+                .collect::<FuturesUnordered<_>>()
+                .for_each(future::ready)
+                .await
+        },
+    }
+
+    Ok(())
 }

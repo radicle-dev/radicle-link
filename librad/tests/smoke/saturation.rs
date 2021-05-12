@@ -28,14 +28,14 @@ fn config() -> testnet::Config {
     }
 }
 
-#[tokio::test]
-async fn saturate_a_peer_with_projects() {
+#[test]
+fn saturate_a_peer_with_projects() {
     logging::init();
 
     const NUM_PROJECTS: usize = 64;
 
-    let net = testnet::run(config()).await.unwrap();
-    {
+    let net = testnet::run(config()).unwrap();
+    net.enter(async {
         let peer1 = net.peers().index(0);
         let peer2 = net.peers().index(1);
 
@@ -111,5 +111,5 @@ async fn saturate_a_peer_with_projects() {
             .unwrap()
             .unwrap();
         assert_eq!(n_projects, NUM_PROJECTS);
-    }
+    })
 }

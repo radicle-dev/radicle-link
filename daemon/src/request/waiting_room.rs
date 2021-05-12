@@ -464,6 +464,16 @@ impl<T, D> WaitingRoom<T, D> {
     }
 }
 
+impl<T, D> WaitingRoom<T, D>
+where
+    T: Clone,
+{
+    /// The state of requests currently in the waiting room
+    pub fn requests(&self) -> HashMap<Revision, SomeRequest<T>> {
+        self.requests.clone()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::{error, str::FromStr};

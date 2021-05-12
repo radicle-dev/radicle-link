@@ -66,12 +66,12 @@ fn config() -> testnet::Config {
 /// 7. peer2 creates an include file, based of the tracked users of the project
 /// i.e. peer1 8. peer2 includes this file in their working copy's config
 /// 9. peer2 fetches in the working copy and sees the commit
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn can_fetch() {
+#[test]
+fn can_fetch() {
     logging::init();
 
-    let net = testnet::run(config()).await.unwrap();
-    {
+    let net = testnet::run(config()).unwrap();
+    net.enter(async {
         let peer1 = net.peers().index(0);
         let peer2 = net.peers().index(1);
 
@@ -130,7 +130,7 @@ async fn can_fetch() {
             .unwrap();
             assert!(peer2_repo.find_commit(commit_id).is_ok());
         }
-    }
+    })
 }
 
 // Perform commit and push to working copy on peer1
