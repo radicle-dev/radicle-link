@@ -24,15 +24,14 @@ layer.
 - Local first
 - Extensible. It should be possible to extend Radicle with new collaborative
   data types without changing the protocol version
-- Interoperable. There should be a straightforward API for other tools to
+- Interoperable. There should be a straightforward API for disparate tools to
   interact with collaborative objects
 
-The local first goal matches Radicles peer to peer design and philosophy. You
-should not need to be online to modify collaborative objects and no one should
-be able to stop you from changing data that is on your computer. That said,
-collaborative objects are _collaborative_, users need to be able to receive
-changes to the same data from other people and this raises the problem of how
-to merge those changes. I see two options here:
+Local first because you should not need to be online to modify collaborative
+objects and no one should be able to stop you from changing data that is on
+your computer. That said, collaborative objects are _collaborative_, users need
+to be able to receive changes to the same data from other people and this
+raises the problem of how to merge those changes. I see two options here:
 
 - CRDTs, data structures which allow conflict free merges
 - Application level merges. Much as Git requires user action to merge
@@ -40,14 +39,9 @@ to merge those changes. I see two options here:
   objects to the user to resolve.
 
 The latter here is undesirable for a lot of reasons but most relevant is that
-it conflicts with extensibility and interoperability. If we want to add new
-data types without changing the protocol version then the only general approach
-for application level merges is to ask the user to directly merge the
-underlying data structures. Requiring users to understand the underlying
-representations of the data they are working with is awful UX which means that
-in order to provide a good UX tools would need to provide a UI for users to do
-a three way merge of the data they are working on. This contradicts the
-interoperability goal.
+it conflicts with extensibility and interoperability. in order to provide a good 
+UX tools would need to provide a UI for users to do a three way merge of the 
+data they are working on. This contradicts the interoperability goal.
 
 This leaves us with CRDTs. For the purposes of this RFC I am going to assume
 that we will use the [Automerge](https://github.com/automerge/automerge) CRDT
@@ -57,7 +51,255 @@ precision integers and floats etc.). An alternative approach would be to write
 a custom CRDT for each data type we want to replicate, see [##Alternative
 Approaches] for a discussion of this design.
 
-## Message storage and transmission
+## Example: Issues
+
+To motivate and contextualise this proposal we introduce a running example
+which is dear to many peoples hearts; issues. We imagine this from the
+perspective of the application developer. For expositional purposes we assume
+that the application communicates with a radicle implementation via an HTTP
+RPC. However, the HTTP RPC is not a proposal of this RFC, the proposed API will
+be specified in terms of `librad` later in this document.
+
+The first thing the developer must do is decide on the schema of their data and
+represent it as a JSON schema. We use this simple schema:
+
+```json
+{
+  "type": "object"
+  "properties": {
+    "title": {
+        "type": "string"
+    },
+    "description": {
+        "type": "string"
+    },
+    "author": {
+        "type": "string",
+        "description": "The radicle ID of the author of the issue"
+    },
+    "signature": {
+        "type": "string",
+        "description": "A base64 encoded signature of the issue"
+    },
+    "comments": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "author": {
+                    "type": "string",
+                    "description": "Radicle ID of the author of the comment"
+                },
+                "signature": {
+                    "type": "string",
+                    "description": "Base64 encoded signature of the comment"
+                }
+            }
+        }
+    }
+  }
+}
+```
+
+An issue consists of a title, description, and author along with the author's
+signature; followed by a list of comments, each of which is signed by it's
+respective author. This is an extremely simplified model. 
+
+This schema may well be the subject of it's own mini standardisation process
+as it is very likely that many different applications will want to interoperate
+with the same issue model. The important thing is that this standardisation
+process can happen independently of the radicle protocol.
+
+In addition to the schema, the developer must choose a name for their type.
+This is similar to an XML namespace and probably standardised as part of the
+same process which produces the schema. In this case let's choose
+`https://radicle.xyz/issue` as the type name.
+
+
+### Creating an issue
+
+The first thing a user will wish to do is to create a new issue. To do
+this they make a POST request to `<radicle implementation>/projects/metadata`
+with the following content:
+
+```json
+{
+    "typename": "https://radicle.xyz/issue",
+    "schema": <the schema above>,
+    "data": {
+        "title": "Librad doesn't implement the metadata RFC",
+        "description": "It's in the name",
+        "author": "<some base64>",
+        "signature": "<some base64>",
+        "comments": [],
+    }
+}
+```
+
+This endpoint returns an error if the data does not match the schema. Otherwise 
+the endpoint returns an identifier for the newly created object and announces
+the new data to the network, anyone tracking the project will pull those 
+changes.
+
+### Retrieving an issue
+
+The next step then is for users to retrieve project metadata. Imagine the user
+has just received the metadata posted in the previous example, we can retrieve
+that data by making a request like this (url encoded of course):
+
+```
+GET <radicle implementation/projects/<project URN>/metadata?typename=https://radicle.xyz/issue
+```
+
+This will return something like this:
+
+```
+[
+    {
+        "id": "<some long string>",
+        "typename": "https://radicle.xyz/issue",
+        "schema": <the schema above>,
+        "data": {
+            "title": "Librad doesn't implement the metadata RFC",
+            "description": "It's in the name",
+            "author": "<some base64>",
+            "signature": "<some base64>",
+            "comments": [],
+        },
+        "history": {
+            "type": "automerge",
+            "changes": "<some base64>"
+        }
+    }
+]
+```
+
+This mysterious `history` key will be explained next.
+
+### Adding a comment
+
+Up to this point this has been a straightforward ReST API, it is at the point
+that we wish to make changes that the distributed nature of the data structure
+intrudes. We cannot directly mutate the data, instead we need to create a 
+change which describes how we want to update the data - this change includes
+metadata which allows other people to incorporate that change into their
+version of the data at any time. In this case we use the automerge Javascript
+API to do this. That would look like the following:
+
+```typescript
+import * as Automerge from "automerge"
+
+const data = await fetch("<metadata URL>").then(r => r.json())
+const doc = Automerge.load(base64ToUint8(data.history.changes))
+const updatedDoc = Automerge.change(doc, d => {
+    d.comments.push({
+        "text": "I completely agree!",
+        "author": "<some base64>",
+        "signature": "<some base64>"
+    })
+})
+const change = Automerge.getChanges(doc, updatedDoc)
+const changeBytes = uint8ToBase64(change)
+```
+
+What we do here is load the automerge document from it's history, then use the
+automerge Javscript library to mutate the document (the `Automerge.change`
+call) and then finally get the change between the original version of the 
+document and the new one. 
+
+Now that we have the change we can make a `PATCH` request to 
+`<radicle-implementation>/projects/<project URN>/metadata/<metadata ID>` with
+the following contents:
+
+```json
+{
+    "changes": {
+        "type": "automerge",
+        "change": "<some base64>
+    }
+}
+```
+
+This endpoint will return an error if the change does not match the schema of
+the object. Otherwise the change will be merged in to the object and announced
+to the network.
+
+
+### Changing the schema
+
+It's a few months on, everyone is very happy with issues except for one thing,
+there is no way to react to a comment with an emojii. To accomodate this we
+modify the schema to add a `reaction` field to the `comment` schema. Now when
+we create an issue, as well as passing the schema, we also pass a schema 
+migration. Like so:
+
+```json
+{
+    "typename": ...,
+    "schema": ...,
+    "schema_migrations": [
+        {
+            "type": "add_field",
+            "path": "comments",
+            "name": "reaction",
+            "schema": {
+                "type": "string",
+                "maxLength": 1,
+            }
+        }
+    ],
+    "data": ...
+}
+```
+
+And when updating an object:
+
+```json
+{
+    "changes": ...,
+    "schema_migrations": <as above>
+}
+```
+
+There are restrictions on these migrations. You can only ever add optional 
+fields, or fields with a default value. This schema migration must be bundled
+with the application, must as database migrations are bundled in the source
+code of web 2.0 applications.
+
+## Implementation
+
+### Automerge
+
+It is useful to briefly outline how automerge functions in order for the
+following to be sensible. Everything automerge does is based on a merging a log
+of operations. An operation might be something like "create a list under the
+'comments' key of the root object", or "insert the character 'a' after the 
+character inserted by the 2nd change actor 1 made". Every operation has an 
+identifier - which allows statements like "the character inserted by the 2nd
+change actor 1 made" to be precise. This operation ID is the combination of a
+unique identifier for each actor, and an always incrementing sequence number.
+This construction, along with sorting by actor IDs in the case of a tie, allows
+us to place operations in a total order which respects causality. i.e if I add
+an operation then no operation that I could have observed at the time I made
+the operation will come after it in the log.
+
+Automerge defines a number of operations along with merge semantics for those
+operations. More detail on that can be found in [the implementation](https://github.com/automerge/automerge)
+and in [the paper](https://arxiv.org/abs/1608.03960).
+
+Despite all the complexity under the hood the API of automerge is relatively
+simple. Automerge works in terms of "documents", a document is a single log of
+changes. Every time you modify an automerge document you generate a new entry 
+for the change log. Each change is just some bytes. When you receive changes 
+from other actors you just pass these changes (which, again, are just bytes) to
+automerge to add to the change log. The end result is that you load a bunch of
+binary changes and get back a JSON object.
+
+There are some subtleties around preserving user intent when modifying
+documents, but these are not too onerous.
+
+### Message storage and transmission
 
 The property of CRDTs that we care about is strong eventual consistency: any
 two nodes which have received the same set of messages will merge to the same
@@ -65,25 +307,46 @@ state. A major part of the design of collaborative objects therefore is how we
 store and transmit these messages. Messages in this context are just binary
 blobs which need to be passed to the CRDT implementation in any order.
 
+Objects are created with a unique identifier at creation time. We use this
+identifier to create a tree with the following structure:
+
+```
+.
+|--manifest
+|--schema
+|  |--schema.json
+|  |--migrations
+|  |  |--<migration hash>.json
+|  |  |--<migration hash>.json
+|--<change 1 hash>
+|--<change 2 hash>
+
+
 We add a new entry to the `signed_refs` of a project at
 `refs/namespaces/<project>/remotes/refs/remotes/<peer>/rad/collaborative-objects`.
 This points to a tree with the following structure:
 
 ```
 .
-|--<object 1 ID>
-|  |--manifest
-|  |--schema
-|  |  |--<schema change 1>
-|  |  |--<schema change 2>
-|  |--<change 1>
-|  |--<change 2>
-|--<object 2 ID>
-|  ...
+|--<type name: e.g https://radicle.xyz/issue>
+|  |--<object 1 ID>
+|  |  |--manifest
+|  |  |--schema
+|  |  |  |--schema.json
+|  |  |  |--migrations
+|  |  |  |  |--<migration hash>.json
+|  |  |  |  |--<migration hash>.json
+|  |  |--<change 1 hash>
+|  |  |--<change 2 hash>
+|  |--<object 2 ID>
+|  |  ...
+|--<another type name>
+|  |--<object 3 ID>
+|  |  ...
 ```
 
-We refer to a directory in this tree as an "object directory" and the tuple 
-`(manifest, [schema changes], [changes])` as an "object state".
+We refer to a directory in this tree as an "object directory" and the tuple
+`(manifest, (shchema.json, [schema changes]), [changes])` as an "object state".
 
 Objects are created with a unique identifier at creation time. This identifier
 is the name of the directory within the `collaborative_objects` tree where the
@@ -95,11 +358,18 @@ applications to enumerate collaborative objects of a particular type. Type
 names should be some kind of human readable identifier - similar to XML
 namespaces.
 
-Each object is also created with a schema, this is a JSON schema document which
-is itself encoded as an automerge document within the `schema` directory. This
-allows for changes to the schema (as long as they are backwards and forwards
-compatible) to be distributed as additional changes within the `<object
-ID>/schema` directory.
+Each object is also created with a JSON schema. The schema is represented by an
+initial `schema.json` and a series of schema migrations which extend that
+initial schema. We will examine schema migrations shortly.
+
+### Mapping the Automerge hash graph to Git
+
+Much like Git, Automerge documents are a hash linked graph of changes. Each
+change is like a commit and references zero or more dependencies via their
+hashes. We can map this structure to git in the following manner:
+
+Every every time we make a chang
+
 
 ### Viewing the tracking graph
 
@@ -196,10 +466,6 @@ because the automerge API works in terms of binary changes.
 
 
 TODO: spell out what this looks like in code
-
-### Extended Example: issues
-
-TODO
 
 ## Blessed Data Types
 
