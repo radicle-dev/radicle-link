@@ -142,7 +142,7 @@ fn setup_path() -> anyhow::Result<PathBuf> {
         None => env::join_paths(Some(helper_path)),
         Some(path) => {
             let mut paths = env::split_paths(&path).collect::<Vec<_>>();
-            paths.push(helper_path.to_path_buf());
+            paths.push(helper_path);
             paths.reverse();
             env::join_paths(paths)
         },
