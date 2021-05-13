@@ -28,20 +28,11 @@ use radicle_daemon::{
     RunConfig,
 };
 
-#[macro_use]
-mod common;
-use common::{
-    build_peer,
-    build_peer_with_seeds,
-    connected,
-    init_logging,
-    shia_le_pathbuf,
-    started,
-};
+use crate::{assert_event, daemon::common::*, logging};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn can_clone_project() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    logging::init();
 
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_repo_path = alice_tmp_dir.path().join("radicle");
@@ -124,7 +115,7 @@ async fn can_clone_project() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn can_clone_user() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    logging::init();
 
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_peer = build_peer(&alice_tmp_dir, RunConfig::default()).await?;
@@ -177,7 +168,7 @@ async fn can_clone_user() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn can_fetch_project_changes() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    logging::init();
 
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_repo_path = alice_tmp_dir.path().join("radicle");
@@ -320,7 +311,7 @@ async fn can_fetch_project_changes() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn can_sync_on_startup() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    logging::init();
 
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_repo_path = alice_tmp_dir.path().join("radicle");
@@ -389,7 +380,7 @@ async fn can_sync_on_startup() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn can_create_working_copy_of_peer() -> Result<(), Box<dyn std::error::Error + 'static>> {
-    init_logging();
+    logging::init();
 
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_repo_path = alice_tmp_dir.path().join("radicle");
@@ -536,7 +527,7 @@ async fn can_create_working_copy_of_peer() -> Result<(), Box<dyn std::error::Err
 
 #[tokio::test(flavor = "multi_thread")]
 async fn track_peer() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    logging::init();
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_repo_path = alice_tmp_dir.path().join("radicle");
     let alice_peer = build_peer(&alice_tmp_dir, RunConfig::default()).await?;

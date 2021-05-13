@@ -10,7 +10,6 @@ use tokio::{
     sync::broadcast,
     time::{error::Elapsed, timeout},
 };
-use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 use librad::{
     git::Urn,
@@ -38,6 +37,7 @@ macro_rules! await_event {
     }};
 }
 
+#[macro_export]
 macro_rules! assert_event {
     ( $receiver:expr , $pattern:pat ) => {{
         $crate::await_event!($receiver, |res| match res.unwrap() {
@@ -54,7 +54,6 @@ macro_rules! assert_event {
 }
 
 /// Assert that we received a cloned event for the expected `RadUrl`.
-#[allow(dead_code)] // NOTE(finto): this is used in integrations tests.
 pub async fn assert_cloned(
     mut receiver: broadcast::Receiver<PeerEvent>,
     expected_urn: &Urn,
@@ -67,7 +66,6 @@ pub async fn assert_cloned(
 }
 
 /// Assert that we received a query event for the expected `RadUrn`.
-#[allow(dead_code)] // NOTE(finto): this is used in integrations tests.
 pub async fn requested(
     mut receiver: broadcast::Receiver<PeerEvent>,
     expected: &Urn,
@@ -80,7 +78,6 @@ pub async fn requested(
 
 /// Assert that the `PeerStatus` transitions to `Online` and the number of
 /// connected peers is equal to or more than `min_connected`.
-#[allow(dead_code)]
 pub async fn connected(
     mut receiver: broadcast::Receiver<PeerEvent>,
     min_connected: usize,
@@ -91,7 +88,6 @@ pub async fn connected(
     )
 }
 
-#[allow(dead_code)]
 pub async fn started(mut receiver: broadcast::Receiver<PeerEvent>) -> Result<(), Elapsed> {
     assert_event!(
         receiver,
@@ -116,7 +112,6 @@ pub async fn build_peer(
     Ok(peer)
 }
 
-#[allow(dead_code)]
 pub async fn build_peer_with_seeds(
     tmp_dir: &tempfile::TempDir,
     seeds: Vec<Seed>,
@@ -133,17 +128,6 @@ pub async fn build_peer_with_seeds(
     Ok(peer)
 }
 
-pub fn init_logging() {
-    if pretty_env_logger::try_init().is_ok() {
-        let subscriber = FmtSubscriber::builder()
-            .with_env_filter(EnvFilter::from_default_env())
-            .finish();
-        tracing::subscriber::set_global_default(subscriber)
-            .expect("setting tracing default failed");
-    }
-}
-
-#[allow(dead_code)]
 pub fn radicle_project(path: PathBuf) -> project::Create {
     project::Create {
         repo: project::Repo::New {
@@ -155,7 +139,6 @@ pub fn radicle_project(path: PathBuf) -> project::Create {
     }
 }
 
-#[allow(dead_code)]
 pub fn shia_le_pathbuf(path: PathBuf) -> project::Create {
     project::Create {
         repo: project::Repo::New {

@@ -17,23 +17,23 @@ use radicle_daemon::{
     RunConfig,
 };
 
-#[macro_use]
-mod common;
-use common::{
-    assert_cloned,
-    build_peer,
-    build_peer_with_seeds,
-    connected,
-    init_logging,
-    radicle_project,
-    requested,
-    shia_le_pathbuf,
-    started,
+use crate::{
+    daemon::common::{
+        assert_cloned,
+        build_peer,
+        build_peer_with_seeds,
+        connected,
+        radicle_project,
+        requested,
+        shia_le_pathbuf,
+        started,
+    },
+    logging,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn can_observe_announcement_from_connected_peer() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    logging::init();
 
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_repo_path = alice_tmp_dir.path().join("radicle");
@@ -112,7 +112,7 @@ async fn can_observe_announcement_from_connected_peer() -> Result<(), Box<dyn st
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn can_ask_and_clone_project() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    logging::init();
 
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_repo_path = alice_tmp_dir.path().join("radicle");

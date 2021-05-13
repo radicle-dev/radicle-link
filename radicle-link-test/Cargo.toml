@@ -9,12 +9,14 @@ license = "GPL-3.0-or-later"
 [dependencies]
 assert_matches = "1"
 anyhow = "1"
+async-stream = "0.3"
 async-trait = "0"
 env_logger = "0"
 either = "1"
 futures = ">= 0.3"
 futures-await-test = "0"
 futures_ringbuf = "0"
+kv = "0.22"
 lazy_static = "1"
 log = "0.4"
 minicbor = ">= 0.6, 0"
@@ -49,6 +51,9 @@ path = "../librad"
 
 [dependencies.radicle-git-ext]
 path = "../git-ext"
+
+[dependencies.radicle-daemon]
+path = "../daemon"
 
 [dependencies.rand]
 version = "0.7"

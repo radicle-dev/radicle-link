@@ -10,13 +10,11 @@ use tokio::time::timeout;
 
 use radicle_daemon::{PeerEvent, RunConfig};
 
-#[macro_use]
-mod common;
-use common::*;
+use crate::{daemon::common::*, logging};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn can_observe_timers() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    logging::init();
 
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_peer = build_peer(&alice_tmp_dir, RunConfig::default()).await?;

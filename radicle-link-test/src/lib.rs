@@ -16,6 +16,7 @@ extern crate nonzero_ext;
 #[macro_use]
 extern crate futures_await_test;
 
+pub mod daemon;
 pub mod git;
 pub mod librad;
 pub mod logging;

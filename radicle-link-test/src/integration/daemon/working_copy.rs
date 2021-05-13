@@ -13,13 +13,14 @@ use radicle_daemon::{
 use assert_matches::assert_matches;
 use pretty_assertions::assert_eq;
 
-#[macro_use]
-mod common;
-use common::{build_peer, init_logging, shia_le_pathbuf};
+use crate::{
+    daemon::common::{build_peer, shia_le_pathbuf},
+    logging,
+};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn upstream_for_default() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    logging::init();
 
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_peer = build_peer(&alice_tmp_dir, RunConfig::default()).await?;
@@ -55,7 +56,7 @@ async fn upstream_for_default() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn checkout_twice_fails() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    logging::init();
 
     let alice_tmp_dir = tempfile::tempdir()?;
     let alice_peer = build_peer(&alice_tmp_dir, RunConfig::default()).await?;
