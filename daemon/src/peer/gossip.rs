@@ -13,11 +13,14 @@ use librad::{
         protocol::gossip::{Payload, Rev},
     },
     peer::PeerId,
-    signer::BoxedSigner,
+    signer::Signer,
 };
 
 /// Announce a new rev for the `urn`.
-pub fn announce(peer: &Peer<BoxedSigner>, urn: &Urn, rev: Option<Oid>) {
+pub fn announce<S>(peer: &Peer<S>, urn: &Urn, rev: Option<Oid>)
+where
+    S: Clone + Signer,
+{
     match peer.announce(Payload {
         urn: urn.clone(),
         rev: rev.map(|rev| Rev::Git(rev.into())),
@@ -29,7 +32,10 @@ pub fn announce(peer: &Peer<BoxedSigner>, urn: &Urn, rev: Option<Oid>) {
 }
 
 /// Emit a [`Payload`] request for the given `urn`.
-pub fn query(peer: &Peer<BoxedSigner>, urn: &Urn, origin: Option<PeerId>) {
+pub fn query<S>(peer: &Peer<S>, urn: &Urn, origin: Option<PeerId>)
+where
+    S: Clone + Signer,
+{
     match peer.query(Payload {
         urn: urn.clone(),
         rev: None,

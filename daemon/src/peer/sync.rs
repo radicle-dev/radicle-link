@@ -5,7 +5,7 @@
 
 //! Perform full state syncs with remote peers.
 
-use librad::{identities::generic::Identity, net::peer::Peer, peer::PeerId, signer::BoxedSigner};
+use librad::{identities::generic::Identity, net::peer::Peer, peer::PeerId, signer::Signer};
 
 use crate::state;
 
@@ -13,7 +13,10 @@ use super::{include, Error};
 
 /// Initiaites a fetch for all locally tracked projects from the given
 /// [`PeerId`].
-pub async fn sync(peer: &Peer<BoxedSigner>, remote_peer: PeerId) -> Result<(), Error> {
+pub async fn sync<S>(peer: &Peer<S>, remote_peer: PeerId) -> Result<(), Error>
+where
+    S: Clone + Signer,
+{
     log::debug!("Starting sync from {}", remote_peer);
 
     let urns = state::list_projects(peer)

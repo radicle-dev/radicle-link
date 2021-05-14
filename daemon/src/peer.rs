@@ -18,7 +18,7 @@ use tokio::{
 };
 
 use crate::state;
-use librad::{net, signer::BoxedSigner};
+use librad::{net, signer::Signer};
 
 mod announcement;
 pub use announcement::Announcement;
@@ -73,9 +73,9 @@ pub enum Error {
 }
 
 /// Local peer to participate in the radicle code-collaboration network.
-pub struct Peer<D> {
+pub struct Peer<S, D> {
     /// The API for interacting with the protocol and storage.
-    pub peer: net::peer::Peer<BoxedSigner>,
+    pub peer: net::peer::Peer<S>,
 
     disco: D,
     /// On-disk storage for caching.
@@ -90,25 +90,40 @@ pub struct Peer<D> {
     control_sender: mpsc::Sender<control::Request>,
 }
 
-impl<D> Peer<D>
+impl<S, D> Peer<S, D>
 where
+    S: Clone + Signer,
     D: net::discovery::Discovery<Addr = SocketAddr> + Clone + Send + Sync + 'static,
 {
     /// Constructs a new [`Peer`].
     ///
-    /// # Errors
-    ///
-    /// Failed to get the listener addresses for the peer.
+    /// To kick-off the peer's subroutines be sure to use [`run`][`Self::run`].
     #[must_use = "give a peer some love"]
     pub fn new(
-        config: net::peer::Config<BoxedSigner>,
+        config: net::peer::Config<S>,
+        disco: D,
+        store: kv::Store,
+        run_config: RunConfig,
+    ) -> Self
+    where
+        S: Clone + Signer,
+    {
+        let peer = librad::net::peer::Peer::new(config);
+        Self::with_peer(peer, disco, store, run_config)
+    }
+
+    /// Construct a new [`Peer`] using an existing [`net::peer::Peer`].
+    ///
+    /// To kick-off the peer's subroutines be sure to use [`run`][`Self::run`].
+    #[must_use = "give a peer some love"]
+    pub fn with_peer(
+        peer: net::peer::Peer<S>,
         disco: D,
         store: kv::Store,
         run_config: RunConfig,
     ) -> Self {
         let (subscriber, _receiver) = broadcast::channel(RECEIVER_CAPACITY);
         let (control_sender, control_receiver) = mpsc::channel(RECEIVER_CAPACITY);
-        let peer = librad::net::peer::Peer::new(config);
         Self {
             peer,
             disco,
