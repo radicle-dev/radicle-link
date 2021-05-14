@@ -130,7 +130,7 @@ pub struct PeerHandle {
 
 pub struct Harness {
     tasks: Vec<tokio::task::JoinHandle<()>>,
-    rt: tokio::runtime::Runtime,
+    rt: Option<tokio::runtime::Runtime>,
     tmp: Vec<tempfile::TempDir>,
 }
 
@@ -139,10 +139,12 @@ impl Harness {
     pub fn new() -> Self {
         Self {
             tasks: Vec::new(),
-            rt: tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap(),
+            rt: Some(
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap(),
+            ),
             tmp: Vec::new(),
         }
     }
@@ -161,7 +163,7 @@ impl Harness {
         let conf = config::configure(paths, signer, *config::LOCALHOST_ANY);
         let disco = config::static_seed_discovery(seeds);
         let peer = {
-            let _enter = self.rt.enter();
+            let _enter = self.rt().enter();
             radicle_daemon::Peer::new(conf, disco, store, run_config)
         };
 
@@ -172,11 +174,11 @@ impl Harness {
 
         // Must launch now for `control` to work
         let running = self
-            .rt
+            .rt()
             .spawn(async move { peer.run().await.expect("peer died unexpectedly") });
 
         // Wait for startup
-        self.rt.block_on(async {
+        self.rt().block_on(async {
             started(&mut events).await?;
             if !seeds.is_empty() {
                 connected(&mut events, 1).await?;
@@ -185,7 +187,7 @@ impl Harness {
             Ok::<_, anyhow::Error>(())
         })?;
 
-        let (listen_addrs, owner) = self.rt.block_on(async {
+        let (listen_addrs, owner) = self.rt().block_on(async {
             let listen_addrs = control.listen_addrs().await;
             let owner = init_owner(
                 &peer_inner,
@@ -215,13 +217,21 @@ impl Harness {
     }
 
     pub fn enter<F: Future>(&self, fut: F) -> F::Output {
-        self.rt.block_on(fut)
+        self.rt().block_on(fut)
+    }
+
+    fn rt(&self) -> &tokio::runtime::Runtime {
+        self.rt.as_ref().unwrap()
     }
 }
 
 impl Drop for Harness {
     fn drop(&mut self) {
-        self.tasks.drain(..).for_each(|t| t.abort())
+        self.tasks.drain(..).for_each(|t| t.abort());
+        self.rt
+            .take()
+            .unwrap()
+            .shutdown_timeout(Duration::from_secs(1));
     }
 }
 

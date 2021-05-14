@@ -10,6 +10,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs as _},
     num::NonZeroUsize,
     ops::Deref,
+    time::Duration,
 };
 
 use futures::{
@@ -270,7 +271,7 @@ async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
 pub struct Testnet {
     tasks: Vec<tokio::task::JoinHandle<Result<!, quic::Error>>>,
     peers: Vec<RunningTestPeer>,
-    rt: tokio::runtime::Runtime,
+    rt: Option<tokio::runtime::Runtime>,
     _tmp: Vec<TempDir>,
 }
 
@@ -280,7 +281,7 @@ impl Testnet {
     }
 
     pub fn enter<F: Future>(&self, fut: F) -> F::Output {
-        self.rt.block_on(fut)
+        self.rt.as_ref().unwrap().block_on(fut)
     }
 }
 
@@ -294,6 +295,10 @@ impl Drop for Testnet {
     fn drop(&mut self) {
         self.tasks.drain(..).for_each(|t| t.abort());
         self.peers.drain(..).for_each(drop);
+        self.rt
+            .take()
+            .unwrap()
+            .shutdown_timeout(Duration::from_secs(1))
     }
 }
 
@@ -331,7 +336,7 @@ pub fn run(config: Config) -> anyhow::Result<Testnet> {
     Ok(Testnet {
         tasks,
         peers,
-        rt,
+        rt: Some(rt),
         _tmp: tmps,
     })
 }

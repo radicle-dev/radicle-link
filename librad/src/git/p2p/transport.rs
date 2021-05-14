@@ -36,8 +36,6 @@
 
 use std::{
     collections::HashMap,
-    fmt::Display,
-    future::Future,
     io::{self, Read, Write},
     net::SocketAddr,
     sync::{Arc, Once, RwLock, Weak},
@@ -138,7 +136,13 @@ impl RadTransport {
                     fac.remove(&from);
                     None
                 },
-                Some(fac) => block_on(fac.open_stream(to, addr_hints)),
+                Some(fac) => match tokio::runtime::Handle::try_current() {
+                    Err(e) => {
+                        tracing::warn!(err = ?e, "unable to obtain runtime handle");
+                        None
+                    },
+                    Ok(hdl) => hdl.block_on(fac.open_stream(to, addr_hints)),
+                },
             },
         }
     }
@@ -195,40 +199,41 @@ impl RadSubTransport {
 
 impl Read for RadSubTransport {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        block_on(async {
-            self.ensure_header_sent().await?;
-            self.stream.read(buf).await.map_err(io_error)
-        })
+        match tokio::runtime::Handle::try_current() {
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+            Ok(rt) => rt.block_on(async {
+                self.ensure_header_sent().await?;
+                self.stream.read(buf).await.map_err(io_error)
+            }),
+        }
     }
 }
 
 impl Write for RadSubTransport {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        block_on(async {
-            self.ensure_header_sent().await?;
-            self.stream.write(buf).await.map_err(io_error)
-        })
+        match tokio::runtime::Handle::try_current() {
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+            Ok(rt) => rt.block_on(async {
+                self.ensure_header_sent().await?;
+                self.stream.write(buf).await.map_err(io_error)
+            }),
+        }
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        block_on(async {
-            self.ensure_header_sent().await?;
-            self.stream.flush().await.map_err(io_error)
-        })
+        match tokio::runtime::Handle::try_current() {
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+            Ok(rt) => rt.block_on(async {
+                self.ensure_header_sent().await?;
+                self.stream.flush().await.map_err(io_error)
+            }),
+        }
     }
 }
 
-fn io_error<E: Display>(err: E) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, err.to_string())
-}
-
-#[tracing::instrument(level = "trace", skip(fut))]
-fn block_on<F>(fut: F) -> F::Output
+fn io_error<E>(err: E) -> io::Error
 where
-    F: Future,
+    E: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    tracing::trace!("task submitted");
-    let out = futures::executor::block_on(fut);
-    tracing::trace!("task completed");
-    out
+    io::Error::new(io::ErrorKind::Other, err)
 }
