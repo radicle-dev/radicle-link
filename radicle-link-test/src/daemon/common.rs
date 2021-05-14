@@ -101,7 +101,7 @@ pub async fn started(mut receiver: broadcast::Receiver<PeerEvent>) -> Result<(),
 pub async fn build_peer(
     tmp_dir: &tempfile::TempDir,
     run_config: RunConfig,
-) -> Result<Peer<discovery::Static>, Box<dyn std::error::Error>> {
+) -> Result<Peer<signer::BoxedSigner, discovery::Static>, Box<dyn std::error::Error>> {
     let key = SecretKey::new();
     let signer = signer::BoxedSigner::from(key);
     let store = kv::Store::new(kv::Config::new(tmp_dir.path().join("store")))?;
@@ -116,7 +116,7 @@ pub async fn build_peer_with_seeds(
     tmp_dir: &tempfile::TempDir,
     seeds: Vec<Seed>,
     run_config: RunConfig,
-) -> Result<Peer<discovery::Static>, Box<dyn std::error::Error>> {
+) -> Result<Peer<signer::BoxedSigner, discovery::Static>, Box<dyn std::error::Error>> {
     let key = SecretKey::new();
     let signer = signer::BoxedSigner::from(key);
     let store = kv::Store::new(kv::Config::new(tmp_dir.path().join("store")))?;
