@@ -26,8 +26,4 @@ pub mod roundtrip;
 pub mod tempdir;
 
 #[cfg(test)]
-mod integration;
-#[cfg(test)]
-mod properties;
-#[cfg(test)]
-mod unit;
+mod test;
