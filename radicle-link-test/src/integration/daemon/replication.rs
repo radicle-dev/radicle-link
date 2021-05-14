@@ -3,12 +3,11 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom, ops::Index, time::Duration};
+use std::{convert::TryFrom, time::Duration};
 
 use assert_matches::assert_matches;
 use futures::{future, StreamExt as _};
 use pretty_assertions::assert_eq;
-use tempfile::tempdir;
 use tokio::time::timeout;
 
 use librad::{
@@ -21,433 +20,359 @@ use librad::{
 use radicle_git_ext::RefLike;
 
 use radicle_daemon::{
-    identities::payload::Person,
     project::{peer, Peer},
+    seed::Seed,
     state,
-    state::init_owner,
     RunConfig,
 };
 
-use crate::{assert_event, daemon::common::*, logging, rad::testnet};
-
-fn config() -> testnet::Config {
-    testnet::Config {
-        num_peers: nonzero!(2usize),
-        min_connected: 2,
-        bootstrap: testnet::Bootstrap::from_env(),
-    }
-}
+use crate::{
+    daemon::common::{assert_fetched, blocking, shia_le_pathbuf, Harness},
+    logging,
+};
 
 #[test]
-fn can_clone_project() {
+fn can_clone_project() -> Result<(), anyhow::Error> {
     logging::init();
 
-    let net = testnet::run(config()).unwrap();
-    net.enter(async {
-        let peer1 = net.peers().index(0);
-        let peer2 = net.peers().index(1);
-
-        let tmp = tempdir().unwrap();
-        let owner = state::init_owner(
-            &peer1,
-            Person {
-                name: "alice".into(),
-            },
+    let mut harness = Harness::new();
+    let alice = harness.add_peer("alice", RunConfig::default(), &[])?;
+    let bob = harness.add_peer("bob", RunConfig::default(), &[])?;
+    harness.enter(async move {
+        let project = state::init_project(
+            &alice.peer,
+            &alice.owner,
+            shia_le_pathbuf(alice.path.join("radicle")),
         )
-        .await
-        .unwrap();
-        let _bob = state::init_owner(&peer2, Person { name: "bob".into() })
-            .await
-            .unwrap();
+        .await?;
 
-        let project =
-            state::init_project(&peer1, &owner, shia_le_pathbuf(tmp.path().to_path_buf()))
-                .await
-                .unwrap();
+        state::clone_project(
+            &bob.peer,
+            project.urn(),
+            alice.peer_id,
+            alice.listen_addrs,
+            None,
+        )
+        .await?;
 
-        {
-            let remote = peer1.peer_id();
-            let addrs = peer1.listen_addrs().to_vec().into_iter();
-            state::clone_project(&peer2, project.urn(), remote, addrs, None)
-                .await
-                .unwrap();
-        }
-
-        let have = state::list_projects(&peer2)
-            .await
-            .unwrap()
+        let have = state::list_projects(&bob.peer)
+            .await?
             .into_iter()
-            .map(|p| p.urn())
+            .map(|project| project.urn())
             .collect::<Vec<_>>();
         let want = vec![project.urn()];
-        assert_eq!(have, want);
+        assert_eq!(have, want, "bob");
 
         let another_peer = librad::peer::PeerId::from(librad::keys::SecretKey::new());
-        state::track(&peer2, project.urn(), another_peer)
-            .await
-            .unwrap();
-        let mut have = state::tracked(&peer2, project.urn())
-            .await
-            .unwrap()
+        state::track(&bob.peer, project.urn(), another_peer).await?;
+        let mut have = state::tracked(&bob.peer, project.urn())
+            .await?
             .into_iter()
             .map(|peer| peer.map(|status| status.map(|user| user.subject().name.to_string())))
             .collect::<Vec<_>>();
         have.sort_by(|p1, p2| p1.status().cmp(p2.status()));
-
         let want: Vec<_> = vec![
             radicle_daemon::project::Peer::Remote {
                 peer_id: another_peer,
                 status: peer::Status::NotReplicated,
             },
             radicle_daemon::project::Peer::Remote {
-                peer_id: peer1.peer_id(),
+                peer_id: alice.peer_id,
                 status: peer::Status::replicated(
                     peer::Role::Maintainer,
-                    owner.subject().name.to_string(),
+                    alice.owner.subject().name.to_string(),
                 ),
             },
         ];
-        assert_eq!(have, want);
+        assert_eq!(have, want, "another_peer");
+
+        Ok(())
     })
 }
 
 #[test]
-fn can_clone_user() {
+fn can_clone_user() -> Result<(), anyhow::Error> {
     logging::init();
 
-    let net = testnet::run(config()).unwrap();
-    net.enter(async {
-        let peer1 = net.peers().index(0);
-        let peer2 = net.peers().index(1);
-        let alice = init_owner(
-            &peer1,
-            Person {
-                name: "alice".into(),
-            },
+    let mut harness = Harness::new();
+    let alice = harness.add_peer("alice", RunConfig::default(), &[])?;
+    let bob = harness.add_peer("bob", RunConfig::default(), &[])?;
+    harness.enter(async move {
+        state::clone_user(
+            &bob.peer,
+            alice.owner.urn(),
+            alice.peer_id,
+            alice.listen_addrs,
+            None,
         )
-        .await
-        .unwrap();
-        let _bob = init_owner(&peer2, Person { name: "bob".into() });
-        {
-            let remote = peer1.peer_id();
-            let addrs = peer1.listen_addrs().to_vec().into_iter();
-            state::clone_user(&peer2, alice.urn(), remote, addrs, None)
-                .await
-                .unwrap();
-        }
-        let want = state::list_users(&peer2)
-            .await
-            .unwrap()
+        .await?;
+
+        let alice_urn = alice.owner.urn();
+        let has_alice = state::list_users(&bob.peer)
+            .await?
             .into_iter()
-            .map(|user| user.urn())
-            .collect::<Vec<_>>();
-        let have = vec![alice.urn()];
+            .find(|user| user.urn() == alice_urn);
+        assert!(has_alice.is_some(), "bob doesn't have alice's default id");
 
-        assert_eq!(want, have);
+        Ok(())
     })
 }
 
 #[test]
-fn can_fetch_project_changes() {
+fn can_fetch_project_changes() -> Result<(), anyhow::Error> {
     logging::init();
 
-    logging::init();
+    let mut harness = Harness::new();
+    let alice = harness.add_peer("alice", RunConfig::default(), &[])?;
+    let bob = harness.add_peer("bob", RunConfig::default(), &[])?;
+    harness.enter(async move {
+        let alice_repo_path = alice.path.join("radicle");
 
-    let net = testnet::run(config()).unwrap();
-    net.enter(async {
-        let peer1 = net.peers().index(0);
-        let peer2 = net.peers().index(1);
+        let project = state::init_project(
+            &alice.peer,
+            &alice.owner,
+            shia_le_pathbuf(alice_repo_path.clone()),
+        )
+        .await?;
 
-        let alice = init_owner(
-            &peer1,
-            Person {
-                name: "alice".into(),
-            },
+        state::clone_project(
+            &bob.peer,
+            project.urn(),
+            alice.peer_id,
+            alice.listen_addrs.clone(),
+            None,
         )
         .await
-        .unwrap();
-        let tmp = tempdir().unwrap();
-        let alice_repo_path = tmp.path().to_path_buf();
-
-        let _bob = init_owner(&peer2, Person { name: "bob".into() })
-            .await
-            .unwrap();
-
-        let project = state::init_project(&peer1, &alice, shia_le_pathbuf(alice_repo_path.clone()))
-            .await
-            .unwrap();
-
-        {
-            let remote = peer1.peer_id();
-            let addrs = peer1.listen_addrs().to_vec();
-            state::clone_project(&peer2, project.urn(), remote, addrs, None)
-                .await
-                .expect("unable to clone project")
-        };
+        .expect("unable to clone project");
 
         assert_eq!(
-            state::list_projects(&peer2)
-                .await
-                .unwrap()
+            state::list_projects(&bob.peer)
+                .await?
                 .into_iter()
                 .map(|project| project.urn())
                 .collect::<Vec<_>>(),
             vec![project.urn()]
         );
 
-        let commit_id = {
-            let repo =
-                git2::Repository::open(alice_repo_path.join(project.subject().name.to_string()))
-                    .unwrap();
-            let oid = repo
-                .find_reference(&format!(
-                    "refs/heads/{}",
-                    project.subject().default_branch.clone().unwrap()
-                ))
-                .unwrap()
-                .target()
-                .expect("Missing first commit");
-            let commit = repo.find_commit(oid).unwrap();
-            let commit_id = {
-                let empty_tree = {
-                    let mut index = repo.index().unwrap();
-                    let oid = index.write_tree().unwrap();
-                    repo.find_tree(oid).unwrap()
-                };
+        let commit_id = blocking({
+            let project = project.clone();
+            let alice_peer = alice.peer.clone();
+            let alice_owner = alice.owner.clone();
 
-                let author =
-                    git2::Signature::now(&alice.subject().name.to_string(), "alice@example.com")
-                        .unwrap();
-                repo.commit(
-                    Some(&format!(
+            move || {
+                let repo = git2::Repository::open(
+                    alice_repo_path.join(project.subject().name.to_string()),
+                )?;
+                let oid = repo
+                    .find_reference(&format!(
                         "refs/heads/{}",
                         project.subject().default_branch.clone().unwrap()
-                    )),
-                    &author,
-                    &author,
-                    "Successor commit",
-                    &empty_tree,
-                    &[&commit],
-                )
-                .unwrap()
-            };
+                    ))?
+                    .target()
+                    .expect("Missing first commit");
+                let commit = repo.find_commit(oid)?;
+                let commit_id = {
+                    let empty_tree = {
+                        let mut index = repo.index()?;
+                        let oid = index.write_tree()?;
+                        repo.find_tree(oid)?
+                    };
 
-            {
-                let mut rad = Remote::<LocalUrl>::rad_remote::<_, Fetchspec>(
-                    LocalUrl::from(project.urn()),
-                    None,
-                );
-                let branch =
-                    RefLike::try_from(project.subject().default_branch.as_ref().unwrap().as_str())
-                        .unwrap();
-                let _ = rad
-                    .push(
-                        state::settings(&peer1),
+                    let author = git2::Signature::now(
+                        &alice_owner.subject().name.to_string(),
+                        "alice@example.com",
+                    )?;
+                    repo.commit(
+                        Some(&format!(
+                            "refs/heads/{}",
+                            project.subject().default_branch.clone().unwrap()
+                        )),
+                        &author,
+                        &author,
+                        "Successor commit",
+                        &empty_tree,
+                        &[&commit],
+                    )?
+                };
+
+                {
+                    let mut rad = Remote::<LocalUrl>::rad_remote::<_, Fetchspec>(
+                        LocalUrl::from(project.urn()),
+                        None,
+                    );
+                    let branch = RefLike::try_from(
+                        project.subject().default_branch.as_ref().unwrap().as_str(),
+                    )
+                    .unwrap();
+                    let _ = rad.push(
+                        state::settings(&alice_peer),
                         &repo,
                         LocalPushspec::Matching {
                             pattern: reflike!("refs/heads").join(branch).into(),
                             force: Force::False,
                         },
-                    )
-                    .unwrap();
+                    )?;
+                }
+
+                Ok::<_, anyhow::Error>(commit_id)
             }
+        })
+        .await?;
 
-            commit_id
-        };
+        state::fetch(
+            &bob.peer,
+            project.urn(),
+            alice.peer_id,
+            alice.listen_addrs,
+            None,
+        )
+        .await?;
 
-        {
-            let remote = peer1.peer_id();
-            let addrs = peer1.listen_addrs().to_vec();
-            state::fetch(&peer2, project.urn(), remote, addrs, None)
-                .await
-                .unwrap();
-        };
-
-        let remote = peer1.peer_id();
         let has_commit = state::has_commit(
-            &peer2,
+            &bob.peer,
             project.urn().with_path(Some(
                 RefLike::try_from(format!(
                     "refs/remotes/{}/heads/{}",
-                    remote,
+                    alice.peer_id,
                     project.subject().default_branch.clone().unwrap(),
                 ))
                 .unwrap(),
             )),
             radicle_daemon::git_ext::Oid::from(commit_id),
         )
-        .await
-        .unwrap();
-        assert!(has_commit);
+        .await?;
+        assert!(has_commit, "bob's missing the commit");
+
+        Ok(())
     })
 }
 
 #[test]
-fn can_sync_on_startup() {
+fn can_sync_on_startup() -> Result<(), anyhow::Error> {
     logging::init();
 
-    let net = testnet::run(config()).unwrap();
-    net.enter(async {
-        let peer1 = net.peers().index(0);
-        let peer2 = net.peers().index(1);
-
-        let tmp = tempdir().unwrap();
-        let config = RunConfig {
-            sync: radicle_daemon::peer::run_config::Sync {
-                interval: Duration::from_millis(100),
-            },
-            ..RunConfig::default()
-        };
-        let owner = state::init_owner(
-            &peer1,
-            Person {
-                name: "alice".into(),
-            },
+    let mut harness = Harness::new();
+    let config = RunConfig {
+        sync: radicle_daemon::peer::run_config::Sync {
+            interval: Duration::from_millis(500),
+        },
+        ..RunConfig::default()
+    };
+    let mut alice = harness.add_peer("alice", config.clone(), &[])?;
+    let bob = harness.add_peer(
+        "bob",
+        config,
+        &[Seed {
+            addrs: alice.listen_addrs.clone(),
+            peer_id: alice.peer_id,
+        }],
+    )?;
+    harness.enter(async move {
+        state::init_project(
+            &alice.peer,
+            &alice.owner,
+            shia_le_pathbuf(alice.path.join("radicle")),
         )
-        .await
-        .unwrap();
-        let store = kv::Store::new(kv::Config::new(tmp.path().join("store"))).unwrap();
-        let disco = radicle_daemon::config::static_seed_discovery(&[radicle_daemon::seed::Seed {
-            peer_id: peer2.peer_id(),
-            addrs: peer2.listen_addrs().to_vec(),
-        }]);
-        let alice_daemon = radicle_daemon::Peer::with_peer((*peer1).clone(), disco, store, config);
-        let mut alice_events = alice_daemon.subscribe();
-        tokio::task::spawn(alice_daemon.run());
+        .await?;
 
-        let store = kv::Store::new(kv::Config::new(tmp.path().join("bob_store"))).unwrap();
-        let disco = radicle_daemon::config::static_seed_discovery(&[radicle_daemon::seed::Seed {
-            peer_id: peer1.peer_id(),
-            addrs: peer1.listen_addrs().to_vec(),
-        }]);
-        let bob_daemon =
-            radicle_daemon::Peer::with_peer((*peer1).clone(), disco, store, RunConfig::default());
-        let bob_events = bob_daemon.subscribe();
-        tokio::task::spawn(bob_daemon.run());
-
-        let _bob = state::init_owner(&peer2, Person { name: "bob".into() })
-            .await
-            .unwrap();
-        connected(bob_events, 1).await.unwrap();
-
-        let _project =
-            state::init_project(&peer1, &owner, shia_le_pathbuf(tmp.path().to_path_buf()))
-                .await
-                .unwrap();
-
-        let remote = peer2.peer_id();
         assert_event!(
-            alice_events,
-            radicle_daemon::PeerEvent::PeerSynced(peer_id) if peer_id == remote
-        )
-        .unwrap();
+            alice.events,
+            radicle_daemon::PeerEvent::PeerSynced(peer_id) if peer_id == bob.peer_id
+        )?;
+
+        Ok(())
     })
 }
 
 #[test]
-fn can_create_working_copy_of_peer() {
-    let config = testnet::Config {
-        num_peers: nonzero!(3usize),
-        min_connected: 3,
-        bootstrap: testnet::Bootstrap::from_env(),
-    };
-    let net = testnet::run(config).unwrap();
-    net.enter(async {
-        let peer1 = net.peers().index(0);
-        let peer2 = net.peers().index(1);
-        let peer3 = net.peers().index(2);
+fn can_create_working_copy_of_peer() -> Result<(), anyhow::Error> {
+    logging::init();
 
-        let tmp = tempdir().unwrap();
-        let owner = state::init_owner(
-            &peer1,
-            Person {
-                name: "alice".into(),
-            },
-        )
-        .await
-        .unwrap();
-
-        let alice_repo_path = tmp.path().join("alice");
-        let bob = state::init_owner(&peer2, Person { name: "bob".into() })
-            .await
-            .unwrap();
-        let bob_repo_path = tmp.path().join("bob");
-
-        let _eve = state::init_owner(&peer3, Person { name: "eve".into() })
-            .await
-            .unwrap();
-        let eve_repo_path = tmp.path().join("eve");
-
-        let project = state::init_project(&peer1, &owner, shia_le_pathbuf(alice_repo_path))
-            .await
-            .unwrap();
-
+    let mut harness = Harness::new();
+    let alice = harness.add_peer("alice", RunConfig::default(), &[])?;
+    let bob = harness.add_peer("bob", RunConfig::default(), &[])?;
+    let eve = harness.add_peer("eve", RunConfig::default(), &[])?;
+    harness.enter(async move {
         let project = {
-            let alice = peer1.peer_id();
-            let addrs = peer1.listen_addrs().to_vec();
-            state::clone_project(&peer2, project.urn(), alice, addrs, None)
-                .await
-                .unwrap();
+            let project = state::init_project(
+                &alice.peer,
+                &alice.owner,
+                shia_le_pathbuf(alice.path.join("radicle")),
+            )
+            .await?;
 
-            let bob = peer2.peer_id();
-            let addrs = peer2.listen_addrs().to_vec();
-            state::clone_project(&peer3, project.urn(), bob, addrs, None)
-                .await
-                .unwrap();
-            state::get_project(&peer3, project.urn())
-                .await
-                .unwrap()
-                .unwrap()
+            state::clone_project(
+                &bob.peer,
+                project.urn(),
+                alice.peer_id,
+                alice.listen_addrs,
+                None,
+            )
+            .await
+            .expect("unable to clone project");
+            state::clone_project(
+                &eve.peer,
+                project.urn(),
+                bob.peer_id,
+                bob.listen_addrs.clone(),
+                None,
+            )
+            .await
+            .expect("unable to clone project");
+            state::get_project(&eve.peer, project.urn()).await?.unwrap()
         };
 
-        let commit_id = {
-            let peer1_id = peer1.peer_id();
-            let path = state::checkout(&peer2, project.urn(), peer1_id, bob_repo_path)
-                .await
-                .unwrap();
+        let path = state::checkout(
+            &bob.peer,
+            project.urn(),
+            alice.peer_id,
+            bob.path.join("radicle"),
+        )
+        .await?;
+        let commit_id = blocking({
+            let project = project.clone();
+            let bob_peer = bob.peer.clone();
+            let bob_owner = bob.owner.clone();
 
-            let repo = git2::Repository::open(path).unwrap();
-            let oid = repo
-                .find_reference(&format!(
-                    "refs/heads/{}",
-                    project.subject().default_branch.clone().unwrap()
-                ))
-                .unwrap()
-                .target()
-                .expect("Missing first commit");
-            let commit = repo.find_commit(oid).unwrap();
-            let commit_id = {
-                let empty_tree = {
-                    let mut index = repo.index().unwrap();
-                    let oid = index.write_tree().unwrap();
-                    repo.find_tree(oid).unwrap()
-                };
-
-                let author = git2::Signature::now(
-                    bob.subject().name.as_str(),
-                    &format!("{}@example.com", bob.subject().name),
-                )
-                .unwrap();
-                repo.commit(
-                    Some(&format!(
+            move || {
+                let repo = git2::Repository::open(path)?;
+                let oid = repo
+                    .find_reference(&format!(
                         "refs/heads/{}",
                         project.subject().default_branch.clone().unwrap()
-                    )),
-                    &author,
-                    &author,
-                    "Successor commit",
-                    &empty_tree,
-                    &[&commit],
-                )
-                .unwrap()
-            };
+                    ))?
+                    .target()
+                    .expect("Missing first commit");
+                let commit = repo.find_commit(oid)?;
+                let commit_id = {
+                    let empty_tree = {
+                        let mut index = repo.index()?;
+                        let oid = index.write_tree()?;
+                        repo.find_tree(oid)?
+                    };
 
-            {
-                let mut rad =
-                    Remote::rad_remote::<_, Fetchspec>(LocalUrl::from(project.urn()), None);
-                let _ = rad
-                    .push(
-                        state::settings(&peer2),
+                    let author = git2::Signature::now(
+                        bob_owner.subject().name.as_str(),
+                        &format!("{}@example.com", bob_owner.subject().name),
+                    )?;
+                    repo.commit(
+                        Some(&format!(
+                            "refs/heads/{}",
+                            project.subject().default_branch.clone().unwrap()
+                        )),
+                        &author,
+                        &author,
+                        "Successor commit",
+                        &empty_tree,
+                        &[&commit],
+                    )?
+                };
+
+                {
+                    let mut rad =
+                        Remote::rad_remote::<_, Fetchspec>(LocalUrl::from(project.urn()), None);
+                    let _ = rad.push(
+                        state::settings(&bob_peer),
                         &repo,
                         LocalPushspec::Matching {
                             pattern: RefLike::try_from(format!(
@@ -458,94 +383,83 @@ fn can_create_working_copy_of_peer() {
                             .into(),
                             force: Force::False,
                         },
-                    )
-                    .unwrap();
+                    )?;
+                }
+
+                Ok::<_, anyhow::Error>(commit_id)
             }
+        })
+        .await?;
 
-            commit_id
-        };
+        state::fetch(
+            &eve.peer,
+            project.urn(),
+            bob.peer_id,
+            bob.listen_addrs,
+            None,
+        )
+        .await?;
 
-        {
-            let remote = peer2.peer_id();
-            let addrs = peer2.listen_addrs().to_vec();
-            state::fetch(&peer3, project.urn(), remote, addrs, None)
-                .await
-                .unwrap();
-        }
+        let path = state::checkout(
+            &eve.peer,
+            project.urn(),
+            alice.peer_id,
+            eve.path.join("radicle"),
+        )
+        .await?;
 
-        let path = {
-            let peer1_id = peer1.peer_id();
-            state::checkout(&peer3, project.urn(), peer1_id, eve_repo_path)
-                .await
-                .unwrap()
-        };
+        blocking(move || {
+            let repo = git2::Repository::open(path).unwrap();
+            assert_matches!(repo.find_commit(commit_id), Err(_));
+        })
+        .await;
 
-        let repo = git2::Repository::open(path).unwrap();
-        assert_matches!(repo.find_commit(commit_id), Err(_));
+        Ok(())
     })
 }
 
 #[test]
-fn track_peer() {
-    let net = testnet::run(config()).unwrap();
-    net.enter(async {
-        let peer1 = net.peers().index(0);
-        let peer2 = net.peers().index(1);
+fn track_peer() -> Result<(), anyhow::Error> {
+    logging::init();
 
-        let tmp = tempdir().unwrap();
-        let owner = state::init_owner(
-            &peer1,
-            Person {
-                name: "alice".into(),
-            },
+    let mut harness = Harness::new();
+    let mut alice = harness.add_peer("alice", RunConfig::default(), &[])?;
+    let bob = harness.add_peer(
+        "bob",
+        RunConfig::default(),
+        &[Seed {
+            addrs: alice.listen_addrs.clone(),
+            peer_id: alice.peer_id,
+        }],
+    )?;
+    harness.enter(async move {
+        let project = state::init_project(
+            &alice.peer,
+            &alice.owner,
+            shia_le_pathbuf(alice.path.join("radicle")),
         )
-        .await
-        .unwrap();
-
-        let alice_repo_path = tmp.path().join("alice");
-        let store = kv::Store::new(kv::Config::new(tmp.path().join("store"))).unwrap();
-        let disco = radicle_daemon::config::static_seed_discovery(&[radicle_daemon::seed::Seed {
-            peer_id: peer2.peer_id(),
-            addrs: peer2.listen_addrs().to_vec(),
-        }]);
-        let alice_daemon =
-            radicle_daemon::Peer::with_peer((*peer1).clone(), disco, store, RunConfig::default());
-        let mut alice_events = alice_daemon.subscribe();
-        tokio::task::spawn(alice_daemon.run());
-
-        let _bob = state::init_owner(&peer2, Person { name: "bob".into() })
-            .await
-            .unwrap();
-
-        let project = state::init_project(&peer1, &owner, shia_le_pathbuf(alice_repo_path))
-            .await
-            .unwrap();
+        .await?;
 
         state::clone_project(
-            &peer2,
+            &bob.peer,
             project.urn(),
-            peer1.peer_id(),
-            peer1.listen_addrs().to_vec(),
+            alice.peer_id,
+            alice.listen_addrs.clone(),
             None,
         )
-        .await
-        .unwrap();
+        .await?;
 
-        state::track(&peer1, project.urn(), peer2.peer_id())
-            .await
-            .unwrap();
+        state::track(&alice.peer, project.urn(), bob.peer_id).await?;
 
-        assert_event!(
-            alice_events,
-            radicle_daemon::PeerEvent::GossipFetched { .. }
-        )
-        .unwrap();
+        assert_fetched(&mut alice.events).await?;
 
-        let tracked = state::tracked(&peer1, project.urn()).await.unwrap();
+        let tracked = state::tracked(&alice.peer, project.urn()).await?;
         assert!(tracked.iter().any(|peer| match peer {
             Peer::Remote { peer_id, status } =>
-                *peer_id == peer2.peer_id() && matches!(status, peer::Status::Replicated(_)),
+                *peer_id == bob.peer_id && matches!(status, peer::Status::Replicated(_)),
             _ => false,
         }));
+
+        Ok(())
     })
 }

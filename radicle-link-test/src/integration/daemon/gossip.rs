@@ -9,220 +9,140 @@ use assert_matches::assert_matches;
 use futures::{future, StreamExt as _};
 use tokio::time::timeout;
 
-use radicle_daemon::{
-    identities::payload::Person,
-    peer::run_config,
-    seed::Seed,
-    state::{self, init_owner},
-    RunConfig,
-};
+use radicle_daemon::{peer::run_config, seed::Seed, state, RunConfig};
 
 use crate::{
-    daemon::common::{
-        assert_cloned,
-        build_peer,
-        build_peer_with_seeds,
-        connected,
-        radicle_project,
-        requested,
-        shia_le_pathbuf,
-        started,
-    },
+    daemon::common::{assert_cloned, radicle_project, requested, shia_le_pathbuf, Harness},
     logging,
 };
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn can_observe_announcement_from_connected_peer() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn can_observe_announcement_from_connected_peer() -> Result<(), anyhow::Error> {
     logging::init();
 
-    let alice_tmp_dir = tempfile::tempdir()?;
-    let alice_repo_path = alice_tmp_dir.path().join("radicle");
-    let alice_peer = build_peer(
-        &alice_tmp_dir,
+    let mut harness = Harness::new();
+    let alice_peer = harness.add_peer(
+        "alice",
         RunConfig {
             announce: run_config::Announce {
                 interval: Duration::from_millis(100),
             },
             ..RunConfig::default()
         },
-    )
-    .await?;
-    let alice_peer_id = alice_peer.peer.peer_id();
-    let alice = init_owner(
-        &alice_peer.peer,
-        Person {
-            name: "alice".into(),
-        },
-    )
-    .await?;
-
-    let (alice_peer, alice_addrs) = {
-        let peer = alice_peer.peer.clone();
-        let events = alice_peer.subscribe();
-        let mut peer_control = alice_peer.control();
-        tokio::task::spawn(alice_peer.run());
-        started(events).await?;
-
-        let listen_addrs = peer_control.listen_addrs().await;
-        (peer, listen_addrs)
-    };
-
-    let bob_tmp_dir = tempfile::tempdir()?;
-    let bob_peer = build_peer_with_seeds(
-        &bob_tmp_dir,
-        vec![Seed {
-            addrs: alice_addrs,
-            peer_id: alice_peer_id,
-        }],
+        &[],
+    )?;
+    let mut bob_peer = harness.add_peer(
+        "bob",
         RunConfig::default(),
-    )
-    .await?;
-    let bob_connected = bob_peer.subscribe();
-    let mut bob_events = bob_peer.subscribe();
+        &[Seed {
+            addrs: alice_peer.listen_addrs.clone(),
+            peer_id: alice_peer.peer_id,
+        }],
+    )?;
+    harness.enter(async move {
+        let project = state::init_project(
+            &alice_peer.peer,
+            &alice_peer.owner,
+            shia_le_pathbuf(alice_peer.path.join("radicle")),
+        )
+        .await?;
+        let project_id = project.urn().id;
+        let announced = async_stream::stream! { loop { yield bob_peer.events.recv().await } }
+            .filter_map(|res| match res.unwrap() {
+                radicle_daemon::PeerEvent::GossipFetched {
+                    gossip, provider, ..
+                } if provider.peer_id == alice_peer.peer_id && gossip.urn.id == project_id => {
+                    future::ready(Some(()))
+                },
+                _ => future::ready(None),
+            })
+            .map(|_| ());
+        tokio::pin!(announced);
+        timeout(Duration::from_secs(5), announced.next()).await?;
 
-    let bob_peer = {
-        let peer = bob_peer.peer.clone();
-        let events = bob_peer.subscribe();
-        tokio::task::spawn(bob_peer.run());
-        started(events).await?;
-
-        peer
-    };
-    let _bob = init_owner(&bob_peer, Person { name: "bob".into() }).await?;
-    connected(bob_connected, 1).await?;
-
-    let project =
-        state::init_project(&alice_peer, &alice, shia_le_pathbuf(alice_repo_path)).await?;
-
-    let announced = async_stream::stream! { loop { yield bob_events.recv().await } }
-        .filter_map(|res| match res.unwrap() {
-            radicle_daemon::PeerEvent::GossipFetched {
-                gossip, provider, ..
-            } if provider.peer_id == alice_peer_id && gossip.urn.id == project.urn().id => {
-                future::ready(Some(()))
-            },
-            _ => future::ready(None),
-        })
-        .map(|_| ());
-    tokio::pin!(announced);
-    timeout(Duration::from_secs(1), announced.next()).await?;
-
-    Ok(())
+        Ok(())
+    })
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn can_ask_and_clone_project() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn can_ask_and_clone_project() -> Result<(), anyhow::Error> {
     logging::init();
 
-    let alice_tmp_dir = tempfile::tempdir()?;
-    let alice_repo_path = alice_tmp_dir.path().join("radicle");
-    let alice_peer = build_peer(&alice_tmp_dir, RunConfig::default()).await?;
-    let alice_peer_id = alice_peer.peer.peer_id();
-    let alice = init_owner(
-        &alice_peer.peer,
-        Person {
-            name: "alice".into(),
-        },
-    )
-    .await?;
-    let mut alice_events = alice_peer.subscribe();
-
-    let (alice_peer, alice_addrs) = {
-        let peer = alice_peer.peer.clone();
-        let events = alice_peer.subscribe();
-        let mut peer_control = alice_peer.control();
-        tokio::task::spawn(alice_peer.run());
-        started(events).await?;
-
-        let listen_addrs = peer_control.listen_addrs().await;
-        (peer, listen_addrs)
-    };
-
-    let bob_tmp_dir = tempfile::tempdir()?;
-    let bob_peer = build_peer_with_seeds(
-        &bob_tmp_dir,
-        vec![Seed {
-            addrs: alice_addrs,
-            peer_id: alice_peer_id,
-        }],
+    let mut harness = Harness::new();
+    let mut alice_peer = harness.add_peer("alice", RunConfig::default(), &[])?;
+    let mut bob_peer = harness.add_peer(
+        "bob",
         RunConfig::default(),
-    )
-    .await?;
-    let bob_peer_id = bob_peer.peer.peer_id();
+        &[Seed {
+            addrs: alice_peer.listen_addrs.clone(),
+            peer_id: alice_peer.peer_id,
+        }],
+    )?;
+    harness.enter(async move {
+        let urn = {
+            let project = radicle_project(alice_peer.path.join("radicle"));
+            let urn = state::init_project(&alice_peer.peer, &alice_peer.owner, project)
+                .await?
+                .urn();
 
-    init_owner(&bob_peer.peer, Person { name: "bob".into() }).await?;
-    let bob_events = bob_peer.subscribe();
-    let mut bob_control = bob_peer.control();
-    let clone_listener = bob_peer.subscribe();
-    let query_listener = bob_peer.subscribe();
+            urn
+        };
 
-    let bob_peer = {
-        let peer = bob_peer.peer.clone();
-        let events = bob_peer.subscribe();
-        tokio::task::spawn(bob_peer.run());
-        started(events).await?;
+        // Alice will track Bob in anticipation of upcoming contributions.
+        state::track(&alice_peer.peer, urn.clone(), bob_peer.peer_id).await?;
 
-        peer
-    };
+        // Make sure Bob is NotReplicated.
+        assert_eq!(
+            state::tracked(&alice_peer.peer, urn.clone()).await?,
+            vec![radicle_daemon::project::peer::Peer::Remote {
+                peer_id: bob_peer.peer_id,
+                status: radicle_daemon::project::peer::Status::NotReplicated,
+            }]
+        );
 
-    connected(bob_events, 1).await?;
+        bob_peer
+            .control
+            .request_project(&urn, SystemTime::now())
+            .await;
 
-    let urn = {
-        let project = radicle_project(alice_repo_path.clone());
-        let urn = state::init_project(&alice_peer, &alice, project)
-            .await?
-            .urn();
+        requested(&mut bob_peer.events, &urn).await?;
+        assert_cloned(&mut bob_peer.events, &urn.clone(), alice_peer.peer_id).await?;
+        state::get_project(&bob_peer.peer, urn.clone()).await?;
 
-        urn
-    };
+        timeout(Duration::from_secs(5), async {
+            loop {
+                let evt = alice_peer.events.recv().await?;
+                match evt {
+                    radicle_daemon::PeerEvent::GossipFetched {
+                        gossip, provider, ..
+                    } if provider.peer_id == bob_peer.peer_id && gossip.urn.id == urn.id => break,
 
-    // Alice will track Bob in anticipation of upcoming contributions.
-    state::track(&alice_peer, urn.clone(), bob_peer_id).await?;
+                    _ => continue,
+                }
+            }
 
-    // Make sure Bob is NotReplicated.
-    assert_eq!(
-        state::tracked(&alice_peer, urn.clone()).await?,
-        vec![radicle_daemon::project::peer::Peer::Remote {
-            peer_id: bob_peer_id,
-            status: radicle_daemon::project::peer::Status::NotReplicated,
-        }]
-    );
-
-    bob_control.request_project(&urn, SystemTime::now()).await;
-
-    requested(query_listener, &urn).await?;
-    assert_cloned(clone_listener, &urn.clone(), alice_peer_id).await?;
-    let project = state::get_project(&bob_peer, urn.clone()).await;
-    assert!(project.is_ok());
-
-    let announced = async_stream::stream! { loop { yield alice_events.recv().await } }
-        .filter_map(|res| match res.unwrap() {
-            radicle_daemon::PeerEvent::GossipFetched {
-                gossip, provider, ..
-            } if provider.peer_id == bob_peer_id && gossip.urn.id == urn.id => {
-                future::ready(Some(()))
-            },
-            _ => future::ready(None),
+            Ok::<_, anyhow::Error>(())
         })
-        .map(|_| ());
-    tokio::pin!(announced);
-    timeout(Duration::from_secs(1), announced.next()).await?;
+        .await??;
 
-    let projects = state::list_projects(&bob_peer).await?;
-    assert_eq!(projects.len(), 1);
+        let projects = state::list_projects(&bob_peer.peer).await?;
+        assert_eq!(projects.len(), 1);
 
-    let alice_tracked = state::tracked(&alice_peer, urn.clone()).await?;
+        let alice_tracked = state::tracked(&alice_peer.peer, urn.clone()).await?;
 
-    assert_matches!(
-        alice_tracked.first().unwrap(),
-        radicle_daemon::project::peer::Peer::Remote {
-            peer_id,
-            status: radicle_daemon::project::peer::Status::Replicated(radicle_daemon::project::peer::Replicated { role, .. }),
-        } => {
-            assert_eq!(*peer_id, bob_peer_id);
-            assert_eq!(*role, radicle_daemon::project::peer::Role::Tracker);
-        }
-    );
+        assert_matches!(
+            alice_tracked.first().unwrap(),
+            radicle_daemon::project::peer::Peer::Remote {
+                peer_id,
+                status: radicle_daemon::project::peer::Status::Replicated(
+                    radicle_daemon::project::peer::Replicated { role, .. }
+                ),
+            } => {
+                assert_eq!(*peer_id, bob_peer.peer_id);
+                assert_eq!(*role, radicle_daemon::project::peer::Role::Tracker);
+            }
+        );
 
-    Ok(())
+        Ok(())
+    })
 }

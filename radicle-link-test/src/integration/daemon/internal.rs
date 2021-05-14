@@ -10,33 +10,30 @@ use tokio::time::timeout;
 
 use radicle_daemon::{PeerEvent, RunConfig};
 
-use crate::{daemon::common::*, logging};
+use crate::{daemon::common::Harness, logging};
 
-#[tokio::test(flavor = "multi_thread")]
-async fn can_observe_timers() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn can_observe_timers() -> Result<(), anyhow::Error> {
     logging::init();
 
-    let alice_tmp_dir = tempfile::tempdir()?;
-    let alice_peer = build_peer(&alice_tmp_dir, RunConfig::default()).await?;
-
-    let mut alice_events = alice_peer.subscribe();
-
-    tokio::spawn(alice_peer.run());
-
-    let ticked = async_stream::stream! {
-        loop { yield alice_events.recv().await }
-    }
-    .scan(0, |ticked, event| {
-        let event = event.unwrap();
-        if let PeerEvent::RequestTick = event {
-            *ticked += 1;
+    let mut harness = Harness::new();
+    let mut alice = harness.add_peer("alice", RunConfig::default(), &[])?;
+    harness.enter(async move {
+        let ticked = async_stream::stream! {
+            loop { yield alice.events.recv().await }
         }
+        .scan(0, |ticked, event| {
+            let event = event.unwrap();
+            if let PeerEvent::RequestTick = event {
+                *ticked += 1;
+            }
 
-        future::ready(if *ticked >= 5 { None } else { Some(event) })
+            future::ready(if *ticked >= 5 { None } else { Some(event) })
+        })
+        .collect::<Vec<_>>();
+        tokio::pin!(ticked);
+        timeout(Duration::from_secs(5), ticked).await?;
+
+        Ok(())
     })
-    .collect::<Vec<_>>();
-    tokio::pin!(ticked);
-    timeout(Duration::from_secs(5), ticked).await?;
-
-    Ok(())
 }

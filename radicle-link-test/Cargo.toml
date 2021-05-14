@@ -49,11 +49,11 @@ features = []
 [dependencies.librad]
 path = "../librad"
 
-[dependencies.radicle-git-ext]
-path = "../git-ext"
-
 [dependencies.radicle-daemon]
 path = "../daemon"
+
+[dependencies.radicle-git-ext]
+path = "../git-ext"
 
 [dependencies.rand]
 version = "0.7"

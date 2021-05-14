@@ -3,103 +3,75 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use radicle_daemon::{
-    identities::payload::Person,
-    project::checkout,
-    state::{self, init_owner},
-    RunConfig,
-};
+use radicle_daemon::{project::checkout, state, RunConfig};
 
 use assert_matches::assert_matches;
 use pretty_assertions::assert_eq;
 
 use crate::{
-    daemon::common::{build_peer, shia_le_pathbuf},
+    daemon::common::{blocking, shia_le_pathbuf, Harness},
     logging,
 };
 
-#[tokio::test(flavor = "multi_thread")]
-async fn upstream_for_default() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn upstream_for_default() -> Result<(), Box<dyn std::error::Error>> {
     logging::init();
 
-    let alice_tmp_dir = tempfile::tempdir()?;
-    let alice_peer = build_peer(&alice_tmp_dir, RunConfig::default()).await?;
-    let alice = init_owner(
-        &alice_peer.peer,
-        Person {
-            name: "alice".into(),
-        },
-    )
-    .await?;
+    let mut harness = Harness::new();
+    let alice = harness.add_peer("alice", RunConfig::default(), &[])?;
+    harness.enter(async move {
+        let create = shia_le_pathbuf(alice.path.join("radicle"));
+        let working_copy_path = create.repo.full_path();
+        let _ = state::init_project(&alice.peer, &alice.owner, create).await?;
 
-    let alice_peer = {
-        let peer = alice_peer.peer.clone();
-        tokio::task::spawn(alice_peer.run());
-        peer
-    };
+        blocking(move || {
+            let repo = git2::Repository::open(working_copy_path).unwrap();
+            let remote = repo.branch_upstream_remote("refs/heads/it").unwrap();
+            assert_eq!(remote.as_str().unwrap(), "rad");
 
-    let create = shia_le_pathbuf(alice_tmp_dir.path().to_path_buf());
-    let working_copy_path = create.repo.full_path();
-    let _ = state::init_project(&alice_peer, &alice, create).await?;
+            let branch = repo.find_branch("rad/it", git2::BranchType::Remote);
+            assert!(branch.is_ok(), "could not find `rad/it`");
+        })
+        .await;
 
-    let repo = git2::Repository::open(working_copy_path)?;
-
-    let remote = repo.branch_upstream_remote("refs/heads/it")?;
-
-    assert_eq!(remote.as_str().unwrap(), "rad");
-
-    let branch = repo.find_branch("rad/it", git2::BranchType::Remote);
-    assert!(branch.is_ok(), "could not find `rad/it`");
-
-    Ok(())
+        Ok(())
+    })
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn checkout_twice_fails() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn checkout_twice_fails() -> Result<(), Box<dyn std::error::Error>> {
     logging::init();
 
-    let alice_tmp_dir = tempfile::tempdir()?;
-    let alice_peer = build_peer(&alice_tmp_dir, RunConfig::default()).await?;
-    let alice = init_owner(
-        &alice_peer.peer,
-        Person {
-            name: "alice".into(),
-        },
-    )
-    .await?;
+    let mut harness = Harness::new();
+    let alice = harness.add_peer("alice", RunConfig::default(), &[])?;
+    harness.enter(async move {
+        let project = state::init_project(
+            &alice.peer,
+            &alice.owner,
+            shia_le_pathbuf(alice.path.clone()),
+        )
+        .await?;
 
-    let alice_peer = {
-        let peer = alice_peer.peer.clone();
-        tokio::task::spawn(alice_peer.run());
-        peer
-    };
-
-    let project = state::init_project(
-        &alice_peer,
-        &alice,
-        shia_le_pathbuf(alice_tmp_dir.path().to_path_buf()),
-    )
-    .await?;
-
-    let _ = state::checkout(
-        &alice_peer,
-        project.urn(),
-        None,
-        alice_tmp_dir.path().join("checkout"),
-    )
-    .await?;
-
-    assert_matches!(
-        state::checkout(
-            &alice_peer,
+        let _ = state::checkout(
+            &alice.peer,
             project.urn(),
             None,
-            alice_tmp_dir.path().join("checkout"),
+            alice.path.join("checkout"),
         )
-        .await
-        .err(),
-        Some(state::Error::Checkout(checkout::Error::AlreadExists(_)))
-    );
+        .await?;
 
-    Ok(())
+        assert_matches!(
+            state::checkout(
+                &alice.peer,
+                project.urn(),
+                None,
+                alice.path.join("checkout"),
+            )
+            .await
+            .err(),
+            Some(state::Error::Checkout(checkout::Error::AlreadExists(_)))
+        );
+
+        Ok(())
+    })
 }
