@@ -163,7 +163,6 @@ fn save(store: &kv::Store, updates: Updates) -> Result<(), Error> {
     bucket.set(KEY_NAME, kv::Json(updates)).map_err(Error::from)
 }
 
-#[allow(clippy::panic)]
 #[cfg(test)]
 mod test {
     use std::{collections::HashSet, convert::TryFrom as _};
@@ -176,6 +175,7 @@ mod test {
     use crate::{config, identities::payload::Person, signer};
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::unwrap_used)] // XXX: clippy sees an unwrap where there is none
     async fn announce() -> Result<(), Box<dyn std::error::Error>> {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
         let key = SecretKey::new();
