@@ -32,7 +32,7 @@ use crate::{
 /// # Panics
 ///
 /// Panics if one of the tasks spawned by this function panics.
-#[tracing::instrument(skip(state, ingress), err)]
+#[tracing::instrument(skip(state, ingress))]
 pub(in crate::net::protocol) async fn incoming<S, I>(
     state: State<S>,
     ingress: I,
