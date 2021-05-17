@@ -5,6 +5,10 @@ authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 
+[lib]
+doctest = true
+test = false
+
 [dependencies]
 async-stream = "0.3"
 async-trait = "0.1"

@@ -6,6 +6,10 @@ edition = "2018"
 license = "GPL-3.0-or-later"
 description = "Utilities and extensions to the git2 crate"
 
+[lib]
+doctest = true
+test = false
+
 [dependencies]
 multibase = "0.9"
 multihash = "0.11"

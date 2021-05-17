@@ -6,6 +6,9 @@ authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 
+[lib]
+test = true
+
 [dependencies]
 assert_matches = "1"
 anyhow = "1"
@@ -74,3 +77,4 @@ features = ["zeroize_derive"]
 [[bin]]
 name = "git-remote-rad"
 path = "../git-helpers/src/bin/remote/main.rs"
+doc = false
