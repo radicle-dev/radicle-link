@@ -65,6 +65,7 @@ be given multiple implementations.
 The following capabilities our already in scope at the time of writing this RFC,
 but naturally, more will be added as the project evolves.
 
+* Gossip
 * Identity
   * read
   * write
@@ -174,24 +175,129 @@ pub trait Replication {
 }
 ```
 
+### Gossip
+
+TODO
+
+```rust
+pub trait Gossip {
+	fn query(&self, want: Payload) -> Result<(), Payload>;
+	fn announce(&self, have: Payload) -> Result<(), Payload>;
+}
+```
+
 ### Git Implementation
 
 The first backing implementation of these capabilities will be the
 `radicle-link`'s git implementation. More precisely, they will be
 implemented for the `Storage` type. It should be
 possible to then chain implementations, e.g. `Peer` can use its
-underlying `Storage` (FIXME: but what about async on `using_storage`).
+underlying `Storage` (FIXME: but what about async on
+`using_storage`). The exception is that `Storage` does not have the
+capability to `Gossip`, instead this will be directly from the `Peer`.
+
+FIXME: Maybe there's warrant to split capabilities even further
+between storage concepts and protocol concepts.
 
 ## HTTP
 
+The HTTP component will be defined in terms of the `core`
+API. The goal is to define a set of endpoints that will remain stable
+but, again, will be maleable for use with different backing
+implementations. This will inherently come from the capability model
+discussed in [Core][#core].
+
+### HTTP Library
+
+TODO: do we just want to use warp? Or survey around?
+
 ### Endpoints
+
+Here we will list the endpoints that will be included as part of the
+implementation of this RFC, but will not be an exhaustive list of
+endpoints the `daemon` will serve. For that we should consider looking
+for [OpenAPI][open] generation.
+
+#### Projects
+
+* GET /project/<urn>
+
+TODO
 
 ## CLI
 
+The CLI component will be defined in terms of the `core` API, similar
+in vein to the [HTTP component][#http]. 
+
+### Client CLI
+
+What we will want to consider here is to make the HTTP component an
+implementor of the capabilities. By doing this the CLI can simply
+become a client of the HTTP endpoints and perform requests, parsing
+responses for a better `stdout` experience.
+
+This would require that a service is always running for the CLI to be
+used. One benefit of this is that if there is a running service this
+means the `radicle-link` protocol is running and capabilities that
+require gossip can execute.
+
+Note that this shouldn't always need to be the case. For example,
+retrieving a project only requires the computation to read from disk
+and doesn't need any of the protocol to be running.
+
+### Non-HTTP CLI
+
+As mentioned in the previous section, a HTTP service is not always
+required by a lot of operations. A CLI that simply needs to access
+storage on disk could be implemented to make things easier and avoid
+spinning up a service.
+
+However, for this RFC, we leave this out of scope to focus on getting
+on full functionality up-and-running first (Contributors welcome =]).
+
 ## Reactor
+
+We have discussed capabilities and we have ensured that we delay the
+implementations of these capabilities to the last moment. And so, at
+the top of our stack is the `reactor` to our `core`. 
+
+The `reactor` component will implement the `core` API by choosing the
+backing implementation, git storage for the first
+implementation. Since it will be implementing these capabilities, it
+can be plugged into the HTTP and CLI components to acquire a running
+service.
+
+The `reactor` component will also house sub-protocols that may not fit
+in `librad`, but are deemed useful for the `daemon`. Note that these
+sub-protocols could be phased out if `librad` implements a protocol
+that would better suit the purpose of the sub-protocol. Currently,
+there are some sub-protocols that exist in the current iteration of
+the `daemon`, and their use can be evaluated as part of this RFC.
+
+* Announcements
+* Synchronisation via fetch
+* The waiting room, i.e. querying and waiting for a project
+
+TODO: I'd rather discuss these via the PR or meetings and summarise
+points here.
+
+### Announcements
+
+### Synchronisation
+
+### Waiting Room
 
 ## Git Server
 
+The final portion of this RFC is to consider the implementation of a
+git server as part of the `daemon`. 
+
+TODO: Actually I need to look into some git server details before I
+write this =]
+
 ## Conclusion
 
+TODO: I'll conclude when there's more conclusiveness =]
+
 [id]: ../spec/002-identities/index.md
+[open]: https://swagger.io/specification/
