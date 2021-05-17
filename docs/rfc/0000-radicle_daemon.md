@@ -68,13 +68,14 @@ but naturally, more will be added as the project evolves.
 * Identity
   * read
   * write
-* Replication
 * Profile
+* Replication
+* Tracking
 
 We will sketch these capabilities here, but this may not reflect the final
 definition that will be found in the implementation.
 
-### Identity Capabilities
+### Identity
 
 The identity capabilities define the create, read, and update methods
 for interacting with Radicle's family of `Identity` types. See
@@ -115,7 +116,16 @@ pub trait read::Rad<I> {
 }
 ```
 
-### Tracking Capabilities
+The `I` parameters signify that the traits are open to many
+identities, and for now there would be specific implementations for
+`Person` and `Project`. We leave any domain specific types open using
+associated types on the trait, e.g. `Rad::Person = Person` will be
+associated type for a `Project`'s `rad/self`.
+
+### Tracking
+
+As well as the family of `Identity` capabilities, we will also want
+methods for the tracking graph of an identity, sketched below:
 
 ```rust
 pub trait Tracking {
@@ -128,7 +138,49 @@ pub trait Tracking {
 }
 ```
 
+### Profile
+
+The profile capability defines how a person can create a profile, read
+the current profile, and switch between existing profiles. 
+
+```rust
+pub trait Profile {
+	type Error;
+	type LocalIdentity;
+	
+	fn create(&self, whomai: Self::LocalIdentity) -> Result<(), Self::Error>;
+	fn update(&self, whoami: Self::LocalIdentity) -> Result<(), Self::Error>;
+	fn current(&self) -> Result<Option<Self::LocalIdentity>, Self::Error>;
+	fn switch(&self, other: Self) -> Result<Self, Self::Error>;
+}
+```
+
+There is an open question of how `Profile` will interact with a
+backing implementation that needs to be aware about restarting a
+loop. For example, if the backing implementation is `net::Peer`, then
+it will need to restart the `Peer` so it can re-initialise with the
+new `Storage`.
+
+### Replication
+
+TODO
+
+```rust
+pub trait Replication {
+	type Error;
+	type Result;
+	
+	fn replicate(&self, /* TODO */) -> Result<Self::Result, Self::Error>;
+}
+```
+
 ### Git Implementation
+
+The first backing implementation of these capabilities will be the
+`radicle-link`'s git implementation. More precisely, they will be
+implemented for the `Storage` type. It should be
+possible to then chain implementations, e.g. `Peer` can use its
+underlying `Storage` (FIXME: but what about async on `using_storage`).
 
 ## HTTP
 
