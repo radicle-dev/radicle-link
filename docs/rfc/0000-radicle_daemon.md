@@ -18,7 +18,25 @@ This RFC wants to tackle the next phase of this plan and give a concrete plan fo
 
 ## Overview
 
+- What this rfc will cover
+  - core api
+  - http
+  - cli
+  - git server
+  - reactor
+  - background process
 
+## Core
+
+### Git Implementation
+
+## HTTP
+
+## CLI
+
+## Reactor
+
+## Git Server
 
 ## Conclusion
 
