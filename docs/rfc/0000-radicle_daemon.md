@@ -76,6 +76,10 @@ definition that will be found in the implementation.
 
 ### Identity Capabilities
 
+The identity capabilities define the create, read, and update methods
+for interacting with Radicle's family of `Identity` types. See
+[spec/identities][id] for more details.
+
 ```rust
 pub trait read::Identity<I> {
 	type Error;
@@ -90,6 +94,37 @@ pub trait write::Identity<I> {
 	fn create<P, D>(&self, payload: P, delegations: D) -> Result<I, Self::Error>;
 	fn update<P, D>(&self, urn: Urn<R>, payload: P, delegations: D) -> Result<I, Self::Error>;
 	fn merge<R>(&self, urn: Urn<R>, from: PeerId) -> Result<I, Self::Error>;
+}
+
+pub trait read::Rad<I> {
+	type Error;
+	type Person;
+	type Signatures;
+	
+	/// rad/self
+	fn whoami(&self, urn: Urn<R>, peer: Option<PeerId>) -> Result<Option<Self::Person>, Self::Error>;
+	
+	/// rad/signed_refs
+	fn signatures(&self, urn: Urn<R>, peer: Option<PeerId>) -> Result<Option<Self::Signatures>, Self::Error>;
+	
+	/// rad/ids/*
+	fn delegates(&self, urn: Urn<R>, peer: Option<PeerId>) -> Result<impl Iterator<Item = Result<Self::Person, Self::Error>>, Self::Error>;
+	
+	/// rad/ids/<id>
+	fn delegate(&self, urn: Urn<R>, peer: Option<PeerId>) -> Result<Option<Self::Person>, Self::Error>;
+}
+```
+
+### Tracking Capabilities
+
+```rust
+pub trait Tracking {
+	type Error;
+	type Tracked;
+	
+	fn track<R>(&self, urn: Urn<R>) -> Result<bool, Self::Error>;
+	fn untrack<R>(&self, urn: Urn<R>) -> Result<bool, Self::Error>;
+	fn tracked<R>(&self, urn: Urn<R>) -> Result<Tracked, Self::Error>;
 }
 ```
 
@@ -107,4 +142,4 @@ pub trait write::Identity<I> {
 
 ## Conclusion
 
-
+[id]: ../spec/002-identities/index.md
