@@ -79,7 +79,7 @@ impl RefLike {
     /// [`RefLike`]).
     pub fn strip_prefix<P: AsRef<str>>(&self, base: P) -> Result<Self, StripPrefixError> {
         let base = base.as_ref();
-        let base = format!("{}/", base.strip_suffix("/").unwrap_or(base));
+        let base = format!("{}/", base.strip_suffix('/').unwrap_or(base));
         self.0
             .strip_prefix(&base)
             .ok_or(StripPrefixError::NotPrefix)

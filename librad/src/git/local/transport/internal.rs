@@ -103,13 +103,15 @@ impl Factory {
     }
 
     fn add(&self, active: Active) -> usize {
+        use std::collections::hash_map::Entry::Vacant;
+
         ensure_registered();
         let idx = NEXT.fetch_add(1, Ordering::SeqCst);
         let mut actives = self.active.lock().unwrap();
-        if actives.contains_key(&idx) {
-            panic!("too many active transports")
+        if let Vacant(entry) = actives.entry(idx) {
+            entry.insert(active);
         } else {
-            actives.insert(idx, active);
+            panic!("too many active transports")
         }
 
         idx

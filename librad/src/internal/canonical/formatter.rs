@@ -234,8 +234,8 @@ impl Formatter for CanonicalFormatter {
 
     fn end_object_value<W: Write + ?Sized>(&mut self, _writer: &mut W) -> Result<()> {
         let object = self.obj_mut()?;
-        let key = std::mem::replace(&mut object.next_key, Vec::new());
-        let value = std::mem::replace(&mut object.next_value, Vec::new());
+        let key = std::mem::take(&mut object.next_key);
+        let value = std::mem::take(&mut object.next_value);
         object.obj.insert(key, value);
         Ok(())
     }

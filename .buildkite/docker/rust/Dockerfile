@@ -20,12 +20,12 @@ RUN set -eux; \
 
 # Rust toolchain
 # Make sure this is in sync with rust-toolchain!
-ENV RUST_VERSION=nightly-2021-03-25 \
+ENV RUST_VERSION=nightly-2021-05-09 \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH \
     RUSTUP_HOME=/usr/local/rustup \
-    RUSTUP_VERSION=1.23.1 \
-    RUSTUP_SHA512=bb28e24b47fb017ee5377c8064296595f3aed9753e1412666220cee33c1b6c99b73fa141a38679a6f1528f97b2b17d453a915962c63f4bde103329358ed53c16
+    RUSTUP_VERSION=1.24.1 \
+    RUSTUP_SHA512=d85a0499bf98163c42181d6720572bf2d0c1538a252b528b9812ea876a68d486e4720cc236640bda4c241d98aebbf3f83d42cf551522bf2f4837aa048c198714
 
 RUN set -eux; \
     curl -LOf "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init"; \

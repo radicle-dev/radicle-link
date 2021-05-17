@@ -42,7 +42,7 @@ fn test_cbor_roundtrip() {
 #[test]
 fn test_dns_name_roundtrip() {
     let peer_id1 = PeerId::from(SecretKey::new());
-    let dns_name: webpki::DNSName = peer_id1.clone().into();
+    let dns_name: webpki::DNSName = peer_id1.into();
     let peer_id2 = PeerId::try_from(dns_name.as_ref()).unwrap();
 
     assert_eq!(peer_id1, peer_id2)

@@ -172,7 +172,7 @@ where
 }
 
 impl<R> GitUrlRef<'_, R> {
-    pub fn to_owned(&self) -> GitUrl<R>
+    pub fn to_owned(self) -> GitUrl<R>
     where
         R: Clone,
     {
