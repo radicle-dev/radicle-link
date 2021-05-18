@@ -368,7 +368,7 @@ impl RunState {
         match (&self.status, input) {
             (_, input::Stats::Tick) => vec![Command::Stats],
             (status, input::Stats::Values(stats)) => {
-                self.connected_peers = stats.connected_peers.keys().into_iter().cloned().collect();
+                self.connected_peers = stats.connected_peers.keys().into_iter().copied().collect();
                 match status {
                     Status::Online { .. } if stats.connected_peers.is_empty() => {
                         self.status = Status::Offline;
@@ -632,7 +632,7 @@ mod test {
             connected_peers: connected_peers.clone(),
         };
         let mut state = RunState::construct(
-            connected_peers.keys().cloned().collect(),
+            connected_peers.keys().copied().collect(),
             status,
             HashSet::new(),
         );

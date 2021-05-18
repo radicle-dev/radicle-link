@@ -942,7 +942,7 @@ fn role(
 ) -> Result<peer::Role, Error> {
     let role = if project
         .delegations()
-        .owner(peer.clone().into_inner().as_public_key())
+        .owner(peer.into_inner().as_public_key())
         .is_some()
     {
         peer::Role::Maintainer

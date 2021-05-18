@@ -59,7 +59,7 @@ impl PeerId {
     }
 
     pub fn as_dns_name(&self) -> webpki::DNSName {
-        self.clone().into()
+        (*self).into()
     }
 
     pub fn from_signer(signer: &impl sign::Signer) -> Self {

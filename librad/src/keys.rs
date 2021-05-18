@@ -159,25 +159,6 @@ impl PublicKey {
             .map(PublicKey)
             .ok()
     }
-
-    pub fn from_bs58(s: &str) -> Option<Self> {
-        let bytes = match bs58::decode(s.as_bytes())
-            .with_alphabet(bs58::alphabet::BITCOIN)
-            .into_vec()
-        {
-            Ok(v) => v,
-            Err(_) => return None,
-        };
-        ed25519::VerificationKeyBytes::try_from(bytes.as_slice())
-            .map(PublicKey)
-            .ok()
-    }
-
-    pub fn to_bs58(&self) -> String {
-        bs58::encode(self.0)
-            .with_alphabet(bs58::alphabet::BITCOIN)
-            .into_string()
-    }
 }
 
 impl From<ed25519::VerificationKey> for PublicKey {
@@ -301,26 +282,6 @@ impl<'b> minicbor::Decode<'b> for PublicKey {
 impl Signature {
     pub fn verify(&self, data: &[u8], pk: &PublicKey) -> bool {
         pk.verify(self, data)
-    }
-
-    pub fn from_bs58(s: &str) -> Option<Self> {
-        let bytes = match bs58::decode(s.as_bytes())
-            .with_alphabet(bs58::alphabet::BITCOIN)
-            .into_vec()
-        {
-            Ok(v) => v,
-            Err(_) => return None,
-        };
-        ed25519::Signature::try_from(bytes.as_slice())
-            .map(Self)
-            .ok()
-    }
-
-    pub fn to_bs58(&self) -> String {
-        let bytes: [u8; 64] = self.0.into();
-        bs58::encode(&bytes[..])
-            .with_alphabet(bs58::alphabet::BITCOIN)
-            .into_string()
     }
 }
 

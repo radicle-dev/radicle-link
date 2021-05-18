@@ -220,17 +220,15 @@ fn ask_and_clone() {
                 .unwrap()
         }
 
-        assert_eq!(
-            false,
-            has_urn(peer2, project_urn.clone()).await,
+        assert!(
+            !has_urn(peer2, project_urn.clone()).await,
             "expected peer2 to not have URN {} yet",
             project_urn
         );
 
         proj.pull(peer1, peer2).await.ok().unwrap();
 
-        assert_eq!(
-            true,
+        assert!(
             has_urn(peer2, project_urn.clone()).await,
             "expected peer2 to have URN {}",
             project_urn

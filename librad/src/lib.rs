@@ -13,7 +13,6 @@
 #![feature(btree_drain_filter)]
 #![feature(core_intrinsics)]
 #![feature(drain_filter)]
-#![feature(duration_saturating_ops)]
 #![feature(ip)]
 #![feature(never_type)]
 #![feature(try_trait)]

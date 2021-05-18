@@ -318,7 +318,7 @@ impl<T, D> WaitingRoom<T, D> {
     ///
     ///   * If the `urn` was not in the `WaitingRoom`.
     ///   * If the underlying `Request` was not in the expected state.
-    #[allow(clippy::clippy::needless_pass_by_value)]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn cloning_failed(
         &mut self,
         urn: &Urn,
