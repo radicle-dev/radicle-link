@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -Eeou pipefail
 
+avail() {
+    df --block-size=1G --output=avail "$1"|sed -n 2p|tr -s '[:blank:]'
+}
+
+# 2GiB min is ~25% of current quota
+declare -ri min_cache_avail=2
+
 if [[ "${CI:-}" == "true" ]]; then
     echo "--- Setting up CI cache directories"
 
@@ -9,15 +16,16 @@ if [[ "${CI:-}" == "true" ]]; then
     export TARGET_CACHE_DIR="${CACHE_DIR}/target"
 
     # We (almost) always check out fresh, so file mtime is always newer
-    export CARGO_BUILD_INCREMENTAL=false
+    export CARGO_INCREMENTAL=0
 
     mkdir -p "$CACHE_DIR" "$CARGO_HOME" "$TARGET_CACHE_DIR"
     ln -sf "$TARGET_CACHE_DIR" target
 
-    cache_avail=$(df --output=avail|sed -n 2p)
-    min_cache_avail=$(( 2 * 1024 * 1024 )) # 25%
+    cache_avail=$(avail $CACHE_DIR)
+    echo "avail: ${cache_avail}GiB"
     if [[ $cache_avail -le $min_cache_avail ]]; then
-        echo "Freeing space under /cache"
-        rm -rf "${CACHE_DIR:?}/*"
+        echo "--- Freeing space under ${CACHE_DIR}"
+        rm -rf ${CACHE_DIR:?}/*
+        echo "avail: $(avail $CACHE_DIR)GiB"
     fi
 fi
