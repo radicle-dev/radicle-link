@@ -69,13 +69,22 @@ represent it as a JSON schema. We use this simple schema:
   "properties": {
     "title": {
         "type": "string"
+        "rad_metadata": {
+            "automerge_type": "text"
+        }
     },
     "description": {
         "type": "string"
+        "rad_metadata": {
+            "automerge_type": "text"
+        }
     },
     "author": {
         "type": "string",
         "description": "The radicle ID of the author of the issue"
+        "rad_metadata": {
+            "automerge_type": "text"
+        }
     },
     "signature": {
         "type": "string",
@@ -90,6 +99,9 @@ represent it as a JSON schema. We use this simple schema:
                 "author": {
                     "type": "string",
                     "description": "Radicle ID of the author of the comment"
+                    "rad_metadata": {
+                        "automerge_type": "text"
+                    }
                 },
                 "signature": {
                     "type": "string",
@@ -104,7 +116,8 @@ represent it as a JSON schema. We use this simple schema:
 
 An issue consists of a title, description, and author along with the author's
 signature; followed by a list of comments, each of which is signed by it's
-respective author. This is an extremely simplified model. 
+respective author. This is an extremely simplified model. Note the presence of
+the `rad_metadata` key on some schema items, more on this later.
 
 This schema may well be the subject of it's own mini standardisation process
 as it is very likely that many different applications will want to interoperate
@@ -225,48 +238,6 @@ This endpoint will return an error if the change does not match the schema of
 the object. Otherwise the change will be merged in to the object and announced
 to the network.
 
-
-### Changing the schema
-
-It's a few months on, everyone is very happy with issues except for one thing,
-there is no way to react to a comment with an emojii. To accomodate this we
-modify the schema to add a `reaction` field to the `comment` schema. Now when
-we create an issue, as well as passing the schema, we also pass a schema 
-migration. Like so:
-
-```json
-{
-    "typename": ...,
-    "schema": ...,
-    "schema_migrations": [
-        {
-            "type": "add_field",
-            "path": "comments",
-            "name": "reaction",
-            "schema": {
-                "type": "string",
-                "maxLength": 1,
-            }
-        }
-    ],
-    "data": ...
-}
-```
-
-And when updating an object:
-
-```json
-{
-    "changes": ...,
-    "schema_migrations": <as above>
-}
-```
-
-There are restrictions on these migrations. You can only ever add optional 
-fields, or fields with a default value. This schema migration must be bundled
-with the application, must as database migrations are bundled in the source
-code of web 2.0 applications.
-
 ## Implementation
 
 ### Automerge
@@ -288,7 +259,7 @@ Automerge defines a number of operations along with merge semantics for those
 operations. More detail on that can be found in [the implementation](https://github.com/automerge/automerge)
 and in [the paper](https://arxiv.org/abs/1608.03960).
 
-Despite all the complexity under the hood the API of automerge is relatively
+Despite all the complexity under the hood, the API of automerge is relatively
 simple. Automerge works in terms of "documents", a document is a single log of
 changes. Every time you modify an automerge document you generate a new entry 
 for the change log. Each change is just some bytes. When you receive changes 
@@ -299,16 +270,9 @@ binary changes and get back a JSON object.
 There are some subtleties around preserving user intent when modifying
 documents, but these are not too onerous.
 
-### Message storage and transmission
+### Object Trees
 
-The property of CRDTs that we care about is strong eventual consistency: any
-two nodes which have received the same set of messages will merge to the same
-state. A major part of the design of collaborative objects therefore is how we
-store and transmit these messages. Messages in this context are just binary
-blobs which need to be passed to the CRDT implementation in any order.
-
-Objects are created with a unique identifier at creation time. We use this
-identifier to create a tree with the following structure:
+Objects are represented by a tree with the following layout:
 
 ```
 .
@@ -318,35 +282,17 @@ identifier to create a tree with the following structure:
 |  |--migrations
 |  |  |--<migration hash>.json
 |  |  |--<migration hash>.json
-|--<change 1 hash>
-|--<change 2 hash>
-
-
-We add a new entry to the `signed_refs` of a project at
-`refs/namespaces/<project>/remotes/refs/remotes/<peer>/rad/collaborative-objects`.
-This points to a tree with the following structure:
-
-```
-.
-|--<type name: e.g https://radicle.xyz/issue>
-|  |--<object 1 ID>
-|  |  |--manifest
-|  |  |--schema
-|  |  |  |--schema.json
-|  |  |  |--migrations
-|  |  |  |  |--<migration hash>.json
-|  |  |  |  |--<migration hash>.json
-|  |  |--<change 1 hash>
-|  |  |--<change 2 hash>
-|  |--<object 2 ID>
-|  |  ...
-|--<another type name>
-|  |--<object 3 ID>
-|  |  ...
+|--history
+|  |--<change 1 hash>
+|  |--<change 2 hash>
 ```
 
-We refer to a directory in this tree as an "object directory" and the tuple
-`(manifest, (shchema.json, [schema changes]), [changes])` as an "object state".
+This tree contains the state of a single collaborative object. We will go into
+more details shortly. However, first let us discuss how they are represented
+and transported.
+
+We refer to the tuple `(manifest, (shchema.json, [schema changes]), [changes])`
+as an "object state".
 
 Objects are created with a unique identifier at creation time. This identifier
 is the name of the directory within the `collaborative_objects` tree where the
@@ -360,27 +306,60 @@ namespaces.
 
 Each object is also created with a JSON schema. The schema is represented by an
 initial `schema.json` and a series of schema migrations which extend that
-initial schema. We will examine schema migrations shortly.
+initial schema. Schema migrations will not be addressed in detail in this RFC
+but we will show their feasibility.
 
 ### Mapping the Automerge hash graph to Git
 
-Much like Git, Automerge documents are a hash linked graph of changes. Each
-change is like a commit and references zero or more dependencies via their
-hashes. We can map this structure to git in the following manner:
+TODO
 
-Every every time we make a chang
+### Fetching Collaborative Objects
 
+Each time a repository creates a collaborative object tree it creates a ref
+pointing to that object at `refs/namespaces/<project>/rad/collaborative-objects/<typename>/<object ID>`, 
+where `object ID` is a unique identifier generated at creation time. 
+
+This allows us to fetch subsets of collaborative objects by specifying refspecs
+that match them. The downside is that we are adding a ref to the initial
+advertised refs, each of theses refs is around 250 bytes. If we consider a popular
+repository such as https://github.com/facebook/react/ you can see that they have
+nearly 10,000 issues (including both Open and Closed, which we must). That would 
+mean that the initial ref advertisment in any replication of this repository
+would be ~2.5Mb. If we could use v2 of the git pack protocol this problem would
+go away but alas, we must use v1. 
+
+To get around the problem we can add a parameter to the radicle URL which
+indicates either a single object ID or a type name which we wish to fetch
+from the remote, this would then be passed as a custom header to the transport
+and interpreted on the server. In this manner we can allow clients to choose
+when they want to replicate collaborative objects, which would allow staged
+fetches where we first fetch the repository and identities, and then fetch 
+collaborative objects.
+
+Therefore we add two parameters to a radicle URN:
+
+- `collab_object_id`: specifies that a server should only consider references to the given object ID
+- `collab_type_name`: specifies that a server should only consider references to the given type name
+
+These parameters are emitted by the radicle p2p transport as headers in a 
+similar fashion to the `n=` parameter for the nonce or the `ls=true`
+parameter for selecting the `upload-pack-ls` service. The Radicle git server
+can then use these parameters to filter the refs it operates on.
 
 ### Viewing the tracking graph
 
-We need to load the state of objects which multiple people within the
-tracking graph are collaborating on. Given a particular object ID we can load
-all the changes from each remote we have replicated and merge them all to
-obtain the final state of the object. With many remotes this could become
-expensive and there are opportunities to do some indexing ahead of time. A more
-pressing concern is that we want to ensure that the schema is respected, more
-on this later.
+Assuming we have replicated a number of collaborative objects from our tracking
+graph, we can now view the merged state of those objects. To do this we search
+through every `/rad/collaborative-objects/<typename>/<object ID>` reference for
+every remote we have and collect the change files for each object ID, then we
+merge all of these changes using Automerge. This is subject to some additional
+logic regarding schemas which is outline later.
 
+It is important to note that this merging is at this point not stored in the
+repository - it can be performed in memory and may be cached. The result is
+that the user sees a single merged view of the object based on the contents
+of the remotes they have replicated. That is, there is no additional
+merge-then-commit step.
 
 ### Updating objects
 
@@ -389,11 +368,8 @@ application developer provide us with the binary representation of the change
 to that object. We apply the change and ensure that the new object state still
 matches the object schema. At this point the state of the object may depend on
 many contributions from the tracking graph - not just the ones in our own view
-of the project. This is a natural point at which to compact the document using
-automerge's compacted document format. We bundle all the changes into one
-compacted change file and replace all the changes in our view of the object
-with this compacted change file - then create a new commit, update our signed
-refs, and announce.
+of the project. We ensure that the new state matches the schema and then
+
 
 ### Strange Perspectives
 
@@ -404,6 +380,9 @@ tracking graph will only see the issue if the maintainer replies to it. It's
 hard to see how you would do things like "link to an issue" under these
 constraints. This is inherent to the network model though, rather than being a
 specific problem of this architecture.
+
+We can work around some of this weirdness using seed nodes. If we consider
+seed nodes 
 
 ## Schemas
 
@@ -455,11 +434,7 @@ The APIs librad will provide:
   applications which wish to write data
 - update an object by providing the bytes of an automerge change which updates
   the document
-- create a new object from a JSON object, an automerge document containing a 
-  schema, and a type name
-- update the schema for all objects of an existing type by providing an the 
-  binary representation of an automerge change which modifies the existing
-  schema
+- create a new object from a JSON object, a JSON schema, and a type name
   
 Note that I am referring to "the binary representation of an automerge x" 
 because the automerge API works in terms of binary changes.
@@ -477,5 +452,7 @@ a few core extensions with librad - issues for example.
 ## Alternative Approaches
 
 ### Domain Specific CRDTs
+
+### JSON Patch instead of Automerge
 
 TODO
