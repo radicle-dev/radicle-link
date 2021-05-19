@@ -353,7 +353,7 @@ graph, we can now view the merged state of those objects. To do this we search
 through every `/rad/collaborative-objects/<typename>/<object ID>` reference for
 every remote we have and collect the change files for each object ID, then we
 merge all of these changes using Automerge. This is subject to some additional
-logic regarding schemas which is outline later.
+logic regarding schemas which is outlined later.
 
 It is important to note that this merging is at this point not stored in the
 repository - it can be performed in memory and may be cached. The result is
@@ -364,7 +364,7 @@ merge-then-commit step.
 ### Updating objects
 
 To make a change to an object we load the existing messages for an object. The 
-application developer provide us with the binary representation of the change
+application developer provides us with the binary representation of the change
 to that object. We apply the change and ensure that the new object state still
 matches the object schema. At this point the state of the object may depend on
 many contributions from the tracking graph - not just the ones in our own view
