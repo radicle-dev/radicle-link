@@ -25,7 +25,3 @@ features = []
 version = "0.12"
 default-features = false
 features = []
-
-[[bin]]
-name = "git-remote-rad"
-path = "src/bin/remote/main.rs"
