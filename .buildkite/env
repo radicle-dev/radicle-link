@@ -25,7 +25,8 @@ if [[ "${CI:-}" == "true" ]]; then
     echo "avail: ${cache_avail}GiB"
     if [[ $cache_avail -le $min_cache_avail ]]; then
         echo "--- Freeing space under ${CACHE_DIR}"
-        rm -rf ${CACHE_DIR:?}/*
+        rm -rf ${CARGO_HOME:?}/*
+        rm -rf ${TARGET_CACHE_DIR:?}/*
         echo "avail: $(avail $CACHE_DIR)GiB"
     fi
 fi
