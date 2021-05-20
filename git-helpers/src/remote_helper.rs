@@ -27,7 +27,7 @@ use radicle_keystore::{
 
 pub struct Config {
     /// Signer for radicle artifacts created by pushes.
-    signer: Option<BoxedSigner>,
+    pub signer: Option<BoxedSigner>,
 }
 
 impl Default for Config {
