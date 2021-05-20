@@ -66,47 +66,43 @@ represent it as a JSON schema. We use this simple schema:
 ```json
 {
   "type": "object"
+  "rad_signed_by": {
+    "fields": ["title", "description", "author"],
+    "keys": ["<authors URN>"],
+  } 
   "properties": {
+    id: {
+      "type": "string",
+      "frozen": true
+    },
     "title": {
         "type": "string"
-        "rad_metadata": {
-            "automerge_type": "text"
-        }
+        "automerge_type": "text"
     },
     "description": {
         "type": "string"
-        "rad_metadata": {
-            "automerge_type": "text"
-        }
+        "automerge_type": "text"
     },
     "author": {
-        "type": "string",
         "description": "The radicle ID of the author of the issue"
-        "rad_metadata": {
-            "automerge_type": "text"
-        }
-    },
-    "signature": {
-        "type": "string",
-        "description": "A base64 encoded signature of the issue"
+        "const": "<the authors URN>",
+        "frozen": true,
     },
     "comments": {
         "type": "array",
         "items": {
             "type": "object",
+            "rad_signed_by": {
+              "properties": ["text", "author"],
+              "keys": ["<commenters URN>"]
+            },
             "properties": {
                 "text": {"type": "string"},
                 "author": {
                     "type": "string",
-                    "description": "Radicle ID of the author of the comment"
-                    "rad_metadata": {
-                        "automerge_type": "text"
-                    }
+                    "description": "Radicle URN of the author of the comment"
+                    "automerge_type": "text"
                 },
-                "signature": {
-                    "type": "string",
-                    "description": "Base64 encoded signature of the comment"
-                }
             }
         }
     }
@@ -117,9 +113,23 @@ represent it as a JSON schema. We use this simple schema:
 An issue consists of a title, description, and author along with the author's
 signature; followed by a list of comments, each of which is signed by it's
 respective author. This is an extremely simplified model. Note the presence of
-the `rad_metadata` key on some schema items, more on this later.
+the `automerge_type`, `frozen`, and `rad_signed_by`, and `rad_urn` keys. 
 
-This schema may well be the subject of it's own mini standardisation process
+The `automerge_type` key indicates that this field should be stored as a
+special data type in the automerge document which tracks individual character
+inserts and deletions, this allows us to merge edits to the same piece of text
+in a non surprising manner.
+
+The `frozen` key indicates that any change which modifies this field should be
+ignored.
+
+The `rad_signed_by` and is more interesting. The  `rad_signed_by` field tells
+librad to validate that the given properties (in this case the `title`,
+`description`, and `author` properties) are signed by the given identities.
+Combined with the constant URN and `frozen` on the author this allows us to
+ensure that only the author of the issue can change the description or title.
+
+This schema may well be the subject of its own mini standardisation process
 as it is very likely that many different applications will want to interoperate
 with the same issue model. The important thing is that this standardisation
 process can happen independently of the radicle protocol.
@@ -144,7 +154,9 @@ with the following content:
         "title": "Librad doesn't implement the metadata RFC",
         "description": "It's in the name",
         "author": "<some base64>",
-        "signature": "<some base64>",
+        "signatures": {
+            "<author URN>": "<some base64>"
+        },
         "comments": [],
     }
 }
@@ -259,6 +271,10 @@ Automerge defines a number of operations along with merge semantics for those
 operations. More detail on that can be found in [the implementation](https://github.com/automerge/automerge)
 and in [the paper](https://arxiv.org/abs/1608.03960).
 
+Operations in automerge are transported in batches called "changes". Each 
+change references zero or more changes it depends on via their hash. In this 
+manner automerge is similar to git in that it's a hash linked graph of changes.
+
 Despite all the complexity under the hood, the API of automerge is relatively
 simple. Automerge works in terms of "documents", a document is a single log of
 changes. Every time you modify an automerge document you generate a new entry 
@@ -272,46 +288,97 @@ documents, but these are not too onerous.
 
 ### Object Trees
 
-Objects are represented by a tree with the following layout:
+Given that automerge changes are a hash linked graph, we can map them to Git.
+We do so by wrapping each change in a commit. The commit points at a tree with
+the following layout
 
 ```
 .
-|--manifest
-|--schema
-|  |--schema.json
-|  |--migrations
-|  |  |--<migration hash>.json
-|  |  |--<migration hash>.json
-|--history
-|  |--<change 1 hash>
-|  |--<change 2 hash>
+|--change
+|  |--manifest
+|  |--schema
+|  |  |--schema.json
+|  |  |--migrations
+|  |  |  |--<migration hash>.json
+|  |  |  |--<migration hash>.json
+|  |--<change hash>
+|--author
+|--signatures
 ```
 
-This tree contains the state of a single collaborative object. We will go into
-more details shortly. However, first let us discuss how they are represented
-and transported.
+This tree contains a single change to a collaborative object. We will go into
+more details shortly. Any direct dependents of this change are encoded in the 
+same manner and become the parents of this commit. This allows us to
+reconstruct the automerge depdency graph. 
 
-We refer to the tuple `(manifest, (shchema.json, [schema changes]), [changes])`
-as an "object state".
 
-Objects are created with a unique identifier at creation time. This identifier
-is the name of the directory within the `collaborative_objects` tree where the
-data for this object is kept. Each time we make a change to the object we store
-the new change (which is a binary blob) in the object directory and create a
-new commit. We also store a manifest file which contains the name of the data
-type of this object. This file is never changed and is used to allow
-applications to enumerate collaborative objects of a particular type. Type
-names should be some kind of human readable identifier - similar to XML
-namespaces.
+#### `change/Manifest`
+
+The manifest is a TOML file containing some metadata about the object.
+Specifically it will contain:
+
+- `id`, a UUID, generated at the time the object is created
+- `typename`, discussed above
+- `history_type`, always `"automerge"`, this is here to allow for different
+  CRDT implementations in future.
+
 
 Each object is also created with a JSON schema. The schema is represented by an
 initial `schema.json` and a series of schema migrations which extend that
 initial schema. Schema migrations will not be addressed in detail in this RFC
 but we will show their feasibility.
 
-### Mapping the Automerge hash graph to Git
+#### `change/schema`
 
-TODO
+Schemas are primarily important for the interoperability of the system. We need
+applications to be able to rely on the data they are working with being valid,
+otherwise we impose the problem of schema validation on application developers.
+We represent schemas using JSON schema which is in the `schema/schema.json` of any
+object tree.
+
+Schemas will need to be able to change, the `schema/migrations` directory is
+present to allow us to store compatible changes to a schema in future. Schema
+migration is out of scope for this RFC.
+
+
+#### `schema/<change hash>`
+
+This is the automerge change which this commit introduces. It is a binary file
+which must contain a single change and it's dependents must be the dependents
+referenced by the parents of the commit.
+
+
+#### `author`
+
+This is the identity tree of the `Person` who authored this commit.
+
+
+#### `signatures`
+
+This is the signature of the `change` tree using the key in `author`. 
+
+TODO: flesh this out
+
+### Reconstructing Collaborative Objects
+
+Assuming we have replicated a number of collaborative objects from our tracking
+graph, we can now view the merged state of those objects. To do this we search
+through every `/rad/collaborative-objects/<typename>/<object ID>` reference for
+every remote we have and collect the change files for each object ID.
+
+At this point we have the hash linked graph of automerge changes, but we need
+to make sure that the merged document is authenticated and valid with respect
+to it's schema. To do this we start at the roots of the hash graph and walk
+down the tree. As we encounter each change we check it's signature, apply it
+and check that the new document does not violate the schema. If it does violate
+the schema we discard the change and all dependent changes. Finally, we have an
+authenticated document which respects a given schema.
+
+It is important to note that this merging is at this point not stored in the
+repository - it can be performed in memory and may be cached. The result is
+that the user sees a single merged view of the object based on the contents
+of the remotes they have replicated. That is, there is no additional
+merge-then-commit step.
 
 ### Fetching Collaborative Objects
 
@@ -346,20 +413,6 @@ similar fashion to the `n=` parameter for the nonce or the `ls=true`
 parameter for selecting the `upload-pack-ls` service. The Radicle git server
 can then use these parameters to filter the refs it operates on.
 
-### Viewing the tracking graph
-
-Assuming we have replicated a number of collaborative objects from our tracking
-graph, we can now view the merged state of those objects. To do this we search
-through every `/rad/collaborative-objects/<typename>/<object ID>` reference for
-every remote we have and collect the change files for each object ID, then we
-merge all of these changes using Automerge. This is subject to some additional
-logic regarding schemas which is outlined later.
-
-It is important to note that this merging is at this point not stored in the
-repository - it can be performed in memory and may be cached. The result is
-that the user sees a single merged view of the object based on the contents
-of the remotes they have replicated. That is, there is no additional
-merge-then-commit step.
 
 ### Updating objects
 
@@ -368,7 +421,41 @@ application developer provides us with the binary representation of the change
 to that object. We apply the change and ensure that the new object state still
 matches the object schema. At this point the state of the object may depend on
 many contributions from the tracking graph - not just the ones in our own view
-of the project. We ensure that the new state matches the schema and then
+of the project. We now create a commit with our new change in it, referencing
+all the commits containing the direct dependencies of the change as parents.
+
+
+### Schema extensions
+
+#### `signed_by`
+
+Many collaborative data structures will need to make statements about who is
+allowed to change what parts of a structure. To achieve this we extend the 
+json schema language with some custom metadata, the `signed_by` property. This
+property can be placed on any `object` schema. It's value is an
+object with two keys, an array of properties which must be signed, and array of 
+radicle URNs who's signature must be present.
+
+This property implies a required `signatures` property which contains a mapping
+from URN to a description of the signature. (Maybe a JWS?).
+
+Any schema which has this property will result in some additional validation.
+Librad will encode the relevant keys of the target object using canonical JSON
+and then check that a signature over them is valid with respect to the given
+keys. 
+
+
+#### `frozen`
+
+Some attributes should never be changed, for example the ID of an issue, or a
+nonce on a comment. Any schema can add the metadata key, `frozen: true` to
+indicate that after it's initial creation any change which modifies it is
+invalid.
+
+#### `automerge_type`
+
+This can take the value `"text"` if  placed on `string` properties to indicate
+that they should be represented in an `Automerge.Text` data type.
 
 
 ### Strange Perspectives
@@ -383,45 +470,6 @@ specific problem of this architecture.
 
 We can work around some of this weirdness using seed nodes. If we consider
 seed nodes 
-
-## Schemas
-
-Schemas are primarily important for the interoperability of the system. We need
-applications to be able to rely on the data they are working with being valid,
-otherwise we impose the problem of schema validation on application developers.
-We represent schemas using automerge documents which contain a JSON schema.
-
-Representing schemas as automerge documents means that we can allow for _some_
-schema migration, but we need to ensure that changes to the schemata are
-backwards and forwards compatible. Loading a schema for a particular object
-state looks roughly like this: 
-- Load all of the schema's changes
-    - Merge all of the changes to put them in causal order
-    - Apply the changes in causal order checking at each change that the new
-      document is a valid JSON schema and that it is forward and backwards
-      compatible with the previous schema.
-
-At this point we know we have a valid schema for each object state. We now
-check that the schemata for each object state are forwards and backwards
-compatible with each other, at which point we can merge all the schema changes
-we have to obtain the valid schema for the object. 
-
-In the case that an object has an incompatible schema with respect to other
-objects in our tracking graph we do not want to reject the entire object as
-this would provide an avenue for griefing. In the case where the current user
-has a version of the object in their own repo then we can privilege objects
-which are compatible with that object, in more complex cases we will need some
-kind of heuristic - maybe we partition the set of objects by compatibility and
-choose the largest partition, or we choose an object from some preferred set of
-peers (say the project maintainers). 
-
-This is all pretty complicated, one alternative would be to store the schemas
-in the `ProjectPayload` rather than alongside the objects themselves. This
-would restrict the kinds of objects that can be used with a given project to
-those that have been "approved" in some manner by the maintainers and would
-require an update to the project identity to add new schemas. I think ideally
-we would avoid this as it also means that schema migrations would require
-action from project maintainers, but it may prove necessary.
 
 ## APIs
 
