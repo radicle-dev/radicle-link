@@ -427,11 +427,11 @@ all the commits containing the direct dependencies of the change as parents.
 
 ### Schema extensions
 
-#### `signed_by`
+#### `rad_signed_by`
 
 Many collaborative data structures will need to make statements about who is
 allowed to change what parts of a structure. To achieve this we extend the 
-json schema language with some custom metadata, the `signed_by` property. This
+json schema language with some custom metadata, the `rad_signed_by` property. This
 property can be placed on any `object` schema. It's value is an
 object with two keys, an array of properties which must be signed, and array of 
 radicle URNs who's signature must be present.
@@ -500,6 +500,92 @@ a few core extensions with librad - issues for example.
 ## Alternative Approaches
 
 ### Domain Specific CRDTs
+
+Instead of using a single CRDT implementation (Automerge) for every data type
+we could have a CRDT per data type. Defining a CRDT consists of either 
+defining a commutative merge operation for a data structure, or a set of 
+operations with a commutative application operation (these are in some sense
+interchangable definitions).
+
+As an example, we might define the issue CRDT using a set of events like this:
+
+```rust
+enum Event {
+    Create(id, title, description, author, signature),
+    Modify(new_title, new_description, new_signature),
+    AddComment(id, text, author, parent_id, signature),
+    ModifyComment(comment_id, text, new_signature),
+    RemoveComment(comment_id, nonce, signature),
+}
+```
+
+A state
+
+```rust
+struct Issue {
+    title: String,
+    author: Author,
+    signature: Signature,
+    comments: CommentTree
+}
+
+enum CommentTree {
+    Node(NodeId, Vec<CommentTree>),
+    Leaf(NodeId, Comment)
+}
+
+struct Comment {
+    text: String,
+    author: Author,
+    signature: Signature,
+}
+```
+
+and an apply function:
+
+
+```rust
+impl Issue {
+    fn apply(&mut self, op: Event) {
+        ...
+    }
+}
+```
+
+This initially seems appealing as the event log matches a little more closely
+with the network model than shipping around automerge states. It's more
+intuitive to think of events as happening concurrently in different places
+and merging them. Furthermore, this appraoch removes the need for schema 
+validation - that logic instead lives in the merge operation.
+
+This architecture would mean that the responsibilities of the
+radicle protocol would be to provide a causal broadcast system - a guarantee
+that events will arrive in causal order, i.e after their dependencies, at each
+node. 
+
+There are difficulties with this approach though: 
+- How do we represent the merge operation? The only general mechanism here
+  would be a programming language, either source code or WASM blobs. This could
+  be achieved but we would need to do some engineering to sandbox such
+  programs. 
+- Writing a correct CRDT merge operation is tricky and the consequences of
+  getting it wrong are permanently corrupted data for the whole network. There
+  are other formulations of CRDTs which make different tradeoffs in the design
+  of the merge operation, but everything I am aware of requires a reasonable
+  amount of domain expertise. 
+- Handling upgrades seems complicated, every CRDT implementation would need to
+  be able to tolerate unknown events or states.
+- Even if the merge operation is correct, naive CRDT implementations can easily
+  require large amounts of storage and network resources.
+
+To me this appraoch seems to fail at satisfying the interoperability design
+goal. We would require application developers to know how to develop a CRDT and
+we would not be able to make many guarantees to users about how CRDTs will 
+perform both in terms of the performance of the merge function and in terms of
+disk and network usage. Additionally we open ourselves up to the security
+problems of sandboxing arbitrary programs.
+
+        
 
 ### JSON Patch instead of Automerge
 
