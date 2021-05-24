@@ -507,11 +507,7 @@ defining a commutative merge operation for a data structure, or a set of
 operations with a commutative application operation (these are in some sense
 interchangable definitions).
 
-As an example, we might define the issue CRDT using a set of events like this:
-
-```rust
-enum Event {
-    Create(id, title, description, author, signature),
+As an example, we might define the issue CRDT using a set of events like this: ```rust enum Event { Create(id, title, description, author, signature),
     Modify(new_title, new_description, new_signature),
     AddComment(id, text, author, parent_id, signature),
     ModifyComment(comment_id, text, new_signature),
@@ -555,8 +551,9 @@ impl Issue {
 This initially seems appealing as the event log matches a little more closely
 with the network model than shipping around automerge states. It's more
 intuitive to think of events as happening concurrently in different places
-and merging them. Furthermore, this appraoch removes the need for schema 
-validation - that logic instead lives in the merge operation.
+and merging them. Furthermore, this approach makes schema validation easier,
+we just have to check that the events are well formed - the final state is 
+guaranteed to be valid by the merge function.
 
 This architecture would mean that the responsibilities of the
 radicle protocol would be to provide a causal broadcast system - a guarantee
@@ -585,8 +582,24 @@ perform both in terms of the performance of the merge function and in terms of
 disk and network usage. Additionally we open ourselves up to the security
 problems of sandboxing arbitrary programs.
 
-        
-
 ### JSON Patch instead of Automerge
 
-TODO
+Automerge is a reasonably esoteric technology, why are we exposing it in our
+API? The reason we receive changes as a set of automerge changes - bytes 
+created by the automerge library by the application developer - is that we
+cannot just allow people to directly update the state of the CRDT. Doing so 
+would lose crucial information which allows for good merge behaviour. For
+example, when modifying a list we want to track exactly where in the list
+modifications happen - just diffing states doesn't allow us to capture things
+like "insert after element 3, then delete element 3, then insert after the new
+element", we would just end up with "delete element 3 and insert two new
+elements", which would behave differently in the presence of concurrent inserts
+after element 3.
+
+However, we could use a different change format, JSON patch is reasonably well
+known and straightforward to use. The problem is that it doesn't have a way of
+expressing changes _within_ a string. If you want to change some text you just
+change the whole property. There are [attempts to extend it](https://github.com/epoberezkin/extended-json-patch)
+but these are not well known or maintained. This is a problem because one of
+the most useful things about automerge is it's ability to merge text changes
+in an intuitive manner.
