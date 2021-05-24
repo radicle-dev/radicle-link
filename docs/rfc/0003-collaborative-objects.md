@@ -361,9 +361,8 @@ history to look for changes.
 
 #### `signatures`
 
-This is the signature of the `change` tree using the key in `author`. 
-
-TODO: flesh this out
+This is the signature of the `change` tree using the key in `author`. This uses
+the same format as that of `X-Rad-Signature` trailer on commit messages.
 
 ### Reconstructing Collaborative Objects
 
