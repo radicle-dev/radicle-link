@@ -307,9 +307,14 @@ the following layout
 ```
 
 This tree contains a single change to a collaborative object. We will go into
-more details shortly. Any direct dependents of this change are encoded in the 
+more details shortly. Any direct dependencies of this change are encoded in the 
 same manner and become the parents of this commit. This allows us to
 reconstruct the automerge depdency graph. 
+
+Along with the dependencies of the commit we also need to add the commit of the
+identity which created this commit. We need this identity to validate
+signatures and by making the commit a parent we ensure that git will replicate
+it for us. 
 
 
 #### `change/Manifest`
@@ -350,8 +355,9 @@ referenced by the parents of the commit.
 
 #### `author`
 
-This is the identity tree of the `Person` who authored this commit.
-
+This is a file containing the SHA of the commit which references the authors
+identity. We need this so we know to ignore this commit when walking the
+history to look for changes.
 
 #### `signatures`
 
@@ -487,8 +493,46 @@ The APIs librad will provide:
 Note that I am referring to "the binary representation of an automerge x" 
 because the automerge API works in terms of binary changes.
 
+This new api will live in a new top level module at
+`librad::collaborative_objects`. An initial sketch looks like this:
 
-TODO: spell out what this looks like in code
+```rust
+struct CollaborativeObjectStore {
+    storage: git::storage::Pool,
+    signer: signer::Signer,
+}
+
+enum History {
+    Automerge(Vec<Vec<u8>>)
+}
+
+struct ObjectId(String);
+struct TypeName(String);
+struct Schema(..);
+
+struct CollaborativeObject {
+    typename: TypeName,
+    schema: Schema,
+    id: ObjectId,
+    author: Person, 
+    json: serde_json::Value,
+    history: History, 
+}
+
+struct NewObjectSpec {
+    typename: TypeName,
+    history: History,
+    schema_json: serde_json::Value,
+}
+
+impl CollaborativeObjectStore {
+    fn retrieve_objects(&self, typename: String) -> Result<_, Vec<CollaborativeObject>>
+    fn retrieve_object(&self, typename: String, id: ObjectId) -> Result<_, CollaborativeObject>
+    fn create_object(&self, spec: NewObjectSpec) -> Result<_, CollaborativeObject>
+    fn update_object(&self, id: String, changes: History) -> Result<_, CollaborativeObject>
+}
+```
+
 
 ## Blessed Data Types
 
@@ -507,7 +551,10 @@ defining a commutative merge operation for a data structure, or a set of
 operations with a commutative application operation (these are in some sense
 interchangable definitions).
 
-As an example, we might define the issue CRDT using a set of events like this: ```rust enum Event { Create(id, title, description, author, signature),
+As an example, we might define the issue CRDT using a set of events like this: 
+
+```rust
+enum Event { Create(id, title, description, author, signature),
     Modify(new_title, new_description, new_signature),
     AddComment(id, text, author, parent_id, signature),
     ModifyComment(comment_id, text, new_signature),
@@ -575,7 +622,7 @@ There are difficulties with this approach though:
 - Even if the merge operation is correct, naive CRDT implementations can easily
   require large amounts of storage and network resources.
 
-To me this appraoch seems to fail at satisfying the interoperability design
+To me this approach seems to fail at satisfying the interoperability design
 goal. We would require application developers to know how to develop a CRDT and
 we would not be able to make many guarantees to users about how CRDTs will 
 perform both in terms of the performance of the merge function and in terms of
@@ -591,8 +638,8 @@ cannot just allow people to directly update the state of the CRDT. Doing so
 would lose crucial information which allows for good merge behaviour. For
 example, when modifying a list we want to track exactly where in the list
 modifications happen - just diffing states doesn't allow us to capture things
-like "insert after element 3, then delete element 3, then insert after the new
-element", we would just end up with "delete element 3 and insert two new
+like "insert after element 3, then delete element 3, then insert after element
+two", we would just end up with "delete element 3 and insert two new
 elements", which would behave differently in the presence of concurrent inserts
 after element 3.
 
