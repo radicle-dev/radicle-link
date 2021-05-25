@@ -44,9 +44,8 @@ use librad::{
     net::peer::Peer,
     paths,
     peer::PeerId,
-    signer::BoxedSigner,
+    signer::{BoxedSigner, Signer, SomeSigner},
 };
-use radicle_keystore::sign::Signer as _;
 
 use crate::{
     peer::gossip,
@@ -61,8 +60,9 @@ pub use error::Error;
 /// # Errors
 ///
 ///   * Checking the storage for the commit fails.
-pub async fn has_commit<Oid>(peer: &Peer<BoxedSigner>, urn: Urn, oid: Oid) -> Result<bool, Error>
+pub async fn has_commit<S, Oid>(peer: &Peer<S>, urn: Urn, oid: Oid) -> Result<bool, Error>
 where
+    S: Clone + Signer,
     Oid: AsRef<git2::Oid> + std::fmt::Debug + Send + 'static,
 {
     Ok(peer
@@ -76,7 +76,10 @@ where
 ///   * Opening the storage config failed
 ///   * Fetching the `Urn` from the config failed
 ///   * Loading the `LocalIdentity` failed
-pub async fn default_owner(peer: &Peer<BoxedSigner>) -> Result<Option<LocalIdentity>, Error> {
+pub async fn default_owner<S>(peer: &Peer<S>) -> Result<Option<LocalIdentity>, Error>
+where
+    S: Clone + Signer,
+{
     Ok(peer
         .using_storage(move |store| local::default(store))
         .await??)
@@ -87,8 +90,9 @@ pub async fn default_owner(peer: &Peer<BoxedSigner>) -> Result<Option<LocalIdent
 /// # Errors
 ///
 ///   * Fails to set the default `rad/self` for this `PeerApi`.
-pub async fn set_default_owner<U>(peer: &Peer<BoxedSigner>, user: U) -> Result<(), Error>
+pub async fn set_default_owner<S, U>(peer: &Peer<S>, user: U) -> Result<(), Error>
 where
+    S: Clone + Signer,
     U: Into<Option<LocalIdentity>> + Send + Sync + 'static,
 {
     Ok(peer
@@ -105,8 +109,9 @@ where
 ///   * Fails to verify `User`.
 ///   * Fails to set the default `rad/self` for this `PeerApi`.
 #[allow(clippy::single_match_else)]
-pub async fn init_owner<P>(peer: &Peer<BoxedSigner>, payload: P) -> Result<LocalIdentity, Error>
+pub async fn init_owner<S, P>(peer: &Peer<S>, payload: P) -> Result<LocalIdentity, Error>
 where
+    S: Clone + Signer,
     P: TryInto<PersonPayload> + Send,
     Error: From<P::Error>,
 {
@@ -140,8 +145,9 @@ where
 ///   * Fails to verify `User`.
 ///   * Fails to set the default `rad/self` for this `PeerApi`.
 #[allow(clippy::single_match_else)]
-pub async fn update_owner_payload<P>(peer: &Peer<BoxedSigner>, payload: P) -> Result<(), Error>
+pub async fn update_owner_payload<S, P>(peer: &Peer<S>, payload: P) -> Result<(), Error>
 where
+    S: Clone + Signer,
     P: TryInto<PersonPayload> + Send,
     Error: From<P::Error>,
 {
@@ -160,14 +166,15 @@ where
 ///   * Could not open librad storage.
 ///   * Failed to clone the project.
 ///   * Failed to set the rad/self of this project.
-pub async fn clone_project<C, Addrs>(
-    peer: &Peer<BoxedSigner>,
+pub async fn clone_project<S, C, Addrs>(
+    peer: &Peer<S>,
     urn: Urn,
     remote_peer: PeerId,
     addr_hints: Addrs,
     config: C,
 ) -> Result<ReplicateResult, Error>
 where
+    S: Clone + Signer,
     C: Into<Option<replication::Config>> + Send,
     Addrs: IntoIterator<Item = SocketAddr> + Send + 'static,
 {
@@ -198,7 +205,10 @@ where
 /// # Errors
 ///
 ///   * Resolving the project fails.
-pub async fn get_project(peer: &Peer<BoxedSigner>, urn: Urn) -> Result<Option<Project>, Error> {
+pub async fn get_project<S>(peer: &Peer<S>, urn: Urn) -> Result<Option<Project>, Error>
+where
+    S: Clone + Signer,
+{
     peer.using_storage(move |store| identities::project::get(store, &urn))
         .await?
         .map_err(Error::from)
@@ -209,7 +219,10 @@ pub async fn get_project(peer: &Peer<BoxedSigner>, urn: Urn) -> Result<Option<Pr
 /// # Errors
 ///
 ///   * Retrieving the project entities from the store fails.
-pub async fn list_projects(peer: &Peer<BoxedSigner>) -> Result<Vec<Project>, Error> {
+pub async fn list_projects<S>(peer: &Peer<S>) -> Result<Vec<Project>, Error>
+where
+    S: Clone + Signer,
+{
     // FIXME(xla): Instead of implicitely expecting a presence of a default owner,
     // there either should be an explicit argument, or it's made impossible to
     // call this function without an owner associated with the state.
@@ -248,10 +261,10 @@ pub async fn list_projects(peer: &Peer<BoxedSigner>) -> Result<Vec<Project>, Err
 /// # Errors
 ///
 /// * if opening the storage fails
-pub async fn list_owner_project_refs(
-    peer: &Peer<BoxedSigner>,
-    urn: Urn,
-) -> Result<Option<Refs>, Error> {
+pub async fn list_owner_project_refs<S>(peer: &Peer<S>, urn: Urn) -> Result<Option<Refs>, Error>
+where
+    S: Clone + Signer,
+{
     peer.using_storage(move |store| Refs::load(store, &urn, None))
         .await?
         .map_err(Error::from)
@@ -262,11 +275,14 @@ pub async fn list_owner_project_refs(
 /// # Errors
 ///
 /// * if opening the storage fails
-pub async fn list_peer_project_refs(
-    peer: &Peer<BoxedSigner>,
+pub async fn list_peer_project_refs<S>(
+    peer: &Peer<S>,
     urn: Urn,
     peer_id: PeerId,
-) -> Result<Option<Refs>, Error> {
+) -> Result<Option<Refs>, Error>
+where
+    S: Clone + Signer,
+{
     peer.using_storage(move |store| Refs::load(store, &urn, Some(peer_id)))
         .await?
         .map_err(Error::from)
@@ -277,7 +293,10 @@ pub async fn list_peer_project_refs(
 /// # Errors
 ///
 ///   * Retrieval of the user entities from the store fails.
-pub async fn list_users(peer: &Peer<BoxedSigner>) -> Result<Vec<Person>, Error> {
+pub async fn list_users<S>(peer: &Peer<S>) -> Result<Vec<Person>, Error>
+where
+    S: Clone + Signer,
+{
     peer.using_storage(move |store| {
         let projects = identities::any::list(store)?
             .filter_map(Result::ok)
@@ -300,14 +319,15 @@ pub async fn list_users(peer: &Peer<BoxedSigner>) -> Result<Vec<Person>, Error> 
 ///   * Could not successfully acquire a lock to the API.
 ///   * Could not open librad storage.
 ///   * Failed to clone the user.
-pub async fn clone_user<C, Addrs>(
-    peer: &Peer<BoxedSigner>,
+pub async fn clone_user<S, C, Addrs>(
+    peer: &Peer<S>,
     urn: Urn,
     remote_peer: PeerId,
     addr_hints: Addrs,
     config: C,
 ) -> Result<ReplicateResult, Error>
 where
+    S: Clone + Signer,
     C: Into<Option<replication::Config>> + Send,
     Addrs: IntoIterator<Item = SocketAddr> + Send + 'static,
 {
@@ -338,7 +358,10 @@ where
 ///
 ///   * Resolving the user fails.
 ///   * Could not successfully acquire a lock to the API.
-pub async fn get_user(peer: &Peer<BoxedSigner>, urn: Urn) -> Result<Option<LocalIdentity>, Error> {
+pub async fn get_user<S>(peer: &Peer<S>, urn: Urn) -> Result<Option<LocalIdentity>, Error>
+where
+    S: Clone + Signer,
+{
     peer.using_storage(move |store| match identities::person::get(store, &urn)? {
         None => Ok(None),
         Some(person) => local::load(store, person.urn()),
@@ -356,14 +379,15 @@ pub async fn get_user(peer: &Peer<BoxedSigner>, urn: Urn) -> Result<Option<Local
 ///   * Could not open librad storage.
 ///   * Failed to fetch the updates.
 ///   * Failed to set the rad/self of this project.
-pub async fn fetch<C, Addrs>(
-    peer: &Peer<BoxedSigner>,
+pub async fn fetch<S, C, Addrs>(
+    peer: &Peer<S>,
     urn: Urn,
     remote_peer: PeerId,
     addr_hints: Addrs,
     config: C,
 ) -> Result<ReplicateResult, Error>
 where
+    S: Clone + Signer,
     C: Into<Option<replication::Config>> + Send,
     Addrs: IntoIterator<Item = SocketAddr> + Send + 'static,
 {
@@ -397,11 +421,14 @@ where
 /// Will error if:
 ///     * The signing of the project metadata fails.
 ///     * The interaction with `librad` [`librad::git::storage::Storage`] fails.
-pub async fn init_project(
-    peer: &Peer<BoxedSigner>,
+pub async fn init_project<S>(
+    peer: &Peer<S>,
     owner: &LocalIdentity,
     create: crate::project::Create,
-) -> Result<Project, Error> {
+) -> Result<Project, Error>
+where
+    S: Clone + Signer,
+{
     let default_branch = create.default_branch.to_string();
     let description = create.description.to_string();
     let name = create
@@ -476,7 +503,10 @@ pub async fn init_project(
 /// Will error if:
 ///     * The signing of the user metadata fails.
 ///     * The interaction with `librad` [`librad::git::storage::Storage`] fails.
-pub async fn init_user(peer: &Peer<BoxedSigner>, name: String) -> Result<LocalIdentity, Error> {
+pub async fn init_user<S>(peer: &Peer<S>, name: String) -> Result<LocalIdentity, Error>
+where
+    S: Clone + Signer,
+{
     let pk = keys::PublicKey::from(peer.signer().public_key());
     peer.using_storage(move |store| {
         let malkovich = person::create(
@@ -498,7 +528,10 @@ pub async fn init_user(peer: &Peer<BoxedSigner>, name: String) -> Result<LocalId
 /// # Errors
 ///
 /// * When the storage operation fails.
-pub async fn track(peer: &Peer<BoxedSigner>, urn: Urn, remote_peer: PeerId) -> Result<(), Error> {
+pub async fn track<S>(peer: &Peer<S>, urn: Urn, remote_peer: PeerId) -> Result<(), Error>
+where
+    S: Clone + Signer,
+{
     {
         let urn = urn.clone();
         peer.using_storage(move |store| tracking::track(store, &urn, remote_peer))
@@ -516,11 +549,10 @@ pub async fn track(peer: &Peer<BoxedSigner>, urn: Urn, remote_peer: PeerId) -> R
 /// # Errors
 ///
 /// * When the storage operation fails.
-pub async fn untrack(
-    peer: &Peer<BoxedSigner>,
-    urn: Urn,
-    remote_peer: PeerId,
-) -> Result<bool, Error> {
+pub async fn untrack<S>(peer: &Peer<S>, urn: Urn, remote_peer: PeerId) -> Result<bool, Error>
+where
+    S: Clone + Signer,
+{
     let res = {
         let urn = urn.clone();
         peer.using_storage(move |store| tracking::untrack(store, &urn, remote_peer))
@@ -545,10 +577,13 @@ pub async fn untrack(
 /// * If did not have the `urn` in storage
 /// * If we could not fetch the tracked peers
 /// * If we could not get the `rad/self` of the peer
-pub async fn tracked(
-    peer: &Peer<BoxedSigner>,
+pub async fn tracked<S>(
+    peer: &Peer<S>,
     urn: Urn,
-) -> Result<Vec<crate::project::Peer<peer::Status<Person>>>, Error> {
+) -> Result<Vec<crate::project::Peer<peer::Status<Person>>>, Error>
+where
+    S: Clone + Signer,
+{
     let project = get_project(peer, urn.clone())
         .await?
         .ok_or_else(|| Error::ProjectNotFound(urn.clone()))?;
@@ -592,10 +627,13 @@ pub async fn tracked(
 ///
 /// * if the default owner can't be fetched
 #[allow(clippy::blocks_in_if_conditions)]
-pub async fn list_project_peers(
-    peer: &Peer<BoxedSigner>,
+pub async fn list_project_peers<S>(
+    peer: &Peer<S>,
     urn: Urn,
-) -> Result<Vec<crate::project::Peer<peer::Status<Person>>>, Error> {
+) -> Result<Vec<crate::project::Peer<peer::Status<Person>>>, Error>
+where
+    S: Clone + Signer,
+{
     let project = get_project(peer, urn.clone())
         .await?
         .ok_or_else(|| Error::ProjectNotFound(urn.clone()))?;
@@ -637,13 +675,14 @@ pub async fn list_project_peers(
 /// * if the project can't be found
 /// * if the include file creation fails
 /// * if the clone of the working copy fails
-pub async fn checkout<P>(
-    peer: &Peer<BoxedSigner>,
+pub async fn checkout<S, P>(
+    peer: &Peer<S>,
     urn: Urn,
     peer_id: P,
     destination: PathBuf,
 ) -> Result<PathBuf, Error>
 where
+    S: Clone + Signer,
     P: Into<Option<PeerId>> + Send + 'static,
 {
     let peer_id = peer_id.into();
@@ -710,7 +749,10 @@ where
 /// # Errors
 ///
 /// * if getting the list of tracked peers fails
-pub async fn update_include(peer: &Peer<BoxedSigner>, urn: Urn) -> Result<PathBuf, Error> {
+pub async fn update_include<S>(peer: &Peer<S>, urn: Urn) -> Result<PathBuf, Error>
+where
+    S: Clone + Signer,
+{
     let local_url = LocalUrl::from(urn.clone());
     let tracked = tracked(peer, urn).await?;
     let include = spawn_blocking({
@@ -748,13 +790,14 @@ pub async fn update_include(peer: &Peer<BoxedSigner>, urn: Urn) -> Result<PathBu
 /// # Errors
 ///   * If the storage operations fail.
 ///   * If the requested reference was not found.
-pub async fn get_branch<P, B>(
-    peer: &Peer<BoxedSigner>,
+pub async fn get_branch<S, P, B>(
+    peer: &Peer<S>,
     urn: Urn,
     remote: P,
     branch_name: B,
 ) -> Result<Reference<Single>, Error>
 where
+    S: Clone + Signer,
     P: Into<Option<PeerId>> + Clone + Send,
     B: Into<Option<Cstring>> + Clone + Send,
 {
@@ -807,10 +850,10 @@ where
 /// # Errors
 ///   * If the storage operations fail.
 ///   * If no default branch was found for the provided [`Urn`].
-pub async fn find_default_branch(
-    peer: &Peer<BoxedSigner>,
-    urn: Urn,
-) -> Result<Reference<Single>, Error> {
+pub async fn find_default_branch<S>(peer: &Peer<S>, urn: Urn) -> Result<Reference<Single>, Error>
+where
+    S: Clone + Signer,
+{
     let project = get_project(peer, urn.clone())
         .await?
         .ok_or_else(|| Error::ProjectNotFound(urn.clone()))?;
@@ -854,23 +897,34 @@ pub async fn find_default_branch(
 
 /// Returns the [`PathBuf`] to the underlying monorepo.
 #[must_use]
-pub fn monorepo(peer: &Peer<BoxedSigner>) -> PathBuf {
+pub fn monorepo<S>(peer: &Peer<S>) -> PathBuf
+where
+    S: Clone + Signer,
+{
     peer.protocol_config().paths.git_dir().to_owned()
 }
 
 /// Returns the underlying [`paths::Paths`].
 #[must_use]
-pub fn paths(peer: &Peer<BoxedSigner>) -> paths::Paths {
+pub fn paths<S>(peer: &Peer<S>) -> paths::Paths
+where
+    S: Clone + Signer,
+{
     peer.protocol_config().paths.clone()
 }
 
 /// Construct the local [`transport::Settings`] for interacting with git related
 /// I/O.
 #[must_use]
-pub fn settings(peer: &Peer<BoxedSigner>) -> transport::Settings {
+pub fn settings<S>(peer: &Peer<S>) -> transport::Settings
+where
+    S: Clone + Signer,
+{
     transport::Settings {
         paths: peer.protocol_config().paths.clone(),
-        signer: peer.signer().clone(),
+        signer: BoxedSigner::from(SomeSigner {
+            signer: peer.signer().clone(),
+        }),
     }
 }
 
@@ -888,7 +942,7 @@ fn role(
 ) -> Result<peer::Role, Error> {
     let role = if project
         .delegations()
-        .owner(peer.clone().into_inner().as_public_key())
+        .owner(peer.into_inner().as_public_key())
         .is_some()
     {
         peer::Role::Maintainer

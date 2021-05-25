@@ -5,12 +5,15 @@ authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 
+[lib]
+doctest = true
+test = false
+
 [dependencies]
 async-stream = "0.3"
 async-trait = "0.1"
 backoff = "0.3"
 bit-vec = "0.6"
-bs58 = "0.3"
 bytes = "0.5"
 dashmap = "4.0"
 directories = "3.0"
@@ -77,7 +80,7 @@ version = "0.4"
 features = []
 
 [dependencies.git2]
-version = ">= 0.13.12, 0.13"
+version = "=0.13.18"
 default-features = false
 features = []
 
@@ -137,21 +140,3 @@ features = ["serde"]
 [dependencies.zeroize]
 version = "1.1"
 features = ["zeroize_derive"]
-
-[dev-dependencies]
-anyhow = "1"
-argh = "0"
-assert_matches = "1"
-env_logger = "0"
-fnv = "1"
-futures-await-test = "0"
-futures_ringbuf = "0"
-log = "0.4"
-nonempty = "0.6"
-pretty_assertions = "0"
-proptest = "0"
-sha-1 = "0.9"
-tracing-subscriber = ">= 0.2"
-
-[dev-dependencies.librad-test]
-path = "../librad-test"

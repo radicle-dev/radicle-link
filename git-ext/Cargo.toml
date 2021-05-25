@@ -6,6 +6,10 @@ edition = "2018"
 license = "GPL-3.0-or-later"
 description = "Utilities and extensions to the git2 crate"
 
+[lib]
+doctest = true
+test = false
+
 [dependencies]
 multibase = "0.9"
 multihash = "0.11"
@@ -29,14 +33,3 @@ optional = true
 
 [dependencies.radicle-std-ext]
 path = "../std-ext"
-
-[dev-dependencies]
-anyhow = "1"
-assert_matches = "1"
-lazy_static = "1"
-pretty_assertions = "0"
-regex = "1"
-serde_json = "1"
-
-[dev-dependencies.librad-test]
-path = "../librad-test"

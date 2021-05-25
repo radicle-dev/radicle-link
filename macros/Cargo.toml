@@ -7,7 +7,9 @@ license = "GPL-3.0-or-later"
 description = "Radicle procedural macros"
 
 [lib]
+doctest = true
 proc-macro = true
+test = false
 
 [dependencies]
 quote = "1"

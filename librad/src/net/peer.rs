@@ -27,7 +27,7 @@ pub use super::protocol::{
 };
 pub use deadpool::managed::PoolError;
 
-mod storage;
+pub mod storage;
 pub use storage::Storage as PeerStorage;
 
 #[derive(Clone)]

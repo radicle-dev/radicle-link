@@ -110,7 +110,7 @@ where
     .await?
 }
 
-fn is_interesting<P>(remote_peer: P, remote_heads: &RemoteHeads, remotes: &Remotes<P>) -> bool
+pub fn is_interesting<P>(remote_peer: P, remote_heads: &RemoteHeads, remotes: &Remotes<P>) -> bool
 where
     P: Ord + FromStr,
 {
@@ -126,53 +126,4 @@ where
                 .and_then(|remote| remote.parse().ok())
         }));
     tracked_remote.any(|peer_id: P| tracked_local.contains(&peer_id))
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    use serde_json::json;
-
-    #[test]
-    fn interesting() {
-        let remote_peer = "lolek".to_owned();
-        let remotes: Remotes<String> = serde_json::from_value(json!({
-            "bolek": {
-                "tola": {}
-            }
-        }))
-        .unwrap();
-        let remote_heads: RemoteHeads = vec![
-            (reflike!("refs/heads/memester"), git2::Oid::zero().into()),
-            (
-                reflike!("refs/remotes/tola/heads/memestress"),
-                git2::Oid::zero().into(),
-            ),
-        ]
-        .into_iter()
-        .collect();
-
-        assert!(is_interesting(remote_peer, &remote_heads, &remotes))
-    }
-
-    #[test]
-    fn not_interesting() {
-        let remote_peer = "lolek".to_owned();
-        let remotes: Remotes<String> = serde_json::from_value(json!({
-            "tola": {}
-        }))
-        .unwrap();
-        let remote_heads: RemoteHeads = vec![
-            (reflike!("refs/heads/memester"), git2::Oid::zero().into()),
-            (
-                reflike!("refs/remotes/bolek/heads/main"),
-                git2::Oid::zero().into(),
-            ),
-        ]
-        .into_iter()
-        .collect();
-
-        assert!(!is_interesting(remote_peer, &remote_heads, &remotes))
-    }
 }

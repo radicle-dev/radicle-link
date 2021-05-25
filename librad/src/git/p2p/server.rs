@@ -278,24 +278,11 @@ where
         .await
 }
 
-fn pkt_line(msg: &str) -> String {
+pub fn pkt_line(msg: &str) -> String {
     assert!(
         msg.len() <= 65516,
         "pkt-line data must not exceed 65516 bytes"
     );
 
     format!("{:04x}{}", 4 + msg.len(), msg)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_pkt_line() {
-        assert_eq!("0006a\n", pkt_line("a\n"));
-        assert_eq!("0005a", pkt_line("a"));
-        assert_eq!("000bfoobar\n", pkt_line("foobar\n"));
-        assert_eq!("0004", pkt_line(""));
-    }
 }

@@ -177,34 +177,3 @@ impl Deref for Service {
         &self.0
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::{git::Urn, keys::SecretKey};
-
-    #[test]
-    fn roundtrip_unnonced() {
-        let hdr = Header::new(
-            GitService::UploadPackLs,
-            Urn::new(git_ext::Oid::from(git2::Oid::zero())),
-            PeerId::from(SecretKey::new()),
-            None,
-        );
-
-        assert_eq!(hdr, hdr.to_string().parse::<Header<Urn>>().unwrap())
-    }
-
-    #[test]
-    fn roundtrip_nonced() {
-        let hdr = Header::new(
-            GitService::UploadPackLs,
-            Urn::new(git_ext::Oid::from(git2::Oid::zero())),
-            PeerId::from(SecretKey::new()),
-            Some(69),
-        );
-
-        assert_eq!(hdr, hdr.to_string().parse::<Header<Urn>>().unwrap())
-    }
-}

@@ -77,32 +77,3 @@ pub struct Payload {
     #[n(2)]
     pub origin: Option<PeerId>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::{keys::SecretKey, peer::PeerId};
-    use librad_test::roundtrip::*;
-
-    lazy_static! {
-        static ref OID: git2::Oid =
-            git2::Oid::hash_object(git2::ObjectType::Commit, b"chrzbrr").unwrap();
-    }
-
-    #[test]
-    fn roundtrip_rev() {
-        cbor_roundtrip(Rev::Git(*OID));
-    }
-
-    #[test]
-    fn roundtrip_payload() {
-        let payload = Payload {
-            urn: Urn::new(git_ext::Oid::from(git2::Oid::zero())),
-            rev: Some(Rev::Git(*OID)),
-            origin: Some(PeerId::from(SecretKey::new())),
-        };
-
-        cbor_roundtrip(payload)
-    }
-}

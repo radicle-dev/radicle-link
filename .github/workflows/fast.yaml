@@ -66,6 +66,7 @@ jobs:
           ./ci/macos-gnu
           echo "/usr/local/opt/gnu-tar/libexec/gnubin" >> $GITHUB_PATH
       - run: ./ci/test-fast
+        timeout-minutes: 20
         shell: bash
 
   test-win:
@@ -86,4 +87,5 @@ jobs:
         run: rustup update nightly-2021-03-25 --no-self-update && rustup default nightly-2021-03-25
         shell: bash
       - run: ./ci/test-fast
+        timeout-minutes: 20
         shell: bash

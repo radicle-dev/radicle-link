@@ -21,9 +21,6 @@ pub mod util;
 
 mod sealed;
 
-#[cfg(test)]
-pub(crate) mod tests;
-
 pub use crate::identities::git::Urn;
 
 /// Initialise the git backend.

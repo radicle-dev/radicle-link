@@ -5,3 +5,7 @@ authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 description = "Monkey patches of std types"
+
+[lib]
+doctest = true
+test = false

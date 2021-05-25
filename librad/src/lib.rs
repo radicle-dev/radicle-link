@@ -13,7 +13,6 @@
 #![feature(btree_drain_filter)]
 #![feature(core_intrinsics)]
 #![feature(drain_filter)]
-#![feature(duration_saturating_ops)]
 #![feature(ip)]
 #![feature(never_type)]
 #![feature(try_trait)]
@@ -43,12 +42,5 @@ pub mod signer;
 // Re-exports
 pub use peer::PeerId;
 pub use radicle_macros::*;
-
-#[cfg(test)]
-#[macro_use]
-extern crate futures_await_test;
-#[cfg(test)]
-#[macro_use]
-extern crate assert_matches;
 
 pub(crate) mod executor;

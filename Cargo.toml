@@ -7,8 +7,17 @@ members = [
   "git-ext",
   "git-helpers",
   "librad",
-  "librad-test",
   "macros",
   "seed",
   "std-ext",
+  "test",
 ]
+
+[patch.crates-io.git2]
+git = "https://github.com/radicle-dev/git2-rs.git"
+rev = "5971ca18d73eed39384193899177dfb7ac2d0a05"
+
+[patch.crates-io.libgit2-sys]
+git = "https://github.com/radicle-dev/git2-rs.git"
+rev = "5971ca18d73eed39384193899177dfb7ac2d0a05"
+
