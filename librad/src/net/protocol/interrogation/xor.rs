@@ -16,7 +16,7 @@ use crate::identities::{SomeUrn, Urn};
 pub type MaxElements = U10000;
 // approx. `MaxElements * 1.23`, but not exactly for all choices of
 // `MaxElements`
-const MAX_FINGERPRINTS: u64 = 12_330;
+pub(crate) const MAX_FINGERPRINTS: u64 = 12_330;
 
 #[derive(Debug, Error)]
 #[non_exhaustive]

@@ -6,7 +6,7 @@
 use std::net::SocketAddr;
 
 use futures::{
-    io::AsyncRead,
+    io::{AsyncRead, BufReader},
     stream::{self, StreamExt as _},
 };
 use futures_codec::FramedRead;
@@ -34,7 +34,16 @@ pub(in crate::net::protocol) async fn membership<S, T>(
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     T: RemoteInfo<Addr = SocketAddr> + AsyncRead + Unpin,
 {
-    let mut recv = FramedRead::new(stream.into_stream(), codec::Membership::new());
+    // A `PeerInfo` may contain ~516 bytes worth of `SocketAddr`s (well, ipv6).
+    // A `Shuffle` may contain 8 `PeerInfo`s + 1 usize. So let's say 5KiB.
+    //
+    // FIXME: we should probably cap the `peers` list for shuffles statically
+    const BUFSIZ: usize = 5 * 1024;
+
+    let mut recv = FramedRead::new(
+        BufReader::with_capacity(BUFSIZ, stream.into_stream()),
+        codec::Membership::new(),
+    );
     let remote_id = recv.remote_peer_id();
     let remote_addr = recv.remote_addr();
 
