@@ -40,12 +40,13 @@ pub(in crate::net::protocol) async fn membership<S, T>(
     // FIXME: we should probably cap the `peers` list for shuffles statically
     const BUFSIZ: usize = 5 * 1024;
 
+    let remote_id = stream.remote_peer_id();
+    let remote_addr = stream.remote_addr();
+
     let mut recv = FramedRead::new(
         BufReader::with_capacity(BUFSIZ, stream.into_stream()),
         codec::Membership::new(),
     );
-    let remote_id = recv.remote_peer_id();
-    let remote_addr = recv.remote_addr();
 
     while let Some(x) = recv.next().await {
         match x {

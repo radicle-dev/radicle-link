@@ -37,11 +37,12 @@ pub(in crate::net::protocol) async fn gossip<S, T>(
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     T: RemotePeer + AsyncRead + Unpin,
 {
+    let remote_id = stream.remote_peer_id();
+
     let mut recv = FramedRead::new(
         BufReader::with_capacity(100, stream.into_stream()),
         codec::Gossip::new(),
     );
-    let remote_id = recv.remote_peer_id();
 
     while let Some(x) = recv.next().await {
         match x {
