@@ -11,7 +11,18 @@ use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
 use tracing::Instrument as _;
 
-use super::{broadcast, cache, config, gossip, io, membership, nonce, ProtocolStorage, TinCans};
+use super::{
+    broadcast,
+    cache,
+    config,
+    gossip,
+    graft,
+    io,
+    membership,
+    nonce,
+    ProtocolStorage,
+    TinCans,
+};
 use crate::{
     executor,
     git::{
@@ -46,7 +57,29 @@ pub(super) struct State<S> {
     pub config: StateConfig,
     pub nonces: nonce::NonceBag,
     pub caches: cache::Caches,
+    pub graftq: Option<io::graft::Queue<Pcg64Mcg, S>>,
     pub spawner: Arc<executor::Spawner>,
+}
+
+impl<S> State<S> {
+    pub fn is_graft_enabled(&self) -> bool {
+        self.graftq.is_some()
+    }
+
+    pub fn graft_trigger(&mut self, conn: quic::Connection, src: graft::Source)
+    where
+        S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    {
+        if let Some(q) = &mut self.graftq {
+            let t = graft::Trigger {
+                context: conn,
+                source: src,
+            };
+            if let Err(e) = q.trigger(t) {
+                tracing::warn!(err = ?e, "graft trigger failed")
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -61,25 +94,13 @@ where
     ) -> Option<Box<dyn GitStream>> {
         let span = tracing::info_span!("open-git-stream", remote_id = %to);
 
-        let may_conn = match self.endpoint.get_connection(*to) {
-            Some(conn) => Some(conn),
-            None => {
-                let addr_hints = addr_hints.iter().copied().collect::<Vec<_>>();
-                io::connect(&self.endpoint, *to, addr_hints)
-                    .instrument(span.clone())
-                    .await
-                    .map(|(conn, ingress)| {
-                        self.spawner
-                            .spawn(
-                                io::streams::incoming(self.clone(), ingress)
-                                    .instrument(span.clone()),
-                            )
-                            .detach();
-                        conn
-                    })
-            },
-        };
-
+        let may_conn = io::connections::get_or_connect(
+            &self,
+            *to,
+            addr_hints.iter().copied().collect::<Vec<_>>(),
+        )
+        .instrument(span.clone())
+        .await;
         match may_conn {
             None => {
                 span.in_scope(|| tracing::error!("unable to obtain connection"));

@@ -5,7 +5,10 @@
 
 use std::{iter, net::SocketAddr};
 
-use futures::stream::{self, StreamExt as _};
+use futures::{
+    pin_mut,
+    stream::{self, StreamExt as _},
+};
 
 use super::{
     control,
@@ -110,13 +113,14 @@ where
 }
 
 #[tracing::instrument(skip(state, rx))]
-pub(super) async fn ground_control<S, E>(state: State<S>, mut rx: E)
+pub(super) async fn ground_control<S, E>(mut state: State<S>, rx: E)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
-    E: futures::Stream<Item = Result<event::Downstream, RecvError>> + Unpin,
+    E: futures::Stream<Item = Result<event::Downstream, RecvError>>,
 {
-    use event::Downstream;
+    use event::Downstream::*;
 
+    pin_mut!(rx);
     while let Some(x) = rx.next().await {
         match x {
             Err(RecvError::Closed) => {
@@ -129,11 +133,10 @@ where
             },
 
             Ok(evt) => match evt {
-                Downstream::Gossip(gossip) => control::gossip(&state, gossip, None).await,
-                Downstream::Info(info) => control::info(&state, info),
-                Downstream::Interrogation(inter) => {
-                    control::interrogation(state.clone(), inter).await
-                },
+                Gossip(evt) => control::gossip(&state, evt, None).await,
+                Info(evt) => control::info(&state, evt),
+                Interrogation(evt) => control::interrogation(state.clone(), evt).await,
+                Graft(evt) => control::graft(&mut state, evt).await,
             },
         }
     }

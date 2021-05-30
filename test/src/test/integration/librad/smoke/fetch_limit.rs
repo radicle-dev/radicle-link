@@ -22,6 +22,7 @@ fn replication_does_not_exceed_limit() {
         num_peers: nonzero!(6usize),
         min_connected: 3,
         bootstrap: testnet::Bootstrap::from_env(),
+        overrides: Default::default(),
     })
     .unwrap();
     net.enter(async {

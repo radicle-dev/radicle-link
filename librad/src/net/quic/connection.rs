@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
+    fmt::{self, Debug},
     io,
     net::SocketAddr,
     pin::Pin,
@@ -210,6 +211,16 @@ impl Connection {
 
     pub fn stable_id(&self) -> usize {
         self.conn.stable_id()
+    }
+}
+
+impl Debug for Connection {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Connection")
+            .field("peer", &self.peer)
+            .field("conn", &self.id())
+            .field("track", &self.track)
+            .finish()
     }
 }
 

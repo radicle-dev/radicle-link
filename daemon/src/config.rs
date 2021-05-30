@@ -72,6 +72,7 @@ where
             network: net::Network::default(),
             replication: replication::Config::default(),
             fetch: net::protocol::config::Fetch::default(),
+            graft: None,
         },
         storage: net::peer::config::Storage::default(),
     }

@@ -35,6 +35,7 @@ fn config() -> testnet::Config {
         num_peers: nonzero!(3usize),
         min_connected: 3,
         bootstrap: testnet::Bootstrap::from_env(),
+        overrides: Default::default(),
     }
 }
 

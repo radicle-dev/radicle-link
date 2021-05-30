@@ -20,6 +20,10 @@ fn config() -> testnet::Config {
         num_peers: nonzero!(2usize),
         min_connected: 2,
         bootstrap: testnet::Bootstrap::from_env(),
+        overrides: testnet::ProtocolOverrides {
+            graft: Some(Some(Default::default())),
+            ..Default::default()
+        },
     }
 }
 

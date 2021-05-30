@@ -24,6 +24,7 @@ fn list_identities_returns_only_local_projects() {
         num_peers: nonzero!(3usize),
         min_connected: 3,
         bootstrap: testnet::Bootstrap::from_env(),
+        overrides: Default::default(),
     })
     .unwrap();
     net.enter(async {

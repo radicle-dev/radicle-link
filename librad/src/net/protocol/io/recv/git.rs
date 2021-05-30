@@ -51,10 +51,15 @@ where
                 .err_into::<Error>()
                 .and_then(|()| async {
                     if let Some(n) = nonce {
-                        // Only rere if we have a fresh nonce
-                        if !state.nonces.contains(&n) {
+                        // Only rere if grafting is enabled and the nonce is fresh
+                        if state.is_graft_enabled() && !state.nonces.contains(&n) {
                             return rere(state.clone(), repo, remote_peer, remote_addr).await;
                         }
+                        tracing::warn!(
+                            "skipping rere: {}, {}",
+                            state.is_graft_enabled(),
+                            state.nonces.contains(&n)
+                        )
                     }
 
                     Ok(())
@@ -89,7 +94,7 @@ where
 
     tracing::info!("attempting rere");
 
-    let config = graft::config::Rere {
+    let config = graft::Config {
         replication: state.config.replication,
         fetch_slot_wait_timeout: state.config.fetch.fetch_slot_wait_timeout,
     };

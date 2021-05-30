@@ -5,6 +5,7 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
+use futures::{Stream, TryFutureExt as _};
 use parking_lot::Mutex;
 pub use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast as tincan, oneshot::Receiver};
@@ -15,6 +16,7 @@ use super::{
     gossip,
     info::PeerAdvertisement,
     interrogation,
+    io,
 };
 use crate::PeerId;
 
@@ -124,6 +126,35 @@ impl TinCans {
         }
 
         rx.await.unwrap_or_default()
+    }
+
+    pub async fn graft(
+        &self,
+        peer: impl Into<(PeerId, Vec<SocketAddr>)>,
+        //) -> Result<Box<dyn Stream<Item = io::graft::Progress> + Send + Sync>, error::Graft> {
+    ) -> Result<impl Stream<Item = io::graft::Progress>, error::Graft> {
+        use event::downstream::Graft;
+
+        let (tx, rx) = replier();
+        let evt = Downstream::Graft(Graft {
+            peer: peer.into(),
+            reply: tx,
+        });
+        if let Err(tincan::error::SendError(e)) = self.downstream.send(evt) {
+            match e {
+                Downstream::Graft(Graft { reply, .. }) => {
+                    reply
+                        .lock()
+                        .take()
+                        .expect("if chan send failed, there can't be another contender")
+                        .send(Err(error::Graft::Unavailable))
+                        .ok();
+                },
+                _ => unreachable!(),
+            }
+        }
+
+        rx.err_into::<error::Graft>().await.flatten()
     }
 
     pub fn interrogate(&self, peer: impl Into<(PeerId, Vec<SocketAddr>)>) -> Interrogation {
