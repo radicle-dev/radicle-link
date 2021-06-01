@@ -3,12 +3,12 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{net::SocketAddr, panic};
+use std::net::SocketAddr;
 
 use either::Either;
 use futures::{
     future::{self, TryFutureExt as _},
-    stream::{FuturesUnordered, Stream, StreamExt as _},
+    stream::{Stream, StreamExt as _},
 };
 use indexmap::IndexSet;
 
@@ -48,45 +48,29 @@ where
     let listen_addrs = state.endpoint.listen_addrs();
     state.phone.emit(event::Endpoint::Up { listen_addrs });
 
-    let mut tasks = FuturesUnordered::new();
     let ingress = ingress.fuse();
     futures::pin_mut!(ingress);
-    loop {
-        futures::select! {
-            conn = ingress.next() => match conn {
-                Some(conn) => match conn {
-                    Ok((_, streams)) => {
-                        tasks.push(state.spawner.spawn(streams::incoming(state.clone(), streams)));
-                    },
-                    Err(err)=> match err {
-                        Connection(_) | PeerId(_) | RemoteIdUnavailable | SelfConnect => {
-                            tracing::warn!(err = %err, "ingress connections error");
-                        },
-                        Connect(_) | Endpoint(_) | Io(_) | Shutdown | Signer(_) | Task(_) => {
-                            tracing::error!(err = %err, "ingress connections error");
-                            break;
-                        },
-                    },
-                },
-                None => {
-                    break;
-                }
+    while let Some(conn) = ingress.next().await {
+        match conn {
+            Ok((_, streams)) => {
+                state
+                    .spawner
+                    .spawn(streams::incoming(state.clone(), streams))
+                    .detach();
             },
-
-            task = tasks.next() => {
-                if let Some(Err(e)) = task {
-                    drop(e.into_cancelled())
-                }
-            }
+            Err(err) => match err {
+                Connection(_) | PeerId(_) | RemoteIdUnavailable | SelfConnect => {
+                    tracing::warn!(err = %err, "ingress connections error");
+                },
+                Connect(_) | Endpoint(_) | Io(_) | Shutdown | Signer(_) | Task(_) => {
+                    tracing::error!(err = %err, "ingress connections error");
+                    break;
+                },
+            },
         }
     }
 
     tracing::debug!("ingress connections done, shutting down...");
-    while let Some(res) = tasks.next().await {
-        if let Err(e) = res {
-            drop(e.into_cancelled())
-        }
-    }
     state.endpoint.wait_idle().await;
     tracing::debug!("shut down");
 

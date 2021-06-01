@@ -294,7 +294,7 @@ impl Drop for Testnet {
         self.rt
             .take()
             .unwrap()
-            .shutdown_timeout(Duration::from_secs(1))
+            .shutdown_timeout(Duration::from_secs(5))
     }
 }
 

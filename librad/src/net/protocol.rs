@@ -247,6 +247,7 @@ impl Future for Accept {
     type Output = Result<!, quic::Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        tracing::debug!("poll accept");
         self.waker = Some(cx.waker().clone());
         match self.main.poll_unpin(cx) {
             Poll::Ready(Err(e)) => Poll::Ready(Err(e.into())),
@@ -260,6 +261,7 @@ impl Drop for Accept {
     fn drop(&mut self) {
         self.endpoint.shutdown();
         if let Some(waker) = self.waker.take() {
+            tracing::debug!("wham!");
             waker.wake()
         }
     }
