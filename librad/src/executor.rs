@@ -124,6 +124,7 @@ impl Spawner {
 
 impl Drop for Spawner {
     fn drop(&mut self) {
+        tracing::debug!("{} spawner drop, awakening the beast", self.scope);
         self.pid1.wake()
     }
 }
@@ -280,13 +281,16 @@ impl Future for Pid1 {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        tracing::debug!("pid1 awoken");
         self.waker.register(cx.waker());
         self.poll_submitted(cx);
         self.poll_running(cx);
 
         if self.submit.is_terminated() {
+            tracing::debug!("pid1 done");
             Poll::Ready(())
         } else {
+            tracing::debug!("pid1 pending");
             Poll::Pending
         }
     }

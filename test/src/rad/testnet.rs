@@ -27,7 +27,6 @@ use librad::{
         discovery::{self, Discovery as _},
         peer::{self, Peer},
         protocol,
-        quic,
         Network,
     },
     paths::Paths,
@@ -269,7 +268,6 @@ async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
 }
 
 pub struct Testnet {
-    tasks: Vec<tokio::task::JoinHandle<Result<!, quic::Error>>>,
     peers: Vec<RunningTestPeer>,
     rt: Option<tokio::runtime::Runtime>,
     _tmp: Vec<TempDir>,
@@ -293,8 +291,6 @@ impl AsRef<[RunningTestPeer]> for Testnet {
 
 impl Drop for Testnet {
     fn drop(&mut self) {
-        self.tasks.drain(..).for_each(|t| t.abort());
-        self.peers.drain(..).for_each(drop);
         self.rt
             .take()
             .unwrap()
@@ -311,7 +307,6 @@ pub fn run(config: Config) -> anyhow::Result<Testnet> {
     let bootstrapped = rt.block_on(bootstrap(config))?;
     let num_peers = bootstrapped.len();
 
-    let mut tasks = Vec::with_capacity(num_peers);
     let mut peers = Vec::with_capacity(num_peers);
     let mut tmps = Vec::with_capacity(num_peers);
     let mut events = Vec::with_capacity(num_peers);
@@ -323,18 +318,19 @@ pub fn run(config: Config) -> anyhow::Result<Testnet> {
             bound,
             disco,
         } = bound;
+
         events.push(peer.subscribe());
         peers.push(RunningTestPeer {
             peer,
             listen_addrs: bound.listen_addrs(),
         });
-        tasks.push(rt.spawn(bound.accept(disco.discover())));
         tmps.push(tmp);
+
+        rt.spawn(bound.accept(disco.discover()));
     }
     rt.block_on(wait_converged(events, min_connected));
 
     Ok(Testnet {
-        tasks,
         peers,
         rt: Some(rt),
         _tmp: tmps,
