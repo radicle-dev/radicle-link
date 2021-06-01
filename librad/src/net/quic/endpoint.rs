@@ -166,7 +166,6 @@ impl Endpoint {
         self.conntrack.disconnect_peer(peer)
     }
 
-    // TODO: provide a graceful shutdown using wait_idle with a timeout
     pub fn shutdown(&self) {
         tracing::warn!(
             connections = self.conntrack.total(),
@@ -176,6 +175,10 @@ impl Endpoint {
         self.endpoint
             .close((reason as u32).into(), reason.reason_phrase());
         self.conntrack.disconnect_all()
+    }
+
+    pub async fn wait_idle(&self) {
+        self.endpoint.wait_idle().await
     }
 }
 

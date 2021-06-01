@@ -9,7 +9,7 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     sync::Arc,
-    task::{Context, Poll},
+    task::{Context, Poll, Waker},
     time::Duration,
 };
 
@@ -230,6 +230,7 @@ where
 
     Accept {
         endpoint,
+        waker: None,
         main,
         _git_factory,
     }
@@ -237,6 +238,7 @@ where
 
 struct Accept {
     endpoint: quic::Endpoint,
+    waker: Option<Waker>,
     main: executor::JoinHandle<Result<!, quic::Error>>,
     _git_factory: Arc<Box<dyn GitStreamFactory>>,
 }
@@ -245,6 +247,7 @@ impl Future for Accept {
     type Output = Result<!, quic::Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        self.waker = Some(cx.waker().clone());
         match self.main.poll_unpin(cx) {
             Poll::Ready(Err(e)) => Poll::Ready(Err(e.into())),
             Poll::Ready(Ok(k)) => Poll::Ready(k),
@@ -256,6 +259,9 @@ impl Future for Accept {
 impl Drop for Accept {
     fn drop(&mut self) {
         self.endpoint.shutdown();
+        if let Some(waker) = self.waker.take() {
+            waker.wake()
+        }
     }
 }
 

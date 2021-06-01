@@ -80,13 +80,15 @@ where
             }
         }
     }
-    tracing::debug!("ingress connections done, draining tasks");
+
+    tracing::debug!("ingress connections done, shutting down...");
     while let Some(res) = tasks.next().await {
         if let Err(e) = res {
             drop(e.into_cancelled())
         }
     }
-    tracing::debug!("tasks drained");
+    state.endpoint.wait_idle().await;
+    tracing::debug!("shut down");
 
     Err(quic::Error::Shutdown)
 }
