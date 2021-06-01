@@ -17,7 +17,8 @@ use std::{
 
 use futures::{
     channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
-    stream::{FuturesUnordered, Stream as _},
+    stream::{FusedStream as _, FuturesUnordered, Stream as _},
+    task::AtomicWaker,
     FutureExt as _,
 };
 use thiserror::Error;
@@ -38,7 +39,8 @@ pub struct Spawner {
     scope: String,
     inner: tokio::runtime::Handle,
     detach: UnboundedSender<DetachedTask>,
-    pid1: tokio::task::JoinHandle<()>,
+
+    pid1: Arc<AtomicWaker>,
 
     spawned: Arc<AtomicUsize>,
     blocking: Arc<AtomicUsize>,
@@ -51,11 +53,13 @@ impl Spawner {
     pub fn new<S: AsRef<str>>(scope: S) -> Self {
         let rt = tokio::runtime::Handle::current();
         let (tx_submit, rx_submit) = mpsc::unbounded();
+        let waker = Arc::new(AtomicWaker::new());
 
-        let pid1 = rt.spawn(
+        rt.spawn(
             Pid1 {
                 submit: rx_submit,
                 running: FuturesUnordered::new(),
+                waker: Arc::clone(&waker),
             }
             .instrument(tracing::info_span!("pid1", scope = %scope.as_ref())),
         );
@@ -64,7 +68,7 @@ impl Spawner {
             scope: scope.as_ref().to_owned(),
             inner: rt,
             detach: tx_submit,
-            pid1,
+            pid1: waker,
             spawned: Arc::new(AtomicUsize::new(0)),
             blocking: Arc::new(AtomicUsize::new(0)),
         }
@@ -120,9 +124,7 @@ impl Spawner {
 
 impl Drop for Spawner {
     fn drop(&mut self) {
-        tracing::trace!(scope = %self.scope, "shutting down...");
-        self.pid1.abort();
-        tracing::trace!(scope = %self.scope, "shutdown complete")
+        self.pid1.wake()
     }
 }
 
@@ -252,6 +254,7 @@ impl Future for DetachedTask {
 struct Pid1 {
     submit: UnboundedReceiver<DetachedTask>,
     running: FuturesUnordered<DetachedTask>,
+    waker: Arc<AtomicWaker>,
 }
 
 impl Pid1 {
@@ -277,9 +280,14 @@ impl Future for Pid1 {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        self.waker.register(cx.waker());
         self.poll_submitted(cx);
         self.poll_running(cx);
 
-        Poll::Pending
+        if self.submit.is_terminated() {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
     }
 }
