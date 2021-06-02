@@ -6,6 +6,7 @@
 use std::{
     borrow::Borrow as _,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    fmt::{self, Debug, Display},
     iter::{self, FromIterator},
     marker::PhantomData,
     ops::Deref,
@@ -81,7 +82,7 @@ pub enum Error {
 ///
 /// Note that this type doesn't track the actual length on the type level, and
 /// so is immutable. Its main use is for validating untrusted input.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Within<N, M, T> {
     inner: T,
     _min: PhantomData<N>,
@@ -141,6 +142,30 @@ impl<N, M, T> Within<N, M, T> {
     /// Consumes the [`Within`], returning the wrapped value.
     pub fn into_inner(self) -> T {
         self.inner
+    }
+}
+
+impl<N, M, T> Debug for Within<N, M, T>
+where
+    N: Unsigned,
+    M: Unsigned,
+    T: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Within")
+            .field("inner", &self.inner)
+            .field("min", &N::USIZE)
+            .field("max", &M::USIZE)
+            .finish()
+    }
+}
+
+impl<N, M, T> Display for Within<N, M, T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.inner)
     }
 }
 
