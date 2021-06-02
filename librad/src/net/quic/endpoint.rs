@@ -166,24 +166,16 @@ impl Endpoint {
         self.conntrack.disconnect_peer(peer)
     }
 
-    // TODO: provide a graceful shutdown using wait_idle with a timeout
-    pub fn shutdown(&self) {
-        tracing::warn!(
+    pub async fn shutdown(&self) {
+        tracing::debug!(
             connections = self.conntrack.total(),
             "endpoint shutdown requested"
         );
         let reason = CloseReason::ServerShutdown;
         self.endpoint
             .close((reason as u32).into(), reason.reason_phrase());
-        self.conntrack.disconnect_all()
-    }
-}
-
-impl Drop for Endpoint {
-    fn drop(&mut self) {
-        if Arc::strong_count(&self.refcount) == 1 {
-            self.shutdown()
-        }
+        self.conntrack.disconnect_all();
+        self.endpoint.wait_idle().await;
     }
 }
 

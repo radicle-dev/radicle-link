@@ -10,11 +10,10 @@ use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs as _},
     num::NonZeroUsize,
     ops::Deref,
-    time::Duration,
 };
 
 use futures::{
-    future::{self, FutureExt as _},
+    future::{self, BoxFuture, FutureExt as _},
     stream::{StreamExt as _, TryStreamExt as _},
 };
 use tempfile::{tempdir, TempDir};
@@ -27,7 +26,6 @@ use librad::{
         discovery::{self, Discovery as _},
         peer::{self, Peer},
         protocol,
-        quic,
         Network,
     },
     paths::Paths,
@@ -269,7 +267,7 @@ async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
 }
 
 pub struct Testnet {
-    tasks: Vec<tokio::task::JoinHandle<Result<!, quic::Error>>>,
+    tasks: Vec<BoxFuture<'static, ()>>,
     peers: Vec<RunningTestPeer>,
     rt: Option<tokio::runtime::Runtime>,
     _tmp: Vec<TempDir>,
@@ -293,12 +291,12 @@ impl AsRef<[RunningTestPeer]> for Testnet {
 
 impl Drop for Testnet {
     fn drop(&mut self) {
-        self.tasks.drain(..).for_each(|t| t.abort());
+        let rt = self.rt.take().unwrap();
+        for task in self.tasks.drain(..) {
+            rt.block_on(task);
+        }
         self.peers.drain(..).for_each(drop);
-        self.rt
-            .take()
-            .unwrap()
-            .shutdown_timeout(Duration::from_secs(1))
+        drop(rt)
     }
 }
 
@@ -328,7 +326,9 @@ pub fn run(config: Config) -> anyhow::Result<Testnet> {
             peer,
             listen_addrs: bound.listen_addrs(),
         });
-        tasks.push(rt.spawn(bound.accept(disco.discover())));
+        let (shutdown, run) = bound.accept(disco.discover());
+        rt.spawn(run);
+        tasks.push(shutdown.boxed());
         tmps.push(tmp);
     }
     rt.block_on(wait_converged(events, min_connected));

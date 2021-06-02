@@ -196,10 +196,12 @@ where
                         addrs_tx
                             .send(bound.listen_addrs())
                             .expect("subroutines is gone");
-                        if let Err(e) = net::protocol::accept(bound, disco.clone().discover()).await
-                        {
+                        let (shutdown, run) =
+                            net::protocol::accept(bound, disco.clone().discover());
+                        if let Err(e) = run.await {
                             log::error!("accept error: {}", e);
                         }
+                        shutdown.await
                     },
                     Err(e) => {
                         log::error!("bound error: {}", e);

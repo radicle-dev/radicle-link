@@ -115,7 +115,8 @@ async fn main() {
         )
         .unwrap();
 
-        let protocol = tokio::spawn(bound.accept(disco.discover()));
+        let (shutdown, run) = bound.accept(disco.discover());
+        let protocol = tokio::spawn(run);
         let metrics = match opts.graphite {
             None => tokio::spawn(stdout_stats(peer)),
             Some(addr) => {
@@ -123,7 +124,9 @@ async fn main() {
                 tokio::spawn(graphite_stats(peer, addr))
             },
         };
-        match future::try_join(protocol, metrics).await {
+        let exit = future::try_join(protocol, metrics).await;
+        shutdown.await;
+        match exit {
             Err(e) => {
                 if let Ok(panicked) = e.try_into_panic() {
                     panic::resume_unwind(panicked)

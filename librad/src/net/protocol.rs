@@ -3,19 +3,12 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    fmt::Debug,
-    future::Future,
-    net::SocketAddr,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::{fmt::Debug, future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
-use futures::{channel::mpsc, future::FutureExt as _, stream::StreamExt as _};
+use futures::{channel::mpsc, stream::StreamExt as _};
 use nonempty::NonEmpty;
 use rand_pcg::Pcg64Mcg;
+use tracing::Instrument as _;
 
 use super::{
     connection::{LocalAddr, LocalPeer},
@@ -111,13 +104,27 @@ impl<S> Bound<S> {
 
     /// Start accepting connections from remote peers.
     ///
-    /// Unbinds from the socket if the returned future is dropped.
-    pub async fn accept<D>(self, disco: D) -> Result<!, quic::Error>
+    /// Returns a tuple of two futures, where:
+    ///
+    /// * The first future will gracefully terminate the endpoint when polled
+    /// * The second future drives the network stack
+    ///
+    /// The second future is typically scheduled as a task onto the async
+    /// runtime (`spawn`), while the first one should be kept around and
+    /// polled when (but not before!) either the accept loop should be
+    /// terminated early, or the second future returned an error.
+    pub fn accept<D>(
+        self,
+        disco: D,
+    ) -> (
+        impl Future<Output = ()>,
+        impl Future<Output = Result<!, quic::Error>>,
+    )
     where
         S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
         D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
     {
-        accept(self, disco).await
+        accept(self, disco)
     }
 }
 
@@ -199,7 +206,10 @@ pub fn accept<Store, Disco>(
         periodic,
     }: Bound<Store>,
     disco: Disco,
-) -> impl Future<Output = Result<!, quic::Error>>
+) -> (
+    impl Future<Output = ()>,
+    impl Future<Output = Result<!, quic::Error>>,
+)
 where
     Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     Disco: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
@@ -208,55 +218,36 @@ where
     git::p2p::transport::register()
         .register_stream_factory(state.local_id, Arc::downgrade(&_git_factory));
 
-    let spawner = state.spawner.clone();
-    {
-        spawner.spawn(accept::disco(state.clone(), disco)).detach();
-        spawner
-            .spawn(accept::periodic(state.clone(), periodic))
-            .detach();
-        spawner
-            .spawn(accept::ground_control(
-                state.clone(),
-                async_stream::stream! {
-                    let mut r = phone.downstream.subscribe();
-                    loop { yield r.recv().await; }
-                }
-                .boxed(),
-            ))
-            .detach();
-    }
     let endpoint = state.endpoint.clone();
-    let main = spawner.spawn(io::connections::incoming(state, incoming));
+    let spawner = state.spawner.clone();
 
-    Accept {
-        endpoint,
-        main,
-        _git_factory,
+    let tasks = [
+        spawner.spawn(accept::disco(state.clone(), disco)),
+        spawner.spawn(accept::periodic(state.clone(), periodic)),
+        spawner.spawn(accept::ground_control(
+            state.clone(),
+            async_stream::stream! {
+                let mut r = phone.downstream.subscribe();
+                loop { yield r.recv().await; }
+            }
+            .boxed(),
+        )),
+    ];
+    let run = async move {
+        let res = io::connections::incoming(state, incoming).await;
+        drop(_git_factory);
+        res
     }
-}
-
-struct Accept {
-    endpoint: quic::Endpoint,
-    main: executor::JoinHandle<Result<!, quic::Error>>,
-    _git_factory: Arc<Box<dyn GitStreamFactory>>,
-}
-
-impl Future for Accept {
-    type Output = Result<!, quic::Error>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        match self.main.poll_unpin(cx) {
-            Poll::Ready(Err(e)) => Poll::Ready(Err(e.into())),
-            Poll::Ready(Ok(k)) => Poll::Ready(k),
-            Poll::Pending => Poll::Pending,
-        }
+    .in_current_span();
+    let sht = async move {
+        tracing::info!("shutting down...");
+        drop(tasks);
+        endpoint.shutdown().await;
+        tracing::info!("shutdown complete");
     }
-}
+    .in_current_span();
 
-impl Drop for Accept {
-    fn drop(&mut self) {
-        self.endpoint.shutdown();
-    }
+    (sht, run)
 }
 
 pub trait ProtocolStorage<A>: broadcast::LocalStorage<A> + storage::Pooled + Send + Sync {}

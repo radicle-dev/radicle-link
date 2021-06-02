@@ -199,9 +199,11 @@ impl Node {
                 loop {
                     match peer.bind().await {
                         Ok(bound) => {
-                            if let Err(e) = bound.accept(disco.clone().discover()).await {
+                            let (shutdown, run) = bound.accept(disco.clone().discover());
+                            if let Err(e) = run.await {
                                 tracing::error!(err = ?e, "Accept error")
                             }
+                            shutdown.await
                         },
                         Err(e) => {
                             tracing::error!(err = ?e, "Bind error");
