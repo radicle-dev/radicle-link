@@ -56,7 +56,7 @@ where
     },
 }
 
-#[tracing::instrument(skip(membership, storage, info), err)]
+#[tracing::instrument(skip(membership, storage, info))]
 pub(super) async fn apply<M, S, F, A, P>(
     membership: &M,
     storage: &S,

@@ -5,7 +5,7 @@
 
 use librad::git_ext::reference::RefLike;
 
-#[tracing::instrument(skip(repo), err)]
+#[tracing::instrument(skip(repo))]
 pub fn create_commit(
     repo: &git2::Repository,
     on_branch: RefLike,

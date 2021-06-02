@@ -121,7 +121,7 @@ impl<Url> Remote<Url> {
     /// Note that this means that _other_ configuration keys are left
     /// untouched, if present.
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(skip(self, repo), fields(name = self.name.as_str()), err)]
+    #[tracing::instrument(skip(self, repo), fields(name = self.name.as_str()))]
     pub fn save(&mut self, repo: &git2::Repository) -> Result<(), git2::Error>
     where
         Url: ToString,
@@ -160,7 +160,7 @@ impl<Url> Remote<Url> {
 
     /// Find a persisted remote by name.
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(skip(repo), err)]
+    #[tracing::instrument(skip(repo))]
     pub fn find(repo: &git2::Repository, name: RefLike) -> Result<Option<Self>, FindError>
     where
         Url: FromStr,
@@ -234,7 +234,7 @@ pub enum LocalFetchspec {
 
 impl Remote<LocalUrl> {
     /// Get the remote repository's reference advertisement list.
-    #[tracing::instrument(skip(self, repo, open_storage), err)]
+    #[tracing::instrument(skip(self, repo, open_storage))]
     pub fn remote_heads<F>(
         &mut self,
         open_storage: F,
@@ -265,7 +265,7 @@ impl Remote<LocalUrl> {
     }
 
     /// Push the provided [`LocalPushspec`].
-    #[tracing::instrument(skip(self, repo, open_storage), err)]
+    #[tracing::instrument(skip(self, repo, open_storage))]
     pub fn push<F>(
         &mut self,
         open_storage: F,
@@ -367,7 +367,7 @@ impl Remote<LocalUrl> {
         })
     }
 
-    #[tracing::instrument(skip(self, repo, open_storage), err)]
+    #[tracing::instrument(skip(self, repo, open_storage))]
     pub fn fetch<F>(
         &mut self,
         open_storage: F,

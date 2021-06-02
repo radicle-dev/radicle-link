@@ -69,7 +69,7 @@ pub mod config {
 /// recursively. Using this function thus requires to inspect the git header for
 /// the presence of a nonce (or else skip the rere), and to keep track of recent
 /// nonces in case of nonce re-use.
-#[tracing::instrument(level = "debug", skip(spawner, storage, config, addr_hints), err)]
+#[tracing::instrument(level = "debug", skip(spawner, storage, config, addr_hints))]
 pub async fn rere<S, Addrs>(
     spawner: &executor::Spawner,
     storage: &S,

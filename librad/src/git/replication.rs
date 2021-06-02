@@ -168,7 +168,7 @@ enum ModeInternal {
 /// set, which is enforced by the
 /// [`crate::git::local::transport::LocalTransport`].
 #[allow(clippy::unit_arg)]
-#[tracing::instrument(skip(storage, fetcher, whoami), err)]
+#[tracing::instrument(skip(storage, fetcher, whoami))]
 pub fn replicate<'a, F>(
     storage: &'a Storage,
     mut fetcher: F,
@@ -337,7 +337,7 @@ where
 /// If we are fetching updates then we only fetch the relevant remotes that we
 /// already know about.
 #[allow(clippy::unit_arg)]
-#[tracing::instrument(skip(storage, fetcher, urn), fields(urn = %urn), err)]
+#[tracing::instrument(skip(storage, fetcher, urn), fields(urn = %urn))]
 fn determine_mode<F>(
     storage: &Storage,
     fetcher: &mut F,
@@ -416,7 +416,7 @@ fn unsafe_into_urn(reference: Reference<git_ext::RefLike>) -> Urn {
 ///
 /// No-op if the ref already exists. Returns the [`ext::Oid`] the ref points to
 /// after the operation.
-#[tracing::instrument(level = "trace", skip(storage, urn), fields(urn = %urn), err)]
+#[tracing::instrument(level = "trace", skip(storage, urn), fields(urn = %urn))]
 fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<ext::Oid, Error> {
     let id_ref = identities::common::IdRef::from(urn);
     id_ref
@@ -510,7 +510,7 @@ mod person {
     ///   * Ensuring we have a top-level `rad/id` that points to the latest
     ///     version
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage), err)]
+    #[tracing::instrument(level = "trace", skip(storage))]
     pub fn ensure_setup(
         storage: &Storage,
         rad_id: &Urn,
@@ -547,7 +547,7 @@ mod person {
     /// Adopt the `rad/id` that has the most up-to-date commit from the set of
     /// `Person` delegates.
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage), err)]
+    #[tracing::instrument(level = "trace", skip(storage))]
     pub fn adopt_latest(
         storage: &Storage,
         urn: &Urn,
@@ -620,7 +620,7 @@ mod project {
     ///   * Ensuring we have a top-level `rad/id` that points to the latest
     ///     version
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage, fetcher), err)]
+    #[tracing::instrument(level = "trace", skip(storage, fetcher))]
     pub fn ensure_setup<F>(
         storage: &Storage,
         fetcher: &mut F,
@@ -714,7 +714,7 @@ mod project {
     /// For each delegate in `remotes/<remote_peer>/rad/ids/*` get the view for
     /// that delegate that _should_ be local the `storage` after a fetch.
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage), err)]
+    #[tracing::instrument(level = "trace", skip(storage))]
     pub fn delegate_views(
         storage: &Storage,
         proj: Project,
@@ -766,7 +766,7 @@ mod project {
 
     /// Persist a delegate identity in our storage.
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage), err)]
+    #[tracing::instrument(level = "trace", skip(storage))]
     pub fn adopt_delegate_person(
         storage: &Storage,
         peer: PeerId,
@@ -796,7 +796,7 @@ mod project {
 
     /// Track all direct delegations of a `Project`.
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage), err)]
+    #[tracing::instrument(level = "trace", skip(storage))]
     fn track_direct(storage: &Storage, proj: &VerifiedProject) -> Result<(), Error> {
         let local_peer_id = storage.peer_id();
 
@@ -815,7 +815,7 @@ mod project {
     /// Adopt the `rad/id` that has the most up-to-date commit from the set of
     /// `Project` delegates.
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(level = "trace", skip(storage), err)]
+    #[tracing::instrument(level = "trace", skip(storage))]
     pub fn adopt_latest(
         storage: &Storage,
         urn: &Urn,

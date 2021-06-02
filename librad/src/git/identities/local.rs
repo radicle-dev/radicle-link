@@ -113,7 +113,7 @@ impl LocalIdentity {
 /// If the identity could not be found, `None` is returned. If the identity
 /// passes verification, is signed by the [`Signer`] of `storage`, and delegates
 /// to the key of the [`Signer`], the [`LocalIdentity`] is returned in a `Some`.
-#[tracing::instrument(level = "debug", skip(storage), err)]
+#[tracing::instrument(level = "debug", skip(storage))]
 pub fn load(storage: &Storage, urn: Urn) -> Result<Option<LocalIdentity>, Error> {
     let urn = urn.with_path(reflike!("refs/rad/self"));
     tracing::debug!("loading local id from {}", urn);
@@ -130,7 +130,7 @@ pub fn load(storage: &Storage, urn: Urn) -> Result<Option<LocalIdentity>, Error>
 ///
 /// If no default identity was configured, `None` is returned. Otherwise, the
 /// result is the result of calling [`load`] with the pre-configured [`Urn`].
-#[tracing::instrument(level = "debug", skip(storage), err)]
+#[tracing::instrument(level = "debug", skip(storage))]
 pub fn default(storage: &Storage) -> Result<Option<LocalIdentity>, Error> {
     match storage.config()?.user()? {
         Some(urn) => load(storage, urn),

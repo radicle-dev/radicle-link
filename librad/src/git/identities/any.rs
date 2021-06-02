@@ -26,7 +26,7 @@ pub use identities::git::Urn;
 /// Note that the [`Urn::path`] is honoured, and the identity is read from the
 /// tip of the branch it resolves to. If that branch is not found, `None` is
 /// returned.
-#[tracing::instrument(level = "debug", skip(storage), err)]
+#[tracing::instrument(level = "debug", skip(storage))]
 pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<SomeIdentity>, Error> {
     let branch = Reference::try_from(urn)?;
     tracing::trace!(
@@ -47,7 +47,7 @@ pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<SomeIdentity>, Error> 
 }
 
 /// List all identities found in `storage`.
-#[tracing::instrument(level = "debug", skip(storage), err)]
+#[tracing::instrument(level = "debug", skip(storage))]
 pub fn list<'a>(
     storage: &'a Storage,
 ) -> Result<impl Iterator<Item = Result<SomeIdentity, Error>> + 'a, Error> {

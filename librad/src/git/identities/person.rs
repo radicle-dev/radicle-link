@@ -35,7 +35,7 @@ pub use identities::{
 /// Read a [`Person`] from the tip of the ref [`Urn::path`] points to.
 ///
 /// If the ref is not found, `None` is returned.
-#[tracing::instrument(level = "trace", skip(storage), err)]
+#[tracing::instrument(level = "trace", skip(storage))]
 pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<Person>, Error> {
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
@@ -59,7 +59,7 @@ pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<Person>, Error> {
 /// not be the same as the tip of the ref [`Urn::path`] points to. That is, this
 /// function cannot be used to assert that the state after an [`update`] is
 /// valid.
-#[tracing::instrument(level = "debug", skip(storage), err)]
+#[tracing::instrument(level = "debug", skip(storage))]
 pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedPerson>, Error> {
     let branch = Reference::try_from(urn)?;
     tracing::debug!("verifying {} from {}", urn, branch);
@@ -79,7 +79,7 @@ pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedPerson>, Er
 }
 
 /// Get the root [`Urn`] for the given `payload` and set of `delegations`.
-#[tracing::instrument(level = "debug", skip(storage), err)]
+#[tracing::instrument(level = "debug", skip(storage))]
 pub fn urn<P>(storage: &Storage, payload: P, delegations: delegation::Direct) -> Result<Urn, Error>
 where
     P: Into<PersonPayload> + Debug,
@@ -94,7 +94,7 @@ where
 /// key, such that the newly created [`Person`] is also a valid
 /// [`LocalIdentity`] -- it is, in fact, its own [`LocalIdentity`]. This can be
 /// changed via [`update`].
-#[tracing::instrument(level = "debug", skip(storage), err)]
+#[tracing::instrument(level = "debug", skip(storage))]
 pub fn create<P>(
     storage: &Storage,
     payload: P,
@@ -120,7 +120,7 @@ where
 }
 
 /// Update the [`Person`] at `urn`.
-#[tracing::instrument(level = "debug", skip(storage), err)]
+#[tracing::instrument(level = "debug", skip(storage))]
 pub fn update<L, P, D>(
     storage: &Storage,
     urn: &Urn,
@@ -147,7 +147,7 @@ where
 }
 
 /// Merge and sign the [`Person`] state as seen by `from`.
-#[tracing::instrument(level = "debug", skip(storage), err)]
+#[tracing::instrument(level = "debug", skip(storage))]
 pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Person, Error> {
     let ours = get(storage, urn)?.ok_or_else(|| Error::NotFound(urn.clone()))?;
     let theirs = {

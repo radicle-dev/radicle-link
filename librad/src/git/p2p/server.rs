@@ -97,7 +97,7 @@ where
     W: AsyncWrite + Unpin,
 {
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(skip(self), err)]
+    #[tracing::instrument(skip(self))]
     pub async fn run(mut self) -> io::Result<()> {
         let Header { service, repo, .. } = self.header;
         match *service {
@@ -130,7 +130,7 @@ enum UploadPack {
 }
 
 impl UploadPack {
-    #[tracing::instrument(level = "debug", err)]
+    #[tracing::instrument(level = "debug")]
     fn advertise<N>(repo_path: &Path, namespace: N) -> io::Result<Self>
     where
         N: AsNamespace + Clone + Debug,
@@ -181,7 +181,7 @@ impl UploadPack {
         .map(Self::AdvertiseRefs)
     }
 
-    #[tracing::instrument(level = "debug", err)]
+    #[tracing::instrument(level = "debug")]
     fn upload_pack(repo_path: &Path) -> io::Result<Self> {
         let mut git = Command::new("git");
         git.arg("-c").arg("uploadpack.allowanysha1inwant=true");
@@ -204,7 +204,7 @@ impl UploadPack {
     }
 
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(skip(self, recv, send), err)]
+    #[tracing::instrument(skip(self, recv, send))]
     async fn run<R, W>(self, mut recv: R, mut send: W) -> io::Result<()>
     where
         R: AsyncRead + Unpin,
