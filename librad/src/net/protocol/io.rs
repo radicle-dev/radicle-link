@@ -6,13 +6,11 @@
 use std::{iter, net::SocketAddr};
 
 use data::BoundedVec;
-use futures::stream::{self, StreamExt as _};
 
 use super::{
     gossip,
     info::{PartialPeerInfo, PeerAdvertisement},
     membership,
-    tick,
     ProtocolStorage,
     State,
 };
@@ -62,17 +60,14 @@ where
                         seen_addrs: BoundedVec::singleton(conn.remote_addr()),
                     });
 
-                trans.into_iter().for_each(|evt| state.phone.emit(evt));
-                for tick in ticks {
-                    stream::iter(membership::collect_tocks(
+                state.emit(trans);
+                state
+                    .tick(membership::tocks(
                         &state.membership,
                         peer_advertisement(&state.endpoint),
-                        tick,
+                        ticks,
                     ))
-                    .for_each(|tock| tick::tock(state.clone(), tock))
-                    .await
-                }
-
+                    .await;
                 state
                     .spawner
                     .spawn(streams::incoming(state.clone(), ingress))

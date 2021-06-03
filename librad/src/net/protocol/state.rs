@@ -11,7 +11,19 @@ use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
 use tracing::Instrument as _;
 
-use super::{broadcast, cache, config, gossip, io, membership, nonce, ProtocolStorage, TinCans};
+use super::{
+    broadcast,
+    cache,
+    config,
+    event,
+    gossip,
+    io,
+    membership,
+    nonce,
+    tick,
+    ProtocolStorage,
+    TinCans,
+};
 use crate::{
     executor,
     git::{
@@ -48,6 +60,32 @@ pub(super) struct State<S> {
     pub caches: cache::Caches,
     pub spawner: Arc<executor::Spawner>,
     pub limits: RateLimits,
+}
+
+impl<S> State<S> {
+    pub fn emit<I, E>(&self, evs: I)
+    where
+        I: IntoIterator<Item = E>,
+        E: Into<event::Upstream>,
+    {
+        for evt in evs {
+            self.phone.emit(evt)
+        }
+    }
+}
+
+impl<S> State<S>
+where
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+{
+    pub async fn tick<I>(&self, tocks: I)
+    where
+        I: IntoIterator<Item = tick::Tock<SocketAddr, gossip::Payload>>,
+    {
+        for tock in tocks {
+            tick::tock(self.clone(), tock).await
+        }
+    }
 }
 
 #[async_trait]
