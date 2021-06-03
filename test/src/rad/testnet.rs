@@ -120,6 +120,7 @@ where
         network: Network::Custom(b"localtestnet".as_ref().into()),
         replication: Default::default(),
         fetch: Default::default(),
+        rate_limits: Default::default(),
     };
     let disco = seeds.into_iter().collect::<discovery::Static>();
     let peer = Peer::new(peer::Config {

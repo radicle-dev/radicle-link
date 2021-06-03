@@ -104,6 +104,7 @@ async fn main() {
                 network: opts.network,
                 replication: Default::default(),
                 fetch: Default::default(),
+                rate_limits: Default::default(),
             },
             storage: Default::default(),
         });
