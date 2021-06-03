@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 
 use futures::{
     io::{AsyncRead, BufReader},
-    stream::{self, StreamExt as _},
+    stream::StreamExt as _,
 };
 use futures_codec::FramedRead;
 
@@ -59,20 +59,19 @@ pub(in crate::net::protocol) async fn membership<S, T>(
             Ok(msg) => {
                 if state.limits.membership.check_key(&remote_id).is_err() {
                     tracing::warn!(remote_id = %remote_id, "rate limit breached, disconnecting peer");
-                    stream::iter(
-                        membership::collect_tocks(
-                            &state.membership,
-                            peer_advertisement(&state.endpoint),
-                            membership::Tick::Reply {
-                                to: remote_id,
-                                message: membership::Message::Disconnect,
-                            },
-                        )
-                        .into_iter()
-                        .chain(Some(tick::Tock::Disconnect { peer: remote_id })),
+
+                    let disconnect = membership::tocks(
+                        &state.membership,
+                        peer_advertisement(&state.endpoint),
+                        Some(membership::Tick::Reply {
+                            to: remote_id,
+                            message: membership::Message::Disconnect,
+                        }),
                     )
-                    .for_each(|tock| tick::tock(state.clone(), tock))
-                    .await;
+                    .into_iter()
+                    // membership flooding is not ok, disconnect hard
+                    .chain(Some(tick::Tock::Disconnect { peer: remote_id }));
+                    state.tick(disconnect).await;
                     self::connection_lost(state, remote_id).await;
 
                     break;
@@ -91,10 +90,8 @@ pub(in crate::net::protocol) async fn membership<S, T>(
                     },
 
                     Ok((trans, tocks)) => {
-                        trans.into_iter().for_each(|evt| state.phone.emit(evt));
-                        stream::iter(tocks)
-                            .for_each(|tock| tick::tock(state.clone(), tock))
-                            .await
+                        state.emit(trans);
+                        state.tick(tocks).await
                     },
                 }
             },
@@ -107,14 +104,12 @@ where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     let membership::TnT { trans, ticks } = state.membership.connection_lost(remote_id);
-    trans.into_iter().for_each(|evt| state.phone.emit(evt));
-    for tick in ticks {
-        stream::iter(membership::collect_tocks(
+    state.emit(trans);
+    state
+        .tick(membership::tocks(
             &state.membership,
             peer_advertisement(&state.endpoint),
-            tick,
+            ticks,
         ))
-        .for_each(|tock| tick::tock(state.clone(), tock))
         .await
-    }
 }
