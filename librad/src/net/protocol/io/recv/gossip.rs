@@ -64,17 +64,11 @@ pub(in crate::net::protocol) async fn gossip<S, T>(
 
                 let peer_info = || PeerInfo {
                     peer_id: state.local_id,
-                    advertised_info: peer_advertisement(&state.endpoint),
+                    advertised_info: peer_advertisement(&state.endpoint)(),
                     seen_addrs: iter::empty().into(),
                 };
-                match broadcast::apply(
-                    &state.membership,
-                    &state.storage,
-                    &peer_info,
-                    remote_id,
-                    msg,
-                )
-                .await
+                match broadcast::apply(&state.membership, &state.storage, peer_info, remote_id, msg)
+                    .await
                 {
                     // Partial view states diverge apparently, and the stream is
                     // (assumed to be) unidirectional. Thus, send a DISCONNECT
@@ -108,11 +102,9 @@ fn membership_tocks<'a, S, I>(
 where
     I: Iterator<Item = membership::Tick<SocketAddr>> + 'a,
 {
-    let info = {
-        let endpoint = state.endpoint.clone();
-        move || peer_advertisement(&endpoint)
-    };
-    ticks.flat_map(move |tick| membership::collect_tocks(&state.membership, &info, tick))
+    ticks.flat_map(move |tick| {
+        membership::collect_tocks(&state.membership, peer_advertisement(&state.endpoint), tick)
+    })
 }
 
 async fn eval_tocks<S, I>(state: State<S>, tocks: I)
