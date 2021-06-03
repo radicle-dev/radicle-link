@@ -33,7 +33,7 @@ pub use tick::Tick;
 #[allow(clippy::type_complexity)] // get off my lawn, glibbi!
 pub(super) fn apply<R, A, F, P>(
     hpv: &Hpv<R, A>,
-    info: &F,
+    info: F,
     remote_id: PeerId,
     remote_addr: A,
     message: Message<A>,
@@ -49,13 +49,13 @@ where
                 trans,
                 ticks
                     .into_iter()
-                    .flat_map(|tick| collect_tocks(hpv, info, tick))
+                    .flat_map(|tick| collect_tocks(hpv, &info, tick))
                     .collect(),
             )
         })
 }
 
-pub(super) fn collect_tocks<R, A, F, P>(hpv: &Hpv<R, A>, info: &F, tick: Tick<A>) -> Vec<Tock<A, P>>
+pub(super) fn collect_tocks<R, A, F, P>(hpv: &Hpv<R, A>, info: F, tick: Tick<A>) -> Vec<Tock<A, P>>
 where
     R: rand::Rng + Clone,
     A: Clone + Debug + PartialEq,

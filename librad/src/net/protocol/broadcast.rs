@@ -60,7 +60,7 @@ where
 pub(super) async fn apply<M, S, F, A, P>(
     membership: &M,
     storage: &S,
-    info: &F,
+    info: F,
     remote_id: PeerId,
     message: Message<A, P>,
 ) -> Result<(Option<event::Gossip<A, P>>, Vec<tick::Tock<A, P>>), Error<A, P>>
