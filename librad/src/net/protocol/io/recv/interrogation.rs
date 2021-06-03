@@ -31,7 +31,6 @@ use crate::{
     net::{
         connection::Duplex,
         protocol::{
-            info::PeerAdvertisement,
             interrogation::{self, xor, Request, Response, Xor},
             io::{self, codec},
             State,
@@ -152,7 +151,9 @@ fn handle_request(
     use either::Either::*;
 
     match req {
-        Request::GetAdvertisement => Left(Response::Advertisement(peer_advertisement(endpoint))),
+        Request::GetAdvertisement => {
+            Left(Response::Advertisement(io::peer_advertisement(endpoint)()))
+        },
         Request::EchoAddr => Left(Response::YourAddr(remote_addr)),
         Request::GetUrns => {
             let urns = urns(cache, storage)?;
@@ -160,10 +161,6 @@ fn handle_request(
         },
     }
     .right_or_else(|resp| encode(&resp))
-}
-
-fn peer_advertisement(endpoint: &quic::Endpoint) -> PeerAdvertisement<SocketAddr> {
-    io::peer_advertisement(endpoint)
 }
 
 fn urns<'a>(cache: &'a Cache, storage: &Storage) -> Result<MappedRwLockReadGuard<'a, Xor>, Error> {
