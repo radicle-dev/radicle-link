@@ -42,12 +42,15 @@ where
             match e {
                 error::Tock::Reliable(error::ReliableSend { cont, source }) => {
                     tracing::warn!(err = ?source, "reliable send error");
-                    let info = || io::peer_advertisement(&state.endpoint);
                     for tick in cont {
                         mcfly.extend(
-                            membership::collect_tocks(&state.membership, &info, tick)
-                                .into_iter()
-                                .map(|tock| one_tock(state.clone(), tock)),
+                            membership::tocks(
+                                &state.membership,
+                                io::peer_advertisement(&state.endpoint),
+                                Some(tick),
+                            )
+                            .into_iter()
+                            .map(|tock| one_tock(state.clone(), tock)),
                         )
                     }
                 },
@@ -74,7 +77,7 @@ where
                 None => {
                     let membership::TnT { trans, ticks: cont } =
                         state.membership.connection_lost(to);
-                    trans.into_iter().for_each(|evt| state.phone.emit(evt));
+                    state.emit(trans);
 
                     Err(error::Tock::Reliable(error::ReliableSend {
                         cont,

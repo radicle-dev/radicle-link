@@ -21,7 +21,7 @@ pub(super) async fn gossip<S>(
 
     let origin = PeerInfo {
         peer_id: state.local_id,
-        advertised_info: io::peer_advertisement(&state.endpoint),
+        advertised_info: io::peer_advertisement(&state.endpoint)(),
         seen_addrs: iter::empty().into(),
     };
     // TODO: answer `Want`s from a provider cache

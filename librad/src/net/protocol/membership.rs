@@ -33,7 +33,7 @@ pub use tick::Tick;
 #[allow(clippy::type_complexity)] // get off my lawn, glibbi!
 pub(super) fn apply<R, A, F, P>(
     hpv: &Hpv<R, A>,
-    info: &F,
+    info: F,
     remote_id: PeerId,
     remote_addr: A,
     message: Message<A>,
@@ -44,18 +44,27 @@ where
     F: Fn() -> PeerAdvertisement<A>,
 {
     hpv.apply(remote_id, remote_addr, message)
-        .map(|TnT { trans, ticks }| {
-            (
-                trans,
-                ticks
-                    .into_iter()
-                    .flat_map(|tick| collect_tocks(hpv, info, tick))
-                    .collect(),
-            )
-        })
+        .map(|TnT { trans, ticks }| (trans, tocks(hpv, info, ticks).collect()))
 }
 
-pub(super) fn collect_tocks<R, A, F, P>(hpv: &Hpv<R, A>, info: &F, tick: Tick<A>) -> Vec<Tock<A, P>>
+pub(super) fn tocks<'a, R, A, F, P, I>(
+    hpv: &'a Hpv<R, A>,
+    info: F,
+    ticks: I,
+) -> impl Iterator<Item = Tock<A, P>> + 'a
+where
+    R: rand::Rng + Clone,
+    A: Clone + Debug + PartialEq,
+    F: Fn() -> PeerAdvertisement<A> + 'a,
+    P: 'a,
+    I: IntoIterator<Item = Tick<A>> + 'a,
+{
+    ticks
+        .into_iter()
+        .flat_map(move |tick| into_tocks(hpv, &info, tick))
+}
+
+fn into_tocks<R, A, F, P>(hpv: &Hpv<R, A>, info: F, tick: Tick<A>) -> Vec<Tock<A, P>>
 where
     R: rand::Rng + Clone,
     A: Clone + Debug + PartialEq,

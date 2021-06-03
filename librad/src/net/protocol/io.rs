@@ -6,13 +6,11 @@
 use std::{iter, net::SocketAddr};
 
 use data::BoundedVec;
-use futures::stream::{self, StreamExt as _};
 
 use super::{
     gossip,
     info::{PartialPeerInfo, PeerAdvertisement},
     membership,
-    tick,
     ProtocolStorage,
     State,
 };
@@ -46,14 +44,15 @@ where
     if let Some((conn, ingress)) = connect(&state.endpoint, peer, addrs).await {
         let rpc_sent = send_rpc::<_, ()>(
             &conn,
-            state.membership.hello(peer_advertisement(&state.endpoint)),
+            state
+                .membership
+                .hello(peer_advertisement(&state.endpoint)()),
         )
         .await;
 
         match rpc_sent {
             Err(e) => tracing::warn!(err = ?e, "failed to send membership hello"),
             Ok(()) => {
-                let info = || peer_advertisement(&state.endpoint);
                 let membership::TnT { trans, ticks } =
                     state.membership.connection_established(PartialPeerInfo {
                         peer_id: peer,
@@ -61,13 +60,14 @@ where
                         seen_addrs: BoundedVec::singleton(conn.remote_addr()),
                     });
 
-                trans.into_iter().for_each(|evt| state.phone.emit(evt));
-                for tick in ticks {
-                    stream::iter(membership::collect_tocks(&state.membership, &info, tick))
-                        .for_each(|tock| tick::tock(state.clone(), tock))
-                        .await
-                }
-
+                state.emit(trans);
+                state
+                    .tick(membership::tocks(
+                        &state.membership,
+                        peer_advertisement(&state.endpoint),
+                        ticks,
+                    ))
+                    .await;
                 state
                     .spawner
                     .spawn(streams::incoming(state.clone(), ingress))
@@ -77,11 +77,15 @@ where
     }
 }
 
-pub(super) fn peer_advertisement(endpoint: &quic::Endpoint) -> PeerAdvertisement<SocketAddr> {
-    let mut listen_addrs = BoundedVec::from(iter::empty());
-    listen_addrs.extend_fill(endpoint.listen_addrs());
-    PeerAdvertisement {
-        listen_addrs,
-        capabilities: Default::default(),
+pub(super) fn peer_advertisement(
+    endpoint: &quic::Endpoint,
+) -> impl Fn() -> PeerAdvertisement<SocketAddr> + '_ {
+    move || {
+        let mut listen_addrs = BoundedVec::from(iter::empty());
+        listen_addrs.extend_fill(endpoint.listen_addrs());
+        PeerAdvertisement {
+            listen_addrs,
+            capabilities: Default::default(),
+        }
     }
 }

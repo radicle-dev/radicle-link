@@ -6,12 +6,24 @@
 use std::{net::SocketAddr, ops::Deref, sync::Arc};
 
 use futures::future::TryFutureExt as _;
-use governor::{Quota, RateLimiter};
+use governor::RateLimiter;
 use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
 use tracing::Instrument as _;
 
-use super::{broadcast, cache, config, gossip, io, membership, nonce, ProtocolStorage, TinCans};
+use super::{
+    broadcast,
+    cache,
+    config,
+    event,
+    gossip,
+    io,
+    membership,
+    nonce,
+    tick,
+    ProtocolStorage,
+    TinCans,
+};
 use crate::{
     executor,
     git::{
@@ -47,6 +59,33 @@ pub(super) struct State<S> {
     pub nonces: nonce::NonceBag,
     pub caches: cache::Caches,
     pub spawner: Arc<executor::Spawner>,
+    pub limits: RateLimits,
+}
+
+impl<S> State<S> {
+    pub fn emit<I, E>(&self, evs: I)
+    where
+        I: IntoIterator<Item = E>,
+        E: Into<event::Upstream>,
+    {
+        for evt in evs {
+            self.phone.emit(evt)
+        }
+    }
+}
+
+impl<S> State<S>
+where
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+{
+    pub async fn tick<I>(&self, tocks: I)
+    where
+        I: IntoIterator<Item = tick::Tock<SocketAddr, gossip::Payload>>,
+    {
+        for tock in tocks {
+            tick::tock(self.clone(), tock).await
+        }
+    }
 }
 
 #[async_trait]
@@ -105,26 +144,67 @@ where
     }
 }
 
-type Limiter = governor::RateLimiter<
+//
+// Rate Limiting
+//
+
+/// Limits retransmission requests when the local storage returns errors
+type StorageErrorLimiter = governor::RateLimiter<
     governor::state::direct::NotKeyed,
     governor::state::InMemoryState,
     governor::clock::DefaultClock,
 >;
 
+type PeerKeyedLimiter = governor::RateLimiter<
+    PeerId,
+    governor::state::keyed::DashMapStateStore<PeerId>,
+    governor::clock::DefaultClock,
+>;
+
+/// Limits gossip messages received from a connected peer
+type GossipLimiter = PeerKeyedLimiter;
+
+/// Limits membership messages received from a connected peer
+type MembershipLimiter = PeerKeyedLimiter;
+
+#[derive(Clone)]
+pub(super) struct RateLimits {
+    pub gossip: Arc<GossipLimiter>,
+    pub membership: Arc<MembershipLimiter>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Quota {
+    pub gossip: governor::Quota,
+    pub membership: governor::Quota,
+    pub storage_errors: governor::Quota,
+}
+
+impl Default for Quota {
+    fn default() -> Self {
+        Self {
+            gossip: governor::Quota::per_second(nonzero!(5u32)).allow_burst(nonzero!(10u32)),
+            membership: governor::Quota::per_second(nonzero!(1u32)).allow_burst(nonzero!(10u32)),
+            storage_errors: governor::Quota::per_minute(nonzero!(10u32)),
+        }
+    }
+}
+
+//
+// Peer Storage (gossip)
+//
+
 #[derive(Clone)]
 pub(super) struct Storage<S> {
     inner: S,
-    limiter: Arc<Limiter>,
+    limiter: Arc<StorageErrorLimiter>,
 }
 
-impl<S> From<S> for Storage<S> {
-    fn from(inner: S) -> Self {
+impl<S> Storage<S> {
+    pub fn new(inner: S, quota: governor::Quota) -> Self {
         Self {
             inner,
-            limiter: Arc::new(RateLimiter::direct(Quota::per_second(
-                // TODO: make this an "advanced" config
-                nonzero!(5u32),
-            ))),
+            limiter: Arc::new(RateLimiter::direct(quota)),
         }
     }
 }
