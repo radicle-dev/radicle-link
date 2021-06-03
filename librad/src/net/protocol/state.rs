@@ -6,7 +6,7 @@
 use std::{net::SocketAddr, ops::Deref, sync::Arc};
 
 use futures::future::TryFutureExt as _;
-use governor::{Quota, RateLimiter};
+use governor::RateLimiter;
 use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
 use tracing::Instrument as _;
@@ -47,6 +47,7 @@ pub(super) struct State<S> {
     pub nonces: nonce::NonceBag,
     pub caches: cache::Caches,
     pub spawner: Arc<executor::Spawner>,
+    pub limits: RateLimits,
 }
 
 #[async_trait]
@@ -105,26 +106,60 @@ where
     }
 }
 
-type Limiter = governor::RateLimiter<
+//
+// Rate Limiting
+//
+
+type DirectLimiter = governor::RateLimiter<
     governor::state::direct::NotKeyed,
     governor::state::InMemoryState,
     governor::clock::DefaultClock,
 >;
 
+type KeyedLimiter<T> = governor::RateLimiter<
+    T,
+    governor::state::keyed::DashMapStateStore<T>,
+    governor::clock::DefaultClock,
+>;
+
+#[derive(Clone)]
+pub(super) struct RateLimits {
+    pub gossip: Arc<KeyedLimiter<PeerId>>,
+    pub membership: Arc<KeyedLimiter<PeerId>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Quota {
+    pub gossip: governor::Quota,
+    pub membership: governor::Quota,
+    pub storage_errors: governor::Quota,
+}
+
+impl Default for Quota {
+    fn default() -> Self {
+        Self {
+            gossip: governor::Quota::per_second(nonzero!(5u32)).allow_burst(nonzero!(10u32)),
+            membership: governor::Quota::per_second(nonzero!(1u32)).allow_burst(nonzero!(10u32)),
+            storage_errors: governor::Quota::per_minute(nonzero!(10u32)),
+        }
+    }
+}
+
+//
+// Peer Storage (gossip)
+//
+
 #[derive(Clone)]
 pub(super) struct Storage<S> {
     inner: S,
-    limiter: Arc<Limiter>,
+    limiter: Arc<DirectLimiter>,
 }
 
-impl<S> From<S> for Storage<S> {
-    fn from(inner: S) -> Self {
+impl<S> Storage<S> {
+    pub fn new(inner: S, quota: governor::Quota) -> Self {
         Self {
             inner,
-            limiter: Arc::new(RateLimiter::direct(Quota::per_second(
-                // TODO: make this an "advanced" config
-                nonzero!(5u32),
-            ))),
+            limiter: Arc::new(RateLimiter::direct(quota)),
         }
     }
 }

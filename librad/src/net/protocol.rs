@@ -51,7 +51,8 @@ pub(super) use tincans::TinCans;
 pub use tincans::{Interrogation, RecvError};
 
 mod state;
-use state::{State, StateConfig, Storage};
+pub use state::Quota;
+use state::{RateLimits, State, StateConfig, Storage};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -62,6 +63,7 @@ pub struct Config {
     pub network: Network,
     pub replication: replication::Config,
     pub fetch: config::Fetch,
+    pub rate_limits: Quota,
     // TODO: transport, ...
 }
 
@@ -169,7 +171,7 @@ where
         Pcg64Mcg::new(rand::random()),
         config.membership,
     );
-    let storage = Storage::from(storage);
+    let storage = Storage::new(storage, config.rate_limits.storage_errors);
     let state = State {
         local_id,
         endpoint,
@@ -184,6 +186,10 @@ where
         nonces: nonce::NonceBag::new(Duration::from_secs(300)), // TODO: config
         caches: cache::Caches::default(),
         spawner,
+        limits: RateLimits {
+            gossip: Arc::new(governor::RateLimiter::keyed(config.rate_limits.gossip)),
+            membership: Arc::new(governor::RateLimiter::keyed(config.rate_limits.membership)),
+        },
     };
 
     Ok(Bound {

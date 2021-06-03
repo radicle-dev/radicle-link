@@ -58,6 +58,28 @@ pub(in crate::net::protocol) async fn membership<S, T>(
 
             Ok(msg) => {
                 let info = || peer_advertisement(&state.endpoint);
+
+                if state.limits.membership.check_key(&remote_id).is_err() {
+                    tracing::warn!(remote_id = %remote_id, "rate limit breached, disconnecting peer");
+                    stream::iter(
+                        membership::collect_tocks(
+                            &state.membership,
+                            &info,
+                            membership::Tick::Reply {
+                                to: remote_id,
+                                message: membership::Message::Disconnect,
+                            },
+                        )
+                        .into_iter()
+                        .chain(Some(tick::Tock::Disconnect { peer: remote_id })),
+                    )
+                    .for_each(|tock| tick::tock(state.clone(), tock))
+                    .await;
+                    self::connection_lost(state, remote_id).await;
+
+                    break;
+                }
+
                 match membership::apply(&state.membership, &info, remote_id, remote_addr, msg) {
                     Err(e) => {
                         tracing::warn!(err = ?e, "membership error");
