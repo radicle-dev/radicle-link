@@ -73,17 +73,29 @@ where
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let mut decoder = minicbor::Decoder::new(src);
+        match decoder.decode() {
+            Err(minicbor::decode::Error::EndOfInput) => Ok(None),
+            Err(e) => {
+                let off = decoder.position();
+                src.advance(off);
+                Err(CborError::from(e).into())
+            },
+            Ok(v) => {
+                let off = decoder.position();
+                src.advance(off);
+                Ok(Some(v))
+            },
+        }
+    }
 
+    fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let mut decoder = minicbor::Decoder::new(src);
         let res = match decoder.decode() {
             Ok(v) => Ok(Some(v)),
-            // try later if we reach EOF prematurely
-            Err(minicbor::decode::Error::EndOfInput) => Ok(None),
             Err(e) => Err(CborError::from(e).into()),
         };
-
-        let offset = decoder.position();
-        src.advance(offset);
-
+        let off = decoder.position();
+        src.advance(off);
         res
     }
 }

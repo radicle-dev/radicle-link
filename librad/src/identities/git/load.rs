@@ -256,7 +256,7 @@ impl<'a> TryFrom<ByOid<'a>> for Project {
 
 type InlinedPerson = generic::Identity<Doc<PersonPayload, PersonDelegations>, Revision, ContentId>;
 
-#[tracing::instrument(level = "debug", skip(repo, tree), err)]
+#[tracing::instrument(level = "debug", skip(repo, tree))]
 fn resolve_inlined_person(
     repo: &git2::Repository,
     tree: &git2::Tree,

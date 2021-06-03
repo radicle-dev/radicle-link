@@ -42,7 +42,7 @@ pub enum Error {
 /// # Errors
 ///
 /// Attempting to track oneself (ie. [`Storage::peer_id`]) is an error.
-#[tracing::instrument(skip(storage), err)]
+#[tracing::instrument(skip(storage))]
 pub fn track(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
     let local_peer = storage.peer_id();
 
@@ -86,7 +86,7 @@ pub fn track(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> 
 /// (yet) atomic, this may fail, leaving "dangling" refs in the storage. It is
 /// safe to call this function repeatedly, so as to ensure all remote tracking
 /// branches have been pruned.
-#[tracing::instrument(skip(storage), err)]
+#[tracing::instrument(skip(storage))]
 pub fn untrack(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
     let remote_name = tracking_remote_name(urn, &peer);
     let was_removed = storage
@@ -112,7 +112,7 @@ pub fn untrack(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error
 }
 
 /// Determine if `peer` is tracked in the context of `urn`.
-#[tracing::instrument(level = "trace", skip(storage), err)]
+#[tracing::instrument(level = "trace", skip(storage))]
 pub fn is_tracked(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
     storage
         .as_raw()

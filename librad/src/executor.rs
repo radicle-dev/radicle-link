@@ -17,7 +17,7 @@ use std::{
 
 use futures::{
     channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
-    stream::{FuturesUnordered, Stream as _},
+    stream::{FusedStream as _, FuturesUnordered, Stream as _},
     FutureExt as _,
 };
 use thiserror::Error;
@@ -38,7 +38,6 @@ pub struct Spawner {
     scope: String,
     inner: tokio::runtime::Handle,
     detach: UnboundedSender<DetachedTask>,
-    pid1: tokio::task::JoinHandle<()>,
 
     spawned: Arc<AtomicUsize>,
     blocking: Arc<AtomicUsize>,
@@ -52,7 +51,7 @@ impl Spawner {
         let rt = tokio::runtime::Handle::current();
         let (tx_submit, rx_submit) = mpsc::unbounded();
 
-        let pid1 = rt.spawn(
+        rt.spawn(
             Pid1 {
                 submit: rx_submit,
                 running: FuturesUnordered::new(),
@@ -64,7 +63,6 @@ impl Spawner {
             scope: scope.as_ref().to_owned(),
             inner: rt,
             detach: tx_submit,
-            pid1,
             spawned: Arc::new(AtomicUsize::new(0)),
             blocking: Arc::new(AtomicUsize::new(0)),
         }
@@ -115,14 +113,6 @@ impl Spawner {
             spawned: self.spawned.load(Relaxed),
             blocking: self.blocking.load(Relaxed),
         }
-    }
-}
-
-impl Drop for Spawner {
-    fn drop(&mut self) {
-        tracing::trace!(scope = %self.scope, "shutting down...");
-        self.pid1.abort();
-        tracing::trace!(scope = %self.scope, "shutdown complete")
     }
 }
 
@@ -280,6 +270,16 @@ impl Future for Pid1 {
         self.poll_submitted(cx);
         self.poll_running(cx);
 
-        Poll::Pending
+        if self.submit.is_terminated() {
+            if !self.running.is_empty() {
+                tracing::warn!("outstanding tasks!");
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        } else {
+            Poll::Pending
+        }
     }
 }

@@ -26,7 +26,7 @@ use picky_asn1_x509::{
     GeneralName,
     PublicKey,
     SubjectPublicKeyInfo,
-    TBSCertificate,
+    TbsCertificate,
     Validity,
     Version,
 };
@@ -87,7 +87,7 @@ impl Certificate {
         };
         let validity = valid_until(Duration::from_secs(7889400)); // 3 months
         let extensions = Extensions(vec![
-            Extension::new_subject_alt_name(vec![GeneralName::DNSName(
+            Extension::new_subject_alt_name(vec![GeneralName::DnsName(
                 peer_id.to_string().parse::<IA5String>().unwrap().into(),
             )]),
             Extension::new_extended_key_usage(ExtendedKeyUsage::new(vec![
@@ -97,7 +97,7 @@ impl Certificate {
         ])
         .into();
 
-        let tbs_certificate = TBSCertificate {
+        let tbs_certificate = TbsCertificate {
             version: Version::V3.into(),
             serial_number,
             signature: algorithm.clone(),
@@ -213,7 +213,7 @@ pub(crate) fn validity_time_as_date(t: &validity::Time) -> Date {
     use validity::Time::*;
 
     let (y, m, d) = match t {
-        UTC(utc) => (utc.year().into(), utc.month(), utc.day()),
+        Utc(utc) => (utc.year().into(), utc.month(), utc.day()),
         Generalized(gen) => (gen.year().into(), gen.month(), gen.day()),
     };
 

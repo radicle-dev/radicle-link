@@ -91,7 +91,7 @@ pub struct Connected {
 
 impl Connected {
     #[allow(clippy::unit_arg)]
-    #[tracing::instrument(skip(self), err)]
+    #[tracing::instrument(skip(self))]
     pub fn wait(&mut self) -> Result<(), Error> {
         let status = self.process.wait()?;
         if status.success() {
@@ -171,7 +171,7 @@ impl From<Box<dyn CanOpenStorage>> for LocalTransport {
 }
 
 impl LocalTransport {
-    #[tracing::instrument(level = "debug", skip(self, service, stdio), err)]
+    #[tracing::instrument(level = "debug", skip(self, service, stdio))]
     pub fn connect(
         &mut self,
         url: LocalUrl,

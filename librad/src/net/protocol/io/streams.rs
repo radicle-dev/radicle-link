@@ -6,7 +6,7 @@
 use std::net::SocketAddr;
 
 use either::Either;
-use futures::stream::{FuturesUnordered, Stream, StreamExt as _};
+use futures::stream::{Stream, StreamExt as _};
 
 use super::recv;
 use crate::net::{
@@ -39,50 +39,36 @@ pub(in crate::net::protocol) async fn incoming<S, I>(
 
     let remote_id = streams.remote_peer_id();
 
-    let mut streams = streams.fuse();
-    let mut tasks = FuturesUnordered::new();
+    let streams = streams.fuse();
+    futures::pin_mut!(streams);
     loop {
-        futures::select! {
-            next_stream = streams.next() => match next_stream {
-                None => {
-                    recv::connection_lost(state, remote_id).await;
-                    break;
-                },
-                Some(stream) => {
-                    tracing::info!("new ingress stream");
-                    match stream {
-                        Ok(s) => {
-                            let task = match s {
-                                Left(bidi) => state.spawner.spawn(incoming::bidi(state.clone(), bidi)),
-                                Right(uni) => state.spawner.spawn(incoming::uni(state.clone(), uni)),
-                            };
-                            tasks.push(task)
-                        },
-                        Err(e) => {
-                            tracing::warn!(err = ?e, "ingress stream error");
-                            recv::connection_lost(state, remote_id).await;
-                            break;
-                        }
-                    }
+        match streams.next().await {
+            None => {
+                recv::connection_lost(state, remote_id).await;
+                break;
+            },
+            Some(stream) => {
+                tracing::info!("new ingress stream");
+                match stream {
+                    Ok(s) => match s {
+                        Left(bidi) => state
+                            .spawner
+                            .spawn(incoming::bidi(state.clone(), bidi))
+                            .detach(),
+                        Right(uni) => state
+                            .spawner
+                            .spawn(incoming::uni(state.clone(), uni))
+                            .detach(),
+                    },
+                    Err(e) => {
+                        tracing::warn!(err = ?e, "ingress stream error");
+                        recv::connection_lost(state, remote_id).await;
+                        break;
+                    },
                 }
             },
-
-            res = tasks.next() => {
-                if let Some(Err(e)) = res {
-                    drop(e.into_cancelled())
-                }
-            },
-
-            complete => break
         }
     }
-    tracing::debug!("ingress streams done, draining tasks");
-    while let Some(res) = tasks.next().await {
-        if let Err(e) = res {
-            drop(e.into_cancelled())
-        }
-    }
-    tracing::debug!("tasks drained");
 }
 
 mod incoming {

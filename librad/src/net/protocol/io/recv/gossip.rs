@@ -6,7 +6,7 @@
 use std::{iter, net::SocketAddr};
 
 use futures::{
-    io::AsyncRead,
+    io::{AsyncRead, BufReader},
     stream::{self, StreamExt as _},
 };
 use futures_codec::FramedRead;
@@ -37,8 +37,12 @@ pub(in crate::net::protocol) async fn gossip<S, T>(
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     T: RemotePeer + AsyncRead + Unpin,
 {
-    let mut recv = FramedRead::new(stream.into_stream(), codec::Gossip::new());
-    let remote_id = recv.remote_peer_id();
+    let remote_id = stream.remote_peer_id();
+
+    let mut recv = FramedRead::new(
+        BufReader::with_capacity(100, stream.into_stream()),
+        codec::Gossip::new(),
+    );
 
     while let Some(x) = recv.next().await {
         match x {

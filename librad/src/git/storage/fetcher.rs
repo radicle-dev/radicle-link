@@ -464,7 +464,7 @@ mod imp {
             &self.info
         }
 
-        #[tracing::instrument(skip(self), err)]
+        #[tracing::instrument(skip(self))]
         pub fn fetch(
             &mut self,
             fetchspecs: Fetchspecs<PeerId, Revision>,

@@ -11,7 +11,7 @@ use std::{
 };
 
 use futures::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt as _},
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader, BufWriter},
     SinkExt as _,
     StreamExt as _,
 };
@@ -82,8 +82,14 @@ pub(in crate::net::protocol) async fn interrogation<S, T>(
     T::Read: AsyncRead + Unpin,
     T::Write: AsyncWrite + Unpin,
 {
+    const BUFSIZ: usize = xor::MAX_FINGERPRINTS as usize * 3;
+
     let remote_addr = stream.remote_addr();
+
     let (recv, send) = stream.into_stream().split();
+    let recv = BufReader::with_capacity(BUFSIZ, recv);
+    let send = BufWriter::with_capacity(BUFSIZ, send);
+
     let mut recv = FramedRead::new(recv, codec::Codec::<interrogation::Request>::new());
     if let Some(x) = recv.next().await {
         match x {

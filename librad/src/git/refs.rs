@@ -225,7 +225,7 @@ pub struct Refs {
 
 impl Refs {
     /// Compute the [`Refs`] from the current storage state at [`Urn`].
-    #[tracing::instrument(level = "debug", skip(storage, urn), fields(urn = %urn), err)]
+    #[tracing::instrument(level = "debug", skip(storage, urn), fields(urn = %urn))]
     pub fn compute(storage: &Storage, urn: &Urn) -> Result<Self, stored::Error> {
         let namespace = Namespace::from(urn);
         let namespace_prefix = format!("refs/namespaces/{}/", namespace);
@@ -292,7 +292,7 @@ impl Refs {
     ///
     /// If the blob where the signed [`Refs`] are expected to be stored is not
     /// found, `None` is returned.
-    #[tracing::instrument(skip(storage, urn), fields(urn = %urn), err)]
+    #[tracing::instrument(skip(storage, urn), fields(urn = %urn))]
     pub fn load<P>(storage: &Storage, urn: &Urn, peer: P) -> Result<Option<Self>, stored::Error>
     where
         P: Into<Option<PeerId>> + Debug,
@@ -322,7 +322,7 @@ impl Refs {
     /// If the result of [`Self::compute`] is the same as the alread-stored
     /// [`Refs`], no commit is made and `None` is returned. Otherwise, the
     /// new and persisted [`Refs`] are returned in a `Some`.
-    #[tracing::instrument(skip(storage, urn), fields(urn = %urn), err)]
+    #[tracing::instrument(skip(storage, urn), fields(urn = %urn))]
     pub fn update(storage: &Storage, urn: &Urn) -> Result<Option<Self>, stored::Error> {
         let branch = Reference::rad_signed_refs(Namespace::from(urn), None);
         tracing::debug!("updating signed refs for {}", branch);

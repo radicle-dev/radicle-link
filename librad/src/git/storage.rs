@@ -151,12 +151,12 @@ impl Storage {
         &self.backend.path()
     }
 
-    #[tracing::instrument(level = "debug", skip(self), err)]
+    #[tracing::instrument(level = "debug", skip(self))]
     pub fn has_urn(&self, urn: &Urn) -> Result<bool, Error> {
         self.has_ref(&Reference::try_from(urn)?)
     }
 
-    #[tracing::instrument(level = "debug", skip(self), err)]
+    #[tracing::instrument(level = "debug", skip(self))]
     pub fn has_ref<'a>(&self, reference: &'a Reference<One>) -> Result<bool, Error> {
         self.backend
             .find_reference(RefLike::from(reference).as_str())
@@ -173,7 +173,7 @@ impl Storage {
     /// `rad/id` if not provided)
     /// 3. The tip SHA was not in the history of the commit
     /// 4. The `oid` was the [`zero`][`git2::Oid::zero`] SHA.
-    #[tracing::instrument(level = "debug", skip(self, urn), fields(urn = %urn), err)]
+    #[tracing::instrument(level = "debug", skip(self, urn), fields(urn = %urn))]
     pub fn has_commit<Oid>(&self, urn: &Urn, oid: Oid) -> Result<bool, Error>
     where
         Oid: AsRef<git2::Oid> + Debug,
@@ -206,7 +206,7 @@ impl Storage {
     /// `rad/id` if not provided)
     /// 3. The SHA of the tag was not the same as the resolved reference
     /// 4. The `oid` was the [`zero`][`git2::Oid::zero`] SHA.
-    #[tracing::instrument(level = "debug", skip(self, urn), fields(urn = %urn), err)]
+    #[tracing::instrument(level = "debug", skip(self, urn), fields(urn = %urn))]
     pub fn has_tag<Oid>(&self, urn: &Urn, oid: Oid) -> Result<bool, Error>
     where
         Oid: AsRef<git2::Oid> + Debug,
@@ -223,7 +223,7 @@ impl Storage {
         Ok(tip.map(|tip| tip.id() == oid).unwrap_or(false))
     }
 
-    #[tracing::instrument(level = "debug", skip(self), err)]
+    #[tracing::instrument(level = "debug", skip(self))]
     pub fn has_object<Oid>(&self, oid: Oid) -> Result<bool, Error>
     where
         Oid: AsRef<git2::Oid> + Debug,
@@ -238,7 +238,7 @@ impl Storage {
         Ok(self.backend.odb()?.exists(*oid))
     }
 
-    #[tracing::instrument(level = "debug", skip(self), err)]
+    #[tracing::instrument(level = "debug", skip(self))]
     pub fn find_object<Oid>(&self, oid: Oid) -> Result<Option<git2::Object>, Error>
     where
         Oid: AsRef<git2::Oid> + Debug,
@@ -254,7 +254,7 @@ impl Storage {
             .or_matches(is_not_found_err, || Ok(None))
     }
 
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn tip(&self, urn: &Urn, kind: git2::ObjectType) -> Result<Option<git2::Object>, Error> {
         let reference = self
             .backend
@@ -268,7 +268,7 @@ impl Storage {
         }
     }
 
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn reference<'a>(
         &'a self,
         reference: &Reference<One>,
@@ -279,7 +279,7 @@ impl Storage {
             .or_matches(is_not_found_err, || Ok(None))
     }
 
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn references<'a>(
         &'a self,
         reference: &Reference<Many>,
@@ -287,7 +287,7 @@ impl Storage {
         self.references_glob(glob::RefspecMatcher::from(RefspecPattern::from(reference)))
     }
 
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn reference_names<'a>(
         &'a self,
         reference: &Reference<Many>,
@@ -295,7 +295,7 @@ impl Storage {
         self.reference_names_glob(glob::RefspecMatcher::from(RefspecPattern::from(reference)))
     }
 
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn references_glob<'a, G: 'a>(
         &'a self,
         glob: G,
@@ -316,7 +316,7 @@ impl Storage {
             }))
     }
 
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn reference_names_glob<'a, G: 'a>(
         &'a self,
         glob: G,
@@ -335,7 +335,7 @@ impl Storage {
         }))
     }
 
-    #[tracing::instrument(level = "trace", skip(self), err)]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn blob<'a>(
         &'a self,
         reference: &'a Reference<One>,
