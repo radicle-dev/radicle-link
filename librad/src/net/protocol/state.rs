@@ -170,7 +170,7 @@ pub(super) struct RateLimits {
 pub struct Quota {
     pub gossip: governor::Quota,
     pub membership: governor::Quota,
-    pub storage_errors: governor::Quota,
+    pub storage: StorageQuota,
 }
 
 impl Default for Quota {
@@ -178,7 +178,22 @@ impl Default for Quota {
         Self {
             gossip: governor::Quota::per_second(nonzero!(5u32)).allow_burst(nonzero!(10u32)),
             membership: governor::Quota::per_second(nonzero!(1u32)).allow_burst(nonzero!(10u32)),
-            storage_errors: governor::Quota::per_minute(nonzero!(10u32)),
+            storage: StorageQuota::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct StorageQuota {
+    errors: governor::Quota,
+    wants: governor::Quota,
+}
+
+impl Default for StorageQuota {
+    fn default() -> Self {
+        Self {
+            errors: governor::Quota::per_minute(nonzero!(10u32)),
+            wants: governor::Quota::per_minute(nonzero!(30u32)),
         }
     }
 }
@@ -190,14 +205,16 @@ impl Default for Quota {
 #[derive(Clone)]
 pub(super) struct Storage<S> {
     inner: S,
-    limiter: Arc<DirectLimiter>,
+    error_limits: Arc<DirectLimiter>,
+    want_limits: Arc<KeyedLimiter<PeerId>>,
 }
 
 impl<S> Storage<S> {
-    pub fn new(inner: S, quota: governor::Quota) -> Self {
+    pub fn new(inner: S, quota: StorageQuota) -> Self {
         Self {
             inner,
-            limiter: Arc::new(RateLimiter::direct(quota)),
+            error_limits: Arc::new(RateLimiter::direct(quota.errors)),
+            want_limits: Arc::new(RateLimiter::keyed(quota.wants)),
         }
     }
 }
@@ -231,9 +248,13 @@ where
     }
 }
 
-impl<S> broadcast::ErrorRateLimited for Storage<S> {
-    fn is_error_rate_limit_breached(&self) -> bool {
-        self.limiter.check().is_err()
+impl<S> broadcast::RateLimited for Storage<S> {
+    fn is_rate_limit_breached(&self, lim: broadcast::Limit) -> bool {
+        use broadcast::Limit;
+        match lim {
+            Limit::Errors => self.error_limits.check().is_err(),
+            Limit::Wants { recipient } => self.want_limits.check_key(recipient).is_err(),
+        }
     }
 }
 

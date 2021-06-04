@@ -171,7 +171,7 @@ where
         Pcg64Mcg::new(rand::random()),
         config.membership,
     );
-    let storage = Storage::new(storage, config.rate_limits.storage_errors);
+    let storage = Storage::new(storage, config.rate_limits.storage);
     let state = State {
         local_id,
         endpoint,
