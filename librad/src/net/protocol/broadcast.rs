@@ -39,8 +39,13 @@ pub(super) trait Membership {
     fn is_member(&self, peer: &PeerId) -> bool;
 }
 
-pub(super) trait ErrorRateLimited {
-    fn is_error_rate_limit_breached(&self) -> bool;
+pub enum Limit<'a> {
+    Errors,
+    Wants { recipient: &'a PeerId },
+}
+
+pub(super) trait RateLimited {
+    fn is_rate_limit_breached(&self, lim: Limit) -> bool;
 }
 
 #[derive(Debug, Error)]
@@ -66,7 +71,7 @@ pub(super) async fn apply<M, S, F, A, P>(
 ) -> Result<(Option<event::Gossip<A, P>>, Vec<tick::Tock<A, P>>), Error<A, P>>
 where
     M: Membership,
-    S: LocalStorage<A, Update = P> + ErrorRateLimited,
+    S: LocalStorage<A, Update = P> + RateLimited,
     F: Fn() -> PeerInfo<A>,
     A: Clone + Debug + Send + 'static,
     P: Clone + Debug,
@@ -119,7 +124,7 @@ where
                         Some(remote_id),
                     ));
 
-                    if storage.is_error_rate_limit_breached() {
+                    if storage.is_rate_limit_breached(Limit::Errors) {
                         tracing::warn!("error rate limit breached");
                     } else {
                         // Request retransmission
@@ -143,32 +148,41 @@ where
         },
 
         Want { origin, val } => {
-            let have = storage.ask(val.clone()).await;
-            let tocks = if have {
-                let reply = Have {
-                    origin: info(),
-                    val,
+            if storage.is_rate_limit_breached(Limit::Wants {
+                recipient: &origin.peer_id,
+            }) {
+                tracing::warn!(
+                    "want rate limit breached: enhance your calm, {}!",
+                    origin.peer_id
+                );
+                Ok((None, vec![]))
+            } else {
+                let have = storage.ask(val.clone()).await;
+                let tocks = if have {
+                    let reply = || Have {
+                        origin: info(),
+                        val,
+                    };
+                    if origin.peer_id == remote_id {
+                        vec![SendConnected {
+                            to: remote_id,
+                            message: reply().into(),
+                        }]
+                    } else {
+                        // FIXME: if we cannot reach origin, we may still want to
+                        // broadcast the `Have`, in the hopes that it will travel
+                        // back the path it came here
+                        vec![AttemptSend {
+                            to: origin,
+                            message: reply().into(),
+                        }]
+                    }
+                } else {
+                    broadcast(Want { origin, val }, Some(remote_id))
                 };
 
-                if origin.peer_id == remote_id {
-                    vec![SendConnected {
-                        to: remote_id,
-                        message: reply.into(),
-                    }]
-                } else {
-                    // FIXME: if we cannot reach origin, we may still want to
-                    // broadcast the `Have`, in the hopes that it will travel
-                    // back the path it came here
-                    vec![AttemptSend {
-                        to: origin,
-                        message: reply.into(),
-                    }]
-                }
-            } else {
-                broadcast(Want { origin, val }, Some(remote_id))
-            };
-
-            Ok((None, tocks))
+                Ok((None, tocks))
+            }
         },
     }
 }
