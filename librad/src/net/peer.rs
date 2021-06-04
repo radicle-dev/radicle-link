@@ -141,6 +141,7 @@ where
             storage::Config {
                 replication: config.protocol.replication,
                 fetch_slot_wait_timeout: config.storage.protocol.fetch_slot_wait_timeout,
+                fetch_quota: config.protocol.rate_limits.gossip.fetches_per_peer_and_urn,
             },
         );
         let git_store = git::storage::Pool::new(
