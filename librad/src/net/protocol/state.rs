@@ -162,13 +162,12 @@ type KeyedLimiter<T> = governor::RateLimiter<
 
 #[derive(Clone)]
 pub(super) struct RateLimits {
-    pub gossip: Arc<KeyedLimiter<PeerId>>,
     pub membership: Arc<KeyedLimiter<PeerId>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Quota {
-    pub gossip: governor::Quota,
+    pub gossip: GossipQuota,
     pub membership: governor::Quota,
     pub storage: StorageQuota,
 }
@@ -176,9 +175,23 @@ pub struct Quota {
 impl Default for Quota {
     fn default() -> Self {
         Self {
-            gossip: governor::Quota::per_second(nonzero!(5u32)).allow_burst(nonzero!(10u32)),
+            gossip: GossipQuota::default(),
             membership: governor::Quota::per_second(nonzero!(1u32)).allow_burst(nonzero!(10u32)),
             storage: StorageQuota::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct GossipQuota {
+    pub fetches_per_peer_and_urn: governor::Quota,
+}
+
+impl Default for GossipQuota {
+    fn default() -> Self {
+        Self {
+            fetches_per_peer_and_urn: governor::Quota::per_minute(nonzero!(1u32))
+                .allow_burst(nonzero!(5u32)),
         }
     }
 }
@@ -203,18 +216,25 @@ impl Default for StorageQuota {
 //
 
 #[derive(Clone)]
+struct StorageLimits {
+    errors: Arc<DirectLimiter>,
+    wants: Arc<KeyedLimiter<PeerId>>,
+}
+
+#[derive(Clone)]
 pub(super) struct Storage<S> {
     inner: S,
-    error_limits: Arc<DirectLimiter>,
-    want_limits: Arc<KeyedLimiter<PeerId>>,
+    limits: StorageLimits,
 }
 
 impl<S> Storage<S> {
     pub fn new(inner: S, quota: StorageQuota) -> Self {
         Self {
             inner,
-            error_limits: Arc::new(RateLimiter::direct(quota.errors)),
-            want_limits: Arc::new(RateLimiter::keyed(quota.wants)),
+            limits: StorageLimits {
+                errors: Arc::new(RateLimiter::direct(quota.errors)),
+                wants: Arc::new(RateLimiter::keyed(quota.wants)),
+            },
         }
     }
 }
@@ -252,8 +272,8 @@ impl<S> broadcast::RateLimited for Storage<S> {
     fn is_rate_limit_breached(&self, lim: broadcast::Limit) -> bool {
         use broadcast::Limit;
         match lim {
-            Limit::Errors => self.error_limits.check().is_err(),
-            Limit::Wants { recipient } => self.want_limits.check_key(recipient).is_err(),
+            Limit::Errors => self.limits.errors.check().is_err(),
+            Limit::Wants { recipient } => self.limits.wants.check_key(recipient).is_err(),
         }
     }
 }

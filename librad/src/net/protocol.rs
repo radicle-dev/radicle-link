@@ -187,7 +187,6 @@ where
         caches: cache::Caches::default(),
         spawner,
         limits: RateLimits {
-            gossip: Arc::new(governor::RateLimiter::keyed(config.rate_limits.gossip)),
             membership: Arc::new(governor::RateLimiter::keyed(config.rate_limits.membership)),
         },
     };
