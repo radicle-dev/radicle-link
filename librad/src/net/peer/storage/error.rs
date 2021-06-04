@@ -8,6 +8,7 @@ use thiserror::Error;
 use crate::{
     executor,
     git::{self, replication, storage::fetcher, tracking},
+    PeerId,
 };
 
 #[derive(Debug, Error)]
@@ -15,6 +16,9 @@ use crate::{
 pub enum Error {
     #[error("already have {0}")]
     KnownObject(git2::Oid),
+
+    #[error("too many fetches from {remote_peer}")]
+    RateLimited { remote_peer: PeerId, urn: git::Urn },
 
     #[error(transparent)]
     Tracking(#[from] tracking::Error),
