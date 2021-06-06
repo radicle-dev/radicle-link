@@ -11,6 +11,7 @@ pub mod relations;
 pub mod sign;
 pub mod urn;
 pub use urn::Urn;
+pub mod xor;
 
 mod sealed;
 

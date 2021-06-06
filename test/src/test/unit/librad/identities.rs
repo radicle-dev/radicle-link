@@ -7,3 +7,4 @@ mod generic;
 mod git;
 mod payload;
 mod urn;
+mod xor;
