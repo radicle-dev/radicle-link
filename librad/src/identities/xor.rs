@@ -3,6 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::fmt::{self, Debug};
+
 use sized_vec::Vec as SVec;
 use thiserror::Error;
 use typenum::{IsLessOrEqual, Unsigned, U10000};
@@ -92,6 +94,27 @@ impl Clone for Xor {
     }
 }
 
+impl PartialEq for Xor {
+    fn eq(&self, other: &Self) -> bool {
+        let this = &self.inner;
+        let that = &other.inner;
+
+        this.seed == that.seed
+            && this.block_length == that.block_length
+            && this.fingerprints == that.fingerprints
+    }
+}
+
+impl Debug for Xor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Xor")
+            .field("seed", &self.inner.seed)
+            .field("block_length", &self.inner.block_length)
+            .field("fingerprints", &self.inner.fingerprints)
+            .finish()
+    }
+}
+
 impl<N> From<&SVec<N, SomeUrn>> for Xor
 where
     N: Unsigned + IsLessOrEqual<MaxElements>,
@@ -134,6 +157,7 @@ impl<'b> minicbor::Decode<'b> for Xor {
 }
 
 #[derive(minicbor::Encode)]
+#[cbor(array)]
 struct Encode<'a> {
     #[n(0)]
     seed: u64,
@@ -144,6 +168,7 @@ struct Encode<'a> {
 }
 
 #[derive(minicbor::Decode)]
+#[cbor(array)]
 struct Decode {
     #[n(0)]
     seed: u64,
