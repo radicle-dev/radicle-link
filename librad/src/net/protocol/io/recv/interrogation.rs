@@ -27,11 +27,14 @@ use thiserror::Error;
 
 use crate::{
     git::{identities, storage, Storage},
-    identities::SomeUrn,
+    identities::{
+        xor::{self, Xor},
+        SomeUrn,
+    },
     net::{
         connection::Duplex,
         protocol::{
-            interrogation::{self, xor, Request, Response, Xor},
+            interrogation::{self, Request, Response},
             io::{self, codec},
             State,
         },

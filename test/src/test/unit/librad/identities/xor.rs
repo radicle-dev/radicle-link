@@ -7,10 +7,7 @@ use sha1::{Digest, Sha1};
 use sized_vec::Vec as SVec;
 use typenum::Unsigned;
 
-use librad::{
-    identities::{SomeUrn, Urn},
-    net::protocol::interrogation::xor::*,
-};
+use librad::identities::{xor::*, SomeUrn, Urn};
 
 struct BuildUrn {
     hasher: Sha1,

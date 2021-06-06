@@ -16,7 +16,7 @@ use super::{
     info::PeerAdvertisement,
     interrogation,
 };
-use crate::PeerId;
+use crate::{identities::xor::Xor, PeerId};
 
 #[derive(Clone)]
 pub struct TinCans {
@@ -186,9 +186,9 @@ impl Interrogation {
 
     /// Ask the interrogated peer to send the complete list of URNs it has.
     ///
-    /// The response is compactly encoded as an [`interrogation::Xor`] filter,
-    /// with a very small false positive probability.
-    pub async fn urns(&self) -> Result<interrogation::Xor, error::Interrogation> {
+    /// The response is compactly encoded as an [`Xor`] filter, with a very
+    /// small false positive probability.
+    pub async fn urns(&self) -> Result<Xor, error::Interrogation> {
         use interrogation::{Request, Response};
 
         self.request(Request::GetUrns)
