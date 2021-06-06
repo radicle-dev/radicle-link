@@ -7,6 +7,3 @@ use super::info::PeerAdvertisement;
 
 mod rpc;
 pub use rpc::{Error, Request, Response};
-
-pub mod xor;
-pub use xor::Xor;
