@@ -24,6 +24,7 @@ use parking_lot::{
     RwLockWriteGuard,
 };
 use thiserror::Error;
+use typenum::Unsigned as _;
 
 use crate::{
     git::{identities, storage, Storage},
@@ -84,7 +85,7 @@ pub(in crate::net::protocol) async fn interrogation<S, T>(
     T::Read: AsyncRead + Unpin,
     T::Write: AsyncWrite + Unpin,
 {
-    const BUFSIZ: usize = xor::MAX_FINGERPRINTS as usize * 3;
+    const BUFSIZ: usize = xor::MaxFingerprints::USIZE * 3;
 
     let remote_addr = stream.remote_addr();
 

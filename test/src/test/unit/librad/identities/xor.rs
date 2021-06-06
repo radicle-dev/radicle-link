@@ -64,3 +64,8 @@ fn cbor() {
 
     cbor_roundtrip(filter)
 }
+
+#[test]
+fn typenum_doesnt_lie() {
+    assert_eq!(MaxFingerprints::U64, 12_330);
+}

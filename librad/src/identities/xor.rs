@@ -5,9 +5,10 @@
 
 use std::fmt::{self, Debug};
 
+use data::BoundedVec;
 use sized_vec::Vec as SVec;
 use thiserror::Error;
-use typenum::{IsLessOrEqual, Unsigned, U10000};
+use typenum::{IsLessOrEqual, Unsigned, U1000, U10000, U330};
 use xorf::{Filter as _, Xor16};
 
 use super::{SomeUrn, Urn};
@@ -16,9 +17,13 @@ use super::{SomeUrn, Urn};
 ///
 /// Currently: 10,000
 pub type MaxElements = U10000;
-// approx. `MaxElements * 1.23`, but not exactly for all choices of
-// `MaxElements`
-pub(crate) const MAX_FINGERPRINTS: u64 = 12_330;
+
+/// Maximum number of fingerprints permitted in a serialised [`Xor`] filter.
+///
+/// Approx. `MaxElements * 1.23`, but not exactly for all choices of
+/// `MaxElements`
+// https://github.com/paholg/typenum/pull/136
+pub type MaxFingerprints = typenum::op!(U10000 + U1000 + U1000 + U330); // 12_330
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -150,7 +155,7 @@ impl<'b> minicbor::Decode<'b> for Xor {
             inner: Xor16 {
                 seed,
                 block_length,
-                fingerprints: fingerprints.into_boxed_slice(),
+                fingerprints: fingerprints.into_inner().into_boxed_slice(),
             },
         })
     }
@@ -175,27 +180,7 @@ struct Decode {
     #[n(1)]
     block_length: usize,
     #[n(2)]
-    #[cbor(with = "bounded")]
-    fingerprints: Vec<u16>,
-}
-
-mod bounded {
-    use super::MAX_FINGERPRINTS;
-
-    pub fn decode(d: &mut minicbor::Decoder) -> Result<Vec<u16>, minicbor::decode::Error> {
-        use minicbor::decode::{Decode, Error::Message as Error};
-
-        match d.probe().array()? {
-            None => Err(Error("expected definite-length array")),
-            Some(len) => {
-                if len > MAX_FINGERPRINTS {
-                    Err(Error("max length exceeded"))
-                } else {
-                    Ok(Decode::decode(d)?)
-                }
-            },
-        }
-    }
+    fingerprints: BoundedVec<MaxFingerprints, u16>,
 }
 
 fn xor_hash(urn: &SomeUrn) -> u64 {
