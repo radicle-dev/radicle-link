@@ -53,3 +53,14 @@ fn false_positives() {
     let rate: f64 = (false_positives * 100) as f64 / MaxElements::USIZE as f64;
     assert!(rate < 0.02, "False positive rate is {:?}", rate);
 }
+
+#[test]
+fn cbor() {
+    use crate::roundtrip::cbor_roundtrip;
+
+    let mut bob = BuildUrn::new();
+    let urns = SVec::<MaxElements, _>::fill(|i| bob.build(&i.to_be_bytes()));
+    let filter = Xor::from(&urns);
+
+    cbor_roundtrip(filter)
+}
