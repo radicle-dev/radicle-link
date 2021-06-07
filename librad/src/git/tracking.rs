@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom, ops::Range, str::FromStr, time::SystemTime};
+use std::{convert::TryFrom, fs, io, ops::Range, str::FromStr, time::SystemTime};
 
 use git_ext::{is_exists_err, is_not_found_err};
 use std_ext::result::ResultExt as _;
@@ -31,6 +31,9 @@ pub enum Error {
 
     #[error(transparent)]
     Git(#[from] git2::Error),
+
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 /// Track the given `peer` in the context of `urn`.
@@ -129,7 +132,10 @@ pub fn tracked(storage: &Storage, urn: &Urn) -> Result<Tracked, Error> {
 
 /// Determine the last modification time of the tracking store.
 pub fn modified(storage: &Storage) -> Result<SystemTime, Error> {
-    Ok(storage.config()?.modified()?)
+    // Carefully avoid to go through `Config`, due to impenetrable locking
+    // behaviour
+    let path = storage.as_raw().path().join("config");
+    Ok(fs::metadata(&path)?.modified()?)
 }
 
 /// Iterator over the 1st degree tracked peers.

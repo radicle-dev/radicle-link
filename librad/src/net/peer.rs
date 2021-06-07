@@ -128,11 +128,13 @@ where
     pub fn new(config: Config<S>) -> Self {
         let spawner = Arc::new(executor::Spawner::new("peer"));
         let phone = protocol::TinCans::default();
+        let storage_lock = git::storage::pool::Initialised::no();
         let fetchers = Fetchers::default();
         let pool = git::storage::Pool::new(
             git::storage::pool::Config::with_fetchers(
                 config.protocol.paths.clone(),
                 config.signer.clone(),
+                storage_lock.clone(),
                 fetchers.clone(),
             ),
             config.storage.protocol.pool_size,
@@ -152,6 +154,7 @@ where
             git::storage::pool::Config::with_fetchers(
                 config.protocol.paths.clone(),
                 config.signer.clone(),
+                storage_lock,
                 fetchers,
             ),
             config.storage.user.pool_size,

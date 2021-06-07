@@ -6,7 +6,7 @@
 use std::{
     ops::Deref,
     sync::{Arc, Weak},
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use futures_timer::Delay;
@@ -158,11 +158,14 @@ pub mod urns {
                             false
                         });
                     if should_rebuild {
-                        tracing::info!("rebuilding xor filter");
+                        let start = Instant::now();
                         match rebuild_it(&spawner, &pool).await {
                             Err(e) => tracing::warn!(err = ?e, "error rebuilding xor filter"),
                             Ok(xor) => {
-                                tracing::info!("rebuilt xor filter");
+                                tracing::info!(
+                                    "rebuilt xor filter in {:.2}s",
+                                    start.elapsed().as_secs_f32()
+                                );
                                 let modified = mtime(&spawner, &pool)
                                     .await
                                     .unwrap_or_else(|_| SystemTime::now());

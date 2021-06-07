@@ -51,7 +51,7 @@ fn responds() {
         );
         let urns = interrogation.urns().await.unwrap();
         for urn in &[SomeUrn::Git(project.urn()), SomeUrn::Git(owner.urn())] {
-            assert!(urns.contains(urn))
+            assert!(urns.contains(urn), "{} not in set", urn)
         }
     })
 }

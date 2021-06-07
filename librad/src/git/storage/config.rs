@@ -5,7 +5,7 @@
 
 #![allow(unused)]
 
-use std::{convert::TryFrom, fs, io, marker::PhantomData, path::PathBuf, time::SystemTime};
+use std::{convert::TryFrom, io, marker::PhantomData};
 
 use git_ext::{self as ext, is_not_found_err};
 use std_ext::result::ResultExt as _;
@@ -41,14 +41,10 @@ pub enum Error {
 
     #[error(transparent)]
     Git(#[from] git2::Error),
-
-    #[error(transparent)]
-    Io(#[from] io::Error),
 }
 
 pub struct Config<'a, S> {
     inner: git2::Config,
-    path: PathBuf,
     signer: &'a S,
 }
 
@@ -56,7 +52,11 @@ impl<'a> TryFrom<&'a Storage> for Config<'a, BoxedSigner> {
     type Error = Error;
 
     fn try_from(storage: &'a Storage) -> Result<Self, Self::Error> {
-        let this = Config::try_from(storage.as_raw())?.map(storage.signer());
+        let inner = git2::Config::open(&storage.as_raw().path().join("config"))?;
+        let this = Self {
+            inner,
+            signer: storage.signer(),
+        };
         this.guard_key_change()?;
 
         Ok(this)
@@ -67,11 +67,9 @@ impl TryFrom<&git2::Repository> for Config<'_, PhantomData<!>> {
     type Error = git2::Error;
 
     fn try_from(repo: &git2::Repository) -> Result<Self, Self::Error> {
-        let path = repo.path().join("config");
-        let inner = git2::Config::open(&path)?;
+        let inner = git2::Config::open(&repo.path().join("config"))?.snapshot()?;
         Ok(Self {
             inner,
-            path,
             signer: &PhantomData,
         })
     }
@@ -100,9 +98,13 @@ where
     // and we change the creation test?
     pub fn init(repo: &mut git2::Repository, signer: &'a S) -> Result<Self, Error> {
         let peer_id = PeerId::from_signer(signer);
-        let mut this = Config::try_from(&*repo)?.map(signer);
+        let config = repo.config()?;
+        let mut this = Config {
+            inner: config,
+            signer,
+        };
         this.guard_key_change()?;
-        this.set_peer_id(peer_id)?;
+        this.set_peer_id(PeerId::from_signer(signer))?;
         this.set_user_info("anonymous")?;
 
         Ok(this)
@@ -182,20 +184,6 @@ impl<S> Config<'_, S> {
             .or_matches::<Error, _, _>(is_not_found_err, || Ok(None))?
             .map(|urn| urn.parse().map_err(Error::from))
             .transpose()
-    }
-
-    /// Determine the last modification time of the configuration.
-    pub fn modified(&self) -> Result<SystemTime, Error> {
-        Ok(fs::metadata(&self.path)?.modified()?)
-    }
-
-    /// Functorial map.
-    pub fn map<'a, T>(self, signer: &'a T) -> Config<'a, T> {
-        Config {
-            inner: self.inner,
-            path: self.path,
-            signer,
-        }
     }
 }
 

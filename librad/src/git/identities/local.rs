@@ -132,7 +132,7 @@ pub fn load(storage: &Storage, urn: Urn) -> Result<Option<LocalIdentity>, Error>
 /// result is the result of calling [`load`] with the pre-configured [`Urn`].
 #[tracing::instrument(level = "debug", skip(storage))]
 pub fn default(storage: &Storage) -> Result<Option<LocalIdentity>, Error> {
-    match storage.config()?.user()? {
+    match storage.config_readonly()?.user()? {
         Some(urn) => load(storage, urn),
         None => Ok(None),
     }
