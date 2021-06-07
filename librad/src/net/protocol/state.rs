@@ -148,44 +148,65 @@ where
 // Rate Limiting
 //
 
-/// Limits retransmission requests when the local storage returns errors
-type StorageErrorLimiter = governor::RateLimiter<
+type DirectLimiter = governor::RateLimiter<
     governor::state::direct::NotKeyed,
     governor::state::InMemoryState,
     governor::clock::DefaultClock,
 >;
 
-type PeerKeyedLimiter = governor::RateLimiter<
-    PeerId,
-    governor::state::keyed::DashMapStateStore<PeerId>,
+type KeyedLimiter<T> = governor::RateLimiter<
+    T,
+    governor::state::keyed::DashMapStateStore<T>,
     governor::clock::DefaultClock,
 >;
 
-/// Limits gossip messages received from a connected peer
-type GossipLimiter = PeerKeyedLimiter;
-
-/// Limits membership messages received from a connected peer
-type MembershipLimiter = PeerKeyedLimiter;
-
 #[derive(Clone)]
 pub(super) struct RateLimits {
-    pub gossip: Arc<GossipLimiter>,
-    pub membership: Arc<MembershipLimiter>,
+    pub membership: Arc<KeyedLimiter<PeerId>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Quota {
-    pub gossip: governor::Quota,
+    pub gossip: GossipQuota,
     pub membership: governor::Quota,
-    pub storage_errors: governor::Quota,
+    pub storage: StorageQuota,
 }
 
 impl Default for Quota {
     fn default() -> Self {
         Self {
-            gossip: governor::Quota::per_second(nonzero!(5u32)).allow_burst(nonzero!(10u32)),
+            gossip: GossipQuota::default(),
             membership: governor::Quota::per_second(nonzero!(1u32)).allow_burst(nonzero!(10u32)),
-            storage_errors: governor::Quota::per_minute(nonzero!(10u32)),
+            storage: StorageQuota::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct GossipQuota {
+    pub fetches_per_peer_and_urn: governor::Quota,
+}
+
+impl Default for GossipQuota {
+    fn default() -> Self {
+        Self {
+            fetches_per_peer_and_urn: governor::Quota::per_minute(nonzero!(1u32))
+                .allow_burst(nonzero!(5u32)),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct StorageQuota {
+    errors: governor::Quota,
+    wants: governor::Quota,
+}
+
+impl Default for StorageQuota {
+    fn default() -> Self {
+        Self {
+            errors: governor::Quota::per_minute(nonzero!(10u32)),
+            wants: governor::Quota::per_minute(nonzero!(30u32)),
         }
     }
 }
@@ -195,16 +216,25 @@ impl Default for Quota {
 //
 
 #[derive(Clone)]
+struct StorageLimits {
+    errors: Arc<DirectLimiter>,
+    wants: Arc<KeyedLimiter<PeerId>>,
+}
+
+#[derive(Clone)]
 pub(super) struct Storage<S> {
     inner: S,
-    limiter: Arc<StorageErrorLimiter>,
+    limits: StorageLimits,
 }
 
 impl<S> Storage<S> {
-    pub fn new(inner: S, quota: governor::Quota) -> Self {
+    pub fn new(inner: S, quota: StorageQuota) -> Self {
         Self {
             inner,
-            limiter: Arc::new(RateLimiter::direct(quota)),
+            limits: StorageLimits {
+                errors: Arc::new(RateLimiter::direct(quota.errors)),
+                wants: Arc::new(RateLimiter::keyed(quota.wants)),
+            },
         }
     }
 }
@@ -238,9 +268,13 @@ where
     }
 }
 
-impl<S> broadcast::ErrorRateLimited for Storage<S> {
-    fn is_error_rate_limit_breached(&self) -> bool {
-        self.limiter.check().is_err()
+impl<S> broadcast::RateLimited for Storage<S> {
+    fn is_rate_limit_breached(&self, lim: broadcast::Limit) -> bool {
+        use broadcast::Limit;
+        match lim {
+            Limit::Errors => self.limits.errors.check().is_err(),
+            Limit::Wants { recipient } => self.limits.wants.check_key(recipient).is_err(),
+        }
     }
 }
 

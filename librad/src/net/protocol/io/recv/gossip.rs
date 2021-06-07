@@ -60,7 +60,7 @@ pub(in crate::net::protocol) async fn gossip<S, T>(
             },
 
             Ok(msg) => {
-                if state.limits.gossip.check_key(&remote_id).is_err() {
+                if state.limits.membership.check_key(&remote_id).is_err() {
                     tracing::warn!(remote_id = %remote_id, "rate limit breached, dropping message");
                     continue;
                 }

@@ -171,7 +171,7 @@ where
         Pcg64Mcg::new(rand::random()),
         config.membership,
     );
-    let storage = Storage::new(storage, config.rate_limits.storage_errors);
+    let storage = Storage::new(storage, config.rate_limits.storage);
     let state = State {
         local_id,
         endpoint,
@@ -187,7 +187,6 @@ where
         caches: cache::Caches::default(),
         spawner,
         limits: RateLimits {
-            gossip: Arc::new(governor::RateLimiter::keyed(config.rate_limits.gossip)),
             membership: Arc::new(governor::RateLimiter::keyed(config.rate_limits.membership)),
         },
     };
