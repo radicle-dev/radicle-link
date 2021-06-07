@@ -3,7 +3,11 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use cuckoofilter::CuckooFilter;
 use either::Either::{self, Left, Right};
@@ -83,6 +87,14 @@ impl Storage {
     }
 
     fn is_rate_limited(&self, remote_peer: PeerId, urn: Urn) -> bool {
+        if self.limits.len() > 1024 {
+            let start = Instant::now();
+            self.limits.retain_recent();
+            tracing::debug!(
+                "sweeped rate limiter in {:.2}s",
+                start.elapsed().as_secs_f32()
+            );
+        }
         self.limits.check_key(&(remote_peer, urn)).is_err()
     }
 
