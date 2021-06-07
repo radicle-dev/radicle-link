@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom, fmt::Debug, path::Path};
+use std::{convert::TryFrom, fmt::Debug, marker::PhantomData, path::Path};
 
 use git_ext::{self as ext, blob, is_not_found_err, RefLike, RefspecPattern};
 use std_ext::result::ResultExt as _;
@@ -352,6 +352,10 @@ impl Storage {
 
     pub fn config(&self) -> Result<Config<BoxedSigner>, Error> {
         Ok(Config::try_from(self)?)
+    }
+
+    pub fn config_readonly(&self) -> Result<Config<PhantomData<!>>, Error> {
+        Ok(Config::try_from(self.as_raw())?)
     }
 
     pub(super) fn signer(&self) -> &BoxedSigner {

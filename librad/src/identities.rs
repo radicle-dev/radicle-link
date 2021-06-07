@@ -3,6 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::fmt::{self, Display};
+
 pub mod delegation;
 pub mod generic;
 pub mod git;
@@ -29,5 +31,12 @@ pub enum SomeUrn {
 impl From<git::Urn> for SomeUrn {
     fn from(urn: git::Urn) -> Self {
         Self::Git(urn)
+    }
+}
+
+impl Display for SomeUrn {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let Self::Git(urn) = self;
+        write!(f, "{}", urn)
     }
 }

@@ -115,7 +115,7 @@ where
     P: TryInto<PersonPayload> + Send,
     Error: From<P::Error>,
 {
-    if let Some(owner) = default_owner(peer).await? {
+    if let Some(owner) = default_owner(peer).await.expect("default owner") {
         return Ok(owner);
     }
 

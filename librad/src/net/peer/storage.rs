@@ -9,11 +9,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cuckoofilter::CuckooFilter;
 use either::Either::{self, Left, Right};
 use git_ext::{self as ext, reference};
-use parking_lot::RwLock;
-use rustc_hash::FxHasher;
 
 use crate::{
     executor,
@@ -36,23 +33,6 @@ pub struct Config {
     pub replication: replication::Config,
     pub fetch_slot_wait_timeout: Duration,
     pub fetch_quota: governor::Quota,
-}
-
-#[derive(Clone)]
-struct Caches {
-    /// [`Urn::id`]s we have.
-    have: Arc<RwLock<CuckooFilter<FxHasher>>>,
-    /// [`Urn::id`]s we have seen.
-    seen: Arc<RwLock<CuckooFilter<FxHasher>>>,
-}
-
-impl Default for Caches {
-    fn default() -> Self {
-        Self {
-            have: Arc::new(RwLock::new(CuckooFilter::with_capacity(10_000))),
-            seen: Arc::new(RwLock::new(CuckooFilter::with_capacity(100_000))),
-        }
-    }
 }
 
 type KeyedLimiter<T> = governor::RateLimiter<
@@ -145,7 +125,11 @@ impl Storage {
         match self.urns.contains(&urn.clone().with_path(None).into()) {
             Err(_) | Ok(false) => false,
             Ok(true) => {
-                let git = self.pool.get().await.unwrap();
+                let git = self
+                    .pool
+                    .get()
+                    .await
+                    .expect("unable to acquire storage from pool");
                 let head = head.into().map(ext::Oid::from);
                 self.spawner
                     .spawn_blocking(move || match head {
