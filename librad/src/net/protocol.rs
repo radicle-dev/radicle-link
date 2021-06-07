@@ -172,6 +172,15 @@ where
         config.membership,
     );
     let storage = Storage::new(storage, config.rate_limits.storage);
+    // TODO: make configurable
+    let nonces = nonce::NonceBag::new(Duration::from_secs(300));
+    let caches = cache::Caches {
+        urns: cache::urns::Filter::new(Arc::clone(&spawner), storage.clone()),
+    };
+    let limits = RateLimits {
+        membership: Arc::new(governor::RateLimiter::keyed(config.rate_limits.membership)),
+    };
+
     let state = State {
         local_id,
         endpoint,
@@ -183,12 +192,10 @@ where
             replication: config.replication,
             fetch: config.fetch,
         },
-        nonces: nonce::NonceBag::new(Duration::from_secs(300)), // TODO: config
-        caches: cache::Caches::default(),
+        nonces,
+        caches,
         spawner,
-        limits: RateLimits {
-            membership: Arc::new(governor::RateLimiter::keyed(config.rate_limits.membership)),
-        },
+        limits,
     };
 
     Ok(Bound {

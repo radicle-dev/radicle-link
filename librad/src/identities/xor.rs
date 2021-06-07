@@ -8,22 +8,23 @@ use std::fmt::{self, Debug};
 use data::BoundedVec;
 use sized_vec::Vec as SVec;
 use thiserror::Error;
-use typenum::{IsLessOrEqual, Unsigned, U1000, U10000, U330};
+use typenum::{IsLessOrEqual, Unsigned, U1000, U100000, U23, U30};
 use xorf::{Filter as _, Xor16};
 
 use super::{SomeUrn, Urn};
 
 /// Maximum number of elements permitted in a single [`Xor`] filter.
 ///
-/// Currently: 10,000
-pub type MaxElements = U10000;
+/// Currently: 100,000
+pub type MaxElements = U100000;
 
 /// Maximum number of fingerprints permitted in a serialised [`Xor`] filter.
 ///
 /// Approx. `MaxElements * 1.23`, but not exactly for all choices of
 /// `MaxElements`
+// 123_030
 // https://github.com/paholg/typenum/pull/136
-pub type MaxFingerprints = typenum::op!(U10000 + U1000 + U1000 + U330); // 12_330
+pub type MaxFingerprints = typenum::op!(U100000 + (U23 * U1000) + U30);
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -40,11 +41,8 @@ pub enum BuildError<E: std::error::Error + Send + Sync + 'static> {
 ///
 /// We use Lemire et.al.'s [Xor filter][xor] with 16-bit fingerprints, which
 /// gives a false positive rate of < 0.02. The number of elements in the filter
-/// is currently limited to 10,000, which makes for a total size of about 31KiB
-/// on the wire when fully loaded. This number may be adjusted in the
-/// future depending on real-world usage we see, or we may evolve the protocol
-/// such that large nodes announce their URN advertisement split over multiple
-/// Xor filters.
+/// is currently limited to **100,000**, which makes for a total size of about
+/// **315KiB** on the wire when fully loaded.
 ///
 /// The choice of Xor filters is a tradeoff: their size is proportional to the
 /// number of elements (ie. no "unused" bits are transmitted), and generally
