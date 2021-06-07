@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{net::SocketAddr, ops::Deref, sync::Arc};
+use std::{net::SocketAddr, ops::Deref, sync::Arc, time::Instant};
 
 use futures::future::TryFutureExt as _;
 use governor::RateLimiter;
@@ -271,9 +271,22 @@ where
 impl<S> broadcast::RateLimited for Storage<S> {
     fn is_rate_limit_breached(&self, lim: broadcast::Limit) -> bool {
         use broadcast::Limit;
+
+        const WANTS_SWEEP_THRESHOLD: usize = 8192;
+
         match lim {
             Limit::Errors => self.limits.errors.check().is_err(),
-            Limit::Wants { recipient } => self.limits.wants.check_key(recipient).is_err(),
+            Limit::Wants { recipient } => {
+                if self.limits.wants.len() > WANTS_SWEEP_THRESHOLD {
+                    let start = Instant::now();
+                    self.limits.wants.retain_recent();
+                    tracing::debug!(
+                        "sweeped wants rate limiter in {:.2}s",
+                        start.elapsed().as_secs_f32()
+                    );
+                }
+                self.limits.wants.check_key(recipient).is_err()
+            },
         }
     }
 }
