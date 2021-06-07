@@ -30,6 +30,10 @@ use crate::{
 };
 
 pub mod broadcast;
+
+pub mod cache;
+pub use cache::Caches;
+
 pub mod error;
 pub mod event;
 pub mod gossip;
@@ -41,7 +45,7 @@ mod info;
 pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
 
 mod accept;
-mod cache;
+
 mod control;
 mod nonce;
 mod tick;
@@ -149,6 +153,7 @@ pub async fn bind<Sign, Store>(
     config: Config,
     signer: Sign,
     storage: Store,
+    caches: impl Into<Option<cache::Caches>>,
 ) -> Result<Bound<Store>, error::Bootstrap>
 where
     Sign: Signer + Clone + Send + Sync + 'static,
@@ -174,12 +179,12 @@ where
     let storage = Storage::new(storage, config.rate_limits.storage);
     // TODO: make configurable
     let nonces = nonce::NonceBag::new(Duration::from_secs(300));
-    let caches = cache::Caches {
-        urns: cache::urns::Filter::new(Arc::clone(&spawner), storage.clone()),
-    };
     let limits = RateLimits {
         membership: Arc::new(governor::RateLimiter::keyed(config.rate_limits.membership)),
     };
+    let caches = caches
+        .into()
+        .unwrap_or_else(|| cache::Caches::new(Arc::clone(&spawner), storage.clone()));
 
     let state = State {
         local_id,

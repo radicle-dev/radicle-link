@@ -20,7 +20,7 @@ use crate::{
         Urn,
     },
     identities::urn,
-    net::protocol::{broadcast, gossip},
+    net::protocol::{broadcast, cache, gossip},
     peer::{Originates, PeerId},
 };
 
@@ -61,20 +61,32 @@ type KeyedLimiter<T> = governor::RateLimiter<
 pub struct Storage {
     pool: Pool,
     config: Config,
-    caches: Caches,
-    limits: Arc<KeyedLimiter<(PeerId, Urn)>>,
+    urns: cache::urns::Filter,
+    limits: Arc<RateLimiter<Keyed<(PeerId, Urn)>>>,
     spawner: Arc<executor::Spawner>,
 }
 
 impl Storage {
-    pub fn new(spawner: Arc<executor::Spawner>, pool: Pool, config: Config) -> Self {
+    pub fn new(
+        spawner: Arc<executor::Spawner>,
+        pool: Pool,
+        config: Config,
+        urns: cache::urns::Filter,
+    ) -> Self {
         Self {
             pool,
             config,
-            caches: Caches::default(),
-            limits: Arc::new(governor::RateLimiter::keyed(config.fetch_quota)),
+            urns,
+            limits: Arc::new(RateLimiter::keyed(
+                config.fetch_quota,
+                nonzero!(256 * 1024usize),
+            )),
             spawner,
         }
+    }
+
+    fn is_rate_limited(&self, remote_peer: PeerId, urn: Urn) -> bool {
+        self.limits.check_key(&(remote_peer, urn)).is_err()
     }
 
     async fn git_fetch(
@@ -94,11 +106,7 @@ impl Storage {
             urn_context(*git.peer_id(), urn)
         };
         let (remote_peer, addr_hints) = from.into();
-        if self
-            .limits
-            .check_key(&(remote_peer, urn.clone().with_path(None)))
-            .is_err()
-        {
+        if self.is_rate_limited(remote_peer, urn.clone().with_path(None)) {
             return Err(Error::RateLimited { remote_peer, urn });
         }
 
@@ -125,60 +133,23 @@ impl Storage {
         let git = self.pool.get().await.unwrap();
         let urn = urn_context(*git.peer_id(), urn);
 
-        // We definitely haven't seen this urn before, so lazily fill the
-        // `have` filter.
-        //
-        // This could be a false negative in case the `seen` filter is fully
-        // loaded and evicted the value. In this case we do extra work (which is
-        // acceptable), but are careful to not cause an eviction from the `have`
-        // filter by using `test_and_add` below.
-        if !self.caches.seen.read().contains(&urn.id) {
-            let have = self
-                .spawner
-                .spawn_blocking({
-                    let urn = urn.clone();
-                    move || git.has_urn(&urn)
-                })
-                .await;
-
-            // Don't mutate the caches in case of errors, as that would yield
-            // false negatives
-            if let Ok(Ok(have)) = have {
-                // Record that we now have seen and have it
-                self.caches.seen.write().add(&urn.id).ok();
-                if have {
-                    self.caches.have.write().test_and_add(&urn.id).ok();
-                } else {
-                    // If we don't have it, we can short-circuit here
-                    return false;
-                }
-            }
+        match self.urns.contains(&urn.clone().with_path(None).into()) {
+            Err(_) | Ok(false) => false,
+            Ok(true) => {
+                let git = self.pool.get().await.unwrap();
+                let head = head.into().map(ext::Oid::from);
+                self.spawner
+                    .spawn_blocking(move || match head {
+                        None => git.has_urn(&urn).unwrap_or(false),
+                        Some(head) => {
+                            git.has_commit(&urn, head).unwrap_or(false)
+                                || git.has_tag(&urn, head).unwrap_or(false)
+                        },
+                    })
+                    .await
+                    .unwrap_or(false)
+            },
         }
-
-        // We probably have seen this urn before, and definitely don't have it.
-        //
-        // False negative if the urn got evicted due to the filter being full.
-        // That's acceptable, because it only means that we don't offer ourselves
-        // as a fetch source.
-        if !self.caches.have.read().contains(&urn.id) {
-            return false;
-        }
-
-        // Here we know that we probably have this urn, and maybe the head. Hit
-        // the disk to find out.
-
-        let git = self.pool.get().await.unwrap();
-        let head = head.into().map(ext::Oid::from);
-        self.spawner
-            .spawn_blocking(move || match head {
-                None => git.has_urn(&urn).unwrap_or(false),
-                Some(head) => {
-                    git.has_commit(&urn, head).unwrap_or(false)
-                        || git.has_tag(&urn, head).unwrap_or(false)
-                },
-            })
-            .await
-            .unwrap_or(false)
     }
 
     async fn is_tracked(&self, urn: Urn, peer: PeerId) -> Result<bool, Error> {

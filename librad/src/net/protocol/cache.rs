@@ -24,6 +24,17 @@ pub struct Caches {
     pub urns: urns::Filter,
 }
 
+impl Caches {
+    pub fn new<S>(spawner: Arc<executor::Spawner>, pool: S) -> Self
+    where
+        S: storage::Pooled + Send + Sync + 'static,
+    {
+        Self {
+            urns: urns::Filter::new(spawner, pool),
+        }
+    }
+}
+
 pub mod urns {
     use super::*;
 
@@ -47,11 +58,12 @@ pub mod urns {
     impl Filter {
         pub fn new<S>(spawner: Arc<executor::Spawner>, pool: S) -> Self
         where
-            S: storage::Pooled + Clone + Send + Sync + 'static,
+            S: storage::Pooled + Send + Sync + 'static,
         {
             let inner = Arc::new(RwLock::new(None));
             spawner
-                .spawn(refresh(Arc::clone(&spawner), pool, Arc::downgrade(&inner)))
+                .clone()
+                .spawn(refresh(spawner, pool, Arc::downgrade(&inner)))
                 .detach();
             Self { inner }
         }
@@ -95,11 +107,11 @@ pub mod urns {
         pool: S,
         filter: Weak<RwLock<Option<FilterInner>>>,
     ) where
-        S: storage::Pooled + Send + Sync,
+        S: storage::Pooled + Send,
     {
         async fn mtime<S>(spawner: &executor::Spawner, pool: &S) -> Result<SystemTime, RefreshError>
         where
-            S: storage::Pooled + Send + Sync,
+            S: storage::Pooled + Send,
         {
             let storage = pool.get().await?;
             Ok(spawner
@@ -113,7 +125,7 @@ pub mod urns {
             filter: &RwLock<Option<FilterInner>>,
         ) -> Result<bool, RefreshError>
         where
-            S: storage::Pooled + Send + Sync,
+            S: storage::Pooled + Send,
         {
             let modified = (&*filter.read()).as_ref().map(|inner| inner.modified);
             match modified {
@@ -125,9 +137,9 @@ pub mod urns {
             }
         }
 
-        async fn do_rebuild<S>(spawner: &executor::Spawner, pool: &S) -> Result<Xor, RefreshError>
+        async fn rebuild_it<S>(spawner: &executor::Spawner, pool: &S) -> Result<Xor, RefreshError>
         where
-            S: storage::Pooled + Send + Sync,
+            S: storage::Pooled + Send,
         {
             let storage = pool.get().await?;
             Ok(spawner
@@ -147,7 +159,7 @@ pub mod urns {
                         });
                     if should_rebuild {
                         tracing::info!("rebuilding xor filter");
-                        match do_rebuild(&spawner, &pool).await {
+                        match rebuild_it(&spawner, &pool).await {
                             Err(e) => tracing::warn!(err = ?e, "error rebuilding xor filter"),
                             Ok(xor) => {
                                 tracing::info!("rebuilt xor filter");
