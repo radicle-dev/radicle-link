@@ -67,5 +67,5 @@ fn cbor() {
 
 #[test]
 fn typenum_doesnt_lie() {
-    assert_eq!(MaxFingerprints::U64, 12_330);
+    assert_eq!(MaxFingerprints::U64, 123_030);
 }

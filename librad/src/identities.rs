@@ -9,9 +9,12 @@ pub mod git;
 pub mod payload;
 pub mod relations;
 pub mod sign;
+
 pub mod urn;
 pub use urn::Urn;
+
 pub mod xor;
+pub use xor::Xor;
 
 mod sealed;
 
