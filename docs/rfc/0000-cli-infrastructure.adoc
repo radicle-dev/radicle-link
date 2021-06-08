@@ -1,0 +1,254 @@
+= RFC: RadiCLI
+:author: @FintanH
+:revdate: 2021-06-04
+:revremark: draft
+:toc:
+:toc-placement: preamble
+
+* Author: {author}
+* Date: {revdate}
+* Status: {revremark}
+* Community discussion: n/a
+* Tracking Issue: n/a
+
+== Motivation
+
+RFC-682 set the stage for defining the architecture of applications
+built on top of `<<radicle-link>>`. This RFC wishes to build on top of
+this specification and fill in the gaps around the CLI component and
+its organisation. As dogfooding our own solutions is on our long-term
+roadmap, this team wants to provide tooling that they will maintain
+and use themselves.
+
+== Overview
+
+This proposal will outline an binary called `rad`, what it will
+provide, and how it can be extended. Following this we provide details
+on the interaction -- or lack there of -- with the peer-to-peer
+daemon.
+
+We also provide a proposal of how any CLI tool will have
+access to any keys, as well as what needs to be completed for
+providing this.
+
+We close out with how the core components will be organised within
+`radicle-link` and `<<radicle-bins>>` as well as providing the first
+iteration of the core set of subcommands.
+
+== One `rad` to Rule Them All
+
+[quote]
+-------
+One ring to rule them all, one ring to find them,
+One ring to bring them all, and in the darkness bind them;
+-------
+-- J.R.R. Tolkein, Fellowship of the Ring
+
+The integral part of this proposal is that there will be one binary,
+`rad`, that will be the foundation for all other subcommands. It will
+define the global parameters and how to extend it.
+
+We will discuss these in the following two sections.
+
+== The Fellowship of the `rad`
+
+[quoute]
+--------
+“I can’t carry it for you, but I can carry you.” – Sam Gamgee
+--------
+-- J.R.R. Tolkien, The Return of the King
+
+To allow the ecosystem of commands to be extended by ourselves and
+others in the community it will be necessary to extend the `rad`
+command with further subcommands. The details of this are outlined in
+RFC-682#CLI, however, we will give a quick overview here for the sake
+of the reader.
+
+Taking inspiration from tools such as `git` and `cargo`, we propose
+that the `rad` binary can be extended by placing another
+binary on the users `$PATH` (or the Windows equivalent). This
+binary MUST follow the naming convention of `rad-*`. To reiterate
+here, these new commands MUST NOT override the core set outlined here
+(nor in further RFCs).
+
+== Global Parameters
+
+Many subcommands will likely want to share a set of options. These
+options, dubbed as "global parameters" here, will be a defined set --
+exported from `radicle-link` for re-use -- that the base `rad` command
+will always receive and pass onto the subcommand being called.
+
+Thus, all subcommands SHALL receive these global parameters as part of
+their interface. We list these parameters here, but it is NOT an
+exhaustive list:
+
+* `verbose`
+* `quiet`
+* `profile := active (default) | <profile-id>`
+
+== Online & Offline
+
+In RFC-682#Process-Orchestration, it was decided that the peer-to-peer
+damon would not be a long-running process. The terminology we will use
+here is that the daemon is *online* if it is running and connected to
+the network. Otherwise, if it is not running then it is *offline*.
+
+This disctinction becomes important when thinking about the
+functionality of `rad` subcommands. The majority of subcommands that
+interact with the storage can be done while the daemon is offline. The
+only action the author can currently think of — that is online — is
+replication of a URN from the network.
+
+This leaves us in a predicament of thinking about how multiple Radicle
+applictions may interact with each other. For example, if Upstream is
+running and I create a project via the CLI, then a good user
+experience is that the Upstream is updated with the new project
+(without refreshing). In RFC-682, it is alluded that a PubSub
+component could solve this, however, that requires the daemon to be
+online. The author prefers not to specify the PubSub component
+here. To bridge the gap, we recommend that a subcommand can add a
+parameter `daemon-mode := offline (default) | online`. If set to
+`online` the command will see if the daemon is online, and if not ask
+it to come online before applying the command.
+
+== Key Access
+
+RFC-682#Signatures outlined the signing of Radicle data. This is essential to
+this RFC as commands that write to the storage generally need access
+to the secret key, whether for signing data or proof of ownership to
+the storage. For most (if not all) read-only commands, no access to
+the secret key is needed.
+
+To achieve the goals of having a read-only storage and using
+`<<ssh-agent>>` for signing, we propose the following should be
+implemented:
+
+. `ssh-agent` compatability with `<<radicle-keystore>>`, which has been
+started in `<<rk-17, radicle-keystore#17>>`.
+. A subcommand `rad-key-ssh-add` for adding one's secret key to the
+`ssh-agent` using the supplied constraints, e.g. ask for password.
+. `radicle-link#461` to have a read-only storage.
+
+== Library/Command Organisation
+
+As proposed here, `radicle-link` will provide a core set of
+functionality. Something this document wishes to standardise is the
+organisation of these components. The author sees two options:
+. One binary that defines the core subcommands
+. Many binary that take advantage of the subcommand mechanism
+
+Pros of *1.*:
+
+* One-stop shop for all core functionality
+* One binary is packages and distributed
+
+Cons of *1.*:
+
+* Making changes to one subset of the commands could mean a version
+  change of the whole binary
+
+Pros of *2.*:
+
+* We will be organising commands as libraries (as per RFC-682) — so
+  modular commands would mirror this structure well.
+* Subcommands can be versioned independently of each other.
+* We can dogfood our subcommand functionality
+
+Cons of *2.*:
+
+* Makes it easier to override one of the core commands.
+* Many binary must be packaged and distributed.
+
+The author recommends *2.*. The modularity provides a clean separation
+of concerns and avoids a monolothic approach. We assume good faith
+of overrides not happening [TODO: is there some way we can just
+disallow this programatically?]. For packaging and distribution of the
+binaries, we propose to have a script that will install each
+subcommand binary — until we have a more well-founded way of
+distributing Radicle artifacts.
+
+=== `radicle-bins`
+
+Per RFC-682#CLI, all subcommands will be provided as
+libraries. However, this leaves the question of where the binary might
+live. So far, it has been an unspoken formalism that all binaries live
+in `radicle-bins` where we can provide a `Cargo.lock` file. All
+functionality will live in `radicle-link`, including the `main`
+function, and the entry in `radicle-bins` will be a thin wrapper
+around this function.
+
+=== Distribution
+
+We are noting here that -- at the time of writing -- we cannot publish
+these binaries to <<crates.io>> due to the fact that `librad` and other
+crucial libraries only live as a `git` repositories and are not on
+crates.io. Anything that depends on them cannot be published as a
+consequence.
+
+This means that all subcommands will need to be built from source
+initially, unless we build the binaries and distribute them from a
+well-known source.
+
+== Core
+
+With all the details in place, we define a non-exhaustive list of the
+core commands that we wish to include for the first iteration. More
+components MAY be added as the result of future RFCs. We SHALL keep a
+list of the core commands as part of the `radicle-link` documentation
+— as part of the `README`.
+
+=== `rad-project`
+
+This command will provide management of the `Project` identities and
+their respective working copies. The following actions will be
+defined:
+
+* `create` — create a `Project` identity and either create a
+  respective working copy, or link it to an existing working copy.
+* `get` — attempt to retrieve a `Project` identity from the store based on
+  a provided URN.
+* `list` — list all `Project` identities in the store.
+* `update` — update a `Project` identity with a new payload.
+* `merge` — merge a peer's version of the `Project` identity with your own
+* `track` — track a peer for the `Project` identity and add the peer
+to the working copy's include file.
+
+=== `rad-person`
+
+This command will provide the management of the `Person`
+identities. The following actions will be defined:
+
+* `create`— create a `Person` identity.
+* `get`— attempt to retrieve a `Person` identity from the store based
+  on a provided URN.
+* `list`— list all `Person` identities in the store.
+* `update`— update a `Person` identity with a new payload.
+* `merge`— merge a peer's version of the `Person` identity with your own.
+* `track`— track a peer for the `Person` identity.
+
+=== `rad-replicate`
+
+* `ask` — ask the network for a given URN and replicate it to local storage.
+
+=== `rad-key`
+
+This command will provide the management of keys and the `Profile`
+construct in `librad`. The following actions will be defined:
+
+* `create`— generate a new key and a new `Profile`, which implies a
+  separate storage.
+* `profile get`— get the current `Profile`'s identifier
+* `profile set`— set the current `Profile` to the identifier
+  passed in. *Note* that this should refuse to do so if the daemon is online.
+* `profile list`— list the available `Profile` identifiers
+* `ssh add`— add the current `Profile`'s key to the `ssh-agent`
+
+[bibliography]
+== References
+
+* [[[crates.io]]] https://crates.io/
+* [[[radicle-bins]]] https://github.com/radicle-dev/radicle-bins/
+* [[[radicle-link]]] https://github.com/radicle-dev/radicle-link/
+* [[[radicle-keystore]]] https://github.com/radicle-dev/radicle-keystore/
+* [[[rk-17]]] https://github.com/radicle-dev/radicle-keystore/pull/17
+* [[[ssh-agent]]] https://datatracker.ietf.org/doc/html/draft-miller-ssh-agent-04
