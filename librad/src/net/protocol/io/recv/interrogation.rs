@@ -33,19 +33,12 @@ use crate::{
 #[derive(Debug, Error)]
 enum Error {
     #[error(transparent)]
-    Cache(#[from] cache::urns::Error),
-
-    #[error(transparent)]
     Cbor(#[from] minicbor::encode::Error<std::io::Error>),
 }
 
 lazy_static! {
     static ref INTERNAL_ERROR: Vec<u8> =
         encode(&Response::Error(interrogation::Error::Internal)).unwrap();
-    static ref UNAVAILABLE_ERROR: Vec<u8> = encode(&Response::Error(
-        interrogation::Error::TemporarilyUnavailable
-    ))
-    .unwrap();
 }
 
 pub(in crate::net::protocol) async fn interrogation<S, T>(
@@ -80,7 +73,6 @@ pub(in crate::net::protocol) async fn interrogation<S, T>(
                                 .unwrap_or_else(|e| {
                                     tracing::error!(err = ?e, "error handling request");
                                     match e {
-                                        Error::Cache(_) => Cow::from(&*UNAVAILABLE_ERROR),
                                         Error::Cbor(_) => Cow::from(&*INTERNAL_ERROR),
                                     }
                                 })
@@ -117,7 +109,7 @@ fn handle_request(
         },
         Request::EchoAddr => Left(Response::YourAddr(remote_addr)),
         Request::GetUrns => {
-            let urns = urns.get()?;
+            let urns = urns.get();
             Right(encode(&Response::<SocketAddr>::Urns(Cow::Borrowed(&urns))))
         },
     }

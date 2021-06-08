@@ -84,9 +84,7 @@ pub fn list_urns(
 
 /// Build an [`Xor`] filter from all available [`Urn`]s.
 pub fn xor_filter(storage: &Storage) -> Result<Xor, xor::BuildError<Error>> {
-    Ok(Xor::try_from_iter(
-        list_urns(storage)?.map_ok(SomeUrn::from),
-    )?)
+    Xor::try_from_iter(list_urns(storage)?.map_ok(SomeUrn::from))
 }
 
 fn identities(storage: &Storage) -> Identities<!> {

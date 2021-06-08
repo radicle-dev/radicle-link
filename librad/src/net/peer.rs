@@ -139,7 +139,13 @@ where
             ),
             config.storage.protocol.pool_size,
         );
-        let caches = protocol::Caches::new(Arc::clone(&spawner), pool.clone());
+        let caches = {
+            let urns = protocol::cache::urns::Filter::new(
+                git::storage::Storage::open(&config.protocol.paths, config.signer.clone()).unwrap(),
+            )
+            .unwrap();
+            protocol::Caches { urns }
+        };
         let peer_store = PeerStorage::new(
             spawner.clone(),
             pool,

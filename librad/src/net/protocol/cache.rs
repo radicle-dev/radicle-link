@@ -3,19 +3,13 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    ops::Deref,
-    sync::{Arc, Weak},
-    time::{Duration, Instant, SystemTime},
-};
+use std::{ops::Deref, sync::Arc, thread, time::Instant};
 
-use futures_timer::Delay;
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 use thiserror::Error;
 
 use crate::{
-    executor,
-    git::{identities, storage, tracking},
+    git::{identities, storage},
     identities::{xor, SomeUrn, Xor},
 };
 
@@ -24,161 +18,71 @@ pub struct Caches {
     pub urns: urns::Filter,
 }
 
-impl Caches {
-    pub fn new<S>(spawner: Arc<executor::Spawner>, pool: S) -> Self
-    where
-        S: storage::Pooled + Send + Sync + 'static,
-    {
-        Self {
-            urns: urns::Filter::new(spawner, pool),
-        }
-    }
-}
-
 pub mod urns {
     use super::*;
 
     #[derive(Debug, Error)]
     #[non_exhaustive]
     pub enum Error {
-        #[error("cache is initialising")]
-        Initialising,
+        #[error(transparent)]
+        Build(#[from] xor::BuildError<identities::Error>),
+
+        #[error(transparent)]
+        Watch(#[from] storage::watch::Error),
+
+        #[error(transparent)]
+        Storage(#[from] storage::Error),
     }
 
     #[derive(Clone)]
     pub struct Filter {
-        inner: Arc<RwLock<Option<FilterInner>>>,
-    }
-
-    struct FilterInner {
-        modified: SystemTime,
-        filter: Xor,
+        inner: Arc<RwLock<Xor>>,
+        watch: storage::Watcher,
     }
 
     impl Filter {
-        pub fn new<S>(spawner: Arc<executor::Spawner>, pool: S) -> Self
-        where
-            S: storage::Pooled + Send + Sync + 'static,
-        {
-            let inner = Arc::new(RwLock::new(None));
-            spawner
-                .clone()
-                .spawn(refresh(spawner, pool, Arc::downgrade(&inner)))
-                .detach();
-            Self { inner }
+        pub fn new(storage: storage::Storage) -> Result<Self, Error> {
+            let xor = identities::any::xor_filter(&storage)?;
+            let inner = Arc::new(RwLock::new(xor));
+
+            let (watch, events) = storage.watch().namespaces()?;
+            thread::spawn({
+                let filter = Arc::clone(&inner);
+                move || recache_thread(storage, filter, events)
+            });
+
+            Ok(Self { inner, watch })
         }
 
-        pub fn contains(&self, urn: &SomeUrn) -> Result<bool, Error> {
-            match &*self.inner.read() {
-                None => Err(Error::Initialising),
-                Some(inner) => Ok(inner.filter.contains(urn)),
-            }
+        pub fn contains(&self, urn: &SomeUrn) -> bool {
+            self.inner.read().contains(urn)
         }
 
-        pub fn get(&self) -> Result<impl Deref<Target = Xor> + '_, Error> {
-            let guard = self.inner.read();
-            match *guard {
-                None => Err(Error::Initialising),
-                Some(_) => Ok(RwLockReadGuard::map(guard, |x| {
-                    x.as_ref().map(|inner| &inner.filter).unwrap()
-                })),
-            }
+        pub fn get(&self) -> impl Deref<Target = Xor> + '_ {
+            self.inner.read()
         }
     }
 
-    #[derive(Debug, Error)]
-    enum RefreshError {
-        #[error(transparent)]
-        Tracking(#[from] tracking::Error),
-
-        #[error(transparent)]
-        Xor(#[from] xor::BuildError<identities::Error>),
-
-        #[error(transparent)]
-        Pool(#[from] storage::PoolError),
-
-        #[error(transparent)]
-        Task(#[from] executor::JoinError),
-    }
-
-    #[tracing::instrument(skip(spawner, pool, filter))]
-    async fn refresh<S>(
-        spawner: Arc<executor::Spawner>,
-        pool: S,
-        filter: Weak<RwLock<Option<FilterInner>>>,
-    ) where
-        S: storage::Pooled + Send,
-    {
-        async fn mtime<S>(spawner: &executor::Spawner, pool: &S) -> Result<SystemTime, RefreshError>
-        where
-            S: storage::Pooled + Send,
-        {
-            let storage = pool.get().await?;
-            Ok(spawner
-                .spawn_blocking(move || tracking::modified(&storage))
-                .await??)
-        }
-
-        async fn should_rebuild<S>(
-            spawner: &executor::Spawner,
-            pool: &S,
-            filter: &RwLock<Option<FilterInner>>,
-        ) -> Result<bool, RefreshError>
-        where
-            S: storage::Pooled + Send,
-        {
-            let modified = (&*filter.read()).as_ref().map(|inner| inner.modified);
-            match modified {
-                None => Ok(true),
-                Some(t) => {
-                    let mtime = mtime(spawner, pool).await?;
-                    Ok(mtime > t)
+    fn recache_thread(
+        storage: storage::Storage,
+        filter: Arc<RwLock<Xor>>,
+        events: impl Iterator<Item = storage::NamespaceEvent>,
+    ) {
+        let span = tracing::info_span!("recache-urns");
+        let _guard = span.enter();
+        for _ in events {
+            let start = Instant::now();
+            match identities::any::xor_filter(&storage) {
+                Err(e) => {
+                    tracing::warn!(err = ?e, "error rebuilding xor filter")
                 },
-            }
-        }
-
-        async fn rebuild_it<S>(spawner: &executor::Spawner, pool: &S) -> Result<Xor, RefreshError>
-        where
-            S: storage::Pooled + Send,
-        {
-            let storage = pool.get().await?;
-            Ok(spawner
-                .spawn_blocking(move || identities::any::xor_filter(&storage))
-                .await??)
-        }
-
-        loop {
-            match Weak::upgrade(&filter) {
-                None => break,
-                Some(lock) => {
-                    let should_rebuild = should_rebuild(&spawner, &pool, &lock)
-                        .await
-                        .unwrap_or_else(|e| {
-                            tracing::warn!(err = ?e, "unable to determine freshness");
-                            false
-                        });
-                    if should_rebuild {
-                        let start = Instant::now();
-                        match rebuild_it(&spawner, &pool).await {
-                            Err(e) => tracing::warn!(err = ?e, "error rebuilding xor filter"),
-                            Ok(xor) => {
-                                tracing::info!(
-                                    "rebuilt xor filter in {:.2}s",
-                                    start.elapsed().as_secs_f32()
-                                );
-                                let modified = mtime(&spawner, &pool)
-                                    .await
-                                    .unwrap_or_else(|_| SystemTime::now());
-                                let mut guard = lock.write();
-                                *guard = Some(FilterInner {
-                                    modified,
-                                    filter: xor,
-                                })
-                            },
-                        }
-                    }
-
-                    Delay::new(Duration::from_secs(120)).await
+                Ok(xor) => {
+                    tracing::info!(
+                        "rebuilt xor filter in {:.2}s",
+                        start.elapsed().as_secs_f32()
+                    );
+                    let mut guard = filter.write();
+                    *guard = xor;
                 },
             }
         }
