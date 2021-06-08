@@ -193,7 +193,9 @@ impl<N, R> Reference<N, R, One> {
             force.as_bool(),
             log_message
         );
-        repo.reference(&self.to_string(), target, force.as_bool(), log_message)
+        let name = self.to_string();
+        repo.reference_ensure_log(&name)?;
+        repo.reference(&name, target, force.as_bool(), log_message)
     }
 
     /// Create a [`SymbolicRef`] from `source` to `self` as the `target`.
@@ -593,13 +595,13 @@ impl<S, T> SymbolicRef<S, T> {
         let reflog_msg = &format!("creating symbolic ref {} -> {}", source, target);
         tracing::debug!("{}", reflog_msg);
 
-        repo.find_reference(target.as_str()).and_then(|_| {
-            repo.reference_symbolic(
-                source.as_str(),
-                target.as_str(),
-                self.force.as_bool(),
-                reflog_msg,
-            )
-        })
+        let _ = repo.refname_to_id(target.as_str())?;
+        repo.reference_ensure_log(source.as_str())?;
+        repo.reference_symbolic(
+            source.as_str(),
+            target.as_str(),
+            self.force.as_bool(),
+            reflog_msg,
+        )
     }
 }

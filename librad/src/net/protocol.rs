@@ -153,7 +153,7 @@ pub async fn bind<Sign, Store>(
     config: Config,
     signer: Sign,
     storage: Store,
-    caches: impl Into<Option<cache::Caches>>,
+    caches: cache::Caches,
 ) -> Result<Bound<Store>, error::Bootstrap>
 where
     Sign: Signer + Clone + Send + Sync + 'static,
@@ -182,9 +182,6 @@ where
     let limits = RateLimits {
         membership: Arc::new(governor::RateLimiter::keyed(config.rate_limits.membership)),
     };
-    let caches = caches
-        .into()
-        .unwrap_or_else(|| cache::Caches::new(Arc::clone(&spawner), storage.clone()));
 
     let state = State {
         local_id,
