@@ -66,11 +66,11 @@ pub mod urns {
     fn recache_thread(
         storage: storage::Storage,
         filter: Arc<RwLock<Xor>>,
-        mut events: impl Iterator<Item = storage::RefsEvent>,
+        events: impl Iterator<Item = storage::RefsEvent>,
     ) {
         let span = tracing::info_span!("recache-urns");
         let _guard = span.enter();
-        while let Some(evt) = events.next() {
+        for evt in events {
             if is_urn_event(evt) {
                 let start = Instant::now();
                 match identities::any::xor_filter(&storage) {
