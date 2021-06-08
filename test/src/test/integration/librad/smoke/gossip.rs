@@ -8,15 +8,12 @@ use std::{
     time::Duration,
 };
 
-use crate::{
-    git::create_commit,
-    logging,
-    rad::{identities::TestProject, testnet},
-};
 use futures::StreamExt as _;
+use futures_timer::Delay;
 use librad::{
     git::{
         local::url::LocalUrl,
+        storage,
         types::{remote, Fetchspec, Force, Reference, Remote},
         Urn,
     },
@@ -33,6 +30,12 @@ use librad::{
 };
 use tempfile::tempdir;
 use tokio::task::spawn_blocking;
+
+use crate::{
+    git::create_commit,
+    logging,
+    rad::{identities::TestProject, testnet},
+};
 
 fn config() -> testnet::Config {
     testnet::Config {
@@ -197,6 +200,9 @@ fn ask_and_clone() {
             .await
             .unwrap()
             .unwrap();
+        // Wait for peer1 to rebuild its cache
+        Delay::new(storage::watch::DEBOUNCE_DELAY).await;
+
         let project_urn = proj.project.urn();
 
         let provider = peer2

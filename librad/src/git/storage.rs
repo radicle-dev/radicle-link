@@ -1,9 +1,15 @@
-// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+// Copyright © 2019-2021 The Radicle Foundation <hello@radicle.foundation>
+// Copyright © 2021      The Radicle Link Contributors
 //
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom, fmt::Debug, marker::PhantomData, path::Path};
+use std::{
+    convert::TryFrom,
+    fmt::Debug,
+    marker::PhantomData,
+    path::{Path, PathBuf},
+};
 
 use git_ext::{self as ext, blob, is_not_found_err, RefLike, RefspecPattern};
 use std_ext::result::ResultExt as _;
@@ -11,7 +17,7 @@ use thiserror::Error;
 
 use super::types::{reference, Many, One, Reference};
 use crate::{
-    identities::git::Identities,
+    identities::git::{Identities, Urn},
     paths::Paths,
     peer::PeerId,
     signer::{BoxedSigner, Signer, SomeSigner},
@@ -21,14 +27,13 @@ pub mod config;
 pub mod fetcher;
 pub mod glob;
 pub mod pool;
+pub mod watch;
 
 pub use config::Config;
 pub use fetcher::{Fetcher, Fetchers};
 pub use glob::Pattern;
 pub use pool::{Pool, PoolError, Pooled, PooledRef};
-
-// FIXME: should be at the crate root
-pub use crate::identities::git::Urn;
+pub use watch::{RefsEvent, RefsEventKind, Watcher};
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -356,6 +361,14 @@ impl Storage {
 
     pub fn config_readonly(&self) -> Result<Config<PhantomData<!>>, Error> {
         Ok(Config::try_from(self.as_raw())?)
+    }
+
+    pub fn config_path(&self) -> PathBuf {
+        config::path(self.as_raw())
+    }
+
+    pub fn watch(&self) -> watch::Watch {
+        watch::Watch { storage: self }
     }
 
     pub(super) fn signer(&self) -> &BoxedSigner {

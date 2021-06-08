@@ -5,11 +5,18 @@
 
 use std::ops::Index as _;
 
+use futures_timer::Delay;
+use librad::{
+    data::BoundedVec,
+    git::storage,
+    identities::SomeUrn,
+    net::protocol::PeerAdvertisement,
+};
+
 use crate::{
     logging,
     rad::{identities::TestProject, testnet},
 };
-use librad::{data::BoundedVec, identities::SomeUrn, net::protocol::PeerAdvertisement};
 
 fn config() -> testnet::Config {
     testnet::Config {
@@ -32,6 +39,8 @@ fn responds() {
             .await
             .unwrap()
             .unwrap();
+        // Make sure responder had a chance to refresh its caches
+        Delay::new(storage::watch::DEBOUNCE_DELAY).await;
 
         let interrogation =
             requester.interrogate((responder.peer_id(), responder.listen_addrs().to_vec()));

@@ -122,27 +122,26 @@ impl Storage {
         let git = self.pool.get().await.unwrap();
         let urn = urn_context(*git.peer_id(), urn);
 
-        match self.urns.contains(&urn.clone().with_path(None).into()) {
-            Err(_) | Ok(false) => false,
-            Ok(true) => {
-                let git = self
-                    .pool
-                    .get()
-                    .await
-                    .expect("unable to acquire storage from pool");
-                let head = head.into().map(ext::Oid::from);
-                self.spawner
-                    .spawn_blocking(move || match head {
-                        None => git.has_urn(&urn).unwrap_or(false),
-                        Some(head) => {
-                            git.has_commit(&urn, head).unwrap_or(false)
-                                || git.has_tag(&urn, head).unwrap_or(false)
-                        },
-                    })
-                    .await
-                    .unwrap_or(false)
-            },
+        if !self.urns.contains(&urn.clone().with_path(None).into()) {
+            return false;
         }
+
+        let git = self
+            .pool
+            .get()
+            .await
+            .expect("unable to acquire storage from pool");
+        let head = head.into().map(ext::Oid::from);
+        self.spawner
+            .spawn_blocking(move || match head {
+                None => git.has_urn(&urn).unwrap_or(false),
+                Some(head) => {
+                    git.has_commit(&urn, head).unwrap_or(false)
+                        || git.has_tag(&urn, head).unwrap_or(false)
+                },
+            })
+            .await
+            .unwrap_or(false)
     }
 
     async fn is_tracked(&self, urn: Urn, peer: PeerId) -> Result<bool, Error> {
