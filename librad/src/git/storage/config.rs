@@ -104,9 +104,9 @@ where
     }
 
     fn ensure_reflog(&mut self) -> Result<(), Error> {
-        if let Err(e) = self.inner.get_string("core.logAllRefUpdates") {
+        if let Err(e) = self.inner.get_bool("core.logAllRefUpdates") {
             return if is_not_found_err(&e) {
-                Ok(self.inner.set_str("core.logAllRefUpdates", "always")?)
+                Ok(self.inner.set_bool("core.logAllRefUpdates", true)?)
             } else {
                 Err(e.into())
             };

@@ -45,7 +45,7 @@ pub mod urns {
             let xor = identities::any::xor_filter(&storage)?;
             let inner = Arc::new(RwLock::new(xor));
 
-            let (watch, events) = storage.watch().refs()?;
+            let (watch, events) = storage.watch().namespaces()?;
             thread::spawn({
                 let filter = Arc::clone(&inner);
                 move || recache_thread(storage, filter, events)
@@ -66,35 +66,25 @@ pub mod urns {
     fn recache_thread(
         storage: storage::Storage,
         filter: Arc<RwLock<Xor>>,
-        events: impl Iterator<Item = storage::RefsEvent>,
+        events: impl Iterator<Item = storage::NamespaceEvent>,
     ) {
         let span = tracing::info_span!("recache-urns");
         let _guard = span.enter();
-        for evt in events {
-            if is_urn_event(evt) {
-                let start = Instant::now();
-                match identities::any::xor_filter(&storage) {
-                    Err(e) => {
-                        tracing::warn!(err = ?e, "error rebuilding xor filter")
-                    },
-                    Ok(xor) => {
-                        tracing::info!(
-                            "rebuilt xor filter in {:.2}s",
-                            start.elapsed().as_secs_f32()
-                        );
-                        let mut guard = filter.write();
-                        *guard = xor;
-                    },
-                }
+        for _ in events {
+            let start = Instant::now();
+            match identities::any::xor_filter(&storage) {
+                Err(e) => {
+                    tracing::warn!(err = ?e, "error rebuilding xor filter")
+                },
+                Ok(xor) => {
+                    tracing::info!(
+                        "rebuilt xor filter in {:.2}s",
+                        start.elapsed().as_secs_f32()
+                    );
+                    let mut guard = filter.write();
+                    *guard = xor;
+                },
             }
         }
-    }
-
-    fn is_urn_event(storage::RefsEvent { path, kind }: storage::RefsEvent) -> bool {
-        matches!(
-            kind,
-            storage::RefsEventKind::Create | storage::RefsEventKind::Remove
-        ) && path.starts_with("refs/namespaces")
-            && path.iter().take(4).count() == 3
     }
 }

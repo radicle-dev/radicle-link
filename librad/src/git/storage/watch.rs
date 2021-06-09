@@ -35,13 +35,14 @@ pub enum Error {
 pub struct Watcher(Arc<notify::RecommendedWatcher>);
 
 #[derive(Debug)]
-pub struct RefsEvent {
+pub struct NamespaceEvent {
     pub path: PathBuf,
-    pub kind: RefsEventKind,
+    pub kind: EventKind,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RefsEventKind {
+#[non_exhaustive]
+pub enum EventKind {
     Create,
     Remove,
     Update,
@@ -52,7 +53,7 @@ pub struct Watch<'a> {
 }
 
 impl<'a> Watch<'a> {
-    pub fn refs(&self) -> Result<(Watcher, impl Iterator<Item = RefsEvent>), Error> {
+    pub fn namespaces(&self) -> Result<(Watcher, impl Iterator<Item = NamespaceEvent>), Error> {
         use notify::{DebouncedEvent::*, RecursiveMode::Recursive};
 
         let repo_path = self.storage.path().to_owned();
@@ -67,27 +68,29 @@ impl<'a> Watch<'a> {
         let mut watcher = notify::watcher(tx, DEBOUNCE_DELAY)?;
         watcher.watch(&reflogs_path, Recursive)?;
 
-        fn relpath(repo: &Path, p: PathBuf) -> PathBuf {
-            match p.strip_prefix(repo) {
-                Ok(rel) => rel.to_path_buf(),
-                Err(_) => p,
-            }
+        fn is_namespace(p: &Path) -> bool {
+            p.starts_with("refs/namespaces") && p.iter().take(4).count() == 3
         }
 
-        let rx = rx.into_iter().filter_map(move |evt| match evt {
-            Create(path) => Some(RefsEvent {
-                path: relpath(&reflogs_path, path),
-                kind: RefsEventKind::Create,
-            }),
-            Remove(path) => Some(RefsEvent {
-                path: relpath(&reflogs_path, path),
-                kind: RefsEventKind::Remove,
-            }),
-            Write(path) => Some(RefsEvent {
-                path: relpath(&reflogs_path, path),
-                kind: RefsEventKind::Update,
-            }),
-            _ => None,
+        let rx = rx.into_iter().filter_map(move |evt| {
+            tracing::trace!("reflog event: {:?}", evt);
+            match evt {
+                Create(path) => {
+                    let path = path.strip_prefix(&reflogs_path).ok()?;
+                    is_namespace(path).then(|| NamespaceEvent {
+                        path: path.to_path_buf(),
+                        kind: EventKind::Create,
+                    })
+                },
+                Remove(path) => {
+                    let path = path.strip_prefix(&reflogs_path).ok()?;
+                    is_namespace(path).then(|| NamespaceEvent {
+                        path: path.to_path_buf(),
+                        kind: EventKind::Remove,
+                    })
+                },
+                _ => None,
+            }
         });
 
         Ok((Watcher(Arc::new(watcher)), rx))
