@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::{
     executor,
-    git::{self, replication, storage::fetcher, tracking},
+    git::{self, replication, storage, storage::fetcher, tracking},
     PeerId,
 };
 
@@ -30,10 +30,10 @@ pub enum Error {
     Fetcher(#[from] fetcher::error::Retrying<git2::Error>),
 
     #[error(transparent)]
-    Store(#[from] git::storage::Error),
+    Store(#[from] storage::Error),
 
     #[error(transparent)]
-    Pool(#[from] deadpool::managed::PoolError<git::storage::Error>),
+    Pool(#[from] storage::PoolError),
 
     #[error(transparent)]
     Task(executor::Cancelled),
