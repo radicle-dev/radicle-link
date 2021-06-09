@@ -16,6 +16,11 @@ use thiserror::Error;
 
 use super::Storage;
 
+/// [`Duration`] to wait for similar events.
+///
+/// Events are _debounced_ (ie. if two similar events occur in close succession,
+/// only one is returned). This is particularly useful for renames, which git
+/// uses a lot to enable atomic file operations.
 pub const DEBOUNCE_DELAY: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Error)]
@@ -31,6 +36,11 @@ pub enum Error {
     Io(#[from] io::Error),
 }
 
+/// A handle to a filesystem watcher.
+///
+/// If and when this value is dropped, the corresponding events iterator will
+/// return `None`. Note, however, that this is subject to the
+/// [`DEBOUNCE_DELAY`].
 #[derive(Clone)]
 pub struct Watcher(Arc<notify::RecommendedWatcher>);
 
@@ -54,11 +64,22 @@ pub enum EventKind {
     Update,
 }
 
+/// Watch a [`Storage`] for changes.
+///
+/// Implemented in terms of filesystem events, and so are emitted regardless of
+/// which process or [`Storage`] instance causes them.
 pub struct Watch<'a> {
     pub(super) storage: &'a Storage,
 }
 
 impl<'a> Watch<'a> {
+    /// Watch for creation or removal of a namespace.
+    ///
+    /// Implemented in terms of [`Self::reflogs`], meaning that reflogs need to
+    /// be enabled, and a reflog for a `rad/id` ref needs to be created.
+    /// This is the default.
+    ///
+    /// Note: `EventKind::Update` events will **not** be emitted.
     pub fn namespaces(&self) -> Result<(Watcher, impl Iterator<Item = NamespaceEvent>), Error> {
         fn is_namespace(p: &Path) -> bool {
             let mut iter = p.iter().take(6);
@@ -85,6 +106,12 @@ impl<'a> Watch<'a> {
         Ok((watcher, rx))
     }
 
+    /// Watch the reflog.
+    ///
+    /// Requires the reflog to be enabled on the backing repository. By default,
+    /// refs created by this library will also create corresponding reflogs.
+    /// Currently, refs created by other tools (eg. `git push`) will **not**
+    /// create reflogs.
     pub fn reflogs(&self) -> Result<(Watcher, impl Iterator<Item = ReflogEvent>), Error> {
         use notify::{DebouncedEvent::*, RecursiveMode::Recursive};
 
@@ -100,26 +127,30 @@ impl<'a> Watch<'a> {
         let mut watcher = notify::watcher(tx, DEBOUNCE_DELAY)?;
         watcher.watch(&reflogs_path, Recursive)?;
 
+        fn is_ref(p: &Path) -> bool {
+            !p.ends_with(".lock") && p.is_file()
+        }
+
         let rx = rx.into_iter().filter_map(move |evt| {
             tracing::trace!("reflog event: {:?}", evt);
             match evt {
                 Create(path) => {
                     let path = path.strip_prefix(&reflogs_path).ok()?;
-                    path.is_file().then(|| ReflogEvent {
+                    is_ref(path).then(|| ReflogEvent {
                         path: path.to_path_buf(),
                         kind: EventKind::Create,
                     })
                 },
                 Remove(path) => {
                     let path = path.strip_prefix(&reflogs_path).ok()?;
-                    path.is_file().then(|| ReflogEvent {
+                    is_ref(path).then(|| ReflogEvent {
                         path: path.to_path_buf(),
                         kind: EventKind::Remove,
                     })
                 },
                 Write(path) | Rename(_, path) => {
                     let path = path.strip_prefix(&reflogs_path).ok()?;
-                    path.is_file().then(|| ReflogEvent {
+                    is_ref(path).then(|| ReflogEvent {
                         path: path.to_path_buf(),
                         kind: EventKind::Update,
                     })
