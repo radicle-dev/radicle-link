@@ -102,6 +102,10 @@ where
     /// Constructs a new [`Peer`].
     ///
     /// To kick-off the peer's subroutines be sure to use [`run`][`Self::run`].
+    ///
+    /// # Errors
+    ///
+    /// If the underlying [`librad::net::peer::Peer`] fails to initialise.
     #[must_use = "give a peer some love"]
     pub fn new(
         config: net::peer::Config<S>,
