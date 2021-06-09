@@ -7,7 +7,6 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use futures::{future, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use futures_timer::Delay;
-use thiserror::Error;
 
 use super::protocol::{self, gossip};
 use crate::{
@@ -27,6 +26,7 @@ pub use super::protocol::{
 };
 pub use deadpool::managed::PoolError;
 
+pub mod error;
 pub mod storage;
 pub use storage::Storage as PeerStorage;
 
@@ -86,31 +86,6 @@ pub mod config {
     }
 }
 
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum StorageError {
-    #[error(transparent)]
-    Task(executor::Cancelled),
-
-    #[error(transparent)]
-    Storage(#[from] git::storage::Error),
-
-    #[error(transparent)]
-    Pool(PoolError<git::storage::Error>),
-}
-
-impl From<PoolError<git::storage::Error>> for StorageError {
-    fn from(e: PoolError<git::storage::Error>) -> Self {
-        Self::Pool(e)
-    }
-}
-
-impl From<executor::JoinError> for StorageError {
-    fn from(e: executor::JoinError) -> Self {
-        Self::Task(e.into_cancelled())
-    }
-}
-
 #[derive(Clone)]
 pub struct Peer<S> {
     config: Config<S>,
@@ -125,7 +100,7 @@ impl<S> Peer<S>
 where
     S: Signer + Clone,
 {
-    pub fn new(config: Config<S>) -> Self {
+    pub fn new(config: Config<S>) -> Result<Self, error::Init> {
         let spawner = Arc::new(executor::Spawner::new("peer"));
         let phone = protocol::TinCans::default();
         let storage_lock = git::storage::pool::Initialised::no();
@@ -140,10 +115,8 @@ where
             config.storage.protocol.pool_size,
         );
         let caches = {
-            let urns = protocol::cache::urns::Filter::new(
-                git::storage::Storage::open(&config.protocol.paths, config.signer.clone()).unwrap(),
-            )
-            .unwrap();
+            let store = git::storage::Storage::open(&config.protocol.paths, config.signer.clone())?;
+            let urns = protocol::cache::urns::Filter::new(store)?;
             protocol::Caches { urns }
         };
         let peer_store = PeerStorage::new(
@@ -166,14 +139,14 @@ where
             config.storage.user.pool_size,
         );
 
-        Self {
+        Ok(Self {
             config,
             phone,
             peer_store,
             user_store,
             caches,
             spawner,
-        }
+        })
     }
 
     pub fn signer(&self) -> &S {
@@ -267,7 +240,7 @@ where
 
     /// Borrow a [`git::storage::Storage`] from the pool, and run a blocking
     /// computation on it.
-    pub async fn using_storage<F, A>(&self, blocking: F) -> Result<A, StorageError>
+    pub async fn using_storage<F, A>(&self, blocking: F) -> Result<A, error::Storage>
     where
         F: FnOnce(&git::storage::Storage) -> A + Send + 'static,
         A: Send + 'static,

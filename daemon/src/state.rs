@@ -1048,7 +1048,7 @@ pub mod test {
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
-        let peer = net::peer::Peer::new(config);
+        let peer = net::peer::Peer::new(config)?;
 
         let annie = super::init_user(&peer, "annie_are_you_ok?".to_string()).await;
         assert!(annie.is_ok());
@@ -1062,7 +1062,7 @@ pub mod test {
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
-        let peer = net::peer::Peer::new(config);
+        let peer = net::peer::Peer::new(config)?;
         let payload = super::PersonPayload::new(Person {
             name: "cloudhead".into(),
         })
@@ -1092,7 +1092,7 @@ pub mod test {
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
-        let peer = net::peer::Peer::new(config);
+        let peer = net::peer::Peer::new(config)?;
         let payload = super::PersonPayload::new(Person {
             name: "cloudhead".into(),
         })
@@ -1123,7 +1123,7 @@ pub mod test {
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
-        let peer = net::peer::Peer::new(config);
+        let peer = net::peer::Peer::new(config)?;
 
         let user = super::init_owner(
             &peer,
@@ -1150,7 +1150,7 @@ pub mod test {
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
-        let peer = net::peer::Peer::new(config);
+        let peer = net::peer::Peer::new(config)?;
 
         let user = super::init_owner(
             &peer,
@@ -1174,7 +1174,7 @@ pub mod test {
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
-        let peer = net::peer::Peer::new(config);
+        let peer = net::peer::Peer::new(config)?;
 
         let user = super::init_owner(
             &peer,
@@ -1215,7 +1215,7 @@ pub mod test {
         let key = SecretKey::new();
         let signer = signer::BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
-        let peer = net::peer::Peer::new(config);
+        let peer = net::peer::Peer::new(config)?;
 
         let _cloudhead = super::init_user(&peer, "cloudhead".to_string()).await?;
         let _kalt = super::init_user(&peer, "kalt".to_string()).await?;
