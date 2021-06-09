@@ -7,6 +7,7 @@ use std::{fmt::Debug, future::Future, net::SocketAddr, sync::Arc, time::Duration
 
 use futures::{channel::mpsc, stream::StreamExt as _};
 use nonempty::NonEmpty;
+use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
 use tracing::Instrument as _;
 
@@ -25,6 +26,7 @@ use crate::{
         storage,
     },
     paths::Paths,
+    rate_limit::RateLimiter,
     signer::Signer,
     PeerId,
 };
@@ -180,7 +182,10 @@ where
     // TODO: make configurable
     let nonces = nonce::NonceBag::new(Duration::from_secs(300));
     let limits = RateLimits {
-        membership: Arc::new(governor::RateLimiter::keyed(config.rate_limits.membership)),
+        membership: Arc::new(RateLimiter::keyed(
+            config.rate_limits.membership,
+            nonzero!(1024 * 1024usize),
+        )),
     };
 
     let state = State {
