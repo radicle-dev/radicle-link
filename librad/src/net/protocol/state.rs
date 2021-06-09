@@ -3,10 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{net::SocketAddr, ops::Deref, sync::Arc, time::Instant};
+use std::{net::SocketAddr, ops::Deref, sync::Arc};
 
 use futures::future::TryFutureExt as _;
-use governor::RateLimiter;
 use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
 use tracing::Instrument as _;
@@ -35,6 +34,7 @@ use crate::{
         storage::{self, PoolError, PooledRef},
     },
     net::{quic, upgrade},
+    rate_limit::{self, Direct, Keyed, RateLimiter},
     PeerId,
 };
 
@@ -148,27 +148,15 @@ where
 // Rate Limiting
 //
 
-type DirectLimiter = governor::RateLimiter<
-    governor::state::direct::NotKeyed,
-    governor::state::InMemoryState,
-    governor::clock::DefaultClock,
->;
-
-type KeyedLimiter<T> = governor::RateLimiter<
-    T,
-    governor::state::keyed::DashMapStateStore<T>,
-    governor::clock::DefaultClock,
->;
-
 #[derive(Clone)]
 pub(super) struct RateLimits {
-    pub membership: Arc<KeyedLimiter<PeerId>>,
+    pub membership: Arc<RateLimiter<Keyed<PeerId>>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Quota {
     pub gossip: GossipQuota,
-    pub membership: governor::Quota,
+    pub membership: rate_limit::Quota,
     pub storage: StorageQuota,
 }
 
@@ -176,7 +164,7 @@ impl Default for Quota {
     fn default() -> Self {
         Self {
             gossip: GossipQuota::default(),
-            membership: governor::Quota::per_second(nonzero!(1u32)).allow_burst(nonzero!(10u32)),
+            membership: rate_limit::Quota::per_second(nonzero!(1u32)).allow_burst(nonzero!(10u32)),
             storage: StorageQuota::default(),
         }
     }
@@ -184,13 +172,13 @@ impl Default for Quota {
 
 #[derive(Clone, Debug)]
 pub struct GossipQuota {
-    pub fetches_per_peer_and_urn: governor::Quota,
+    pub fetches_per_peer_and_urn: rate_limit::Quota,
 }
 
 impl Default for GossipQuota {
     fn default() -> Self {
         Self {
-            fetches_per_peer_and_urn: governor::Quota::per_minute(nonzero!(1u32))
+            fetches_per_peer_and_urn: rate_limit::Quota::per_minute(nonzero!(1u32))
                 .allow_burst(nonzero!(5u32)),
         }
     }
@@ -198,15 +186,15 @@ impl Default for GossipQuota {
 
 #[derive(Clone, Debug)]
 pub struct StorageQuota {
-    errors: governor::Quota,
-    wants: governor::Quota,
+    errors: rate_limit::Quota,
+    wants: rate_limit::Quota,
 }
 
 impl Default for StorageQuota {
     fn default() -> Self {
         Self {
-            errors: governor::Quota::per_minute(nonzero!(10u32)),
-            wants: governor::Quota::per_minute(nonzero!(30u32)),
+            errors: rate_limit::Quota::per_minute(nonzero!(10u32)),
+            wants: rate_limit::Quota::per_minute(nonzero!(30u32)),
         }
     }
 }
@@ -217,8 +205,8 @@ impl Default for StorageQuota {
 
 #[derive(Clone)]
 struct StorageLimits {
-    errors: Arc<DirectLimiter>,
-    wants: Arc<KeyedLimiter<PeerId>>,
+    errors: Arc<RateLimiter<Direct>>,
+    wants: Arc<RateLimiter<Keyed<PeerId>>>,
 }
 
 #[derive(Clone)]
@@ -233,7 +221,7 @@ impl<S> Storage<S> {
             inner,
             limits: StorageLimits {
                 errors: Arc::new(RateLimiter::direct(quota.errors)),
-                wants: Arc::new(RateLimiter::keyed(quota.wants)),
+                wants: Arc::new(RateLimiter::keyed(quota.wants, nonzero!(256 * 1024usize))),
             },
         }
     }
@@ -272,21 +260,9 @@ impl<S> broadcast::RateLimited for Storage<S> {
     fn is_rate_limit_breached(&self, lim: broadcast::Limit) -> bool {
         use broadcast::Limit;
 
-        const WANTS_SWEEP_THRESHOLD: usize = 8192;
-
         match lim {
             Limit::Errors => self.limits.errors.check().is_err(),
-            Limit::Wants { recipient } => {
-                if self.limits.wants.len() > WANTS_SWEEP_THRESHOLD {
-                    let start = Instant::now();
-                    self.limits.wants.retain_recent();
-                    tracing::debug!(
-                        "sweeped wants rate limiter in {:.2}s",
-                        start.elapsed().as_secs_f32()
-                    );
-                }
-                self.limits.wants.check_key(recipient).is_err()
-            },
+            Limit::Wants { recipient } => self.limits.wants.check_key(recipient).is_err(),
         }
     }
 }
