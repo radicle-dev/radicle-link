@@ -7,11 +7,15 @@ use std::{future::Future, net::SocketAddr, path::PathBuf, time::Duration};
 
 use anyhow::Context as _;
 use futures::{future, StreamExt as _};
+use lazy_static::lazy_static;
+use serde::{Deserialize, Serialize};
 use tokio::{sync::broadcast, time::timeout};
+use url::Url;
 
 use librad::{
     git::{identities::local::LocalIdentity, Urn},
     git_ext::OneLevel,
+    identities::payload::HasNamespace,
     keys::SecretKey,
     peer::PeerId,
     reflike,
@@ -262,5 +266,20 @@ pub fn shia_le_pathbuf(path: PathBuf) -> project::Create {
         },
         description: "do".to_string(),
         default_branch: OneLevel::from(reflike!("it")),
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct TestExt(pub String);
+
+lazy_static! {
+    static ref NAMESPACE: Url = "https://radicle.xyz/test"
+        .parse()
+        .expect("Static URL malformed");
+}
+
+impl HasNamespace for TestExt {
+    fn namespace() -> &'static Url {
+        &NAMESPACE
     }
 }

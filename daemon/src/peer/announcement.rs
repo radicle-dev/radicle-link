@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use librad::{
     git::Urn,
     git_ext::{Oid, RefLike},
-    identities::urn::ParseError,
+    identities::{urn::ParseError, SomeIdentity},
     net::peer::Peer,
     signer::Signer,
 };
@@ -75,31 +75,30 @@ async fn build<S>(peer: &Peer<S>) -> Result<Updates, Error>
 where
     S: Clone + Signer,
 {
-    let mut list: Updates = HashSet::new();
-
-    match state::list_projects(peer).await {
+    let identities = match state::list_identities(peer).await {
         // TODO(xla): We need to avoid the case where there is no owner yet for the peer api, there
         // should be machinery to kick off these routines only if our app state is ready for it.
-        Err(state::Error::Storage(librad::git::storage::Error::Config(_err))) => Ok(list),
-        Err(err) => Err(err.into()),
-        Ok(projects) => {
-            for project in &projects {
-                if let Some(refs) = state::list_owner_project_refs(peer, project.urn()).await? {
-                    for ((one_level, oid), category) in refs.iter_categorised() {
-                        list.insert((
-                            Urn {
-                                path: Some(RefLike::from(category).join(one_level.clone())),
-                                ..project.urn()
-                            },
-                            *oid,
-                        ));
-                    }
-                }
-            }
-
-            Ok(list)
-        },
+        Err(state::Error::Storage(librad::git::storage::Error::Config(_))) => Vec::new(),
+        result => result?,
+    };
+    let mut updates: Updates = HashSet::new();
+    for identity in identities {
+        let urn = match identity {
+            SomeIdentity::Person(person) => person.urn(),
+            SomeIdentity::Project(project) => project.urn(),
+            _ => continue,
+        };
+        let refs = match state::load_refs(peer, urn.clone()).await? {
+            Some(refs) => refs,
+            None => continue,
+        };
+        for ((one_level, oid), category) in refs.iter_categorised() {
+            let path = RefLike::from(category).join(one_level.clone());
+            let urn = urn.clone().with_path(path);
+            updates.insert((urn, *oid));
+        }
     }
+    Ok(updates)
 }
 
 /// Computes the list of announcements based on the difference of the `new` and
