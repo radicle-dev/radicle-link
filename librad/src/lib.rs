@@ -37,6 +37,7 @@ pub mod net;
 pub mod paths;
 pub mod peer;
 pub mod profile;
+pub mod rate_limit;
 pub mod signer;
 
 // Re-exports

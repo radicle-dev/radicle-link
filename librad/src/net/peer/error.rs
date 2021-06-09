@@ -38,5 +38,11 @@ pub enum Init {
     Storage(#[from] storage::Error),
 
     #[error(transparent)]
-    Cache(#[from] cache::urns::Error),
+    Cache(#[from] Box<cache::urns::Error>),
+}
+
+impl From<cache::urns::Error> for Init {
+    fn from(e: cache::urns::Error) -> Self {
+        Self::from(Box::new(e))
+    }
 }
