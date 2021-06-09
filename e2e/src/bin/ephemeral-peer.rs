@@ -107,7 +107,8 @@ async fn main() {
                 rate_limits: Default::default(),
             },
             storage: Default::default(),
-        });
+        })
+        .unwrap();
         let bound = peer.bind().await.unwrap();
         let disco = discovery::Static::resolve(
             opts.bootstrap

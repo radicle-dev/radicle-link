@@ -182,7 +182,7 @@ mod test {
             signer: key.clone(),
         });
         let config = config::default(signer.clone(), tmp_dir.path())?;
-        let peer = net::peer::Peer::new(config);
+        let peer = net::peer::Peer::new(config)?;
 
         let _owner = crate::state::init_owner(
             &peer,

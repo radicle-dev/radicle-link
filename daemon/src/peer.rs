@@ -70,6 +70,10 @@ pub enum Error {
     /// An interaction with the underlying storage failed.
     #[error(transparent)]
     State(#[from] state::error::Error),
+
+    /// Peer initialisation error.
+    #[error(transparent)]
+    Init(#[from] net::peer::error::Init),
 }
 
 /// Local peer to participate in the radicle code-collaboration network.
@@ -98,18 +102,22 @@ where
     /// Constructs a new [`Peer`].
     ///
     /// To kick-off the peer's subroutines be sure to use [`run`][`Self::run`].
+    ///
+    /// # Errors
+    ///
+    /// If the underlying [`librad::net::peer::Peer`] fails to initialise.
     #[must_use = "give a peer some love"]
     pub fn new(
         config: net::peer::Config<S>,
         disco: D,
         store: kv::Store,
         run_config: RunConfig,
-    ) -> Self
+    ) -> Result<Self, Error>
     where
         S: Clone + Signer,
     {
-        let peer = librad::net::peer::Peer::new(config);
-        Self::with_peer(peer, disco, store, run_config)
+        let peer = librad::net::peer::Peer::new(config)?;
+        Ok(Self::with_peer(peer, disco, store, run_config))
     }
 
     /// Construct a new [`Peer`] using an existing [`net::peer::Peer`].
