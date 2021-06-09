@@ -257,8 +257,7 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
                             remote_peer,
                             urn
                         );
-                        // Someone else may still be interested
-                        PutResult::Uninteresting
+                        PutResult::Stale
                     },
                     x => {
                         tracing::error!(err = %x, "fetch error");
