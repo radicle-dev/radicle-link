@@ -56,7 +56,7 @@ pub struct ReflogEvent {
     pub kind: EventKind,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum EventKind {
     Create,
@@ -82,10 +82,11 @@ impl<'a> Watch<'a> {
     /// Note: `EventKind::Update` events will **not** be emitted.
     pub fn namespaces(&self) -> Result<(Watcher, impl Iterator<Item = NamespaceEvent>), Error> {
         fn is_namespace(p: &Path) -> bool {
-            let mut iter = p.iter().take(6);
+            let mut iter = p.iter().take(7);
             iter.next() == Some("refs".as_ref())
                 && iter.next() == Some("namespaces".as_ref())
                 && iter.next().is_some()
+                && iter.next() == Some("refs".as_ref())
                 && iter.next() == Some("rad".as_ref())
                 && iter.next() == Some("id".as_ref())
                 && iter.next().is_none()
@@ -134,23 +135,23 @@ impl<'a> Watch<'a> {
         let rx = rx.into_iter().filter_map(move |evt| {
             tracing::trace!("reflog event: {:?}", evt);
             match evt {
-                Create(path) => {
+                Create(path) if is_ref(&path) => {
                     let path = path.strip_prefix(&reflogs_path).ok()?;
-                    is_ref(path).then(|| ReflogEvent {
+                    Some(ReflogEvent {
                         path: path.to_path_buf(),
                         kind: EventKind::Create,
                     })
                 },
-                Remove(path) => {
+                Remove(path) if is_ref(&path) => {
                     let path = path.strip_prefix(&reflogs_path).ok()?;
-                    is_ref(path).then(|| ReflogEvent {
+                    Some(ReflogEvent {
                         path: path.to_path_buf(),
                         kind: EventKind::Remove,
                     })
                 },
-                Write(path) | Rename(_, path) => {
+                Write(path) | Rename(_, path) if is_ref(&path) => {
                     let path = path.strip_prefix(&reflogs_path).ok()?;
-                    is_ref(path).then(|| ReflogEvent {
+                    Some(ReflogEvent {
                         path: path.to_path_buf(),
                         kind: EventKind::Update,
                     })

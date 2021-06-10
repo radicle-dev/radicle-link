@@ -33,7 +33,7 @@ pub use config::Config;
 pub use fetcher::{Fetcher, Fetchers};
 pub use glob::Pattern;
 pub use pool::{Pool, PoolError, Pooled, PooledRef};
-pub use watch::{NamespaceEvent, Watcher};
+pub use watch::{NamespaceEvent, ReflogEvent, Watcher};
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
