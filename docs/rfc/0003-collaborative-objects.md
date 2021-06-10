@@ -65,6 +65,40 @@ represent it as a JSON schema. We use this simple schema:
 
 ```json
 {
+  "definitions": {
+    "comment": {
+        "type": "object",
+        "rad_signed_by": {
+          "properties": ["parent_id", "text", "author"],
+          "data": {
+            "keys": "0/author"
+          },
+        },
+        "properties": {
+            "text": {"type": "string"},
+            "id": "string",
+            "children": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/definitions/comment"
+                }
+            }
+            "parent_id": {
+                "oneOf": [
+                    "data": {
+                        "const": "1/id"
+                    },
+                    "const": null
+                ]
+            }
+            "author": {
+                "type": "string",
+                "description": "Radicle URN of the author of the comment"
+                "automerge_type": "text"
+            },
+        }
+    }
+  }
   "type": "object"
   "rad_signed_by": {
     "fields": ["title", "description", "author"],
@@ -91,19 +125,7 @@ represent it as a JSON schema. We use this simple schema:
     "comments": {
         "type": "array",
         "items": {
-            "type": "object",
-            "rad_signed_by": {
-              "properties": ["text", "author"],
-              "keys": ["<commenters URN>"]
-            },
-            "properties": {
-                "text": {"type": "string"},
-                "author": {
-                    "type": "string",
-                    "description": "Radicle URN of the author of the comment"
-                    "automerge_type": "text"
-                },
-            }
+            "$ref": "#/definitions/comment"
         }
     }
   }
@@ -129,6 +151,14 @@ librad to validate that the given properties (in this case the `title`,
 Combined with the constant URN and `frozen` on the author this allows us to
 ensure that only the author of the issue can change the description or title.
 
+Note that comments are described by a tree structure where the parent ID
+uses the `"$data"` keyword of the [data JSON schema vocabulary](https://gregsdennis.github.io/json-everything/usage/vocabs-data.html)
+to add the constraint that the parent ID must be the ID of the parent comment
+in the document structure. This allows us to impose a partial order on comments
+which cannot be rewritten by arbitrary writers. We also use the `$data` keyword
+to allow comments to dynamically state what the key they should be signed by
+is.
+
 This schema may well be the subject of its own mini standardisation process
 as it is very likely that many different applications will want to interoperate
 with the same issue model. The important thing is that this standardisation
@@ -153,10 +183,13 @@ with the following content:
     "data": {
         "title": "Librad doesn't implement the metadata RFC",
         "description": "It's in the name",
-        "author": "<some base64>",
-        "signatures": {
-            "<author URN>": "<some base64>"
-        },
+        "author": "<the authors URN>",
+        "signatures": [
+            {
+                "key": "<some base32-z>",
+                "signature":  "<some base32-z>" 
+            }
+        ],
         "comments": [],
     }
 }
@@ -286,7 +319,7 @@ binary changes and get back a JSON object.
 There are some subtleties around preserving user intent when modifying
 documents, but these are not too onerous.
 
-### Object Trees
+### Change Commits
 
 Given that automerge changes are a hash linked graph, we can map them to Git.
 We do so by wrapping each change in a commit. The commit points at a tree with
@@ -302,7 +335,6 @@ the following layout
 |  |  |  |--<migration hash>.json
 |  |  |  |--<migration hash>.json
 |  |--<change hash>
-|--author
 |--signatures
 ```
 
@@ -315,6 +347,13 @@ Along with the dependencies of the commit we also need to add the commit of the
 identity which created this commit. We need this identity to validate
 signatures and by making the commit a parent we ensure that git will replicate
 it for us. 
+
+A valid change commit must have two trailers:
+
+- `X-Rad-Signature`, as for identity documents
+- `X-Rad-Author-Parent`, this is the hash of the commit which references the
+  author identity. We use this trailer to avoid following the author commit
+  reference when constructing the automerge change graph
 
 
 #### `change/Manifest`
@@ -408,7 +447,7 @@ when they want to replicate collaborative objects, which would allow staged
 fetches where we first fetch the repository and identities, and then fetch 
 collaborative objects.
 
-Therefore we add two parameters to a radicle URN:
+Therefore we add two parameters to a radicle URL:
 
 - `collab_object_id`: specifies that a server should only consider references to the given object ID
 - `collab_type_name`: specifies that a server should only consider references to the given type name
@@ -432,6 +471,12 @@ all the commits containing the direct dependencies of the change as parents.
 
 ### Schema extensions
 
+To allow for structural validation of schemas we support the [Data
+Access](https://gregsdennis.github.io/json-everything/usage/vocabs-data.html)
+vocabulary of JSON Schema. This allows a schema to reference other parts of a
+document via a [relative JSON pointer](https://tools.ietf.org/id/draft-handrews-relative-json-pointer-00.html)
+when expressing constraints.
+
 #### `rad_signed_by`
 
 Many collaborative data structures will need to make statements about who is
@@ -441,13 +486,33 @@ property can be placed on any `object` schema. It's value is an
 object with two keys, an array of properties which must be signed, and array of 
 radicle URNs who's signature must be present.
 
-This property implies a required `signatures` property which contains a mapping
-from URN to a description of the signature. (Maybe a JWS?).
+This property implies a required `signatures` property with the following schema:
+
+```json
+{
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "key": {
+                "type": "string",
+                "$comment": "A multibase base32-z encoding of the public key"
+            },
+            "signature": {
+                "type": "string",
+                "$comment": A multibase base32-z encoding the signature"
+            }
+        }
+    }
+}
+```
 
 Any schema which has this property will result in some additional validation.
-Librad will encode the relevant keys of the target object using canonical JSON
+Librad will encode the relevant keys of the target object using CBOR.
 and then check that a signature over them is valid with respect to the given
-keys. 
+keys. Note that the encoding will go directly from automerge types to CBOR,
+which allows for signatures over any type in the automerge data model, in 
+particular including floating point numbers and byte types.
 
 
 #### `frozen`
