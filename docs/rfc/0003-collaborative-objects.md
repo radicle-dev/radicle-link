@@ -332,14 +332,7 @@ the following layout
 ```
 .
 |--change
-|  |--manifest
-|  |--schema
-|  |  |--schema.json
-|  |  |--migrations
-|  |  |  |--<migration hash>.json
-|  |  |  |--<migration hash>.json
-|  |--<change hash>
-|--signatures
+|--manifest.toml
 ```
 
 This tree contains a single change to a collaborative object. We will go into
@@ -352,15 +345,17 @@ identity which created this commit. We need this identity to validate
 signatures and by making the commit a parent we ensure that git will replicate
 it for us. 
 
-A valid change commit must have two trailers:
+A valid change commit must have three trailers:
 
 - `X-Rad-Signature`, as for identity documents
 - `X-Rad-Author-Parent`, this is the hash of the commit which references the
   author identity. We use this trailer to avoid following the author commit
   reference when constructing the automerge change graph
+- `X-Rad-Schema-Parent`, this is the hash of the parent commit which contains 
+  the schema of this object. See [schema commits](#schema-commits).
 
 
-#### `change/Manifest`
+#### `manifest.toml`
 
 The manifest is a TOML file containing some metadata about the object.
 Specifically it will contain:
@@ -376,36 +371,12 @@ initial `schema.json` and a series of schema migrations which extend that
 initial schema. Schema migrations will not be addressed in detail in this RFC
 but we will show their feasibility.
 
-#### `change/schema`
-
-Schemas are primarily important for the interoperability of the system. We need
-applications to be able to rely on the data they are working with being valid,
-otherwise we impose the problem of schema validation on application developers.
-We represent schemas using JSON schema which is in the `schema/schema.json` of any
-object tree.
-
-Schemas will need to be able to change, the `schema/migrations` directory is
-present to allow us to store compatible changes to a schema in future. Schema
-migration is out of scope for this RFC.
-
-
-#### `schema/<change hash>`
+#### `change`
 
 This is the automerge change which this commit introduces. It is a binary file
 which must contain a single change and it's dependents must be the dependents
 referenced by the parents of the commit.
 
-
-#### `author`
-
-This is a file containing the SHA of the commit which references the authors
-identity. We need this so we know to ignore this commit when walking the
-history to look for changes.
-
-#### `signatures`
-
-This is the signature of the `change` tree using the key in `author`. This uses
-the same format as that of `X-Rad-Signature` trailer on commit messages.
 
 ### Reconstructing Collaborative Objects
 
@@ -471,6 +442,36 @@ matches the object schema. At this point the state of the object may depend on
 many contributions from the tracking graph - not just the ones in our own view
 of the project. We now create a commit with our new change in it, referencing
 all the commits containing the direct dependencies of the change as parents.
+
+### Schema Commits
+
+Schemas are important for the interoperability of the system. We need
+applications to be able to rely on the data they are working with being valid,
+otherwise we impose the problem of schema validation on application developers.
+
+Schemas will need to be able to change over time. Schema migration is out of 
+scope for this RFC but we need a minimal mechanism to support it in future. To
+this end schemas are represented using their own hash graph. For the purposes
+of this RFC a schema is a commit with a tree that contains a single `schema.json`
+blob:
+
+```
+--- schema.json
+```
+
+This can be extended in future by creating schema commits that reference this
+schema commit and add migrations.
+
+As with change commits the schema commit is signed and references an author
+commit, therefore the commit has two trailers:
+
+- `X-Rad-Auther-Parent`
+- `X-Rad-Signatures`
+
+With the same definition as for change commits.
+
+Change commits have a schema commit as one of their parents and reference that
+commit via the `X-Rad-Schema-Parent` trailer.
 
 
 ### Schema extensions
