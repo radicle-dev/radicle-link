@@ -153,10 +153,19 @@ pub(super) struct RateLimits {
     pub membership: Arc<RateLimiter<Keyed<PeerId>>>,
 }
 
+/// Rate limit quota.
 #[derive(Clone, Debug)]
 pub struct Quota {
+    /// See [`GossipQuota`].
     pub gossip: GossipQuota,
+    /// Membership messages per peer.
+    ///
+    /// When a peer sends membership messages at a higher rate, it will be
+    /// disconnected.
+    ///
+    /// Default: 1/sec (burst: 10)
     pub membership: rate_limit::Quota,
+    /// See [`StorageQuota`].
     pub storage: StorageQuota,
 }
 
@@ -172,6 +181,9 @@ impl Default for Quota {
 
 #[derive(Clone, Debug)]
 pub struct GossipQuota {
+    /// Fetch attempts per peer and Urn.
+    ///
+    /// Default: 1/min (burst: 5)
     pub fetches_per_peer_and_urn: rate_limit::Quota,
 }
 
@@ -184,10 +196,23 @@ impl Default for GossipQuota {
     }
 }
 
+/// Peer storage quota.
 #[derive(Clone, Debug)]
 pub struct StorageQuota {
-    errors: rate_limit::Quota,
-    wants: rate_limit::Quota,
+    /// Local storage errors to tolerate.
+    ///
+    /// While the limit is not breached, applying the gossip message to local
+    /// storage will be retried. The quota should be rather low, as storage
+    /// errors are generally not expected to be transient.
+    ///
+    /// Default: 10/min
+    pub errors: rate_limit::Quota,
+    /// `Want` requests to respond to per remote peer.
+    ///
+    /// When this limit is breached, `Want`s from the peer will be ignored.
+    ///
+    /// Default: 30/min
+    pub wants: rate_limit::Quota,
 }
 
 impl Default for StorageQuota {
