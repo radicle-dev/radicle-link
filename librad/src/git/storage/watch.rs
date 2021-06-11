@@ -16,13 +16,6 @@ use thiserror::Error;
 
 use super::Storage;
 
-/// [`Duration`] to wait for similar events.
-///
-/// Events are _debounced_ (ie. if two similar events occur in close succession,
-/// only one is returned). This is particularly useful for renames, which git
-/// uses a lot to enable atomic file operations.
-pub const DEBOUNCE_DELAY: Duration = Duration::from_secs(1);
-
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -80,7 +73,10 @@ impl<'a> Watch<'a> {
     /// This is the default.
     ///
     /// Note: `EventKind::Update` events will **not** be emitted.
-    pub fn namespaces(&self) -> Result<(Watcher, impl Iterator<Item = NamespaceEvent>), Error> {
+    pub fn namespaces(
+        &self,
+        debounce: Duration,
+    ) -> Result<(Watcher, impl Iterator<Item = NamespaceEvent>), Error> {
         fn is_namespace(p: &Path) -> bool {
             let mut iter = p.iter().take(7);
             iter.next() == Some("refs".as_ref())
@@ -92,7 +88,7 @@ impl<'a> Watch<'a> {
                 && iter.next().is_none()
         }
 
-        let (watcher, rx) = self.reflogs()?;
+        let (watcher, rx) = self.reflogs(debounce)?;
         let rx = rx.filter_map(move |ReflogEvent { path, kind }| {
             if matches!(kind, EventKind::Create | EventKind::Remove) {
                 is_namespace(&path).then(|| NamespaceEvent {
@@ -113,7 +109,10 @@ impl<'a> Watch<'a> {
     /// refs created by this library will also create corresponding reflogs.
     /// Currently, refs created by other tools (eg. `git push`) will **not**
     /// create reflogs.
-    pub fn reflogs(&self) -> Result<(Watcher, impl Iterator<Item = ReflogEvent>), Error> {
+    pub fn reflogs(
+        &self,
+        debounce: Duration,
+    ) -> Result<(Watcher, impl Iterator<Item = ReflogEvent>), Error> {
         use notify::{DebouncedEvent::*, RecursiveMode::Recursive};
 
         let repo_path = self.storage.path().to_owned();
@@ -125,7 +124,7 @@ impl<'a> Watch<'a> {
 
         let (tx, rx) = mpsc::channel();
 
-        let mut watcher = notify::watcher(tx, DEBOUNCE_DELAY)?;
+        let mut watcher = notify::watcher(tx, debounce)?;
         watcher.watch(&reflogs_path, Recursive)?;
 
         fn is_ref(p: &Path) -> bool {
