@@ -53,7 +53,7 @@ pub(super) fn info<S>(state: &State<S>, evt: event::downstream::Info)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
 {
-    use event::downstream::{Info, MembershipInfo, Stats};
+    use event::downstream::{CacheStats, Info, MembershipInfo, Stats};
 
     match evt {
         Info::ConnectedPeers(reply) => {
@@ -83,6 +83,9 @@ where
                     connected_peers: state.endpoint.connected_peers(),
                     membership_active: active,
                     membership_passive: passive,
+                    caches: CacheStats {
+                        urns: state.caches.urns.stats(),
+                    },
                 })
                 .ok();
             }

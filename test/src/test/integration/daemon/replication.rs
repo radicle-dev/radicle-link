@@ -451,6 +451,9 @@ fn track_peer() -> Result<(), anyhow::Error> {
 
         state::track(&alice.peer, project.urn(), bob.peer_id).await?;
 
+        // FIXME: For some reason, we need to wait for two fetch events. Trying
+        // to match on the project URN doesn't work.
+        assert_fetched(&mut alice.events).await?;
         assert_fetched(&mut alice.events).await?;
 
         let tracked = state::tracked(&alice.peer, project.urn()).await?;

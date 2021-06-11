@@ -18,6 +18,7 @@ use crate::{
 
 pub use super::protocol::{
     event::{
+        self,
         downstream::{MembershipInfo, Stats},
         Upstream as ProtocolEvent,
     },
@@ -116,7 +117,8 @@ where
         );
         let caches = {
             let store = git::storage::Storage::open(&config.protocol.paths, config.signer.clone())?;
-            let urns = protocol::cache::urns::Filter::new(store)?;
+            let phone = phone.clone();
+            let urns = protocol::cache::urns::Filter::new(store, move |ev| phone.emit(ev))?;
             protocol::Caches { urns }
         };
         let peer_store = PeerStorage::new(

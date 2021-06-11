@@ -138,7 +138,7 @@ impl TinCans {
         async_stream::stream! { loop { yield r.recv().await } }
     }
 
-    pub(super) fn emit(&self, evt: impl Into<event::Upstream>) {
+    pub(crate) fn emit(&self, evt: impl Into<event::Upstream>) {
         self.upstream.send(evt.into()).ok();
     }
 }

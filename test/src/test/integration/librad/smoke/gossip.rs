@@ -9,18 +9,16 @@ use std::{
 };
 
 use futures::StreamExt as _;
-use futures_timer::Delay;
 use librad::{
     git::{
         local::url::LocalUrl,
-        storage,
         types::{remote, Fetchspec, Force, Reference, Remote},
         Urn,
     },
     net::{
         peer::Peer,
         protocol::{
-            event::{self, upstream::predicate::gossip_from},
+            event::{self, upstream::predicate},
             gossip::{self, Rev},
         },
     },
@@ -137,18 +135,20 @@ fn fetches_on_gossip_notify() {
             .unwrap();
 
         // Wait for peer2 to receive the gossip announcement
+        futures::pin_mut!(peer2_events);
         event::upstream::expect(
-            peer2_events.boxed(),
-            gossip_from(peer1.peer_id()),
+            peer2_events,
+            predicate::gossip_from(peer1.peer_id()),
             Duration::from_secs(5),
         )
         .await
         .unwrap();
 
         // Does peer2 forward the gossip?
+        futures::pin_mut!(peer1_events);
         event::upstream::expect(
-            peer1_events.boxed(),
-            gossip_from(peer1.peer_id()),
+            peer1_events,
+            predicate::gossip_from(peer1.peer_id()),
             Duration::from_secs(5),
         )
         .await
@@ -195,13 +195,33 @@ fn ask_and_clone() {
     net.enter(async {
         let peer1 = &net.peers()[0];
         let peer2 = &net.peers()[1];
-        let proj = peer1
-            .using_storage(move |storage| TestProject::create(&storage))
-            .await
-            .unwrap()
-            .unwrap();
-        // Wait for peer1 to rebuild its cache
-        Delay::new(storage::watch::DEBOUNCE_DELAY).await;
+        let proj = {
+            let events = peer1.subscribe();
+            let proj = peer1
+                .using_storage(move |storage| TestProject::create(&storage))
+                .await
+                .unwrap()
+                .unwrap();
+
+            let stats = peer1.stats().await;
+            if stats.caches.urns.elements < 2 {
+                tracing::debug!(
+                    "waiting for cache rebuild (expected 2 elements, got {})",
+                    stats.caches.urns.elements
+                );
+                // Wait for peer1 to rebuild its cache
+                futures::pin_mut!(events);
+                event::upstream::expect(
+                    events,
+                    predicate::urn_cache_len(|len| len >= 2),
+                    Duration::from_secs(5),
+                )
+                .await
+                .unwrap();
+            }
+
+            proj
+        };
 
         let project_urn = proj.project.urn();
 

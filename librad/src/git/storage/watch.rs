@@ -15,13 +15,6 @@ use thiserror::Error;
 
 use super::Storage;
 
-/// [`Duration`] to wait for similar events.
-///
-/// Events are _debounced_ (ie. if two similar events occur in close succession,
-/// only one is returned). This is particularly useful for renames, which git
-/// uses a lot to enable atomic file operations.
-pub const DEBOUNCE_DELAY: Duration = Duration::from_secs(1);
-
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -49,12 +42,6 @@ pub struct NamespaceEvent {
     pub kind: EventKind,
 }
 
-#[derive(Debug)]
-pub struct ReflogEvent {
-    pub path: PathBuf,
-    pub kind: EventKind,
-}
-
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum EventKind {
@@ -74,87 +61,73 @@ pub struct Watch<'a> {
 impl<'a> Watch<'a> {
     /// Watch for creation or removal of a namespace.
     ///
-    /// Implemented in terms of [`Self::reflogs`], meaning that reflogs need to
-    /// be enabled, and a reflog for a `rad/id` ref needs to be created.
-    /// This is the default.
+    /// Implemented by watching `$GIT_DIR/logs/refs/namespaces` for directory
+    /// events. Note that:
     ///
-    /// Note: `EventKind::Update` events will **not** be emitted.
+    /// * reflogs must be enabled for the repository
+    /// * reflogs for at least one ref within the namespace (eg. `rad/id`) must
+    ///   be created
+    /// * the directory `$GIT_DIR/logs/refs/namespaces` is created if it doesn't
+    ///   exist
+    /// * the directory is watched _non-recursively_, as this tends to miss
+    ///   events with most filesystem event backends
+    ///
+    /// By default [`super::Config`] sets `core.logAllRefUpdates` to `true`
+    /// (**not** "always"), and refs created by this library will have a
+    /// corresponding reflog created. It is currently unlikely that
+    /// [`EventKind`]s other than [`EventKind::Create`] will be emitted.
     pub fn namespaces(&self) -> Result<(Watcher, impl Iterator<Item = NamespaceEvent>), Error> {
+        use notify::{Op, RawEvent, RecursiveMode::NonRecursive};
+
         fn is_namespace(p: &Path) -> bool {
-            let mut iter = p.iter().take(7);
+            let mut iter = p.iter().take(4);
             iter.next() == Some("refs".as_ref())
                 && iter.next() == Some("namespaces".as_ref())
                 && iter.next().is_some()
-                && iter.next() == Some("refs".as_ref())
-                && iter.next() == Some("rad".as_ref())
-                && iter.next() == Some("id".as_ref())
                 && iter.next().is_none()
         }
 
-        let (watcher, rx) = self.reflogs()?;
-        let rx = rx.filter_map(move |ReflogEvent { path, kind }| {
-            if matches!(kind, EventKind::Create | EventKind::Remove) {
-                is_namespace(&path).then(|| NamespaceEvent {
-                    path: path.iter().take(3).collect(),
-                    kind,
-                })
-            } else {
-                None
-            }
-        });
-
-        Ok((watcher, rx))
-    }
-
-    /// Watch the reflog.
-    ///
-    /// Requires the reflog to be enabled on the backing repository. By default,
-    /// refs created by this library will also create corresponding reflogs.
-    /// Currently, refs created by other tools (eg. `git push`) will **not**
-    /// create reflogs.
-    pub fn reflogs(&self) -> Result<(Watcher, impl Iterator<Item = ReflogEvent>), Error> {
-        use notify::{DebouncedEvent::*, RecursiveMode::Recursive};
-
         let repo_path = self.storage.path().to_owned();
         let reflogs_path = repo_path.join("logs");
+        let namespaces_path = reflogs_path.join("refs/namespaces");
 
-        if !reflogs_path.exists() {
-            fs::create_dir(&reflogs_path)?;
+        if !namespaces_path.exists() {
+            fs::create_dir_all(&namespaces_path)?;
         }
 
         let (tx, rx) = mpsc::channel();
 
-        let mut watcher = notify::watcher(tx, DEBOUNCE_DELAY)?;
-        watcher.watch(&reflogs_path, Recursive)?;
-
-        fn is_ref(p: &Path) -> bool {
-            !p.ends_with(".lock") && p.is_file()
-        }
+        let mut watcher = notify::raw_watcher(tx)?;
+        watcher.watch(&namespaces_path, NonRecursive)?;
 
         let rx = rx.into_iter().filter_map(move |evt| {
-            tracing::trace!("reflog event: {:?}", evt);
+            tracing::trace!("{:?}", evt);
+
             match evt {
-                Create(path) if is_ref(&path) => {
+                RawEvent {
+                    path: Some(path),
+                    op: Ok(op),
+                    cookie: _,
+                } if path.is_dir() => {
                     let path = path.strip_prefix(&reflogs_path).ok()?;
-                    Some(ReflogEvent {
-                        path: path.to_path_buf(),
-                        kind: EventKind::Create,
-                    })
+                    if is_namespace(&path) {
+                        let kind = if op.contains(Op::CREATE) {
+                            EventKind::Create
+                        } else if op.contains(Op::REMOVE) {
+                            EventKind::Remove
+                        } else {
+                            EventKind::Update
+                        };
+                        Some(NamespaceEvent {
+                            path: path.to_path_buf(),
+                            kind,
+                        })
+                    } else {
+                        tracing::trace!("not a namespace");
+                        None
+                    }
                 },
-                Remove(path) if is_ref(&path) => {
-                    let path = path.strip_prefix(&reflogs_path).ok()?;
-                    Some(ReflogEvent {
-                        path: path.to_path_buf(),
-                        kind: EventKind::Remove,
-                    })
-                },
-                Write(path) | Rename(_, path) if is_ref(&path) => {
-                    let path = path.strip_prefix(&reflogs_path).ok()?;
-                    Some(ReflogEvent {
-                        path: path.to_path_buf(),
-                        kind: EventKind::Update,
-                    })
-                },
+
                 _ => None,
             }
         });

@@ -3,13 +3,21 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{ops::Deref, sync::Arc, thread, time::Instant};
+use std::{
+    ops::Deref,
+    sync::{atomic::AtomicBool, Arc},
+    thread,
+    time::{Duration, Instant},
+};
 
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 use thiserror::Error;
 
 use crate::{
-    git::{identities, storage},
+    git::{
+        identities,
+        storage::{self, watch},
+    },
     identities::{xor, SomeUrn, Xor},
 };
 
@@ -28,63 +36,183 @@ pub mod urns {
         Build(#[from] xor::BuildError<identities::Error>),
 
         #[error(transparent)]
-        Watch(#[from] storage::watch::Error),
+        Watch(#[from] watch::Error),
 
         #[error(transparent)]
         Storage(#[from] storage::Error),
     }
 
+    #[derive(Clone, Debug)]
+    pub enum Event {
+        Error(Arc<Box<dyn std::error::Error + Send + Sync + 'static>>),
+        Rebuilt {
+            built_in: Duration,
+            len_old: usize,
+            len_new: usize,
+        },
+    }
+
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct Stats {
+        pub elements: usize,
+        pub fingerprints: usize,
+    }
+
     #[derive(Clone)]
     pub struct Filter {
-        inner: Arc<RwLock<Xor>>,
+        inner: Arc<RwLock<FilterInner>>,
         watch: storage::Watcher,
     }
 
+    struct FilterInner {
+        filter: Xor,
+        elements: usize,
+    }
+
+    impl From<(Xor, usize)> for FilterInner {
+        fn from((filter, elements): (Xor, usize)) -> Self {
+            Self { filter, elements }
+        }
+    }
+
     impl Filter {
-        pub fn new(storage: storage::Storage) -> Result<Self, Error> {
-            let xor = identities::any::xor_filter(&storage)?;
-            let inner = Arc::new(RwLock::new(xor));
+        pub fn new<F>(storage: storage::Storage, observe: F) -> Result<Self, Error>
+        where
+            F: Fn(Event) + Send + 'static,
+        {
+            let inner = {
+                let inner = identities::any::xor_filter(&storage).map(FilterInner::from)?;
+                Arc::new(RwLock::new(inner))
+            };
 
             let (watch, events) = storage.watch().namespaces()?;
             thread::spawn({
                 let filter = Arc::clone(&inner);
-                move || recache_thread(storage, filter, events)
+                move || recache_thread(storage, filter, events, observe)
             });
 
             Ok(Self { inner, watch })
         }
 
         pub fn contains(&self, urn: &SomeUrn) -> bool {
-            self.inner.read().contains(urn)
+            self.inner.read().filter.contains(urn)
         }
 
         pub fn get(&self) -> impl Deref<Target = Xor> + '_ {
-            self.inner.read()
+            RwLockReadGuard::map(self.inner.read(), |inner| &inner.filter)
+        }
+
+        /// The number of elements in the filter.
+        pub fn len(&self) -> usize {
+            self.inner.read().elements
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.len() == 0
+        }
+
+        pub fn stats(&self) -> Stats {
+            let inner = self.inner.read();
+            Stats {
+                elements: inner.elements,
+                fingerprints: inner.filter.len(),
+            }
         }
     }
 
-    fn recache_thread(
+    fn recache_thread<F>(
         storage: storage::Storage,
-        filter: Arc<RwLock<Xor>>,
-        events: impl Iterator<Item = storage::NamespaceEvent>,
-    ) {
+        filter: Arc<RwLock<FilterInner>>,
+        events: impl Iterator<Item = watch::NamespaceEvent>,
+        observe: F,
+    ) where
+        F: Fn(Event) + Send + 'static,
+    {
+        use std::sync::atomic::Ordering::*;
+
         let span = tracing::info_span!("recache-urns");
         let _guard = span.enter();
-        for _ in events {
-            let start = Instant::now();
-            match identities::any::xor_filter(&storage) {
-                Err(e) => {
-                    tracing::warn!(err = ?e, "error rebuilding xor filter")
-                },
-                Ok(xor) => {
-                    tracing::info!(
-                        "rebuilt xor filter in {:.2}s",
-                        start.elapsed().as_secs_f32()
-                    );
-                    let mut guard = filter.write();
-                    *guard = xor;
-                },
+
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let rebuild = Arc::new(AtomicBool::new(false));
+
+        let bob = thread::spawn({
+            let span = span.clone();
+            let shutdown = Arc::clone(&shutdown);
+            let rebuild = Arc::clone(&rebuild);
+            move || {
+                let _guard = span.enter();
+                'exit: loop {
+                    // If we got unparked with pending events, don't bother
+                    // rebuilding
+                    if shutdown.load(Acquire) {
+                        break;
+                    }
+
+                    // Keep rebuilding while new events are coming in, but check
+                    // for shutdown after each iteration.
+                    //
+                    // This will rebuild for every event while building the xor
+                    // filter is fast, but incorporate batches when a lot of
+                    // events are generated in quick succession for a large repo.
+                    while rebuild.fetch_and(false, Acquire) {
+                        tracing::trace!("rebuilding xor filter...");
+                        // Prevent racing for the creation of `refs/rad/id` in
+                        // the namespace which triggered the event (we watch for
+                        // directory creation only).
+                        thread::sleep(Duration::from_millis(10));
+                        let len_old = filter.read().elements;
+                        match build_filter(&storage) {
+                            Err(e) => {
+                                tracing::warn!(err = ?e, "error rebuilding xor filter");
+                                observe(Event::Error(Arc::new(Box::new(e))))
+                            },
+                            Ok((new, dur)) => {
+                                let len_new = new.elements;
+                                tracing::trace!(
+                                    len_old,
+                                    len_new,
+                                    "rebuilt xor filter in {:.2}s",
+                                    dur.as_secs_f32()
+                                );
+                                let mut guard = filter.write();
+                                *guard = new;
+                                drop(guard);
+                                observe(Event::Rebuilt {
+                                    built_in: dur,
+                                    len_old,
+                                    len_new,
+                                });
+                            },
+                        }
+
+                        if shutdown.load(Acquire) {
+                            break 'exit;
+                        }
+                    }
+
+                    thread::park()
+                }
             }
+        });
+
+        for ev in events {
+            tracing::trace!("new event: {:?}", ev);
+            // Keep the rebuild loop spinning
+            rebuild.store(true, Release);
+            // Unpark if it's idle
+            bob.thread().unpark()
         }
+
+        shutdown.store(true, Release);
+        bob.thread().unpark();
+        bob.join().ok();
+    }
+
+    fn build_filter(
+        storage: &storage::Storage,
+    ) -> Result<(FilterInner, Duration), xor::BuildError<identities::Error>> {
+        let start = Instant::now();
+        identities::any::xor_filter(&storage).map(|res| (FilterInner::from(res), start.elapsed()))
     }
 }
