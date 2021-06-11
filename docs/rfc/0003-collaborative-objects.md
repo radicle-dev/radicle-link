@@ -79,6 +79,7 @@ represent it as a JSON schema. We use this simple schema:
             "id": "string",
             "children": {
                 "type": "array",
+                "grow_only": true,
                 "items": {
                     "$ref": "#/definitions/comment"
                 }
@@ -93,34 +94,34 @@ represent it as a JSON schema. We use this simple schema:
             }
             "author": {
                 "type": "string",
-                "description": "Radicle URN of the author of the comment"
+                "description": "Radicle URN of the author of the comment",
                 "automerge_type": "text"
             },
         }
     }
-  }
-  "type": "object"
+  },
+  "type": "object",
   "rad_signed_by": {
     "fields": ["title", "description", "author"],
-    "keys": ["<authors URN>"],
-  } 
+    "keys": ["<authors URN>"]
+  },
   "properties": {
-    id: {
+    "id": {
       "type": "string",
       "frozen": true
     },
     "title": {
-        "type": "string"
+        "type": "string",
         "automerge_type": "text"
     },
     "description": {
-        "type": "string"
+        "type": "string",
         "automerge_type": "text"
     },
     "author": {
-        "description": "The radicle ID of the author of the issue"
+        "description": "The radicle ID of the author of the issue",
         "const": "<the authors URN>",
-        "frozen": true,
+        "frozen": true
     },
     "comments": {
         "type": "array",
@@ -135,7 +136,7 @@ represent it as a JSON schema. We use this simple schema:
 An issue consists of a title, description, and author along with the author's
 signature; followed by a list of comments, each of which is signed by it's
 respective author. This is an extremely simplified model. Note the presence of
-the `automerge_type`, `frozen`, and `rad_signed_by`, and `rad_urn` keys. 
+the `automerge_type`, `frozen`, `grow_only`, `rad_signed_by`, and `rad_urn` keys. 
 
 The `automerge_type` key indicates that this field should be stored as a
 special data type in the automerge document which tracks individual character
@@ -144,6 +145,9 @@ in a non surprising manner.
 
 The `frozen` key indicates that any change which modifies this field should be
 ignored.
+
+The `grow_only` key indicates that elements may not be removed from this 
+sequence. This allows us to ensure that comments cannot be removed.
 
 The `rad_signed_by` and is more interesting. The  `rad_signed_by` field tells
 librad to validate that the given properties (in this case the `title`,
@@ -500,7 +504,7 @@ This property implies a required `signatures` property with the following schema
             },
             "signature": {
                 "type": "string",
-                "$comment": A multibase base32-z encoding the signature"
+                "$comment": "A multibase base32-z encoding the signature"
             }
         }
     }
@@ -521,6 +525,12 @@ Some attributes should never be changed, for example the ID of an issue, or a
 nonce on a comment. Any schema can add the metadata key, `frozen: true` to
 indicate that after it's initial creation any change which modifies it is
 invalid.
+
+#### `grow_only`
+
+This key stipulates that elements can never be removed from a sequence or 
+object. Any schema which has this key on it will result in schema validation
+for a change which removes items from the instance in question.
 
 #### `automerge_type`
 
