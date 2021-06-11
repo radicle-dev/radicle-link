@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeSet, convert::TryFrom as _, thread, time::Duration};
+use std::{collections::BTreeSet, convert::TryFrom as _};
 
 use librad::{
     git::{
@@ -24,23 +24,22 @@ fn namespaces() {
     let (watcher, events) = store.watch().namespaces().unwrap();
     let TestProject { project, owner } = TestProject::create(&store).unwrap();
 
+    let expected = vec![
+        (project.urn(), EventKind::Create),
+        (owner.urn(), EventKind::Create),
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+
     let events = events
-        .into_iter()
+        .take(expected.len())
         .map(|NamespaceEvent { path, kind }| {
-            (
-                Urn::try_from(RefLike::try_from(path.to_str().unwrap()).unwrap()).unwrap(),
-                kind,
-            )
+            let refl = RefLike::try_from(path.as_path()).unwrap();
+            let urn = Urn::try_from(refl).unwrap();
+            (urn, kind)
         })
         .collect::<BTreeSet<_>>();
+    drop(watcher);
 
-    assert_eq!(
-        vec![
-            (project.urn(), EventKind::Create),
-            (owner.urn(), EventKind::Create)
-        ]
-        .into_iter()
-        .collect::<BTreeSet<_>>(),
-        events
-    )
+    assert_eq!(expected, events)
 }
