@@ -34,7 +34,7 @@ fn namespaces() {
         .into_iter()
         .map(|NamespaceEvent { path, kind }| {
             (
-                Urn::try_from(RefLike::try_from(path.to_str().unwrap()).unwrap()).unwrap(),
+                Urn::try_from(RefLike::try_from(path.as_path()).unwrap()).unwrap(),
                 kind,
             )
         })
@@ -66,7 +66,7 @@ fn reflogs() {
         .into_iter()
         .map(|ReflogEvent { path, kind }| {
             (
-                Urn::try_from(RefLike::try_from(path.to_str().unwrap()).unwrap()).unwrap(),
+                Urn::try_from(RefLike::try_from(path.as_path()).unwrap()).unwrap(),
                 kind,
             )
         })
