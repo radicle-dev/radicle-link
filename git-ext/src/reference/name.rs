@@ -9,6 +9,7 @@ use std::{
     fmt::{self, Display},
     iter::FromIterator,
     ops::Deref,
+    path::Path,
     str::{self, FromStr},
 };
 
@@ -166,6 +167,30 @@ impl TryFrom<String> for RefLike {
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
         Self::try_from(s.as_str())
+    }
+}
+
+impl TryFrom<&Path> for RefLike {
+    type Error = Error;
+
+    #[cfg(target_family = "windows")]
+    fn try_from(p: &Path) -> Result<Self, Self::Error> {
+        use std::{convert::TryInto as _, path::Component::Normal};
+
+        p.components()
+            .filter_map(|comp| match comp {
+                Normal(s) => Some(s),
+                _ => None,
+            })
+            .map(|os| os.to_str().ok_or(Error::Utf8))
+            .collect::<Result<Vec<_>, Self::Error>>()?
+            .join("/")
+            .try_into()
+    }
+
+    #[cfg(target_family = "unix")]
+    fn try_from(p: &Path) -> Result<Self, Self::Error> {
+        Self::try_from(p.to_str().ok_or(Error::Utf8)?)
     }
 }
 
