@@ -66,7 +66,7 @@ impl Xor {
         self.inner.contains(&xor_hash(urn))
     }
 
-    pub fn try_from_iter<T, E>(iter: T) -> Result<Self, BuildError<E>>
+    pub fn try_from_iter<T, E>(iter: T) -> Result<(Self, usize), BuildError<E>>
     where
         T: IntoIterator<Item = Result<SomeUrn, E>>,
         E: std::error::Error + Send + Sync + 'static,
@@ -80,8 +80,15 @@ impl Xor {
             }
         }
 
+        let elements = xs.len();
         let inner = Xor16::from(xs);
-        Ok(Self { inner })
+
+        Ok((Self { inner }, elements))
+    }
+
+    /// The number of fingerprints in the filter.
+    pub fn len(&self) -> usize {
+        self.inner.len()
     }
 }
 

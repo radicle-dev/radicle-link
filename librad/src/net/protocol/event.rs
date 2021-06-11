@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, net::SocketAddr};
 
-use super::{broadcast, error, gossip, interrogation, membership};
+use super::{broadcast, cache, error, gossip, interrogation, membership};
 use crate::PeerId;
 
 #[derive(Clone)]
@@ -59,6 +59,12 @@ pub mod downstream {
         pub connected_peers: HashMap<PeerId, Vec<SocketAddr>>,
         pub membership_active: usize,
         pub membership_passive: usize,
+        pub caches: CacheStats,
+    }
+
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct CacheStats {
+        pub urns: cache::urns::Stats,
     }
 
     #[derive(Clone)]
@@ -71,10 +77,12 @@ pub mod downstream {
 }
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum Upstream {
     Endpoint(upstream::Endpoint),
     Gossip(Box<upstream::Gossip<SocketAddr, gossip::Payload>>),
     Membership(membership::Transition<SocketAddr>),
+    Caches(upstream::Caches),
 }
 
 pub mod upstream {
@@ -125,6 +133,24 @@ pub mod upstream {
         }
     }
 
+    #[derive(Clone, Debug)]
+    #[non_exhaustive]
+    pub enum Caches {
+        Urns(cache::urns::Event),
+    }
+
+    impl From<Caches> for Upstream {
+        fn from(c: Caches) -> Self {
+            Self::Caches(c)
+        }
+    }
+
+    impl From<cache::urns::Event> for Upstream {
+        fn from(e: cache::urns::Event) -> Self {
+            Self::from(Caches::Urns(e))
+        }
+    }
+
     #[derive(Debug, Error)]
     pub enum ExpectError {
         #[error("timeout waiting for matching event")]
@@ -164,6 +190,20 @@ pub mod upstream {
         pub fn gossip_from(peer: PeerId) -> impl Fn(&Upstream) -> bool {
             move |event| match event {
                 Upstream::Gossip(box Gossip::Put { provider, .. }) => provider.peer_id == peer,
+                _ => false,
+            }
+        }
+
+        /// Wait for cache `Rebuilt` events where the new length matches the
+        /// predicate.
+        pub fn urn_cache_len<P>(cmp: P) -> impl Fn(&Upstream) -> bool
+        where
+            P: Fn(usize) -> bool,
+        {
+            move |event| match event {
+                Upstream::Caches(Caches::Urns(cache::urns::Event::Rebuilt { len_new, .. })) => {
+                    cmp(*len_new)
+                },
                 _ => false,
             }
         }

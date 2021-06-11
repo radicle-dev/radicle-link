@@ -83,7 +83,9 @@ pub fn list_urns(
 }
 
 /// Build an [`Xor`] filter from all available [`Urn`]s.
-pub fn xor_filter(storage: &Storage) -> Result<Xor, xor::BuildError<Error>> {
+///
+/// The returned `usize` is the number of URNs added to the filter.
+pub fn xor_filter(storage: &Storage) -> Result<(Xor, usize), xor::BuildError<Error>> {
     Xor::try_from_iter(list_urns(storage)?.map_ok(SomeUrn::from))
 }
 

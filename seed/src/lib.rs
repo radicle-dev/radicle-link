@@ -338,7 +338,7 @@ impl Node {
                 };
                 transmit.send(event).await.ok();
             },
-            ProtocolEvent::Membership(_) => {},
+            _ => {},
         }
         Ok(())
     }
