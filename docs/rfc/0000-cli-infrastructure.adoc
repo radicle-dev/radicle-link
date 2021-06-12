@@ -140,7 +140,7 @@ organisation of these components. The author sees two options:
 Pros of *1.*:
 
 * One-stop shop for all core functionality
-* One binary is packages and distributed
+* One binary is packaged and distributed
 
 Cons of *1.*:
 
@@ -159,13 +159,9 @@ Cons of *2.*:
 * Makes it easier to override one of the core commands.
 * Many binary must be packaged and distributed.
 
-The author recommends *2.*. The modularity provides a clean separation
-of concerns and avoids a monolothic approach. We assume good faith
-of overrides not happening [TODO: is there some way we can just
-disallow this programatically?]. For packaging and distribution of the
-binaries, we propose to have a script that will install each
-subcommand binary — until we have a more well-founded way of
-distributing Radicle artifacts.
+The author recommends *1.*. As mentioned, we have a hard requirement
+of not allowing the core commands to be overrided. In *2.* this is
+_always_ possible.
 
 === `radicle-bins`
 
