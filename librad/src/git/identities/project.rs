@@ -72,8 +72,8 @@ where
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
             let lookup = |urn| {
-                let refname = Reference::rad_id(Namespace::from(urn)).to_string();
-                storage.as_raw().refname_to_id(&refname)
+                let refname = Reference::rad_id(Namespace::from(urn));
+                storage.reference_oid(&refname).map(|oid| oid.into())
             };
             identities(storage)
                 .verify(tip, lookup)

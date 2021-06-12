@@ -256,6 +256,13 @@ impl Storage {
         }))
     }
 
+    pub fn reference_oid(&self, reference: &Reference<One>) -> Result<ext::Oid, Error> {
+        self.backend
+            .refname_to_id(&reference.to_string())
+            .map(ext::Oid::from)
+            .map_err(Error::from)
+    }
+
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn blob<'a>(
         &'a self,
@@ -266,7 +273,7 @@ impl Storage {
             branch: reference.into(),
             path,
         }
-        .get(self.as_raw())
+        .get(&self.backend)
         .map(Some)
         .or_matches(|e| matches!(e, blob::Error::NotFound(_)), || Ok(None))
     }
@@ -276,14 +283,7 @@ impl Storage {
     }
 
     pub(in crate::git) fn identities<'a, T: 'a>(&'a self) -> Identities<'a, T> {
-        Identities::from(self.as_raw())
-    }
-
-    // TODO: we would need to wrap a few more low-level git operations (such as:
-    // create commit, manipulate refs, manipulate config) in order to be able to
-    // model "capabilities" in terms of traits.
-    pub(in crate::git) fn as_raw(&self) -> &git2::Repository {
-        &self.backend
+        Identities::from(&self.backend)
     }
 }
 
