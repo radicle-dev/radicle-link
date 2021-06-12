@@ -66,7 +66,7 @@ of the reader.
 
 Taking inspiration from tools such as `git` and `cargo`, we propose
 that the `rad` binary can be extended by placing another
-binary on the users `$PATH` (or the Windows equivalent). This
+binary on the users `$PATH` (or `%PATH%` on Windows). This
 binary MUST follow the naming convention of `rad-*`. To reiterate
 here, these new commands MUST NOT override the core set outlined here
 (nor in further RFCs).
@@ -178,8 +178,7 @@ around this function.
 With all the details in place, we define a non-exhaustive list of the
 core commands that we wish to include for the first iteration. More
 components MAY be added as the result of future RFCs. We SHALL keep a
-list of the core commands as part of the `radicle-link` documentation
-— as part of the `README`.
+list of the core commands as part of the `radicle-link` documentation.
 
 === `rad-project`
 
