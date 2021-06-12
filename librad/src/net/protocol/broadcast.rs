@@ -148,38 +148,41 @@ where
         },
 
         Want { origin, val } => {
-            let have = storage.ask(val.clone()).await;
-            let tocks = if have {
-                let reply = || Have {
-                    origin: info(),
-                    val,
-                };
-                let limit = Limit::Wants {
-                    recipient: &origin.peer_id,
-                };
-
-                if storage.is_rate_limit_breached(limit) {
-                    tracing::warn!("want rate limit breached: enhance your calm!");
-                    vec![]
-                } else if origin.peer_id == remote_id {
-                    vec![SendConnected {
-                        to: remote_id,
-                        message: reply().into(),
-                    }]
-                } else {
-                    // FIXME: if we cannot reach origin, we may still want to
-                    // broadcast the `Have`, in the hopes that it will travel
-                    // back the path it came here
-                    vec![AttemptSend {
-                        to: origin,
-                        message: reply().into(),
-                    }]
-                }
+            if storage.is_rate_limit_breached(Limit::Wants {
+                recipient: &origin.peer_id,
+            }) {
+                tracing::warn!(
+                    "want rate limit breached: enhance your calm, {}!",
+                    origin.peer_id
+                );
+                Ok((None, vec![]))
             } else {
-                broadcast(Want { origin, val }, Some(remote_id))
-            };
+                let have = storage.ask(val.clone()).await;
+                let tocks = if have {
+                    let reply = || Have {
+                        origin: info(),
+                        val,
+                    };
+                    if origin.peer_id == remote_id {
+                        vec![SendConnected {
+                            to: remote_id,
+                            message: reply().into(),
+                        }]
+                    } else {
+                        // FIXME: if we cannot reach origin, we may still want to
+                        // broadcast the `Have`, in the hopes that it will travel
+                        // back the path it came here
+                        vec![AttemptSend {
+                            to: origin,
+                            message: reply().into(),
+                        }]
+                    }
+                } else {
+                    broadcast(Want { origin, val }, Some(remote_id))
+                };
 
-            Ok((None, tocks))
+                Ok((None, tocks))
+            }
         },
     }
 }

@@ -55,7 +55,10 @@ pub enum Error {
     Concurrent { urn: Urn, remote_peer: PeerId },
 
     #[error(transparent)]
-    Storage(#[from] peer::StorageError),
+    InitPeer(#[from] peer::error::Init),
+
+    #[error(transparent)]
+    Storage(#[from] peer::error::Storage),
 
     #[error(transparent)]
     Tracking(#[from] tracking::Error),
@@ -187,7 +190,7 @@ impl Node {
         peer_config: peer::Config<Signer>,
         mut transmit: mpsc::Sender<Event>,
     ) -> Result<(), Error> {
-        let peer = Peer::new(peer_config);
+        let peer = Peer::new(peer_config)?;
         let mut events = peer.subscribe().boxed().fuse();
         let mut requests = ReceiverStream::new(self.requests).fuse();
 
@@ -335,7 +338,7 @@ impl Node {
                 };
                 transmit.send(event).await.ok();
             },
-            ProtocolEvent::Membership(_) => {},
+            _ => {},
         }
         Ok(())
     }

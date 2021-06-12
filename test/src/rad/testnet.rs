@@ -127,7 +127,7 @@ where
         signer: key,
         protocol,
         storage: Default::default(),
-    });
+    })?;
     let bound = peer.bind().await?;
 
     Ok(BoundTestPeer {

@@ -165,7 +165,7 @@ impl Harness {
         let peer = {
             let _enter = self.rt().enter();
             radicle_daemon::Peer::new(conf, disco, store, run_config)
-        };
+        }?;
 
         let peer_inner = peer.peer.clone();
         let peer_id = peer_inner.peer_id();

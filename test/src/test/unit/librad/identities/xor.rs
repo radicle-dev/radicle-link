@@ -7,10 +7,7 @@ use sha1::{Digest, Sha1};
 use sized_vec::Vec as SVec;
 use typenum::Unsigned;
 
-use librad::{
-    identities::{SomeUrn, Urn},
-    net::protocol::interrogation::xor::*,
-};
+use librad::identities::{xor::*, SomeUrn, Urn};
 
 struct BuildUrn {
     hasher: Sha1,
@@ -55,4 +52,20 @@ fn false_positives() {
             .count();
     let rate: f64 = (false_positives * 100) as f64 / MaxElements::USIZE as f64;
     assert!(rate < 0.02, "False positive rate is {:?}", rate);
+}
+
+#[test]
+fn cbor() {
+    use crate::roundtrip::cbor_roundtrip;
+
+    let mut bob = BuildUrn::new();
+    let urns = SVec::<MaxElements, _>::fill(|i| bob.build(&i.to_be_bytes()));
+    let filter = Xor::from(&urns);
+
+    cbor_roundtrip(filter)
+}
+
+#[test]
+fn typenum_doesnt_lie() {
+    assert_eq!(MaxFingerprints::U64, 123_030);
 }

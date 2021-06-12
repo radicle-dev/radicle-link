@@ -8,11 +8,6 @@ use std::{
     time::Duration,
 };
 
-use crate::{
-    git::create_commit,
-    logging,
-    rad::{identities::TestProject, testnet},
-};
 use futures::StreamExt as _;
 use librad::{
     git::{
@@ -23,7 +18,7 @@ use librad::{
     net::{
         peer::Peer,
         protocol::{
-            event::{self, upstream::predicate::gossip_from},
+            event::{self, upstream::predicate},
             gossip::{self, Rev},
         },
     },
@@ -33,6 +28,12 @@ use librad::{
 };
 use tempfile::tempdir;
 use tokio::task::spawn_blocking;
+
+use crate::{
+    git::create_commit,
+    logging,
+    rad::{identities::TestProject, testnet},
+};
 
 fn config() -> testnet::Config {
     testnet::Config {
@@ -134,18 +135,20 @@ fn fetches_on_gossip_notify() {
             .unwrap();
 
         // Wait for peer2 to receive the gossip announcement
+        futures::pin_mut!(peer2_events);
         event::upstream::expect(
-            peer2_events.boxed(),
-            gossip_from(peer1.peer_id()),
+            peer2_events,
+            predicate::gossip_from(peer1.peer_id()),
             Duration::from_secs(5),
         )
         .await
         .unwrap();
 
         // Does peer2 forward the gossip?
+        futures::pin_mut!(peer1_events);
         event::upstream::expect(
-            peer1_events.boxed(),
-            gossip_from(peer1.peer_id()),
+            peer1_events,
+            predicate::gossip_from(peer1.peer_id()),
             Duration::from_secs(5),
         )
         .await
@@ -192,11 +195,27 @@ fn ask_and_clone() {
     net.enter(async {
         let peer1 = &net.peers()[0];
         let peer2 = &net.peers()[1];
-        let proj = peer1
-            .using_storage(move |storage| TestProject::create(&storage))
+        let proj = {
+            let events = peer1.subscribe();
+            let proj = peer1
+                .using_storage(move |storage| TestProject::create(&storage))
+                .await
+                .unwrap()
+                .unwrap();
+
+            // Wait for peer1 to rebuild its cache
+            futures::pin_mut!(events);
+            event::upstream::expect(
+                events,
+                predicate::urn_cache_len(|len| len >= 2),
+                Duration::from_millis(500),
+            )
             .await
-            .unwrap()
             .unwrap();
+
+            proj
+        };
+
         let project_urn = proj.project.urn();
 
         let provider = peer2

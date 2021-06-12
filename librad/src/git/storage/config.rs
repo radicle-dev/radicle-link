@@ -5,7 +5,7 @@
 
 #![allow(unused)]
 
-use std::{convert::TryFrom, io, marker::PhantomData};
+use std::{convert::TryFrom, io, marker::PhantomData, path::PathBuf};
 
 use git_ext::{self as ext, is_not_found_err};
 use std_ext::result::ResultExt as _;
@@ -43,6 +43,14 @@ pub enum Error {
     Git(#[from] git2::Error),
 }
 
+/// The _local_ config for the give [`git2::Repository`].
+///
+/// This is typically `$GIT_DIR/.git/config` for non-bare, and `$GIT_DIR/config`
+/// for bare repositories.
+pub fn path(repo: &git2::Repository) -> PathBuf {
+    repo.path().join("config")
+}
+
 pub struct Config<'a, S> {
     inner: git2::Config,
     signer: &'a S,
@@ -52,12 +60,13 @@ impl<'a> TryFrom<&'a Storage> for Config<'a, BoxedSigner> {
     type Error = Error;
 
     fn try_from(storage: &'a Storage) -> Result<Self, Self::Error> {
-        let inner = git2::Config::open(&storage.as_raw().path().join("config"))?;
-        let this = Self {
+        let inner = git2::Config::open(&storage.config_path())?;
+        let mut this = Self {
             inner,
             signer: storage.signer(),
         };
         this.guard_key_change()?;
+        this.ensure_reflog()?;
 
         Ok(this)
     }
@@ -67,7 +76,7 @@ impl TryFrom<&git2::Repository> for Config<'_, PhantomData<!>> {
     type Error = git2::Error;
 
     fn try_from(repo: &git2::Repository) -> Result<Self, Self::Error> {
-        let inner = git2::Config::open(&repo.path().join("config"))?;
+        let inner = git2::Config::open(&self::path(repo))?.snapshot()?;
         Ok(Self {
             inner,
             signer: &PhantomData,
@@ -94,16 +103,29 @@ where
         }
     }
 
+    fn ensure_reflog(&mut self) -> Result<(), Error> {
+        if let Err(e) = self.inner.get_bool("core.logAllRefUpdates") {
+            return if is_not_found_err(&e) {
+                Ok(self.inner.set_bool("core.logAllRefUpdates", true)?)
+            } else {
+                Err(e.into())
+            };
+        }
+
+        Ok(())
+    }
+
     // TODO(finto): changed this from `pub(super)` to `pub`, but should it be hidden
     // and we change the creation test?
     pub fn init(repo: &mut git2::Repository, signer: &'a S) -> Result<Self, Error> {
         let peer_id = PeerId::from_signer(signer);
-        let config = repo.config()?;
+        let config = git2::Config::open(&self::path(repo))?;
         let mut this = Config {
             inner: config,
             signer,
         };
         this.guard_key_change()?;
+        this.ensure_reflog()?;
         this.set_peer_id(PeerId::from_signer(signer))?;
         this.set_user_info("anonymous")?;
 

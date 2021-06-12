@@ -88,7 +88,7 @@ pub enum Error {
 
     /// Peer storage error.
     #[error(transparent)]
-    PeerStorage(#[from] net::peer::StorageError),
+    PeerStorage(#[from] net::peer::error::Storage),
 
     /// Peer storage error.
     #[error(transparent)]

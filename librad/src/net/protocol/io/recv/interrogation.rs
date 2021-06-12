@@ -3,12 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    borrow::Cow,
-    net::SocketAddr,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{borrow::Cow, net::SocketAddr};
 
 use futures::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader, BufWriter},
@@ -16,22 +11,17 @@ use futures::{
     StreamExt as _,
 };
 use futures_codec::FramedRead;
-use parking_lot::{
-    MappedRwLockReadGuard,
-    RwLock,
-    RwLockReadGuard,
-    RwLockUpgradableReadGuard,
-    RwLockWriteGuard,
-};
 use thiserror::Error;
+use typenum::Unsigned as _;
 
 use crate::{
-    git::{identities, storage, Storage},
-    identities::SomeUrn,
+    git::storage,
+    identities::xor,
     net::{
         connection::Duplex,
         protocol::{
-            interrogation::{self, xor, Request, Response, Xor},
+            cache,
+            interrogation::{self, Request, Response},
             io::{self, codec},
             State,
         },
@@ -40,36 +30,15 @@ use crate::{
     },
 };
 
-#[derive(Clone, Default)]
-pub struct Cache {
-    urns: Arc<RwLock<Option<(Instant, Xor)>>>,
-}
-
 #[derive(Debug, Error)]
 enum Error {
-    #[error("the cache is being rebuilt")]
-    Refreshing,
-
-    #[error(transparent)]
-    BuildUrns(#[from] Box<xor::BuildError<identities::Error>>),
-
     #[error(transparent)]
     Cbor(#[from] minicbor::encode::Error<std::io::Error>),
-}
-
-impl From<xor::BuildError<identities::Error>> for Error {
-    fn from(e: xor::BuildError<identities::Error>) -> Self {
-        Self::BuildUrns(Box::new(e))
-    }
 }
 
 lazy_static! {
     static ref INTERNAL_ERROR: Vec<u8> =
         encode(&Response::Error(interrogation::Error::Internal)).unwrap();
-    static ref UNAVAILABLE_ERROR: Vec<u8> = encode(&Response::Error(
-        interrogation::Error::TemporarilyUnavailable
-    ))
-    .unwrap();
 }
 
 pub(in crate::net::protocol) async fn interrogation<S, T>(
@@ -81,7 +50,7 @@ pub(in crate::net::protocol) async fn interrogation<S, T>(
     T::Read: AsyncRead + Unpin,
     T::Write: AsyncWrite + Unpin,
 {
-    const BUFSIZ: usize = xor::MAX_FINGERPRINTS as usize * 3;
+    const BUFSIZ: usize = xor::MaxFingerprints::USIZE * 3;
 
     let remote_addr = stream.remote_addr();
 
@@ -94,43 +63,28 @@ pub(in crate::net::protocol) async fn interrogation<S, T>(
         match x {
             Err(e) => tracing::warn!(err = ?e, "interrogation recv error"),
             Ok(req) => {
-                let resp = match state.storage.get().await {
-                    Err(e) => {
-                        tracing::error!(err = ?e, "unable to borrow storage");
-                        Cow::from(&*INTERNAL_ERROR)
-                    },
-                    Ok(storage) => {
-                        let res = state
-                            .spawner
-                            .clone()
-                            .spawn_blocking(move || {
-                                handle_request(
-                                    &state.endpoint,
-                                    &storage,
-                                    &state.caches.interrogation,
-                                    remote_addr,
-                                    req,
-                                )
+                let resp = {
+                    let res = state
+                        .spawner
+                        .clone()
+                        .spawn_blocking(move || {
+                            handle_request(&state.endpoint, &state.caches.urns, remote_addr, req)
                                 .map(Cow::from)
                                 .unwrap_or_else(|e| {
                                     tracing::error!(err = ?e, "error handling request");
                                     match e {
-                                        Error::Refreshing | Error::BuildUrns(_) => {
-                                            Cow::from(&*UNAVAILABLE_ERROR)
-                                        },
                                         Error::Cbor(_) => Cow::from(&*INTERNAL_ERROR),
                                     }
                                 })
-                            })
-                            .await;
-                        match res {
-                            Err(e) => {
-                                drop(e.into_cancelled());
-                                return;
-                            },
-                            Ok(resp) => resp,
-                        }
-                    },
+                        })
+                        .await;
+                    match res {
+                        Err(e) => {
+                            drop(e.into_cancelled());
+                            return;
+                        },
+                        Ok(resp) => resp,
+                    }
                 };
 
                 if let Err(e) = send.into_sink().send(resp).await {
@@ -143,8 +97,7 @@ pub(in crate::net::protocol) async fn interrogation<S, T>(
 
 fn handle_request(
     endpoint: &quic::Endpoint,
-    storage: &Storage,
-    cache: &Cache,
+    urns: &cache::urns::Filter,
     remote_addr: SocketAddr,
     req: interrogation::Request,
 ) -> Result<Vec<u8>, Error> {
@@ -156,52 +109,11 @@ fn handle_request(
         },
         Request::EchoAddr => Left(Response::YourAddr(remote_addr)),
         Request::GetUrns => {
-            let urns = urns(cache, storage)?;
+            let urns = urns.get();
             Right(encode(&Response::<SocketAddr>::Urns(Cow::Borrowed(&urns))))
         },
     }
     .right_or_else(|resp| encode(&resp))
-}
-
-fn urns<'a>(cache: &'a Cache, storage: &Storage) -> Result<MappedRwLockReadGuard<'a, Xor>, Error> {
-    // refresh the cache every couple of minutes, assuming we have the refs in
-    // memory anyways
-    //
-    // TODO: we should eventually have hooks to only refresh when the refs
-    // actually changed
-    const MAX_AGE: Duration = Duration::from_secs(300);
-
-    // fast path cache hit
-    {
-        let guard = cache.urns.read();
-        if let Some((updated, _)) = &*guard {
-            if updated.elapsed() < MAX_AGE {
-                return Ok(RwLockReadGuard::map(guard, |x| {
-                    x.as_ref().map(|(_, x)| x).unwrap()
-                }));
-            }
-        }
-    }
-
-    // take an upgradable read lock, exiting if another cache builder holds it
-    match cache.urns.try_upgradable_read() {
-        None => Err(Error::Refreshing),
-        Some(guard) => {
-            // I/O while only holding the read lock, other readers should be
-            // able to make progress
-            let xor = build_urns(storage)?;
-            let mut guard = RwLockUpgradableReadGuard::upgrade(guard);
-            *guard = Some((Instant::now(), xor));
-            Ok(RwLockReadGuard::map(
-                RwLockWriteGuard::downgrade(guard),
-                |x| x.as_ref().map(|(_, x)| x).unwrap(),
-            ))
-        },
-    }
-}
-
-fn build_urns(storage: &Storage) -> Result<Xor, xor::BuildError<identities::Error>> {
-    Xor::try_from_iter(identities::any::list_urns(storage)?.map(|res| res.map(SomeUrn::Git)))
 }
 
 fn encode(resp: &interrogation::Response<SocketAddr>) -> Result<Vec<u8>, Error> {

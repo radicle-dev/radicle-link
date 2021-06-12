@@ -5,10 +5,11 @@
 
 use std::{
     ops::{Deref, DerefMut},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use deadpool::managed::{self, Manager, Object, RecycleResult};
+use parking_lot::RwLock;
 
 use super::{Error, Fetchers, Storage};
 use crate::{paths::Paths, signer::Signer};
@@ -64,25 +65,44 @@ impl From<Object<Storage, Error>> for PooledRef {
 }
 
 #[derive(Clone)]
+pub struct Initialised(Arc<RwLock<bool>>);
+
+impl Initialised {
+    pub fn no() -> Self {
+        Self(Arc::new(RwLock::new(false)))
+    }
+}
+
+#[derive(Clone)]
 pub struct Config<S> {
     paths: Paths,
     signer: S,
+    init: Initialised,
     fetchers: Fetchers,
-    init_lock: Arc<Mutex<()>>,
 }
 
 impl<S> Config<S> {
-    pub fn new(paths: Paths, signer: S) -> Self {
-        Self::with_fetchers(paths, signer, Default::default())
+    pub fn new(paths: Paths, signer: S, init: Initialised) -> Self {
+        Self::with_fetchers(paths, signer, init, Default::default())
     }
 
-    pub fn with_fetchers(paths: Paths, signer: S, fetchers: Fetchers) -> Self {
+    pub fn with_fetchers(paths: Paths, signer: S, init: Initialised, fetchers: Fetchers) -> Self {
         Self {
             paths,
             signer,
+            init,
             fetchers,
-            init_lock: Arc::new(Mutex::new(())),
         }
+    }
+}
+
+impl<S> Config<S>
+where
+    S: Signer + Clone,
+    S::Error: std::error::Error + Send + Sync + 'static,
+{
+    fn mk_storage(&self) -> Result<Storage, Error> {
+        Storage::with_fetchers(&self.paths, self.signer.clone(), self.fetchers.clone())
     }
 }
 
@@ -93,11 +113,16 @@ where
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     async fn create(&self) -> Result<Storage, Error> {
-        // FIXME(kim): we should `block_in_place` here, but that forces the
-        // threaded runtime onto users
-        let _lock = self.init_lock.lock().unwrap();
-        {
-            Storage::with_fetchers(&self.paths, self.signer.clone(), self.fetchers.clone())
+        let initialised = self.init.0.read();
+        if *initialised {
+            self.mk_storage()
+        } else {
+            drop(initialised);
+            let mut initialised = self.init.0.write();
+            self.mk_storage().map(|storage| {
+                *initialised = true;
+                storage
+            })
         }
     }
 

@@ -7,6 +7,7 @@ use std::{fmt::Debug, future::Future, net::SocketAddr, sync::Arc, time::Duration
 
 use futures::{channel::mpsc, stream::StreamExt as _};
 use nonempty::NonEmpty;
+use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
 use tracing::Instrument as _;
 
@@ -25,11 +26,16 @@ use crate::{
         storage,
     },
     paths::Paths,
+    rate_limit::RateLimiter,
     signer::Signer,
     PeerId,
 };
 
 pub mod broadcast;
+
+pub mod cache;
+pub use cache::Caches;
+
 pub mod error;
 pub mod event;
 pub mod gossip;
@@ -41,7 +47,7 @@ mod info;
 pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
 
 mod accept;
-mod cache;
+
 mod control;
 mod nonce;
 mod tick;
@@ -149,6 +155,7 @@ pub async fn bind<Sign, Store>(
     config: Config,
     signer: Sign,
     storage: Store,
+    caches: cache::Caches,
 ) -> Result<Bound<Store>, error::Bootstrap>
 where
     Sign: Signer + Clone + Send + Sync + 'static,
@@ -172,6 +179,15 @@ where
         config.membership,
     );
     let storage = Storage::new(storage, config.rate_limits.storage);
+    // TODO: make configurable
+    let nonces = nonce::NonceBag::new(Duration::from_secs(300));
+    let limits = RateLimits {
+        membership: Arc::new(RateLimiter::keyed(
+            config.rate_limits.membership,
+            nonzero!(1024 * 1024usize),
+        )),
+    };
+
     let state = State {
         local_id,
         endpoint,
@@ -183,12 +199,10 @@ where
             replication: config.replication,
             fetch: config.fetch,
         },
-        nonces: nonce::NonceBag::new(Duration::from_secs(300)), // TODO: config
-        caches: cache::Caches::default(),
+        nonces,
+        caches,
         spawner,
-        limits: RateLimits {
-            membership: Arc::new(governor::RateLimiter::keyed(config.rate_limits.membership)),
-        },
+        limits,
     };
 
     Ok(Bound {

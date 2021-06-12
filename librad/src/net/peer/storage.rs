@@ -3,13 +3,14 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use cuckoofilter::CuckooFilter;
 use either::Either::{self, Left, Right};
 use git_ext::{self as ext, reference};
-use parking_lot::RwLock;
-use rustc_hash::FxHasher;
 
 use crate::{
     executor,
@@ -20,7 +21,7 @@ use crate::{
         Urn,
     },
     identities::urn,
-    net::protocol::{broadcast, gossip},
+    net::protocol::{broadcast, cache, gossip},
     peer::{Originates, PeerId},
 };
 
@@ -34,23 +35,6 @@ pub struct Config {
     pub fetch_quota: governor::Quota,
 }
 
-#[derive(Clone)]
-struct Caches {
-    /// [`Urn::id`]s we have.
-    have: Arc<RwLock<CuckooFilter<FxHasher>>>,
-    /// [`Urn::id`]s we have seen.
-    seen: Arc<RwLock<CuckooFilter<FxHasher>>>,
-}
-
-impl Default for Caches {
-    fn default() -> Self {
-        Self {
-            have: Arc::new(RwLock::new(CuckooFilter::with_capacity(10_000))),
-            seen: Arc::new(RwLock::new(CuckooFilter::with_capacity(100_000))),
-        }
-    }
-}
-
 type KeyedLimiter<T> = governor::RateLimiter<
     T,
     governor::state::keyed::DashMapStateStore<T>,
@@ -61,20 +45,37 @@ type KeyedLimiter<T> = governor::RateLimiter<
 pub struct Storage {
     pool: Pool,
     config: Config,
-    caches: Caches,
+    urns: cache::urns::Filter,
     limits: Arc<KeyedLimiter<(PeerId, Urn)>>,
     spawner: Arc<executor::Spawner>,
 }
 
 impl Storage {
-    pub fn new(spawner: Arc<executor::Spawner>, pool: Pool, config: Config) -> Self {
+    pub fn new(
+        spawner: Arc<executor::Spawner>,
+        pool: Pool,
+        config: Config,
+        urns: cache::urns::Filter,
+    ) -> Self {
         Self {
             pool,
             config,
-            caches: Caches::default(),
+            urns,
             limits: Arc::new(governor::RateLimiter::keyed(config.fetch_quota)),
             spawner,
         }
+    }
+
+    fn is_rate_limited(&self, remote_peer: PeerId, urn: Urn) -> bool {
+        if self.limits.len() > 1024 {
+            let start = Instant::now();
+            self.limits.retain_recent();
+            tracing::debug!(
+                "sweeped rate limiter in {:.2}s",
+                start.elapsed().as_secs_f32()
+            );
+        }
+        self.limits.check_key(&(remote_peer, urn)).is_err()
     }
 
     async fn git_fetch(
@@ -94,11 +95,7 @@ impl Storage {
             urn_context(*git.peer_id(), urn)
         };
         let (remote_peer, addr_hints) = from.into();
-        if self
-            .limits
-            .check_key(&(remote_peer, urn.clone().with_path(None)))
-            .is_err()
-        {
+        if self.is_rate_limited(remote_peer, urn.clone().with_path(None)) {
             return Err(Error::RateLimited { remote_peer, urn });
         }
 
@@ -125,49 +122,15 @@ impl Storage {
         let git = self.pool.get().await.unwrap();
         let urn = urn_context(*git.peer_id(), urn);
 
-        // We definitely haven't seen this urn before, so lazily fill the
-        // `have` filter.
-        //
-        // This could be a false negative in case the `seen` filter is fully
-        // loaded and evicted the value. In this case we do extra work (which is
-        // acceptable), but are careful to not cause an eviction from the `have`
-        // filter by using `test_and_add` below.
-        if !self.caches.seen.read().contains(&urn.id) {
-            let have = self
-                .spawner
-                .spawn_blocking({
-                    let urn = urn.clone();
-                    move || git.has_urn(&urn)
-                })
-                .await;
-
-            // Don't mutate the caches in case of errors, as that would yield
-            // false negatives
-            if let Ok(Ok(have)) = have {
-                // Record that we now have seen and have it
-                self.caches.seen.write().add(&urn.id).ok();
-                if have {
-                    self.caches.have.write().test_and_add(&urn.id).ok();
-                } else {
-                    // If we don't have it, we can short-circuit here
-                    return false;
-                }
-            }
-        }
-
-        // We probably have seen this urn before, and definitely don't have it.
-        //
-        // False negative if the urn got evicted due to the filter being full.
-        // That's acceptable, because it only means that we don't offer ourselves
-        // as a fetch source.
-        if !self.caches.have.read().contains(&urn.id) {
+        if !self.urns.contains(&urn.clone().with_path(None).into()) {
             return false;
         }
 
-        // Here we know that we probably have this urn, and maybe the head. Hit
-        // the disk to find out.
-
-        let git = self.pool.get().await.unwrap();
+        let git = self
+            .pool
+            .get()
+            .await
+            .expect("unable to acquire storage from pool");
         let head = head.into().map(ext::Oid::from);
         self.spawner
             .spawn_blocking(move || match head {
@@ -294,8 +257,7 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
                             remote_peer,
                             urn
                         );
-                        // Someone else may still be interested
-                        PutResult::Uninteresting
+                        PutResult::Stale
                     },
                     x => {
                         tracing::error!(err = %x, "fetch error");

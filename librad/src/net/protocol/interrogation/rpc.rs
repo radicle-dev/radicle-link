@@ -5,7 +5,8 @@
 
 use std::borrow::Cow;
 
-use super::{xor, PeerAdvertisement};
+use super::PeerAdvertisement;
+use crate::identities::xor;
 
 #[derive(Clone, Copy, Debug, minicbor::Encode, minicbor::Decode)]
 pub enum Request {

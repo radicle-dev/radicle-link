@@ -6,7 +6,6 @@
 use std::{net::SocketAddr, ops::Deref, sync::Arc};
 
 use futures::future::TryFutureExt as _;
-use governor::RateLimiter;
 use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
 use tracing::Instrument as _;
@@ -35,6 +34,7 @@ use crate::{
         storage::{self, PoolError, PooledRef},
     },
     net::{quic, upgrade},
+    rate_limit::{self, Direct, Keyed, RateLimiter},
     PeerId,
 };
 
@@ -148,27 +148,24 @@ where
 // Rate Limiting
 //
 
-type DirectLimiter = governor::RateLimiter<
-    governor::state::direct::NotKeyed,
-    governor::state::InMemoryState,
-    governor::clock::DefaultClock,
->;
-
-type KeyedLimiter<T> = governor::RateLimiter<
-    T,
-    governor::state::keyed::DashMapStateStore<T>,
-    governor::clock::DefaultClock,
->;
-
 #[derive(Clone)]
 pub(super) struct RateLimits {
-    pub membership: Arc<KeyedLimiter<PeerId>>,
+    pub membership: Arc<RateLimiter<Keyed<PeerId>>>,
 }
 
+/// Rate limit quota.
 #[derive(Clone, Debug)]
 pub struct Quota {
+    /// See [`GossipQuota`].
     pub gossip: GossipQuota,
-    pub membership: governor::Quota,
+    /// Membership messages per peer.
+    ///
+    /// When a peer sends membership messages at a higher rate, it will be
+    /// disconnected.
+    ///
+    /// Default: 1/sec (burst: 10)
+    pub membership: rate_limit::Quota,
+    /// See [`StorageQuota`].
     pub storage: StorageQuota,
 }
 
@@ -176,7 +173,7 @@ impl Default for Quota {
     fn default() -> Self {
         Self {
             gossip: GossipQuota::default(),
-            membership: governor::Quota::per_second(nonzero!(1u32)).allow_burst(nonzero!(10u32)),
+            membership: rate_limit::Quota::per_second(nonzero!(1u32)).allow_burst(nonzero!(10u32)),
             storage: StorageQuota::default(),
         }
     }
@@ -184,29 +181,45 @@ impl Default for Quota {
 
 #[derive(Clone, Debug)]
 pub struct GossipQuota {
-    pub fetches_per_peer_and_urn: governor::Quota,
+    /// Fetch attempts per peer and Urn.
+    ///
+    /// Default: 1/min (burst: 5)
+    pub fetches_per_peer_and_urn: rate_limit::Quota,
 }
 
 impl Default for GossipQuota {
     fn default() -> Self {
         Self {
-            fetches_per_peer_and_urn: governor::Quota::per_minute(nonzero!(1u32))
+            fetches_per_peer_and_urn: rate_limit::Quota::per_minute(nonzero!(1u32))
                 .allow_burst(nonzero!(5u32)),
         }
     }
 }
 
+/// Peer storage quota.
 #[derive(Clone, Debug)]
 pub struct StorageQuota {
-    errors: governor::Quota,
-    wants: governor::Quota,
+    /// Local storage errors to tolerate.
+    ///
+    /// While the limit is not breached, applying the gossip message to local
+    /// storage will be retried. The quota should be rather low, as storage
+    /// errors are generally not expected to be transient.
+    ///
+    /// Default: 10/min
+    pub errors: rate_limit::Quota,
+    /// `Want` requests to respond to per remote peer.
+    ///
+    /// When this limit is breached, `Want`s from the peer will be ignored.
+    ///
+    /// Default: 30/min
+    pub wants: rate_limit::Quota,
 }
 
 impl Default for StorageQuota {
     fn default() -> Self {
         Self {
-            errors: governor::Quota::per_minute(nonzero!(10u32)),
-            wants: governor::Quota::per_minute(nonzero!(30u32)),
+            errors: rate_limit::Quota::per_minute(nonzero!(10u32)),
+            wants: rate_limit::Quota::per_minute(nonzero!(30u32)),
         }
     }
 }
@@ -217,8 +230,8 @@ impl Default for StorageQuota {
 
 #[derive(Clone)]
 struct StorageLimits {
-    errors: Arc<DirectLimiter>,
-    wants: Arc<KeyedLimiter<PeerId>>,
+    errors: Arc<RateLimiter<Direct>>,
+    wants: Arc<RateLimiter<Keyed<PeerId>>>,
 }
 
 #[derive(Clone)]
@@ -233,7 +246,7 @@ impl<S> Storage<S> {
             inner,
             limits: StorageLimits {
                 errors: Arc::new(RateLimiter::direct(quota.errors)),
-                wants: Arc::new(RateLimiter::keyed(quota.wants)),
+                wants: Arc::new(RateLimiter::keyed(quota.wants, nonzero!(256 * 1024usize))),
             },
         }
     }
@@ -271,6 +284,7 @@ where
 impl<S> broadcast::RateLimited for Storage<S> {
     fn is_rate_limit_breached(&self, lim: broadcast::Limit) -> bool {
         use broadcast::Limit;
+
         match lim {
             Limit::Errors => self.limits.errors.check().is_err(),
             Limit::Wants { recipient } => self.limits.wants.check_key(recipient).is_err(),

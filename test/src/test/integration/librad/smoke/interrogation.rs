@@ -3,13 +3,21 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::ops::Index as _;
+use std::{ops::Index as _, time::Duration};
+
+use librad::{
+    data::BoundedVec,
+    identities::SomeUrn,
+    net::protocol::{
+        event::{self, upstream::predicate},
+        PeerAdvertisement,
+    },
+};
 
 use crate::{
     logging,
     rad::{identities::TestProject, testnet},
 };
-use librad::{data::BoundedVec, identities::SomeUrn, net::protocol::PeerAdvertisement};
 
 fn config() -> testnet::Config {
     testnet::Config {
@@ -27,11 +35,26 @@ fn responds() {
     net.enter(async {
         let responder = net.peers().index(0);
         let requester = net.peers().index(1);
-        let TestProject { project, owner } = responder
-            .using_storage(move |s| TestProject::create(&s))
+        let TestProject { project, owner } = {
+            let events = responder.subscribe();
+            let proj = responder
+                .using_storage(move |s| TestProject::create(&s))
+                .await
+                .unwrap()
+                .unwrap();
+
+            // Make sure responder had a chance to refresh its caches
+            futures::pin_mut!(events);
+            event::upstream::expect(
+                events,
+                predicate::urn_cache_len(|len| len >= 2),
+                Duration::from_millis(500),
+            )
             .await
-            .unwrap()
             .unwrap();
+
+            proj
+        };
 
         let interrogation =
             requester.interrogate((responder.peer_id(), responder.listen_addrs().to_vec()));
@@ -51,7 +74,7 @@ fn responds() {
         );
         let urns = interrogation.urns().await.unwrap();
         for urn in &[SomeUrn::Git(project.urn()), SomeUrn::Git(owner.urn())] {
-            assert!(urns.contains(urn))
+            assert!(urns.contains(urn), "{} not in set", urn)
         }
     })
 }

@@ -3,20 +3,28 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::fmt::{self, Debug};
+
+use data::BoundedVec;
 use sized_vec::Vec as SVec;
 use thiserror::Error;
-use typenum::{IsLessOrEqual, Unsigned, U10000};
+use typenum::{IsLessOrEqual, Unsigned, U1000, U100000, U23, U30};
 use xorf::{Filter as _, Xor16};
 
-use crate::identities::{SomeUrn, Urn};
+use super::{SomeUrn, Urn};
 
 /// Maximum number of elements permitted in a single [`Xor`] filter.
 ///
-/// Currently: 10,000
-pub type MaxElements = U10000;
-// approx. `MaxElements * 1.23`, but not exactly for all choices of
-// `MaxElements`
-pub(crate) const MAX_FINGERPRINTS: u64 = 12_330;
+/// Currently: 100,000
+pub type MaxElements = U100000;
+
+/// Maximum number of fingerprints permitted in a serialised [`Xor`] filter.
+///
+/// Approx. `MaxElements * 1.23`, but not exactly for all choices of
+/// `MaxElements`
+// 123_030
+// https://github.com/paholg/typenum/pull/136
+pub type MaxFingerprints = typenum::op!(U100000 + (U23 * U1000) + U30);
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -33,11 +41,8 @@ pub enum BuildError<E: std::error::Error + Send + Sync + 'static> {
 ///
 /// We use Lemire et.al.'s [Xor filter][xor] with 16-bit fingerprints, which
 /// gives a false positive rate of < 0.02. The number of elements in the filter
-/// is currently limited to 10,000, which makes for a total size of about 31KiB
-/// on the wire when fully loaded. This number may be adjusted in the
-/// future depending on real-world usage we see, or we may evolve the protocol
-/// such that large nodes announce their URN advertisement split over multiple
-/// Xor filters.
+/// is currently limited to **100,000**, which makes for a total size of about
+/// **315KiB** on the wire when fully loaded.
 ///
 /// The choice of Xor filters is a tradeoff: their size is proportional to the
 /// number of elements (ie. no "unused" bits are transmitted), and generally
@@ -61,7 +66,7 @@ impl Xor {
         self.inner.contains(&xor_hash(urn))
     }
 
-    pub fn try_from_iter<T, E>(iter: T) -> Result<Self, BuildError<E>>
+    pub fn try_from_iter<T, E>(iter: T) -> Result<(Self, usize), BuildError<E>>
     where
         T: IntoIterator<Item = Result<SomeUrn, E>>,
         E: std::error::Error + Send + Sync + 'static,
@@ -75,8 +80,15 @@ impl Xor {
             }
         }
 
+        let elements = xs.len();
         let inner = Xor16::from(xs);
-        Ok(Self { inner })
+
+        Ok((Self { inner }, elements))
+    }
+
+    /// The number of fingerprints in the filter.
+    pub fn len(&self) -> usize {
+        self.inner.len()
     }
 }
 
@@ -89,6 +101,27 @@ impl Clone for Xor {
                 fingerprints: self.inner.fingerprints.clone(),
             },
         }
+    }
+}
+
+impl PartialEq for Xor {
+    fn eq(&self, other: &Self) -> bool {
+        let this = &self.inner;
+        let that = &other.inner;
+
+        this.seed == that.seed
+            && this.block_length == that.block_length
+            && this.fingerprints == that.fingerprints
+    }
+}
+
+impl Debug for Xor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Xor")
+            .field("seed", &self.inner.seed)
+            .field("block_length", &self.inner.block_length)
+            .field("fingerprints", &self.inner.fingerprints)
+            .finish()
     }
 }
 
@@ -127,13 +160,14 @@ impl<'b> minicbor::Decode<'b> for Xor {
             inner: Xor16 {
                 seed,
                 block_length,
-                fingerprints: fingerprints.into_boxed_slice(),
+                fingerprints: fingerprints.into_inner().into_boxed_slice(),
             },
         })
     }
 }
 
 #[derive(minicbor::Encode)]
+#[cbor(array)]
 struct Encode<'a> {
     #[n(0)]
     seed: u64,
@@ -144,33 +178,14 @@ struct Encode<'a> {
 }
 
 #[derive(minicbor::Decode)]
+#[cbor(array)]
 struct Decode {
     #[n(0)]
     seed: u64,
     #[n(1)]
     block_length: usize,
     #[n(2)]
-    #[cbor(with = "bounded")]
-    fingerprints: Vec<u16>,
-}
-
-mod bounded {
-    use super::MAX_FINGERPRINTS;
-
-    pub fn decode(d: &mut minicbor::Decoder) -> Result<Vec<u16>, minicbor::decode::Error> {
-        use minicbor::decode::{Decode, Error::Message as Error};
-
-        match d.probe().array()? {
-            None => Err(Error("expected definite-length array")),
-            Some(len) => {
-                if len > MAX_FINGERPRINTS {
-                    Err(Error("max length exceeded"))
-                } else {
-                    Ok(Decode::decode(d)?)
-                }
-            },
-        }
-    }
+    fingerprints: BoundedVec<MaxFingerprints, u16>,
 }
 
 fn xor_hash(urn: &SomeUrn) -> u64 {
