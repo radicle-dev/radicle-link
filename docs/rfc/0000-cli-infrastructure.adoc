@@ -173,18 +173,6 @@ functionality will live in `radicle-link`, including the `main`
 function, and the entry in `radicle-bins` will be a thin wrapper
 around this function.
 
-=== Distribution
-
-We are noting here that -- at the time of writing -- we cannot publish
-these binaries to <<crates.io>> due to the fact that `librad` and other
-crucial libraries only live as a `git` repositories and are not on
-crates.io. Anything that depends on them cannot be published as a
-consequence.
-
-This means that all subcommands will need to be built from source
-initially, unless we build the binaries and distribute them from a
-well-known source.
-
 == Core
 
 With all the details in place, we define a non-exhaustive list of the
