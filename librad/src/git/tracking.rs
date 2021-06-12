@@ -113,18 +113,20 @@ pub fn untrack(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error
 
 /// Determine if `peer` is tracked in the context of `urn`.
 #[tracing::instrument(level = "trace", skip(storage))]
-pub fn is_tracked(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
-    storage
-        .as_raw()
-        .find_remote(&tracking_remote_name(urn, &peer))
-        .and(Ok(true))
-        .or_matches(is_not_found_err, || Ok(false))
+pub fn is_tracked<S>(storage: &S, urn: &Urn, peer: PeerId) -> Result<bool, Error>
+where
+    S: AsRef<storage::Storage>,
+{
+    storage.as_ref().has_remote(urn, peer).map_err(Error::from)
 }
 
 /// Obtain an iterator over the 1st degree tracked peers in the context of
 /// `urn`.
-pub fn tracked(storage: &Storage, urn: &Urn) -> Result<Tracked, Error> {
-    Ok(Tracked::collect(storage.as_raw(), urn)?)
+pub fn tracked<S>(storage: &S, urn: &Urn) -> Result<Tracked, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    Tracked::collect(storage, urn)
 }
 
 /// Iterator over the 1st degree tracked peers.
@@ -136,8 +138,12 @@ pub struct Tracked {
 }
 
 impl Tracked {
-    fn collect(repo: &git2::Repository, context: &Urn) -> Result<Self, git2::Error> {
-        let remotes = repo.remotes()?;
+    fn collect<S>(storage: &S, context: &Urn) -> Result<Self, Error>
+    where
+        S: AsRef<storage::ReadOnly>,
+    {
+        let storage = storage.as_ref();
+        let remotes = storage.remotes()?;
         let range = 0..remotes.len();
         let prefix = format!("{}/", context.encode_id());
         Ok(Self {

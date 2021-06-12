@@ -6,6 +6,7 @@
 
 use std::{convert::TryFrom, fmt::Debug, marker::PhantomData, path::Path};
 
+use git2::string_array::StringArray;
 use git_ext::{self as ext, blob, is_not_found_err, RefLike, RefspecPattern};
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
@@ -276,6 +277,18 @@ impl Storage {
         .get(&self.backend)
         .map(Some)
         .or_matches(|e| matches!(e, blob::Error::NotFound(_)), || Ok(None))
+    }
+
+    pub fn remotes(&self) -> Result<StringArray, Error> {
+        self.backend.remotes().map_err(Error::from)
+    }
+
+    pub fn has_remote(&self, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
+        let name = format!("{}/{}", urn.encode_id(), peer);
+        self.backend
+            .find_remote(&name)
+            .and(Ok(true))
+            .or_matches(is_not_found_err, || Ok(false))
     }
 
     pub fn config(&self) -> Result<Config<PhantomData<!>>, Error> {
