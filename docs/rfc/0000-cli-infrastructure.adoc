@@ -106,10 +106,7 @@ experience is that the Upstream is updated with the new project
 (without refreshing). In RFC-682, it is alluded that a PubSub
 component could solve this, however, that requires the daemon to be
 online. The author prefers not to specify the PubSub component
-here. To bridge the gap, we recommend that a subcommand can add a
-parameter `daemon-mode := offline (default) | online`. If set to
-`online` the command will see if the daemon is online, and if not ask
-it to come online before applying the command.
+here.
 
 == Key Access
 
