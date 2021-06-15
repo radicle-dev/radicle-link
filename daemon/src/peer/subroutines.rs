@@ -6,6 +6,7 @@
 //! Management of peer subroutine tasks driven by advancing the core state
 //! machine with a stream of inputs, producing commands.
 
+use librad::net::protocol::event::NetworkDiagnosticEvent;
 use std::{
     net::SocketAddr,
     time::{Duration, SystemTime},
@@ -72,6 +73,7 @@ where
     S: Clone + Signer,
 {
     /// Constructs a new subroutines manager.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         peer: net::peer::Peer<S>,
         mut listen_addrs: watch::Receiver<Vec<SocketAddr>>,
@@ -80,6 +82,10 @@ where
         protocol_events: BoxStream<'static, Result<ProtocolEvent, net::protocol::RecvError>>,
         subscriber: broadcast::Sender<Event>,
         mut control_receiver: mpsc::Receiver<control::Request>,
+        network_diagnostic_events: BoxStream<
+            'static,
+            Result<NetworkDiagnosticEvent, net::protocol::RecvError>,
+        >,
     ) -> Self {
         let announce_timer = if run_config.announce.interval.is_zero() {
             None
@@ -122,6 +128,23 @@ where
                             Ok(ev) => Some(Input::Protocol(ev)),
                             Err(err) => {
                                 log::warn!("receive error: {}", err);
+                                None
+                            },
+                        }
+                    })
+                    .boxed(),
+            );
+
+            coalesced.push(
+                network_diagnostic_events
+                    .filter_map(|res| async move {
+                        match res {
+                            Ok(ev) => Some(Input::NetworkDiagnostic(ev)),
+                            Err(err) => {
+                                log::warn!(
+                                    "receive error for network diagnostic event log: {}",
+                                    err
+                                );
                                 None
                             },
                         }

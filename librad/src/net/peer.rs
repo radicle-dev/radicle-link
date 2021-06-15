@@ -9,7 +9,7 @@ use futures::{future, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use futures_timer::Delay;
 use thiserror::Error;
 
-use super::protocol::{self, gossip};
+use super::protocol::{self, event::NetworkDiagnosticEvent, gossip};
 use crate::{
     executor,
     git::{self, storage::Fetchers, Urn},
@@ -248,6 +248,12 @@ where
         &self,
     ) -> impl futures::Stream<Item = Result<ProtocolEvent, protocol::RecvError>> {
         self.phone.subscribe()
+    }
+
+    pub fn subscribe_to_diagnostic_events(
+        &self,
+    ) -> impl futures::Stream<Item = Result<NetworkDiagnosticEvent, protocol::RecvError>> {
+        self.phone.subscribe_diagnostic_events()
     }
 
     /// Borrow a [`git::storage::Storage`] from the pool, and run a blocking

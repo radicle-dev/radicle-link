@@ -3,6 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use crate::net::protocol::event::NetworkDiagnosticEvent;
 use std::{iter, net::SocketAddr};
 
 use data::BoundedVec;
@@ -44,11 +45,12 @@ where
     }
 
     if let Some((conn, ingress)) = connect(&state.endpoint, peer, addrs).await {
-        let rpc_sent = send_rpc::<_, ()>(
-            &conn,
-            state.membership.hello(peer_advertisement(&state.endpoint)),
-        )
-        .await;
+        let msg = state.membership.hello(peer_advertisement(&state.endpoint));
+        let rpc: Rpc<_, ()> = msg.clone().into();
+        let rpc_sent = send_rpc::<_, ()>(&conn, rpc).await;
+        state
+            .phone
+            .emit_diagnostic_event(NetworkDiagnosticEvent::hpv_sent(conn.remote_addr(), msg));
 
         match rpc_sent {
             Err(e) => tracing::warn!(err = ?e, "failed to send membership hello"),

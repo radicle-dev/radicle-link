@@ -7,11 +7,12 @@ use std::{collections::BTreeSet, convert::TryFrom, option::NoneError};
 
 use data::BoundedVec;
 use minicbor::{Decode, Encode};
+use serde::Serialize;
 use typenum::U16;
 
 use crate::peer::PeerId;
 
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Encode, Decode)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Encode, Decode, Serialize)]
 #[repr(u8)]
 pub enum Capability {
     #[n(0)]
@@ -86,7 +87,7 @@ impl<Addr> From<PeerInfo<Addr>> for (PeerId, Vec<Addr>) {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Encode)]
+#[derive(Debug, Clone, PartialEq, Encode, Serialize)]
 #[cbor(array)]
 pub struct GenericPeerInfo<Addr, T> {
     #[n(0)]
@@ -159,7 +160,7 @@ impl<'__b777, Addr: minicbor::Decode<'__b777>, T: minicbor::Decode<'__b777>>
         })
     }
 }
-#[derive(Debug, Clone, PartialEq, Encode)]
+#[derive(Debug, Clone, PartialEq, Encode, Serialize)]
 #[cbor(array)]
 pub struct PeerAdvertisement<Addr> {
     #[n(0)]

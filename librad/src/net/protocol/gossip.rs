@@ -7,6 +7,8 @@ use minicbor::{Decode, Decoder, Encode, Encoder};
 
 use crate::{identities::git::Urn, peer::PeerId};
 
+use serde::Serialize;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Rev {
     Git(git2::Oid),
@@ -55,8 +57,19 @@ impl<'de> Decode<'de> for Rev {
     }
 }
 
+impl Serialize for Rev {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Git(oid) => serializer.serialize_str(oid.to_string().as_str()),
+        }
+    }
+}
+
 /// The gossip payload type
-#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode, Serialize)]
 #[cbor(array)]
 pub struct Payload {
     /// URN of an updated or wanted repo.

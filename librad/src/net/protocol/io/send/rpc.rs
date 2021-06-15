@@ -15,7 +15,7 @@ use crate::net::{
     upgrade,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Rpc<A, P> {
     Membership(membership::Message<A>),
     Gossip(broadcast::Message<A, P>),

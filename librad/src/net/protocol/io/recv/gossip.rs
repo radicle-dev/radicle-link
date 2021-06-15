@@ -13,7 +13,7 @@ use futures_codec::FramedRead;
 
 use crate::{
     net::{
-        connection::RemotePeer,
+        connection::{RemoteAddr, RemotePeer},
         protocol::{
             broadcast,
             event,
@@ -35,7 +35,7 @@ pub(in crate::net::protocol) async fn gossip<S, T>(
     stream: Upgraded<upgrade::Gossip, T>,
 ) where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
-    T: RemotePeer + AsyncRead + Unpin,
+    T: RemotePeer + RemoteAddr<Addr = SocketAddr> + AsyncRead + Unpin,
 {
     let remote_id = stream.remote_peer_id();
 
@@ -62,6 +62,12 @@ pub(in crate::net::protocol) async fn gossip<S, T>(
                     advertised_info: peer_advertisement(&state.endpoint),
                     seen_addrs: iter::empty().into(),
                 };
+                state
+                    .phone
+                    .emit_diagnostic_event(event::NetworkDiagnosticEvent::gossip_received(
+                        recv.remote_addr(),
+                        msg.clone(),
+                    ));
                 match broadcast::apply(
                     &state.membership,
                     &state.storage,
