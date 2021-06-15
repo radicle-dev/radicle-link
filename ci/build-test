@@ -5,5 +5,4 @@ echo '--- Build'
 cargo build --workspace --all-features
 
 echo '--- Test'
-#RUST_LOG=error cargo test --workspace --all-features
-RUST_LOG=librad=trace cargo test test::integration::librad::smoke::clone::when_connected
+RUST_LOG=librad::rate_limit=trace,librad::net::protocol::cache=trace,librad::net::protocol=trace cargo test --workspace --all-features
