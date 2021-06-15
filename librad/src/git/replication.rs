@@ -18,7 +18,7 @@ use super::{
     fetch,
     identities::{self, local::LocalIdentity},
     refs::{self, Refs},
-    storage::{self, Storage},
+    storage::{self, ReadOnlyStorage, Storage},
     tracking,
     types::{reference, Force, Namespace, Reference},
 };

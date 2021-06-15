@@ -12,6 +12,7 @@ use futures::StreamExt as _;
 use librad::{
     git::{
         local::url::LocalUrl,
+        storage::ReadOnlyStorage as _,
         types::{remote, Fetchspec, Force, Reference, Remote},
         Urn,
     },

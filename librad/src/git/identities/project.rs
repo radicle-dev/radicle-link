@@ -11,7 +11,7 @@ use git_ext::{is_not_found_err, OneLevel};
 use super::{
     super::{
         refs::Refs as Sigrefs,
-        storage::{self, Storage},
+        storage::{self, ReadOnlyStorage as _, Storage},
         types::{namespace, reference, Force, Reference, Single, SymbolicRef},
     },
     common,

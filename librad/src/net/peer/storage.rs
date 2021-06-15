@@ -13,7 +13,7 @@ use crate::{
     executor,
     git::{
         replication,
-        storage::{self, fetcher, Pool, PoolError, PooledRef},
+        storage::{self, fetcher, Pool, PoolError, PooledRef, ReadOnlyStorage as _},
         tracking,
         Urn,
     },

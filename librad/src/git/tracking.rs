@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use super::{
     p2p::url::GitUrlRef,
-    storage::{self, glob, Storage},
+    storage::{self, glob, ReadOnlyStorage, Storage},
 };
 use crate::peer::PeerId;
 

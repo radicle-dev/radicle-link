@@ -10,7 +10,7 @@ use itertools::Itertools as _;
 
 use super::{
     super::{
-        storage::{self, glob},
+        storage::{self, glob, ReadOnlyStorage as _},
         types::Reference,
     },
     error::Error,

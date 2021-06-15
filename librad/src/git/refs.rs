@@ -23,7 +23,7 @@ use serde::{
 use thiserror::Error;
 
 use super::{
-    storage::{self, Storage},
+    storage::{self, ReadOnlyStorage, Storage},
     tracking,
     types::{Namespace, Reference, RefsCategory},
 };

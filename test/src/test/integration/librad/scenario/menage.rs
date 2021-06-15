@@ -18,7 +18,7 @@ use librad::{
     self,
     git::{
         local::url::LocalUrl,
-        storage::Storage,
+        storage::{ReadOnlyStorage as _, Storage},
         tracking,
         types::{remote, Flat, Force, GenericRef, Namespace, Reference, Refspec, Remote},
         Urn,

@@ -10,7 +10,7 @@ use crate::{
     rad::{identities::TestProject, testnet},
 };
 use librad::{
-    git::{tracking, util},
+    git::{storage::ReadOnlyStorage as _, tracking, util},
     git_ext::tree,
     reflike,
 };

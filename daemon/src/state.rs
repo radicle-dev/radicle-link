@@ -26,7 +26,10 @@ use librad::{
         local::{transport, url::LocalUrl},
         refs::Refs,
         replication::{self, ReplicateResult},
-        storage::fetcher::{self, BuildFetcher},
+        storage::{
+            fetcher::{self, BuildFetcher},
+            ReadOnlyStorage as _,
+        },
         tracking,
         types::{Namespace, Reference, Single},
         Urn,

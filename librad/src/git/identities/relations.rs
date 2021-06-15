@@ -11,7 +11,7 @@ use crate::{
     git::{
         identities,
         refs::{stored, Refs},
-        storage::{self, Storage},
+        storage::{self, ReadOnlyStorage as _, Storage},
         tracking,
         types::{Namespace, Reference},
         Urn,

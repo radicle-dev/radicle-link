@@ -10,7 +10,7 @@ use radicle_git_ext::{is_not_found_err, OneLevel};
 use super::{
     super::{
         refs::Refs,
-        storage::{self, Storage},
+        storage::{self, ReadOnlyStorage as _, Storage},
         types::Reference,
     },
     common,

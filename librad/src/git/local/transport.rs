@@ -19,7 +19,7 @@ use super::{
     super::{
         identities,
         refs::{self, Refs},
-        storage::{self, glob, Storage},
+        storage::{self, glob, ReadOnlyStorage as _, Storage},
         types::Namespace,
         Urn,
     },

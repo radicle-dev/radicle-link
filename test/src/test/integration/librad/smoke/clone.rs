@@ -17,7 +17,7 @@ use librad::{
     git::{
         identities,
         replication,
-        storage::fetcher,
+        storage::{fetcher, ReadOnlyStorage as _},
         types::{Namespace, Reference},
     },
 };

@@ -4,12 +4,20 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom, fmt::Debug, marker::PhantomData, path::PathBuf};
+use std::{
+    convert::TryFrom,
+    fmt::Debug,
+    marker::PhantomData,
+    path::{Path, PathBuf},
+};
 
-use git_ext::is_not_found_err;
+use git2::string_array::StringArray;
+use git_ext::{self as ext, is_not_found_err};
 use thiserror::Error;
 
 use crate::{
+    git::types::{Many, One, Reference},
+    identities::git::Urn,
     paths::Paths,
     peer::PeerId,
     signer::{BoxedSigner, Signer, SomeSigner},
@@ -26,7 +34,15 @@ pub use config::Config;
 pub use fetcher::{Fetcher, Fetchers};
 pub use glob::Pattern;
 pub use pool::{Pool, PoolError, Pooled, PooledRef};
-pub use read::{Error, Storage as ReadOnly};
+pub use read::{
+    Error,
+    ReadOnly,
+    ReadOnlyStorage,
+    ReferenceNames,
+    ReferenceNamesGlob,
+    References,
+    ReferencesGlob,
+};
 pub use watch::{NamespaceEvent, Watcher};
 
 #[derive(Debug, Error)]
@@ -44,7 +60,7 @@ pub enum OpenError {
 
 /// Low-level operations on the link "monorepo".
 pub struct Storage {
-    inner: read::Storage,
+    inner: ReadOnly,
     signer: BoxedSigner,
     fetchers: Fetchers,
 }
@@ -101,7 +117,7 @@ impl Storage {
         }
 
         Ok(Self {
-            inner: read::Storage { backend, peer_id },
+            inner: ReadOnly { backend, peer_id },
             signer: BoxedSigner::from(SomeSigner { signer }),
             fetchers,
         })
@@ -158,6 +174,10 @@ impl Storage {
         self.inner.peer_id()
     }
 
+    pub fn path(&self) -> &Path {
+        self.inner.path()
+    }
+
     pub fn config(&self) -> Result<Config<BoxedSigner>, Error> {
         Ok(Config::try_from(self)?)
     }
@@ -182,7 +202,7 @@ impl Storage {
     // create commit, manipulate refs, manipulate config) in order to be able to
     // model "capabilities" in terms of traits.
     pub(super) fn as_raw(&self) -> &git2::Repository {
-        &self.backend
+        &self.inner.backend
     }
 
     fn fetchers(&self) -> &Fetchers {
@@ -196,16 +216,105 @@ impl AsRef<Storage> for Storage {
     }
 }
 
-impl AsRef<read::Storage> for Storage {
-    fn as_ref(&self) -> &read::Storage {
+impl AsRef<ReadOnly> for Storage {
+    fn as_ref(&self) -> &ReadOnly {
         &self.inner
     }
 }
 
-impl std::ops::Deref for Storage {
-    type Target = ReadOnly;
+impl ReadOnlyStorage for Storage {
+    fn has_urn(&self, urn: &Urn) -> Result<bool, Error> {
+        self.inner.has_urn(urn)
+    }
 
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+    fn has_ref(&self, reference: &Reference<One>) -> Result<bool, Error> {
+        self.inner.has_ref(reference)
+    }
+
+    fn has_commit<Oid>(&self, urn: &Urn, oid: Oid) -> Result<bool, Error>
+    where
+        Oid: AsRef<git2::Oid> + Debug,
+    {
+        self.inner.has_commit(urn, oid)
+    }
+
+    fn has_tag<Oid>(&self, urn: &Urn, oid: Oid) -> Result<bool, Error>
+    where
+        Oid: AsRef<git2::Oid> + Debug,
+    {
+        self.inner.has_tag(urn, oid)
+    }
+
+    fn has_object<Oid>(&self, oid: Oid) -> Result<bool, Error>
+    where
+        Oid: AsRef<git2::Oid> + Debug,
+    {
+        self.inner.has_object(oid)
+    }
+
+    fn find_object<Oid>(&self, oid: Oid) -> Result<Option<git2::Object>, Error>
+    where
+        Oid: AsRef<git2::Oid> + Debug,
+    {
+        self.inner.find_object(oid)
+    }
+
+    fn tip(&self, urn: &Urn, kind: git2::ObjectType) -> Result<Option<git2::Object>, Error> {
+        self.inner.tip(urn, kind)
+    }
+
+    fn reference<'a>(
+        &'a self,
+        reference: &Reference<One>,
+    ) -> Result<Option<git2::Reference<'a>>, Error> {
+        self.inner.reference(reference)
+    }
+
+    fn references<'a>(&'a self, reference: &Reference<Many>) -> Result<References<'a>, Error> {
+        self.inner.references(reference)
+    }
+
+    fn reference_names<'a>(
+        &'a self,
+        reference: &Reference<Many>,
+    ) -> Result<ReferenceNames<'a>, Error> {
+        self.inner.reference_names(reference)
+    }
+
+    fn references_glob<'a, G: 'a>(&'a self, glob: G) -> Result<ReferencesGlob<'a, G>, Error>
+    where
+        G: Pattern + Debug,
+    {
+        self.inner.references_glob(glob)
+    }
+
+    fn reference_names_glob<'a, G: 'a>(
+        &'a self,
+        glob: G,
+    ) -> Result<ReferenceNamesGlob<'a, G>, Error>
+    where
+        G: Pattern + Debug,
+    {
+        self.inner.reference_names_glob(glob)
+    }
+
+    fn reference_oid(&self, reference: &Reference<One>) -> Result<ext::Oid, Error> {
+        self.inner.reference_oid(reference)
+    }
+
+    fn blob<'a>(
+        &'a self,
+        reference: &'a Reference<One>,
+        path: &'a Path,
+    ) -> Result<Option<git2::Blob<'a>>, Error> {
+        self.inner.blob(reference, path)
+    }
+
+    fn remotes(&self) -> Result<StringArray, Error> {
+        self.inner.remotes()
+    }
+
+    fn has_remote(&self, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
+        self.inner.has_remote(urn, peer)
     }
 }
