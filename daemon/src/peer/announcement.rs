@@ -75,12 +75,7 @@ async fn build<S>(peer: &Peer<S>) -> Result<Updates, Error>
 where
     S: Clone + Signer,
 {
-    let identities = match state::list_identities(peer).await {
-        // TODO(xla): We need to avoid the case where there is no owner yet for the peer api, there
-        // should be machinery to kick off these routines only if our app state is ready for it.
-        Err(state::Error::Storage(librad::git::storage::Error::Config(_))) => Vec::new(),
-        result => result?,
-    };
+    let identities = state::list_identities(peer).await?;
     let mut updates: Updates = HashSet::new();
     for identity in identities {
         let urn = match identity {

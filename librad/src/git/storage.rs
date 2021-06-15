@@ -13,7 +13,6 @@ use std::{
 
 use git2::string_array::StringArray;
 use git_ext::{self as ext, is_not_found_err};
-use thiserror::Error;
 
 use crate::{
     git::types::{Many, One, Reference},
@@ -45,17 +44,23 @@ pub use read::{
 };
 pub use watch::{NamespaceEvent, Watcher};
 
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum OpenError {
-    #[error(transparent)]
-    Config(#[from] config::Error),
+pub mod error {
+    use thiserror::Error;
 
-    #[error(transparent)]
-    Git(#[from] git2::Error),
+    use super::config;
 
-    #[error("signer key does not match the key used at initialisation")]
-    SignerKeyMismatch,
+    #[derive(Debug, Error)]
+    #[non_exhaustive]
+    pub enum Init {
+        #[error(transparent)]
+        Config(#[from] config::Error),
+
+        #[error(transparent)]
+        Git(#[from] git2::Error),
+
+        #[error("signer key does not match the key used at initialisation")]
+        SignerKeyMismatch,
+    }
 }
 
 /// Low-level operations on the link "monorepo".
@@ -79,7 +84,7 @@ impl Storage {
     /// the same way two `git` processes can access the same repository.
     /// However, if you need multiple [`Storage`]s to be shared between
     /// threads, use a [`Pool`] instead.
-    pub fn open<S>(paths: &Paths, signer: S) -> Result<Self, OpenError>
+    pub fn open<S>(paths: &Paths, signer: S) -> Result<Self, error::Init>
     where
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -87,7 +92,11 @@ impl Storage {
         Self::with_fetchers(paths, signer, Default::default())
     }
 
-    pub fn with_fetchers<S>(paths: &Paths, signer: S, fetchers: Fetchers) -> Result<Self, OpenError>
+    pub fn with_fetchers<S>(
+        paths: &Paths,
+        signer: S,
+        fetchers: Fetchers,
+    ) -> Result<Self, error::Init>
     where
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -113,7 +122,7 @@ impl Storage {
         let peer_id = Config::try_from(&backend)?.peer_id()?;
 
         if peer_id != PeerId::from_signer(&signer) {
-            return Err(OpenError::SignerKeyMismatch);
+            return Err(error::Init::SignerKeyMismatch);
         }
 
         Ok(Self {
@@ -132,7 +141,7 @@ impl Storage {
     /// error is propagated promptly -- e.g. when you use a [`Pool`],
     /// initialisation would happen lazily, which makes it easy to miss
     /// errors.
-    pub fn init<S>(paths: &Paths, signer: S) -> Result<(), OpenError>
+    pub fn init<S>(paths: &Paths, signer: S) -> Result<(), error::Init>
     where
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -142,7 +151,7 @@ impl Storage {
     }
 
     #[deprecated = "use `open` instead"]
-    pub fn open_or_init<S>(paths: &Paths, signer: S) -> Result<Self, OpenError>
+    pub fn open_or_init<S>(paths: &Paths, signer: S) -> Result<Self, error::Init>
     where
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -150,13 +159,17 @@ impl Storage {
         Self::open(paths, signer)
     }
 
-    pub fn from_read_only<S>(ro: ReadOnly, signer: S, fetchers: Fetchers) -> Result<Self, OpenError>
+    pub fn from_read_only<S>(
+        ro: ReadOnly,
+        signer: S,
+        fetchers: Fetchers,
+    ) -> Result<Self, error::Init>
     where
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
         if ro.peer_id != PeerId::from_signer(&signer) {
-            return Err(OpenError::SignerKeyMismatch);
+            return Err(error::Init::SignerKeyMismatch);
         }
 
         Ok(Self {
@@ -178,8 +191,8 @@ impl Storage {
         self.inner.path()
     }
 
-    pub fn config(&self) -> Result<Config<BoxedSigner>, Error> {
-        Ok(Config::try_from(self)?)
+    pub fn config(&self) -> Result<Config<BoxedSigner>, config::Error> {
+        Config::try_from(self)
     }
 
     pub fn config_readonly(&self) -> Result<Config<PhantomData<!>>, Error> {

@@ -27,9 +27,6 @@ use super::{
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
-    #[error(transparent)]
-    Config(#[from] config::Error),
-
     #[error("malformed URN")]
     Ref(#[from] reference::FromUrnError),
 
@@ -38,6 +35,22 @@ pub enum Error {
 
     #[error(transparent)]
     Git(#[from] git2::Error),
+}
+
+pub mod error {
+    use thiserror::Error;
+
+    use super::config;
+
+    #[derive(Debug, Error)]
+    #[non_exhaustive]
+    pub enum Init {
+        #[error(transparent)]
+        Config(#[from] config::Error),
+
+        #[error(transparent)]
+        Git(#[from] git2::Error),
+    }
 }
 
 pub trait ReadOnlyStorage {
@@ -136,7 +149,7 @@ impl ReadOnly {
     /// the same way two `git` processes can access the same repository.
     /// However, if you need multiple [`ReadOnly`]s to be shared between
     /// threads, use a [`super::Pool`] instead.
-    pub fn open(paths: &Paths) -> Result<Self, Error> {
+    pub fn open(paths: &Paths) -> Result<Self, error::Init> {
         crate::git::init();
         let backend = git2::Repository::open(paths.git_dir())?;
         let peer_id = Config::try_from(&backend)?.peer_id()?;

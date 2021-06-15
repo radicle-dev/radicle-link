@@ -11,11 +11,11 @@ use std::{
 use deadpool::managed::{self, Manager, Object, RecycleResult};
 use parking_lot::RwLock;
 
-use super::{Fetchers, OpenError, ReadOnly, Storage};
+use super::{error, Fetchers, ReadOnly, Storage};
 use crate::{paths::Paths, signer::Signer};
 
-pub type Pool = deadpool::managed::Pool<Storage, OpenError>;
-pub type PoolError = managed::PoolError<OpenError>;
+pub type Pool = deadpool::managed::Pool<Storage, error::Init>;
+pub type PoolError = managed::PoolError<error::Init>;
 
 #[async_trait]
 pub trait Pooled {
@@ -30,7 +30,7 @@ impl Pooled for Pool {
 }
 
 /// A reference to a pooled [`Storage`].
-pub struct PooledRef(Object<Storage, OpenError>);
+pub struct PooledRef(Object<Storage, error::Init>);
 
 impl Deref for PooledRef {
     type Target = Storage;
@@ -64,8 +64,8 @@ impl AsRef<ReadOnly> for PooledRef {
     }
 }
 
-impl From<Object<Storage, OpenError>> for PooledRef {
-    fn from(obj: Object<Storage, OpenError>) -> Self {
+impl From<Object<Storage, error::Init>> for PooledRef {
+    fn from(obj: Object<Storage, error::Init>) -> Self {
         Self(obj)
     }
 }
@@ -107,18 +107,18 @@ where
     S: Signer + Clone,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
-    fn mk_storage(&self) -> Result<Storage, OpenError> {
+    fn mk_storage(&self) -> Result<Storage, error::Init> {
         Storage::with_fetchers(&self.paths, self.signer.clone(), self.fetchers.clone())
     }
 }
 
 #[async_trait]
-impl<S> Manager<Storage, OpenError> for Config<S>
+impl<S> Manager<Storage, error::Init> for Config<S>
 where
     S: Signer + Clone,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
-    async fn create(&self) -> Result<Storage, OpenError> {
+    async fn create(&self) -> Result<Storage, error::Init> {
         let initialised = self.init.0.read();
         if *initialised {
             self.mk_storage()
@@ -132,7 +132,7 @@ where
         }
     }
 
-    async fn recycle(&self, _: &mut Storage) -> RecycleResult<OpenError> {
+    async fn recycle(&self, _: &mut Storage) -> RecycleResult<error::Init> {
         Ok(())
     }
 }
