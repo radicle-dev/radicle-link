@@ -102,6 +102,9 @@ where
     Xor::try_from_iter(list_urns(storage)?.map_ok(SomeUrn::from))
 }
 
-fn identities(storage: &storage::ReadOnly) -> Identities<!> {
-    storage.identities()
+fn identities<S>(storage: &S) -> Identities<!>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    storage.as_ref().identities()
 }

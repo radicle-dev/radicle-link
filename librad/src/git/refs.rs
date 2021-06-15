@@ -226,7 +226,11 @@ pub struct Refs {
 impl Refs {
     /// Compute the [`Refs`] from the current storage state at [`Urn`].
     #[tracing::instrument(level = "debug", skip(storage, urn), fields(urn = %urn))]
-    pub fn compute(storage: &Storage, urn: &Urn) -> Result<Self, stored::Error> {
+    pub fn compute<S>(storage: &S, urn: &Urn) -> Result<Self, stored::Error>
+    where
+        S: AsRef<storage::ReadOnly>,
+    {
+        let storage = storage.as_ref();
         let namespace = Namespace::from(urn);
         let namespace_prefix = format!("refs/namespaces/{}/", namespace);
 
@@ -287,18 +291,20 @@ impl Refs {
     /// Load the [`Refs`] of [`Urn`] (and optionally a remote `peer`) from
     /// storage, and verify the signature.
     ///
-    /// If `peer` is `None`, the signer's public key is used for signature
+    /// If `peer` is `None`, the storage's [`PeerId`] is used for signature
     /// verification.
     ///
     /// If the blob where the signed [`Refs`] are expected to be stored is not
     /// found, `None` is returned.
     #[tracing::instrument(skip(storage, urn), fields(urn = %urn))]
-    pub fn load<P>(storage: &Storage, urn: &Urn, peer: P) -> Result<Option<Self>, stored::Error>
+    pub fn load<S, P>(storage: &S, urn: &Urn, peer: P) -> Result<Option<Self>, stored::Error>
     where
+        S: AsRef<storage::ReadOnly>,
         P: Into<Option<PeerId>> + Debug,
     {
+        let storage = storage.as_ref();
         let peer = peer.into();
-        let signer = peer.unwrap_or_else(|| PeerId::from_signer(storage.signer()));
+        let signer = peer.unwrap_or_else(|| *storage.peer_id());
 
         let blob_ref = Reference::rad_signed_refs(Namespace::from(urn), peer);
         let blob_path = Path::new(stored::BLOB_PATH);

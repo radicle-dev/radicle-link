@@ -93,7 +93,8 @@ where
     S: AsRef<storage::ReadOnly>,
     P: Into<PersonPayload> + Debug,
 {
-    let (_, revision) = identities(storage.as_ref()).base(payload.into(), delegations)?;
+    let storage = storage.as_ref();
+    let (_, revision) = identities(storage).base(payload.into(), delegations)?;
     Ok(Urn::new(revision))
 }
 

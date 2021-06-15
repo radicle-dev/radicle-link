@@ -3,11 +3,11 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use git_ext::is_exists_err;
+use git_ext::{self as ext, is_exists_err};
 use std_ext::result::ResultExt as _;
 
 use super::super::{
-    storage::Storage,
+    storage::{self, ReadOnlyStorage as _, Storage},
     types::{Force, Namespace, Reference},
 };
 use crate::identities::git::Urn;
@@ -22,8 +22,13 @@ impl<'a> From<&'a Urn> for IdRef<'a> {
 }
 
 impl<'a> IdRef<'a> {
-    pub fn oid(&self, storage: &Storage) -> Result<git2::Oid, git2::Error> {
-        Reference::rad_id(Namespace::from(self.0)).oid(storage.as_raw())
+    pub fn oid<S>(&self, storage: &S) -> Result<ext::Oid, storage::Error>
+    where
+        S: AsRef<storage::ReadOnly>,
+    {
+        storage
+            .as_ref()
+            .reference_oid(&Reference::rad_id(Namespace::from(self.0)))
     }
 
     pub fn create(

@@ -423,10 +423,7 @@ fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<ext::Oid
         .create(storage, tip)
         .map_err(|e| Error::Store(e.into()))?;
 
-    id_ref
-        .oid(storage)
-        .map(Into::into)
-        .map_err(|e| Error::Store(e.into()))
+    id_ref.oid(storage).map(Into::into).map_err(Error::Store)
 }
 
 /// Untrack the list of `PeerId`s, which also has the side-effect of removing

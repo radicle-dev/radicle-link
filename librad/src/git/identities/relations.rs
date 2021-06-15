@@ -11,7 +11,7 @@ use crate::{
     git::{
         identities,
         refs::{stored, Refs},
-        storage::{self, ReadOnlyStorage as _, Storage},
+        storage::{self, ReadOnlyStorage as _},
         tracking,
         types::{Namespace, Reference},
         Urn,
@@ -50,18 +50,22 @@ pub enum Error {
 ///
 /// If `peer` is `Either::Right` then it is a remote peer and we use it for
 /// looking at `refs/<remote>/rad/signed_refs`.
-pub fn role(
-    store: &Storage,
+pub fn role<S>(
+    storage: &S,
     project: &Project,
     peer: Either<PeerId, PeerId>,
-) -> Result<Role, stored::Error> {
+) -> Result<Role, stored::Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    let storage = storage.as_ref();
     let role = if project
         .delegations()
         .owner(peer.into_inner().as_public_key())
         .is_some()
     {
         Role::Maintainer
-    } else if Refs::load(store, &project.urn(), peer.right())?
+    } else if Refs::load(storage, &project.urn(), peer.right())?
         .map_or(false, |refs| !refs.heads.is_empty())
     {
         Role::Contributor
@@ -81,7 +85,11 @@ pub fn role(
 ///
 /// If their `rad/self` is under the tree of remotes, then they have been
 /// replicated, signified by [`Status::Replicated`].
-pub fn tracked(storage: &Storage, urn: &Urn) -> Result<Vec<Peer<Status<Person>>>, Error> {
+pub fn tracked<S>(storage: &S, urn: &Urn) -> Result<Vec<Peer<Status<Person>>>, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    let storage = storage.as_ref();
     let project = identities::project::verify(storage, &urn)?
         .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
 
