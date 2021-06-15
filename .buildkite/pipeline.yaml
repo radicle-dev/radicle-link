@@ -13,7 +13,7 @@ steps:
       production: "true"
       platform: "linux"
     env: &build-docker
-    # DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-seedling-build@sha256:583464ea3b1c5405e630ec148380687881154b8822243a59355949d753d035a5"
+      DOCKER_IMAGE: "gcr.io/opensourcecoin/radicle-link-seedling-build@sha256:4dfc3e1707b6c98919f1f5a5883f46256e2f271abf1fb6c8768bedc1b8144915"
       DOCKER_FILE: .buildkite/docker/rust/Dockerfile
 
   - wait
