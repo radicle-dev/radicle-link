@@ -6,4 +6,4 @@ cargo build --workspace --all-features
 
 echo '--- Test'
 #RUST_LOG=error cargo test --workspace --all-features
-RUST_LOG=trace cargo test test::integration::librad::smoke::clone::when_connected
+RUST_LOG=librad=trace cargo test test::integration::librad::smoke::clone::when_connected
