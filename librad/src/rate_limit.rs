@@ -8,7 +8,13 @@ use std::{
     hash::Hash,
     mem,
     num::NonZeroUsize,
-    sync::{Arc, Weak},
+    sync::{
+        atomic::{
+            AtomicBool,
+            Ordering::{Acquire, Release},
+        },
+        Arc,
+    },
     thread::{self, Thread},
     time::Instant,
 };
@@ -34,13 +40,20 @@ pub type Keyed<T> = governor::RateLimiter<
 #[derive(Clone)]
 pub struct RateLimiter<T> {
     inner: Arc<T>,
-    maint: Option<Thread>,
+    maint: Option<Maint>,
 }
 
-impl<T> Drop for RateLimiter<T> {
+#[derive(Clone)]
+struct Maint {
+    thread: Thread,
+    stop: Arc<AtomicBool>,
+}
+
+impl Drop for Maint {
     fn drop(&mut self) {
-        if let Some(t) = self.maint.as_ref() {
-            t.unpark()
+        if Arc::strong_count(&self.stop) == 1 {
+            self.stop.store(true, Release);
+            self.thread.unpark()
         }
     }
 }
@@ -64,34 +77,33 @@ where
 {
     pub fn keyed(quota: Quota, mem: NonZeroUsize) -> Self {
         let inner = Arc::new(governor::RateLimiter::keyed(quota));
-        let maint = thread::spawn({
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread = thread::spawn({
             let maint_threshold = mem.get() / max(1, mem::size_of::<T>());
-            let limiter = Arc::downgrade(&inner);
+            let limiter = Arc::clone(&inner);
+            let stop = Arc::clone(&stop);
             let span = tracing::debug_span!("rate-limiter-maint");
             move || {
                 let _guard = span.enter();
                 loop {
-                    match Weak::upgrade(&limiter) {
-                        None => {
-                            tracing::debug!("limiter gone");
-                            break;
-                        },
-                        Some(lim) => {
-                            if lim.len() >= maint_threshold {
-                                tracing::debug!(
-                                    "limiter is over threshold {}: {}",
-                                    maint_threshold,
-                                    lim.len()
-                                );
-                                let start = Instant::now();
-                                lim.retain_recent();
-                                tracing::debug!(
-                                    "sweeped limiter in {:.2}s, new len: {}",
-                                    start.elapsed().as_secs_f32(),
-                                    lim.len()
-                                );
-                            }
-                        },
+                    if stop.load(Acquire) {
+                        tracing::debug!("stopping");
+                        break;
+                    }
+
+                    if limiter.len() >= maint_threshold {
+                        tracing::debug!(
+                            "limiter is over threshold {}: {}",
+                            maint_threshold,
+                            limiter.len()
+                        );
+                        let start = Instant::now();
+                        limiter.retain_recent();
+                        tracing::debug!(
+                            "sweeped limiter in {:.2}s, new len: {}",
+                            start.elapsed().as_secs_f32(),
+                            limiter.len()
+                        );
                     }
 
                     thread::park()
@@ -103,12 +115,12 @@ where
 
         Self {
             inner,
-            maint: Some(maint),
+            maint: Some(Maint { thread, stop }),
         }
     }
 
     pub fn check_key(&self, k: &T) -> Result<(), NotUntil<<DefaultClock as Clock>::Instant>> {
-        self.maint.as_ref().unwrap().unpark();
+        self.maint.as_ref().unwrap().thread.unpark();
         self.inner.check_key(k)
     }
 }
