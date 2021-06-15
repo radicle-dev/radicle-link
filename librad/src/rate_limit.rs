@@ -51,7 +51,7 @@ struct Maint {
 
 impl Drop for Maint {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.stop) == 1 {
+        if Arc::strong_count(&self.stop) == 2 {
             self.stop.store(true, Release);
             self.thread.unpark()
         }
