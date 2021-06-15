@@ -72,7 +72,10 @@ where
                 let _guard = span.enter();
                 loop {
                     match Weak::upgrade(&limiter) {
-                        None => break,
+                        None => {
+                            tracing::debug!("limiter gone");
+                            break;
+                        },
                         Some(lim) => {
                             if lim.len() >= maint_threshold {
                                 tracing::debug!(

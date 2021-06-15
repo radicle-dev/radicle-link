@@ -188,9 +188,12 @@ pub mod urns {
             bob.thread().unpark()
         }
 
+        tracing::trace!("shutdown..");
         shutdown.store(true, Release);
         bob.thread().unpark();
+        tracing::trace!("rebuild thread unparked");
         bob.join().ok();
+        tracing::trace!("shutdown complete");
     }
 
     fn build_filter(
