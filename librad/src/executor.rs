@@ -15,11 +15,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{
-    channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
-    stream::{FusedStream as _, FuturesUnordered, Stream as _},
-    FutureExt as _,
-};
+use futures::FutureExt as _;
 use thiserror::Error;
 use tracing::Instrument as _;
 
@@ -37,7 +33,6 @@ use tracing::Instrument as _;
 pub struct Spawner {
     scope: String,
     inner: tokio::runtime::Handle,
-    detach: UnboundedSender<DetachedTask>,
 
     spawned: Arc<AtomicUsize>,
     blocking: Arc<AtomicUsize>,
@@ -49,20 +44,9 @@ impl Spawner {
     /// The scope label is for informational purposes (logging, tracing) only.
     pub fn new<S: AsRef<str>>(scope: S) -> Self {
         let rt = tokio::runtime::Handle::current();
-        let (tx_submit, rx_submit) = mpsc::unbounded();
-
-        rt.spawn(
-            Pid1 {
-                submit: rx_submit,
-                running: FuturesUnordered::new(),
-            }
-            .instrument(tracing::info_span!("pid1", scope = %scope.as_ref())),
-        );
-
         Self {
             scope: scope.as_ref().to_owned(),
             inner: rt,
-            detach: tx_submit,
             spawned: Arc::new(AtomicUsize::new(0)),
             blocking: Arc::new(AtomicUsize::new(0)),
         }
@@ -75,7 +59,6 @@ impl Spawner {
     {
         let counter = Arc::clone(&self.spawned);
         JoinHandle {
-            detach: self.detach.clone(),
             task: self.inner.spawn(
                 async move {
                     counter.fetch_add(1, Relaxed);
@@ -96,7 +79,6 @@ impl Spawner {
         let span = tracing::Span::current();
         let counter = Arc::clone(&self.blocking);
         JoinHandle {
-            detach: self.detach.clone(),
             task: self.inner.spawn_blocking(move || {
                 counter.fetch_add(1, Relaxed);
                 let _guard = span.enter();
@@ -138,7 +120,6 @@ pub struct Stats<'a> {
 /// This is similar to `async-std`, but very unlike `tokio`.
 #[must_use = "spawned tasks must be awaited"]
 pub struct JoinHandle<T> {
-    detach: UnboundedSender<DetachedTask>,
     task: tokio::task::JoinHandle<T>,
 }
 
@@ -157,15 +138,9 @@ impl<T> JoinHandle<T> {
 impl JoinHandle<()> {
     /// If the underlying task does not yield any output, it can be "detached".
     ///
-    /// A detached task will continue to run until the [`Spawner`] through which
-    /// it was created is dropped. When this happens, the task is aborted as
-    /// if [`JoinHandle::abort`] was called.
-    pub fn detach(self) {
-        if let Err(e) = self.detach.unbounded_send(DetachedTask(self.task)) {
-            tracing::warn!("detach queue closed, task will be cancelled");
-            drop(e.into_inner())
-        }
-    }
+    /// A detached task will continue to run until it terminates on it's own.
+    /// Dropping the runtime will typically block on outstanding tasks.
+    pub fn detach(self) {}
 }
 
 impl<T> Future for JoinHandle<T> {
@@ -218,68 +193,3 @@ impl From<tokio::task::JoinError> for JoinError {
 #[derive(Debug, Error)]
 #[error("spawned task cancelled")]
 pub struct Cancelled;
-
-struct DetachedTask(tokio::task::JoinHandle<()>);
-
-impl Drop for DetachedTask {
-    fn drop(&mut self) {
-        self.0.abort()
-    }
-}
-
-impl Future for DetachedTask {
-    type Output = Result<(), JoinError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        self.0.poll_unpin(cx).map(|t| t.map_err(JoinError::from))
-    }
-}
-
-/// Keeps track of [`DetachedTask`]s spawned through a particular [`Spawner`],
-/// dropping their handles once their futures resolve. When the [`Spawner`] is
-/// dropped, its [`Pid1`] is aborted, which in turn will drop all in-flight
-/// tasks.
-struct Pid1 {
-    submit: UnboundedReceiver<DetachedTask>,
-    running: FuturesUnordered<DetachedTask>,
-}
-
-impl Pid1 {
-    fn poll_submitted(&mut self, cx: &mut Context) {
-        while let Poll::Ready(Some(task)) = Pin::new(&mut self.submit).poll_next(cx) {
-            self.running.push(task)
-        }
-    }
-
-    fn poll_running(&mut self, cx: &mut Context) {
-        while let Poll::Ready(Some(result)) = Pin::new(&mut self.running).poll_next(cx) {
-            if let Err(JoinError::Panicked(panik)) = result {
-                tracing::error!(
-                    "detached task panicked: {:?}",
-                    panik.downcast_ref::<String>()
-                )
-            }
-        }
-    }
-}
-
-impl Future for Pid1 {
-    type Output = ();
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        self.poll_submitted(cx);
-        self.poll_running(cx);
-
-        if self.submit.is_terminated() {
-            if !self.running.is_empty() {
-                tracing::warn!("outstanding tasks!");
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            } else {
-                Poll::Ready(())
-            }
-        } else {
-            Poll::Pending
-        }
-    }
-}
