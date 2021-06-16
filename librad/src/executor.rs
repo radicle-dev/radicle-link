@@ -89,6 +89,19 @@ impl Spawner {
         }
     }
 
+    pub fn block_in_place<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce() -> T,
+    {
+        let span = tracing::Span::current();
+        let _tracing = span.enter();
+        let _rt = self.inner.enter();
+        self.blocking.fetch_add(1, Relaxed);
+        let res = tokio::task::block_in_place(f);
+        self.blocking.fetch_sub(1, Relaxed);
+        res
+    }
+
     pub fn stats(&self) -> Stats {
         Stats {
             scope: &self.scope,
