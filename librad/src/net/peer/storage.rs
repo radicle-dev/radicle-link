@@ -35,7 +35,7 @@ pub struct Config {
 
 #[derive(Clone)]
 pub struct Storage {
-    pool: Pool,
+    pool: Pool<storage::Storage>,
     config: Config,
     urns: cache::urns::Filter,
     limits: Arc<RateLimiter<Keyed<(PeerId, Urn)>>>,
@@ -45,7 +45,7 @@ pub struct Storage {
 impl Storage {
     pub fn new(
         spawner: Arc<executor::Spawner>,
-        pool: Pool,
+        pool: Pool<storage::Storage>,
         config: Config,
         urns: cache::urns::Filter,
     ) -> Self {
@@ -274,8 +274,8 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
 }
 
 #[async_trait]
-impl storage::Pooled for Storage {
-    async fn get(&self) -> Result<PooledRef, PoolError> {
+impl storage::Pooled<storage::Storage> for Storage {
+    async fn get(&self) -> Result<PooledRef<storage::Storage>, PoolError> {
         self.pool.get().await.map(PooledRef::from)
     }
 }

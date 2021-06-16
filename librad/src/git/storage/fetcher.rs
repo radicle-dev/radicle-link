@@ -312,7 +312,7 @@ pub async fn retrying<P, B, E, F, A>(
     f: F,
 ) -> Result<A, error::Retrying<E>>
 where
-    P: super::Pooled + Send + 'static,
+    P: super::Pooled<Storage> + Send + 'static,
     B: BuildFetcher<Error = E> + Clone + Send + 'static,
     E: std::error::Error + Send + Sync + 'static,
     F: Fn(&Storage, Fetcher) -> A + Send + Sync + 'static,
@@ -335,7 +335,7 @@ where
         f: F,
     ) -> Result<A, Inner<B, F, E>>
     where
-        P: super::Pooled + Send + 'static,
+        P: super::Pooled<Storage> + Send + 'static,
         B: BuildFetcher<Error = E> + Send + 'static,
         F: Fn(&Storage, Fetcher) -> A + Send + Sync + 'static,
         E: std::error::Error + Send + Sync + 'static,

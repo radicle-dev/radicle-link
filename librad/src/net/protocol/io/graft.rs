@@ -79,7 +79,7 @@ pub async fn rere<S, Addrs>(
     addr_hints: Addrs,
 ) -> Result<Option<replication::ReplicateResult>, error::Rere>
 where
-    S: storage::Pooled + Send + Sync + 'static,
+    S: storage::Pooled<storage::Storage> + Send + Sync + 'static,
     Addrs: IntoIterator<Item = SocketAddr>,
 {
     fetcher::retrying(

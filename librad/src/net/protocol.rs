@@ -269,9 +269,12 @@ where
     (sht, run)
 }
 
-pub trait ProtocolStorage<A>: broadcast::LocalStorage<A> + storage::Pooled + Send + Sync {}
+pub trait ProtocolStorage<A>:
+    broadcast::LocalStorage<A> + storage::Pooled<storage::Storage> + Send + Sync
+{
+}
 impl<A, T> ProtocolStorage<A> for T where
-    T: broadcast::LocalStorage<A> + storage::Pooled + Send + Sync
+    T: broadcast::LocalStorage<A> + storage::Pooled<storage::Storage> + Send + Sync
 {
 }
 

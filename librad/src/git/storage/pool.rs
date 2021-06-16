@@ -11,62 +11,76 @@ use std::{
 
 use deadpool::managed::{self, Manager, Object, RecycleResult};
 use parking_lot::RwLock;
+use thiserror::Error;
 
 use super::{error, read, Fetchers, ReadOnly, Storage};
 use crate::{paths::Paths, signer::Signer};
 
-pub type Pool = deadpool::managed::Pool<Storage, error::Init>;
-pub type PoolError = managed::PoolError<error::Init>;
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum InitError {
+    #[error(transparent)]
+    Read(#[from] read::error::Init),
+
+    #[error(transparent)]
+    Write(#[from] error::Init),
+}
+
+pub type Pool<S> = deadpool::managed::Pool<S, InitError>;
+pub type PoolError = managed::PoolError<InitError>;
 
 #[async_trait]
-pub trait Pooled {
-    async fn get(&self) -> Result<PooledRef, PoolError>;
+pub trait Pooled<S: Send> {
+    async fn get(&self) -> Result<PooledRef<S>, PoolError>;
 }
 
 #[async_trait]
-impl Pooled for Pool {
-    async fn get(&self) -> Result<PooledRef, PoolError> {
+impl<S: Send> Pooled<S> for Pool<S> {
+    async fn get(&self) -> Result<PooledRef<S>, PoolError> {
         self.get().await.map(PooledRef::from)
     }
 }
 
-/// A reference to a pooled [`Storage`].
-pub struct PooledRef(Object<Storage, error::Init>);
+/// A reference to a pooled storage.
+///
+/// The `S` parameter can be filled by [`Storage`] for read-write access or
+/// [`ReadOnly`] for read-only access.
+pub struct PooledRef<S>(Object<S, InitError>);
 
-impl Deref for PooledRef {
-    type Target = Storage;
+impl<S> Deref for PooledRef<S> {
+    type Target = S;
 
     fn deref(&self) -> &Self::Target {
         self.0.deref()
     }
 }
 
-impl DerefMut for PooledRef {
+impl<S> DerefMut for PooledRef<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0.deref_mut()
     }
 }
 
-impl AsRef<Storage> for PooledRef {
-    fn as_ref(&self) -> &Storage {
+impl<S> AsRef<S> for PooledRef<S> {
+    fn as_ref(&self) -> &S {
         self
     }
 }
 
-impl AsMut<Storage> for PooledRef {
-    fn as_mut(&mut self) -> &mut Storage {
+impl<S> AsMut<S> for PooledRef<S> {
+    fn as_mut(&mut self) -> &mut S {
         self
     }
 }
 
-impl AsRef<ReadOnly> for PooledRef {
+impl AsRef<ReadOnly> for PooledRef<Storage> {
     fn as_ref(&self) -> &ReadOnly {
-        self.read_only()
+        self.0.read_only()
     }
 }
 
-impl From<Object<Storage, error::Init>> for PooledRef {
-    fn from(obj: Object<Storage, error::Init>) -> Self {
+impl<S> From<Object<S, InitError>> for PooledRef<S> {
+    fn from(obj: Object<S, InitError>) -> Self {
         Self(obj)
     }
 }
@@ -116,12 +130,12 @@ impl ReadConfig {
 }
 
 #[async_trait]
-impl Manager<ReadOnly, read::error::Init> for ReadConfig {
-    async fn create(&self) -> Result<ReadOnly, read::error::Init> {
-        ReadOnly::open(&self.paths)
+impl Manager<ReadOnly, InitError> for ReadConfig {
+    async fn create(&self) -> Result<ReadOnly, InitError> {
+        ReadOnly::open(&self.paths).map_err(InitError::from)
     }
 
-    async fn recycle(&self, _: &mut ReadOnly) -> RecycleResult<read::error::Init> {
+    async fn recycle(&self, _: &mut ReadOnly) -> RecycleResult<InitError> {
         Ok(())
     }
 }
@@ -142,7 +156,7 @@ impl<S> ReadWriteConfig<S> {
         }
     }
 
-    fn mk_storage(&self) -> Result<Storage, error::Init>
+    fn mk_storage(&self) -> Result<Storage, InitError>
     where
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -152,30 +166,33 @@ impl<S> ReadWriteConfig<S> {
             self.write.signer.clone(),
             self.write.fetchers.clone(),
         )
+        .map_err(InitError::from)
     }
 }
 
 #[async_trait]
-impl<S> Manager<Storage, error::Init> for ReadWriteConfig<S>
+impl<S> Manager<Storage, InitError> for ReadWriteConfig<S>
 where
     S: Signer + Clone,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
-    async fn create(&self) -> Result<Storage, error::Init> {
+    async fn create(&self) -> Result<Storage, InitError> {
         let initialised = self.write.init.0.read();
         if *initialised {
             self.mk_storage()
         } else {
             drop(initialised);
             let mut initialised = self.write.init.0.write();
-            self.mk_storage().map(|storage| {
-                *initialised = true;
-                storage
-            })
+            self.mk_storage()
+                .map(|storage| {
+                    *initialised = true;
+                    storage
+                })
+                .map_err(InitError::from)
         }
     }
 
-    async fn recycle(&self, _: &mut Storage) -> RecycleResult<error::Init> {
+    async fn recycle(&self, _: &mut Storage) -> RecycleResult<InitError> {
         Ok(())
     }
 }

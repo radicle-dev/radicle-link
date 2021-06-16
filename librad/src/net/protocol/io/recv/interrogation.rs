@@ -45,7 +45,7 @@ pub(in crate::net::protocol) async fn interrogation<S, T>(
     state: State<S>,
     stream: Upgraded<upgrade::Interrogation, T>,
 ) where
-    S: storage::Pooled + Send + 'static,
+    S: storage::Pooled<storage::Storage> + Send + 'static,
     T: Duplex<Addr = SocketAddr>,
     T::Read: AsyncRead + Unpin,
     T::Write: AsyncWrite + Unpin,

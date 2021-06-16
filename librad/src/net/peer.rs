@@ -25,7 +25,6 @@ pub use super::protocol::{
     Interrogation,
     PeerInfo,
 };
-pub use deadpool::managed::PoolError;
 
 pub mod error;
 pub mod storage;
@@ -92,7 +91,7 @@ pub struct Peer<S> {
     config: Config<S>,
     phone: protocol::TinCans,
     peer_store: PeerStorage,
-    user_store: git::storage::Pool,
+    user_store: git::storage::Pool<git::storage::Storage>,
     caches: protocol::Caches,
     spawner: Arc<executor::Spawner>,
 }
@@ -269,7 +268,7 @@ where
     /// return the [`git::storage::Storage`] to the pool.
     pub async fn storage(
         &self,
-    ) -> Result<impl AsRef<git::storage::Storage>, PoolError<git::storage::error::Init>> {
+    ) -> Result<impl AsRef<git::storage::Storage>, git::storage::pool::PoolError> {
         self.user_store
             .get()
             .map_ok(git::storage::pool::PooledRef::from)

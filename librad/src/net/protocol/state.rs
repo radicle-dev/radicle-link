@@ -293,11 +293,11 @@ impl<S> broadcast::RateLimited for Storage<S> {
 }
 
 #[async_trait]
-impl<S> storage::Pooled for Storage<S>
+impl<S> storage::Pooled<storage::Storage> for Storage<S>
 where
-    S: storage::Pooled + Send + Sync,
+    S: storage::Pooled<storage::Storage> + Send + Sync,
 {
-    async fn get(&self) -> Result<PooledRef, PoolError> {
+    async fn get(&self) -> Result<PooledRef<storage::Storage>, PoolError> {
         self.inner.get().await
     }
 }
