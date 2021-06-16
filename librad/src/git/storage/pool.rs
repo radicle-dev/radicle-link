@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -11,7 +12,7 @@ use std::{
 use deadpool::managed::{self, Manager, Object, RecycleResult};
 use parking_lot::RwLock;
 
-use super::{error, Fetchers, ReadOnly, Storage};
+use super::{error, read, Fetchers, ReadOnly, Storage};
 use crate::{paths::Paths, signer::Signer};
 
 pub type Pool = deadpool::managed::Pool<Storage, error::Init>;
@@ -79,15 +80,53 @@ impl Initialised {
     }
 }
 
-#[derive(Clone)]
-pub struct Config<S> {
-    paths: Paths,
+pub struct Write<S> {
     signer: S,
-    init: Initialised,
     fetchers: Fetchers,
+    init: Initialised,
 }
 
-impl<S> Config<S> {
+#[derive(Clone)]
+pub struct Config<W> {
+    paths: Paths,
+    write: W,
+}
+
+pub type ReadConfig = Config<PhantomData<!>>;
+pub type ReadWriteConfig<S> = Config<Write<S>>;
+
+impl ReadConfig {
+    pub fn new(paths: Paths) -> Self {
+        Config {
+            paths,
+            write: PhantomData,
+        }
+    }
+
+    pub fn write<S>(self, signer: S, init: Initialised) -> ReadWriteConfig<S> {
+        Config {
+            paths: self.paths,
+            write: Write {
+                signer,
+                fetchers: Default::default(),
+                init,
+            },
+        }
+    }
+}
+
+#[async_trait]
+impl Manager<ReadOnly, read::error::Init> for ReadConfig {
+    async fn create(&self) -> Result<ReadOnly, read::error::Init> {
+        ReadOnly::open(&self.paths)
+    }
+
+    async fn recycle(&self, _: &mut ReadOnly) -> RecycleResult<read::error::Init> {
+        Ok(())
+    }
+}
+
+impl<S> ReadWriteConfig<S> {
     pub fn new(paths: Paths, signer: S, init: Initialised) -> Self {
         Self::with_fetchers(paths, signer, init, Default::default())
     }
@@ -95,36 +134,40 @@ impl<S> Config<S> {
     pub fn with_fetchers(paths: Paths, signer: S, init: Initialised, fetchers: Fetchers) -> Self {
         Self {
             paths,
-            signer,
-            init,
-            fetchers,
+            write: Write {
+                signer,
+                fetchers,
+                init,
+            },
         }
     }
-}
 
-impl<S> Config<S>
-where
-    S: Signer + Clone,
-    S::Error: std::error::Error + Send + Sync + 'static,
-{
-    fn mk_storage(&self) -> Result<Storage, error::Init> {
-        Storage::with_fetchers(&self.paths, self.signer.clone(), self.fetchers.clone())
+    fn mk_storage(&self) -> Result<Storage, error::Init>
+    where
+        S: Signer + Clone,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
+        Storage::with_fetchers(
+            &self.paths,
+            self.write.signer.clone(),
+            self.write.fetchers.clone(),
+        )
     }
 }
 
 #[async_trait]
-impl<S> Manager<Storage, error::Init> for Config<S>
+impl<S> Manager<Storage, error::Init> for ReadWriteConfig<S>
 where
     S: Signer + Clone,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     async fn create(&self) -> Result<Storage, error::Init> {
-        let initialised = self.init.0.read();
+        let initialised = self.write.init.0.read();
         if *initialised {
             self.mk_storage()
         } else {
             drop(initialised);
-            let mut initialised = self.init.0.write();
+            let mut initialised = self.write.init.0.write();
             self.mk_storage().map(|storage| {
                 *initialised = true;
                 storage
