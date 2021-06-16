@@ -253,6 +253,21 @@ where
             .await?)
     }
 
+    /// Borrow a [`git::storage::ReadOnly`] from the pool, and run a blocking
+    /// computation on it.
+
+    pub async fn using_read_only<F, A>(&self, blocking: F) -> Result<A, error::Storage>
+    where
+        F: FnOnce(&git::storage::ReadOnly) -> A + Send + 'static,
+        A: Send + 'static,
+    {
+        let storage = self.user_store.get().await?;
+        Ok(self
+            .spawner
+            .spawn_blocking(move || blocking(&storage.read_only()))
+            .await?)
+    }
+
     /// Borrow a [`git::storage::Storage`] from the pool directly.
     ///
     /// # WARNING
