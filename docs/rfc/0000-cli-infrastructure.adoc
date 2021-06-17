@@ -230,6 +230,29 @@ construct in `librad`. The following actions will be defined:
 * `profile list`— list the available `Profile` identifiers
 * `ssh add`— add the current `Profile`'s key to the `ssh-agent`
 
+=== Note on Output
+
+Some operations will result in data that should be output, for
+example, retrieving a `Project` from the store will return the
+metadata for that project. As per RFC-682#CLI:
+
+[quote]
+-------
+
+Each subcommand MUST expose its functionality as a linkable library,
+and provide CBOR serialisation for its arguments and outputs.
+-------
+
+The output should, however, not be limited to CBOR. We will provide an
+option, `--output`, that will give the caller the option to output
+into another format. The initial options will be:
+
+. `json`
+. `cbor`
+
+with the default being `cbor` due the to above requirement. More
+output types MAY be proposed in future RFCs.
+
 [bibliography]
 == References
 
