@@ -22,7 +22,7 @@ and use themselves.
 
 == Overview
 
-This proposal will outline an binary called `rad`, what it will
+This proposal will outline a binary called `rad`, what it will
 provide, and how it can be extended. Following this we provide details
 on the interaction -- or lack there of -- with the peer-to-peer
 daemon.
@@ -131,8 +131,9 @@ started in `<<rk-17, radicle-keystore#17>>`.
 As proposed here, `radicle-link` will provide a core set of
 functionality. Something this document wishes to standardise is the
 organisation of these components. The author sees two options:
+
 . One binary that defines the core subcommands
-. Many binary that take advantage of the subcommand mechanism
+. Many binaries that take advantage of the subcommand mechanism
 
 Pros of *1.*:
 
@@ -154,7 +155,7 @@ Pros of *2.*:
 Cons of *2.*:
 
 * Makes it easier to override one of the core commands.
-* Many binary must be packaged and distributed.
+* Many binaries must be packaged and distributed.
 
 The author recommends *1.*. As mentioned, we have a hard requirement
 of not allowing the core commands to be overrided. In *2.* this is
