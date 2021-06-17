@@ -3,7 +3,21 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{cmp::max, hash::Hash, mem, num::NonZeroUsize, sync::Arc, thread, time::Instant};
+use std::{
+    cmp::max,
+    hash::Hash,
+    mem,
+    num::NonZeroUsize,
+    sync::{
+        atomic::{
+            AtomicBool,
+            Ordering::{Acquire, Release},
+        },
+        Arc,
+    },
+    thread::{self, Thread},
+    time::Instant,
+};
 
 pub use governor::{
     clock::{Clock, DefaultClock},
@@ -26,14 +40,29 @@ pub type Keyed<T> = governor::RateLimiter<
 #[derive(Clone)]
 pub struct RateLimiter<T> {
     inner: Arc<T>,
-    need_maint: Option<crossbeam_channel::Sender<()>>,
+    maint: Option<Maint>,
+}
+
+#[derive(Clone)]
+struct Maint {
+    thread: Thread,
+    stop: Arc<AtomicBool>,
+}
+
+impl Drop for Maint {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.stop) == 2 {
+            self.stop.store(true, Release);
+            self.thread.unpark()
+        }
+    }
 }
 
 impl RateLimiter<Direct> {
     pub fn direct(quota: Quota) -> Self {
         Self {
             inner: Arc::new(governor::RateLimiter::direct(quota)),
-            need_maint: None,
+            maint: None,
         }
     }
 
@@ -48,14 +77,20 @@ where
 {
     pub fn keyed(quota: Quota, mem: NonZeroUsize) -> Self {
         let inner = Arc::new(governor::RateLimiter::keyed(quota));
-        let maint_threshold = mem.get() / max(1, mem::size_of::<T>());
-        let (tx, rx) = crossbeam_channel::unbounded();
-        thread::spawn({
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread = thread::spawn({
+            let maint_threshold = mem.get() / max(1, mem::size_of::<T>());
             let limiter = Arc::clone(&inner);
+            let stop = Arc::clone(&stop);
             let span = tracing::debug_span!("rate-limiter-maint");
             move || {
                 let _guard = span.enter();
-                for _ in rx {
+                loop {
+                    if stop.load(Acquire) {
+                        tracing::debug!("stopping");
+                        break;
+                    }
+
                     if limiter.len() >= maint_threshold {
                         tracing::debug!(
                             "limiter is over threshold {}: {}",
@@ -70,18 +105,22 @@ where
                             limiter.len()
                         );
                     }
+
+                    thread::park()
                 }
             }
-        });
+        })
+        .thread()
+        .clone();
 
         Self {
             inner,
-            need_maint: Some(tx),
+            maint: Some(Maint { thread, stop }),
         }
     }
 
     pub fn check_key(&self, k: &T) -> Result<(), NotUntil<<DefaultClock as Clock>::Instant>> {
-        self.need_maint.as_ref().unwrap().send(()).ok();
+        self.maint.as_ref().unwrap().thread.unpark();
         self.inner.check_key(k)
     }
 }

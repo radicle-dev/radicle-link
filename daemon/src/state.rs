@@ -261,7 +261,7 @@ where
 /// # Errors
 ///
 /// * if opening the storage fails
-pub async fn list_owner_project_refs<S>(peer: &Peer<S>, urn: Urn) -> Result<Option<Refs>, Error>
+pub async fn load_refs<S>(peer: &Peer<S>, urn: Urn) -> Result<Option<Refs>, Error>
 where
     S: Clone + Signer,
 {
@@ -926,6 +926,24 @@ where
             signer: peer.signer().clone(),
         }),
     }
+}
+
+/// Returns the list of [`SomeIdentity`]s for the local peer.
+///
+/// # Errors
+///
+///   * Retrieving the project entities from the store fails.
+pub async fn list_identities<S>(peer: &Peer<S>) -> Result<Vec<SomeIdentity>, Error>
+where
+    S: Clone + Signer,
+{
+    peer.using_storage(move |store| {
+        let identities = identities::any::list(store)?
+            .filter_map(Result::ok)
+            .collect::<Vec<_>>();
+        Ok(identities)
+    })
+    .await?
 }
 
 /// Determine the [`peer::Role`] for a given [`Project`] and [`PeerId`].

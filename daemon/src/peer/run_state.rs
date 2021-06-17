@@ -460,7 +460,7 @@ mod test {
                 connected_peers: one_connected_peer(peer_id),
                 membership_active: 1,
                 membership_passive: 1,
-                caches: Default::default(),
+                caches: downstream::CacheStats::default(),
             })))
         };
         assert!(cmds.is_empty());

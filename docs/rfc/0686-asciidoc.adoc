@@ -1,0 +1,96 @@
+= RFC: Standardise on AsciiDoc for all things doc
+:author: @kim
+:revdate: 2021-05-31
+:revremark: accepted
+:toc:
+:toc-placement: preamble
+
+* Author: {author}
+* Date: {revdate}
+* Status: {revremark}
+* Community discussion: n/a
+* Tracking Issue: https://github.com/radicle-dev/radicle-link/issues/706
+
+== Motivation
+
+Markdown is probably the most widely deployed proof that worse is, in fact,
+worse footnote:[https://en.wikipedia.org/wiki/Worse_is_better].
+
+Markdown's ability to mark up text is so limited that it is virtually unusable
+for anything but a short text of approximately the scope of an email -- yet,
+markdown never saw adoption for email, and, tbh, plain-text emails using
+markdown conventions mostly don't read very fluently. Without resorting to one
+of its manifold "flavours" -- which, of course, is only understood by one
+particular toolchain -- it is grossly inappropriate for writing technical
+documentation.
+
+So why do we keep using it?
+
+Well, yeah, it's ubiquitous, we remember the five syntax elements supported by
+GitHub via muscle memory, and -- of course -- we use GitHub every day and want
+our prose to look reasonably good when rendered online there.
+
+While headings, lists, reference links, and bold/italic text might be sufficient
+for authoring an RFC, the consequence of markdown's limitations is that we are
+in fact using _three_ markdown languages: GitHub-flavoured for RFCs,
+<<pandoc>>-flavoured for specification, and <<docusaurus>>-flavoured for
+user-facing documentation. Which flavour shall it be when we get to man pages,
+installation instructions, API documentation, _et cetera_?
+
+It would be highly desirable to reduce the babylonian flavouredness, and settle
+on a single markup language which:
+
+* is easy on the eyes when viewed as plain-text (eg. in diffs)
+* is rendered as HTML in repo browsers of major forges, preferably in a
+  consistent, un-flavoured way
+* is supported by _some_ static site generators, or can be converted
+* rendered views degrade gracefully in restricted environments (eg. GitHub)
+* yet provides rich enough syntax to author complex technical documentation
+* supports a variety of output formats
+* provides a toolchain which makes it strictly less painful to reproduce the
+  output across software versions than LaTeX
+
+
+== Alternatives
+
+The restriction to have pages rendered automatically in forge repo browsers
+narrows down the choice to _AsciiDoc_ <<asciidoc>> and _reStructured Text_
+<<rst>>. Their feature sets are more or less on par, and it is largely a matter
+of personal taste to prefer one over the other. The author's preference is
+_AsciiDoc_, because its syntax _somewhat_ more familiar for markdown users (and
+less _pythonic_). In case of a majority vote, he would be happy to amend the
+proposal in favour of _reStructured Text_, however.
+
+== Migration
+
+* Use _kramdoc_ <<kramdoc>> to convert existing RFCs and specification
+  fragments to _AsciiDoc_
+* Retire the _Pandoc_ build pipeline, which stores the output in the repository
+* Use _AsciiDoc_ henceforth
+
+== Tooling
+
+_Asciidoctor_ <<asciidoctor>> is an easy to install and use converter. _Pandoc_
+also accepts AsciiDoc.
+
+== Drawbacks
+
+Muscle memory needs to be re-wired, both for maintainers and contributors. This
+is considered to improve mental agility and longevity, however
+footnote:[citation needed].
+
+== Recommendation
+
+Use _AsciiDoc_
+
+
+
+[bibliography]
+== References
+
+* [[[asciidoc]]] https://asciidoc.org
+* [[[asciidoctor]]] https://asciidoctor.org
+* [[[docusaurus]]] https://docusaurus.io
+* [[[kramdoc]]] https://github.com/asciidoctor/kramdown-asciidoc
+* [[[pandoc]]] https://pandoc.org
+* [[[rst]]] https://docutils.sourceforge.io/rst.html

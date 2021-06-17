@@ -32,8 +32,8 @@ pub enum Error {
 /// A handle to a filesystem watcher.
 ///
 /// If and when this value is dropped, the corresponding events iterator will
-/// return `None`. Note, however, that this is subject to the
-/// [`DEBOUNCE_DELAY`].
+/// return `None`. Note, however, that this is subject to the debounce delay of
+/// the watcher.
 #[derive(Clone)]
 pub struct Watcher(Arc<notify::RecommendedWatcher>);
 

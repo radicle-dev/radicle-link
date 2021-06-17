@@ -12,9 +12,17 @@ use tokio::time::timeout;
 use radicle_daemon::{peer::run_config, seed::Seed, state, RunConfig};
 
 use crate::{
-    daemon::common::{assert_cloned, radicle_project, requested, shia_le_pathbuf, Harness},
+    daemon::common::{
+        assert_cloned,
+        radicle_project,
+        requested,
+        shia_le_pathbuf,
+        Harness,
+        TestExt,
+    },
     logging,
 };
+use librad::identities::payload::{Person, PersonPayload};
 
 #[test]
 fn can_observe_announcement_from_connected_peer() -> Result<(), anyhow::Error> {
@@ -52,6 +60,56 @@ fn can_observe_announcement_from_connected_peer() -> Result<(), anyhow::Error> {
                 radicle_daemon::PeerEvent::GossipFetched {
                     gossip, provider, ..
                 } if provider.peer_id == alice_peer.peer_id && gossip.urn.id == project_id => {
+                    future::ready(Some(()))
+                },
+                _ => future::ready(None),
+            })
+            .map(|_| ());
+        tokio::pin!(announced);
+        timeout(Duration::from_secs(5), announced.next()).await?;
+
+        Ok(())
+    })
+}
+
+#[test]
+fn can_observe_person_announcement_from_connected_peer() -> Result<(), anyhow::Error> {
+    logging::init();
+
+    let mut harness = Harness::new();
+    let alice_peer = harness.add_peer(
+        "alice",
+        RunConfig {
+            announce: run_config::Announce {
+                interval: Duration::from_millis(100),
+            },
+            ..RunConfig::default()
+        },
+        &[],
+    )?;
+    let mut bob_peer = harness.add_peer(
+        "bob",
+        RunConfig::default(),
+        &[Seed {
+            addrs: alice_peer.listen_addrs.clone(),
+            peer_id: alice_peer.peer_id,
+        }],
+    )?;
+    harness.enter(async move {
+        let person = Person {
+            name: "alice".into(),
+        };
+        let ext = TestExt("test".to_string());
+        let payload = PersonPayload::new(person).with_ext(ext)?;
+        state::update_owner_payload(&alice_peer.peer, payload).await?;
+
+        let announced = async_stream::stream! { loop { yield bob_peer.events.recv().await } }
+            .filter_map(|res| match res.unwrap() {
+                radicle_daemon::PeerEvent::GossipFetched {
+                    gossip, provider, ..
+                } if provider.peer_id == alice_peer.peer_id
+                    && gossip.urn.id == alice_peer.owner.root =>
+                {
                     future::ready(Some(()))
                 },
                 _ => future::ready(None),

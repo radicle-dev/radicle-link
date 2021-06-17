@@ -86,9 +86,13 @@ impl Xor {
         Ok((Self { inner }, elements))
     }
 
-    /// The number of fingerprints in the filter.
+    /// The number of **fingerprints** in the filter.
     pub fn len(&self) -> usize {
         self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.len() == 0
     }
 }
 

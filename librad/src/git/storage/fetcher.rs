@@ -346,36 +346,29 @@ where
             .await
             .map_err(error::Retrying::from)
             .map_err(Inner::Fatal)?;
-        let task = spawner
-            .spawn_blocking(move || {
-                let fetcher = builder
-                    .build_fetcher(&storage)
-                    .map_err(error::Retrying::MkFetcher)
-                    .map_err(Inner::Fatal)?;
+        spawner.block_in_place(move || {
+            let fetcher = builder
+                .build_fetcher(&storage)
+                .map_err(error::Retrying::MkFetcher)
+                .map_err(Inner::Fatal)?;
 
-                match fetcher {
-                    Ok(fetcher) => Ok(f(&storage, fetcher)),
-                    Err(info) => {
-                        let keep_going = &info.remote_peer != builder.remote_peer();
-                        let err = error::Retrying::Concurrent {
-                            urn: info.urn,
-                            remote_peer: info.remote_peer,
-                        };
+            match fetcher {
+                Ok(fetcher) => Ok(f(&storage, fetcher)),
+                Err(info) => {
+                    let keep_going = &info.remote_peer != builder.remote_peer();
+                    let err = error::Retrying::Concurrent {
+                        urn: info.urn,
+                        remote_peer: info.remote_peer,
+                    };
 
-                        if keep_going {
-                            Err(Inner::Retry { b: builder, f, err })
-                        } else {
-                            Err(Inner::Fatal(err))
-                        }
-                    },
-                }
-            })
-            .await;
-
-        match task {
-            Err(e) => Err(Inner::Fatal(error::Retrying::from(e))),
-            Ok(x) => x,
-        }
+                    if keep_going {
+                        Err(Inner::Retry { b: builder, f, err })
+                    } else {
+                        Err(Inner::Fatal(err))
+                    }
+                },
+            }
+        })
     }
 
     let mut policy = ExponentialBackoff {

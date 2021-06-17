@@ -50,7 +50,6 @@ pub use radicle_git_helpers::remote_helper;
 
 pub mod config;
 pub mod convert;
-pub mod keystore;
 pub mod peer;
 pub use peer::{Control as PeerControl, Event as PeerEvent, Peer, RunConfig, Status as PeerStatus};
 pub mod project;

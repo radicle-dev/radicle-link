@@ -67,8 +67,14 @@ pub mod urns {
     }
 
     struct FilterInner {
-        elements: usize,
         filter: Xor,
+        elements: usize,
+    }
+
+    impl From<(Xor, usize)> for FilterInner {
+        fn from((filter, elements): (Xor, usize)) -> Self {
+            Self { filter, elements }
+        }
     }
 
     impl Filter {
@@ -77,8 +83,7 @@ pub mod urns {
             F: Fn(Event) + Send + 'static,
         {
             let inner = {
-                let inner = identities::any::xor_filter(&storage)
-                    .map(|(filter, elements)| FilterInner { elements, filter })?;
+                let inner = identities::any::xor_filter(&storage).map(FilterInner::from)?;
                 Arc::new(RwLock::new(inner))
             };
 
@@ -102,6 +107,10 @@ pub mod urns {
         /// The number of elements in the filter.
         pub fn len(&self) -> usize {
             self.inner.read().elements
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.len() == 0
         }
 
         pub fn stats(&self) -> Stats {
@@ -179,16 +188,18 @@ pub mod urns {
             bob.thread().unpark()
         }
 
+        tracing::trace!("shutdown..");
         shutdown.store(true, Release);
         bob.thread().unpark();
+        tracing::trace!("rebuild thread unparked");
         bob.join().ok();
+        tracing::trace!("shutdown complete");
     }
 
     fn build_filter(
         storage: &storage::Storage,
     ) -> Result<(FilterInner, Duration), xor::BuildError<identities::Error>> {
         let start = Instant::now();
-        identities::any::xor_filter(&storage)
-            .map(|(filter, elements)| (FilterInner { filter, elements }, start.elapsed()))
+        identities::any::xor_filter(&storage).map(|res| (FilterInner::from(res), start.elapsed()))
     }
 }
