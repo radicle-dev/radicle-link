@@ -20,7 +20,7 @@ use super::{
     refs::{self, Refs},
     storage::{self, ReadOnlyStorage, Storage},
     tracking,
-    types::{reference, Force, Namespace, Reference},
+    types::{reference, Force, Namespace, One, Reference},
 };
 use crate::{
     identities::git::{Person, Project, Revision, SomeIdentity, VerifiedPerson, VerifiedProject},
@@ -426,6 +426,40 @@ fn ensure_rad_id(storage: &Storage, urn: &Urn, tip: ext::Oid) -> Result<ext::Oid
     id_ref.oid(storage).map(Into::into).map_err(Error::Store)
 }
 
+fn adopt_rad_self(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<(), Error> {
+    let rad_self = Reference::rad_self(Namespace::from(urn), peer);
+
+    // We only need to create the rad/id there's a rad/self
+    if storage.has_ref(&rad_self)? {
+        if let Some(person) =
+            identities::person::verify(storage, &unsafe_into_urn(rad_self.clone()))?
+        {
+            let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(person.urn())));
+            if !storage.has_urn(&person.urn())? {
+                ensure_rad_id(storage, &rad_id, person.content_id)?;
+                symref(storage, &rad_id, rad_self)?;
+                tracking::track(storage, &rad_id, peer)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn symref(storage: &Storage, top_level: &Urn, symbolic: Reference<One>) -> Result<(), Error> {
+    // Now point our view to the top-level
+    Reference::try_from(top_level)
+        .map_err(|e| Error::RefFromUrn {
+            urn: top_level.clone(),
+            source: e,
+        })?
+        .symbolic_ref::<_, PeerId>(symbolic, Force::False)
+        .create(storage.as_raw())
+        .and(Ok(()))
+        .or_matches(is_exists_err, || Ok(()))
+        .map_err(|e: git2::Error| Error::Store(e.into()))
+}
+
 /// Untrack the list of `PeerId`s, which also has the side-effect of removing
 /// that peer's remote references in the storage.
 ///
@@ -531,6 +565,7 @@ mod person {
                 for peer_id in delegations.iter() {
                     if peer_id != local_peer {
                         tracking::track(storage, &urn, *peer_id)?;
+                        adopt_rad_self(storage, &urn, *peer_id)?;
                     }
                 }
 
@@ -648,6 +683,7 @@ mod project {
         for peer in tracked {
             if peer != *local_peer {
                 tracking::track(&storage, &urn, peer)?;
+                adopt_rad_self(storage, &urn, peer)?;
             }
         }
 
@@ -776,19 +812,11 @@ mod project {
         tracking::track(storage, &project_urn, peer)?;
 
         // Now point our view to the top-level
-        Reference::try_from(&delegate_urn)
-            .map_err(|e| Error::RefFromUrn {
-                urn: delegate_urn.clone(),
-                source: e,
-            })?
-            .symbolic_ref::<_, PeerId>(
-                Reference::rad_delegate(Namespace::from(project_urn), &delegate_urn),
-                Force::False,
-            )
-            .create(storage.as_raw())
-            .and(Ok(()))
-            .or_matches(is_exists_err, || Ok(()))
-            .map_err(|e: git2::Error| Error::Store(e.into()))
+        symref(
+            storage,
+            &delegate_urn,
+            Reference::rad_delegate(Namespace::from(project_urn), &delegate_urn),
+        )
     }
 
     /// Track all direct delegations of a `Project`.

@@ -466,3 +466,52 @@ fn track_peer() -> Result<(), anyhow::Error> {
         Ok(())
     })
 }
+
+#[test]
+fn replication_includes_user() -> Result<(), anyhow::Error> {
+    logging::init();
+
+    let mut harness = Harness::new();
+    let alice = harness.add_peer("alice", RunConfig::default(), &[])?;
+    let bob = harness.add_peer(
+        "bob",
+        RunConfig::default(),
+        &[Seed {
+            addrs: alice.listen_addrs.clone(),
+            peer_id: alice.peer_id,
+        }],
+    )?;
+    harness.enter(async move {
+        let project = state::init_project(
+            &alice.peer,
+            &alice.owner,
+            shia_le_pathbuf(alice.path.join("radicle")),
+        )
+        .await?;
+
+        state::clone_project(
+            &bob.peer,
+            project.urn(),
+            alice.peer_id,
+            alice.listen_addrs.clone(),
+            None,
+        )
+        .await?;
+
+        state::track(&alice.peer, project.urn(), bob.peer_id).await?;
+        state::fetch(
+            &alice.peer,
+            project.urn(),
+            bob.peer_id,
+            bob.listen_addrs.clone(),
+            None,
+        )
+        .await?;
+
+        let bob_malkovich = state::get_user(&alice.peer, bob.owner.urn()).await?;
+
+        assert_eq!(bob_malkovich, Some(bob.owner.into_inner().into_inner()));
+
+        Ok(())
+    })
+}
