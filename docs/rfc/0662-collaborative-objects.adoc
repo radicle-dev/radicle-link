@@ -149,8 +149,30 @@ same process which produces the schema. In this case let's choose
 
 === Creating an issue
 
-The first thing a user will wish to do is to create a new issue. To do
-this they make a POST request to `<radicle implementation>/projects/metadata`
+The first thing a user will wish to do is to create a new issue. In order to 
+create an issue the application will need to create an Automerge change 
+representing the issue, in Javascript that will look like this:
+
+[source,typescript]
+----
+import * as Automerge from "automerge"
+
+const doc = Automerge.from({
+    "title": "Librad doesn't implement the metadata RFC",
+    "description": "it's in the name",
+    "author": "<the authors URN>",
+    "signatures": [
+        {
+            "key": "<some base32-z>",
+            "signature": "<some base32-z>"
+        }
+    ]
+})
+const change = Automerge.getChanges(doc, null)
+const changeBytes = uint8ToBase64(change)
+----
+
+Then they make a POST request to `<radicle implementation>/projects/metadata`
 with the following content:
 
 [source,json]
@@ -158,17 +180,9 @@ with the following content:
 {
     "typename": "https://radicle.xyz/issue",
     "schema": <the schema above>,
-    "data": {
-        "title": "Librad doesn't implement the metadata RFC",
-        "description": "It's in the name",
-        "author": "<the authors URN>",
-        "signatures": [
-            {
-                "key": "<some base32-z>",
-                "signature":  "<some base32-z>" 
-            }
-        ],
-        "comments": [],
+    "history": {
+        "type": "automerge",
+        "changes": "<changeBytes from above>"
     }
 }
 ----
