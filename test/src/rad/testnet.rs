@@ -297,7 +297,7 @@ impl Drop for Testnet {
             rt.block_on(task);
         }
         self.peers.drain(..).for_each(drop);
-        drop(rt)
+        rt.shutdown_background();
     }
 }
 
