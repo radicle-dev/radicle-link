@@ -358,17 +358,30 @@ where
 /// Get the user found at `urn`.
 ///
 /// # Errors
-///
-///   * Resolving the user fails.
-///   * Could not successfully acquire a lock to the API.
-pub async fn get_user<S>(peer: &Peer<S>, urn: Urn) -> Result<Option<LocalIdentity>, Error>
+///   * Storage access fails
+pub async fn get_user<S>(peer: &Peer<S>, urn: Urn) -> Result<Option<Person>, Error>
 where
     S: Clone + Signer,
 {
-    peer.using_storage(move |store| match identities::person::get(store, &urn)? {
-        None => Ok(None),
-        Some(person) => local::load(store, person.urn()),
-    })
+    peer.using_storage(move |store| identities::person::get(store, &urn))
+        .await?
+        .map_err(Error::from)
+}
+
+/// Get the local user found at `urn`.
+///
+/// # Errors
+///   * Storage access fails
+pub async fn get_local<S>(peer: &Peer<S>, urn: Urn) -> Result<Option<LocalIdentity>, Error>
+where
+    S: Clone + Signer,
+{
+    peer.using_storage(
+        move |store| match identities::person::verify(store, &urn)? {
+            None => Ok(None),
+            Some(person) => local::load(store, person.urn()),
+        },
+    )
     .await?
     .map_err(Error::from)
 }
