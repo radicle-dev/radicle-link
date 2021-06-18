@@ -227,17 +227,15 @@ This will return something like this:
 ]
 ----
 
-This mysterious `history` key will be explained next.
 
 === Adding a comment
 
-Up to this point this has been a straightforward ReST API, it is at the point
-that we wish to make changes that the distributed nature of the data structure
-intrudes. We cannot directly mutate the data, instead we need to create a 
-change which describes how we want to update the data - this change includes
-metadata which allows other people to incorporate that change into their
-version of the data at any time. In this case we use the automerge Javascript
-API to do this. That would look like the following:
+Up to this point this has been a mostly straightforward ReST API, it is at the
+point that we wish to make changes that the distributed nature of the data
+structure intrudes. We cannot directly mutate the data, instead we need to
+create a change which describes how we want to update the data - this change
+includes metadata which allows other people to incorporate that change into
+their version of the data at any time. Like so:
 
 [source,typescript]
 ----
@@ -281,40 +279,15 @@ to the network.
 
 == Implementation
 
-=== Automerge
+Every collaborative object is represented by a graph of automerge changes. See
+the <<appendix_automerge>> for more about automerge. We first show how we map
+the graph of automerge changes onto git in <<Change Commits>>, then we describe
+how we reconstruct the change graph for an object given a repo in <<Reconstructing Collaborative Objects>>.
+In <<Fetching Collaborative Objects>> we explain how the tips of collaborative
+objects are stored under a particular reference and how those references are 
+replicated to other peers. In <<Schema extensions>> we explain how we use JSON
+schema to validate collaborative objects.
 
-It is useful to briefly outline how automerge functions in order for the
-following to be sensible. Everything automerge does is based on a merging a log
-of operations. An operation might be something like "create a list under the
-'comments' key of the root object", or "insert the character 'a' after the 
-character inserted by the 2nd change actor 1 made". Every operation has an 
-identifier - which allows statements like "the character inserted by the 2nd
-change actor 1 made" to be precise. This operation ID is the combination of a
-unique identifier for each actor, and an always incrementing sequence number.
-This construction, along with sorting by actor IDs in the case of a tie, allows
-us to place operations in a total order which respects causality. i.e if I add
-an operation then no operation that I could have observed at the time I made
-the operation will come after it in the log.
-
-Automerge defines a number of operations along with merge semantics for those
-operations. More detail on that can be found in
-https://github.com/automerge/automerge[the implementation] and in
-https://arxiv.org/abs/1608.03960[the paper].
-
-Operations in automerge are transported in batches called "changes". Each 
-change references zero or more changes it depends on via their hash. In this 
-manner automerge is similar to git in that it's a hash linked graph of changes.
-
-Despite all the complexity under the hood, the API of automerge is relatively
-simple. Automerge works in terms of "documents", a document is a single log of
-changes. Every time you modify an automerge document you generate a new entry 
-for the change log. Each change is just some bytes. When you receive changes 
-from other actors you just pass these changes (which, again, are just bytes) to
-automerge to add to the change log. The end result is that you load a bunch of
-binary changes and get back a JSON object.
-
-There are some subtleties around preserving user intent when modifying
-documents, but these are not too onerous.
 
 === Change Commits
 
@@ -733,3 +706,41 @@ https://github.com/epoberezkin/extended-json-patch[attempts to extend it] but
 these are not well known or maintained. This is a problem because one of the
 most useful things about automerge is it's ability to merge text changes in an
 intuitive manner.
+
+[appendix]
+[[appendix_automerge,Appendix A: Automerge]]
+== Automerge
+
+It may be useful to briefly outline how automerge functions. Everything
+automerge does is based on a merging a log of operations. An operation might be
+something like "create a list under the 'comments' key of the root object", or
+"insert the character 'a' after the character inserted by the 2nd change actor
+1 made". Every operation has an identifier - which allows statements like "the
+character inserted by the 2nd change actor 1 made" to be precise. This
+operation ID is the combination of a unique identifier for each actor, and an
+always incrementing sequence number.  This construction, along with sorting by
+actor IDs in the case of a tie, allows us to place operations in a total order
+which respects causality. i.e if I add an operation then no operation that I
+could have observed at the time I made the operation will come after it in the
+log.
+
+Automerge defines a number of operations along with merge semantics for those
+operations. More detail on that can be found in
+https://github.com/automerge/automerge[the implementation] and in
+https://arxiv.org/abs/1608.03960[the paper].
+
+Operations in automerge are transported in batches called "changes". Each 
+change references zero or more changes it depends on via their hash. In this 
+manner automerge is similar to git in that it's a hash linked graph of changes.
+
+Despite all the complexity under the hood, the API of automerge is relatively
+simple. Automerge works in terms of "documents", a document is a single log of
+changes. Every time you modify an automerge document you generate a new entry 
+for the change log. Each change is just some bytes. When you receive changes 
+from other actors you just pass these changes (which, again, are just bytes) to
+automerge to add to the change log. The end result is that you load a bunch of
+binary changes and get back a JSON object.
+
+There are some subtleties around preserving user intent when modifying
+documents, but these are not too onerous.
+
