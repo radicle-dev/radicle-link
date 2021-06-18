@@ -5,7 +5,8 @@
 
 use std::{fmt::Debug, future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
-use futures::{channel::mpsc, stream::StreamExt as _};
+use async_stream::stream;
+use futures::channel::mpsc;
 use nonempty::NonEmpty;
 use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
@@ -245,11 +246,10 @@ where
         spawner.spawn(accept::periodic(state.clone(), periodic)),
         spawner.spawn(accept::ground_control(
             state.clone(),
-            async_stream::stream! {
+            stream! {
                 let mut r = phone.downstream.subscribe();
                 loop { yield r.recv().await; }
-            }
-            .boxed(),
+            },
         )),
     ];
     let run = async move {

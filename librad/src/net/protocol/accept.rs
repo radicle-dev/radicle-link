@@ -110,13 +110,14 @@ where
 }
 
 #[tracing::instrument(skip(state, rx))]
-pub(super) async fn ground_control<S, E>(state: State<S>, mut rx: E)
+pub(super) async fn ground_control<S, E>(state: State<S>, rx: E)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
-    E: futures::Stream<Item = Result<event::Downstream, RecvError>> + Unpin,
+    E: futures::Stream<Item = Result<event::Downstream, RecvError>>,
 {
     use event::Downstream;
 
+    futures::pin_mut!(rx);
     while let Some(x) = rx.next().await {
         match x {
             Err(RecvError::Closed) => {
