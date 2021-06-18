@@ -1,9 +1,8 @@
 = RFC: Collaborative Objects
-:Author: @alexjg
+:author: @alexjg
 :revate: 2021-05-04
 :revmark: draft
 :toc:
-:toc-placement: preamble
 :source-highlighter: highlight.js
 
 == Motivation
@@ -67,105 +66,75 @@ represent it as a JSON schema. We use this simple schema:
 [source,json]
 ----
 {
-  "definitions": {
-    "comment": {
-        "type": "object",
-        "rad_signed_by": {
-          "properties": ["parent_id", "text", "author"],
-          "data": {
-            "keys": "0/author"
-          },
+    "type": "object",
+    "rad_signed_by": {
+        "fields": [
+            "title",
+            "description",
+            "author"
+        ],
+        "keys": [
+            "<authors URN>"
+        ]
+    },
+    "properties": {
+        "id": {
+            "type": "string"
         },
-        "properties": {
-            "text": {"type": "string"},
-            "id": "string",
-            "children": {
-                "type": "array",
-                "grow_only": true,
-                "items": {
-                    "$ref": "#/definitions/comment"
+        "title": {
+            "type": "string",
+            "automerge_type": "text"
+        },
+        "description": {
+            "type": "string",
+            "automerge_type": "text"
+        },
+        "author": {
+            "description": "The radicle ID of the author of the issue",
+            "const": "<the authors URN>"
+        },
+        "comments": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "rad_signed_by": {
+                    "properties": [
+                        "text",
+                        "id",
+                        "author"
+                    ],
+                    "data": {
+                        "keys": "0/author"
+                    }
+                },
+                "properties": {
+                    "text": {
+                        "type": "string"
+                    },
+                    "id": "string",
+                    "author": {
+                        "type": "string",
+                        "description": "Radicle URN of the author of the comment"
+                    }
                 }
             }
-            "parent_id": {
-                "oneOf": [
-                    "data": {
-                        "const": "1/id"
-                    },
-                    "const": null
-                ]
-            }
-            "author": {
-                "type": "string",
-                "description": "Radicle URN of the author of the comment",
-                "automerge_type": "text"
-            },
         }
     }
-  },
-  "type": "object",
-  "rad_signed_by": {
-    "fields": ["title", "description", "author"],
-    "keys": ["<authors URN>"]
-  },
-  "properties": {
-    "id": {
-      "type": "string",
-      "frozen": true
-    },
-    "title": {
-        "type": "string",
-        "automerge_type": "text"
-    },
-    "description": {
-        "type": "string",
-        "automerge_type": "text"
-    },
-    "author": {
-        "description": "The radicle ID of the author of the issue",
-        "const": "<the authors URN>",
-        "frozen": true
-    },
-    "comments": {
-        "type": "array",
-        "items": {
-            "$ref": "#/definitions/comment"
-        }
-    }
-  }
 }
 ----
 
 An issue consists of a title, description, and author along with the author's
 signature; followed by a list of comments, each of which is signed by it's
 respective author. This is an extremely simplified model. Note the presence of
-the `automerge_type`, `frozen`, `grow_only`, `rad_signed_by`, and `rad_urn` keys. 
+the `rad_signed_by` key This key tells librad to validate that the given
+properties (for example the `title`, `description`, and `author` properties)
+are signed by one of the keys belonging to the given identities.  
 
-The `automerge_type` key indicates that this field should be stored as a
-special data type in the automerge document which tracks individual character
-inserts and deletions, this allows us to merge edits to the same piece of text
-in a non surprising manner.
-
-The `frozen` key indicates that any change which modifies this field should be
-ignored.
-
-The `grow_only` key indicates that elements may not be removed from this 
-sequence. This allows us to ensure that comments cannot be removed.
-
-The `rad_signed_by` and is more interesting. The  `rad_signed_by` field tells
-librad to validate that the given properties (in this case the `title`,
-`description`, and `author` properties) are signed by the given identities.
-Combined with the constant URN and `frozen` on the author this allows us to
-ensure that only the author of the issue can change the description or title.
-
-Note that comments are described by a tree structure where the parent ID uses
-the `"$data"` keyword of the
+Note that comments are also signed, but here the key that is signing the
+comment depends on the data in the document. For this reason we use the
 https://gregsdennis.github.io/json-everything/usage/vocabs-data.html[data JSON
-schema vocabulary] to add the constraint that the parent ID must be the ID of
-the parent comment in the document structure. This allows us to impose a
-partial order on comments which cannot be rewritten by arbitrary writers. We
-also use the `$data` keyword to allow comments to dynamically state what the
-key they should be signed by
-is.
+schema vocabulary] to allow the `rad_signed_by` schema to reference the authors
+key.
 
 This schema may well be the subject of its own mini standardisation process
 as it is very likely that many different applications will want to interoperate
@@ -506,7 +475,7 @@ radicle URNs who's signature must be present.
 
 This property implies a required `signatures` property with the following schema:
 
-[source]
+[source,json]
 ----
 {
     "type": "array",
@@ -526,32 +495,38 @@ This property implies a required `signatures` property with the following schema
 }
 ----
 
-Any schema which has this property will result in some additional validation.
-Librad will encode the relevant keys of the target object using CBOR.
-and then check that a signature over them is valid with respect to the given
-keys. Note that the encoding will go directly from automerge types to CBOR,
-which allows for signatures over any type in the automerge data model, in 
-particular including floating point numbers and byte types.
+Any schema which has this property results in some additional validation.  A
+signature is computed over the given properties and checked against the given
+key and signature.
 
+To compute a signature, the values at the keys specified in rad_signed_by.keys
+are looked up from the document in the order given, and converted back-to-back
+into CBOR according to the following canonicalisation rules:
 
-==== `frozen`
+* `integer` values are encoded as major types 0 and 1, respectively, with
+  additional value 27 (64-bit)
+* `number` types are encoded as major type 7 with 5-bit value 27 (IEEE 754
+  double-precision float)
+* object types are encoded as major type 5 (maps), applying the
+  canonicalisation rules as per RFC 7049, section 2.3
+* The remaining schema types have unambiguous mappings to CBOR types
 
-Some attributes should never be changed, for example the ID of an issue, or a
-nonce on a comment. Any schema can add the metadata key, `frozen: true` to
-indicate that after it's initial creation any change which modifies it is
-invalid.
+When the input is in the automerge data model, the mappings are as follows:
 
-==== `grow_only`
+[horizontal]
+f32,f64:: major type 7,27 
+int:: major type 0 or 1,27
+uint: major type 1,27
+bytes:: major type 2, where the length is represented as a 64-bit unsigned integer (major type 1,27)
+str:: major type 3, where the length is represented as a 64-bit unsigned integer (major type 1,27)
+boolean:: major type 7, 20 or 21 respectively
+counter, timestamp:: as their corresponding integer value
+null:: major type 7, 22
 
-This key stipulates that elements can never be removed from a sequence or 
-object. Any schema which has this key on it will result in schema validation
-for a change which removes items from the instance in question.
+Cursors, undefined values, and constructions which can not be represented as
+definite-length arrays / maps in CBOR are illegal for signed values.
 
-==== `automerge_type`
-
-This can take the value `"text"` if  placed on `string` properties to indicate
-that they should be represented in an `Automerge.Text` data type.
-
+Finally, the signature is computed over the binary CBOR representation
 
 === Strange Perspectives
 
