@@ -269,7 +269,7 @@ where
     /// return the [`git::storage::Storage`] to the pool.
     pub async fn storage(
         &self,
-    ) -> Result<impl AsRef<git::storage::Storage>, PoolError<git::storage::Error>> {
+    ) -> Result<impl AsRef<git::storage::Storage>, PoolError<git::storage::OpenError>> {
         self.user_store
             .get()
             .map_ok(git::storage::pool::PooledRef::from)

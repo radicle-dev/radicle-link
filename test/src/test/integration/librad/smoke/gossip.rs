@@ -164,7 +164,6 @@ fn fetches_on_gossip_notify() {
                 let peer1_id = peer1.peer_id();
                 move |storage| {
                     let peer2_has_commit = storage
-                        .as_ref()
                         .has_commit(&commit_urn, Box::new(commit_id))
                         .unwrap();
                     assert!(peer2_has_commit);

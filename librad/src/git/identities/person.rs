@@ -36,7 +36,11 @@ pub use identities::{
 ///
 /// If the ref is not found, `None` is returned.
 #[tracing::instrument(level = "trace", skip(storage))]
-pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<Person>, Error> {
+pub fn get<S>(storage: &S, urn: &Urn) -> Result<Option<Person>, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    let storage = storage.as_ref();
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
@@ -60,7 +64,11 @@ pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<Person>, Error> {
 /// function cannot be used to assert that the state after an [`update`] is
 /// valid.
 #[tracing::instrument(level = "debug", skip(storage))]
-pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedPerson>, Error> {
+pub fn verify<S>(storage: &S, urn: &Urn) -> Result<Option<VerifiedPerson>, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    let storage = storage.as_ref();
     let branch = Reference::try_from(urn)?;
     tracing::debug!("verifying {} from {}", urn, branch);
     match storage.reference(&branch) {
@@ -80,11 +88,12 @@ pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedPerson>, Er
 
 /// Get the root [`Urn`] for the given `payload` and set of `delegations`.
 #[tracing::instrument(level = "debug", skip(storage))]
-pub fn urn<P>(storage: &Storage, payload: P, delegations: delegation::Direct) -> Result<Urn, Error>
+pub fn urn<S, P>(storage: &S, payload: P, delegations: delegation::Direct) -> Result<Urn, Error>
 where
+    S: AsRef<storage::ReadOnly>,
     P: Into<PersonPayload> + Debug,
 {
-    let (_, revision) = identities(storage).base(payload.into(), delegations)?;
+    let (_, revision) = identities(storage.as_ref()).base(payload.into(), delegations)?;
     Ok(Urn::new(revision))
 }
 
@@ -172,18 +181,23 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Person, Error
 
 /// Return the newer of `a` and `b`, or an error if their histories are
 /// unrelated.
-pub fn newer(
-    storage: &Storage,
-    a: VerifiedPerson,
-    b: VerifiedPerson,
-) -> Result<VerifiedPerson, Error> {
+pub fn newer<S>(storage: &S, a: VerifiedPerson, b: VerifiedPerson) -> Result<VerifiedPerson, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
     Ok(verified(storage).newer(a, b)?)
 }
 
-fn identities(storage: &Storage) -> Identities<Person> {
-    storage.identities()
+fn identities<S>(storage: &S) -> Identities<Person>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    storage.as_ref().identities()
 }
 
-fn verified(storage: &Storage) -> Identities<VerifiedPerson> {
-    storage.identities()
+fn verified<S>(storage: &S) -> Identities<VerifiedPerson>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    storage.as_ref().identities()
 }

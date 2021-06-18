@@ -36,11 +36,11 @@ fn create_anonymous() -> anyhow::Result<()> {
     )?;
     assert_eq!(
         Some(proj.urn()),
-        identities::project::get(&storage, &proj.urn())?.map(|proj| proj.urn())
+        identities::project::get(&storage.read_only(), &proj.urn())?.map(|proj| proj.urn())
     );
     assert_eq!(
         Some(proj.urn()),
-        identities::any::get(&storage, &proj.urn())?
+        identities::any::get(&storage.read_only(), &proj.urn())?
             .and_then(SomeIdentity::project)
             .map(|proj| proj.urn())
     );

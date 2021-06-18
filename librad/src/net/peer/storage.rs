@@ -121,10 +121,10 @@ impl Storage {
         let head = head.into().map(ext::Oid::from);
         self.spawner
             .spawn_blocking(move || match head {
-                None => git.has_urn(&urn).unwrap_or(false),
+                None => git.as_ref().has_urn(&urn).unwrap_or(false),
                 Some(head) => {
-                    git.has_commit(&urn, head).unwrap_or(false)
-                        || git.has_tag(&urn, head).unwrap_or(false)
+                    git.as_ref().has_commit(&urn, head).unwrap_or(false)
+                        || git.as_ref().has_tag(&urn, head).unwrap_or(false)
                 },
             })
             .await

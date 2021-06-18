@@ -11,11 +11,11 @@ use std::{
 use deadpool::managed::{self, Manager, Object, RecycleResult};
 use parking_lot::RwLock;
 
-use super::{Error, Fetchers, Storage};
+use super::{Fetchers, OpenError, ReadOnly, Storage};
 use crate::{paths::Paths, signer::Signer};
 
-pub type Pool = deadpool::managed::Pool<Storage, Error>;
-pub type PoolError = managed::PoolError<Error>;
+pub type Pool = deadpool::managed::Pool<Storage, OpenError>;
+pub type PoolError = managed::PoolError<OpenError>;
 
 #[async_trait]
 pub trait Pooled {
@@ -30,7 +30,7 @@ impl Pooled for Pool {
 }
 
 /// A reference to a pooled [`Storage`].
-pub struct PooledRef(Object<Storage, Error>);
+pub struct PooledRef(Object<Storage, OpenError>);
 
 impl Deref for PooledRef {
     type Target = Storage;
@@ -58,8 +58,14 @@ impl AsMut<Storage> for PooledRef {
     }
 }
 
-impl From<Object<Storage, Error>> for PooledRef {
-    fn from(obj: Object<Storage, Error>) -> Self {
+impl AsRef<ReadOnly> for PooledRef {
+    fn as_ref(&self) -> &ReadOnly {
+        self.read_only()
+    }
+}
+
+impl From<Object<Storage, OpenError>> for PooledRef {
+    fn from(obj: Object<Storage, OpenError>) -> Self {
         Self(obj)
     }
 }
@@ -101,18 +107,18 @@ where
     S: Signer + Clone,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
-    fn mk_storage(&self) -> Result<Storage, Error> {
+    fn mk_storage(&self) -> Result<Storage, OpenError> {
         Storage::with_fetchers(&self.paths, self.signer.clone(), self.fetchers.clone())
     }
 }
 
 #[async_trait]
-impl<S> Manager<Storage, Error> for Config<S>
+impl<S> Manager<Storage, OpenError> for Config<S>
 where
     S: Signer + Clone,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
-    async fn create(&self) -> Result<Storage, Error> {
+    async fn create(&self) -> Result<Storage, OpenError> {
         let initialised = self.init.0.read();
         if *initialised {
             self.mk_storage()
@@ -126,7 +132,7 @@ where
         }
     }
 
-    async fn recycle(&self, _: &mut Storage) -> RecycleResult<Error> {
+    async fn recycle(&self, _: &mut Storage) -> RecycleResult<OpenError> {
         Ok(())
     }
 }

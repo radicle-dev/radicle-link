@@ -35,7 +35,11 @@ type Namespace = namespace::Namespace<Revision>;
 ///
 /// If the ref is not found, `None` is returned.
 #[tracing::instrument(level = "trace", skip(storage))]
-pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<Project>, Error> {
+pub fn get<S>(storage: &S, urn: &Urn) -> Result<Option<Project>, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    let storage = storage.as_ref();
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
@@ -59,7 +63,11 @@ pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<Project>, Error> {
 /// function cannot be used to assert that the state after an [`update`] is
 /// valid.
 #[tracing::instrument(level = "debug", skip(storage))]
-pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedProject>, Error> {
+pub fn verify<S>(storage: &S, urn: &Urn) -> Result<Option<VerifiedProject>, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    let storage = storage.as_ref();
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
@@ -81,10 +89,12 @@ pub fn verify(storage: &Storage, urn: &Urn) -> Result<Option<VerifiedProject>, E
 
 /// Get the root [`Urn`] for the given `payload` and set of `delegations`.
 #[tracing::instrument(level = "debug", skip(storage))]
-pub fn urn<P>(storage: &Storage, payload: P, delegations: IndirectDelegation) -> Result<Urn, Error>
+pub fn urn<S, P>(storage: &S, payload: P, delegations: IndirectDelegation) -> Result<Urn, Error>
 where
+    S: AsRef<storage::ReadOnly>,
     P: Into<ProjectPayload> + Debug,
 {
+    let storage = storage.as_ref();
     let (_, revision) = identities(storage).base(payload.into(), delegations)?;
     Ok(Urn::new(revision))
 }
@@ -162,11 +172,14 @@ pub fn merge(storage: &Storage, urn: &Urn, from: PeerId) -> Result<Project, Erro
 
 /// Return the newer of `a` and `b`, or an error if their histories are
 /// unrelated.
-pub fn newer(
-    storage: &Storage,
+pub fn newer<S>(
+    storage: &S,
     a: VerifiedProject,
     b: VerifiedProject,
-) -> Result<VerifiedProject, Error> {
+) -> Result<VerifiedProject, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
     Ok(verified(storage).newer(a, b)?)
 }
 
@@ -223,10 +236,16 @@ impl<'a> ProjectRefs<'a> {
     }
 }
 
-fn identities(storage: &Storage) -> Identities<Project> {
-    storage.identities()
+fn identities<S>(storage: &S) -> Identities<Project>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    storage.as_ref().identities()
 }
 
-fn verified(storage: &Storage) -> Identities<VerifiedProject> {
-    storage.identities()
+fn verified<S>(storage: &S) -> Identities<VerifiedProject>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    storage.as_ref().identities()
 }

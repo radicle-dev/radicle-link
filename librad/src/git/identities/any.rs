@@ -10,7 +10,7 @@ use itertools::Itertools as _;
 
 use super::{
     super::{
-        storage::{self, glob, Storage},
+        storage::{self, glob},
         types::Reference,
     },
     error::Error,
@@ -30,7 +30,11 @@ pub use identities::git::Urn;
 /// tip of the branch it resolves to. If that branch is not found, `None` is
 /// returned.
 #[tracing::instrument(level = "debug", skip(storage))]
-pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<SomeIdentity>, Error> {
+pub fn get<S>(storage: &S, urn: &Urn) -> Result<Option<SomeIdentity>, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    let storage = storage.as_ref();
     let branch = Reference::try_from(urn)?;
     tracing::trace!(
         "trying to resolve unknown identity at {} from {}",
@@ -51,9 +55,12 @@ pub fn get(storage: &Storage, urn: &Urn) -> Result<Option<SomeIdentity>, Error> 
 
 /// List all identities found in `storage`.
 #[tracing::instrument(level = "debug", skip(storage))]
-pub fn list<'a>(
-    storage: &'a Storage,
-) -> Result<impl Iterator<Item = Result<SomeIdentity, Error>> + 'a, Error> {
+pub fn list<'a, S>(
+    storage: &'a S,
+) -> Result<impl Iterator<Item = Result<SomeIdentity, Error>> + 'a, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
     let iter = self::list_urns(storage)?.filter_map(move |urn| match urn {
         Ok(urn) => self::get(storage, &urn).transpose(),
         Err(e) => Some(Err(e)),
@@ -67,9 +74,12 @@ pub fn list<'a>(
 /// Note that this means that only the namespace must successfully parse as a
 /// [`Urn`], but neither the existence nor the validity of the identity
 /// histories is guaranteed.
-pub fn list_urns(
-    storage: &Storage,
-) -> Result<impl Iterator<Item = Result<Urn, Error>> + '_, Error> {
+pub fn list_urns<S>(storage: &S) -> Result<impl Iterator<Item = Result<Urn, Error>> + '_, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+{
+    let storage = storage.as_ref();
+
     lazy_static! {
         static ref GLOB: glob::RefspecMatcher =
             refspec_pattern!("refs/namespaces/*/refs/rad/id").into();
@@ -85,10 +95,13 @@ pub fn list_urns(
 /// Build an [`Xor`] filter from all available [`Urn`]s.
 ///
 /// The returned `usize` is the number of URNs added to the filter.
-pub fn xor_filter(storage: &Storage) -> Result<(Xor, usize), xor::BuildError<Error>> {
+pub fn xor_filter<S>(storage: &S) -> Result<(Xor, usize), xor::BuildError<Error>>
+where
+    S: AsRef<storage::ReadOnly>,
+{
     Xor::try_from_iter(list_urns(storage)?.map_ok(SomeUrn::from))
 }
 
-fn identities(storage: &Storage) -> Identities<!> {
+fn identities(storage: &storage::ReadOnly) -> Identities<!> {
     storage.identities()
 }

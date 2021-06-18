@@ -35,7 +35,7 @@ impl From<executor::JoinError> for Storage {
 #[derive(Debug, Error)]
 pub enum Init {
     #[error(transparent)]
-    Storage(#[from] storage::Error),
+    Storage(#[from] storage::OpenError),
 
     #[error(transparent)]
     Cache(#[from] Box<cache::urns::Error>),

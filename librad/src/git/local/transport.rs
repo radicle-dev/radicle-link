@@ -183,7 +183,7 @@ impl LocalTransport {
         let storage = _box.as_ref();
 
         let urn = url.into();
-        guard_has_urn(storage, &urn)?;
+        guard_has_urn(storage.as_ref(), &urn)?;
 
         let mut git = Command::new("git");
         git.envs(::std::env::vars().filter(|(key, _)| key.starts_with("GIT_TRACE")))
@@ -201,7 +201,7 @@ impl LocalTransport {
         match service {
             Service::UploadPack | Service::UploadPackLs => {
                 // Fetching remotes is ok, pushing is not
-                visible_remotes(storage, &urn)?.for_each(|remote_ref| {
+                visible_remotes(storage.as_ref(), &urn)?.for_each(|remote_ref| {
                     git.arg("-c")
                         .arg(format!("uploadpack.hiderefs=!^{}", remote_ref));
                 });
@@ -271,7 +271,7 @@ impl LocalTransport {
 
 fn guard_has_urn<S>(storage: S, urn: &Urn) -> Result<(), Error>
 where
-    S: AsRef<Storage>,
+    S: AsRef<storage::ReadOnly>,
 {
     let have = storage.as_ref().has_urn(urn).map_err(Error::from)?;
     if !have {
@@ -283,7 +283,7 @@ where
 
 fn visible_remotes<S>(storage: S, urn: &Urn) -> Result<impl Iterator<Item = ext::RefLike>, Error>
 where
-    S: AsRef<Storage>,
+    S: AsRef<storage::ReadOnly>,
 {
     let remotes = storage
         .as_ref()
