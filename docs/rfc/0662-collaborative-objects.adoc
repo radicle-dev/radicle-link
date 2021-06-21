@@ -312,7 +312,8 @@ described in <<Reconstructing Collaborative Objects>>. This allows us to use
 git to replicate collaborative objects, see <<Fetching Collaborative Objects>>.
 
 We require some schema extensions to authenticate data in collaborative objects,
-these are described in <<Schema Extensions>>.
+these are described in <<Schema Extensions>>. We also introduce a simple DSL
+for expressing authorization logic in <<Authorization Logic>>.
 
 
 === Change Commits
@@ -540,6 +541,24 @@ Cursors, undefined values, and constructions which can not be represented as
 definite-length arrays / maps in CBOR are illegal for signed values.
 
 Finally, the signature is computed over the binary CBOR representation
+
+
+=== Authorization Logic
+
+The authorization language is based on
+https://content.iospress.com/articles/journal-of-computer-security/jcs364[SecPAL],
+a decentralized authorization language based on Datalog with constraints. We
+provide a set of predicates over paths in a document, programs written using
+these predicates can be translated into programs which operate over the
+operations in an automerge document. We can use this program to scan an
+automerge change and assert that all the operations in it are authorized with
+respect to the access control policy. Crucially the evaluation of this program
+will terminate and the runtime is polynomial in the size of the access control
+policy. That means that griefing vectors are limited to creating objects with
+large access control policies - there is no way to grief an existing object
+created by an honest participant.
+
+#TODO: sketch of syntax and semantics of auth lang#
 
 === Strange Perspectives
 
