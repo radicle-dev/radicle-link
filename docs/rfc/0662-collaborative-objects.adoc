@@ -144,7 +144,30 @@ process can happen independently of the radicle protocol.
 In addition to the schema, the developer must choose a name for their type.
 This is similar to an XML namespace and probably standardised as part of the
 same process which produces the schema. In this case let's choose
-`\https://radicle.xyz/issue` as the type name.
+`\xyz.radicle.issue` as the type name.
+
+This schema ensures that the data is well formed, but we generally want to
+ensure that certain parts of the data are only modified by particular people.
+For example, if someone has added a comment, only that person should be able to
+modify it. Collaborative objects have a logic based DSL to achieve this:
+
+[source]
+----
+docAuthor says that X can set .{"title", "description", "signature"} <1>
+if
+  X isCreator(.).
+
+docAuthor says that anyone insert ".comments". <2>
+
+docAuthor says that X can modify Y.{"text", "signature"} <3>
+if
+  X isCreator(Y)
+  Y < ".comments".
+
+----
+<1> The original author of the comment can modify the issue title and description
+<2> Anyone is allowed to comment
+<3> Anyone can modify a comment if they were the person who made the comment
 
 
 === Creating an issue
@@ -178,8 +201,9 @@ with the following content:
 [source,json]
 ----
 {
-    "typename": "https://radicle.xyz/issue",
+    "typename": "xyz.radicle.issue",
     "schema": <the schema above>,
+    "auth_policy": "<the policy above>",
     "history": {
         "type": "automerge",
         "changes": "<changeBytes from above>"
@@ -200,7 +224,7 @@ that data by making a request like this (url encoded of course):
 
 [source]
 ----
-GET <radicle implementation/projects/<project URN>/metadata?typename=https://radicle.xyz/issue
+GET <radicle implementation/projects/<project URN>/metadata?typename=xyz.radicle.issue
 ----
 
 This will return something like this:
@@ -210,7 +234,7 @@ This will return something like this:
 [
     {
         "id": "<some long string>",
-        "typename": "https://radicle.xyz/issue",
+        "typename": "xyz.radicle.issue",
         "schema": <the schema above>,
         "data": {
             "title": "Librad doesn't implement the metadata RFC",
@@ -280,13 +304,15 @@ to the network.
 == Implementation
 
 Every collaborative object is represented by a graph of automerge changes. See
-the <<appendix_automerge>> for more about automerge. We first show how we map
-the graph of automerge changes onto git in <<Change Commits>>, then we describe
-how we reconstruct the change graph for an object given a repo in <<Reconstructing Collaborative Objects>>.
-In <<Fetching Collaborative Objects>> we explain how the tips of collaborative
-objects are stored under a particular reference and how those references are 
-replicated to other peers. In <<Schema extensions>> we explain how we use JSON
-schema to validate collaborative objects.
+the <<appendix_automerge>> for more about automerge. We map this change graph
+to git as described in <<Change Commits>>, we store the tip of the change 
+graph under a `/cob/<typename>/<object ID>` reference, this allows us to 
+reconstruct the state of a collaborative object for a particular peer as 
+described in <<Reconstructing Collaborative Objects>>. This allows us to use
+git to replicate collaborative objects, see <<Fetching Collaborative Objects>>.
+
+We require some schema extensions to authenticate data in collaborative objects,
+these are described in <<Schema Extensions>>.
 
 
 === Change Commits
@@ -349,7 +375,7 @@ referenced by the parents of the commit.
 
 Assuming we have replicated a number of collaborative objects from our tracking
 graph, we can now view the merged state of those objects. To do this we search
-through every `/rad/collaborative-objects/<typename>/<object ID>` reference for
+through every `/cob/<typename>/<object ID>` reference for
 every remote we have and collect the change files for each object ID.
 
 At this point we have the hash linked graph of automerge changes, but we need
