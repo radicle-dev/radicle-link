@@ -5,14 +5,11 @@
 
 use thiserror::Error;
 
-use crate::{executor, git::storage, net::protocol::cache};
+use crate::{git::storage, net::protocol::cache};
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Storage {
-    #[error(transparent)]
-    Task(executor::Cancelled),
-
     #[error(transparent)]
     Storage(#[from] storage::Error),
 
@@ -26,14 +23,11 @@ impl From<storage::PoolError> for Storage {
     }
 }
 
-impl From<executor::JoinError> for Storage {
-    fn from(e: executor::JoinError) -> Self {
-        Self::Task(e.into_cancelled())
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum Init {
+    #[error("no async context found, try calling `.enter()` on the runtime")]
+    Runtime,
+
     #[error(transparent)]
     Storage(#[from] storage::error::Init),
 

@@ -15,68 +15,74 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{
-    channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
-    stream::{FusedStream as _, FuturesUnordered, Stream as _},
-    FutureExt as _,
-};
+use futures::FutureExt as _;
 use thiserror::Error;
 use tracing::Instrument as _;
 
-/// Wrapper around an async runtime, which:
-///
-/// * Approximates a task scope
-/// * Commits to a semantics where mainstream runtimes disagree
-/// * Adds instrumentation to spawned tasks
-/// * May allow compile-time selection of the runtime implementation at some
-///   point (currently only `tokio` is supported)
-///
-/// When a [`Spawner`] is dropped, all tasks spawned through it are cancelled.
-/// Note, however, that mainstream runtimes **do not** guarantee that those
-/// tasks are cancelled _immediately_.
+/// Wrapper around an async runtime.
 pub struct Spawner {
-    scope: String,
     inner: tokio::runtime::Handle,
-    detach: UnboundedSender<DetachedTask>,
-
-    spawned: Arc<AtomicUsize>,
-    blocking: Arc<AtomicUsize>,
+    stats: StatsMut,
 }
 
 impl Spawner {
-    /// Create a new [`Spawner`] with a scope label.
+    /// Try to create a [`Spawner`] from the ambient async context.
     ///
-    /// The scope label is for informational purposes (logging, tracing) only.
-    pub fn new<S: AsRef<str>>(scope: S) -> Self {
-        let rt = tokio::runtime::Handle::current();
-        let (tx_submit, rx_submit) = mpsc::unbounded();
+    /// Returns `None` if the current thread does not have access to an async
+    /// context. Runtimes typically expose an `.enter()` function in some
+    /// form, which can be used to propagate the context in this case.
+    pub fn from_current() -> Option<Self> {
+        tokio::runtime::Handle::try_current().map(Self::tokio).ok()
+    }
 
-        rt.spawn(
-            Pid1 {
-                submit: rx_submit,
-                running: FuturesUnordered::new(),
-            }
-            .instrument(tracing::info_span!("pid1", scope = %scope.as_ref())),
-        );
-
+    /// Create a [`Spawner`] from a [`tokio::runtime::Handle`].
+    pub fn tokio(inner: tokio::runtime::Handle) -> Self {
         Self {
-            scope: scope.as_ref().to_owned(),
-            inner: rt,
-            detach: tx_submit,
-            spawned: Arc::new(AtomicUsize::new(0)),
-            blocking: Arc::new(AtomicUsize::new(0)),
+            inner,
+            stats: StatsMut {
+                spawned: Arc::new(AtomicUsize::new(0)),
+                blocking: Arc::new(AtomicUsize::new(0)),
+            },
         }
     }
 
-    pub fn spawn<T>(&self, task: T) -> JoinHandle<T::Output>
+    /// Spawn an asynchronous task, returning a handle to it.
+    ///
+    /// Spawning a task enables it to run concurrently and in parallel to other
+    /// tasks. The task may run on the current thread, or it may be sent to
+    /// a different thread by the runtime to be executed.
+    ///
+    /// The returned [`Task`] future can be `.await`ed in order to retrieve the
+    /// task's output. Note, however, that the task will be executed
+    /// regardless of whether the [`Task`] handle is `.await`ed.
+    ///
+    /// The `spawned` counter of [`Stats`] will be incremented once the task is
+    /// scheduled for execution, and decremented when its future completes.
+    ///
+    /// The task is run in the [`tracing::Span`] context active at the call site
+    /// of [`spawn()`][`Spawner::spawn`].
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping the [`Task`] will abort the task, ie. it will be deallocated at
+    /// the next possible time, regardless of whether the task ran to
+    /// completion already. To continue running the task in the background,
+    /// [`Task::detach`] can be called. In this case, the output of the task
+    /// (if any) can no longer be retrieved, and the task will continue to
+    /// run until it either completes, or the runtime shuts down.
+    ///
+    /// Keep in mind that there is no guarantee that the task is run to
+    /// completion -- the runtime may decide to deallocate it when it shuts
+    /// down. It is guaranteed, however, that the task is cancelled when the
+    /// [`Task`] is cancelled.
+    pub fn spawn<T>(&self, task: T) -> Task<T::Output>
     where
         T: Future + Send + 'static,
         T::Output: Send + 'static,
     {
-        let counter = Arc::clone(&self.spawned);
-        JoinHandle {
-            detach: self.detach.clone(),
-            task: self.inner.spawn(
+        let counter = Arc::clone(&self.stats.spawned);
+        self.inner
+            .spawn(
                 async move {
                     counter.fetch_add(1, Relaxed);
                     let res = task.await;
@@ -84,32 +90,72 @@ impl Spawner {
                     res
                 }
                 .in_current_span(),
-            ),
-        }
+            )
+            .into()
     }
 
-    pub fn spawn_blocking<F, T>(&self, f: F) -> JoinHandle<T>
+    /// Run a blocking function in an async context.
+    ///
+    /// The function is run on a separate thread pool, so as to not block the
+    /// async runtime's threads. The current async context is made available to
+    /// the thread executing the task, so it can be re-entered.
+    ///
+    /// The `blocking` counter of [`Stats`] will be incremented once the task is
+    /// scheduled for execution, and decremented when the function completes.
+    ///
+    /// The task is run in the [`tracing::Span`] context active at the call site
+    /// of [`blocking()`][`Spawner::blocking`].
+    ///
+    /// # Panics
+    ///
+    /// If the blocking function panics, the `.await`ing future will also panic.
+    ///
+    /// _NOTE: Due to limitations in the underlying machinery, the panic payload
+    /// will always be 'task has failed'. The default panic hook should print
+    /// the original panic message, and be able to display a backtrace,
+    /// however._
+    ///
+    /// # Cancellation
+    ///
+    /// Blocking tasks can _not_ be cancelled, even if the future awaiting their
+    /// output is dropped. This can lead to surprising behaviour, eg. when the
+    /// blocking code is accessing resources which are destroyed when the
+    /// program exits. It is the programmer's responsibility to ensure
+    /// "graceful shutdown" by driving outstanding futures which may
+    /// `.await` blocking tasks to completion.
+    pub async fn blocking<F, T>(&self, f: F) -> T
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
+        let rt = self.inner.clone();
         let span = tracing::Span::current();
-        let counter = Arc::clone(&self.blocking);
-        JoinHandle {
-            detach: self.detach.clone(),
-            task: self.inner.spawn_blocking(move || {
-                counter.fetch_add(1, Relaxed);
-                let _guard = span.enter();
-                let res = f();
-                counter.fetch_sub(1, Relaxed);
-                res
-            }),
-        }
+        let counter = Arc::clone(&self.stats.blocking);
+        blocking::unblock(move || {
+            counter.fetch_add(1, Relaxed);
+            let _span = span.enter();
+            let _rt = rt.enter();
+            let res = f();
+            counter.fetch_sub(1, Relaxed);
+            res
+        })
+        .await
     }
 
+    /// Obtain a snapshot of some stats about this [`Spawner`].
     pub fn stats(&self) -> Stats {
+        self.stats.snapshot()
+    }
+}
+
+struct StatsMut {
+    spawned: Arc<AtomicUsize>,
+    blocking: Arc<AtomicUsize>,
+}
+
+impl StatsMut {
+    fn snapshot(&self) -> Stats {
         Stats {
-            scope: &self.scope,
             spawned: self.spawned.load(Relaxed),
             blocking: self.blocking.load(Relaxed),
         }
@@ -117,33 +163,30 @@ impl Spawner {
 }
 
 /// Snapshot of the state of a [`Spawner`].
-pub struct Stats<'a> {
-    /// Scope label of the [`Spawner`].
-    pub scope: &'a str,
+pub struct Stats {
     /// Number of tasks spawned using [`Spawner::spawn`] whose futures have not
     /// resoved yet. Includes detached tasks.
     pub spawned: usize,
-    /// Number of tasks spawned using [`Spawner::spawn_blocking`] whose futures
+    /// Number of tasks spawned using [`Spawner::blocking`] whose futures
     /// have not resolved yet. Includes detached tasks.
     pub blocking: usize,
 }
 
-/// A handle to a task spawned via [`Spawner::spawn`] or
-/// [`Spawner::spawn_blocking`].
+/// A handle to a task spawned via [`Spawner::spawn`].
 ///
-/// Dropping a [`JoinHandle`] will abort the task, ie. `spawn(task);` is a
-/// no-op. To continue running the task without polling the [`JoinHandle`]
-/// future, [`JoinHandle::detach`] can be used.
+/// Dropping a [`Task`] will abort the task, ie. `spawn(task);` is a
+/// no-op. To continue running the task without polling the [`Task`]
+/// future, [`Task::detach`] can be used.
 ///
-/// This is similar to `async-std`, but very unlike `tokio`.
+/// _NOTE: This is similar to `async-std`, but very unlike `tokio`._
 #[must_use = "spawned tasks must be awaited"]
-pub struct JoinHandle<T> {
-    detach: UnboundedSender<DetachedTask>,
+pub struct Task<T> {
     task: tokio::task::JoinHandle<T>,
+    abort_on_drop: bool,
 }
 
-impl<T> JoinHandle<T> {
-    /// Abort the task corresponding to this [`JoinHandle`].
+impl<T> Task<T> {
+    /// Abort the task corresponding to this [`Task`].
     ///
     /// The task will be dropped immediately and not polled again -- _unless_ it
     /// is currently being polled, in which case the task can be considered
@@ -152,23 +195,31 @@ impl<T> JoinHandle<T> {
     pub fn abort(&self) {
         self.task.abort()
     }
+
+    /// Continue running the [`Task`] in the background.
+    pub fn detach(mut self) {
+        self.abort_on_drop = false;
+    }
 }
 
-impl JoinHandle<()> {
-    /// If the underlying task does not yield any output, it can be "detached".
-    ///
-    /// A detached task will continue to run until the [`Spawner`] through which
-    /// it was created is dropped. When this happens, the task is aborted as
-    /// if [`JoinHandle::abort`] was called.
-    pub fn detach(self) {
-        if let Err(e) = self.detach.unbounded_send(DetachedTask(self.task)) {
-            tracing::warn!("detach queue closed, task will be cancelled");
-            drop(e.into_inner())
+impl<T> From<tokio::task::JoinHandle<T>> for Task<T> {
+    fn from(task: tokio::task::JoinHandle<T>) -> Self {
+        Self {
+            task,
+            abort_on_drop: true,
         }
     }
 }
 
-impl<T> Future for JoinHandle<T> {
+impl<T> Drop for Task<T> {
+    fn drop(&mut self) {
+        if self.abort_on_drop {
+            self.abort()
+        }
+    }
+}
+
+impl<T> Future for Task<T> {
     type Output = Result<T, JoinError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -218,68 +269,3 @@ impl From<tokio::task::JoinError> for JoinError {
 #[derive(Debug, Error)]
 #[error("spawned task cancelled")]
 pub struct Cancelled;
-
-struct DetachedTask(tokio::task::JoinHandle<()>);
-
-impl Drop for DetachedTask {
-    fn drop(&mut self) {
-        self.0.abort()
-    }
-}
-
-impl Future for DetachedTask {
-    type Output = Result<(), JoinError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        self.0.poll_unpin(cx).map(|t| t.map_err(JoinError::from))
-    }
-}
-
-/// Keeps track of [`DetachedTask`]s spawned through a particular [`Spawner`],
-/// dropping their handles once their futures resolve. When the [`Spawner`] is
-/// dropped, its [`Pid1`] is aborted, which in turn will drop all in-flight
-/// tasks.
-struct Pid1 {
-    submit: UnboundedReceiver<DetachedTask>,
-    running: FuturesUnordered<DetachedTask>,
-}
-
-impl Pid1 {
-    fn poll_submitted(&mut self, cx: &mut Context) {
-        while let Poll::Ready(Some(task)) = Pin::new(&mut self.submit).poll_next(cx) {
-            self.running.push(task)
-        }
-    }
-
-    fn poll_running(&mut self, cx: &mut Context) {
-        while let Poll::Ready(Some(result)) = Pin::new(&mut self.running).poll_next(cx) {
-            if let Err(JoinError::Panicked(panik)) = result {
-                tracing::error!(
-                    "detached task panicked: {:?}",
-                    panik.downcast_ref::<String>()
-                )
-            }
-        }
-    }
-}
-
-impl Future for Pid1 {
-    type Output = ();
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        self.poll_submitted(cx);
-        self.poll_running(cx);
-
-        if self.submit.is_terminated() {
-            if !self.running.is_empty() {
-                tracing::warn!("outstanding tasks!");
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            } else {
-                Poll::Ready(())
-            }
-        } else {
-            Poll::Pending
-        }
-    }
-}

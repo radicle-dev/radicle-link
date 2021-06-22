@@ -125,10 +125,7 @@ impl<S> Bound<S> {
     pub fn accept<D>(
         self,
         disco: D,
-    ) -> (
-        impl Future<Output = ()>,
-        impl Future<Output = Result<!, quic::Error>>,
-    )
+    ) -> (impl FnOnce(), impl Future<Output = Result<!, quic::Error>>)
     where
         S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
         D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
@@ -152,6 +149,7 @@ impl<S> LocalAddr for Bound<S> {
 }
 
 pub async fn bind<Sign, Store>(
+    spawner: Arc<executor::Spawner>,
     phone: TinCans,
     config: Config,
     signer: Sign,
@@ -162,7 +160,6 @@ where
     Sign: Signer + Clone + Send + Sync + 'static,
     Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
-    let spawner = Arc::new(executor::Spawner::new("protocol"));
     let local_id = PeerId::from_signer(&signer);
     let git = GitServer::new(&config.paths);
     let quic::BoundEndpoint { endpoint, incoming } = quic::Endpoint::bind(
@@ -226,10 +223,7 @@ pub fn accept<Store, Disco>(
         periodic,
     }: Bound<Store>,
     disco: Disco,
-) -> (
-    impl Future<Output = ()>,
-    impl Future<Output = Result<!, quic::Error>>,
-)
+) -> (impl FnOnce(), impl Future<Output = Result<!, quic::Error>>)
 where
     Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     Disco: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
@@ -252,21 +246,21 @@ where
             },
         )),
     ];
-    let run = async move {
-        let res = io::connections::incoming(state, incoming).await;
-        drop(_git_factory);
-        res
-    }
-    .in_current_span();
-    let sht = async move {
-        tracing::info!("shutting down...");
-        drop(tasks);
-        endpoint.shutdown().await;
-        tracing::info!("shutdown complete");
-    }
-    .in_current_span();
+    let run = {
+        let endpoint = endpoint.clone();
+        async move {
+            let res = io::connections::incoming(state, incoming).await;
+            drop(_git_factory);
+            drop(tasks);
+            tracing::debug!("waiting on idle connections...");
+            endpoint.wait_idle().await;
+            tracing::debug!("protocol shut down");
+            res
+        }
+        .in_current_span()
+    };
 
-    (sht, run)
+    (move || endpoint.close(), run)
 }
 
 pub trait ProtocolStorage<A>:

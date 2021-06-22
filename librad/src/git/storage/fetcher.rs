@@ -14,6 +14,7 @@ use std::{
 use dashmap::DashMap;
 use git_ext::RefLike;
 use rustc_hash::FxHasher;
+use thiserror::Error;
 use url::Url;
 
 use super::{PoolError, Storage};
@@ -28,7 +29,8 @@ use crate::{
     PeerId,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
+#[error("fetch of {urn} from {remote_peer} already in-flight")]
 pub struct Info {
     pub urn: Urn,
     pub remote_peer: PeerId,
@@ -246,7 +248,6 @@ impl BuildFetcher for AnyUrl {
 
 pub mod error {
     use super::*;
-    use crate::executor::{Cancelled, JoinError};
     use thiserror::Error;
 
     #[derive(Debug, Error)]
@@ -254,23 +255,11 @@ pub mod error {
         #[error("fetch of {urn} from {remote_peer} already in-flight")]
         Concurrent { urn: Urn, remote_peer: PeerId },
 
-        #[error(transparent)]
-        Task(Cancelled),
-
         #[error("unable to create fetcher")]
         MkFetcher(#[source] E),
 
         #[error(transparent)]
         Pool(#[from] super::PoolError),
-    }
-
-    impl<E> From<JoinError> for Retrying<E>
-    where
-        E: std::error::Error + Send + Sync + 'static,
-    {
-        fn from(e: JoinError) -> Self {
-            Self::Task(e.into_cancelled())
-        }
     }
 
     #[derive(Debug, Error)]
@@ -346,8 +335,8 @@ where
             .await
             .map_err(error::Retrying::from)
             .map_err(Inner::Fatal)?;
-        let task = spawner
-            .spawn_blocking(move || {
+        spawner
+            .blocking(move || {
                 let fetcher = builder
                     .build_fetcher(&storage)
                     .map_err(error::Retrying::MkFetcher)
@@ -370,12 +359,7 @@ where
                     },
                 }
             })
-            .await;
-
-        match task {
-            Err(e) => Err(Inner::Fatal(error::Retrying::from(e))),
-            Ok(x) => x,
-        }
+            .await
     }
 
     let mut policy = ExponentialBackoff {

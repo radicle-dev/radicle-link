@@ -6,7 +6,6 @@
 use thiserror::Error;
 
 use crate::{
-    executor,
     git::{self, replication, storage, storage::fetcher, tracking},
     PeerId,
 };
@@ -34,13 +33,4 @@ pub enum Error {
 
     #[error(transparent)]
     Pool(#[from] storage::PoolError),
-
-    #[error(transparent)]
-    Task(executor::Cancelled),
-}
-
-impl From<executor::JoinError> for Error {
-    fn from(e: executor::JoinError) -> Self {
-        Self::Task(e.into_cancelled())
-    }
 }

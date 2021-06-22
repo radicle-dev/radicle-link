@@ -36,8 +36,10 @@
 
 use std::{
     collections::HashMap,
+    future::Future,
     io::{self, Read, Write},
     net::SocketAddr,
+    ops::Try,
     sync::{Arc, Once, RwLock, Weak},
 };
 
@@ -199,35 +201,26 @@ impl RadSubTransport {
 
 impl Read for RadSubTransport {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match tokio::runtime::Handle::try_current() {
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-            Ok(rt) => rt.block_on(async {
-                self.ensure_header_sent().await?;
-                self.stream.read(buf).await.map_err(io_error)
-            }),
-        }
+        block_on(async {
+            self.ensure_header_sent().await?;
+            self.stream.read(buf).await
+        })
     }
 }
 
 impl Write for RadSubTransport {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match tokio::runtime::Handle::try_current() {
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-            Ok(rt) => rt.block_on(async {
-                self.ensure_header_sent().await?;
-                self.stream.write(buf).await.map_err(io_error)
-            }),
-        }
+        block_on(async {
+            self.ensure_header_sent().await?;
+            self.stream.write(buf).await
+        })
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        match tokio::runtime::Handle::try_current() {
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-            Ok(rt) => rt.block_on(async {
-                self.ensure_header_sent().await?;
-                self.stream.flush().await.map_err(io_error)
-            }),
-        }
+        block_on(async {
+            self.ensure_header_sent().await?;
+            self.stream.flush().await
+        })
     }
 }
 
@@ -236,4 +229,14 @@ where
     E: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
     io::Error::new(io::ErrorKind::Other, err)
+}
+
+fn block_on<F>(fut: F) -> io::Result<<F::Output as Try>::Ok>
+where
+    F: Future,
+    F::Output: Try<Error = io::Error>,
+{
+    tokio::runtime::Handle::try_current()
+        .map_err(io_error)
+        .and_then(|rt| rt.block_on(fut).into_result())
 }

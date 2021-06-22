@@ -13,7 +13,7 @@ use std::{
 };
 
 use futures::{
-    future::{self, BoxFuture, FutureExt as _},
+    future::{self, FutureExt as _},
     stream::{StreamExt as _, TryStreamExt as _},
 };
 use tempfile::{tempdir, TempDir};
@@ -268,7 +268,8 @@ async fn bootstrap(config: Config) -> anyhow::Result<Vec<BoundTestPeer>> {
 }
 
 pub struct Testnet {
-    tasks: Vec<BoxFuture<'static, ()>>,
+    sig: Vec<Box<dyn FnOnce()>>,
+    main: Vec<tokio::task::JoinHandle<()>>,
     peers: Vec<RunningTestPeer>,
     rt: Option<tokio::runtime::Runtime>,
     _tmp: Vec<TempDir>,
@@ -293,11 +294,12 @@ impl AsRef<[RunningTestPeer]> for Testnet {
 impl Drop for Testnet {
     fn drop(&mut self) {
         let rt = self.rt.take().unwrap();
-        for task in self.tasks.drain(..) {
-            rt.block_on(task);
+        for term in self.sig.drain(..) {
+            term()
         }
-        self.peers.drain(..).for_each(drop);
-        rt.shutdown_background();
+        for task in self.main.drain(..) {
+            rt.block_on(task).ok();
+        }
     }
 }
 
@@ -310,7 +312,8 @@ pub fn run(config: Config) -> anyhow::Result<Testnet> {
     let bootstrapped = rt.block_on(bootstrap(config))?;
     let num_peers = bootstrapped.len();
 
-    let mut tasks = Vec::with_capacity(num_peers);
+    let mut sig = Vec::with_capacity(num_peers);
+    let mut main = Vec::with_capacity(num_peers);
     let mut peers = Vec::with_capacity(num_peers);
     let mut tmps = Vec::with_capacity(num_peers);
     let mut events = Vec::with_capacity(num_peers);
@@ -328,14 +331,17 @@ pub fn run(config: Config) -> anyhow::Result<Testnet> {
             listen_addrs: bound.listen_addrs(),
         });
         let (shutdown, run) = bound.accept(disco.discover());
-        rt.spawn(run);
-        tasks.push(shutdown.boxed());
+        sig.push(Box::new(shutdown) as Box<dyn FnOnce()>);
+        main.push(rt.spawn(async move {
+            run.await.ok();
+        }));
         tmps.push(tmp);
     }
     rt.block_on(wait_converged(events, min_connected));
 
     Ok(Testnet {
-        tasks,
+        sig,
+        main,
         peers,
         rt: Some(rt),
         _tmp: tmps,

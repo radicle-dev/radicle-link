@@ -120,7 +120,7 @@ impl Storage {
             .expect("unable to acquire storage from pool");
         let head = head.into().map(ext::Oid::from);
         self.spawner
-            .spawn_blocking(move || match head {
+            .blocking(move || match head {
                 None => git.as_ref().has_urn(&urn).unwrap_or(false),
                 Some(head) => {
                     git.as_ref().has_commit(&urn, head).unwrap_or(false)
@@ -128,15 +128,14 @@ impl Storage {
                 },
             })
             .await
-            .unwrap_or(false)
     }
 
     async fn is_tracked(&self, urn: Urn, peer: PeerId) -> Result<bool, Error> {
         let git = self.pool.get().await?;
         Ok(self
             .spawner
-            .spawn_blocking(move || tracking::is_tracked(&git, &urn, peer))
-            .await??)
+            .blocking(move || tracking::is_tracked(&git, &urn, peer))
+            .await?)
     }
 }
 

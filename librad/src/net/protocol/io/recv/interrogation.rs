@@ -63,29 +63,14 @@ pub(in crate::net::protocol) async fn interrogation<S, T>(
         match x {
             Err(e) => tracing::warn!(err = ?e, "interrogation recv error"),
             Ok(req) => {
-                let resp = {
-                    let res = state
-                        .spawner
-                        .clone()
-                        .spawn_blocking(move || {
-                            handle_request(&state.endpoint, &state.caches.urns, remote_addr, req)
-                                .map(Cow::from)
-                                .unwrap_or_else(|e| {
-                                    tracing::error!(err = ?e, "error handling request");
-                                    match e {
-                                        Error::Cbor(_) => Cow::from(&*INTERNAL_ERROR),
-                                    }
-                                })
-                        })
-                        .await;
-                    match res {
-                        Err(e) => {
-                            drop(e.into_cancelled());
-                            return;
-                        },
-                        Ok(resp) => resp,
-                    }
-                };
+                let resp = handle_request(&state.endpoint, &state.caches.urns, remote_addr, req)
+                    .map(Cow::from)
+                    .unwrap_or_else(|e| {
+                        tracing::error!(err = ?e, "error handling request");
+                        match e {
+                            Error::Cbor(_) => Cow::from(&*INTERNAL_ERROR),
+                        }
+                    });
 
                 if let Err(e) = send.into_sink().send(resp).await {
                     tracing::warn!(err = ?e, "interrogation send error")

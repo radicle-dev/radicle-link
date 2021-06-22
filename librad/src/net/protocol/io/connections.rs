@@ -62,7 +62,7 @@ where
                 Connection(_) | PeerId(_) | RemoteIdUnavailable | SelfConnect => {
                     tracing::warn!(err = %err, "ingress connections error");
                 },
-                Connect(_) | Endpoint(_) | Io(_) | Shutdown | Signer(_) | Task(_) => {
+                Connect(_) | Endpoint(_) | Io(_) | Shutdown | Signer(_) => {
                     tracing::error!(err = %err, "ingress connections error");
                     break;
                 },

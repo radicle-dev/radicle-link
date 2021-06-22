@@ -55,7 +55,7 @@ fn not_present() {
         let voyeur_id = voyeur.peer_id();
         let voyeur_addrs = voyeur.listen_addrs().iter().copied().collect::<Vec<_>>();
 
-        contributor.clone_from(maintainer, true).await;
+        contributor.clone_from(maintainer, true).await.unwrap();
 
         let cfg = contributor.0.protocol_config().replication;
         contributor
@@ -96,7 +96,10 @@ fn when_connected() {
     let net = testnet::run(default_config()).unwrap();
     net.enter(async {
         let host = Host::init(&net.peers()[0]).await;
-        Leecher(&net.peers()[1]).clone_from(host, false).await
+        Leecher(&net.peers()[1])
+            .clone_from(host, false)
+            .await
+            .unwrap()
     })
 }
 
@@ -107,20 +110,25 @@ fn when_disconnected() {
     let net = testnet::run(disconnected_config()).unwrap();
     net.enter(async {
         let host = Host::init(&net.peers()[0]).await;
-        Leecher(&net.peers()[1]).clone_from(host, true).await
+        Leecher(&net.peers()[1])
+            .clone_from(host, true)
+            .await
+            .unwrap()
     })
 }
 
 #[test]
-#[should_panic(expected = "git p2p transport: no connection to")]
 fn when_disconnected_and_no_addr_hints() {
     logging::init();
 
     let net = testnet::run(disconnected_config()).unwrap();
-    net.enter(async {
+    let res = net.enter(async {
         let host = Host::init(&net.peers()[0]).await;
         Leecher(&net.peers()[1]).clone_from(host, false).await
-    })
+    });
+    assert!(
+        matches!(res, Err(e) if e.to_string().starts_with("git p2p transport: no connection to"))
+    )
 }
 
 struct Host<'a> {
@@ -143,7 +151,7 @@ impl<'a> Host<'a> {
 struct Leecher<'a>(&'a RunningTestPeer);
 
 impl Leecher<'_> {
-    async fn clone_from(&self, host: Host<'_>, supply_addr_hints: bool) {
+    async fn clone_from(&self, host: Host<'_>, supply_addr_hints: bool) -> anyhow::Result<()> {
         let cfg = self.0.protocol_config().replication;
         let urn = host.project.project.urn();
         let owner = host.project.owner;
@@ -159,28 +167,27 @@ impl Leecher<'_> {
                         .into_iter()
                         .flatten(),
                 )
-                .build(&storage)
-                .unwrap()
-                .unwrap();
-                replication::replicate(&storage, fetcher, cfg, None).unwrap();
+                .build(&storage)??;
+                replication::replicate(&storage, fetcher, cfg, None)?;
 
                 // check rad/self of peer1 exists
-                assert!(
-                    storage
-                        .has_ref(&Reference::rad_self(Namespace::from(&urn), host_peer))
-                        .unwrap(),
-                    "`refs/remotes/<peer1>/rad/self` should exist"
-                );
+                {
+                    let has_ref =
+                        storage.has_ref(&Reference::rad_self(Namespace::from(&urn), host_peer))?;
+                    anyhow::ensure!(has_ref, "`refs/remotes/<peer1>/rad/self` should exist");
+                }
 
                 // check we have a top-level namespace for `owner`
-                let urn = owner.urn();
-                assert_eq!(
-                    Some(owner),
-                    identities::person::get(&storage, &urn).unwrap(),
-                    "alice should be a first class citizen"
-                )
+                {
+                    let urn = owner.urn();
+                    let pers = identities::person::get(&storage, &urn)?;
+                    anyhow::ensure!(pers == Some(owner), "alice should be a first class citizen");
+                }
+
+                Ok(())
             })
-            .await
-            .unwrap();
+            .await??;
+
+        Ok(())
     }
 }

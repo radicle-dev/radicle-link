@@ -101,7 +101,9 @@ where
     S: Signer + Clone,
 {
     pub fn new(config: Config<S>) -> Result<Self, error::Init> {
-        let spawner = Arc::new(executor::Spawner::new("peer"));
+        let spawner = executor::Spawner::from_current()
+            .map(Arc::new)
+            .ok_or(error::Init::Runtime)?;
         let phone = protocol::TinCans::default();
         let storage_lock = git::storage::pool::Initialised::no();
         let fetchers = Fetchers::default();
@@ -247,15 +249,11 @@ where
         A: Send + 'static,
     {
         let storage = self.user_store.get().await?;
-        Ok(self
-            .spawner
-            .spawn_blocking(move || blocking(&storage))
-            .await?)
+        Ok(self.spawner.blocking(move || blocking(&storage)).await)
     }
 
     /// Borrow a [`git::storage::ReadOnly`] from the pool, and run a blocking
     /// computation on it.
-
     pub async fn using_read_only<F, A>(&self, blocking: F) -> Result<A, error::Storage>
     where
         F: FnOnce(&git::storage::ReadOnly) -> A + Send + 'static,
@@ -264,8 +262,8 @@ where
         let storage = self.user_store.get().await?;
         Ok(self
             .spawner
-            .spawn_blocking(move || blocking(&storage.read_only()))
-            .await?)
+            .blocking(move || blocking(&storage.read_only()))
+            .await)
     }
 
     /// Borrow a [`git::storage::Storage`] from the pool directly.
@@ -292,6 +290,7 @@ where
 
     pub async fn bind(&self) -> Result<protocol::Bound<PeerStorage>, protocol::error::Bootstrap> {
         protocol::bind(
+            self.spawner.clone(),
             self.phone.clone(),
             self.config.protocol.clone(),
             self.config.signer.clone(),

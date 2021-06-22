@@ -166,7 +166,7 @@ impl Endpoint {
         self.conntrack.disconnect_peer(peer)
     }
 
-    pub async fn shutdown(&self) {
+    pub fn close(&self) {
         tracing::debug!(
             connections = self.conntrack.total(),
             "endpoint shutdown requested"
@@ -175,7 +175,10 @@ impl Endpoint {
         self.endpoint
             .close((reason as u32).into(), reason.reason_phrase());
         self.conntrack.disconnect_all();
-        self.endpoint.wait_idle().await;
+    }
+
+    pub async fn wait_idle(&self) {
+        self.endpoint.wait_idle().await
     }
 }
 

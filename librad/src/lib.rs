@@ -29,6 +29,7 @@ pub extern crate radicle_git_ext as git_ext;
 pub extern crate radicle_keystore as keystore;
 pub extern crate radicle_std_ext as std_ext;
 
+pub mod executor;
 pub mod git;
 pub mod identities;
 pub mod internal;
@@ -43,5 +44,3 @@ pub mod signer;
 // Re-exports
 pub use peer::PeerId;
 pub use radicle_macros::*;
-
-pub(crate) mod executor;
