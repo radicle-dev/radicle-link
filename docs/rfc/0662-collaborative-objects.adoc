@@ -144,30 +144,12 @@ process can happen independently of the radicle protocol.
 In addition to the schema, the developer must choose a name for their type.
 This is similar to an XML namespace and probably standardised as part of the
 same process which produces the schema. In this case let's choose
-`\xyz.radicle.issue` as the type name.
+`xyz.radicle.issue` as the type name.
 
-This schema ensures that the data is well formed, but we generally want to
-ensure that certain parts of the data are only modified by particular people.
-For example, if someone has added a comment, only that person should be able to
-modify it. Collaborative objects have a logic based DSL to achieve this:
-
-[source]
-----
-docAuthor says that X can set .{"title", "description", "signature"} <1>
-if
-  X isCreator(.).
-
-docAuthor says that anyone insert ".comments". <2>
-
-docAuthor says that X can modify Y.{"text", "signature"} <3>
-if
-  X isCreator(Y)
-  Y < ".comments".
-
-----
-<1> The original author of the comment can modify the issue title and description
-<2> Anyone is allowed to comment
-<3> Anyone can modify a comment if they were the person who made the comment
+This schema ensures that the data is well formed. In this iteration of 
+collaborative objects, only project maintainers can modify an issue, we assume
+that project maintainers can be trusted not to modify the issue in malicious
+ways.
 
 
 === Creating an issue
@@ -312,8 +294,7 @@ described in <<Reconstructing Collaborative Objects>>. This allows us to use
 git to replicate collaborative objects, see <<Fetching Collaborative Objects>>.
 
 We require some schema extensions to authenticate data in collaborative objects,
-these are described in <<Schema Extensions>>. We also introduce a simple DSL
-for expressing authorization logic in <<Authorization Logic>>.
+these are described in <<Schema Extensions>>.
 
 
 === Change Commits
@@ -533,23 +514,6 @@ definite-length arrays / maps in CBOR are illegal for signed values.
 Finally, the signature is computed over the binary CBOR representation
 
 
-=== Authorization Logic
-
-The authorization language is based on
-https://content.iospress.com/articles/journal-of-computer-security/jcs364[SecPAL],
-a decentralized authorization language based on Datalog with constraints. We
-provide a set of predicates over paths in a document, programs written using
-these predicates can be translated into programs which operate over the
-operations in an automerge document. We can use this program to scan an
-automerge change and assert that all the operations in it are authorized with
-respect to the access control policy. Crucially the evaluation of this program
-will terminate and the runtime is polynomial in the size of the access control
-policy. That means that griefing vectors are limited to creating objects with
-large access control policies - there is no way to grief an existing object
-created by an honest participant.
-
-#TODO: sketch of syntax and semantics of auth lang#
-
 === Strange Perspectives
 
 This model introduces some counter-intuitive properties. For example, I might
@@ -626,6 +590,20 @@ This project metadata mechanism is extremely broad, which has a lot of upsides
 but it runs the risk of running into XMPP style extension hell, where every
 peer is running a different set of extensions. It might be worthwhile to bundle
 a few core extensions with librad - issues for example.
+
+
+== Further work
+
+This RFC limits participants in collaborative objects to project maintainers.
+This is a significant limitation, we can't reproduce the common behaviour of
+many issue trackers where an issue can be created by anyone. In order to allow
+this behaviour we need the ability to make authorization decisions about 
+different parts of the document. One way to achieve this would be by adding an
+authorization logic a la https://content.iospress.com/articles/journal-of-computer-security/jcs364[SecPAL]
+to the collaborative object definition. This would be used in a similar manner
+to the schema to validate that changes to a document are authorized by the 
+authorization logic.
+
 
 [[alt-approaches,Alternative Approaches]]
 ==  Alternative Approaches
