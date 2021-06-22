@@ -396,35 +396,25 @@ merge-then-commit step.
 === Fetching Collaborative Objects
 
 Each time a repository creates a collaborative object tree it creates a ref
-pointing to that object at `refs/namespaces/<project>/rad/collaborative-objects/<typename>/<object ID>`, 
-where `object ID` is a unique identifier generated at creation time. 
+pointing to that object at `refs/namespaces/<project>/cob/<typename>/<object ID>`, 
+where `object ID` is a unique identifier generated at creation time. We then
+fetch collaborative objects by replicating these refs, much as we do with
+any other ref category in a radicle repository.
 
-This allows us to fetch subsets of collaborative objects by specifying refspecs
-that match them. The downside is that we are adding a ref to the initial
-advertised refs, each of theses refs is around 250 bytes. If we consider a popular
-repository such as https://github.com/facebook/react/ you can see that they have
-nearly 10,000 issues (including both Open and Closed, which we must). That would 
-mean that the initial ref advertisment in any replication of this repository
-would be ~2.5Mb. If we could use v2 of the git pack protocol this problem would
-go away but alas, we must use v1. 
+Collaborative objects are not replicated over gits V1 protocol, this is because
+v1 starts every interaction with a ref advertisment. Consider that we are
+adding a reference for each collaborative object, and that a popular repository
+such as https://github.com/facebook/react/ has over 10000 issues, which would
+translate to 10000 refs. Each ref is about 250 bytes, so every replication
+would start with a ~2.5Mb ref advertisment, which is not feasible.
 
-To get around the problem we can add a parameter to the radicle URL which
-indicates either a single object ID or a type name which we wish to fetch
-from the remote, this would then be passed as a custom header to the transport
-and interpreted on the server. In this manner we can allow clients to choose
-when they want to replicate collaborative objects, which would allow staged
-fetches where we first fetch the repository and identities, and then fetch 
-collaborative objects.
-
-Therefore we add two parameters to a radicle URL:
-
-* `collab_object_id`: specifies that a server should only consider references to the given object ID
-* `collab_type_name`: specifies that a server should only consider references to the given type name
-
-These parameters are emitted by the radicle p2p transport as headers in a 
-similar fashion to the `n=` parameter for the nonce or the `ls=true`
-parameter for selecting the `upload-pack-ls` service. The Radicle git server
-can then use these parameters to filter the refs it operates on.
+However, with V2 of the git protocol this is not a problem. Because we are
+using a top level `cob` ref category we can choose to only `ls-refs` these refs
+when we want to fetch collaborative objects. This means that we can perform
+replication of collaborative objects in a separate step to replicating the
+source code, furthermore we can choose to limit the set of objects to just
+types we are interested in via filtering on the typename, or even on the object
+ID.
 
 
 === Updating objects
@@ -460,7 +450,7 @@ schema commit and add migrations.
 As with change commits the schema commit is signed and references an author
 commit, therefore the commit has two trailers:
 
-- `X-Rad-Auther-Parent`
+- `X-Rad-Author-Parent`
 - `X-Rad-Signatures`
 
 With the same definition as for change commits.
