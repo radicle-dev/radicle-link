@@ -7,9 +7,20 @@
 #[macro_use]
 extern crate async_trait;
 
-use std::{collections::HashSet, net::SocketAddr, time::Duration};
+use std::{
+    collections::HashSet,
+    net::SocketAddr,
+    panic,
+    sync::{
+        atomic::{AtomicBool, Ordering::SeqCst},
+        Arc,
+    },
+    thread,
+    time::Duration,
+};
 
-use futures::{select, stream::StreamExt as _};
+use crossbeam_utils::atomic::AtomicCell;
+use futures::{future::FutureExt as _, pin_mut, select, stream::StreamExt as _};
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -80,6 +91,9 @@ pub enum Error {
 
     #[error("sending reply failed for {0}")]
     Reply(String),
+
+    #[error("failed to set up signal handler")]
+    Signals,
 }
 
 impl From<identities::Error> for Error {
@@ -191,18 +205,23 @@ impl Node {
         mut transmit: mpsc::Sender<Event>,
     ) -> Result<(), Error> {
         let peer = Peer::new(peer_config)?;
-        let mut events = peer.subscribe().boxed().fuse();
+        let events = peer.subscribe().fuse();
         let mut requests = ReceiverStream::new(self.requests).fuse();
 
-        // Spawn the background peer thread.
-        tokio::spawn({
+        let term = Arc::new(AtomicCell::new(None));
+        // Spawn the peer thread.
+        let mut protocol = tokio::spawn({
             let peer = peer.clone();
             let disco = discovery::Static::resolve(self.config.bootstrap.clone())?;
+            let term = Arc::clone(&term);
             async move {
                 loop {
                     match peer.bind().await {
                         Ok(bound) => {
-                            let (_, run) = bound.accept(disco.clone().discover());
+                            let (kill, run) = bound.accept(disco.clone().discover());
+                            if let Some(prev) = term.swap(Some(kill)) {
+                                prev()
+                            }
                             if let Err(e) = run.await {
                                 tracing::error!(err = ?e, "Accept error")
                             }
@@ -214,13 +233,57 @@ impl Node {
                     }
                 }
             }
-        });
+        })
+        .fuse();
+        // Set up signal handlers
+        {
+            use signal_hook::{
+                consts::TERM_SIGNALS,
+                flag::register_conditional_shutdown,
+                low_level::register,
+            };
+
+            let stop = Arc::new(AtomicBool::new(false));
+            let sig_handler = thread::spawn({
+                let stop = Arc::clone(&stop);
+                move || loop {
+                    if stop.load(SeqCst) {
+                        if let Some(f) = term.take() {
+                            f()
+                        }
+                        break;
+                    }
+
+                    thread::park()
+                }
+            });
+
+            for sig in TERM_SIGNALS {
+                register_conditional_shutdown(*sig, 1, Arc::clone(&stop))
+                    .or(Err(Error::Signals))?;
+                unsafe {
+                    let stop = Arc::clone(&stop);
+                    let thread = sig_handler.thread().clone();
+                    register(*sig, move || {
+                        stop.store(true, SeqCst);
+                        thread.unpark()
+                    })
+                    .or(Err(Error::Signals))?;
+                }
+            }
+        }
 
         // Track already-known URNs.
         Node::initialize_tracker(&self.config.mode, &peer, &mut transmit).await?;
 
+        pin_mut!(events);
         loop {
             select! {
+                p = protocol => match p {
+                    Err(e) if e.is_panic() => panic::resume_unwind(e.into_panic()),
+                    _ => break
+                },
+
                 event = events.next() => {
                     match event {
                         Some(Ok(evt)) => {
