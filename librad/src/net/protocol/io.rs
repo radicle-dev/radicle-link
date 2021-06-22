@@ -24,6 +24,8 @@ mod codec;
 pub(super) mod connections;
 pub(super) use connections::{connect, connect_peer_info};
 
+pub mod error;
+
 pub mod graft;
 pub(super) mod recv;
 

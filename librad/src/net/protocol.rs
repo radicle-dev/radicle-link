@@ -113,19 +113,21 @@ impl<S> Bound<S> {
 
     /// Start accepting connections from remote peers.
     ///
-    /// Returns a tuple of two futures, where:
+    /// Returns a tuple of
     ///
-    /// * The first future will gracefully terminate the endpoint when polled
-    /// * The second future drives the network stack
+    /// * a function which, when called, will interrupt the accept loop
+    /// * and a future which must be polled to advance the networking stack
     ///
-    /// The second future is typically scheduled as a task onto the async
-    /// runtime (`spawn`), while the first one should be kept around and
-    /// polled when (but not before!) either the accept loop should be
-    /// terminated early, or the second future returned an error.
+    /// The future runs indefinitely until a fatal error occurs, such as the
+    /// endpoint shutting down. It is important to ensure that the future is
+    /// **driven to completion** in order to ensure a graceful shutdown.
     pub fn accept<D>(
         self,
         disco: D,
-    ) -> (impl FnOnce(), impl Future<Output = Result<!, quic::Error>>)
+    ) -> (
+        impl FnOnce(),
+        impl Future<Output = Result<!, io::error::Accept>>,
+    )
     where
         S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
         D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
@@ -223,7 +225,10 @@ pub fn accept<Store, Disco>(
         periodic,
     }: Bound<Store>,
     disco: Disco,
-) -> (impl FnOnce(), impl Future<Output = Result<!, quic::Error>>)
+) -> (
+    impl FnOnce(),
+    impl Future<Output = Result<!, io::error::Accept>>,
+)
 where
     Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     Disco: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,

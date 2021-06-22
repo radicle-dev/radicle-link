@@ -8,18 +8,24 @@
 use std::{
     net::{SocketAddr, ToSocketAddrs},
     panic,
+    process,
+    sync::{
+        atomic::{AtomicBool, Ordering::SeqCst},
+        Arc,
+    },
+    thread,
     time::{Duration, SystemTime},
 };
 
 use argh::FromArgs;
-use futures::future;
+use futures::FutureExt as _;
 use librad::{
     git,
     keys::SecretKey,
     net::{
         discovery::{self, Discovery as _},
         peer::{self, Peer},
-        protocol,
+        protocol::{self, io},
         Network,
     },
     paths::Paths,
@@ -27,6 +33,7 @@ use librad::{
 };
 use radicle_link_e2e::logging;
 use tempfile::tempdir;
+use tokio::task::JoinError;
 
 /// A passive peer using temporary storage
 #[derive(FromArgs)]
@@ -117,28 +124,79 @@ async fn main() {
         )
         .unwrap();
 
-        let (_, run) = bound.accept(disco.discover());
-        let protocol = tokio::spawn(run);
-        let metrics = match opts.graphite {
+        let (term, run) = bound.accept(disco.discover());
+        install_signal_handlers(term);
+
+        let mut protocol = tokio::spawn(run).fuse();
+        let mut metrics = match opts.graphite {
             None => tokio::spawn(stdout_stats(peer)),
             Some(addr) => {
                 let addr = addr.to_socket_addrs().unwrap().next().unwrap();
                 tokio::spawn(graphite_stats(peer, addr))
             },
-        };
-        let exit = future::try_join(protocol, metrics).await;
-        match exit {
-            Err(e) => {
-                if let Ok(panicked) = e.try_into_panic() {
-                    panic::resume_unwind(panicked)
-                }
-            },
+        }
+        .fuse();
 
-            Ok(res) => match res {
-                (Err(e), _) => panic!("protocol error: {:?}", e),
-                (_, Err(e)) => panic!("metrics error: {:?}", e),
-                _ => {},
-            },
+        let res = futures::select! {
+            p = protocol => p.map(|inner| inner.map(|_| ()).or_else(|e| match e {
+                io::error::Accept::Done => Ok(()),
+                _ => Err(e.into())
+            })),
+            m = metrics => m.map(|inner| inner.map(|_| ())),
+        };
+        handle_shutdown(res)
+    }
+}
+
+fn handle_shutdown(r: Result<anyhow::Result<()>, JoinError>) {
+    let res = match r {
+        Err(e) if e.is_panic() => panic::resume_unwind(e.into_panic()),
+        Ok(Err(e)) => Some(e),
+        _ => None,
+    };
+
+    process::exit(match res {
+        Some(e) => {
+            eprintln!("FATAL: {}", e);
+            1
+        },
+        None => 0,
+    })
+}
+
+fn install_signal_handlers<F>(term: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    use signal_hook::{
+        consts::TERM_SIGNALS,
+        flag::register_conditional_shutdown,
+        low_level::register,
+    };
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let sig_handler = thread::spawn({
+        let stop = Arc::clone(&stop);
+        move || loop {
+            if stop.load(SeqCst) {
+                term();
+                break;
+            }
+
+            thread::park();
+        }
+    });
+
+    for sig in TERM_SIGNALS {
+        register_conditional_shutdown(*sig, 1, Arc::clone(&stop)).unwrap();
+        unsafe {
+            let stop = Arc::clone(&stop);
+            let thread = sig_handler.thread().clone();
+            register(*sig, move || {
+                stop.store(true, SeqCst);
+                thread.unpark()
+            })
+            .unwrap();
         }
     }
 }

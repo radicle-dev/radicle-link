@@ -12,16 +12,11 @@ use futures::{
 };
 use indexmap::IndexSet;
 
+pub use super::error;
+use super::streams;
 use crate::{
     net::{
-        protocol::{
-            event::upstream as event,
-            gossip,
-            info::PeerInfo,
-            io::streams,
-            ProtocolStorage,
-            State,
-        },
+        protocol::{event::upstream as event, gossip, info::PeerInfo, ProtocolStorage, State},
         quic,
     },
     PeerId,
@@ -36,7 +31,7 @@ use crate::{
 pub(in crate::net::protocol) async fn incoming<S, I>(
     state: State<S>,
     ingress: I,
-) -> Result<!, quic::Error>
+) -> Result<!, error::Accept>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     I: futures::Stream<
@@ -63,14 +58,15 @@ where
                     tracing::warn!(err = %err, "ingress connections error");
                 },
                 Connect(_) | Endpoint(_) | Io(_) | Shutdown | Signer(_) => {
-                    tracing::error!(err = %err, "ingress connections error");
-                    break;
+                    state.phone.emit(event::Endpoint::Down);
+                    return Err(err.into());
                 },
             },
         }
     }
 
-    Err(quic::Error::Shutdown)
+    state.phone.emit(event::Endpoint::Down);
+    Err(error::Accept::Done)
 }
 
 pub async fn connect_peer_info(
