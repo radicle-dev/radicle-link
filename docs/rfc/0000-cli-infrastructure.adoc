@@ -106,14 +106,14 @@ interact with the storage can be done while the daemon is offline. The
 only action the author can currently think of — that is online — is
 replication of a URN from the network.
 
-This leaves us in a predicament of thinking about how multiple Radicle
-applictions may interact with each other. For example, if Upstream is
+This leaves us to think about how multiple Radicle applications may
+interact with each other. For example, if Upstream is
 running and I create a project via the CLI, then a good user
 experience is that the Upstream is updated with the new project
-(without refreshing). In RFC-682, it is alluded that a PubSub
-component could solve this, however, that requires the daemon to be
-online. The author prefers not to specify the PubSub component
-here.
+(without refreshing). Here we will assume the existence of the
+(future) <<arch-pubsub, RFC-682#PubSub>> component. The CLI commands
+in this RFC MAY publish interesting events to this component so that
+other applications can receive and act upon them.
 
 == Key Access
 
@@ -269,7 +269,9 @@ output types MAY be proposed in future RFCs.
 == References
 
 * [[[arch-cli]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#cli
-* [[[arch-orch]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#process-orchestration
+* [[[arch-orch]]]
+  https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#process-orchestration
+* [[[arch-pubsub]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#pubsub
 * [[[arch-sigs]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#signatures
 * [[[crates.io]]] https://crates.io/
 * [[[radicle-bins]]] https://github.com/radicle-dev/radicle-bins/
