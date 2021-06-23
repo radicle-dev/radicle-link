@@ -14,6 +14,7 @@ use crate::{
     logging,
     rad::{identities::TestProject, testnet},
 };
+use blocking::unblock;
 use librad::{
     self,
     git::{
@@ -28,7 +29,6 @@ use librad::{
     reflike,
     refspec_pattern,
 };
-use tokio::task::spawn_blocking;
 
 fn config() -> testnet::Config {
     testnet::Config {
@@ -98,7 +98,7 @@ fn a_trois() {
             .try_into()
             .unwrap();
         let tmp = tempfile::tempdir().unwrap();
-        let commit_id = spawn_blocking({
+        let commit_id = unblock({
             let urn = proj.project.urn();
             let owner_subject = proj.owner.subject().clone();
             let default_branch = default_branch.clone();
@@ -139,8 +139,7 @@ fn a_trois() {
                 oid
             }
         })
-        .await
-        .unwrap();
+        .await;
 
         let expected_urn = proj.project.urn().with_path(
             reflike!("refs/remotes")

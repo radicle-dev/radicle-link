@@ -144,7 +144,7 @@ impl Harness {
         Self {
             tasks: Vec::new(),
             rt: Some(
-                tokio::runtime::Builder::new_multi_thread()
+                tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .unwrap(),
@@ -244,7 +244,7 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    tokio::task::spawn_blocking(f).await.unwrap()
+    blocking::unblock(f).await
 }
 
 pub fn radicle_project(path: PathBuf) -> project::Create {

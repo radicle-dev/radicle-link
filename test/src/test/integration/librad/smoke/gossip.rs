@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use blocking::unblock;
 use futures::StreamExt as _;
 use librad::{
     git::{
@@ -28,7 +29,6 @@ use librad::{
     signer::Signer,
 };
 use tempfile::tempdir;
-use tokio::task::spawn_blocking;
 
 use crate::{
     git::create_commit,
@@ -72,7 +72,7 @@ fn fetches_on_gossip_notify() {
 
         let mastor = reflike!("refs/heads/master");
         let project_repo_path = tempdir().unwrap();
-        let (commit_id, tag_id) = spawn_blocking({
+        let (commit_id, tag_id) = unblock({
             let project_repo_path = project_repo_path.path().to_path_buf();
             let project_urn = project.urn();
             let mastor = mastor.clone();
@@ -117,8 +117,7 @@ fn fetches_on_gossip_notify() {
                 (commit_id, tag_id)
             }
         })
-        .await
-        .unwrap();
+        .await;
 
         peer1
             .announce(gossip::Payload {
