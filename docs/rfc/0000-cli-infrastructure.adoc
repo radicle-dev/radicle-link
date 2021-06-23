@@ -179,6 +179,13 @@ around this function.
 
 == Core
 
+[quote]
+------
+We swears to serve the master of the precious. We will swear on
+the…on the precious.
+------
+-- Gollum, The Two Towers
+
 With all the details in place, we define a non-exhaustive list of the
 core commands that we wish to include for the first iteration. More
 components MAY be added as the result of future RFCs. We SHALL keep a
