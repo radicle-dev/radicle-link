@@ -131,7 +131,7 @@ implemented:
 started in `<<rk-17, radicle-keystore#17>>`.
 . A subcommand `rad-key-ssh-add` for adding one's secret key to the
 `ssh-agent` using the supplied constraints, e.g. ask for password.
-. `radicle-link#461` to have a read-only storage.
+. Implement `<<rl-461, radicle-link#461>>` to have a read-only storage.
 
 == Library/Command Organisation
 
@@ -277,4 +277,5 @@ output types MAY be proposed in future RFCs.
 * [[[radicle-keystore]]] https://github.com/radicle-dev/radicle-keystore/
 * [[[rk-17]]] https://github.com/radicle-dev/radicle-keystore/pull/17
 * [[[rl-141]]] https://github.com/radicle-dev/radicle-link/issues/141
+* [[[rl-461]]] https://github.com/radicle-dev/radicle-link/issues/461
 * [[[ssh-agent]]] https://datatracker.ietf.org/doc/html/draft-miller-ssh-agent-04
