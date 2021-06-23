@@ -35,6 +35,18 @@ We close out with how the core components will be organised within
 `radicle-link` and `<<radicle-bins>>` as well as providing the first
 iteration of the core set of subcommands.
 
+== Terminology and Conventions
+
+The key words "`MUST`", "`MUST NOT`", "`REQUIRED`", "`SHALL`", "`SHALL NOT`",
+"`SHOULD`", "`SHOULD NOT`", "`RECOMMENDED`", "`NOT RECOMMENDED`", "`MAY`", and
+"`OPTIONAL`" in this document are to be interpreted as described in <<RFC2119>>
+and <<RFC8174>> when, and only when, they appear in all capitals, as shown here.
+
+CBOR <<RFC8949>> datatype definitions are given using the notation devised in
+CDDL <<RFC8610>>. By convention, `struct`-like datatypes are encoded as CBOR
+maps, where the map key is the zero-based numeric index of the field in
+declaration order.
+
 == One `rad` to Rule Them All
 
 [quote]
@@ -268,6 +280,10 @@ output types MAY be proposed in future RFCs.
 [bibliography]
 == References
 
+* [[[RFC2119]]] https://datatracker.ietf.org/doc/html/rfc2119
+* [[[RFC8174]]] https://datatracker.ietf.org/doc/html/rfc8174
+* [[[RFC8610]]] https://datatracker.ietf.org/doc/html/rfc8610
+* [[[RFC8949]]] https://datatracker.ietf.org/doc/html/rfc8949
 * [[[arch-cli]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#cli
 * [[[arch-orch]]]
   https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#process-orchestration
