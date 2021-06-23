@@ -184,38 +184,34 @@ core commands that we wish to include for the first iteration. More
 components MAY be added as the result of future RFCs. We SHALL keep a
 list of the core commands as part of the `radicle-link` documentation.
 
-=== `rad-project`
+=== `rad-identities`
 
-This command will provide management of the `Project` identities and
-their respective working copies. The following actions will be
-defined:
+The `rad identities` subcommand provides the management of identity
+documents and their metadata. It is further split into subcommands
+which we sketch out below:
 
-* `create` — create a `Project` identity and either create a
-  respective working copy, or link it to an existing working copy.
-* `get` — attempt to retrieve a `Project` identity from the store based on
-  a provided URN.
-* `list` — list all `Project` identities in the store.
-* `update` — update a `Project` identity with a new payload.
-* `merge` — merge a peer's version of the `Project` identity with your own
-* `track` — track a peer for the `Project` identity and add the peer
-to the working copy's include file.
-
-=== `rad-person`
-
-This command will provide the management of the `Person`
-identities. The following actions will be defined:
-
-* `create`— create a `Person` identity.
-* `get`— attempt to retrieve a `Person` identity from the store based
-  on a provided URN.
-* `list`— list all `Person` identities in the store.
-* `update`— update a `Person` identity with a new payload.
-* `merge`— merge a peer's version of the `Person` identity with your own.
-* `track`— track a peer for the `Person` identity.
+* `project [ create | get | list | update | checkout | review ]` --
+  modify and retrieve `Project` identities.
+* `person [ create | get | list | update | checkout | review ]` --
+  modify and retrieve `Person` identities.
+* `any [ get | list ]` -- retrieve identities where the caller does not
+  know what kind of identity it is. The CLI will make a best-effort to
+  infer the type, or else return an opaque blob.
+* `local [ set | get | default ]` -- modify or retrieve a local identity
+* `tracking [ track | untrack | list ]` -- modify and list the tracking
+  graph for a given identity
+* `rad-refs [ self | signed | delegates | delegate ]` -- retrieve the
+  blobs that live under `rad/<refname>`
+* `refs [ heads | notes | tags | category ]` -- list the reference names
+  under the respective category, where `category` is a user supplied category.
 
 === `rad-replicate`
 
-* `ask` — ask the network for a given URN and replicate it to local storage.
+* `ask` -- tell the `daemon` that you wish to replicate the
+  given URN. Pending <<rl-141, radicle-link#141>>.
+* `replicate` -- if the peer/address are known for the given URN,
+  attempt to replicate the identity. This requires the activation of
+  the peer-to-peer daemon.
 
 === `rad-key`
 
@@ -261,4 +257,5 @@ output types MAY be proposed in future RFCs.
 * [[[radicle-link]]] https://github.com/radicle-dev/radicle-link/
 * [[[radicle-keystore]]] https://github.com/radicle-dev/radicle-keystore/
 * [[[rk-17]]] https://github.com/radicle-dev/radicle-keystore/pull/17
+* [[[rl-141]]] https://github.com/radicle-dev/radicle-link/issues/141
 * [[[ssh-agent]]] https://datatracker.ietf.org/doc/html/draft-miller-ssh-agent-04
