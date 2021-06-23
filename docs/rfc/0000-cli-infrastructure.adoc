@@ -81,16 +81,17 @@ will always receive and pass onto the subcommand being called.
 Other subcommands that are written in the target language (currently
 Rust) will be able to import the `struct` for reuse. If the subcommand
 is in another target language it SHALL add these parameters to its
-parameter list. The `rad` command will parse these parameters, setting
-defaults if necessary, and SHALL pass them varbatim to the subcommand.
+parameter list prefixed with `global-`. The `rad` command will parse
+these parameters, setting defaults if necessary, and SHALL pass them
+varbatim to the subcommand.
 
 Thus, all subcommands SHALL receive these global parameters as part of
 their interface. We list these parameters here, but it is NOT an
 exhaustive list:
 
-* `verbose`
-* `quiet`
-* `profile := active (default) | <profile-id>`
+* `global-verbose`
+* `global-quiet`
+* `global-profile := active (default) | <profile-id>`
 
 == Online & Offline
 
