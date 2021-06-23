@@ -61,7 +61,7 @@ We will discuss these in the following two sections.
 To allow the ecosystem of commands to be extended by ourselves and
 others in the community it will be necessary to extend the `rad`
 command with further subcommands. The details of this are outlined in
-RFC-682#CLI, however, we will give a quick overview here for the sake
+<<arch-cli, RFC-682#CLI>>, however, we will give a quick overview here for the sake
 of the reader.
 
 Taking inspiration from tools such as `git` and `cargo`, we propose
@@ -94,7 +94,7 @@ exhaustive list:
 
 == Online & Offline
 
-In RFC-682#Process-Orchestration, it was decided that the peer-to-peer
+In <<arch-orch, RFC-682#Process-Orchestration>>, it was decided that the peer-to-peer
 damon would not be a long-running process. The terminology we will use
 here is that the daemon is *online* if it is running and connected to
 the network. Otherwise, if it is not running then it is *offline*.
@@ -116,7 +116,7 @@ here.
 
 == Key Access
 
-RFC-682#Signatures outlined the signing of Radicle data. This is essential to
+<<arch-sigs, RFC-682#Signatures>> outlined the signing of Radicle data. This is essential to
 this RFC as commands that write to the storage generally need access
 to the secret key, whether for signing data or proof of ownership to
 the storage. For most (if not all) read-only commands, no access to
@@ -169,7 +169,7 @@ _always_ possible.
 
 === `radicle-bins`
 
-Per RFC-682#CLI, all subcommands will be provided as
+Per <<arch-cli, RFC-682#CLI>>, all subcommands will be provided as
 libraries. However, this leaves the question of where the binary might
 live. So far, it has been an unspoken formalism that all binaries live
 in `radicle-bins` where we can provide a `Cargo.lock` file. All
@@ -238,7 +238,7 @@ This command provides control over and introspection into the peer-to-peer daemo
 
 Some operations will result in data that should be output, for
 example, retrieving a `Project` from the store will return the
-metadata for that project. As per RFC-682#CLI:
+metadata for that project. As per <<arch-cli, RFC-682#CLI>>:
 
 [quote]
 -------
@@ -260,6 +260,9 @@ output types MAY be proposed in future RFCs.
 [bibliography]
 == References
 
+* [[[arch-cli]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#cli
+* [[[arch-orch]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#process-orchestration
+* [[[arch-sigs]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#signatures
 * [[[crates.io]]] https://crates.io/
 * [[[radicle-bins]]] https://github.com/radicle-dev/radicle-bins/
 * [[[radicle-link]]] https://github.com/radicle-dev/radicle-link/
