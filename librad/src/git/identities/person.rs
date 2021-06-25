@@ -5,7 +5,7 @@
 
 use std::{convert::TryFrom, fmt::Debug};
 
-use radicle_git_ext::{is_not_found_err, OneLevel};
+use radicle_git_ext::{self as ext, is_not_found_err, OneLevel};
 
 use super::{
     super::{
@@ -187,6 +187,21 @@ where
     S: AsRef<storage::ReadOnly>,
 {
     Ok(verified(storage).newer(a, b)?)
+}
+
+pub fn fast_forward(storage: &Storage, latest: &VerifiedPerson) -> Result<Option<ext::Oid>, Error> {
+    let urn = latest.urn().with_path(None);
+    let id_ref = super::common::IdRef::from(&urn);
+    let canonical = id_ref.oid(storage)?;
+    let tip = latest.content_id;
+    Ok(if storage.as_raw().graph_descendant_of(*tip, *canonical)? {
+        id_ref
+            .update(storage, tip, &format!("fast-forward to {}", tip))
+            .map_err(|e| Error::Store(e.into()))?;
+        Some(tip)
+    } else {
+        None
+    })
 }
 
 fn identities<S>(storage: &S) -> Identities<Person>

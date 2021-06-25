@@ -805,9 +805,15 @@ mod project {
         project_urn: &Urn,
     ) -> Result<(), Error> {
         let delegate_urn = person.urn();
-        ensure_rad_id(storage, &delegate_urn, person.content_id)?;
-        tracking::track(storage, &delegate_urn, peer)?;
-        tracking::track(storage, project_urn, peer)?;
+
+        // if the identity is known we see if we can fast-forward it
+        if storage.has_urn(&delegate_urn)? {
+            identities::person::fast_forward(storage, person)?;
+        } else {
+            ensure_rad_id(storage, &delegate_urn, person.content_id)?;
+            tracking::track(storage, &delegate_urn, peer)?;
+            tracking::track(storage, project_urn, peer)?;
+        }
 
         // Now point our view to the top-level
         symref(
@@ -927,7 +933,7 @@ mod project {
         S: AsRef<storage::ReadOnly>,
     {
         let storage = storage.as_ref();
-        identities::project::verify_with(storage, &urn, |delegate| {
+        identities::project::verify_with(storage, urn, |delegate| {
             let refname =
                 Reference::rad_delegate(Namespace::from(urn.clone()), &delegate).with_remote(peer);
             storage.reference_oid(&refname).map(|oid| oid.into())
