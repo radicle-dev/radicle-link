@@ -205,8 +205,7 @@ where
                     let rad_id = unsafe_into_urn(
                         Reference::rad_id(Namespace::from(&urn)).with_remote(remote_peer),
                     );
-                    let proj = identities::project::verify(storage, &rad_id)?
-                        .ok_or(Error::MissingIdentity)?;
+                    let proj = project::verify_with_delegate(storage, &rad_id, Some(remote_peer))?;
                     let project::SetupResult {
                         updated_tips: mut project_tips,
                         identity: id_status,
@@ -262,8 +261,7 @@ where
             let (result, updated) = match identity {
                 SomeIdentity::Project(proj) => {
                     let delegate_views = project::delegate_views(storage, proj, None)?;
-                    let proj = identities::project::verify(storage, &urn)?
-                        .ok_or(Error::MissingIdentity)?;
+                    let proj = project::verify_with_delegate(storage, &urn, None)?;
                     let mut updated_delegations = project::all_delegates(&proj);
                     let rad_id = unsafe_into_urn(Reference::rad_id(Namespace::from(&urn)));
                     let project::SetupResult {
@@ -768,8 +766,8 @@ mod project {
                         let peer_id = PeerId::from(*key);
                         let (urn, project) = if &peer_id == local_peer_id {
                             let urn = proj.urn();
-                            let verified = identities::project::verify(storage, &urn)?
-                                .ok_or(Error::MissingIdentity)?;
+                            let verified =
+                                project::verify_with_delegate(storage, &urn, remote_peer)?;
                             (urn, verified)
                         } else {
                             let remote_urn = unsafe_into_urn(
@@ -777,8 +775,8 @@ mod project {
                                     .with_remote(peer_id),
                             );
                             adopt_delegate_person(storage, peer_id, &person, &proj.urn())?;
-                            let verified = identities::project::verify(storage, &remote_urn)?
-                                .ok_or(Error::MissingIdentity)?;
+                            let verified =
+                                project::verify_with_delegate(storage, &remote_urn, remote_peer)?;
                             (remote_urn, verified)
                         };
                         delegate_views.insert(
@@ -918,5 +916,22 @@ mod project {
                     .collect(),
             })
             .collect()
+    }
+
+    pub fn verify_with_delegate<S>(
+        storage: &S,
+        urn: &Urn,
+        peer: Option<PeerId>,
+    ) -> Result<VerifiedProject, Error>
+    where
+        S: AsRef<storage::ReadOnly>,
+    {
+        let storage = storage.as_ref();
+        identities::project::verify_with(storage, &urn, |delegate| {
+            let refname =
+                Reference::rad_delegate(Namespace::from(urn.clone()), &delegate).with_remote(peer);
+            storage.reference_oid(&refname).map(|oid| oid.into())
+        })?
+        .ok_or(Error::MissingIdentity)
     }
 }

@@ -68,13 +68,42 @@ where
     S: AsRef<storage::ReadOnly>,
 {
     let storage = storage.as_ref();
+    let lookup = |urn| {
+        let refname = Reference::rad_id(Namespace::from(urn));
+        storage.reference_oid(&refname).map(|oid| oid.into())
+    };
+    verify_with(storage, urn, lookup)
+}
+
+/// Read and verify the [`Project`] pointed to by `urn`.
+///
+/// The `lookup` callback is used to specify how the delegate's latest tip
+/// should retrieved. For example, the `Urn` could be used to point it to
+/// `rad/ids/<urn.id>`.
+///
+/// If the ref pointed to by [`Urn::path`] is not found, `None` is returned.
+///
+/// # Caveats
+///
+/// Keep in mind that the `content_id` of a successfully verified project may
+/// not be the same as the tip of the ref [`Urn::path`] points to. That is, this
+/// function cannot be used to assert that the state after an [`update`] is
+/// valid.
+#[tracing::instrument(level = "debug", skip(storage, lookup))]
+pub fn verify_with<S, E, F>(
+    storage: &S,
+    urn: &Urn,
+    lookup: F,
+) -> Result<Option<VerifiedProject>, Error>
+where
+    S: AsRef<storage::ReadOnly>,
+    E: std::error::Error + Send + Sync + 'static,
+    F: Fn(Urn) -> Result<git2::Oid, E>,
+{
+    let storage = storage.as_ref();
     match storage.reference(&Reference::try_from(urn)?) {
         Ok(Some(reference)) => {
             let tip = reference.peel_to_commit()?.id();
-            let lookup = |urn| {
-                let refname = Reference::rad_id(Namespace::from(urn));
-                storage.reference_oid(&refname).map(|oid| oid.into())
-            };
             identities(storage)
                 .verify(tip, lookup)
                 .map(Some)
