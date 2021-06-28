@@ -141,7 +141,7 @@ implemented:
 
 . `ssh-agent` compatability with `<<radicle-keystore>>`, which has been
 started in `<<rk-17, radicle-keystore#17>>`.
-. A subcommand `rad-key-ssh-add` for adding one's secret key to the
+. A subcommand `rad-profile-ssh-add` for adding one's secret key to the
 `ssh-agent` using the supplied constraints, e.g. ask for password.
 . Implement `<<rl-461, radicle-link#461>>` to have a read-only storage.
 
@@ -233,18 +233,18 @@ which we sketch out below:
   attempt to replicate the identity. This requires the activation of
   the peer-to-peer daemon.
 
-=== `rad-key`
+=== `rad-profile`
 
 This command will provide the management of keys and the `Profile`
 construct in `librad`. The following actions will be defined:
 
 * `create`— generate a new key and a new `Profile`, which implies a
   separate storage.
-* `profile get`— get the current `Profile`'s identifier
-* `profile set`— set the current `Profile` to the identifier
+* `get`— get the current `Profile`'s identifier
+* `set`— set the current `Profile` to the identifier
   passed in. *Note* that this should refuse to do so if the daemon is online.
-* `profile list`— list the available `Profile` identifiers
-* `ssh add`— add the current `Profile`'s key to the `ssh-agent`
+* `list`— list the available `Profile` identifiers
+* `ssh-add`— add the current `Profile`'s key to the `ssh-agent`
 
 === `rad-daemon`
 
