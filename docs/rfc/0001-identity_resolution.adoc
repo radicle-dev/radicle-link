@@ -97,11 +97,11 @@ $PEER_ID/refs/
 `-- namespaces
     `-- $IDENTITY
         `-- refs
-            |-- heads # <-- code branches owned by $PEER_ID go here
+            |-- heads <1>
             |-- rad
-            |   |-- id # <-- points to the identity document history
-            |   |-- signed_refs # <-- signed refs of the peer
-            |   |-- self # <-- points to the identity of $PEER_ID
+            |   |-- id <2>
+            |   |-- signed_refs <3>
+            |   |-- self <4>
             |   `-- ids
             |       |-- $CERTIFIER[1]
             |       `-- $CERTIFIER[2]
@@ -116,6 +116,10 @@ $PEER_ID/refs/
                             |-- $CERTIFIER[1]
                             `-- $CERTIFIER[2]
 ....
+<1> code branches owned by $PEER_ID go here
+<2> points to the identity document history
+<3> signed refs of the peer
+<4> points to the identity of $PEER_ID
 
 Note that the *owned* `$CERTIFIER[n]` refs (ie. not those of remotes)
 are <<symbolic-refs>>, pointing
