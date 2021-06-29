@@ -5,21 +5,22 @@
 
 use std::{
     env,
-    fs,
     io,
-    path,
     path::{Path, PathBuf},
 };
-use uuid::Uuid;
 
 use crate::paths::{project_dirs, Paths};
 
+pub mod id;
+pub use id::ProfileId;
+
+const RAD_HOME: &str = "RAD_HOME";
+const RAD_PROFILE: &str = "RAD_PROFILE";
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("invalid profile ID in RAD_PROFILE environment variable: {id}")]
-    InvalidProfileIdFromEnv { id: String },
-    #[error("invalid profile ID loaded from {path}: {id}")]
-    InvalidProfileIdFromFile { id: String, path: PathBuf },
+    #[error(transparent)]
+    ProfileId(#[from] id::Error),
     #[error(transparent)]
     Io(#[from] io::Error),
 }
@@ -29,8 +30,42 @@ pub enum Error {
 /// Profiles with different identifiers have distinct paths.
 #[derive(Debug, Clone)]
 pub struct Profile {
-    id: String,
+    id: ProfileId,
     paths: Paths,
+}
+
+/// An enumeration of where the root directory for a `Profile` lives.
+pub enum RadHome {
+    /// The system specific directories given by [`directories::ProjectDirs`].
+    ProjectDirs,
+    /// A given path, usually set through `RAD_HOME`.
+    Root(PathBuf),
+}
+
+impl Default for RadHome {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RadHome {
+    /// If `RAD_HOME` is defined then the path supplied there is used and
+    /// [`RadHome::Root`] is constructed. Otherwise, [`RadHome::ProjectDirs`] is
+    /// constructed.
+    pub fn new() -> Self {
+        if let Ok(root) = env::var(RAD_HOME) {
+            Self::Root(Path::new(&root).to_path_buf())
+        } else {
+            Self::ProjectDirs
+        }
+    }
+
+    fn config(&self) -> Result<PathBuf, io::Error> {
+        Ok(match self {
+            Self::ProjectDirs => project_dirs()?.config_dir().to_path_buf(),
+            Self::Root(root) => root.clone(),
+        })
+    }
 }
 
 impl Profile {
@@ -56,31 +91,14 @@ impl Profile {
     /// special component like `.` or `..`. Otherwise an error is returned
     ///
     /// On Linux, the path to the active profile is
-    /// `$XDG_CONFIG_HOME/radicle-link/active_profile` and profile specific
-    /// system paths are `$XDG_CONFIG_HOME/radicle-link/<profile_id>` and
-    /// `XDG_DATA_HOME/radicle-link/<profile-id>`.
+    /// `$ProjectDirs_CONFIG_HOME/radicle-link/active_profile` and profile
+    /// specific system paths are
+    /// `$ProjectDirs_CONFIG_HOME/radicle-link/<profile_id>` and
+    /// `ProjectDirs_DATA_HOME/radicle-link/<profile-id>`.
     pub fn load() -> Result<Self, Error> {
-        let env_profile_id = env::var("RAD_PROFILE").ok();
-
-        if let Some(ref id) = env_profile_id {
-            if !is_valid_profile_id(id) {
-                return Err(Error::InvalidProfileIdFromEnv { id: id.clone() });
-            }
-        }
-
-        if let Ok(rad_home) = env::var("RAD_HOME") {
-            Self::from_root(Path::new(&rad_home), env_profile_id)
-        } else {
-            let id = if let Some(id) = env_profile_id {
-                id
-            } else {
-                load_profile_id(project_dirs()?.config_dir())?
-            };
-
-            let paths = Paths::new(&id)?;
-
-            Ok(Self { id, paths })
-        }
+        let env_profile_id = ProfileId::from_env()?;
+        let home = RadHome::new();
+        Self::from_home(&home, env_profile_id)
     }
 
     /// Creates a profile where `<root>/<profile_id>` is used as the base path
@@ -91,83 +109,31 @@ impl Profile {
     /// ID is generated and written to `<root>/active_profile`.
     ///
     /// [`Paths::from_root`] for more information.
-    pub fn from_root(root: &Path, profile_id: Option<String>) -> Result<Self, Error> {
-        let id = if let Some(profile_id) = profile_id {
-            profile_id
-        } else {
-            load_profile_id(root)?
+    pub fn from_home(home: &RadHome, profile_id: Option<ProfileId>) -> Result<Self, Error> {
+        let id = match profile_id {
+            Some(id) => id,
+            None => ProfileId::load(home)?,
         };
 
-        let paths = Paths::from_root(root.join(&id))?;
+        let paths = match home {
+            RadHome::ProjectDirs => Paths::new(&id.0)?,
+            RadHome::Root(root) => Paths::from_root(root.join(&id.0))?,
+        };
 
         Ok(Self { id, paths })
     }
 
+    pub fn from_root(root: &Path, profile_id: Option<ProfileId>) -> Result<Self, Error> {
+        Self::from_home(&RadHome::Root(root.to_path_buf()), profile_id)
+    }
+
     /// Returns the profile identifier
     pub fn id(&self) -> &str {
-        &self.id
+        &self.id.0
     }
 
     /// Returns [`Paths`] for this profile.
     pub fn paths(&self) -> &Paths {
         &self.paths
-    }
-}
-
-/// Returns `true` if `id` is a valid profile ID.
-///
-/// A valid profile ID is not empty, does not contain path separators, is not
-/// a windows path prefix like `C:`, and is not a special component like `.` or
-/// `..`.
-fn is_valid_profile_id(id: &str) -> bool {
-    let mut components = Path::new(id).components();
-
-    match components.next() {
-        Some(path::Component::Normal(_)) => {},
-        _ => return false,
-    }
-
-    if components.next().is_some() {
-        return false;
-    }
-
-    true
-}
-
-/// Read the profile ID from a file or create the file and write a newly
-/// generated profile ID to it.
-///
-/// The profile ID is the first line of the file. If the file does not exist a
-/// new ID is generated and written to the file.
-///
-/// The profile ID is validated.
-pub fn load_profile_id(config_dir: &Path) -> Result<String, Error> {
-    let active_profile_path = config_dir.join("active_profile");
-
-    let maybe_id = match fs::read_to_string(&active_profile_path) {
-        Ok(content) => Some(content.lines().next().unwrap_or("").to_string()),
-        Err(err) => {
-            if err.kind() == io::ErrorKind::NotFound {
-                None
-            } else {
-                return Err(Error::from(err));
-            }
-        },
-    };
-
-    if let Some(id) = maybe_id {
-        if !is_valid_profile_id(&id) {
-            return Err(Error::InvalidProfileIdFromFile {
-                path: active_profile_path,
-                id,
-            });
-        }
-
-        Ok(id)
-    } else {
-        let id = Uuid::new_v4().to_hyphenated().to_string();
-        fs::create_dir_all(config_dir)?;
-        fs::write(active_profile_path, &id)?;
-        Ok(id)
     }
 }
