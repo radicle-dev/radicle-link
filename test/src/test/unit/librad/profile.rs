@@ -3,10 +3,10 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::fs;
+use std::{collections::BTreeSet, fs};
 use tempfile::TempDir;
 
-use librad::profile::{id, Profile, ProfileId, RadHome};
+use librad::profile::{id, Error, Profile, ProfileId, RadHome};
 
 pub struct TempHome {
     tmp: TempDir,
@@ -84,4 +84,73 @@ fn empty_profile_file() {
     std::fs::write(profile_id_path, content).unwrap();
     let err = ProfileId::load(&tmp_home.home).unwrap_err();
     assert!(matches!(err, id::Error::FromFile { .. }))
+}
+
+#[test]
+fn new_doesnt_interfere_with_load() {
+    let tmp_home = temp();
+
+    let p1 = ProfileId::load(&tmp_home.home).unwrap();
+    let p2 = Profile::new(&tmp_home.home).unwrap();
+
+    assert_ne!(&p1, p2.id());
+
+    let active = ProfileId::active(&tmp_home.home).unwrap().unwrap();
+    assert_eq!(p1, active);
+}
+
+#[test]
+fn get_set_load() {
+    let tmp_home = temp();
+
+    let p = Profile::new(&tmp_home.home).unwrap();
+    Profile::set(&tmp_home.home, p.id().clone()).unwrap();
+
+    let l = ProfileId::load(&tmp_home.home).unwrap();
+    assert_eq!(p.id(), &l);
+
+    let g = Profile::get(&tmp_home.home, p.id().clone()).unwrap();
+    assert_eq!(Some(p.id()), g.as_ref().map(|g| g.id()));
+}
+
+#[test]
+fn list_profiles() {
+    let n = 10;
+    let tmp_home = temp();
+    let mut expected = BTreeSet::new();
+    for _ in 1..n {
+        expected.insert(Profile::new(&tmp_home.home).unwrap().id().clone());
+    }
+
+    let profiles = Profile::list(&tmp_home.home)
+        .unwrap()
+        .into_iter()
+        .map(|p| p.id().clone())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(expected, profiles);
+}
+
+#[test]
+fn get_profile() {
+    let tmp_home = temp();
+
+    let p = Profile::new(&tmp_home.home).unwrap();
+    let p1 = Profile::get(&tmp_home.home, p.id().clone()).unwrap();
+    assert_eq!(Some(p.id()), p1.as_ref().map(|p| p.id()));
+
+    let p2 = Profile::get(&tmp_home.home, "i-dont-exist".parse().unwrap()).unwrap();
+    assert_eq!(p2.as_ref().map(|p| p.id()), None);
+}
+
+#[test]
+fn set_profile() {
+    let tmp_home = temp();
+
+    let p = Profile::new(&tmp_home.home).unwrap();
+    let p1 = Profile::set(&tmp_home.home, p.id().clone()).unwrap();
+    assert_eq!(p.id(), p1.id());
+
+    let err = Profile::set(&tmp_home.home, "i-dont-exist".parse().unwrap()).unwrap_err();
+    assert!(matches!(err, Error::DoesNotExist { .. }));
 }
