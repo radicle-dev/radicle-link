@@ -17,6 +17,8 @@ use uuid::Uuid;
 
 use super::{RadHome, RAD_PROFILE};
 
+const ACTIVE: &str = "active_profile";
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("invalid profile ID while parsing: {id}")]
@@ -117,7 +119,7 @@ impl ProfileId {
             None => {
                 let id = Self::new();
                 let config = home.config()?;
-                let path = config.join("active_profile");
+                let path = config.join(ACTIVE);
                 fs::create_dir_all(config)?;
                 fs::write(path, &id.0)?;
                 Ok(id)
@@ -131,7 +133,7 @@ impl ProfileId {
     /// The `ProfileId` is the first line of the file. If the file does not
     /// exist a new ID is generated and written to the file.
     pub fn active(home: &RadHome) -> Result<Option<Self>, Error> {
-        let active_path = home.config()?.join("active_profile");
+        let active_path = home.config()?.join(ACTIVE);
 
         match fs::read_to_string(&active_path) {
             Ok(content) => {
@@ -150,6 +152,12 @@ impl ProfileId {
                 }
             },
         }
+    }
+
+    pub fn set_active(&self, home: &RadHome) -> Result<(), Error> {
+        let path = home.config()?.join(ACTIVE);
+        fs::write(path, &self.0)?;
+        Ok(())
     }
 
     pub fn as_str(&self) -> &str {

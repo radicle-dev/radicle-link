@@ -19,6 +19,8 @@ const RAD_PROFILE: &str = "RAD_PROFILE";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("the profile {0} does not exist")]
+    DoesNotExist(ProfileId),
     #[error(transparent)]
     ProfileId(#[from] id::Error),
     #[error(transparent)]
@@ -69,6 +71,58 @@ impl RadHome {
 }
 
 impl Profile {
+    /// Create a new `Profile` by generating a new [`ProfileId`] and creating
+    /// the directory structure under the [`RadHome`] given. Note that this
+    /// will not set the active profile, to do that use [`Profile::set`].
+    pub fn new(home: &RadHome) -> Result<Self, Error> {
+        let id = ProfileId::new();
+        Self::from_home(home, Some(id))
+    }
+
+    pub fn active(home: &RadHome) -> Result<Option<Self>, Error> {
+        let id = ProfileId::active(home)?;
+        id.map(|id| Self::from_home(home, Some(id))).transpose()
+    }
+
+    /// Get the `Profile` to be found by `id` under `home`. If it does not exist
+    /// then `None` is retured.
+    pub fn get(home: &RadHome, id: ProfileId) -> Result<Option<Self>, Error> {
+        if !exists(home, &id)? {
+            return Ok(None);
+        }
+        Self::from_home(home, Some(id)).map(Some)
+    }
+
+    /// Set the `"active_profile"` under `home` to the given `id`. This will
+    /// error if the `id` does not exist under `home`. To ensure that the
+    /// `ProfileId` exists, use [`Profile::get`].
+    pub fn set(home: &RadHome, id: ProfileId) -> Result<Self, Error> {
+        if !exists(home, &id)? {
+            return Err(Error::DoesNotExist(id));
+        }
+        id.set_active(home)?;
+        Self::from_home(home, Some(id))
+    }
+
+    /// List all the `Profile`s that can be found under `home`.
+    ///
+    /// Note: It is expected that only [`ProfileId`]s exist under `home`.
+    pub fn list(home: &RadHome) -> Result<Vec<Self>, Error> {
+        let mut profiles = Vec::new();
+        let config = home.config()?;
+        for entry in config.read_dir()? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let name = entry.file_name();
+            let id = name.to_string_lossy().parse()?;
+            let profile = Self::from_home(home, Some(id))?;
+            profiles.push(profile)
+        }
+        Ok(profiles)
+    }
+
     /// Creates a profile by loading the profile identifier and paths from
     /// the environment variables or well-known file.
     ///
@@ -136,4 +190,10 @@ impl Profile {
     pub fn paths(&self) -> &Paths {
         &self.paths
     }
+}
+
+fn exists(home: &RadHome, id: &ProfileId) -> Result<bool, Error> {
+    let config = home.config()?;
+    let path = config.join(id.as_str());
+    Ok(path.is_dir())
 }
