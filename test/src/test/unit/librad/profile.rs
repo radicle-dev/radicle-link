@@ -39,17 +39,17 @@ fn load_profile_id_test() {
 fn profile_paths() {
     let tmp_home = tempfile::tempdir().unwrap();
 
-    let id = "foo";
+    let id: ProfileId = "foo".parse().unwrap();
 
     let profile_id_path = tmp_home.path().join("active_profile");
-    std::fs::write(profile_id_path, id).unwrap();
+    std::fs::write(profile_id_path, id.as_str()).unwrap();
 
     let profile = Profile::from_root(tmp_home.path(), None).unwrap();
-    assert_eq!(profile.id(), id);
+    assert_eq!(profile.id(), &id);
     assert!(profile
         .paths()
         .git_dir()
-        .starts_with(tmp_home.path().join(id)));
+        .starts_with(tmp_home.path().join(id.as_str())));
 }
 
 #[test]

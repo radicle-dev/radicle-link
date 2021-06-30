@@ -37,7 +37,7 @@ pub enum Error {
 /// A valid profile ID is not empty, does not contain path separators, is
 /// not a windows path prefix like `C:`, and is not a special component
 /// like `.` or `..`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ProfileId(pub(super) String);
 
 impl FromStr for ProfileId {

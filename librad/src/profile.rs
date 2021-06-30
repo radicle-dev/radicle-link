@@ -128,8 +128,8 @@ impl Profile {
     }
 
     /// Returns the profile identifier
-    pub fn id(&self) -> &str {
-        &self.id.0
+    pub fn id(&self) -> &ProfileId {
+        &self.id
     }
 
     /// Returns [`Paths`] for this profile.
