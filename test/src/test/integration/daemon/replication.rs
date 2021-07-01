@@ -472,7 +472,7 @@ fn replication_includes_user() -> Result<(), anyhow::Error> {
     logging::init();
 
     let mut harness = Harness::new();
-    let alice = harness.add_peer("alice", RunConfig::default(), &[])?;
+    let mut alice = harness.add_peer("alice", RunConfig::default(), &[])?;
     let bob = harness.add_peer(
         "bob",
         RunConfig::default(),
@@ -498,15 +498,13 @@ fn replication_includes_user() -> Result<(), anyhow::Error> {
         )
         .await?;
 
+        // tracking the project will cause a mutual fetch
         state::track(&alice.peer, project.urn(), bob.peer_id).await?;
-        state::fetch(
-            &alice.peer,
-            project.urn(),
-            bob.peer_id,
-            bob.listen_addrs.clone(),
-            None,
-        )
-        .await?;
+
+        // FIXME: we have to wait for these events otherwise track and fetch race. A
+        // similar double call is required in the track_peer test.
+        assert_fetched(&mut alice.events).await?;
+        assert_fetched(&mut alice.events).await?;
 
         let bob_malkovich = state::get_user(&alice.peer, bob.owner.urn()).await?;
 
