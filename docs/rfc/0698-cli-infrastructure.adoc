@@ -177,7 +177,7 @@ Cons of *2.*:
 * Many binaries must be packaged and distributed.
 
 The author recommends *1.*. As mentioned, we have a hard requirement
-of not allowing the core commands to be overrided. In *2.* this is
+of not allowing the core commands to be overridden. In *2.* this is
 _always_ possible.
 
 === `radicle-bins`
