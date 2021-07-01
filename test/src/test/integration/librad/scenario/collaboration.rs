@@ -35,7 +35,7 @@ fn can_add_maintainer() {
 
         let proj = {
             let proj = peer1
-                .using_storage(move |storage| TestProject::create(&storage))
+                .using_storage(move |storage| TestProject::create(storage))
                 .await
                 .unwrap()
                 .unwrap();
@@ -80,13 +80,13 @@ fn can_add_maintainer() {
                 move |storage| -> Result<Option<identities::VerifiedProject>, anyhow::Error> {
                     let project = identities::project::get(&storage, &rad)?.unwrap();
                     identities::project::update(
-                        &storage,
+                        storage,
                         &urn,
                         None,
                         None,
                         project.delegations().clone(),
                     )?;
-                    identities::project::merge(&storage, &urn, peer_id)?;
+                    identities::project::merge(storage, &urn, peer_id)?;
                     Ok(identities::project::verify(storage, &urn)?)
                 }
             })

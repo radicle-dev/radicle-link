@@ -32,7 +32,7 @@ fn mutual_fetch() {
         let alice = net.peers().index(0);
         let bob = net.peers().index(1);
         let project = alice
-            .using_storage(move |s| TestProject::create(&s))
+            .using_storage(move |s| TestProject::create(s))
             .await
             .unwrap()
             .unwrap();
@@ -43,7 +43,7 @@ fn mutual_fetch() {
             .using_storage({
                 let urn = project.project.urn();
                 let bob = bob.peer_id();
-                move |s| tracking::track(&s, &urn, bob)
+                move |s| tracking::track(s, &urn, bob)
             })
             .await
             .unwrap()
@@ -65,7 +65,7 @@ fn mutual_fetch() {
                 let urn = commit_urn.clone();
                 move |s| {
                     util::quick_commit(
-                        &s,
+                        s,
                         &urn,
                         vec![("HI", tree::blob(b"Hi Bob"))].into_iter().collect(),
                         "say hi to bob",
@@ -80,7 +80,7 @@ fn mutual_fetch() {
                 let urn = commit_urn.clone();
                 move |s| {
                     util::quick_commit(
-                        &s,
+                        s,
                         &urn,
                         vec![("HI", tree::blob(b"Hi Alice"))].into_iter().collect(),
                         "say hi to alice",

@@ -270,7 +270,7 @@ where
                         updated_tips: mut project_tips,
                         identity: id_status,
                     } = project::ensure_setup(
-                        &storage,
+                        storage,
                         &mut fetcher,
                         config.fetch_limit,
                         delegate_views,
@@ -381,7 +381,7 @@ where
         let identity = identities::any::get(storage, &urn)?.ok_or(Error::MissingIdentity)?;
         let existing = match identity {
             SomeIdentity::Project(ref proj) => {
-                let mut remotes = project::all_delegates(&proj);
+                let mut remotes = project::all_delegates(proj);
                 let mut tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
                 remotes.append(&mut tracked);
 
@@ -550,7 +550,7 @@ mod person {
         let local_peer = storage.peer_id();
         let urn = person.urn();
 
-        let delegations = match identities::person::verify(storage, &rad_id)? {
+        let delegations = match identities::person::verify(storage, rad_id)? {
             None => Err(Error::MissingIdentity),
             Some(person) => {
                 let delegations = person
@@ -682,7 +682,7 @@ mod project {
         )?;
         for peer in tracked {
             if peer != *local_peer {
-                tracking::track(&storage, &urn, peer)?;
+                tracking::track(storage, &urn, peer)?;
                 adopt_rad_self(storage, &urn, peer)?;
             }
         }
@@ -713,10 +713,10 @@ mod project {
         F::Error: std::error::Error + Send + Sync + 'static,
     {
         // Read `signed_refs` for all tracked
-        let tracked = tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>();
+        let tracked = tracking::tracked(storage, urn)?.collect::<BTreeSet<_>>();
         let tracked_sigrefs = tracked
             .into_iter()
-            .filter_map(|peer| match Refs::load(storage, &urn, peer) {
+            .filter_map(|peer| match Refs::load(storage, urn, peer) {
                 Ok(Some(refs)) => Some(Ok((peer, refs))),
 
                 Ok(None) => None,
@@ -734,7 +734,7 @@ mod project {
             })
             .map_err(|e| Error::Fetch(e.into()))?;
 
-        Refs::update(storage, &urn)?;
+        Refs::update(storage, urn)?;
         Ok((
             res,
             tracked_sigrefs
@@ -809,7 +809,7 @@ mod project {
         let delegate_urn = person.urn();
         ensure_rad_id(storage, &delegate_urn, person.content_id)?;
         tracking::track(storage, &delegate_urn, peer)?;
-        tracking::track(storage, &project_urn, peer)?;
+        tracking::track(storage, project_urn, peer)?;
 
         // Now point our view to the top-level
         symref(

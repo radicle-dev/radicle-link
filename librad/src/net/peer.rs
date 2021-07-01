@@ -262,7 +262,7 @@ where
         let storage = self.user_store.get().await?;
         Ok(self
             .spawner
-            .blocking(move || blocking(&storage.read_only()))
+            .blocking(move || blocking(storage.read_only()))
             .await)
     }
 

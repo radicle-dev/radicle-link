@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeSet, convert::TryFrom, option::NoneError};
+use std::collections::BTreeSet;
 
 use data::BoundedVec;
 use minicbor::{Decode, Encode};
@@ -33,14 +33,6 @@ impl<Addr> PartialPeerInfo<Addr> {
             advertised_info,
             seen_addrs,
         })
-    }
-}
-
-impl<Addr> TryFrom<PartialPeerInfo<Addr>> for PeerInfo<Addr> {
-    type Error = NoneError;
-
-    fn try_from(part: PartialPeerInfo<Addr>) -> Result<Self, Self::Error> {
-        Ok(part.sequence()?)
     }
 }
 

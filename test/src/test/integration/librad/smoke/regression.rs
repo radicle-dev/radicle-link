@@ -31,7 +31,7 @@ fn list_identities_returns_only_local_projects() {
         let peer2 = net.peers().index(1);
         let peer3 = net.peers().index(2);
         let proj = peer1
-            .using_storage(move |storage| TestProject::create(&storage))
+            .using_storage(move |storage| TestProject::create(storage))
             .await
             .unwrap()
             .unwrap();

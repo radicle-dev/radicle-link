@@ -53,7 +53,7 @@ impl PeerId {
             return Err(UnknownVersion(*version));
         }
 
-        PublicKey::from_slice(&key)
+        PublicKey::from_slice(key)
             .map(PeerId)
             .ok_or(InvalidPublicKey)
     }
@@ -112,7 +112,7 @@ impl<'de> Deserialize<'de> for PeerId {
             where
                 E: serde::de::Error,
             {
-                PeerId::from_str(&s).map_err(serde::de::Error::custom)
+                PeerId::from_str(s).map_err(serde::de::Error::custom)
             }
         }
 

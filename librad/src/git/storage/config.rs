@@ -90,7 +90,7 @@ where
 {
     fn guard_key_change(&self) -> Result<(), Error> {
         let configured_peer_id = self.peer_id().map(Some).or_matches::<Error, _, _>(
-            |err| matches!(err, Error::Git(e) if is_not_found_err(&e)),
+            |err| matches!(err, Error::Git(e) if is_not_found_err(e)),
             || Ok(None),
         )?;
         let signer_peer_id = PeerId::from_signer(self.signer);

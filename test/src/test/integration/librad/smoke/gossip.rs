@@ -60,7 +60,7 @@ fn fetches_on_gossip_notify() {
         let peer1 = net.peers().index(0);
         let peer2 = net.peers().index(1);
         let proj = peer1
-            .using_storage(move |storage| TestProject::create(&storage))
+            .using_storage(move |storage| TestProject::create(storage))
             .await
             .unwrap()
             .unwrap();
@@ -197,7 +197,7 @@ fn ask_and_clone() {
         let proj = {
             let events = peer1.subscribe();
             let proj = peer1
-                .using_storage(move |storage| TestProject::create(&storage))
+                .using_storage(move |storage| TestProject::create(storage))
                 .await
                 .unwrap()
                 .unwrap();

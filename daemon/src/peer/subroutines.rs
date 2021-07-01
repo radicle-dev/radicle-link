@@ -312,7 +312,7 @@ where
                 }
                 maybe_input = self.inputs.next() => {
                     if let Some(input) = maybe_input {
-                        self.handle_input(input)
+                        self.handle_input(input);
                     } else {
                         return Ok(())
                     }
@@ -325,7 +325,7 @@ where
 impl<S> Drop for Subroutines<S> {
     fn drop(&mut self) {
         for task in self.pending_tasks.iter_mut() {
-            task.abort()
+            task.abort();
         }
     }
 }
@@ -354,6 +354,7 @@ where
 }
 
 /// Fulfill control requests by sending the scheduled responses.
+#[allow(clippy::unused_async)]
 async fn control_respond(cmd: control::Response) {
     match cmd {
         control::Response::CurrentStatus(sender, status) => sender.send(status).ok(),
@@ -377,6 +378,7 @@ where
         .ok();
 }
 
+#[allow(clippy::unused_async)]
 async fn persist_waiting_room(waiting_room: WaitingRoom<SystemTime, Duration>, store: kv::Store) {
     match waiting_room::save(&store, waiting_room) {
         Ok(()) => log::debug!("Successfully persisted the waiting room"),

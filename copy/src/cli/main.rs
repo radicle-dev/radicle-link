@@ -40,7 +40,7 @@ pub fn main() -> anyhow::Result<()> {
     let profile = Profile::load()?;
     let paths = profile.paths();
     let signer = get_signer(paths.keys_dir(), args.key)?;
-    let storage = Storage::open(&paths, signer.clone())?;
+    let storage = Storage::open(paths, signer.clone())?;
     let whoami = local::default(&storage)?
         .ok_or_else(|| anyhow!("the default identity is not set for your Radicle store"))?;
     match args.command {
@@ -87,7 +87,7 @@ pub fn main() -> anyhow::Result<()> {
                 let project = identities::project::get(&storage, &urn)?.ok_or_else(|| anyhow!(
                 "the project URN `{}` does not exist, are you sure you passed in the right URN?", urn
             ))?;
-                include::update(&storage, &paths, &project)?;
+                include::update(&storage, paths, &project)?;
             },
         },
     };

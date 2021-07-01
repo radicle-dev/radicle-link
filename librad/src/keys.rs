@@ -150,7 +150,7 @@ impl<'a> sign::Signer for &'a SecretKey {
 impl PublicKey {
     pub fn verify(&self, sig: &Signature, data: &[u8]) -> bool {
         ed25519::VerificationKey::try_from(self.0)
-            .and_then(|vk| vk.verify(&sig.0, &data))
+            .and_then(|vk| vk.verify(&sig.0, data))
             .is_ok()
     }
 

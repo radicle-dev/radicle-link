@@ -90,12 +90,12 @@ where
     S: AsRef<storage::ReadOnly>,
 {
     let storage = storage.as_ref();
-    let project = identities::project::verify(storage, &urn)?
+    let project = identities::project::verify(storage, urn)?
         .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
 
     let mut peers = vec![];
 
-    for peer_id in tracking::tracked(storage, &urn)? {
+    for peer_id in tracking::tracked(storage, urn)? {
         let rad_self = Urn::try_from(Reference::rad_self(Namespace::from(urn.clone()), peer_id))
             .expect("namespace is set");
         let status = if storage.has_urn(&rad_self)? {

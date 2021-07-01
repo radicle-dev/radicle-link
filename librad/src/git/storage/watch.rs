@@ -110,7 +110,7 @@ impl<'a> Watch<'a> {
                     cookie: _,
                 } if path.is_dir() => {
                     let path = path.strip_prefix(&reflogs_path).ok()?;
-                    if is_namespace(&path) {
+                    if is_namespace(path) {
                         let kind = if op.contains(Op::CREATE) {
                             EventKind::Create
                         } else if op.contains(Op::REMOVE) {

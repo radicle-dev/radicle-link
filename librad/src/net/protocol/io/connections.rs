@@ -114,7 +114,7 @@ where
             tracing::info!(remote_addr = %addr, "establishing connection");
             Box::pin(async move {
                 endpoint
-                    .connect(remote_id, &addr)
+                    .connect(remote_id, addr)
                     .map_err(|e| {
                         tracing::warn!(err = ?e, remote_addr = %addr, "could not connect");
                         e

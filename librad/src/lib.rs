@@ -15,7 +15,8 @@
 #![feature(drain_filter)]
 #![feature(ip)]
 #![feature(never_type)]
-#![feature(try_trait)]
+#![feature(try_trait_v2)]
+#![feature(control_flow_enum)]
 
 #[macro_use]
 extern crate async_trait;

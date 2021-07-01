@@ -431,7 +431,7 @@ impl<T, R, C> Verifying<Identity<T, R, C>, Quorum> {
 
             (None, None) => Ok(self.coerce()),
 
-            (Some(replaces), Some(ref parent)) => {
+            (Some(replaces), Some(parent)) => {
                 if replaces != &parent.revision {
                     Err(error::Verify::ParentMismatch {
                         expected: replaces.to_owned(),

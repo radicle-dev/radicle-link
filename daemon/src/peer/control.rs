@@ -17,7 +17,6 @@ use crate::{request, request::waiting_room};
 use super::run_state::Status;
 
 /// Requests sent to the peer.
-#[allow(clippy::pub_enum_variant_names)]
 #[derive(Debug)]
 pub enum Request {
     ListenAddrs(oneshot::Sender<Vec<SocketAddr>>),

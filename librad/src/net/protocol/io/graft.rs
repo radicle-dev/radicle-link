@@ -95,10 +95,10 @@ where
 
             tracing::debug!("remotes: {:?}", refs.remotes);
 
-            if is_interesting(remote_peer, &remote_heads, &refs.remotes) {
+            if is_interesting(remote_peer, remote_heads, &refs.remotes) {
                 tracing::debug!("interesting");
                 Ok(Some(
-                    replication::replicate(&storage, fetcher, config.replication, None)
+                    replication::replicate(storage, fetcher, config.replication, None)
                         .map_err(error::Rere::from)?,
                 ))
             } else {

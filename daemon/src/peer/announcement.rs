@@ -55,7 +55,7 @@ pub type Updates = HashSet<Announcement>;
 /// # Errors
 ///
 /// * if the announcemnet of one of the project heads failed
-async fn announce<S>(peer: &Peer<S>, updates: impl Iterator<Item = &Announcement> + Send)
+fn announce<'a, S>(peer: &Peer<S>, updates: impl Iterator<Item = &'a Announcement> + Send)
 where
     S: Clone + Signer,
 {
@@ -136,7 +136,7 @@ where
     let new = build(peer).await?;
     let updates = diff(&old, &new);
 
-    announce(peer, updates.iter()).await;
+    announce(peer, updates.iter());
 
     if !updates.is_empty() {
         spawn_blocking(move || save(&store, new.clone())).await??;
@@ -189,7 +189,7 @@ mod test {
 
         // TODO(xla): Build up proper testnet to assert that haves are announced.
         let updates = super::build(&peer).await?;
-        super::announce(&peer, updates.iter()).await;
+        super::announce(&peer, updates.iter());
 
         Ok(())
     }

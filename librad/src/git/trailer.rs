@@ -64,7 +64,7 @@ impl Deref for Token<'_> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.0
     }
 }
 

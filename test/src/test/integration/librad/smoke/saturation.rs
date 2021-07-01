@@ -48,12 +48,12 @@ fn saturate_a_peer_with_projects() {
             .using_storage({
                 move |storage| {
                     let mut projs = Vec::with_capacity(NUM_PROJECTS + 1);
-                    let proj = TestProject::create(&storage)?;
+                    let proj = TestProject::create(storage)?;
                     let owner = proj.owner.clone();
                     projs.push(proj);
                     for payload in payloads {
                         projs.push(TestProject::from_project_payload(
-                            &storage,
+                            storage,
                             owner.clone(),
                             payload,
                         )?);

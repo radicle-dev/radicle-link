@@ -161,7 +161,7 @@ impl ReadOnly {
     }
 
     pub fn path(&self) -> &Path {
-        &self.backend.path()
+        self.backend.path()
     }
 
     /// Check the existence of `oid` as a **commit**.

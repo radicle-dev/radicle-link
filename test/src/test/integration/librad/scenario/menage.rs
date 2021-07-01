@@ -62,7 +62,7 @@ impl ExpectedReferences {
             Reference::rad_delegate(Namespace::from(urn.clone()), &delegate).with_remote(remote);
 
         Ok(ExpectedReferences {
-            has_commit: commit.map_or(Ok(true), |commit| storage.has_commit(&urn, commit))?,
+            has_commit: commit.map_or(Ok(true), |commit| storage.has_commit(urn, commit))?,
             has_rad_id: storage.has_ref(&rad_id)?,
             has_rad_self: storage.has_ref(&rad_self)?,
             has_rad_ids: storage.has_ref(&rad_ids)?,
@@ -82,7 +82,7 @@ fn a_trois() {
         let peer3 = net.peers().index(2);
 
         let proj = peer1
-            .using_storage(move |storage| TestProject::create(&storage))
+            .using_storage(move |storage| TestProject::create(storage))
             .await
             .unwrap()
             .unwrap();
@@ -228,7 +228,7 @@ fn threes_a_crowd() {
         let peer3 = net.peers().index(2);
 
         let proj = peer1
-            .using_storage(move |storage| TestProject::create(&storage))
+            .using_storage(move |storage| TestProject::create(storage))
             .await
             .unwrap()
             .unwrap();

@@ -34,7 +34,7 @@ fn smoke() {
     let rad_paths = profile.paths();
     let key = SecretKey::new();
 
-    let urn = setup_project(&rad_paths, key.clone()).unwrap();
+    let urn = setup_project(rad_paths, key.clone()).unwrap();
     setup_keystore(rad_paths.keys_dir(), key).unwrap();
     let path = setup_path().unwrap();
 

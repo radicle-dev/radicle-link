@@ -190,10 +190,10 @@ impl<'a, R> Clone for GitUrlRef<'a, R> {
     #[inline]
     fn clone(&self) -> GitUrlRef<'a, R> {
         Self {
-            local_peer: &self.local_peer,
-            remote_peer: &self.remote_peer,
-            addr_hints: &self.addr_hints,
-            repo: &self.repo,
+            local_peer: self.local_peer,
+            remote_peer: self.remote_peer,
+            addr_hints: self.addr_hints,
+            repo: self.repo,
             nonce: self.nonce,
         }
     }

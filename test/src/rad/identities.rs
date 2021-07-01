@@ -86,10 +86,10 @@ impl TestProject {
         let res = to
             .using_storage(move |storage| {
                 let fetcher = fetcher::PeerToPeer::new(urn, remote_peer, remote_addrs)
-                    .build(&storage)
+                    .build(storage)
                     .unwrap()
                     .unwrap();
-                replication::replicate(&storage, fetcher, cfg, None)
+                replication::replicate(storage, fetcher, cfg, None)
             })
             .await??;
         Ok(res)

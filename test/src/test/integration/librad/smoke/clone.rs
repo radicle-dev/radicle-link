@@ -70,10 +70,10 @@ fn not_present() {
                 );
 
                 let fetcher = fetcher::PeerToPeer::new(urn.clone(), voyeur_id, voyeur_addrs)
-                    .build(&storage)
+                    .build(storage)
                     .unwrap()
                     .unwrap();
-                let res = replication::replicate(&storage, fetcher, cfg, None);
+                let res = replication::replicate(storage, fetcher, cfg, None);
                 assert!(res.is_ok());
 
                 // check rad/self of maintainer exists
@@ -139,7 +139,7 @@ struct Host<'a> {
 impl<'a> Host<'a> {
     async fn init(peer: &'a RunningTestPeer) -> Host<'a> {
         let project = peer
-            .using_storage(move |storage| TestProject::create(&storage))
+            .using_storage(move |storage| TestProject::create(storage))
             .await
             .unwrap()
             .unwrap();
@@ -167,8 +167,8 @@ impl Leecher<'_> {
                         .into_iter()
                         .flatten(),
                 )
-                .build(&storage)??;
-                replication::replicate(&storage, fetcher, cfg, None)?;
+                .build(storage)??;
+                replication::replicate(storage, fetcher, cfg, None)?;
 
                 // check rad/self of peer1 exists
                 {

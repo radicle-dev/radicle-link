@@ -58,7 +58,7 @@ jobs:
             ${{ runner.os }}-build-
             ${{ runner.os }}-
       - name: Install Rust
-        run: rustup update nightly-2021-03-25 --no-self-update && rustup default nightly-2021-03-25
+        run: rustup update nightly-2021-06-17 --no-self-update && rustup default nightly-2021-06-17
         shell: bash
       # NB: We install gnu-tar because BSD tar is buggy on Github's macos machines. https://github.com/actions/cache/issues/403
       - name: Install GNU tar
@@ -84,7 +84,7 @@ jobs:
             ${{ runner.os }}-build-
             ${{ runner.os }}-
       - name: Install Rust
-        run: rustup update nightly-2021-03-25 --no-self-update && rustup default nightly-2021-03-25
+        run: rustup update nightly-2021-06-17 --no-self-update && rustup default nightly-2021-06-17
         shell: bash
       - run: ./ci/test-fast
         timeout-minutes: 20

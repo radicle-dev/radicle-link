@@ -454,7 +454,7 @@ impl From<Qualified> for String {
 
 impl Display for Qualified {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&self)
+        f.write_str(self)
     }
 }
 

@@ -38,7 +38,7 @@ fn responds() {
         let TestProject { project, owner } = {
             let events = responder.subscribe();
             let proj = responder
-                .using_storage(move |s| TestProject::create(&s))
+                .using_storage(move |s| TestProject::create(s))
                 .await
                 .unwrap()
                 .unwrap();

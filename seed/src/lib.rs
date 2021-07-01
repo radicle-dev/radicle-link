@@ -380,8 +380,8 @@ impl Node {
 
                     if mode.is_trackable(peer_id, urn) {
                         // Attempt to track, but keep going if it fails.
-                        if Node::track_project(&api, urn, &provider).await.is_ok() {
-                            let event = Event::project_tracked(urn.clone(), *peer_id, &api).await?;
+                        if Node::track_project(api, urn, provider).await.is_ok() {
+                            let event = Event::project_tracked(urn.clone(), *peer_id, api).await?;
                             api.announce(Payload {
                                 urn: urn.clone(),
                                 rev: None,
@@ -419,10 +419,10 @@ impl Node {
             let urn = urn.clone();
             api.using_storage(move |storage| {
                 let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
-                    .build(&storage)
+                    .build(storage)
                     .map_err(|e| Error::MkFetcher(e.into()))??;
-                replication::replicate(&storage, fetcher, cfg, None)?;
-                tracking::track(&storage, &urn, peer_id)?;
+                replication::replicate(storage, fetcher, cfg, None)?;
+                tracking::track(storage, &urn, peer_id)?;
 
                 Ok::<_, Error>(())
             })
@@ -460,7 +460,7 @@ impl Node {
                     let mut peers = api.providers(urn.clone(), Duration::from_secs(30));
                     // Attempt to track until we succeed.
                     while let Some(peer) = peers.next().await {
-                        if Node::track_project(&api, urn, &peer).await.is_ok() {
+                        if Node::track_project(api, urn, &peer).await.is_ok() {
                             let event =
                                 Event::project_tracked(urn.clone(), peer.peer_id, api).await?;
                             transmit.send(event).await.ok();

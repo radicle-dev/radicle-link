@@ -5,6 +5,7 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         ca-certificates \
+        cmake \
         curl \
         file \
         gcc \
@@ -20,7 +21,7 @@ RUN set -eux; \
 
 # Rust toolchain
 # Make sure this is in sync with rust-toolchain!
-ENV RUST_VERSION=nightly-2021-05-09 \
+ENV RUST_VERSION=nightly-2021-06-17 \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH \
     RUSTUP_HOME=/usr/local/rustup \

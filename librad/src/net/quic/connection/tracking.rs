@@ -125,7 +125,7 @@ impl Conntrack {
         match self.peer_connections.entry(to) {
             Occupied(mut entry) => {
                 let conns = entry.get_mut();
-                conns.retain(|weak| Weak::upgrade(&weak).is_some());
+                conns.retain(|weak| Weak::upgrade(weak).is_some());
                 if conns.is_empty() {
                     entry.remove();
                     None
@@ -288,7 +288,7 @@ fn spawn_gc(
                     let evict = peer_connections
                         .iter_mut()
                         .filter_map(|mut conns: RefMutMulti<'_, _, Vec<Weak<Tracked>>, _>| {
-                            (*conns).retain(|weak| Weak::upgrade(&weak).is_some());
+                            (*conns).retain(|weak| Weak::upgrade(weak).is_some());
                             if conns.value().is_empty() {
                                 Some(*conns.key())
                             } else {

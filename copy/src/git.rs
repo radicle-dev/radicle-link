@@ -84,7 +84,7 @@ where
     // Ensure that we have the default branch fetched from the remote
     let _fetched = git_remote.fetch(
         open_storage,
-        &repo,
+        repo,
         LocalFetchspec::Specs(NonEmpty::new(Fetchspec::from(Refspec {
             src: reflike!("refs/heads").join(default_branch.clone()),
             dst: reflike!("refs/remotes")

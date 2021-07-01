@@ -83,7 +83,7 @@ version = "0.4"
 features = []
 
 [dependencies.git2]
-version = "=0.13.18"
+version = "=0.13.20"
 default-features = false
 features = []
 

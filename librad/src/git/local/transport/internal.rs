@@ -135,7 +135,7 @@ fn ensure_registered() {
     unsafe {
         INIT.call_once(move || {
             git2::transport::register(super::super::URL_SCHEME, move |remote| {
-                git2::transport::Transport::smart(&remote, true, Factory::new())
+                git2::transport::Transport::smart(remote, true, Factory::new())
             })
             .unwrap()
         });

@@ -71,7 +71,7 @@ pub fn quick_commit(
         .map(Some)
         .or_matches::<git2::Error, _, _>(is_not_found_err, || Ok(None))?;
     let tree = {
-        let oid = tree.write(&repo)?;
+        let oid = tree.write(repo)?;
         repo.find_tree(oid)?
     };
 

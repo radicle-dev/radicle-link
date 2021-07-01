@@ -315,7 +315,7 @@ impl Refs {
             blob_path.display()
         );
 
-        let maybe_blob = storage.blob(&blob_ref, &blob_path)?;
+        let maybe_blob = storage.blob(&blob_ref, blob_path)?;
         maybe_blob
             .map(|blob| Signed::from_json(blob.content(), &signer).map(|signed| signed.refs))
             .transpose()

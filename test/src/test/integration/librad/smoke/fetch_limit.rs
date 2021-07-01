@@ -40,9 +40,9 @@ fn replication_does_not_exceed_limit() {
                     peer5.peer_id(),
                 ];
                 move |storage| {
-                    let proj = TestProject::create(&storage)?;
+                    let proj = TestProject::create(storage)?;
                     for remote in remotes.into_iter() {
-                        tracking::track(&storage, &proj.project.urn(), remote)?;
+                        tracking::track(storage, &proj.project.urn(), remote)?;
                     }
                     Ok::<_, anyhow::Error>(proj)
                 }

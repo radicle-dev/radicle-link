@@ -204,7 +204,7 @@ impl<'a, T, R, C> Iterator for Iter<'a, T, R, C> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.identities.next().map(Right).or_else(|| {
-            while let Some((pk, pos)) = self.delegations.next() {
+            for (pk, pos) in &mut self.delegations {
                 if pos.is_none() {
                     return Some(Left(pk));
                 }
@@ -257,7 +257,7 @@ impl<T, R, C> Iterator for IntoIter<T, R, C> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.identities.next().map(Right).or_else(|| {
-            while let Some((pk, pos)) = self.delegations.next() {
+            for (pk, pos) in &mut self.delegations {
                 if pos.is_none() {
                     return Some(Left(pk));
                 }

@@ -16,15 +16,15 @@ const DATA_TO_SIGN: &[u8] = b"alors monsieur";
 #[test]
 fn test_sign_verify_via_signature() {
     let key = SecretKey::new();
-    let sig = key.sign(&DATA_TO_SIGN);
-    assert!(sig.verify(&DATA_TO_SIGN, &key.public()))
+    let sig = key.sign(DATA_TO_SIGN);
+    assert!(sig.verify(DATA_TO_SIGN, &key.public()))
 }
 
 #[test]
 fn test_sign_verify_via_pubkey() {
     let key = SecretKey::new();
-    let sig = key.sign(&DATA_TO_SIGN);
-    assert!(key.public().verify(&sig, &DATA_TO_SIGN))
+    let sig = key.sign(DATA_TO_SIGN);
+    assert!(key.public().verify(&sig, DATA_TO_SIGN))
 }
 
 #[test]
@@ -52,17 +52,17 @@ fn test_public_key_deserialize_wrong_version() {
 
 #[test]
 fn test_signature_json() {
-    json_roundtrip(SecretKey::new().sign(&DATA_TO_SIGN))
+    json_roundtrip(SecretKey::new().sign(DATA_TO_SIGN))
 }
 
 #[test]
 fn test_signature_cbor() {
-    cbor_roundtrip(SecretKey::new().sign(&DATA_TO_SIGN))
+    cbor_roundtrip(SecretKey::new().sign(DATA_TO_SIGN))
 }
 
 #[test]
 fn test_signature_deserialize_wrong_version() {
-    let sig = SecretKey::new().sign(&DATA_TO_SIGN);
+    let sig = SecretKey::new().sign(DATA_TO_SIGN);
     let ser = multibase::encode(
         Base::Base32Z,
         iter::once(&1)

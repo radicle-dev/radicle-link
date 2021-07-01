@@ -29,7 +29,7 @@ pub fn dylan(
         },
         Some(key.public()).into_iter().collect(),
     )?;
-    identities::local::load(&storage, dylan.urn())?
+    identities::local::load(storage, dylan.urn())?
         .ok_or_else(|| anyhow::anyhow!("where did dylan go?"))
 }
 

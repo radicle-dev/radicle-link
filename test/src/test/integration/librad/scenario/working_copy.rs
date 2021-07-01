@@ -78,7 +78,7 @@ fn can_fetch() {
         let peer2_events = peer2.subscribe();
 
         let proj = peer1
-            .using_storage(move |store| TestProject::create(&store))
+            .using_storage(move |store| TestProject::create(store))
             .await
             .unwrap()
             .unwrap();
@@ -110,7 +110,7 @@ fn can_fetch() {
         let tmp = tempdir().unwrap();
         {
             let commit_id =
-                commit_and_push(tmp.path().join("peer1"), &peer1, &proj.owner, &proj.project)
+                commit_and_push(tmp.path().join("peer1"), peer1, &proj.owner, &proj.project)
                     .await
                     .unwrap();
             event::upstream::expect(
@@ -123,7 +123,7 @@ fn can_fetch() {
             let peer2_repo = create_working_copy(
                 tmp.path().join("peer2"),
                 tmp.path().to_path_buf(),
-                &peer2,
+                peer2,
                 &proj.project,
                 tracked_persons,
             )

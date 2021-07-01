@@ -39,7 +39,6 @@ use std::{
     future::Future,
     io::{self, Read, Write},
     net::SocketAddr,
-    ops::Try,
     sync::{Arc, Once, RwLock, Weak},
 };
 
@@ -89,7 +88,7 @@ pub fn register() -> RadTransport {
     unsafe {
         INIT.call_once(|| {
             git2::transport::register(super::URL_SCHEME, move |remote| {
-                Transport::smart(&remote, true, RadTransport::new())
+                Transport::smart(remote, true, RadTransport::new())
             })
             .unwrap();
         })
@@ -125,7 +124,7 @@ impl RadTransport {
         addr_hints: &[SocketAddr],
     ) -> Option<Box<dyn GitStream>> {
         let fac = self.fac.read().unwrap();
-        match fac.get(&from) {
+        match fac.get(from) {
             None => None,
             Some(weak) => match weak.upgrade() {
                 None => {
@@ -135,7 +134,7 @@ impl RadTransport {
                     );
                     drop(fac);
                     let mut fac = self.fac.write().unwrap();
-                    fac.remove(&from);
+                    fac.remove(from);
                     None
                 },
                 Some(fac) => match tokio::runtime::Handle::try_current() {
@@ -231,12 +230,11 @@ where
     io::Error::new(io::ErrorKind::Other, err)
 }
 
-fn block_on<F>(fut: F) -> io::Result<<F::Output as Try>::Ok>
+fn block_on<F, T>(fut: F) -> io::Result<T>
 where
-    F: Future,
-    F::Output: Try<Error = io::Error>,
+    F: Future<Output = io::Result<T>>,
 {
     tokio::runtime::Handle::try_current()
         .map_err(io_error)
-        .and_then(|rt| rt.block_on(fut).into_result())
+        .and_then(|rt| rt.block_on(fut))
 }
