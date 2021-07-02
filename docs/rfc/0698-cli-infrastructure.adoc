@@ -215,17 +215,17 @@ which we sketch out below:
   infer the type, or else return an opaque blob.
 * `local [ set | get | default ]` -- modify or retrieve a local identity
 * `tracking [ track | untrack | list ]` -- modify and list the tracking
-  graph for a given identity
+  graph for a given identity.
 * `rad-refs [ self | signed | delegates | delegate ]` -- retrieve the
   blobs that live under `rad/<refname>`
-* `refs [ heads | notes | tags | category ]` -- list the reference names
+* `refs [ heads | notes | tags | category ]` -- list the reference names.
   under the respective category, where `category` is a user supplied category.
 
 === `rad-replicate`
 
 * `ask` -- tell the `daemon` that you wish to replicate the
   given URN. Pending <<rl-141, radicle-link#141>>.
-* `replicate` -- if the peer/address are known for the given URN,
+* `from` -- if the peer/address are known for the given URN,
   attempt to replicate the identity. This requires the activation of
   the peer-to-peer daemon.
 
@@ -234,21 +234,23 @@ which we sketch out below:
 This command will provide the management of keys and the `Profile`
 construct in `librad`. The following actions will be defined:
 
-* `create`— generate a new key and a new `Profile`, which implies a
-  separate storage.
-* `get`— get the current `Profile`'s identifier
-* `set`— set the current `Profile` to the identifier
+* `create`— generate a new `Profile`-- setting up a new key and any
+  related infrastructure for the profile, e.g. storage.
+* `get`— get the current `Profile`'s identifier.
+* `set`— set the current `Profile` to the identifier.
   passed in. *Note* that this should refuse to do so if the daemon is online.
-* `list`— list the available `Profile` identifiers
-* `ssh-add`— add the current `Profile`'s key to the `ssh-agent`
+* `list`— list the available `Profile` identifiers.
+* `ssh-add`— add the current `Profile`'s key to the `ssh-agent`.
 
 === `rad-daemon`
 
-This command provides control over and introspection into the peer-to-peer daemon.
+This command provides introspection into the peer-to-peer daemon.
 
-* `start` -- request to start the peer-to-peer daemon.
-* `stop` -- request to stop the peer-to-peer daemon.
-* `status` -- request the status of the peer-to-peer daemon.
+* `peers` -- get the list of currently connected peers
+* `membership` -- get the membership list for the peer-to-peer
+  daemon's membership view.
+* `stats` -- request the stats of the peer-to-peer daemon, i.e. a
+  summary of peers and members.
 
 === Note on Output
 
