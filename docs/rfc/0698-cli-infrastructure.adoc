@@ -101,27 +101,27 @@ exhaustive list:
 * `global-quiet`
 * `global-profile := active (default) | <profile-id>`
 
-== Online & Offline
+== CLI Events
 
-In <<arch-orch, RFC-682#Process-Orchestration>>, it was decided that the peer-to-peer
-damon would not be a long-running process. The terminology we will use
-here is that the daemon is *online* if it is running and connected to
-the network. Otherwise, if it is not running then it is *offline*.
-
-This disctinction becomes important when thinking about the
-functionality of `rad` subcommands. The majority of subcommands that
-interact with the storage can be done while the daemon is offline. The
-only action the author can currently think of — that is online — is
-replication of a URN from the network.
-
-This leaves us to think about how multiple Radicle applications may
-interact with each other. For example, if Upstream is
+The execution of a CLI subcommand could potentially result in an
+interesting event. For example, if Upstream is
 running and I create a project via the CLI, then a good user
 experience is that the Upstream is updated with the new project
-(without refreshing). Here we will assume the existence of the
-(future) <<arch-pubsub, RFC-682#PubSub>> component. The CLI commands
-in this RFC MAY publish interesting events to this component so that
-other applications can receive and act upon them.
+(without refreshing). In this case, the event is the creation of the
+project.
+
+In <<arch-pubsub, RFC-682#PubSub>>, a PubSub component was proposed --
+with a detailed specification being left to a future RFC. We will
+assume the existence of this component here. The CLI commands in this
+RFC MAY publish interesting events to the PubSub component. This will
+allow other applications to react upon seeing these events via
+subscriptions to the PubSub component.
+
+Other subcommands MAY also publish interesting events, as long as they
+adhere to the specification of the future RFC. They SHALL reuse any
+events defined as part of the <<Core>> commands. That is to say, there
+will be a core set of events that should not be overridden, but rather
+reused if needs be.
 
 == Key Access
 
