@@ -1,0 +1,60 @@
+[package]
+name = "radicle-link-git-protocol"
+version = "0.1.0"
+authors = ["Kim Altintop <kim@eagain.st>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+description = "radicle-link-flavoured git protocol-v2 client and server"
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+async-process = "1.1.0"
+async-trait = "0.1"
+blocking = "1.0.2"
+bstr = "0.2.16"
+futures-lite = "1.12.0"
+futures-util = "0.3.15"
+pin-project = "1.0.7"
+tempfile = "3.2.0"
+versions = "3.0.2"
+
+[dependencies.git-features]
+git = "https://github.com/kim/gitoxide"
+branch = "pu"
+
+[dependencies.git-hash]
+git = "https://github.com/kim/gitoxide"
+branch = "pu"
+
+[dependencies.git-odb]
+git = "https://github.com/kim/gitoxide"
+branch = "pu"
+
+[dependencies.git-pack]
+git = "https://github.com/kim/gitoxide"
+branch = "pu"
+
+[dependencies.git-packetline]
+git = "https://github.com/kim/gitoxide"
+branch = "pu"
+features = ["async-io"]
+
+[dependencies.git-protocol]
+git = "https://github.com/kim/gitoxide"
+branch = "pu"
+features = ["async-client"]
+
+[dependencies.git-transport]
+git = "https://github.com/kim/gitoxide"
+branch = "pu"
+features = ["async-client"]
+
+[dependencies.git2]
+version = "=0.13.20"
+default-features = false
+features = []
+optional = true

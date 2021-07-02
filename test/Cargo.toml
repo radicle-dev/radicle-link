@@ -15,12 +15,13 @@ anyhow = "1"
 async-stream = "0.3"
 async-trait = "0"
 blocking = "1.0.2"
+bstr = "0.2"
 env_logger = "0"
 either = "1"
 futures = ">= 0.3"
 futures_codec = "0.4"
 futures-await-test = "0"
-futures_ringbuf = "0.3"
+futures_ringbuf = "0.3.1"
 futures-timer = "3.0"
 kv = "0.22"
 lazy_static = "1"
@@ -30,6 +31,7 @@ multibase = "0.9"
 multihash = "0.11"
 nonempty = "0.6"
 nonzero_ext = "0.2"
+once_cell = "1"
 pretty_assertions = "0"
 proptest = "0"
 radicle-keystore = "0"
@@ -63,6 +65,10 @@ path = "../git-ext"
 
 [dependencies.radicle-git-helpers]
 path = "../git-helpers"
+
+[dependencies.radicle-link-git-protocol]
+path = "../git-protocol"
+features = ["git2"]
 
 [dependencies.rand]
 version = "0.7"

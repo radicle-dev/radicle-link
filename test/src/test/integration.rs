@@ -5,4 +5,5 @@
 
 mod daemon;
 mod git_helpers;
+mod git_protocol;
 mod librad;

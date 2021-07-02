@@ -6,6 +6,7 @@ members = [
   "e2e",
   "git-ext",
   "git-helpers",
+  "git-protocol",
   "librad",
   "macros",
   "seed",
