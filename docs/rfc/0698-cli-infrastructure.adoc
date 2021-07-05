@@ -272,8 +272,10 @@ into another format. The initial options will be:
 . `json`
 . `cbor`
 
-with the default being `cbor` due the to above requirement. More
-output types MAY be proposed in future RFCs.
+with the default being `json` since the CLIs are user-centric
+applications and human-readable footnote:disclaimer[For some
+definition of human-readble] output would be desirable. More output
+types MAY be proposed in future RFCs.
 
 [bibliography]
 == References
