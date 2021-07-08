@@ -5,4 +5,5 @@
 
 mod collaboration;
 mod menage;
+mod tracked_references;
 mod working_copy;
