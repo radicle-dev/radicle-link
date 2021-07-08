@@ -1,12 +1,10 @@
-// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+// Copyright © 2021 The Radicle Link Contributors
 //
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use crate::{
-    logging,
-    rad::{identities::TestProject, testnet},
-};
+use std::ops::Index as _;
+
 use librad::{
     git::{
         identities,
@@ -18,7 +16,11 @@ use librad::{
     git_ext::tree,
     reflike,
 };
-use std::ops::Index as _;
+
+use crate::{
+    logging,
+    rad::{identities::TestProject, testnet},
+};
 
 fn config() -> testnet::Config {
     testnet::Config {
@@ -28,11 +30,10 @@ fn config() -> testnet::Config {
     }
 }
 
-#[test]
 /// Peers should be able to see references created by peers in their tracking
 /// graph. To test this we do the following:
 ///
-/// - Create a testnet with two peers, peer1, and peer2
+/// - Create a testnet with two peers
 /// - Make peer1 track peer2
 /// - Create a project in peer1s storage
 /// - Create a commit in the project as peer1, point refs/heads/master at it
@@ -47,6 +48,7 @@ fn config() -> testnet::Config {
 /// the patch we have applied to libgit incorrectly handling unknown remote
 /// references. This is now fixed but it seems prudent to retain the test as it
 /// exercises a critical code path.
+#[test]
 fn can_see_tracked_references() {
     logging::init();
 
