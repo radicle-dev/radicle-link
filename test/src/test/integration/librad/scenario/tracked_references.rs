@@ -7,7 +7,6 @@ use crate::{
     logging,
     rad::{identities::TestProject, testnet},
 };
-use lazy_static::lazy_static;
 use librad::{
     git::{
         identities,
@@ -17,21 +16,9 @@ use librad::{
         util::quick_commit,
     },
     git_ext::tree,
-    keys::SecretKey,
     reflike,
 };
 use std::ops::Index as _;
-
-lazy_static! {
-    static ref KEY_ONE: SecretKey = SecretKey::from_seed([
-        100, 107, 14, 43, 237, 25, 113, 215, 236, 197, 160, 60, 169, 174, 81, 58, 143, 74, 42, 201,
-        122, 252, 143, 21, 82, 225, 111, 252, 12, 186, 4, 154
-    ]);
-    static ref KEY_TWO: SecretKey = SecretKey::from_seed([
-        153, 72, 253, 68, 81, 29, 234, 67, 15, 241, 138, 59, 180, 75, 76, 113, 103, 189, 174, 200,
-        244, 183, 138, 215, 98, 231, 103, 194, 0, 53, 124, 119
-    ]);
-}
 
 fn config() -> testnet::Config {
     testnet::Config {
@@ -42,31 +29,47 @@ fn config() -> testnet::Config {
 }
 
 #[test]
-fn rere_tracked() {
+/// Peers should be able to see references created by peers in their tracking
+/// graph. To test this we do the following:
+///
+/// - Create a testnet with two peers, peer1, and peer2
+/// - Make peer1 track peer2
+/// - Create a project in peer1s storage
+/// - Create a commit in the project as peer1, point refs/heads/master at it
+/// - Pull the project from peer1 to peer2
+/// - Create a commit in peer2, point refs/heads/master at it
+/// - Pull the project from peer2 into peer1
+/// - Assert that the reference refs/namespaces/<project>/refs/remotes/<Peer
+///   2>/heads/master exists in peer1s storage.
+///
+/// This test was initially created to reproduce this issue
+/// https://github.com/radicle-dev/radicle-link/issues/726 which was due to
+/// the patch we have applied to libgit incorrectly handling unknown remote
+/// references. This is now fixed but it seems prudent to retain the test as it
+/// exercises a critical code path.
+fn can_see_tracked_references() {
     logging::init();
 
     let net = testnet::run(config()).unwrap();
-    let peer1 = net.peers().index(0).clone();
-    let peer2 = net.peers().index(1).clone();
     net.enter(async {
-        tracing::info!(peer1=?peer1.peer_id(), peer2=?peer2.peer_id(), "created peers");
+        let peer1 = net.peers().index(0);
+        let peer2 = net.peers().index(1);
 
         let proj = peer1
-            .using_storage(move |storage| TestProject::create(&storage))
+            .using_storage(move |storage| TestProject::create(storage))
             .await
             .unwrap()
             .unwrap();
 
-        tracing::info!(project_id=?proj.project.urn().encode_id(), "created project");
-
         peer1
             .using_storage({
                 let urn = proj.project.urn();
-                let peer2_id = peer2.peer_id().clone();
+                let peer2_id = peer2.peer_id();
                 move |storage| {
                     let id = identities::local::load(storage, urn.clone())
                         .expect("local ID should have been created by TestProject::create")
                         .unwrap();
+                    let id_encoded = id.clone().into_inner().urn().encode_id();
                     id.link(storage, &urn).unwrap();
                     tracking::track(storage, &urn, peer2_id).unwrap();
                 }
@@ -75,7 +78,6 @@ fn rere_tracked() {
             .unwrap();
 
         // Create a commit in peer1's view of the project
-        // Note that if we don't create a commit in peer 1 the test passes
         let _peer1_commit_id = peer1
             .using_storage({
                 let urn = proj.project.urn();
@@ -111,21 +113,6 @@ fn rere_tracked() {
             .await
             .unwrap()
             .unwrap();
-
-        tracing::debug!("pulling");
-        let peer1_storage_path = peer1
-            .using_storage(|s| s.path().to_path_buf())
-            .await
-            .unwrap();
-        let peer2_storage_path = peer2
-            .using_storage(|s| s.path().to_path_buf())
-            .await
-            .unwrap();
-        tracing::debug!(
-            ?peer1_storage_path,
-            ?peer2_storage_path,
-            "STORAGESTORAGEGETYOURSTORAGE"
-        );
 
         // pull project from peer2 to peer1
         proj.pull(peer2, peer1).await.unwrap();

@@ -13,7 +13,7 @@ use futures::{
 use thiserror::Error;
 
 use crate::{
-    git::{p2p::header::Service, replication::ReplicateResult, Urn},
+    git::{replication::ReplicateResult, Urn},
     net::{
         connection::{Duplex, RemoteInfo},
         protocol::{self, control, gossip, io::graft, ProtocolStorage, State},
@@ -44,14 +44,12 @@ where
     match state.git.service(recv, send).await {
         Err(e) => tracing::warn!(err = ?e, "git service setup error"),
         Ok(srv) => {
-            let service: Service = Service(srv.header.service.clone());
             let repo = srv.header.repo.clone();
             let nonce = srv.header.nonce;
             let res = srv
                 .run()
                 .err_into::<Error>()
                 .and_then(|()| async {
-                    tracing::info!(service=?service, "Finished running git service");
                     if let Some(n) = nonce {
                         // Only rere if we have a fresh nonce
                         if !state.nonces.contains(&n) {
@@ -88,6 +86,8 @@ where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     use protocol::event::downstream::Gossip::Announce;
+
+    tracing::info!("attempting rere");
 
     let config = graft::config::Rere {
         replication: state.config.replication,
