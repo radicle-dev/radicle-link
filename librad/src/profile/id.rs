@@ -42,6 +42,12 @@ pub enum Error {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ProfileId(pub(super) String);
 
+impl AsRef<Path> for ProfileId {
+    fn as_ref(&self) -> &Path {
+        self.0.as_ref()
+    }
+}
+
 impl FromStr for ProfileId {
     type Err = Error;
 

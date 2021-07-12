@@ -49,7 +49,7 @@ fn profile_paths() {
     assert!(profile
         .paths()
         .git_dir()
-        .starts_with(tmp_home.path().join(id.as_str())));
+        .starts_with(tmp_home.path().join(id)));
 }
 
 #[test]
