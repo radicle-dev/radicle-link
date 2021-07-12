@@ -206,11 +206,11 @@ where
                             .expect("subroutines is gone");
                         let (_, run) = net::protocol::accept(bound, disco.clone().discover());
                         if let Err(e) = run.await {
-                            log::error!("accept error: {}", e);
+                            tracing::error!(error = ?e, "accept error");
                         }
                     },
                     Err(e) => {
-                        log::error!("bound error: {}", e);
+                        tracing::error!(error = ?e, "bound error");
                         return Err(Error::Bootstrap(e));
                     },
                 }

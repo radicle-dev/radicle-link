@@ -112,7 +112,7 @@ where
     remote.save(&repo)?;
     for (reference, oid) in remote.fetch(storage, &repo, LocalFetchspec::Configured)? {
         let msg = format!("Fetched `{}->{}`", reference, oid);
-        log::debug!("{}", msg);
+        tracing::debug!("{}", msg);
 
         // FIXME(finto): we should ignore refs that don't start with heads to avoid
         // unintended side-effects.

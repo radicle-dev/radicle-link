@@ -14,8 +14,7 @@ pub async fn update<S>(peer: Peer<S>, urn: Urn)
 where
     S: Clone + Signer,
 {
-    match state::update_include(&peer, urn.clone()).await {
-        Ok(path) => log::debug!("Updated include file @ {}", path.display()),
-        Err(err) => log::debug!("Failed to update include file for `{}`: {}", urn, err),
+    if let Err(err) = state::update_include(&peer, urn.clone()).await {
+        tracing::error!(%urn, error = ?err, "Failed to update include file");
     }
 }

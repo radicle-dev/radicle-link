@@ -120,7 +120,7 @@ impl discovery::Discovery for StreamDiscovery {
                 match self.seeds_receiver.changed().await {
                     Ok(_) => {},
                     Err(_) => {
-                        log::warn!("Peer discovery stream dropped");
+                        tracing::warn!("Peer discovery stream dropped");
                         break;
                     }
                 }

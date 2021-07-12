@@ -26,8 +26,8 @@ where
         rev: rev.map(|rev| Rev::Git(rev.into())),
         origin: None,
     }) {
-        Ok(()) => log::trace!("successfully announced for urn=`{}`, rev=`{:?}`", urn, rev),
-        Err(_payload) => log::warn!("failed to announce for urn=`{}`, rev=`{:?}`", urn, rev),
+        Ok(()) => tracing::trace!(%urn, ?rev, "successfully announced URN"),
+        Err(_payload) => tracing::warn!(%urn, ?rev, "failed to announce URN"),
     }
 }
 
@@ -41,11 +41,7 @@ where
         rev: None,
         origin,
     }) {
-        Ok(()) => log::trace!(
-            "successfully queried for urn=`{}`, origin=`{:?}`",
-            urn,
-            origin
-        ),
-        Err(_payload) => log::warn!("failed to query for urn=`{}`, origin=`{:?}`", urn, origin),
+        Ok(()) => tracing::trace!(%urn, ?origin, "successfully queried URN"),
+        Err(_payload) => tracing::warn!(%urn, "failed to query URN"),
     };
 }

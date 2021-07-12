@@ -88,7 +88,7 @@ where
         };
         let waiting_room = match waiting_room::load(&store) {
             Err(err) => {
-                log::warn!("Failed to load waiting room: {}", err);
+                tracing::warn!(?err, "Failed to load waiting room");
                 WaitingRoom::new(request::waiting_room::Config {
                     delta: config::DEFAULT_WAITING_ROOM_TIMEOUT,
                     ..request::waiting_room::Config::default()
@@ -121,7 +121,7 @@ where
                         match res {
                             Ok(ev) => Some(Input::Protocol(ev)),
                             Err(err) => {
-                                log::warn!("receive error: {}", err);
+                                tracing::warn!(?err, "receive error");
                                 None
                             },
                         }
@@ -276,7 +276,7 @@ where
     }
 
     fn handle_input(&mut self, input: Input) {
-        log::debug!("handling subroutine input: {:?}", input);
+        tracing::debug!(?input, "handling subroutine input");
 
         let old_status = self.run_state.status.clone();
 
@@ -344,7 +344,7 @@ where
                 .ok();
         },
         Err(err) => {
-            log::error!("announce error: {:?}", err);
+            tracing::error!(?err, "announce error");
             sender
                 .send(Input::Announce(input::Announce::Failed))
                 .await
@@ -381,8 +381,8 @@ where
 #[allow(clippy::unused_async)]
 async fn persist_waiting_room(waiting_room: WaitingRoom<SystemTime, Duration>, store: kv::Store) {
     match waiting_room::save(&store, waiting_room) {
-        Ok(()) => log::debug!("Successfully persisted the waiting room"),
-        Err(err) => log::debug!("Error while persisting the waiting room: {}", err),
+        Ok(()) => tracing::debug!("Successfully persisted the waiting room"),
+        Err(err) => tracing::debug!(?err, "Error while persisting the waiting room"),
     }
 }
 
@@ -405,7 +405,7 @@ where
                 .ok();
         },
         Err(err) => {
-            log::error!("sync error for {}: {:?}", peer_id, err);
+            tracing::error!(%peer_id, ?err, "sync error");
             sender
                 .send(Input::PeerSync(input::Sync::Failed(peer_id)))
                 .await
@@ -456,11 +456,11 @@ async fn clone<S>(
             gossip::announce(&peer, &urn, None);
         },
         Err(err) => {
-            log::warn!(
-                "an error occurred for the command 'Clone' for the URN '{}' from {}:\n{}",
-                urn,
-                remote_peer,
-                err,
+            tracing::warn!(
+                %urn,
+                %remote_peer,
+                ?err,
+                "an error occurred for the command 'Clone'",
             );
             sender
                 .send(Input::Request(input::Request::Failed {

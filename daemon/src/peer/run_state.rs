@@ -199,7 +199,7 @@ impl RunState {
     /// new state and in some cases produes commands which should be
     /// executed in the appropriate subroutines.
     pub fn transition(&mut self, input: Input) -> Vec<Command> {
-        log::trace!("TRANSITION START: {:?} {:?}", input, self.status);
+        tracing::trace!(?input, status = ?self.status, "transition start");
 
         let cmds = match input {
             Input::Announce(announce_input) => self.handle_announce(announce_input),
@@ -211,7 +211,7 @@ impl RunState {
             Input::Stats(stats_input) => self.handle_stats(stats_input),
         };
 
-        log::trace!("TRANSITION END: {:?} {:?}", self.status, cmds);
+        tracing::trace!(?cmds, status = ?self.status, "transition end");
 
         cmds
     }
@@ -356,7 +356,7 @@ impl RunState {
                     urn,
                 },
             ) => {
-                log::warn!("Cloning failed with: {}", reason);
+                tracing::warn!(?reason, "cloning failed");
                 self.waiting_room
                     .cloning_failed(&urn, remote_peer, SystemTime::now(), reason)
             },

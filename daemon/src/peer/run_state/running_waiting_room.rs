@@ -328,7 +328,7 @@ impl RunningWaitingRoom {
             },
             // FIXME(alexjg): Figure out how to report this error to the client
             Err(error) => {
-                log::warn!("WaitingRoom::Error : {}", error);
+                tracing::warn!(?error, "waiting room error");
                 Vec::new()
             },
         }

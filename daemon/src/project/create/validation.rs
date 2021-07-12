@@ -233,10 +233,7 @@ impl Repository {
                 url,
                 default_branch,
             } => {
-                log::debug!(
-                    "Setting up existing repository @ '{}'",
-                    repo.path().display()
-                );
+                tracing::debug!(path = ?repo.path(), "Setting up existing repository");
                 Self::setup_remote(&repo, open_storage, url, &default_branch)?;
                 Ok(repo)
             },
@@ -248,7 +245,7 @@ impl Repository {
                 signature,
             } => {
                 let path = path.join(name);
-                log::debug!("Setting up new repository @ '{}'", path.display());
+                tracing::debug!(?path, "Setting up new repository",);
                 let repo = Self::initialise(path, description, &default_branch)?;
                 Self::initial_commit(
                     &repo,
@@ -284,7 +281,7 @@ impl Repository {
         description: &str,
         default_branch: &OneLevel,
     ) -> Result<git2::Repository, git2::Error> {
-        log::debug!("Setting up new repository @ '{}'", path.display());
+        tracing::debug!(?path, "Setting up new repository");
         let mut options = git2::RepositoryInitOptions::new();
         options.no_reinit(true);
         options.mkpath(true);
@@ -336,7 +333,7 @@ impl Repository {
     {
         let _default_branch_ref = Self::existing_branch(repo, default_branch)?;
 
-        log::debug!("Creating rad remote");
+        tracing::debug!("Creating rad remote");
 
         let fetchspec = Refspec {
             src: refspec_pattern!("refs/heads/*"),
@@ -359,7 +356,7 @@ impl Repository {
                 force: Force::True,
             },
         )? {
-            log::debug!("Pushed local branch `{}`", pushed);
+            tracing::debug!(branch = ?pushed, "Pushed local branch");
         }
         Ok(git_remote)
     }
@@ -383,10 +380,7 @@ impl Repository {
     ) -> Result<Option<Remote<LocalUrl>>, Error> {
         match Remote::<LocalUrl>::find(repo, reflike!("rad")) {
             Err(remote::FindError::ParseUrl(_)) => {
-                log::warn!("an old/invalid URL was found when trying to load the `rad` remote");
-                log::warn!(
-                    "we are going to rename the remote to `rad_old` and create a new `rad` remote"
-                );
+                tracing::warn!("renaming invalid rad URL");
                 repo.remote_rename("rad", "rad_old")?;
                 Ok(None)
             },

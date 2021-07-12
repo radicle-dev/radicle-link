@@ -482,10 +482,10 @@ where
         })
         .await??;
 
-    log::debug!(
-        "Created project '{}#{}'",
-        project.urn(),
-        project.subject().name
+    tracing::debug!(
+        urn = ?project.urn(),
+        name = ?project.subject().name,
+        "created project",
     );
 
     let repo = spawn_blocking({
@@ -555,8 +555,7 @@ where
     }
 
     gossip::query(peer, &urn, Some(remote_peer));
-    let path = update_include(peer, urn).await?;
-    log::debug!("Updated include path @ `{}`", path.display());
+    update_include(peer, urn).await?;
     Ok(())
 }
 
@@ -577,8 +576,7 @@ where
 
     // Only need to update if we did untrack an existing peer
     if res {
-        let path = update_include(peer, urn).await?;
-        log::debug!("Updated include path @ `{}`", path.display());
+        update_include(peer, urn).await?;
     }
     Ok(res)
 }
@@ -725,7 +723,6 @@ where
         include_path,
     };
 
-    log::debug!("Determing Owner");
     let ownership = match peer_id {
         None => crate::project::checkout::Ownership::Local(peer.peer_id()),
         Some(remote) => {
@@ -733,10 +730,9 @@ where
                 let rad_self =
                     Urn::try_from(Reference::rad_self(Namespace::from(urn.clone()), peer_id))
                         .expect("namespace is set");
-                log::debug!("Monorepo: {}", monorepo(peer).display());
                 let person = peer
                     .using_storage(move |store| {
-                        log::debug!("Urn -> {}", rad_self);
+                        tracing::debug!(?rad_self, "cloning from peer");
                         person::get(store, &rad_self)?.ok_or(Error::PersonNotFound(rad_self))
                     })
                     .await??;
@@ -753,7 +749,6 @@ where
     };
 
     let settings = settings(peer);
-    log::debug!("Cloning");
     let path = spawn_blocking(move || checkout.run(settings, ownership)).await??;
 
     Ok(path)
@@ -791,7 +786,7 @@ where
     })
     .await??;
     let include_path = include.file_path();
-    log::info!("creating include file @ '{:?}'", include_path);
+    tracing::debug!(path = ?include_path, "updaing include");
     include.save()?;
 
     Ok(include_path)

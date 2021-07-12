@@ -17,7 +17,7 @@ pub async fn sync<S>(peer: &Peer<S>, remote_peer: PeerId) -> Result<(), Error>
 where
     S: Clone + Signer,
 {
-    log::debug!("Starting sync from {}", remote_peer);
+    tracing::debug!(%remote_peer, "Starting sync");
 
     let urns = state::list_projects(peer)
         .await?
@@ -26,18 +26,18 @@ where
         .collect::<Vec<_>>();
 
     for urn in urns {
-        log::debug!("Starting fetch of {} from {}", urn, remote_peer);
+        tracing::debug!(%urn, %remote_peer, "starting fetch");
         match state::fetch(peer, urn.clone(), remote_peer, vec![], None).await {
             Ok(result) => {
-                log::debug!(
-                    "Finished fetch of {} from {} with the result {:?}",
-                    urn,
-                    remote_peer,
-                    result.updated_tips
+                tracing::debug!(
+                    %urn,
+                    %remote_peer,
+                    updated_tips = ?result.updated_tips,
+                    "finished fetch",
                 );
                 include::update(peer.clone(), urn).await;
             },
-            Err(e) => log::debug!("Fetch of {} from {} errored: {}", urn, remote_peer, e),
+            Err(error) => tracing::error!(%urn, %remote_peer, ?error, "fetch error"),
         }
     }
 
