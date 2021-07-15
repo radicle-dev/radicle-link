@@ -276,7 +276,7 @@ where
     }
 
     fn handle_input(&mut self, input: Input) {
-        tracing::debug!(?input, "handling subroutine input");
+        tracing::trace!(?input, "handling subroutine input");
 
         let old_status = self.run_state.status.clone();
 
