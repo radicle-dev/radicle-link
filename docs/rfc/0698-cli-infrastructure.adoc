@@ -261,7 +261,7 @@ metadata for that project. As per <<arch-cli, RFC-682#CLI>>:
 -------
 
 Each subcommand MUST expose its functionality as a linkable library,
-and provide CBOR serialisation for its arguments and outputs.
+and provide CBOR <<RFC8949>> serialisation for its arguments and outputs.
 -------
 
 The output should, however, not be limited to CBOR. We will provide an
@@ -281,6 +281,7 @@ types MAY be proposed in future RFCs.
 
 * [[[RFC2119]]] https://datatracker.ietf.org/doc/html/rfc2119
 * [[[RFC8174]]] https://datatracker.ietf.org/doc/html/rfc8174
+* [[[RFC8949]]] https://datatracker.ietf.org/doc/html/rfc8949
 * [[[arch-cli]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#cli
 * [[[arch-orch]]]
   https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc#process-orchestration
