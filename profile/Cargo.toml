@@ -1,0 +1,22 @@
+[package]
+name = "radicle-profile"
+version = "0.1.0"
+authors = ["The Radicle Team <dev@radicle.xyz>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[lib]
+doctest = true
+test = false
+
+[dependencies]
+anyhow = "1"
+argh = "0"
+thiserror = "1"
+serde = "1"
+
+[dependencies.librad]
+path = "../librad"
+
+[dependencies.radicle-keystore]
+version = "0.1"
