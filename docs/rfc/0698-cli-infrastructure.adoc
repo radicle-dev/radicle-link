@@ -237,7 +237,7 @@ construct in `librad`. The following actions will be defined:
   related infrastructure for the profile, e.g. storage.
 * `get`— get the current `Profile`'s identifier.
 * `set`— set the current `Profile` to the identifier.
-  passed in. *Note* that this should refuse to do so if the daemon is online.
+  passed in.
 * `list`— list the available `Profile` identifiers.
 * `ssh-add`— add the current `Profile`'s key to the `ssh-agent`.
 
