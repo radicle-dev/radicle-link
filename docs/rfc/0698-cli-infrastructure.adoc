@@ -224,7 +224,9 @@ which we sketch out below:
 
 * `ask` -- tell the `daemon` that you wish to replicate the
   given URN. Pending <<rl-141, radicle-link#141>>.
-* `from` -- if the peer/address are known for the given URN,
+* `status` -- retrieve the status of a URN that we have `ask`ed for.
+* `list` -- list the URNs that we have asked for but have not yet replicated.
+* `direct` -- if the peer/address are known for the given URN,
   attempt to replicate the identity. This requires the activation of
   the peer-to-peer daemon.
 
