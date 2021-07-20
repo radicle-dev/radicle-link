@@ -19,7 +19,6 @@ use std::{
     time::Duration,
 };
 
-use crossbeam_utils::atomic::AtomicCell;
 use futures::{future::FutureExt as _, pin_mut, select, stream::StreamExt as _};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -198,7 +197,7 @@ impl Node {
     }
 
     /// Run the seed node. This function runs indefinitely until a fatal error
-    /// occurs.
+    /// occurs or a termination signal is sent to the process.
     pub async fn run(
         self,
         peer_config: peer::Config<Signer>,
@@ -208,27 +207,49 @@ impl Node {
         let events = peer.subscribe().fuse();
         let mut requests = ReceiverStream::new(self.requests).fuse();
 
-        let term = Arc::new(AtomicCell::new(None));
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let shutdown_rx = shutdown_rx.fuse();
+
         // Spawn the peer thread.
         let mut protocol = tokio::spawn({
             let peer = peer.clone();
             let disco = discovery::Static::resolve(self.config.bootstrap.clone())?;
-            let term = Arc::clone(&term);
             async move {
+                futures::pin_mut!(shutdown_rx);
                 loop {
                     match peer.bind().await {
                         Ok(bound) => {
-                            let (kill, run) = bound.accept(disco.clone().discover());
-                            if let Some(prev) = term.swap(Some(kill)) {
-                                prev()
-                            }
-                            if let Err(e) = run.await {
-                                tracing::error!(err = ?e, "Accept error")
-                            }
+                            let (stop_accepting, run) = bound.accept(disco.clone().discover());
+                            let run = run.fuse();
+                            futures::pin_mut!(run);
+                            let result = futures::select! {
+                                _ = shutdown_rx => {
+                                    stop_accepting();
+                                    run.await
+                                }
+                                result = run => result
+                            };
+                            match result {
+                                Err(protocol::io::error::Accept::Done) => {
+                                    tracing::info!("network endpoint shut down");
+                                    return;
+                                },
+                                Err(error) => {
+                                    tracing::error!(?error, "accept error");
+                                },
+                                Ok(never) => never,
+                            };
                         },
                         Err(e) => {
                             tracing::error!(err = ?e, "Bind error");
-                            tokio::time::sleep(Duration::from_secs(2)).await
+                            let sleep = tokio::time::sleep(Duration::from_secs(2)).fuse();
+                            futures::pin_mut!(sleep);
+                            futures::select! {
+                                _ = sleep => {},
+                                _ = shutdown_rx => {
+                                    return;
+                                }
+                            };
                         },
                     }
                 }
@@ -248,9 +269,7 @@ impl Node {
                 let stop = Arc::clone(&stop);
                 move || loop {
                     if stop.load(SeqCst) {
-                        if let Some(f) = term.take() {
-                            f()
-                        }
+                        let _ = shutdown_tx.send(());
                         break;
                     }
 

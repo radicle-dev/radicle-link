@@ -133,7 +133,7 @@ pub struct PeerHandle {
 }
 
 pub struct Harness {
-    tasks: Vec<tokio::task::JoinHandle<()>>,
+    peer_shutdowns: Vec<peer::Shutdown>,
     rt: Option<tokio::runtime::Runtime>,
     tmp: Vec<tempfile::TempDir>,
 }
@@ -142,7 +142,7 @@ impl Harness {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
-            tasks: Vec::new(),
+            peer_shutdowns: Vec::new(),
             rt: Some(
                 tokio::runtime::Builder::new_current_thread()
                     .enable_all()
@@ -176,10 +176,12 @@ impl Harness {
         let mut events = peer.subscribe();
         let mut control = peer.control();
 
+        let (shutdown, run) = peer.start();
+        self.peer_shutdowns.push(shutdown);
+
         // Must launch now for `control` to work
-        let running = self
-            .rt()
-            .spawn(async move { peer.run().await.expect("peer died unexpectedly") });
+        self.rt()
+            .spawn(async move { run.await.expect("peer died unexpectedly") });
 
         // Wait for startup
         self.rt().block_on(async {
@@ -214,7 +216,6 @@ impl Harness {
             control,
         };
 
-        self.tasks.push(running);
         self.tmp.push(tmp);
 
         Ok(hodl)
@@ -231,7 +232,7 @@ impl Harness {
 
 impl Drop for Harness {
     fn drop(&mut self) {
-        self.tasks.drain(..).for_each(|t| t.abort());
+        self.peer_shutdowns.clear();
         self.rt
             .take()
             .unwrap()

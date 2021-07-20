@@ -9,8 +9,9 @@
 use std::{io, net::SocketAddr, vec};
 
 use futures::{
-    future::{FutureExt as _, TryFutureExt as _},
+    future::{Either, FutureExt as _, TryFutureExt as _},
     stream::StreamExt as _,
+    Future,
 };
 use tokio::{
     sync::{broadcast, mpsc, watch},
@@ -101,7 +102,8 @@ where
 {
     /// Constructs a new [`Peer`].
     ///
-    /// To kick-off the peer's subroutines be sure to use [`run`][`Self::run`].
+    /// To kick-off the peer's subroutines be sure to use
+    /// [`start`][`Self::start`].
     ///
     /// # Errors
     ///
@@ -122,7 +124,8 @@ where
 
     /// Construct a new [`Peer`] using an existing [`net::peer::Peer`].
     ///
-    /// To kick-off the peer's subroutines be sure to use [`run`][`Self::run`].
+    /// To kick-off the peer's subroutines be sure to use
+    /// [`start`][`Self::start`].
     #[must_use = "give a peer some love"]
     pub fn with_peer(
         peer: net::peer::Peer<S>,
@@ -159,8 +162,14 @@ where
         self.subscriber.subscribe()
     }
 
-    /// Start up the internal machinery to advance the underlying protocol,
-    /// react to significant events and keep auxiliary tasks running.
+    /// Returns a future that runs the peer and a handle that shuts the peer
+    /// down when it is dropped.
+    ///
+    /// The function only returns when an error occurs or the [`Shutdown`] value
+    /// is dropped. becomes ready.
+    ///
+    /// The future returned by this function must be run to completion for the
+    /// daemon to shut down properly.
     ///
     /// # Errors
     /// * Failed to accept peer connections
@@ -169,62 +178,102 @@ where
     /// # Panics
     /// * If the subroutine is gone when the protocol network is still setting
     ///   up shop.
-    pub async fn run(self) -> Result<(), Error> {
-        #![allow(clippy::mut_mut)]
+    pub fn start(self) -> (Shutdown, impl Future<Output = Result<(), Error>>) {
+        let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel(1);
+        let shutdown = Shutdown(shutdown_tx.clone());
 
-        let Self {
-            peer,
-            disco,
-            store,
-            subscriber,
-            run_config,
-            control_receiver,
-            ..
-        } = self;
-        let (addrs_tx, addrs_rx) = watch::channel(vec![]);
+        // We move all code inside the future so that this function can be called
+        // without a runtime being present yet.
+        let run = async move {
+            let Self {
+                peer,
+                disco,
+                store,
+                subscriber,
+                run_config,
+                control_receiver,
+                ..
+            } = self;
+            let (addrs_tx, addrs_rx) = watch::channel(vec![]);
 
-        let protocol_events = peer.subscribe().boxed();
-        let subroutines = Subroutines::new(
-            peer.clone(),
-            addrs_rx,
-            store,
-            &run_config,
-            protocol_events,
-            subscriber,
-            control_receiver,
-        )
-        .run()
-        .fuse()
-        .map_err(Error::Join);
+            let protocol_events = peer.subscribe().boxed();
+            let subroutines = Subroutines::new(
+                peer.clone(),
+                addrs_rx,
+                store,
+                &run_config,
+                protocol_events,
+                subscriber,
+                control_receiver,
+            )
+            .run()
+            .fuse()
+            .map_err(Error::Join);
 
-        let protocol = async move {
-            loop {
-                match peer.bind().await {
-                    Ok(bound) => {
-                        addrs_tx
-                            .send(bound.listen_addrs())
-                            .expect("subroutines is gone");
-                        let (_, run) = net::protocol::accept(bound, disco.clone().discover());
-                        if let Err(e) = run.await {
-                            tracing::error!(error = ?e, "accept error");
-                        }
-                    },
-                    Err(e) => {
-                        tracing::error!(error = ?e, "bound error");
-                        return Err(Error::Bootstrap(e));
-                    },
+            let protocol = async move {
+                loop {
+                    match peer.bind().await {
+                        Ok(bound) => {
+                            addrs_tx
+                                .send(bound.listen_addrs())
+                                .expect("subroutines is gone");
+                            let (stop_accepting, run) = bound.accept(disco.clone().discover());
+                            let shutdown_recv = shutdown_rx.recv();
+                            futures::pin_mut!(shutdown_recv);
+                            futures::pin_mut!(run);
+                            let result = match futures::future::select(shutdown_recv, run).await {
+                                Either::Left((_, run)) => {
+                                    stop_accepting();
+                                    run.await
+                                },
+                                Either::Right((run_result, _)) => run_result,
+                            };
+                            match result {
+                                Err(net::protocol::io::error::Accept::Done) => {
+                                    tracing::info!("network endpoint shut down");
+                                    return Ok(());
+                                },
+                                Err(error) => {
+                                    tracing::error!(?error, "accept error");
+                                },
+                                Ok(never) => never,
+                            };
+                        },
+                        Err(e) => {
+                            tracing::error!(error = ?e, "bound error");
+                            return Err(Error::Bootstrap(e));
+                        },
+                    }
                 }
             }
-        }
-        .fuse();
+            .fuse();
 
-        futures::pin_mut!(subroutines);
-        futures::pin_mut!(protocol);
+            futures::pin_mut!(subroutines);
+            futures::pin_mut!(protocol);
+            match futures::future::select(subroutines, protocol).await {
+                Either::Left((result, protocol)) => {
+                    let _result = shutdown_tx.send(());
 
-        futures::select! {
-            res = protocol => res?,
-            res = subroutines => res?
+                    protocol.await?;
+                    result
+                },
+                Either::Right((result, _subroutines)) => result,
+            }
         };
-        Ok(())
+
+        (shutdown, run)
+    }
+}
+
+/// Shutdown handle returned by [`Peer::start`].
+///
+/// If this value is dropped, the peer will shutdown.
+#[derive(Debug)]
+pub struct Shutdown(mpsc::Sender<()>);
+
+impl Drop for Shutdown {
+    fn drop(&mut self) {
+        // If this errors, the peer has already shut down.
+        let _ = self.0.try_send(());
     }
 }
