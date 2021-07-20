@@ -11,7 +11,7 @@ use std::{
 };
 
 use data::BoundedVec;
-use futures::channel::mpsc;
+use futures::Stream;
 use parking_lot::RwLock;
 use rand::seq::IteratorRandom as _;
 
@@ -24,7 +24,6 @@ use super::{
     Tick,
 };
 use crate::{
-    executor,
     net::protocol::info::{PartialPeerInfo, PeerAdvertisement, PeerInfo},
     PeerId,
 };
@@ -124,20 +123,18 @@ where
     Addr: Clone + Debug + PartialEq,
 {
     pub fn new(
-        spawner: &executor::Spawner,
         local_id: PeerId,
         rng: Rng,
         params: Params,
-    ) -> (Self, mpsc::Receiver<Periodic<Addr>>)
+    ) -> (Self, impl Stream<Item = Periodic<Addr>>)
     where
         Rng: Send + Sync + 'static,
         Addr: Send + Sync + 'static,
     {
         let this = Self(Arc::new(RwLock::new(HpvInner::new(local_id, rng, params))));
-        let (tx, rx) = mpsc::channel(1);
-        spawner.spawn(periodic_tasks(this.clone(), tx)).detach();
+        let periodic = periodic_tasks(this.clone());
 
-        (this, rx)
+        (this, periodic)
     }
 
     pub fn view_stats(&self) -> (usize, usize) {

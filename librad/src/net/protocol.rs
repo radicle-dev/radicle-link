@@ -6,7 +6,7 @@
 use std::{fmt::Debug, future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use async_stream::stream;
-use futures::channel::mpsc;
+use futures::{stream::BoxStream, StreamExt};
 use nonempty::NonEmpty;
 use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
@@ -99,7 +99,7 @@ pub struct Bound<S> {
     phone: TinCans,
     state: State<S>,
     incoming: quic::IncomingConnections<'static>,
-    periodic: mpsc::Receiver<membership::Periodic<SocketAddr>>,
+    periodic: BoxStream<'static, membership::Periodic<SocketAddr>>,
 }
 
 impl<S> Bound<S> {
@@ -173,7 +173,6 @@ where
     )
     .await?;
     let (membership, periodic) = membership::Hpv::<_, SocketAddr>::new(
-        &spawner,
         local_id,
         Pcg64Mcg::new(rand::random()),
         config.membership,
@@ -209,7 +208,7 @@ where
         phone,
         state,
         incoming,
-        periodic,
+        periodic: periodic.boxed(),
     })
 }
 

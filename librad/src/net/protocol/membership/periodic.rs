@@ -4,7 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    fmt::{Debug, Display},
+    fmt::Debug,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -13,6 +13,7 @@ use std::{
 use futures::{
     future::{self, FutureExt as _},
     stream::{self, StreamExt as _},
+    Stream,
 };
 use futures_timer::Delay;
 use rand::Rng as _;
@@ -26,33 +27,35 @@ pub enum Periodic<A> {
     Tickle,
 }
 
-#[tracing::instrument(skip(hpv, tx))]
-pub(super) async fn periodic_tasks<Rng, Addr, T>(hpv: Hpv<Rng, Addr>, tx: T)
+#[tracing::instrument(skip(hpv))]
+pub(super) fn periodic_tasks<Rng, Addr>(hpv: Hpv<Rng, Addr>) -> impl Stream<Item = Periodic<Addr>>
 where
-    Rng: rand::Rng + Clone,
+    Rng: rand::Rng + Clone + 'static,
     Addr: Clone + Debug + PartialEq + Send + Sync + 'static,
-    T: futures::Sink<Periodic<Addr>>,
-    T::Error: Display,
 {
     let params = hpv.params();
 
-    let shuffle = Interval::new(params.shuffle_interval, Duration::from_secs(5)).filter_map(|_| {
-        let p = hpv.shuffle().map(Periodic::Shuffle);
-        if p.is_none() {
-            tracing::warn!("nothing to shuffle");
+    let shuffle = Interval::new(params.shuffle_interval, Duration::from_secs(5)).filter_map({
+        let hpv = hpv.clone();
+        move |_| {
+            let p = hpv.shuffle().map(Periodic::Shuffle);
+            if p.is_none() {
+                tracing::warn!("nothing to shuffle");
+            }
+            future::ready(p)
         }
-        future::ready(p)
     });
 
-    let promote = Interval::new(params.promote_interval, Duration::from_secs(5)).filter_map(|_| {
-        let candidates = hpv.choose_passive_to_promote();
-        if candidates.is_empty() {
-            tracing::warn!("nothing to promote");
-            future::ready(None)
-        } else {
-            future::ready(Some(Periodic::RandomPromotion { candidates }))
-        }
-    });
+    let promote =
+        Interval::new(params.promote_interval, Duration::from_secs(5)).filter_map(move |_| {
+            let candidates = hpv.choose_passive_to_promote();
+            if candidates.is_empty() {
+                tracing::warn!("nothing to promote");
+                future::ready(None)
+            } else {
+                future::ready(Some(Periodic::RandomPromotion { candidates }))
+            }
+        });
 
     let tickle = Interval::new(MAX_IDLE_TIMEOUT.div_f32(2.0), Duration::from_secs(5))
         .filter_map(|_| future::ready(Some(Periodic::Tickle)));
@@ -60,14 +63,7 @@ where
     // Wrapping the `select` calls is the most effective to combine the three
     // interval streams into one. All other means (select macro, select_all)
     // incur significant overhead.
-    if let Err(e) = stream::select(stream::select(promote, shuffle), tickle)
-        .map(Ok)
-        .forward(tx)
-        .await
-    {
-        tracing::warn!(err = %e, "periodic tasks error");
-    }
-    tracing::info!("shutting down")
+    stream::select(stream::select(promote, shuffle), tickle)
 }
 
 struct Interval {
