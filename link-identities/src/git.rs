@@ -15,7 +15,7 @@ use multihash::Multihash;
 use crate::{
     delegation::{self, Delegations},
     generic::{self, Signed, Verified},
-    payload::{self, PersonPayload, ProjectPayload},
+    payload::{self, PersonPayload, ProjectPayload, SomePayload},
     sign::{Signature, Signatures},
     urn,
 };
@@ -67,6 +67,13 @@ impl SomeIdentity {
         match self {
             Self::Project(project) => Some(project),
             _ => None,
+        }
+    }
+
+    pub fn payload(&self) -> SomePayload {
+        match self {
+            Self::Project(project) => SomePayload::Project(project.payload().clone()),
+            Self::Person(person) => SomePayload::Person(person.payload().clone()),
         }
     }
 }

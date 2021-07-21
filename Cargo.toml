@@ -16,6 +16,7 @@ members = [
   "node-lib",
   "rad-clib",
   "rad-exe",
+  "rad-identities",
   "rad-profile",
   "seed",
   "std-ext",
