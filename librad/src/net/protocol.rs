@@ -255,9 +255,9 @@ where
         async move {
             let res = io::connections::incoming(state, incoming).await;
             drop(_git_factory);
-            drop(tasks);
             tracing::debug!("waiting on idle connections...");
             endpoint.wait_idle().await;
+            drop(tasks);
             tracing::debug!("protocol shut down");
             res
         }
