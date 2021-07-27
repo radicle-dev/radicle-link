@@ -28,14 +28,21 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 pub fn init() {
     if env_logger::builder().is_test(true).try_init().is_ok() {
         if env::var("RUST_LOG").is_err() {
-            env::set_var("RUST_LOG", "error");
+            env::set_var("RUST_LOG", "debug");
         }
 
-        let mut builder = FmtSubscriber::builder().with_env_filter(EnvFilter::from_default_env());
+        let mut builder = FmtSubscriber::builder()
+            .with_env_filter(EnvFilter::from_default_env())
+            .with_test_writer();
         if log_enabled!(target: "librad", Level::Trace) {
             builder = builder.with_thread_ids(true);
         } else if env::var("TRACING_FMT").is_err() {
-            env::set_var("TRACING_FMT", "compact")
+            let default_format = if env::var("CI").is_ok() {
+                "compact"
+            } else {
+                "pretty"
+            };
+            env::set_var("TRACING_FMT", default_format);
         }
 
         match env::var("TRACING_FMT").ok().as_deref() {
