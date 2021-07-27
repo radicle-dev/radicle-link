@@ -22,7 +22,7 @@ default-features = false
 features = []
 
 [dependencies.minicbor]
-version = ">= 0.6, 0"
+version = "0.9.1"
 features = ["std"]
 optional = true
 

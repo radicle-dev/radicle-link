@@ -29,7 +29,7 @@ pub enum Message<Addr> {
         #[n(0)]
         info: PeerAdvertisement<Addr>,
         #[n(1)]
-        need_friends: Option<()>,
+        prio: Priority,
     },
 
     #[n(3)]
@@ -53,4 +53,53 @@ pub enum Message<Addr> {
     #[n(5)]
     #[cbor(array)]
     Disconnect,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Priority {
+    Normal,
+    High,
+}
+
+// A joint brainfart of @kim and @twittner previously optimised away
+// composability for the savings of 1 byte:
+//
+// `minicbor` prior to 0.9 would encode `()` as nothing at all, and so the
+// priority was defined as `Option<()>` with `Some(())` denoting "high" and
+// `None` denoting "normal".
+//
+// That is obviously stupid, and minicbor 0.9 makes a breaking change to rectify
+// it. Unfortunately, we need to keep the previous encoding until enough peers
+// are deployed which understand the more conventional `index_only` encoding.
+
+impl minicbor::Encode for Priority {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut minicbor::Encoder<W>,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        if let Priority::Normal = &self {
+            e.null()?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'b> minicbor::Decode<'b> for Priority {
+    fn decode(d: &mut minicbor::Decoder<'b>) -> Result<Self, minicbor::decode::Error> {
+        use minicbor::{data::Type, decode::Error};
+
+        if Type::Null == d.datatype()? {
+            d.skip()?;
+            Ok(Self::Normal)
+        } else if Type::U32 == d.datatype()? {
+            match d.u32()? {
+                0 => Ok(Self::Normal),
+                1 => Ok(Self::High),
+                x => Err(Error::UnknownVariant(x)),
+            }
+        } else {
+            Ok(Self::High)
+        }
+    }
 }

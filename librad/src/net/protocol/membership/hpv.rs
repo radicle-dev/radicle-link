@@ -203,13 +203,17 @@ where
     }
 
     pub fn hello(&self, local_info: PeerAdvertisement<Addr>) -> rpc::Message<Addr> {
-        use rpc::Message::*;
+        use rpc::{Message::*, Priority};
 
         match self.view_stats() {
             (0, 0) => Join { info: local_info },
             (act, _) => Neighbour {
                 info: local_info,
-                need_friends: (act == 0).then_some(()),
+                prio: if act == 0 {
+                    Priority::High
+                } else {
+                    Priority::Normal
+                },
             },
         }
     }
@@ -341,7 +345,7 @@ where
         remote_addr: Addr,
         rpc: rpc::Message<Addr>,
     ) -> Result<TnT<Addr>, Error> {
-        use rpc::Message::*;
+        use rpc::{Message::*, Priority};
         use Tick::*;
 
         tracing::debug!(
@@ -405,8 +409,8 @@ where
                 Ok(tnt)
             },
 
-            Neighbour { info, need_friends } => {
-                if need_friends.is_some() || !self.view.is_active_full() {
+            Neighbour { info, prio } => {
+                if prio == Priority::High || !self.view.is_active_full() {
                     let info = peer_info_from(remote_peer, info, remote_addr);
                     Ok(self.view.add_active(info.into()).into_iter().collect())
                 } else {
