@@ -105,19 +105,7 @@ pub(super) async fn interrogation<S>(
 {
     let chan = reply.lock().take();
     if let Some(tx) = chan {
-        let may_conn = match state.endpoint.get_connection(peer) {
-            Some(conn) => Some(conn),
-            None => io::connect(&state.endpoint, peer, addr_hints)
-                .await
-                .map(|(conn, ingress)| {
-                    state
-                        .spawner
-                        .spawn(io::streams::incoming(state.clone(), ingress))
-                        .detach();
-                    conn
-                }),
-        };
-        let resp = match may_conn {
+        let resp = match state.connection(peer, addr_hints).await {
             None => Err(error::Interrogation::NoConnection(peer)),
             Some(conn) => match io::send::request(&conn, request).await {
                 Err(e) => Err(e.into()),

@@ -16,7 +16,7 @@ pub use super::error;
 use super::streams;
 use crate::{
     net::{
-        protocol::{event::upstream as event, gossip, info::PeerInfo, ProtocolStorage, State},
+        protocol::{event::upstream as event, gossip, ProtocolStorage, State},
         quic,
     },
     PeerId,
@@ -69,22 +69,6 @@ where
     Err(error::Accept::Done)
 }
 
-pub async fn connect_peer_info(
-    endpoint: &quic::Endpoint,
-    peer_info: PeerInfo<SocketAddr>,
-) -> Option<(
-    quic::Connection,
-    quic::IncomingStreams<
-        impl Stream<Item = quic::Result<Either<quic::BidiStream, quic::RecvStream>>>,
-    >,
-)> {
-    let addrs = peer_info
-        .seen_addrs
-        .into_iter()
-        .chain(peer_info.advertised_info.listen_addrs);
-    connect(endpoint, peer_info.peer_id, addrs).await
-}
-
 #[tracing::instrument(skip(endpoint, addrs))]
 pub async fn connect<'a, Addrs>(
     endpoint: &quic::Endpoint,
@@ -106,7 +90,7 @@ where
 
     let addrs = addrs.into_iter().filter(routable).collect::<IndexSet<_>>();
     if addrs.is_empty() {
-        tracing::warn!("no routable addrs");
+        tracing::debug!("no routable addrs");
         None
     } else {
         future::select_ok(addrs.iter().map(|addr| {

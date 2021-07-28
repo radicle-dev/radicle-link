@@ -86,6 +86,29 @@ where
             tick::tock(self.clone(), tock).await
         }
     }
+
+    /// Get or establish a connection
+    pub async fn connection<I>(&self, to: PeerId, addr_hints: I) -> Option<quic::Connection>
+    where
+        I: IntoIterator<Item = SocketAddr> + 'static,
+    {
+        match self.endpoint.get_connection(to) {
+            Some(conn) => Some(conn),
+            None => io::connect(&self.endpoint, to, addr_hints)
+                .in_current_span()
+                .await
+                .map(|(conn, ingress)| {
+                    self.spawner
+                        .spawn(io::streams::incoming(self.clone(), ingress))
+                        .detach();
+                    conn
+                }),
+        }
+    }
+
+    pub fn has_connection(&self, to: PeerId) -> bool {
+        self.endpoint.get_connection(to).is_some()
+    }
 }
 
 #[async_trait]
@@ -99,27 +122,11 @@ where
         addr_hints: &[SocketAddr],
     ) -> Option<Box<dyn GitStream>> {
         let span = tracing::info_span!("open-git-stream", remote_id = %to);
-
-        let may_conn = match self.endpoint.get_connection(*to) {
-            Some(conn) => Some(conn),
-            None => {
-                let addr_hints = addr_hints.iter().copied().collect::<Vec<_>>();
-                io::connect(&self.endpoint, *to, addr_hints)
-                    .instrument(span.clone())
-                    .await
-                    .map(|(conn, ingress)| {
-                        self.spawner
-                            .spawn(
-                                io::streams::incoming(self.clone(), ingress)
-                                    .instrument(span.clone()),
-                            )
-                            .detach();
-                        conn
-                    })
-            },
-        };
-
-        match may_conn {
+        match self
+            .connection(*to, addr_hints.iter().copied().collect::<Vec<_>>())
+            .instrument(span.clone())
+            .await
+        {
             None => {
                 span.in_scope(|| tracing::error!("unable to obtain connection"));
                 None

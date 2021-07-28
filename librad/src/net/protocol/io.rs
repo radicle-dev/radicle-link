@@ -22,7 +22,7 @@ use crate::{
 mod codec;
 
 pub(super) mod connections;
-pub(super) use connections::{connect, connect_peer_info};
+pub(super) use connections::connect;
 
 pub mod error;
 
@@ -39,7 +39,7 @@ pub(super) async fn discovered<S>(state: State<S>, peer: PeerId, addrs: Vec<Sock
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
-    if state.endpoint.get_connection(peer).is_some() {
+    if state.has_connection(peer) {
         return;
     }
 

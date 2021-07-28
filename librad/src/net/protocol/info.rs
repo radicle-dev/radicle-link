@@ -91,6 +91,14 @@ pub struct GenericPeerInfo<Addr, T> {
     pub seen_addrs: BoundedVec<U16, Addr>,
 }
 
+impl<Addr> GenericPeerInfo<Addr, PeerAdvertisement<Addr>> {
+    pub fn addrs(&self) -> impl Iterator<Item = &Addr> {
+        self.seen_addrs
+            .iter()
+            .chain(&self.advertised_info.listen_addrs)
+    }
+}
+
 // XXX: derive fails to add the trait bound on Addr
 impl<'__b777, Addr: minicbor::Decode<'__b777>, T: minicbor::Decode<'__b777>>
     minicbor::Decode<'__b777> for GenericPeerInfo<Addr, T>

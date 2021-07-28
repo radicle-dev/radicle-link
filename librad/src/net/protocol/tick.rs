@@ -73,7 +73,7 @@ where
 
     async move {
         match tock {
-            SendConnected { to, message } => match state.endpoint.get_connection(to) {
+            SendConnected { to, message } => match state.connection(to, None).await {
                 None => {
                     let membership::TnT { trans, ticks: cont } =
                         state.membership.connection_lost(to);
@@ -102,21 +102,10 @@ where
             },
 
             AttemptSend { to, message } => {
-                let conn = match state.endpoint.get_connection(to.peer_id) {
-                    None => {
-                        let (conn, ingress) = io::connect_peer_info(&state.endpoint, to.clone())
-                            .await
-                            .ok_or(error::BestEffortSend::CouldNotConnect { to })?;
-                        state
-                            .spawner
-                            .clone()
-                            .spawn(io::streams::incoming(state, ingress))
-                            .detach();
-
-                        Ok(conn)
-                    },
-                    Some(conn) => Ok::<_, error::Tock<SocketAddr>>(conn),
-                }?;
+                let conn = state
+                    .connection(to.peer_id, to.addrs().copied().collect::<Vec<_>>())
+                    .await
+                    .ok_or_else(|| error::BestEffortSend::CouldNotConnect { to })?;
                 Ok(io::send_rpc(&conn, message)
                     .await
                     .map_err(error::BestEffortSend::SendGossip)?)

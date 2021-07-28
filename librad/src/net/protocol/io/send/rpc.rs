@@ -56,15 +56,15 @@ where
 
     match rpc.into() {
         Membership(msg) => {
-            let upgraded = upgrade::upgrade(stream, upgrade::Membership).await?;
-            FramedWrite::new(upgraded, codec::Membership::new())
+            let mut upgraded = upgrade::upgrade(stream, upgrade::Membership).await?;
+            FramedWrite::new(&mut upgraded, codec::Membership::new())
                 .send(msg)
                 .await?;
         },
 
         Gossip(msg) => {
-            let upgraded = upgrade::upgrade(stream, upgrade::Gossip).await?;
-            FramedWrite::new(upgraded, codec::Gossip::new())
+            let mut upgraded = upgrade::upgrade(stream, upgrade::Gossip).await?;
+            FramedWrite::new(&mut upgraded, codec::Gossip::new())
                 .send(msg)
                 .await?;
         },
