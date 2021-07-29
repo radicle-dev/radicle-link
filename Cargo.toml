@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "clib",
   "copy",
   "daemon",
   "data",

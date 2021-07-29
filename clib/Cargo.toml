@@ -1,0 +1,23 @@
+[package]
+name = "link-clib"
+version = "0.1.0"
+authors = ["The Radicle Team <dev@radicle.xyz>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[lib]
+doctest = true
+test = false
+
+[dependencies]
+radicle-keystore = "0.1"
+serde_json = "1.0"
+serde = "1.0"
+thiserror = "1.0"
+
+[dependencies.librad]
+path = "../librad"
+
+[dependencies.minicbor]
+version = "0.9.1"
+features = ["std"]
