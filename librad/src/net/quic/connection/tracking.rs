@@ -20,17 +20,19 @@ use rustc_hash::FxHasher;
 
 use super::{CloseReason, Connection, ConnectionId, RemotePeer as _};
 use crate::{
-    net::quic::{MAX_IDLE_TIMEOUT, MAX_PEER_CONNECTIONS},
+    net::{
+        connection::RemoteAddr as _,
+        quic::{MAX_IDLE_TIMEOUT, MAX_PEER_CONNECTIONS},
+    },
     PeerId,
 };
 
 type Connections = DashMap<ConnectionId, Arc<Tracked>, BuildHasherDefault<FxHasher>>;
 type PeerConnections = DashMap<PeerId, Vec<Weak<Tracked>>, BuildHasherDefault<FxHasher>>;
 
-#[derive(Clone)]
 struct Tracked {
-    connection: quinn::Connection,
-    epoch: Arc<AtomicUsize>,
+    connection: Connection,
+    epoch: AtomicUsize,
 }
 
 #[derive(Clone)]
@@ -97,7 +99,7 @@ impl Conntrack {
                 let addrs = r
                     .value()
                     .iter()
-                    .filter_map(|c| c.upgrade().map(|c| c.connection.remote_address()))
+                    .filter_map(|c| c.upgrade().map(|c| c.connection.remote_addr()))
                     .collect();
                 (*r.key(), addrs)
             })
@@ -119,7 +121,7 @@ impl Conntrack {
     /// If multiple connections exist for the given peer, the most recent one is
     /// returned. No liveness checks are performed, apart from reaping
     /// dropped connections.
-    pub fn get(&self, to: PeerId) -> Option<quinn::Connection> {
+    pub fn get(&self, to: PeerId) -> Option<Connection> {
         use dashmap::mapref::entry::Entry::*;
 
         match self.peer_connections.entry(to) {
@@ -156,8 +158,8 @@ impl Conntrack {
 
         let weak = {
             let strong = Arc::new(Tracked {
-                connection: conn.conn.clone(),
-                epoch: Arc::new(AtomicUsize::new(self.epoch.load(SeqCst))),
+                connection: conn.clone(),
+                epoch: AtomicUsize::new(self.epoch.load(SeqCst)),
             });
             let weak = Arc::downgrade(&strong);
             self.connections.insert(conn.id(), strong);
@@ -177,9 +179,7 @@ impl Conntrack {
                 if conns.len() >= MAX_PEER_CONNECTIONS {
                     let reason = CloseReason::TooManyConnections;
                     for evict in conns.drain(0..).filter_map(|weak| Weak::upgrade(&weak)) {
-                        evict
-                            .connection
-                            .close((reason as u32).into(), reason.reason_phrase());
+                        evict.connection.close(reason);
                     }
                 }
                 conns.push(weak);
@@ -188,14 +188,9 @@ impl Conntrack {
     }
 
     /// Close the given connection (if it is tracked), optionally with a reason.
-    pub fn disconnect(&self, conn_id: &ConnectionId, reason: impl Into<Option<CloseReason>>) {
+    pub fn disconnect(&self, conn_id: &ConnectionId, reason: CloseReason) {
         if let Some((_, tracked)) = self.connections.remove(conn_id) {
-            match reason.into() {
-                None => tracked.connection.close(0u32.into(), b""),
-                Some(reason) => tracked
-                    .connection
-                    .close((reason as u32).into(), reason.reason_phrase()),
-            }
+            tracked.connection.close(reason)
         }
     }
 
@@ -261,9 +256,7 @@ fn spawn_gc(
                             "GC"
                         );
                         if tracked_epoch <= prev_epoch {
-                            tracked
-                                .connection
-                                .close((CLOSE_REASON as u32).into(), CLOSE_REASON.reason_phrase());
+                            tracked.connection.close(CLOSE_REASON);
                             false
                         } else {
                             // Tickle the connection immediately.

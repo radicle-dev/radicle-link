@@ -157,9 +157,7 @@ impl Endpoint {
     }
 
     pub fn get_connection(&self, to: PeerId) -> Option<Connection> {
-        self.conntrack
-            .get(to)
-            .map(|conn| Connection::existing(to, self.conntrack.clone(), conn))
+        self.conntrack.get(to)
     }
 
     pub fn disconnect(&self, peer: &PeerId) {
