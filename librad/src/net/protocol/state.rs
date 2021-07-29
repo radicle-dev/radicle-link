@@ -20,6 +20,7 @@ use super::{
     membership,
     nonce,
     tick,
+    Endpoint,
     ProtocolStorage,
     TinCans,
 };
@@ -50,7 +51,7 @@ pub(super) struct StateConfig {
 #[derive(Clone)]
 pub(super) struct State<S> {
     pub local_id: PeerId,
-    pub endpoint: quic::Endpoint,
+    pub endpoint: Endpoint,
     pub git: GitServer,
     pub membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     pub storage: Storage<S>,

@@ -23,9 +23,9 @@ use crate::{
             cache,
             interrogation::{self, Request, Response},
             io::{self, codec},
+            Endpoint,
             State,
         },
-        quic,
         upgrade::{self, Upgraded},
     },
 };
@@ -81,7 +81,7 @@ pub(in crate::net::protocol) async fn interrogation<S, T>(
 }
 
 fn handle_request(
-    endpoint: &quic::Endpoint,
+    endpoint: &Endpoint,
     urns: &cache::urns::Filter,
     remote_addr: SocketAddr,
     req: interrogation::Request,

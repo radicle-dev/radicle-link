@@ -61,6 +61,8 @@ mod state;
 pub use state::Quota;
 use state::{RateLimits, State, StateConfig, Storage};
 
+pub type Endpoint = quic::Endpoint<2>;
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub paths: Paths,

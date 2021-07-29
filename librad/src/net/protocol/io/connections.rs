@@ -16,7 +16,7 @@ pub use super::error;
 use super::streams;
 use crate::{
     net::{
-        protocol::{event::upstream as event, gossip, ProtocolStorage, State},
+        protocol::{event::upstream as event, gossip, Endpoint, ProtocolStorage, State},
         quic,
     },
     PeerId,
@@ -71,7 +71,7 @@ where
 
 #[tracing::instrument(skip(endpoint, addrs))]
 pub async fn connect<'a, Addrs>(
-    endpoint: &quic::Endpoint,
+    endpoint: &Endpoint,
     remote_id: PeerId,
     addrs: Addrs,
 ) -> Option<(

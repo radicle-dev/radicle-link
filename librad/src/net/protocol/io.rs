@@ -11,13 +11,11 @@ use super::{
     gossip,
     info::{PartialPeerInfo, PeerAdvertisement},
     membership,
+    Endpoint,
     ProtocolStorage,
     State,
 };
-use crate::{
-    net::{connection::RemoteAddr as _, quic},
-    PeerId,
-};
+use crate::{net::connection::RemoteAddr as _, PeerId};
 
 mod codec;
 
@@ -80,7 +78,7 @@ where
 }
 
 pub(super) fn peer_advertisement(
-    endpoint: &quic::Endpoint,
+    endpoint: &Endpoint,
 ) -> impl Fn() -> PeerAdvertisement<SocketAddr> + '_ {
     move || {
         let mut listen_addrs = BoundedVec::from(iter::empty());

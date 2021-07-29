@@ -34,18 +34,18 @@ use crate::{
 
 pub type IncomingConnections<'a> = BoxStream<'a, Result<(Connection, BoxedIncomingStreams<'a>)>>;
 
-pub struct BoundEndpoint<'a> {
-    pub endpoint: Endpoint,
+pub struct BoundEndpoint<'a, const R: usize> {
+    pub endpoint: Endpoint<R>,
     pub incoming: IncomingConnections<'a>,
 }
 
-impl<'a> LocalPeer for BoundEndpoint<'a> {
+impl<'a, const R: usize> LocalPeer for BoundEndpoint<'a, R> {
     fn local_peer_id(&self) -> PeerId {
         self.endpoint.local_peer_id()
     }
 }
 
-impl<'a> LocalAddr for BoundEndpoint<'a> {
+impl<'a, const R: usize> LocalAddr for BoundEndpoint<'a, R> {
     type Addr = SocketAddr;
 
     fn listen_addrs(&self) -> Vec<SocketAddr> {
@@ -53,8 +53,12 @@ impl<'a> LocalAddr for BoundEndpoint<'a> {
     }
 }
 
+/// A QUIC endpoint.
+///
+/// `R` is the number of reservations for outgoing unidirectional streams, see
+/// [`Connection::borrow_uni`].
 #[derive(Clone)]
-pub struct Endpoint {
+pub struct Endpoint<const R: usize> {
     peer_id: PeerId,
     endpoint: quinn::Endpoint,
     listen_addrs: Arc<RwLock<BTreeSet<SocketAddr>>>,
@@ -62,14 +66,14 @@ pub struct Endpoint {
     refcount: Arc<()>,
 }
 
-impl Endpoint {
+impl<const R: usize> Endpoint<R> {
     pub async fn bind<'a, S>(
         signer: S,
         spawner: &executor::Spawner,
         listen_addr: SocketAddr,
         advertised_addrs: Option<NonEmpty<SocketAddr>>,
         network: Network,
-    ) -> Result<BoundEndpoint<'a>>
+    ) -> Result<BoundEndpoint<'a, R>>
     where
         S: Signer + Clone + Send + Sync + 'static,
         S::Error: std::error::Error + Send + Sync + 'static,
@@ -110,7 +114,7 @@ impl Endpoint {
                         remote_peer != peer_id,
                         "self-connections are prevented in the TLS handshake"
                     );
-                    let (conn, streams) = Connection::new(remote_peer, conntrack.clone(), conn);
+                    let (conn, streams) = Connection::new(conntrack.clone(), R, remote_peer, conn);
                     conntrack.connected(&conn);
 
                     Ok((conn, streams.boxed()))
@@ -150,7 +154,7 @@ impl Endpoint {
             .endpoint
             .connect(addr, peer.as_dns_name().as_ref().into())?
             .await?;
-        let (conn, streams) = Connection::new(peer, self.conntrack.clone(), conn);
+        let (conn, streams) = Connection::new(self.conntrack.clone(), R, peer, conn);
         self.conntrack.connected(&conn);
 
         Ok((conn, streams.boxed()))
@@ -180,13 +184,13 @@ impl Endpoint {
     }
 }
 
-impl LocalPeer for Endpoint {
+impl<const R: usize> LocalPeer for Endpoint<R> {
     fn local_peer_id(&self) -> PeerId {
         self.peer_id
     }
 }
 
-impl LocalAddr for Endpoint {
+impl<const R: usize> LocalAddr for Endpoint<R> {
     type Addr = SocketAddr;
 
     fn listen_addrs(&self) -> Vec<SocketAddr> {

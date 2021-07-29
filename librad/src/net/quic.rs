@@ -6,7 +6,14 @@
 use std::time::Duration;
 
 mod connection;
-pub use connection::{BoxedIncomingStreams, Connection, ConnectionId, Conntrack, IncomingStreams};
+pub use connection::{
+    BorrowUniError,
+    BoxedIncomingStreams,
+    Connection,
+    ConnectionId,
+    Conntrack,
+    IncomingStreams,
+};
 
 mod endpoint;
 pub use endpoint::{BoundEndpoint, Endpoint, IncomingConnections};

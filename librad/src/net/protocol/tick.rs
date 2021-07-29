@@ -105,7 +105,7 @@ where
                 let conn = state
                     .connection(to.peer_id, to.addrs().copied().collect::<Vec<_>>())
                     .await
-                    .ok_or_else(|| error::BestEffortSend::CouldNotConnect { to })?;
+                    .ok_or(error::BestEffortSend::CouldNotConnect { to })?;
                 Ok(io::send_rpc(&conn, message)
                     .await
                     .map_err(error::BestEffortSend::SendGossip)?)

@@ -3,9 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, ops::DerefMut as _};
 
-use futures::sink::SinkExt as _;
+use futures::{SinkExt as _, TryFutureExt as _};
 use futures_codec::FramedWrite;
 
 use crate::net::{
@@ -52,19 +52,48 @@ where
 {
     use Rpc::*;
 
-    let stream = conn.open_uni().await?;
+    fn into_protocol_error(
+        e: quic::BorrowUniError<upgrade::Error<quic::SendStream>>,
+    ) -> error::Rpc<quic::SendStream> {
+        match e {
+            quic::BorrowUniError::Quic(f) => error::Rpc::Quic(f),
+            quic::BorrowUniError::Upgrade(f) => error::Rpc::Upgrade(f),
+        }
+    }
+
+    enum StreamIndex {
+        Member = 0,
+        Gossip = 1,
+    }
+
+    impl From<StreamIndex> for usize {
+        fn from(idx: StreamIndex) -> usize {
+            idx as usize
+        }
+    }
 
     match rpc.into() {
         Membership(msg) => {
-            let mut upgraded = upgrade::upgrade(stream, upgrade::Membership).await?;
-            FramedWrite::new(&mut upgraded, codec::Membership::new())
+            let mut stream = conn
+                .borrow_uni(StreamIndex::Member, |s| {
+                    upgrade::upgrade(s, upgrade::Membership)
+                        .map_ok(|upgraded| upgraded.into_stream())
+                })
+                .await
+                .map_err(into_protocol_error)?;
+            FramedWrite::new(stream.deref_mut(), codec::Membership::new())
                 .send(msg)
                 .await?;
         },
 
         Gossip(msg) => {
-            let mut upgraded = upgrade::upgrade(stream, upgrade::Gossip).await?;
-            FramedWrite::new(&mut upgraded, codec::Gossip::new())
+            let mut stream = conn
+                .borrow_uni(StreamIndex::Gossip, |s| {
+                    upgrade::upgrade(s, upgrade::Gossip).map_ok(|upgraded| upgraded.into_stream())
+                })
+                .await
+                .map_err(into_protocol_error)?;
+            FramedWrite::new(stream.deref_mut(), codec::Gossip::new())
                 .send(msg)
                 .await?;
         },

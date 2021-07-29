@@ -4,15 +4,24 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
+    future::Future,
     io,
+    iter,
     net::SocketAddr,
+    ops::DerefMut,
     pin::Pin,
+    result::Result as StdResult,
+    sync::Arc,
     task::{Context, Poll},
 };
 
 use either::Either;
-use futures::stream::{self, BoxStream, Stream, StreamExt as _, TryStreamExt as _};
+use futures::{
+    lock::{Mutex, MutexGuard},
+    stream::{self, BoxStream, Stream, StreamExt as _, TryStreamExt as _},
+};
 use quinn::NewConnection;
+use thiserror::Error;
 
 use super::{BidiStream, Error, RecvStream, Result, SendStream};
 use crate::{
@@ -115,17 +124,29 @@ impl<S> RemotePeer for IncomingStreams<S> {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ConnectionId(usize);
 
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum BorrowUniError<E: std::error::Error + 'static> {
+    #[error("opening a new stream failed")]
+    Quic(#[from] Error),
+
+    #[error("stream upgrade failed")]
+    Upgrade(#[source] E),
+}
+
 #[derive(Clone)]
 pub struct Connection {
     peer: PeerId,
     conn: quinn::Connection,
     track: Conntrack,
+    send_streams: Arc<Vec<Mutex<Option<SendStream>>>>,
 }
 
 impl Connection {
     pub(super) fn new(
-        remote_peer: PeerId,
         track: Conntrack,
+        reserve_send_streams: usize,
+        remote_peer: PeerId,
         NewConnection {
             connection,
             bi_streams,
@@ -140,18 +161,15 @@ impl Connection {
             peer: remote_peer,
             conn: connection,
             track,
+            send_streams: Arc::new(
+                iter::repeat_with(Default::default)
+                    .take(reserve_send_streams)
+                    .collect(),
+            ),
         };
         let incoming = incoming_streams(conn.clone(), bi_streams, uni_streams);
 
         (conn, incoming)
-    }
-
-    pub(super) fn existing(remote_peer: PeerId, track: Conntrack, conn: quinn::Connection) -> Self {
-        Self {
-            peer: remote_peer,
-            conn,
-            track,
-        }
     }
 
     pub fn id(&self) -> ConnectionId {
@@ -193,7 +211,41 @@ impl Connection {
         })
     }
 
-    pub fn close(self, reason: CloseReason) {
+    /// Borrow the [`SendStream`] at index `idx` from a fixed-size set of
+    /// reservations.
+    ///
+    /// The reservations are allocated on construction, but the actual streams
+    /// are created lazily when requested. The supplied closure is executed
+    /// once when the stream is allocated, typically to perform a stream
+    /// upgrade.
+    ///
+    /// The caller is responsible for mapping indices to the expected stream,
+    /// and to not exceed the reservation bounds.
+    ///
+    /// # Panics
+    ///
+    /// If `idx` is out of bounds.
+    pub async fn borrow_uni<I, F, U, E>(
+        &self,
+        idx: I,
+        upgrade: F,
+    ) -> StdResult<impl DerefMut<Target = SendStream> + '_, BorrowUniError<E>>
+    where
+        I: Into<usize>,
+        F: FnOnce(SendStream) -> U,
+        U: Future<Output = std::result::Result<SendStream, E>>,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        let mut lck = self.send_streams[idx.into()].lock().await;
+        if lck.is_none() {
+            let stream = self.open_uni().await.map_err(BorrowUniError::Quic)?;
+            *lck = Some(upgrade(stream).await.map_err(BorrowUniError::Upgrade)?);
+        }
+
+        Ok(MutexGuard::map(lck, |s| s.as_mut().unwrap()))
+    }
+
+    pub fn close(&self, reason: CloseReason) {
         self.track.disconnect(&self.id(), reason);
     }
 
