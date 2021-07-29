@@ -9,6 +9,9 @@ license = "GPL-3.0-or-later"
 doctest = true
 test = false
 
+[features]
+unsafe = []
+
 [dependencies]
 radicle-keystore = "0.1"
 serde_json = "1.0"

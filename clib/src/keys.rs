@@ -27,6 +27,20 @@ pub fn prompt() -> Pwhash<Prompt<'static>> {
     Pwhash::new(prompt, KdfParams::recommended())
 }
 
+/// Create a [`Prompt`] for unlocking the key storage.
+///
+/// # Safety
+///
+/// The encryption of the file store will be weak but fast. So this not intended
+/// for production use.
+#[cfg(feature = "unsafe")]
+pub fn unsafe_prompt() -> Pwhash<Prompt<'static>> {
+    use radicle_keystore::crypto::KDF_PARAMS_TEST;
+
+    let prompt = Prompt::new("please enter your passphrase: ");
+    Pwhash::new(prompt, *KDF_PARAMS_TEST)
+}
+
 /// Create a [`FileStorage`] for [`librad::keys`].
 pub fn file_storage<C>(profile: &Profile, crypto: C) -> FileStorage<C, PublicKey, SecretKey, ()>
 where
@@ -39,6 +53,20 @@ where
 /// a passphrase via a prompt.
 pub fn signer_prompt(profile: &Profile) -> Result<BoxedSigner, Error> {
     let store = file_storage(profile, prompt());
+    let key = store.get_key()?.secret_key;
+    Ok(key.into())
+}
+
+/// Get the signer from the file store, decrypting the secret key by asking for
+/// a passphrase via a prompt.
+///
+/// # Safety
+///
+/// The encryption of the file store will be weak but fast. So this not intended
+/// for production use.
+#[cfg(feature = "unsafe")]
+pub fn unsafe_signer_prompt(profile: &Profile) -> Result<BoxedSigner, Error> {
+    let store = file_storage(profile, unsafe_prompt());
     let key = store.get_key()?.secret_key;
     Ok(key.into())
 }
