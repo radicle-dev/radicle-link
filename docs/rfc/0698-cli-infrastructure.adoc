@@ -89,7 +89,7 @@ will always receive and pass onto the subcommand being called.
 These parameters will be prefixed by `rad-`, signfiying that they are
 from the `radicle-link` namespace and are reserved names.
 
-Subcommands, including the <<Core>> subcommands, MUST accept these
+Subcommands, including the <<Core>> subcommands, SHOULD accept these
 parameters as well. Exceptions can be made for commands that truly
 don't need these values, e.g. `rad-profile` will not need the
 `--rad-profile` option.
@@ -123,7 +123,7 @@ set without the use of `--rad-profile`, then the value is taken from
 
 Other subcommands that are written in the target language (currently
 Rust) will be able to import a `struct` for reuse. If the subcommand
-is in another target language it SHALL add these parameters to its
+is in another target language it SHOULD add these parameters to its
 parameter list.
 
 We list these parameters here, but it is NOT an exhaustive list:
