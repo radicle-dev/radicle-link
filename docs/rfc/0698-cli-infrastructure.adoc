@@ -86,20 +86,51 @@ options, dubbed as "global parameters" here, will be a defined set --
 exported from `radicle-link` for re-use -- that the base `rad` command
 will always receive and pass onto the subcommand being called.
 
+These parameters will be prefixed by `rad-`, signfiying that they are
+from the `radicle-link` namespace and are reserved names.
+
+Subcommands, including the <<Core>> subcommands, MUST accept these
+parameters as well. Exceptions can be made for commands that truly
+don't need these values, e.g. `rad-profile` will not need the
+`--rad-profile` option.
+
+To illustrate the passing of the value to the subcommand, we will
+suppose a subcommand called `rad-issues`. The `--rad-profile`
+parameter can be used like the following:
+```
+$ rad --rad-profile abc issues create ...
+```
+
+or:
+```
+$ rad issues --rad-profile abc create
+```
+
+If the parameter is specified in both positions, i.e.
+```
+$ rad --rad-profile abc issues --rad-profile def create
+```
+then the first will take precedence. The result of the above will be
+the profile `abc`.
+
+Some parameters can also be specified by environment variables. The
+arguments passed to subcommands will be given by the environment
+variable, if and only if, the command line argument is not specified.
+For example, `$RAD_PROFILE` is used within `radicle-link`. If this is
+set without the use of `--rad-profile`, then the value is taken from
+`$RAD_PROFILE`. However, if `--rad-profile` is specified as well as
+`$RAD_PROFILE`, then the value of `--rad-profile` takes precedence.
+
 Other subcommands that are written in the target language (currently
-Rust) will be able to import the `struct` for reuse. If the subcommand
+Rust) will be able to import a `struct` for reuse. If the subcommand
 is in another target language it SHALL add these parameters to its
-parameter list prefixed with `global-`. The `rad` command will parse
-these parameters, setting defaults if necessary, and SHALL pass them
-varbatim to the subcommand.
+parameter list.
 
-Thus, all subcommands SHALL receive these global parameters as part of
-their interface. We list these parameters here, but it is NOT an
-exhaustive list:
+We list these parameters here, but it is NOT an exhaustive list:
 
-* `global-verbose`
-* `global-quiet`
-* `global-profile := active (default) | <profile-id>`
+* `rad-verbose`
+* `rad-quiet`
+* `rad-profile := active (default) | <profile-id>`
 
 == CLI Events
 
