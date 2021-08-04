@@ -9,6 +9,8 @@ use async_process::{Command, Stdio};
 use futures_lite::io::{copy, AsyncRead, AsyncWrite};
 use futures_util::try_join;
 use git_packetline::PacketLine;
+use once_cell::sync::Lazy;
+use versions::Version;
 
 #[derive(Debug, PartialEq)]
 pub struct Header {
@@ -87,6 +89,8 @@ where
     let mut recv = recv.into_inner();
 
     let fut = async move {
+        advertise_capabilities(&mut send).await?;
+
         let mut child = Command::new("git")
             .current_dir(git_dir)
             .env_clear()
@@ -102,6 +106,7 @@ where
                 "lsrefs.unborn=ignore",
                 "upload-pack",
                 "--strict",
+                "--stateless-rpc",
                 ".",
             ])
             .stdout(Stdio::piped())
@@ -123,6 +128,53 @@ where
     };
 
     Ok((header, fut))
+}
+
+async fn advertise_capabilities<W>(mut send: W) -> io::Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    use git_packetline::encode;
+
+    // Thou shallt not upgrade your `git` installation while a link instance is
+    // running!
+    static GIT_VERSION: Lazy<Version> = Lazy::new(|| git_version().unwrap());
+    static AGENT: Lazy<Vec<u8>> = Lazy::new(|| format!("agent=git/{}", *GIT_VERSION).into_bytes());
+    static CAPABILITIES: Lazy<[&[u8]; 4]> = Lazy::new(|| {
+        [
+            b"version 2",
+            AGENT.as_slice(),
+            b"object-format=sha1",
+            b"fetch=ref-in-want",
+        ]
+    });
+
+    for cap in *CAPABILITIES {
+        encode::text_to_write(cap, &mut send).await?;
+    }
+    encode::flush_to_write(&mut send).await?;
+
+    Ok(())
+}
+
+fn git_version() -> io::Result<Version> {
+    let out = std::process::Command::new("git")
+        .arg("--version")
+        .output()?;
+    if !out.status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "failed to read `git` version",
+        ));
+    }
+    out.stdout
+        .rsplit(|x| x == &b' ')
+        .next()
+        .and_then(|s| {
+            let s = std::str::from_utf8(s).ok()?;
+            Version::new(s.trim())
+        })
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "failed to parse `git` version"))
 }
 
 fn invalid_data<E>(inner: E) -> io::Error
