@@ -12,8 +12,7 @@ use crate::{create, get, list, paths, peer_id, set, ssh_add};
 
 use super::args::*;
 
-pub fn main() -> anyhow::Result<()> {
-    let Args { command } = argh::from_env();
+pub fn main(Args { command }: Args) -> anyhow::Result<()> {
     eval(command)
 }
 
@@ -58,7 +57,7 @@ fn eval(command: Command) -> anyhow::Result<()> {
             println!("git includes: {}", paths.git_includes_dir().display());
             println!("keys: {}", paths.keys_dir().display());
         },
-        Command::Ssh(SshAdd { id }) => {
+        Command::SshAdd(SshAdd { id }) => {
             let (id, peer_id) = ssh_add(id, crypto())?;
             println!(
                 "added key for profile id `{}` and peer id `{}`",

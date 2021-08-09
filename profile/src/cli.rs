@@ -5,3 +5,5 @@
 
 pub mod args;
 pub mod main;
+
+pub use main::main;
