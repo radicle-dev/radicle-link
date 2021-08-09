@@ -60,7 +60,7 @@ We will discuss these in the following two sections.
 
 == The Fellowship of the `rad`
 
-[quoute]
+[quote]
 --------
 “I can’t carry it for you, but I can carry you.” – Sam Gamgee
 --------
@@ -166,7 +166,7 @@ To achieve the goals of having a read-only storage and using
 `<<ssh-agent>>` for signing, we propose the following should be
 implemented:
 
-. `ssh-agent` compatability with `<<radicle-keystore>>`, which has been
+. `ssh-agent` compatibility with `<<radicle-keystore>>`, which has been
 started in `<<rk-17, radicle-keystore#17>>`.
 . A subcommand `rad-profile-ssh-add` for adding one's secret key to the
 `ssh-agent` using the supplied constraints, e.g. ask for password.
