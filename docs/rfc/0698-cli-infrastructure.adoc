@@ -9,7 +9,7 @@
 * Date: {revdate}
 * Status: {revremark}
 * Community discussion: n/a
-* Tracking Issue: n/a
+* Tracking Issue: https://github.com/radicle-dev/radicle-link/issues/742
 
 == Motivation
 
