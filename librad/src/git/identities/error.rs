@@ -3,6 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use git_ext as ext;
 use thiserror::Error;
 
 use super::{
@@ -25,7 +26,7 @@ pub enum Error {
     RefFromUrn(#[from] reference::FromUrnError),
 
     #[error("failed to build URN from ref")]
-    UrnFromRef(#[from] urn::FromRefLikeError),
+    UrnFromRef(#[from] urn::error::FromRefLike<ext::oid::FromMultihashError>),
 
     #[error("update of signed_refs failed")]
     Sigrefs(#[from] refs::stored::Error),

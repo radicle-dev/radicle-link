@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use librad::{
     git::Urn,
     git_ext::{Oid, RefLike},
-    identities::{urn::ParseError, SomeIdentity},
+    identities::{urn, SomeIdentity},
     net::peer::Peer,
     signer::Signer,
 };
@@ -32,7 +32,7 @@ pub enum Error {
 
     /// Failures parsing.
     #[error(transparent)]
-    Parse(#[from] ParseError<git2::Error>),
+    Parse(#[from] urn::error::FromStr<git2::Error>),
 
     /// Error occurred when interacting with [`Peer`].
     #[error(transparent)]

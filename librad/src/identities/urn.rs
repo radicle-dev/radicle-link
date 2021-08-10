@@ -20,6 +20,61 @@ lazy_static! {
     pub static ref DEFAULT_PATH: ext::Qualified = ext::Qualified::from(reflike!("refs/rad/id"));
 }
 
+pub mod error {
+    use super::*;
+
+    #[derive(Debug, Error)]
+    #[non_exhaustive]
+    pub enum DecodeId<E: std::error::Error + 'static> {
+        #[error("invalid id")]
+        InvalidId(#[source] E),
+
+        #[error(transparent)]
+        Encoding(#[from] multibase::Error),
+
+        #[error(transparent)]
+        Multihash(#[from] multihash::DecodeOwnedError),
+    }
+
+    #[derive(Debug, Error)]
+    #[non_exhaustive]
+    pub enum FromRefLike<E: std::error::Error + 'static> {
+        #[error("missing {0}")]
+        Missing(&'static str),
+
+        #[error("must be a fully-qualified ref, ie. start with `refs/namespaces`")]
+        Namespaced(#[from] ext::reference::name::StripPrefixError),
+
+        #[error("invalid id")]
+        InvalidId(#[source] DecodeId<E>),
+
+        #[error(transparent)]
+        Path(#[from] ext::reference::name::Error),
+    }
+
+    #[derive(Debug, Error)]
+    #[non_exhaustive]
+    pub enum FromStr<E: std::error::Error + 'static> {
+        #[error("missing {0}")]
+        Missing(&'static str),
+
+        #[error("invalid namespace identifier: {0}")]
+        InvalidNID(String),
+
+        #[error("invalid protocol: {0}")]
+        InvalidProto(String),
+
+        #[error("invalid id")]
+        InvalidId(#[source] DecodeId<E>),
+
+        #[error(transparent)]
+        Path(#[from] ext::reference::name::Error),
+
+        #[error(transparent)]
+        Utf8(#[from] std::str::Utf8Error),
+    }
+}
+
 pub trait HasProtocol: sealed::Sealed {
     const PROTOCOL: &'static str;
 }
@@ -85,6 +140,17 @@ impl<R> Urn<R> {
         multibase::encode(multibase::Base::Base32Z, (&self.id).into())
     }
 
+    pub fn try_from_id(s: impl AsRef<str>) -> Result<Self, error::DecodeId<R::Error>>
+    where
+        R: TryFrom<Multihash>,
+        R::Error: std::error::Error + 'static,
+    {
+        let bytes = multibase::decode(s.as_ref()).map(|x| x.1)?;
+        let mhash = Multihash::from_bytes(bytes)?;
+        let id = R::try_from(mhash).map_err(error::DecodeId::InvalidId)?;
+        Ok(Self::new(id))
+    }
+
     pub fn map<F, S>(self, f: F) -> Urn<S>
     where
         F: FnOnce(R) -> S,
@@ -119,47 +185,17 @@ impl<R> From<R> for Urn<R> {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum FromRefLikeError {
-    #[error("missing {0}")]
-    Missing(&'static str),
-
-    #[error("must be a fully-qualified ref, ie. start with `refs/namespaces`")]
-    Namespaced(#[from] ext::reference::name::StripPrefixError),
-
-    #[error(transparent)]
-    OidFromMultihash(#[from] ext::oid::FromMultihashError),
-
-    #[error(transparent)]
-    Path(#[from] ext::reference::name::Error),
-
-    #[error(transparent)]
-    Encoding(#[from] multibase::Error),
-
-    #[error(transparent)]
-    Multihash(#[from] multihash::DecodeOwnedError),
-
-    #[error("invalid utf8")]
-    Utf8,
-}
-
 // FIXME: For some inexplicable reason, rustc rejects an impl for Urn<R>,
 // claiming that the blanket impl `impl<T, U> TryFrom<U> for T where U: Into<T>`
 // overlaps. We absolutely do not have `Into<Urn<R>> for ext::RefLike`.
 impl TryFrom<ext::RefLike> for Urn<ext::Oid> {
-    type Error = FromRefLikeError;
+    type Error = error::FromRefLike<ext::oid::FromMultihashError>;
 
     fn try_from(refl: ext::RefLike) -> Result<Self, Self::Error> {
         let refl = refl.strip_prefix("refs/namespaces/")?;
         let mut suf = refl.split('/');
-        let id = suf
-            .next()
-            .ok_or(Self::Error::Missing("namespace"))
-            .and_then(|ns| {
-                let bytes = multibase::decode(ns).map(|(_base, bytes)| bytes)?;
-                let mhash = Multihash::from_bytes(bytes)?;
-                Ok(ext::Oid::try_from(mhash)?)
-            })?;
+        let ns = suf.next().ok_or(Self::Error::Missing("namespace"))?;
+        let urn = Self::try_from_id(ns).map_err(Self::Error::InvalidId)?;
         let path = {
             let path = suf.collect::<Vec<_>>().join("/");
             if path.is_empty() {
@@ -169,7 +205,7 @@ impl TryFrom<ext::RefLike> for Urn<ext::Oid> {
             }
         }?;
 
-        Ok(Self { id, path })
+        Ok(urn.with_path(path))
     }
 }
 
@@ -215,40 +251,12 @@ where
     }
 }
 
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum ParseError<E: std::error::Error + 'static> {
-    #[error("missing {0}")]
-    Missing(&'static str),
-
-    #[error("invalid namespace identifier: {0}")]
-    InvalidNID(String),
-
-    #[error("invalid protocol: {0}")]
-    InvalidProto(String),
-
-    #[error("invalid Id")]
-    InvalidId(#[source] E),
-
-    #[error(transparent)]
-    InvalidPath(#[from] ext::reference::name::Error),
-
-    #[error(transparent)]
-    Encoding(#[from] multibase::Error),
-
-    #[error(transparent)]
-    Multihash(#[from] multihash::DecodeOwnedError),
-
-    #[error(transparent)]
-    Utf8(#[from] std::str::Utf8Error),
-}
-
 impl<R, E> FromStr for Urn<R>
 where
     R: HasProtocol + TryFrom<Multihash, Error = E>,
     E: std::error::Error + 'static,
 {
-    type Err = ParseError<E>;
+    type Err = error::FromStr<E>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut components = s.split(':');
@@ -278,15 +286,10 @@ where
                 let decoded = percent_decode_str(s).decode_utf8()?;
                 let mut iter = decoded.splitn(2, '/');
 
-                let id = iter.next().ok_or(Self::Err::Missing("id")).and_then(|id| {
-                    let bytes = multibase::decode(id).map(|(_base, bytes)| bytes)?;
-                    let mhash = Multihash::from_bytes(bytes)?;
-                    R::try_from(mhash).map_err(Self::Err::InvalidId)
-                })?;
-
+                let id = iter.next().ok_or(Self::Err::Missing("id"))?;
+                let urn = Self::try_from_id(id).map_err(Self::Err::InvalidId)?;
                 let path = iter.next().map(ext::RefLike::try_from).transpose()?;
-
-                Ok(Self { id, path })
+                Ok(urn.with_path(path))
             })
     }
 }

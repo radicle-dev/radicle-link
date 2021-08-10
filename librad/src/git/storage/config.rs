@@ -37,7 +37,7 @@ pub enum Error {
     PeerId(#[from] peer::conversion::Error),
 
     #[error(transparent)]
-    Urn(#[from] urn::ParseError<ext::oid::FromMultihashError>),
+    Urn(#[from] urn::error::FromStr<ext::oid::FromMultihashError>),
 
     #[error(transparent)]
     Git(#[from] git2::Error),
