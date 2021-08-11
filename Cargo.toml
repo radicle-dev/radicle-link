@@ -14,6 +14,7 @@ members = [
   "link-crypto",
   "link-git",
   "link-identities",
+  "link-replication",
   "macros",
   "node-lib",
   "rad-clib",
