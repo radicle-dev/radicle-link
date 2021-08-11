@@ -24,34 +24,27 @@ tempfile = "3.2.0"
 versions = "3.0.2"
 
 [dependencies.git-features]
-git = "https://github.com/kim/gitoxide"
-branch = "pu"
+version = "0.16.1"
 
 [dependencies.git-hash]
-git = "https://github.com/kim/gitoxide"
-branch = "pu"
+version = "0.5.0"
 
 [dependencies.git-odb]
-git = "https://github.com/kim/gitoxide"
-branch = "pu"
+version = "0.16.1"
 
 [dependencies.git-pack]
-git = "https://github.com/kim/gitoxide"
-branch = "pu"
+version = "0.3.1"
 
 [dependencies.git-packetline]
-git = "https://github.com/kim/gitoxide"
-branch = "pu"
+version = "0.6.0"
 features = ["async-io"]
 
 [dependencies.git-protocol]
-git = "https://github.com/kim/gitoxide"
-branch = "pu"
+version = "0.8.0"
 features = ["async-client"]
 
 [dependencies.git-transport]
-git = "https://github.com/kim/gitoxide"
-branch = "pu"
+version = "0.9.0"
 features = ["async-client"]
 
 [dependencies.git2]
