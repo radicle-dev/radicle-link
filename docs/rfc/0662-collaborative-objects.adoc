@@ -329,6 +329,11 @@ A valid change commit must have three trailers:
 * `X-Rad-Schema-Parent`, this is the hash of the parent commit which contains 
   the schema of this object. See [schema commits](#schema-commits).
 
+Furthermore a change commit must be signed by an identity who was at some point
+a maintainer of the project (note that we can't stipulate that the identity is
+_currently_ a maintainer as we do not know when the change was made). For
+collaborative objects created in a direct identity (i.e a person identity) then
+the change must be signed by the owner of the namespace.
 
 ==== `manifest.toml`
 
@@ -543,8 +548,6 @@ hard to see how you would do things like "link to an issue" under these
 constraints. This is inherent to the network model though, rather than being a
 specific problem of this architecture.
 
-We can work around some of this weirdness using seed nodes. If we consider
-seed nodes 
 
 == APIs
 
