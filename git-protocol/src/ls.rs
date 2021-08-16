@@ -110,10 +110,6 @@ impl DelegateBlocking for LsRefs {
     ) -> io::Result<Action> {
         unreachable!("`negotiate` called even though no `fetch` command was sent")
     }
-
-    fn indicate_client_done_when_fetch_completes(&self) -> bool {
-        false
-    }
 }
 
 #[async_trait(?Send)]
@@ -141,6 +137,7 @@ where
         &mut delegate,
         |_| unreachable!("credentials helper requested"),
         progress::Discard,
+        git_protocol::FetchConnection::AllowReuse,
     )
     .await
     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;

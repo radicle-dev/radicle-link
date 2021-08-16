@@ -169,10 +169,6 @@ impl<P: PackWriter> DelegateBlocking for Fetch<P, P::Output> {
         // send done, as we don't bother with further negotiation
         Ok(Action::Cancel)
     }
-
-    fn indicate_client_done_when_fetch_completes(&self) -> bool {
-        false
-    }
 }
 
 #[async_trait(?Send)]
@@ -259,6 +255,7 @@ where
                 &mut delegate,
                 |_| unreachable!("credentials helper requested"),
                 progress::Discard,
+                git_protocol::FetchConnection::AllowReuse,
             ))
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
