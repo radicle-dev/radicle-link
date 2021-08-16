@@ -80,8 +80,6 @@ pub enum Event {
         /// The attempts that were made before the timeout
         attempts: Option<usize>,
     },
-    /// One tick of the waiting room
-    Tick,
 }
 
 /// `RunningWaitingRoom` is an adapter from the interface of `WaitingRoom` to
@@ -192,27 +190,18 @@ impl RunningWaitingRoom {
         )
     }
 
+    /// Issue "query" and "clone" requests for requests that are next in the
+    /// queue.
     pub fn tick(&mut self, timestamp: SystemTime) -> Vec<Command> {
-        let mut cmds = Vec::with_capacity(3);
-        let state_before = self.waiting_room.requests();
+        let mut cmds = Vec::with_capacity(2);
 
         if let Some(urn) = self.waiting_room.next_query(timestamp) {
             cmds.push(Command::Request(command::Request::Query(urn)));
-            cmds.push(Command::PersistWaitingRoom(self.waiting_room.clone()));
         }
         if let Some((urn, remote_peer)) = self.waiting_room.next_clone() {
             cmds.push(Command::Request(command::Request::Clone(urn, remote_peer)));
-            cmds.push(Command::PersistWaitingRoom(self.waiting_room.clone()));
         }
 
-        let state_after = self.waiting_room.requests();
-        let transition = WaitingRoomTransition {
-            timestamp,
-            state_before,
-            state_after,
-            event: Event::Tick,
-        };
-        cmds.push(Command::EmitEvent(transition.into()));
         cmds
     }
 
