@@ -15,7 +15,7 @@ use thiserror::Error;
 
 /// Serializable [`git2::Oid`]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Oid(pub git2::Oid);
+pub struct Oid(git2::Oid);
 
 impl Oid {
     pub fn into_multihash(self) -> Multihash {
@@ -113,6 +113,14 @@ impl AsRef<[u8]> for Oid {
     }
 }
 
+#[cfg(feature = "git-hash")]
+impl AsRef<git_hash::oid> for Oid {
+    fn as_ref(&self) -> &git_hash::oid {
+        // SAFETY: checks the length of the slice, which we know is correct
+        git_hash::oid::try_from(self.as_bytes()).unwrap()
+    }
+}
+
 impl From<git2::Oid> for Oid {
     fn from(oid: git2::Oid) -> Self {
         Self(oid)
@@ -122,6 +130,28 @@ impl From<git2::Oid> for Oid {
 impl From<Oid> for git2::Oid {
     fn from(oid: Oid) -> Self {
         oid.0
+    }
+}
+
+#[cfg(feature = "git-hash")]
+impl From<git_hash::ObjectId> for Oid {
+    fn from(git_hash::ObjectId::Sha1(bs): git_hash::ObjectId) -> Self {
+        // SAFETY: checks the length of the slice, which we statically know
+        Self(git2::Oid::from_bytes(&bs).unwrap())
+    }
+}
+
+#[cfg(feature = "git-hash")]
+impl From<Oid> for git_hash::ObjectId {
+    fn from(oid: Oid) -> Self {
+        Self::from_20_bytes(oid.as_ref())
+    }
+}
+
+#[cfg(feature = "git-hash")]
+impl<'a> From<&'a Oid> for &'a git_hash::oid {
+    fn from(oid: &'a Oid) -> Self {
+        oid.as_ref()
     }
 }
 
