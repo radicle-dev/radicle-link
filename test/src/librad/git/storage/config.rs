@@ -5,7 +5,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use librad::{git::storage::config::Config, keys::SecretKey};
+use librad::{git::storage::config::Config, SecretKey};
 
 use crate::tempdir::WithTmpDir;
 

@@ -8,6 +8,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use crypto::{BoxedSignError, BoxedSigner, SomeSigner};
 use rustls::{
     sign::CertifiedKey,
     ClientCertVerified,
@@ -25,11 +26,7 @@ use rustls::{
 };
 use time::{Date, OffsetDateTime};
 
-use crate::{
-    net::x509,
-    peer::PeerId,
-    signer::{BoxedSignError, BoxedSigner, Signer, SomeSigner},
-};
+use crate::{net::x509, PeerId, Signer};
 
 pub fn make_client_config<S>(signer: S) -> Result<rustls::ClientConfig, S::Error>
 where

@@ -34,10 +34,10 @@ use librad::{
             gossip::{self, Rev},
         },
     },
-    peer::PeerId,
     reflike,
     refspec_pattern,
-    signer::Signer,
+    PeerId,
+    Signer,
 };
 
 use crate::{

@@ -14,10 +14,7 @@ use multihash::Multihash;
 use thiserror::Error;
 use url::Url;
 
-use crate::{
-    identities::urn::Urn,
-    peer::{self, PeerId},
-};
+use crate::{identities::urn::Urn, PeerId};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GitUrl<R> {
@@ -62,7 +59,7 @@ pub enum ParseError {
     CannotBeABase,
 
     #[error(transparent)]
-    PeerId(#[from] peer::conversion::Error),
+    PeerId(#[from] crypto::peer::conversion::Error),
 
     #[error("malformed URL")]
     Url(#[from] url::ParseError),

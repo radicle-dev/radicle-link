@@ -13,14 +13,13 @@ use tokio::{sync::broadcast, time::timeout};
 use url::Url;
 
 use librad::{
+    crypto::BoxedSigner,
     git::{identities::local::LocalIdentity, Urn},
     git_ext::OneLevel,
     identities::payload::HasNamespace,
-    keys::SecretKey,
-    peer::PeerId,
     reflike,
-    signer,
-    signer::BoxedSigner,
+    PeerId,
+    SecretKey,
 };
 
 use radicle_daemon::{
@@ -161,7 +160,7 @@ impl Harness {
     ) -> Result<PeerHandle, anyhow::Error> {
         let tmp = tempfile::tempdir()?;
         let key = SecretKey::new();
-        let signer = signer::BoxedSigner::from(key);
+        let signer = BoxedSigner::from(key);
         let store = kv::Store::new(kv::Config::new(tmp.path().join("store")))?;
         let paths = Paths::from_root(tmp.path())?;
         let conf = config::configure(paths, signer, *config::LOCALHOST_ANY);

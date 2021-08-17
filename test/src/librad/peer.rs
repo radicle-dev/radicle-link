@@ -5,7 +5,7 @@
 
 use proptest::{collection, prelude::*};
 
-use librad::peer::PeerId;
+use librad::PeerId;
 
 use crate::librad::keys::gen_secret_key;
 

@@ -26,7 +26,7 @@ use librad::{
     },
     reflike,
     refspec_pattern,
-    signer::Signer,
+    Signer,
 };
 use tempfile::tempdir;
 

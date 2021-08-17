@@ -47,7 +47,7 @@ use git2::transport::{Service, SmartSubtransport, SmartSubtransportStream, Trans
 use git_ext::into_git_err;
 
 use super::{header::Header, url::GitUrl};
-use crate::{identities::git::Urn, peer::PeerId};
+use crate::{identities::git::Urn, PeerId};
 
 type Factories = Arc<RwLock<HashMap<PeerId, Weak<Box<dyn GitStreamFactory>>>>>;
 

@@ -12,8 +12,8 @@ use librad::{
         peer::Peer,
         protocol::gossip::{Payload, Rev},
     },
-    peer::PeerId,
-    signer::Signer,
+    PeerId,
+    Signer,
 };
 
 /// Announce a new rev for the `urn`.

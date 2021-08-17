@@ -11,14 +11,8 @@ use std::{
 use git_ext as ext;
 use thiserror::Error;
 
-use crate::{
-    identities,
-    peer::{self, PeerId},
-};
-
 use super::{sealed, AsNamespace, Force, Namespace};
-
-use identities::git::Urn;
+use crate::{identities::git::Urn, PeerId};
 
 /// Type witness for a [`Reference`] that should point to a single reference.
 pub type One = ext::RefLike;
@@ -509,7 +503,7 @@ pub enum FromUrnError {
     Eof,
 
     #[error(transparent)]
-    PeerId(#[from] peer::conversion::Error),
+    PeerId(#[from] crypto::peer::conversion::Error),
 }
 
 impl TryFrom<&Urn> for Reference<Namespace<ext::Oid>, PeerId, One> {

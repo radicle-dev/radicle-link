@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use crate::peer::PeerId;
+use crate::PeerId;
 
 /// Result of applying a broadcast update to local storage.
 #[derive(Clone, Copy, Debug, PartialEq)]

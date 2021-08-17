@@ -34,14 +34,13 @@ extern crate assert_matches;
 
 pub use librad::{
     self,
+    crypto,
     git::{self, identities::local::LocalIdentity, include, local::url::LocalUrl, Urn},
     identities::{self, Person, Project},
-    keys,
     net::{self, discovery},
     paths::Paths,
-    peer::PeerId,
     profile,
-    signer,
+    PeerId,
 };
 
 pub use librad::git_ext;

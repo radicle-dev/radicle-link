@@ -16,9 +16,10 @@ use tempfile::tempdir;
 
 use librad::{
     git::{local::url::LocalUrl, storage::Storage, Urn},
-    keys::{PublicKey, SecretKey},
     paths::Paths,
     profile::Profile,
+    PublicKey,
+    SecretKey,
 };
 
 use crate::{logging, rad::identities::create_test_project};

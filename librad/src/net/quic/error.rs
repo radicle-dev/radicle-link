@@ -3,7 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use crate::peer;
 use std::io;
 use thiserror::Error;
 
@@ -22,7 +21,7 @@ pub enum Error {
     Shutdown,
 
     #[error(transparent)]
-    PeerId(#[from] peer::conversion::Error),
+    PeerId(#[from] crypto::peer::conversion::Error),
 
     #[error("signer error")]
     Signer(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),

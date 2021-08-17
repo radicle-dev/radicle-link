@@ -5,7 +5,7 @@
 
 use std::io;
 
-use librad::{git::storage::Storage, keys::SecretKey, paths::Paths};
+use librad::{git::storage::Storage, paths::Paths, SecretKey};
 
 use crate::tempdir::WithTmpDir;
 

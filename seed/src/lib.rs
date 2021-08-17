@@ -36,8 +36,8 @@ use librad::{
         peer::{self, Peer, ProtocolEvent},
         protocol::{self, gossip::Payload, PeerInfo},
     },
-    peer::PeerId,
     profile,
+    PeerId,
 };
 
 pub use crate::{

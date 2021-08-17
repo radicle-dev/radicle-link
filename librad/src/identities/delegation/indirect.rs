@@ -16,9 +16,8 @@ use std::{
 
 use either::*;
 
-use crate::keys::PublicKey;
-
 use super::{generic, payload, sealed, Delegations, Direct};
+use crate::PublicKey;
 
 pub mod error {
     use std::fmt::{Debug, Display};

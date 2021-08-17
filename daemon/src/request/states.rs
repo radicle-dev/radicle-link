@@ -14,7 +14,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use librad::peer::PeerId;
+use librad::PeerId;
 
 use super::sealed;
 

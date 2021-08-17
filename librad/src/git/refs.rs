@@ -29,9 +29,9 @@ use super::{
 };
 use crate::{
     internal::canonical::{Cjson, CjsonError},
-    keys::Signature,
-    peer::PeerId,
-    signer::Signer,
+    PeerId,
+    Signature,
+    Signer,
 };
 
 pub use crate::identities::git::Urn;

@@ -4,7 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use super::sealed;
-use crate::peer::PeerId;
+use crate::PeerId;
 
 pub mod namespace;
 pub mod reference;

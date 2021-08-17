@@ -14,7 +14,6 @@ use multihash::Multihash;
 use thiserror::Error;
 
 use super::Urn;
-use crate::peer;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LocalUrl {
@@ -68,7 +67,7 @@ pub enum ParseError {
     Multihash(#[from] multihash::DecodeOwnedError),
 
     #[error(transparent)]
-    Peer(#[from] peer::conversion::Error),
+    Peer(#[from] crypto::peer::conversion::Error),
 }
 
 impl FromStr for LocalUrl {

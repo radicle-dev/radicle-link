@@ -11,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crypto::{BoxedSigner, SomeSigner};
 use git2::string_array::StringArray;
 use git_ext::{self as ext, is_not_found_err};
 
@@ -18,8 +19,8 @@ use crate::{
     git::types::{Many, One, Reference},
     identities::git::Urn,
     paths::Paths,
-    peer::PeerId,
-    signer::{BoxedSigner, Signer, SomeSigner},
+    PeerId,
+    Signer,
 };
 
 pub mod config;

@@ -24,7 +24,7 @@ use librad::{
             gossip::Payload,
         },
     },
-    peer::PeerId,
+    PeerId,
 };
 
 use crate::{
@@ -413,7 +413,6 @@ mod test {
         data::BoundedVec,
         git::Urn,
         git_ext::Oid,
-        keys::SecretKey,
         net::{
             self,
             peer::ProtocolEvent,
@@ -426,7 +425,8 @@ mod test {
                 gossip::Payload,
             },
         },
-        peer::PeerId,
+        PeerId,
+        SecretKey,
     };
 
     use super::{command, input, Command, Input, RunState, Status};

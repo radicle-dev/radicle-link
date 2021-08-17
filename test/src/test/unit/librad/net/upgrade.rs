@@ -6,7 +6,6 @@
 use futures::try_join;
 
 use librad::{
-    keys::SecretKey,
     net::upgrade::{
         upgrade,
         with_upgraded,
@@ -18,7 +17,8 @@ use librad::{
         SomeUpgraded,
         UpgradeRequest,
     },
-    peer::PeerId,
+    PeerId,
+    SecretKey,
 };
 
 use crate::{librad::net::connection::MockStream, roundtrip::*};

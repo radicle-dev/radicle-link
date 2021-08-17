@@ -25,23 +25,20 @@ extern crate lazy_static;
 #[macro_use]
 extern crate radicle_macros;
 
+pub extern crate link_crypto as crypto;
 pub extern crate radicle_data as data;
 pub extern crate radicle_git_ext as git_ext;
-pub extern crate radicle_keystore as keystore;
 pub extern crate radicle_std_ext as std_ext;
 
 pub mod executor;
 pub mod git;
 pub mod identities;
 pub mod internal;
-pub mod keys;
 pub mod net;
 pub mod paths;
-pub mod peer;
 pub mod profile;
 pub mod rate_limit;
-pub mod signer;
 
 // Re-exports
-pub use peer::PeerId;
+pub use link_crypto::{keystore, PeerId, PublicKey, SecStr, SecretKey, Signature, Signer};
 pub use radicle_macros::*;

@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use librad::{git::Urn, git_ext, keys::SecretKey, net::protocol::gossip::*, peer::PeerId};
+use librad::{git::Urn, git_ext, net::protocol::gossip::*, PeerId, SecretKey};
 
 use crate::roundtrip::*;
 

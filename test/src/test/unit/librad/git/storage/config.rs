@@ -5,8 +5,8 @@
 
 use librad::{
     git::storage::config::{Config, Error},
-    keys::SecretKey,
-    peer::PeerId,
+    PeerId,
+    SecretKey,
 };
 
 use crate::librad::git::storage::config::setup;

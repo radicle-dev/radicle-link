@@ -12,7 +12,7 @@ use std::{
     net::{SocketAddr, ToSocketAddrs},
 };
 
-use crate::peer::PeerId;
+use crate::PeerId;
 
 pub trait Discovery {
     type Addr;

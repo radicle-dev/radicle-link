@@ -5,12 +5,12 @@
 
 use std::io;
 
-use librad::{keys, peer::PeerId};
+use librad::{PeerId, SecStr, SecretKey};
 use radicle_keystore::sign::ed25519;
 
 #[derive(Clone)]
 pub struct Signer {
-    pub(super) key: keys::SecretKey,
+    pub(super) key: SecretKey,
 }
 
 impl From<Signer> for PeerId {
@@ -26,8 +26,8 @@ impl Signer {
         let mut bytes = Vec::new();
         r.read_to_end(&mut bytes)?;
 
-        let sbytes: keys::SecStr = bytes.into();
-        match keys::SecretKey::from_bytes_and_meta(sbytes, &()) {
+        let sbytes: SecStr = bytes.into();
+        match SecretKey::from_bytes_and_meta(sbytes, &()) {
             Ok(key) => Ok(Self { key }),
             Err(err) => Err(io::Error::new(io::ErrorKind::InvalidData, err)),
         }
@@ -43,6 +43,6 @@ impl ed25519::Signer for Signer {
     }
 
     async fn sign(&self, data: &[u8]) -> Result<ed25519::Signature, Self::Error> {
-        <keys::SecretKey as ed25519::Signer>::sign(&self.key, data).await
+        <SecretKey as ed25519::Signer>::sign(&self.key, data).await
     }
 }

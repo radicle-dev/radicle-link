@@ -9,6 +9,7 @@ use either::Either;
 
 use librad::{
     self,
+    crypto::BoxedSigner,
     git::{
         identities::{self, local::LocalIdentity, Project},
         local::{
@@ -21,8 +22,7 @@ use librad::{
     },
     identities::{delegation::Indirect, payload},
     paths::Paths,
-    peer::PeerId,
-    signer::BoxedSigner,
+    PeerId,
 };
 
 use crate::{include, sealed};

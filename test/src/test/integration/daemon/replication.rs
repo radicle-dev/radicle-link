@@ -63,7 +63,7 @@ fn can_clone_project() -> Result<(), anyhow::Error> {
         let want = vec![project.urn()];
         assert_eq!(have, want, "bob");
 
-        let another_peer = librad::peer::PeerId::from(librad::keys::SecretKey::new());
+        let another_peer = librad::PeerId::from(librad::crypto::SecretKey::new());
         state::track(&bob.peer, project.urn(), another_peer).await?;
         let mut have = state::tracked(&bob.peer, project.urn())
             .await?

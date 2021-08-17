@@ -12,7 +12,7 @@
 
 use serde::Serialize;
 
-use crate::peer::PeerId;
+use crate::PeerId;
 
 /// Relation of the peer to the project.
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]

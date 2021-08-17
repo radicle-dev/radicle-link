@@ -11,6 +11,7 @@ use std::{
     sync::Arc,
 };
 
+use crypto::BoxedSigner;
 use git2::transport::Service;
 use git_ext::{self as ext};
 use thiserror::Error;
@@ -25,7 +26,7 @@ use super::{
     },
     url::LocalUrl,
 };
-use crate::{paths::Paths, signer::BoxedSigner};
+use crate::paths::Paths;
 
 mod internal;
 

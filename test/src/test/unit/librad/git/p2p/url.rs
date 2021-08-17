@@ -5,7 +5,7 @@
 
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
-use librad::{git::p2p::url::GitUrl, identities::git, keys::SecretKey, peer::PeerId};
+use librad::{git::p2p::url::GitUrl, identities::git, PeerId, SecretKey};
 
 use crate::roundtrip::str_roundtrip;
 

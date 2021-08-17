@@ -10,9 +10,9 @@ use librad::{
         Urn,
     },
     git_ext as ext,
-    keys::SecretKey,
-    peer::PeerId,
     reflike,
+    PeerId,
+    SecretKey,
 };
 
 const LOCAL_SEED: [u8; 32] = [

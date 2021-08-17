@@ -6,7 +6,6 @@
 use std::{ops::Deref, time::Duration};
 
 use futures::executor::block_on;
-use keystore::sign::Signer;
 use picky_asn1::{
     bit_string::BitString,
     date::{GeneralizedTime, UTCTime},
@@ -33,15 +32,12 @@ use picky_asn1_x509::{
 use thiserror::Error;
 use time::{Date, OffsetDateTime};
 
-use crate::{
-    keys,
-    peer::{self, PeerId},
-};
+use crate::{keystore::sign::Signer, PeerId};
 
 #[derive(Debug, Error)]
 pub enum FromDerError {
     #[error("the subject common name must be a valid PeerId")]
-    SubjectNotPeerId(#[source] peer::conversion::Error),
+    SubjectNotPeerId(#[source] crypto::peer::conversion::Error),
 
     #[error("invalid subject public key")]
     InvalidPublicKey,
@@ -140,7 +136,7 @@ impl Certificate {
                 .subject_public_key_info
                 .subject_public_key
             {
-                PublicKey::Ed(point) => keys::PublicKey::from_slice(point.payload_view())
+                PublicKey::Ed(point) => crate::PublicKey::from_slice(point.payload_view())
                     .ok_or(FromDerError::InvalidPublicKey)
                     .map(PeerId::from),
                 _ => Err(FromDerError::UnsupportedAlgorithm),

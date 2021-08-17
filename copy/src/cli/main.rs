@@ -12,15 +12,16 @@ use std::{
 use anyhow::anyhow;
 
 use librad::{
+    crypto::{BoxedSigner, SomeSigner},
     git::{
         identities::{self, local},
         storage::Storage,
         Urn,
     },
     git_ext::{OneLevel, RefLike},
-    keys::{PublicKey, SecretKey},
     profile::Profile,
-    signer::{BoxedSigner, SomeSigner},
+    PublicKey,
+    SecretKey,
 };
 use radicle_keystore::{
     crypto::{self, Pwhash},

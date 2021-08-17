@@ -9,7 +9,7 @@ use proptest::prelude::*;
 
 use librad::{
     net::protocol::{membership::PartialView, PartialPeerInfo, PeerAdvertisement},
-    peer::PeerId,
+    PeerId,
 };
 
 use crate::librad::peer::gen_peer_id;

@@ -5,11 +5,7 @@
 
 use std::convert::TryFrom as _;
 
-use librad::{
-    git_ext as ext,
-    keys::SecretKey,
-    peer::{conversion, PeerId},
-};
+use librad::{git_ext as ext, PeerId, SecretKey};
 
 use crate::roundtrip::*;
 
@@ -25,7 +21,7 @@ fn test_default_encoding_roundtrip() {
 fn test_default_encoding_empty_input() {
     assert!(matches!(
         PeerId::from_default_encoding(""),
-        Err(conversion::Error::UnexpectedInputLength(0))
+        Err(librad::crypto::peer::conversion::Error::UnexpectedInputLength(0))
     ))
 }
 

@@ -5,7 +5,7 @@
 
 use librad::{
     net::connection::{Duplex, RemoteAddr, RemotePeer},
-    peer::PeerId,
+    PeerId,
 };
 
 use std::{io, pin::Pin};

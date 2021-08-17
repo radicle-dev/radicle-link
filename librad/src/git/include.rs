@@ -17,7 +17,7 @@ use super::{
     local::url::LocalUrl,
     types::{Flat, Force, GenericRef, Reference, Refspec, Remote},
 };
-use crate::peer::PeerId;
+use crate::PeerId;
 
 /// Config key to reference generated include files in working copies.
 pub const GIT_CONFIG_PATH_KEY: &str = "include.path";

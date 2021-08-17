@@ -4,9 +4,10 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use librad::{
-    keys::{IntoSecretKeyError, PublicKey, SecretKey},
+    crypto::{BoxedSigner, IntoSecretKeyError},
     profile::Profile,
-    signer::BoxedSigner,
+    PublicKey,
+    SecretKey,
 };
 use radicle_keystore::{
     crypto::{Crypto, KdfParams, Pwhash, SecretBoxError},
@@ -41,7 +42,7 @@ pub fn unsafe_prompt() -> Pwhash<Prompt<'static>> {
     Pwhash::new(prompt, *KDF_PARAMS_TEST)
 }
 
-/// Create a [`FileStorage`] for [`librad::keys`].
+/// Create a [`FileStorage`] for [`SecretKey`]s.
 pub fn file_storage<C>(profile: &Profile, crypto: C) -> FileStorage<C, PublicKey, SecretKey, ()>
 where
     C: Crypto,

@@ -5,7 +5,7 @@
 
 use pretty_assertions::assert_eq;
 
-use librad::{keys::SecretKey, net::x509::Certificate, peer::PeerId};
+use librad::{net::x509::Certificate, PeerId, SecretKey};
 
 lazy_static! {
     static ref KEY: SecretKey = SecretKey::from_seed([

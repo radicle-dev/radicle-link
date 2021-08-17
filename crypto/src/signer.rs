@@ -7,7 +7,7 @@
 
 use std::error::Error;
 
-use futures::executor::block_on;
+use futures_lite::future::block_on;
 use keystore::sign;
 
 use crate::{keys, peer::PeerId};
@@ -77,7 +77,7 @@ impl std::error::Error for BoxedSignError {
 
 /// A dynamic [`Signer`] where the associated error is a [`BoxedSignError`].
 /// This allows us to dynamically send around something that is a `Signer`. This
-/// is important for [`crate::git::local::transport`].
+/// is important for `librad`'s `git::local::transport`.
 pub struct BoxedSigner {
     signer: Box<dyn Signer<Error = BoxedSignError>>,
 }

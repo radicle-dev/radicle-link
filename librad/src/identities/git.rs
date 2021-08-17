@@ -19,8 +19,8 @@ use crate::{
         urn,
     },
     internal::canonical::Cjson,
-    keys::PublicKey,
-    signer::Signer,
+    PublicKey,
+    Signer,
 };
 
 pub mod error;

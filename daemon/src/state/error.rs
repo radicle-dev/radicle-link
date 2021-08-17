@@ -11,7 +11,7 @@ use librad::{
         Urn,
     },
     net,
-    peer::PeerId,
+    PeerId,
 };
 use std::{convert::Infallible, panic};
 

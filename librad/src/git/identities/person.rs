@@ -24,7 +24,7 @@ use crate::{
         git::{Identities, Verifying},
         urn,
     },
-    peer::PeerId,
+    PeerId,
 };
 
 pub use identities::{
@@ -100,10 +100,9 @@ where
 
 /// Create a new [`Person`].
 ///
-/// The `delegations` must include the [`Storage`]'s [`crate::signer::Signer`]
-/// key, such that the newly created [`Person`] is also a valid
-/// [`LocalIdentity`] -- it is, in fact, its own [`LocalIdentity`]. This can be
-/// changed via [`update`].
+/// The `delegations` must include the [`Storage`]'s [`crate::Signer`] key, such
+/// that the newly created [`Person`] is also a valid [`LocalIdentity`] -- it
+/// is, in fact, its own [`LocalIdentity`]. This can be changed via [`update`].
 #[tracing::instrument(level = "debug", skip(storage))]
 pub fn create<P>(
     storage: &Storage,

@@ -6,13 +6,14 @@
 use either::Either::{Left, Right};
 
 use librad::{
+    crypto::peer::Originates,
     git::Urn,
     git_ext as ext,
     identities::urn,
-    keys::SecretKey,
     net::peer::storage::urn_context,
-    peer::{Originates, PeerId},
     reflike,
+    PeerId,
+    SecretKey,
 };
 
 lazy_static! {

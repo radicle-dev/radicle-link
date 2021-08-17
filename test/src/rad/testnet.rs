@@ -20,7 +20,6 @@ use tempfile::{tempdir, TempDir};
 
 use librad::{
     git,
-    keys::SecretKey,
     net::{
         connection::{LocalAddr, LocalPeer},
         discovery::{self, Discovery as _},
@@ -29,7 +28,8 @@ use librad::{
         Network,
     },
     paths::Paths,
-    peer::PeerId,
+    PeerId,
+    SecretKey,
 };
 
 lazy_static! {

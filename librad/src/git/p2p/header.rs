@@ -12,7 +12,7 @@ use std::{
 use git2::transport::Service as GitService;
 use thiserror::Error;
 
-use crate::peer::{self, PeerId};
+use crate::PeerId;
 
 #[derive(Debug, PartialEq)]
 pub struct Header<Urn> {
@@ -76,7 +76,7 @@ pub enum ParseError {
     MissingHost,
 
     #[error("malformed host. Must be a PeerId")]
-    MalformedHost(#[from] peer::conversion::Error),
+    MalformedHost(#[from] crypto::peer::conversion::Error),
 
     #[error("invalid mode: `{0}`. Must be `ls`, or absent")]
     InvalidMode(String),

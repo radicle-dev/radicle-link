@@ -2,6 +2,7 @@
 members = [
   "clib",
   "copy",
+  "crypto",
   "daemon",
   "data",
   "e2e",

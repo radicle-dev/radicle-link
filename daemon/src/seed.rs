@@ -6,7 +6,7 @@
 //! Seed nodes.
 use std::{io, net::SocketAddr};
 
-use librad::peer;
+use librad::{crypto, PeerId};
 
 /// Errors that occur when resolving seed addresses.
 #[derive(Debug, thiserror::Error)]
@@ -17,7 +17,7 @@ pub enum Error {
 
     /// Seed input is invalid.
     #[error("the seed '{0}' is invalid: {:1}")]
-    InvalidSeed(String, Option<librad::peer::conversion::Error>),
+    InvalidSeed(String, Option<crypto::peer::conversion::Error>),
 
     /// I/O error.
     #[error(transparent)]
@@ -28,12 +28,12 @@ pub enum Error {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Seed {
     /// The seed peer id.
-    pub peer_id: peer::PeerId,
+    pub peer_id: PeerId,
     /// The seed address.
     pub addrs: Vec<SocketAddr>,
 }
 
-impl From<Seed> for (peer::PeerId, Vec<SocketAddr>) {
+impl From<Seed> for (PeerId, Vec<SocketAddr>) {
     fn from(seed: Seed) -> Self {
         (seed.peer_id, seed.addrs)
     }
@@ -52,7 +52,7 @@ impl Seed {
             let host = &rest[1..]; // Skip '@'
 
             if let Some(addr) = tokio::net::lookup_host(host).await?.next() {
-                let peer_id = peer::PeerId::from_default_encoding(peer_id)
+                let peer_id = PeerId::from_default_encoding(peer_id)
                     .map_err(|err| Error::InvalidSeed(seed.to_string(), Some(err)))?;
 
                 Ok(Self {

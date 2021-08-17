@@ -14,7 +14,7 @@ use parking_lot::RwLock;
 use thiserror::Error;
 
 use super::{error, read, Fetchers, ReadOnly, Storage};
-use crate::{paths::Paths, signer::Signer};
+use crate::{paths::Paths, Signer};
 
 #[derive(Debug, Error)]
 #[non_exhaustive]

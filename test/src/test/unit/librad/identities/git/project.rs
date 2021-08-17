@@ -16,7 +16,7 @@ use librad::{
         Identities,
         IndirectDelegation,
     },
-    keys::SecretKey,
+    SecretKey,
 };
 
 use crate::librad::git::{repo, Device, Project};

@@ -20,8 +20,8 @@ use std::{
 use argh::FromArgs;
 use futures::FutureExt as _;
 use librad::{
+    crypto,
     git,
-    keys::SecretKey,
     net::{
         discovery::{self, Discovery as _},
         peer::{self, Peer},
@@ -30,6 +30,7 @@ use librad::{
     },
     paths::Paths,
     PeerId,
+    SecretKey,
 };
 use radicle_link_e2e::logging;
 use tempfile::tempdir;
@@ -66,7 +67,7 @@ fn parse_bootstrap_node(s: &str) -> Result<BoostrapNode, String> {
         Some((peer_id, addr)) => {
             let peer_id = peer_id
                 .parse()
-                .map_err(|e: librad::peer::conversion::Error| e.to_string())?;
+                .map_err(|e: crypto::peer::conversion::Error| e.to_string())?;
             Ok(BoostrapNode {
                 peer_id,
                 addr: addr.to_owned(),

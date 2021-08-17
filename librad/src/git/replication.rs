@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{
     identities::git::{Person, Project, Revision, SomeIdentity, VerifiedPerson, VerifiedProject},
-    peer::PeerId,
+    PeerId,
 };
 
 pub use crate::identities::git::Urn;

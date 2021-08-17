@@ -21,7 +21,7 @@ use crate::{
         Person,
         Project,
     },
-    peer::PeerId,
+    PeerId,
 };
 
 #[derive(Debug, thiserror::Error)]

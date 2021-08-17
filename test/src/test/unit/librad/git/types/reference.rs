@@ -9,9 +9,9 @@ use librad::{
     git::{types::reference::Reference, Urn},
     git_ext as ext,
     identities,
-    keys::SecretKey,
-    peer::PeerId,
     reflike,
+    PeerId,
+    SecretKey,
 };
 
 #[test]

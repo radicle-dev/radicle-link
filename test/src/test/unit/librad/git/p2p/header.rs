@@ -7,8 +7,8 @@ use git2::transport::Service as GitService;
 use librad::{
     git::{p2p::header::Header, Urn},
     git_ext as ext,
-    keys::SecretKey,
-    peer::PeerId,
+    PeerId,
+    SecretKey,
 };
 
 #[test]

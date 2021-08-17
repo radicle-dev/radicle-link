@@ -5,7 +5,7 @@
 
 use minicbor::{Decode, Decoder, Encode, Encoder};
 
-use crate::{identities::git::Urn, peer::PeerId};
+use crate::{identities::git::Urn, PeerId};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Rev {

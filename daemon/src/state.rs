@@ -15,6 +15,7 @@ use either::Either;
 use tokio::task::spawn_blocking;
 
 use librad::{
+    crypto::{BoxedSigner, SomeSigner},
     git::{
         identities::{
             self,
@@ -43,11 +44,11 @@ use librad::{
         SomeIdentity,
     },
     internal::canonical::Cstring,
-    keys,
     net::peer::Peer,
     paths,
-    peer::PeerId,
-    signer::{BoxedSigner, Signer, SomeSigner},
+    PeerId,
+    PublicKey,
+    Signer,
 };
 
 use crate::{
@@ -123,7 +124,7 @@ where
     }
 
     let payload = payload.try_into()?;
-    let pk = keys::PublicKey::from(peer.signer().public_key());
+    let pk = PublicKey::from(peer.signer().public_key());
     let delegations = Some(pk).into_iter().collect();
     let person = peer
         .using_storage(move |store| person::create(store, payload, delegations))
@@ -523,7 +524,7 @@ pub async fn init_user<S>(peer: &Peer<S>, name: String) -> Result<LocalIdentity,
 where
     S: Clone + Signer,
 {
-    let pk = keys::PublicKey::from(peer.signer().public_key());
+    let pk = PublicKey::from(peer.signer().public_key());
     peer.using_storage(move |store| {
         let malkovich = person::create(
             store,
@@ -989,9 +990,16 @@ fn role(
 #[allow(clippy::panic, clippy::unwrap_used)]
 #[cfg(test)]
 pub mod test {
-    use crate::{config, identities::payload::HasNamespace, project, signer};
+    use crate::{config, identities::payload::HasNamespace, project};
     use lazy_static::lazy_static;
-    use librad::{git_ext::OneLevel, identities::payload::Person, keys::SecretKey, net, reflike};
+    use librad::{
+        crypto::BoxedSigner,
+        git_ext::OneLevel,
+        identities::payload::Person,
+        net,
+        reflike,
+        SecretKey,
+    };
     use serde::{Deserialize, Serialize};
     use std::{env, path::PathBuf};
     use url::Url;
@@ -1075,7 +1083,7 @@ pub mod test {
     async fn can_create_user() -> Result<(), Box<dyn std::error::Error>> {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
         let key = SecretKey::new();
-        let signer = signer::BoxedSigner::from(key.clone());
+        let signer = BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
         let peer = net::peer::Peer::new(config)?;
 
@@ -1089,7 +1097,7 @@ pub mod test {
     async fn can_init_owner() -> Result<(), Box<dyn std::error::Error>> {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
         let key = SecretKey::new();
-        let signer = signer::BoxedSigner::from(key.clone());
+        let signer = BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
         let peer = net::peer::Peer::new(config)?;
         let payload = super::PersonPayload::new(Person {
@@ -1119,7 +1127,7 @@ pub mod test {
     async fn can_update_owner_payload() -> Result<(), Box<dyn std::error::Error>> {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
         let key = SecretKey::new();
-        let signer = signer::BoxedSigner::from(key.clone());
+        let signer = BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
         let peer = net::peer::Peer::new(config)?;
         let payload = super::PersonPayload::new(Person {
@@ -1150,7 +1158,7 @@ pub mod test {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
         env::set_var("RAD_HOME", tmp_dir.path());
         let key = SecretKey::new();
-        let signer = signer::BoxedSigner::from(key.clone());
+        let signer = BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
         let peer = net::peer::Peer::new(config)?;
 
@@ -1177,7 +1185,7 @@ pub mod test {
         let repo_path = repo_path.join("radicalise");
         std::fs::create_dir_all(repo_path.clone()).expect("failed to create directory path");
         let key = SecretKey::new();
-        let signer = signer::BoxedSigner::from(key.clone());
+        let signer = BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
         let peer = net::peer::Peer::new(config)?;
 
@@ -1201,7 +1209,7 @@ pub mod test {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
 
         let key = SecretKey::new();
-        let signer = signer::BoxedSigner::from(key.clone());
+        let signer = BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
         let peer = net::peer::Peer::new(config)?;
 
@@ -1242,7 +1250,7 @@ pub mod test {
     async fn list_users() -> Result<(), Box<dyn std::error::Error>> {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
         let key = SecretKey::new();
-        let signer = signer::BoxedSigner::from(key.clone());
+        let signer = BoxedSigner::from(key.clone());
         let config = config::default(signer.clone(), tmp_dir.path())?;
         let peer = net::peer::Peer::new(config)?;
 

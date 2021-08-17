@@ -8,7 +8,7 @@ use either::Either::Left;
 use librad::{
     git::identities,
     identities::{delegation, payload, SomeIdentity},
-    keys::SecretKey,
+    SecretKey,
 };
 
 use crate::librad::git::{self, storage::storage};

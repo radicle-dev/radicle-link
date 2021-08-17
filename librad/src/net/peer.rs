@@ -12,8 +12,8 @@ use super::protocol::{self, gossip};
 use crate::{
     executor,
     git::{self, storage::Fetchers, Urn},
-    signer::Signer,
     PeerId,
+    Signer,
 };
 
 pub use super::protocol::{

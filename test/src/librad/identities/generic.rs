@@ -20,7 +20,9 @@ use librad::{
         generic::{Doc, Identity},
         sign::Signatures,
     },
-    keys::{PublicKey, SecretKey, Signature},
+    PublicKey,
+    SecretKey,
+    Signature,
 };
 
 use crate::librad::keys::{gen_secret_key, RESKey};

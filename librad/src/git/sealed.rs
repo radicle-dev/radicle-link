@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use crate::peer::PeerId;
+use crate::PeerId;
 
 /// Constraint for [sealed traits] under the `git` module hierarchy.
 ///

@@ -19,7 +19,7 @@ use tokio::{
 };
 
 use crate::state;
-use librad::{net, signer::Signer};
+use librad::{net, Signer};
 
 mod announcement;
 pub use announcement::Announcement;

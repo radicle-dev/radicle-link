@@ -18,7 +18,7 @@ use librad::{
         ProjectDelegations,
         ProjectPayload,
     },
-    keys::SecretKey,
+    SecretKey,
 };
 
 use crate::{librad::identities::payload::*, roundtrip::*};

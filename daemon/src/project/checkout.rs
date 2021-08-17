@@ -25,9 +25,9 @@ use librad::{
         Urn,
     },
     git_ext::{self, OneLevel, Qualified, RefLike},
-    peer::PeerId,
     reflike,
     refspec_pattern,
+    PeerId,
 };
 
 /// When checking out a working copy, we can run into several I/O failures.

@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use librad::{
     git::{identities::Revision, Urn},
-    peer::PeerId,
+    PeerId,
 };
 
 use crate::request::{Clones, Queries, Request, RequestState, SomeRequest, Status, TimedOut};
@@ -479,7 +479,7 @@ mod test {
     use std::{error, str::FromStr};
 
     use assert_matches::assert_matches;
-    use librad::{git::Urn, git_ext::Oid, keys::SecretKey, peer::PeerId};
+    use librad::{git::Urn, git_ext::Oid, PeerId, SecretKey};
     use pretty_assertions::assert_eq;
 
     use super::*;

@@ -11,7 +11,7 @@ use librad::{
         Urn,
     },
     git_ext::RefLike,
-    keys::SecretKey,
+    SecretKey,
 };
 
 use crate::{librad::git::storage::storage, logging, rad::identities::TestProject};

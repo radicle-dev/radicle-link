@@ -7,7 +7,7 @@ use std::iter;
 
 use multibase::{self, Base};
 
-use librad::keys::*;
+use librad::crypto::*;
 
 use crate::roundtrip::*;
 

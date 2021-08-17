@@ -14,14 +14,7 @@ use async_stream::stream;
 use futures::stream::BoxStream;
 use tokio::sync::watch;
 
-use librad::{
-    git::replication,
-    net,
-    net::discovery,
-    paths,
-    peer::PeerId,
-    signer::{BoxedSigner, Signer},
-};
+use librad::{crypto::BoxedSigner, git::replication, net, net::discovery, paths, PeerId, Signer};
 
 use crate::seed;
 

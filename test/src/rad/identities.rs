@@ -13,7 +13,7 @@ use librad::{
     },
     identities::{delegation, payload},
     net::{connection::LocalInfo, peer::Peer},
-    signer::Signer,
+    Signer,
 };
 
 pub struct TestPerson {

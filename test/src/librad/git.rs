@@ -11,7 +11,7 @@ use either::Either::*;
 use librad::{
     git::{identities, storage::Storage, Urn},
     identities::{payload, *},
-    keys::SecretKey,
+    SecretKey,
 };
 
 use crate::tempdir::WithTmpDir;

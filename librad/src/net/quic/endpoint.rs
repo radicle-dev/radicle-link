@@ -28,8 +28,8 @@ use crate::{
         Network,
         PROTOCOL_VERSION,
     },
-    signer::Signer,
     PeerId,
+    Signer,
 };
 
 pub type IncomingConnections<'a> = BoxStream<'a, Result<(Connection, BoxedIncomingStreams<'a>)>>;

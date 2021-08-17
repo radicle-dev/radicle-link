@@ -5,13 +5,12 @@
 
 use std::time::Duration;
 
+use librad::{net::protocol::event::downstream::MembershipInfo, PeerId};
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, oneshot},
     time,
 };
-
-use librad::{net::protocol::event::downstream::MembershipInfo, peer::PeerId};
 
 use crate::Project;
 

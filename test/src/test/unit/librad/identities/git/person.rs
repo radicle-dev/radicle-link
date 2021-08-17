@@ -8,7 +8,7 @@ use librad::{
         git::{error, VerificationError},
         Identities,
     },
-    keys::SecretKey,
+    SecretKey,
 };
 
 use crate::librad::git::{repo, Device};

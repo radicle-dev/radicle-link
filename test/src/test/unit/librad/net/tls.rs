@@ -8,9 +8,9 @@ use std::{io, sync::Arc};
 use rustls::{ClientSession, ServerSession, Session};
 
 use librad::{
-    keys::SecretKey,
     net::tls::{make_client_config, make_server_config},
-    peer::PeerId,
+    PeerId,
+    SecretKey,
 };
 
 #[test]

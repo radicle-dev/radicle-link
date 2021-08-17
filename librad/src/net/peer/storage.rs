@@ -5,6 +5,7 @@
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
+use crypto::peer::Originates;
 use either::Either::{self, Left, Right};
 use git_ext::{self as ext, reference};
 use nonzero_ext::nonzero;
@@ -19,8 +20,8 @@ use crate::{
     },
     identities::urn,
     net::protocol::{broadcast, cache, gossip},
-    peer::{Originates, PeerId},
     rate_limit::{Keyed, RateLimiter},
+    PeerId,
 };
 
 mod error;

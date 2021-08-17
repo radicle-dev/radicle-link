@@ -9,21 +9,23 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::credential;
 use librad::{
+    crypto::{BoxedSigner, SomeSigner},
     git::local::{
         transport::{CanOpenStorage, LocalTransport, Localio, Mode::Stateful, Settings},
         url::LocalUrl,
     },
-    keys::{PublicKey, SecretKey},
     profile::Profile,
-    signer::{BoxedSigner, SomeSigner},
+    PublicKey,
+    SecretKey,
 };
 use radicle_keystore::{
     crypto::{self, Pwhash},
     FileStorage,
     Keystore,
 };
+
+use crate::credential;
 
 pub struct Config {
     /// Signer for radicle artifacts created by pushes.

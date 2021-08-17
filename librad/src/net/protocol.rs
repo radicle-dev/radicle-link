@@ -28,8 +28,8 @@ use crate::{
     },
     paths::Paths,
     rate_limit::RateLimiter,
-    signer::Signer,
     PeerId,
+    Signer,
 };
 
 pub mod broadcast;

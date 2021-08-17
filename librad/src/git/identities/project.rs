@@ -24,7 +24,7 @@ use crate::{
         git::{Identities, IndirectDelegation, Project, Revision, VerifiedProject, Verifying},
         urn,
     },
-    peer::PeerId,
+    PeerId,
 };
 
 pub use identities::{git::Urn, payload::ProjectPayload};

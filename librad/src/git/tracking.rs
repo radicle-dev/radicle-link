@@ -13,7 +13,7 @@ use super::{
     p2p::url::GitUrlRef,
     storage::{self, glob, ReadOnlyStorage, Storage},
 };
-use crate::peer::PeerId;
+use crate::PeerId;
 
 pub use crate::identities::git::Urn;
 

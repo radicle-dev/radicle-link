@@ -4,7 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use either::Either;
-use librad::{git::Urn, identities::Revision, peer::PeerId};
+use librad::{git::Urn, identities::Revision, PeerId};
 use std::{
     collections::HashMap,
     time::{Duration, SystemTime},

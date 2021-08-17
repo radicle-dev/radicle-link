@@ -22,8 +22,8 @@ use tokio::{
 use librad::{
     git::Urn,
     net::{self, peer::ProtocolEvent},
-    peer::PeerId,
-    signer::Signer,
+    PeerId,
+    Signer,
 };
 
 use crate::{

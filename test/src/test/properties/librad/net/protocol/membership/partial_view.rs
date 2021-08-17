@@ -7,7 +7,7 @@ use proptest::prelude::*;
 
 use librad::{
     net::protocol::membership::{PartialView, Transition},
-    peer::PeerId,
+    PeerId,
 };
 
 use crate::librad::{

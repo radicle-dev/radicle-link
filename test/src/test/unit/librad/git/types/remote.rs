@@ -14,10 +14,10 @@ use librad::{
         Urn,
     },
     git_ext as ext,
-    keys::SecretKey,
-    peer::PeerId,
     reflike,
     refspec_pattern,
+    PeerId,
+    SecretKey,
 };
 
 use crate::tempdir::WithTmpDir;

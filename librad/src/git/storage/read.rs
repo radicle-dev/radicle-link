@@ -16,7 +16,7 @@ use crate::{
     git::types::{reference, Many, One, Reference},
     identities::git::{Identities, Urn},
     paths::Paths,
-    peer::PeerId,
+    PeerId,
 };
 
 use super::{

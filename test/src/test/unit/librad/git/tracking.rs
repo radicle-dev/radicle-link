@@ -11,10 +11,10 @@ use librad::{
         tracking::{is_tracked, track, tracked, untrack},
         Urn,
     },
-    keys::SecretKey,
     paths::Paths,
-    peer::PeerId,
     reflike,
+    PeerId,
+    SecretKey,
 };
 
 #[test]

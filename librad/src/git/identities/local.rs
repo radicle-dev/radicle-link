@@ -16,8 +16,8 @@ use super::{
 };
 use crate::{
     identities::git::{Urn, VerifiedPerson},
-    peer::PeerId,
-    signer::Signer,
+    PeerId,
+    Signer,
 };
 
 #[derive(Debug, Error)]

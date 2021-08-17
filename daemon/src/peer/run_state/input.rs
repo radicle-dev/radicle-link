@@ -7,7 +7,7 @@ use std::{net::SocketAddr, time::SystemTime};
 
 use tokio::sync::oneshot;
 
-use librad::{git::Urn, net, net::peer::ProtocolEvent, peer::PeerId};
+use librad::{git::Urn, net, net::peer::ProtocolEvent, PeerId};
 
 use crate::{
     peer::announcement,

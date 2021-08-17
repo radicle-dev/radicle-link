@@ -18,7 +18,7 @@ use serde::ser::SerializeMap;
 use thiserror::Error;
 use url::Url;
 
-use crate::{internal::canonical::Cstring, keys::PublicKey};
+use crate::{internal::canonical::Cstring, PublicKey};
 
 use super::{
     delegation,

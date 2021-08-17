@@ -11,7 +11,7 @@
 //! the project.
 use serde::Serialize;
 
-use librad::peer::PeerId;
+use librad::PeerId;
 
 /// Relation of the peer to the project.
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]

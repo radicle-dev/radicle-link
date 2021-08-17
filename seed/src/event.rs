@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use librad::{
     git::{identities, Urn},
     net::peer::Peer,
-    peer::PeerId,
+    PeerId,
 };
 
 use crate::{signer::Signer, Error, Project};

@@ -22,8 +22,8 @@ use librad::{
         Urn,
     },
     git_ext::{self, OneLevel, Qualified, RefLike},
-    peer::PeerId,
     refspec_pattern,
+    PeerId,
 };
 
 use crate::git;

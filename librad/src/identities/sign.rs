@@ -17,7 +17,7 @@ use serde::{
 
 use crate::{
     git::trailer::{self, Token, Trailer},
-    keys::{self, PublicKey},
+    PublicKey,
 };
 
 pub mod error;
@@ -27,11 +27,11 @@ const TRAILER_TOKEN: &str = "X-Rad-Signature";
 #[derive(Clone, Debug, PartialEq)]
 pub struct Signature {
     key: PublicKey,
-    sig: keys::Signature,
+    sig: crypto::Signature,
 }
 
-impl From<(PublicKey, keys::Signature)> for Signature {
-    fn from((key, sig): (PublicKey, keys::Signature)) -> Self {
+impl From<(PublicKey, crypto::Signature)> for Signature {
+    fn from((key, sig): (PublicKey, crypto::Signature)) -> Self {
         Self { key, sig }
     }
 }
@@ -55,7 +55,7 @@ impl TryFrom<Trailer<'_>> for Signature {
             .next()
             .ok_or(error::Signature::Missing("signature"))
             .and_then(|sig| {
-                keys::Signature::deserialize(
+                crypto::Signature::deserialize(
                     sig.deref().into_deserializer() as StrDeserializer<serde::de::value::Error>
                 )
                 .map_err(|e| e.into())
@@ -65,12 +65,12 @@ impl TryFrom<Trailer<'_>> for Signature {
     }
 }
 
-/// Lets us avoid writing `impl From<(&PublicKey, &keys::Signature)> for
+/// Lets us avoid writing `impl From<(&PublicKey, &crypto::Signature)> for
 /// Trailer`. While that isn't an orphan because `Trailer` is defined in this
 /// crate, it is quite confusing nevertheless, and breaks modularity.
 struct SignatureRef<'a> {
     key: &'a PublicKey,
-    sig: &'a keys::Signature,
+    sig: &'a crypto::Signature,
 }
 
 impl<'a> From<&'a Signature> for SignatureRef<'a> {
@@ -79,8 +79,8 @@ impl<'a> From<&'a Signature> for SignatureRef<'a> {
     }
 }
 
-impl<'a> From<(&'a PublicKey, &'a keys::Signature)> for SignatureRef<'a> {
-    fn from((key, sig): (&'a PublicKey, &'a keys::Signature)) -> Self {
+impl<'a> From<(&'a PublicKey, &'a crypto::Signature)> for SignatureRef<'a> {
+    fn from((key, sig): (&'a PublicKey, &'a crypto::Signature)) -> Self {
         Self { key, sig }
     }
 }
@@ -109,7 +109,7 @@ impl<'a> From<SignatureRef<'a>> for Trailer<'_> {
 // FIXME(kim): This should really be a HashMap with a no-op Hasher -- PublicKey
 // collisions are catastrophic
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Signatures(BTreeMap<PublicKey, keys::Signature>);
+pub struct Signatures(BTreeMap<PublicKey, crypto::Signature>);
 
 impl Signatures {
     pub fn from_trailers(message: &str) -> Result<Self, error::Signatures> {
@@ -118,7 +118,7 @@ impl Signatures {
 }
 
 impl Deref for Signatures {
-    type Target = BTreeMap<PublicKey, keys::Signature>;
+    type Target = BTreeMap<PublicKey, crypto::Signature>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -139,13 +139,13 @@ impl From<Signature> for Signatures {
     }
 }
 
-impl From<BTreeMap<PublicKey, keys::Signature>> for Signatures {
-    fn from(map: BTreeMap<PublicKey, keys::Signature>) -> Self {
+impl From<BTreeMap<PublicKey, crypto::Signature>> for Signatures {
+    fn from(map: BTreeMap<PublicKey, crypto::Signature>) -> Self {
         Self(map)
     }
 }
 
-impl From<Signatures> for BTreeMap<PublicKey, keys::Signature> {
+impl From<Signatures> for BTreeMap<PublicKey, crypto::Signature> {
     fn from(s: Signatures) -> Self {
         s.0
     }
@@ -167,18 +167,18 @@ impl TryFrom<Vec<Trailer<'_>>> for Signatures {
     }
 }
 
-impl FromIterator<(PublicKey, keys::Signature)> for Signatures {
+impl FromIterator<(PublicKey, crypto::Signature)> for Signatures {
     fn from_iter<T>(iter: T) -> Self
     where
-        T: IntoIterator<Item = (PublicKey, keys::Signature)>,
+        T: IntoIterator<Item = (PublicKey, crypto::Signature)>,
     {
         Self(BTreeMap::from_iter(iter))
     }
 }
 
 impl IntoIterator for Signatures {
-    type Item = (PublicKey, keys::Signature);
-    type IntoIter = <BTreeMap<PublicKey, keys::Signature> as IntoIterator>::IntoIter;
+    type Item = (PublicKey, crypto::Signature);
+    type IntoIter = <BTreeMap<PublicKey, crypto::Signature> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -196,10 +196,10 @@ impl Extend<Signature> for Signatures {
     }
 }
 
-impl Extend<(PublicKey, keys::Signature)> for Signatures {
+impl Extend<(PublicKey, crypto::Signature)> for Signatures {
     fn extend<T>(&mut self, iter: T)
     where
-        T: IntoIterator<Item = (PublicKey, keys::Signature)>,
+        T: IntoIterator<Item = (PublicKey, crypto::Signature)>,
     {
         for (key, sig) in iter {
             self.insert(key, sig);

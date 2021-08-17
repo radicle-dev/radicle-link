@@ -9,7 +9,7 @@ use data::BoundedVec;
 use minicbor::{Decode, Encode};
 use typenum::U16;
 
-use crate::peer::PeerId;
+use crate::PeerId;
 
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Encode, Decode)]
 #[repr(u8)]

@@ -7,6 +7,7 @@
 
 use std::{convert::TryFrom, io, marker::PhantomData, path::PathBuf};
 
+use crypto::BoxedSigner;
 use git_ext::{self as ext, is_not_found_err};
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
@@ -17,9 +18,9 @@ use crate::{
         git::{Identities, Urn, VerifiedPerson},
         urn,
     },
-    keys::SecretKey,
-    peer::{self, PeerId},
-    signer::{BoxedSigner, Signer},
+    PeerId,
+    SecretKey,
+    Signer,
 };
 
 const CONFIG_USER_NAME: &str = "user.name";
@@ -34,7 +35,7 @@ pub enum Error {
     AlreadyInitialised(PeerId),
 
     #[error(transparent)]
-    PeerId(#[from] peer::conversion::Error),
+    PeerId(#[from] crypto::peer::conversion::Error),
 
     #[error(transparent)]
     Urn(#[from] urn::error::FromStr<ext::oid::FromMultihashError>),

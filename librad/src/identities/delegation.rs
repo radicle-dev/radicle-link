@@ -7,9 +7,8 @@ use std::collections::BTreeSet;
 
 use either::Either::{self, *};
 
-use crate::keys::PublicKey;
-
 use super::{generic, payload, sealed};
+use crate::PublicKey;
 
 pub mod direct;
 pub mod indirect;

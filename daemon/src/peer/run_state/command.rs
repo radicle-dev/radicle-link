@@ -5,7 +5,7 @@
 
 use std::time::{Duration, SystemTime};
 
-use librad::{git::Urn, peer::PeerId};
+use librad::{git::Urn, PeerId};
 
 use crate::{peer::control, request::waiting_room::WaitingRoom};
 

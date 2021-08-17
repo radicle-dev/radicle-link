@@ -25,9 +25,9 @@ use librad::{
         Urn,
     },
     git_ext as ext,
-    peer::PeerId,
     reflike,
     refspec_pattern,
+    PeerId,
 };
 
 fn config() -> testnet::Config {

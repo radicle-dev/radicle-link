@@ -12,7 +12,7 @@ use librad::{
     git_ext::{Oid, RefLike},
     identities::{urn, SomeIdentity},
     net::peer::Peer,
-    signer::Signer,
+    Signer,
 };
 use tokio::task::spawn_blocking;
 
@@ -163,17 +163,22 @@ mod test {
 
     use pretty_assertions::assert_eq;
 
-    use librad::{git::Urn, keys::SecretKey, net};
+    use librad::{
+        crypto::{BoxedSigner, SomeSigner},
+        git::Urn,
+        net,
+        SecretKey,
+    };
     use radicle_git_ext::{oid, RefLike};
 
-    use crate::{config, identities::payload::Person, signer};
+    use crate::{config, identities::payload::Person};
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[allow(clippy::unwrap_used)] // XXX: clippy sees an unwrap where there is none
     async fn announce() -> Result<(), Box<dyn std::error::Error>> {
         let tmp_dir = tempfile::tempdir().expect("failed to create temdir");
         let key = SecretKey::new();
-        let signer = signer::BoxedSigner::new(signer::SomeSigner {
+        let signer = BoxedSigner::new(SomeSigner {
             signer: key.clone(),
         });
         let config = config::default(signer.clone(), tmp_dir.path())?;

@@ -9,10 +9,7 @@ use proptest::prelude::*;
 use rand::{rngs::SmallRng, SeedableRng as _};
 use zeroize::Zeroize;
 
-use librad::{
-    keys::{PublicKey, SecretKey},
-    peer::PeerId,
-};
+use librad::{PeerId, PublicKey, SecretKey};
 
 pub fn gen_secret_key() -> impl Strategy<Value = RESKey> {
     any::<[u8; 32]>().prop_map(RESKey::from_seed)
