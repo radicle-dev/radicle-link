@@ -88,7 +88,7 @@ where
             None => continue,
         };
         for ((one_level, oid), category) in refs.iter_categorised() {
-            let path = RefLike::from(category).join(one_level.clone());
+            let path = RefLike::from(one_level.clone().into_qualified(category.into()));
             let urn = urn.clone().with_path(path);
             updates.insert((urn, *oid));
         }
