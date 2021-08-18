@@ -5,9 +5,8 @@
 
 use std::{convert::TryFrom, marker::PhantomData};
 
-use crate::identities::generic::{self, Untrusted};
-
 use super::{error, ByOid};
+use crate::generic::{self, Untrusted};
 
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct Iter<'a, T> {

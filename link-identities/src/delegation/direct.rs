@@ -8,8 +8,10 @@ use std::{
     iter::FromIterator,
 };
 
-use super::{payload, sealed, Delegations};
-use crate::PublicKey;
+use crypto::PublicKey;
+
+use super::Delegations;
+use crate::{payload, sealed};
 
 /// [`Delegations`] which delegate directly to a set of [`PublicKey`]s.
 ///

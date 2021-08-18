@@ -5,10 +5,10 @@
 
 use std::collections::BTreeSet;
 
+use crypto::PublicKey;
 use either::Either::{self, *};
 
-use super::{generic, payload, sealed};
-use crate::PublicKey;
+use crate::{generic, sealed};
 
 pub mod direct;
 pub mod indirect;

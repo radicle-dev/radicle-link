@@ -3,7 +3,24 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+#![allow(private_intra_doc_links)]
+#![warn(clippy::extra_unused_lifetimes)]
+#![deny(broken_intra_doc_links)]
+#![feature(bool_to_option, never_type)]
+
 use std::fmt::{self, Display};
+
+pub extern crate link_canonical as canonical;
+pub extern crate link_crypto as crypto;
+
+#[macro_use]
+extern crate lazy_static;
+#[macro_use]
+extern crate radicle_macros;
+
+extern crate radicle_data as data;
+extern crate radicle_git_ext as git_ext;
+extern crate radicle_std_ext as std_ext;
 
 pub mod delegation;
 pub mod generic;

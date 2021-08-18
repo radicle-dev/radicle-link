@@ -9,7 +9,8 @@ use std::{
     fmt::{self, Display},
 };
 
-use crate::identities::{git::error, sign::Signatures};
+use super::error;
+use crate::sign::Signatures;
 
 impl<'a> TryFrom<&git2::Commit<'a>> for Signatures {
     type Error = error::Signatures;

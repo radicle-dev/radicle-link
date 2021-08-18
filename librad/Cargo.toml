@@ -79,9 +79,6 @@ version = "=0.13.20"
 default-features = false
 features = []
 
-[dependencies.git-trailers]
-path = "../git-trailers"
-
 [dependencies.libgit2-sys]
 version = "0.12"
 default-features = false
@@ -96,11 +93,14 @@ version = "0.7"
 default-features = false
 features = ["tls-rustls"]
 
+[dependencies.link-canonical]
+path = "../link-canonical"
+
 [dependencies.link-crypto]
 path = "../link-crypto"
 
-[dependencies.link-canonical]
-path = "../link-canonical"
+[dependencies.link-identities]
+path = "../link-identities"
 
 [dependencies.radicle-data]
 path = "../data"

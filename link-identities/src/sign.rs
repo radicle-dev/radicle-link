@@ -10,13 +10,12 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use crypto::PublicKey;
 use git_trailers::{self as trailer, Token, Trailer};
 use serde::{
     de::{value::StrDeserializer, IntoDeserializer},
     Deserialize,
 };
-
-use crate::PublicKey;
 
 pub mod error;
 

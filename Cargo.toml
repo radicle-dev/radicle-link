@@ -12,6 +12,7 @@ members = [
   "librad",
   "link-canonical",
   "link-crypto",
+  "link-identities",
   "macros",
   "seed",
   "std-ext",

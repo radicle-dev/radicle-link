@@ -14,17 +14,17 @@ use std::{
     vec,
 };
 
+use crypto::PublicKey;
 use either::*;
 
-use super::{generic, payload, sealed, Delegations, Direct};
-use crate::PublicKey;
+use super::{Delegations, Direct};
+use crate::{generic, payload, sealed};
 
 pub mod error {
     use std::fmt::{Debug, Display};
 
+    use crypto::PublicKey;
     use thiserror::Error;
-
-    use super::PublicKey;
 
     #[derive(Debug, Error)]
     #[non_exhaustive]

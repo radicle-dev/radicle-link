@@ -5,10 +5,10 @@
 
 use std::{fmt::Debug, path::PathBuf};
 
-use link_canonical::CjsonError;
+use canonical::CjsonError;
 use thiserror::Error;
 
-use crate::identities::{
+use crate::{
     delegation::indirect::error::FromIter as DelegationsFromIterError,
     generic,
     sign,

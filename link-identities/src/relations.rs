@@ -10,9 +10,8 @@
 //! `Replicated`, and it can be a `Tracker`, `Contributor`, or `Maintainer` of
 //! the project.
 
+use crypto::PeerId;
 use serde::Serialize;
-
-use crate::PeerId;
 
 /// Relation of the peer to the project.
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]

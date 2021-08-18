@@ -5,12 +5,12 @@
 
 use std::{convert::TryFrom, path::PathBuf};
 
+use canonical::Cjson;
 use either::Either;
 use git_ext::{self as ext, is_not_found_err};
-use link_canonical::Cjson;
 use std_ext::result::ResultExt as _;
 
-use crate::identities::{
+use crate::{
     delegation,
     generic,
     payload::{

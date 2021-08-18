@@ -5,22 +5,19 @@
 
 use std::{convert::TryFrom, fmt::Debug, marker::PhantomData};
 
+use canonical::Cjson;
+use crypto::{PublicKey, Signer};
 use either::*;
-use futures::executor::block_on;
+use futures_lite::future::block_on;
 use git_ext as ext;
-use link_canonical::Cjson;
 use multihash::Multihash;
 
 use crate::{
-    identities::{
-        delegation::{self, Delegations},
-        generic::{self, Signed, Verified},
-        payload::{self, PersonPayload, ProjectPayload},
-        sign::{Signature, Signatures},
-        urn,
-    },
-    PublicKey,
-    Signer,
+    delegation::{self, Delegations},
+    generic::{self, Signed, Verified},
+    payload::{self, PersonPayload, ProjectPayload},
+    sign::{Signature, Signatures},
+    urn,
 };
 
 pub mod error;
@@ -52,7 +49,7 @@ pub type Person = Identity<PersonDoc>;
 pub type Project = Identity<ProjectDoc>;
 
 #[non_exhaustive]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum SomeIdentity {
     Person(Person),
     Project(Project),

@@ -56,6 +56,9 @@ pub enum Error {
     #[error("fork detected between `{mine}` and `{theirs}`")]
     Fork { mine: Urn, theirs: Urn },
 
+    #[error("unknown identity kind")]
+    UnknownIdentityKind(SomeIdentity),
+
     #[error(transparent)]
     Refs(#[from] refs::stored::Error),
 
@@ -236,6 +239,8 @@ where
                         .collect();
                     (allowed, id_status)
                 },
+
+                unknown => return Err(Error::UnknownIdentityKind(unknown)),
             };
 
             // Symref `rad/self` if a `LocalIdentity` was given
@@ -301,6 +306,8 @@ where
                         tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>(),
                     )
                 },
+
+                unknown => return Err(Error::UnknownIdentityKind(unknown)),
             };
 
             let Partition { removed, .. } = partition(&existing, &updated);
@@ -386,6 +393,8 @@ where
                 remotes
             },
             SomeIdentity::Person(_) => tracking::tracked(storage, &urn)?.collect::<BTreeSet<_>>(),
+
+            unknown => return Err(Error::UnknownIdentityKind(unknown)),
         };
 
         let fetch::FetchResult { updated_tips } = fetcher

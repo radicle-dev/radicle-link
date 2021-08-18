@@ -11,7 +11,7 @@ use thiserror::Error;
 use typenum::{IsLessOrEqual, Unsigned, U1000, U100000, U23, U30};
 use xorf::{Filter as _, Xor16};
 
-use super::{SomeUrn, Urn};
+use crate::{SomeUrn, Urn};
 
 /// Maximum number of elements permitted in a single [`Xor`] filter.
 ///

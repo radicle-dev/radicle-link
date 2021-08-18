@@ -12,16 +12,15 @@ use std::{
     ops::{Deref, DerefMut, RangeBounds},
 };
 
+use canonical::Cstring;
+use crypto::PublicKey;
 use either::Either;
-use link_canonical::Cstring;
 use multihash::Multihash;
 use serde::ser::SerializeMap;
 use thiserror::Error;
 use url::Url;
 
-use crate::PublicKey;
-
-use super::{
+use crate::{
     delegation,
     sealed,
     urn::{HasProtocol, Urn},
@@ -80,7 +79,7 @@ impl sealed::Sealed for Project {}
 /// use lazy_static::lazy_static;
 /// use url::Url;
 ///
-/// use librad::identities::payload::HasNamespace;
+/// use link_identities::payload::HasNamespace;
 ///
 /// lazy_static! {
 ///     static ref MY_NAMESPACE: Url = Url::parse("https://semantic.me/mytype/v1").unwrap();
