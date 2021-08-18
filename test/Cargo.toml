@@ -54,6 +54,9 @@ version = "0.13"
 default-features = false
 features = []
 
+[dependencies.git-trailers]
+path = "../git-trailers"
+
 [dependencies.librad]
 path = "../librad"
 

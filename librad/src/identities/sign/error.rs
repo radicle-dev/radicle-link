@@ -5,8 +5,6 @@
 
 use thiserror::Error;
 
-use crate::git::trailer;
-
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Signature {
@@ -21,7 +19,7 @@ pub enum Signature {
 #[non_exhaustive]
 pub enum Signatures {
     #[error(transparent)]
-    Trailer(#[from] trailer::Error),
+    Trailer(#[from] git_trailers::Error),
 
     #[error(transparent)]
     Signature(#[from] Signature),

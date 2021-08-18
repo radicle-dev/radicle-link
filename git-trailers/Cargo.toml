@@ -1,0 +1,14 @@
+[package]
+name = "git-trailers"
+version = "0.1.0"
+authors = ["Nuno Alexandre <hi@nunoalexandre.com>", "Kim Altintop <kim@eagain.st>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+nom = "5"
+thiserror = "1.0"

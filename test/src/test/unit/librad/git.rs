@@ -12,5 +12,4 @@ mod refs;
 mod replication;
 mod storage;
 mod tracking;
-mod trailer;
 mod types;

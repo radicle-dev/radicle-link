@@ -5,9 +5,8 @@
 
 use std::{borrow::Cow, convert::TryFrom as _, ops::Deref as _};
 
+use git_trailers::{display, parse, Error, Token, Trailer};
 use pretty_assertions::assert_eq;
-
-use librad::git::trailer::{display, parse, Error, Token, Trailer};
 
 #[test]
 fn parse_message_with_valid_trailers() {

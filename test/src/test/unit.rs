@@ -5,4 +5,5 @@
 
 mod git_ext;
 mod git_protocol;
+mod git_trailers;
 mod librad;

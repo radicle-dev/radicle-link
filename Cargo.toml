@@ -9,6 +9,7 @@ members = [
   "git-ext",
   "git-helpers",
   "git-protocol",
+  "git-trailers",
   "librad",
   "macros",
   "seed",

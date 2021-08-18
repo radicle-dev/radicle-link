@@ -10,15 +10,13 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use git_trailers::{self as trailer, Token, Trailer};
 use serde::{
     de::{value::StrDeserializer, IntoDeserializer},
     Deserialize,
 };
 
-use crate::{
-    git::trailer::{self, Token, Trailer},
-    PublicKey,
-};
+use crate::PublicKey;
 
 pub mod error;
 

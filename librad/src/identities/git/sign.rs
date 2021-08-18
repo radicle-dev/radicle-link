@@ -3,15 +3,13 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use git_trailers::Trailer;
 use std::{
     convert::TryFrom,
     fmt::{self, Display},
 };
 
-use crate::{
-    git::trailer::Trailer,
-    identities::{git::error, sign::Signatures},
-};
+use crate::identities::{git::error, sign::Signatures};
 
 impl<'a> TryFrom<&git2::Commit<'a>> for Signatures {
     type Error = error::Signatures;

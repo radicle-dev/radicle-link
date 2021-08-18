@@ -82,6 +82,9 @@ version = "=0.13.20"
 default-features = false
 features = []
 
+[dependencies.git-trailers]
+path = "../git-trailers"
+
 [dependencies.libgit2-sys]
 version = "0.12"
 default-features = false
