@@ -205,5 +205,4 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     "https://github.com/ZcashFoundation/ed25519-zebra",
     "https://github.com/radicle-dev/git2-rs",
-    "https://github.com/kim/gitoxide",
 ]
