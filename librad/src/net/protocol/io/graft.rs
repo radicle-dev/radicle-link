@@ -28,7 +28,7 @@ pub mod error {
         MissingSignedRefs(Urn),
 
         #[error(transparent)]
-        Replicate(#[from] replication::Error),
+        Replicate(#[from] Box<replication::Error>),
 
         #[error(transparent)]
         Refs(#[from] refs::stored::Error),
@@ -41,6 +41,12 @@ pub mod error {
 
         #[error(transparent)]
         Pool(#[from] storage::PoolError),
+    }
+
+    impl From<replication::Error> for Rere {
+        fn from(e: replication::Error) -> Self {
+            Self::from(Box::new(e))
+        }
     }
 }
 

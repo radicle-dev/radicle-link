@@ -36,11 +36,17 @@ pub enum Error {
 
     /// Error occurred when interacting with [`Peer`].
     #[error(transparent)]
-    State(#[from] state::Error),
+    State(#[from] Box<state::Error>),
 
     /// Error in spawned task.
     #[error(transparent)]
     Task(#[from] tokio::task::JoinError),
+}
+
+impl From<state::Error> for Error {
+    fn from(e: state::Error) -> Self {
+        Self::from(Box::new(e))
+    }
 }
 
 /// An update and all the required information that can be announced on the
