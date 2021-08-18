@@ -97,7 +97,7 @@ default-features = false
 features = ["tls-rustls"]
 
 [dependencies.link-crypto]
-path = "../crypto"
+path = "../link-crypto"
 
 [dependencies.link-canonical]
 path = "../link-canonical"

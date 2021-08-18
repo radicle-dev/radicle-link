@@ -2,7 +2,6 @@
 members = [
   "clib",
   "copy",
-  "crypto",
   "daemon",
   "data",
   "e2e",
@@ -12,6 +11,7 @@ members = [
   "git-trailers",
   "librad",
   "link-canonical",
+  "link-crypto",
   "macros",
   "seed",
   "std-ext",
