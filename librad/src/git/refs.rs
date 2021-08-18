@@ -14,6 +14,7 @@ use std::{
 };
 
 use git_ext::reference;
+use link_canonical::{Cjson, CjsonError};
 use serde::{
     de,
     ser::{self, SerializeStruct},
@@ -27,12 +28,7 @@ use super::{
     tracking,
     types::{Namespace, Reference, RefsCategory},
 };
-use crate::{
-    internal::canonical::{Cjson, CjsonError},
-    PeerId,
-    Signature,
-    Signer,
-};
+use crate::{PeerId, Signature, Signer};
 
 pub use crate::identities::git::Urn;
 pub use git_ext::Oid;

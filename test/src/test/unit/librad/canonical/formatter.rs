@@ -3,10 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use librad::internal::canonical::formatter::CanonicalFormatter;
-
 use std::io::Result;
 
+use link_canonical::formatter::CanonicalFormatter;
 use serde::Serialize;
 use serde_json::Serializer;
 

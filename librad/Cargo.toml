@@ -55,7 +55,6 @@ tracing = "0.1"
 tracing-attributes = "<0.12.0, ^0.1.13"
 tracing-futures = "0.2"
 typenum = "1.13"
-unicode-normalization = "0.1"
 uuid = { version = "0.8", features = ["v4"] }
 webpki = "0.21"
 xorf = "0.7"
@@ -101,6 +100,9 @@ features = ["tls-rustls"]
 
 [dependencies.link-crypto]
 path = "../crypto"
+
+[dependencies.link-canonical]
+path = "../link-canonical"
 
 [dependencies.radicle-data]
 path = "../data"

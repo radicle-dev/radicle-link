@@ -25,6 +25,7 @@ extern crate lazy_static;
 #[macro_use]
 extern crate radicle_macros;
 
+pub extern crate link_canonical as canonical;
 pub extern crate link_crypto as crypto;
 pub extern crate radicle_data as data;
 pub extern crate radicle_git_ext as git_ext;

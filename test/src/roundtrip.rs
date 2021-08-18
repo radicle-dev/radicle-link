@@ -8,7 +8,7 @@ use std::{
     str::FromStr,
 };
 
-use librad::internal::canonical::Cjson;
+use link_canonical::Cjson;
 use pretty_assertions::assert_eq;
 
 pub fn json_roundtrip<A>(a: A)

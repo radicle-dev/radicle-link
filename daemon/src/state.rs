@@ -15,6 +15,7 @@ use either::Either;
 use tokio::task::spawn_blocking;
 
 use librad::{
+    canonical::Cstring,
     crypto::{BoxedSigner, SomeSigner},
     git::{
         identities::{
@@ -43,7 +44,6 @@ use librad::{
         Project,
         SomeIdentity,
     },
-    internal::canonical::Cstring,
     net::peer::Peer,
     paths,
     PeerId,

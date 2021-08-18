@@ -60,6 +60,9 @@ path = "../git-trailers"
 [dependencies.librad]
 path = "../librad"
 
+[dependencies.link-canonical]
+path = "../link-canonical"
+
 [dependencies.radicle-daemon]
 path = "../daemon"
 

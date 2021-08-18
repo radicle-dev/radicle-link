@@ -3,13 +3,12 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use link_canonical::{string, Cjson};
 use pretty_assertions::assert_eq;
 use proptest::prelude::*;
 use unicode_normalization::UnicodeNormalization as _;
 
-use librad::internal::canonical::{string, Cjson};
-
-use crate::{librad::internal::canonical::gen_cstring, roundtrip::*};
+use crate::{canonical::gen_cstring, roundtrip::*};
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct T {

@@ -11,6 +11,7 @@ members = [
   "git-protocol",
   "git-trailers",
   "librad",
+  "link-canonical",
   "macros",
   "seed",
   "std-ext",

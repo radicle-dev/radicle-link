@@ -4,5 +4,4 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 pub mod identities;
-pub mod internal;
 pub mod net;

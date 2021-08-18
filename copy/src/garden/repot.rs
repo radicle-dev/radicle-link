@@ -8,10 +8,10 @@ use std::{marker::PhantomData, path::PathBuf};
 use serde::{Deserialize, Serialize};
 
 use librad::{
+    canonical::Cstring,
     git::local::{transport::CanOpenStorage, url::LocalUrl},
     git_ext::{self, OneLevel},
     identities::payload,
-    internal::canonical::Cstring,
     std_ext::result::ResultExt as _,
 };
 

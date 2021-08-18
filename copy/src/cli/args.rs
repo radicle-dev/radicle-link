@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use argh::FromArgs;
 
-use librad::{git::Urn, internal::canonical::Cstring, PeerId};
+use librad::{canonical::Cstring, git::Urn, PeerId};
 
 /// Management of Radicle projects and their working copies.
 ///

@@ -18,6 +18,7 @@ extern crate futures_await_test;
 
 #[macro_use]
 pub mod daemon;
+pub mod canonical;
 pub mod git;
 pub mod librad;
 pub mod logging;

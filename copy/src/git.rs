@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use nonempty::NonEmpty;
 
 use librad::{
+    canonical::Cstring,
     git::{
         local::{
             transport::{self, CanOpenStorage},
@@ -21,7 +22,6 @@ use librad::{
         },
     },
     git_ext::{self, OneLevel, Qualified},
-    internal::canonical::Cstring,
     reflike,
     refspec_pattern,
     std_ext::result::ResultExt as _,

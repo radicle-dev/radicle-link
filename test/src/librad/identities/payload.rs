@@ -6,6 +6,7 @@
 use std::fmt::Debug;
 
 use either::Either;
+use link_canonical::Cstring;
 use proptest::prelude::*;
 use url::Url;
 
@@ -26,13 +27,11 @@ use librad::{
         },
         urn::Urn,
     },
-    internal::canonical::Cstring,
 };
 
-use crate::librad::{
-    identities::urn::gen_oid,
-    internal::canonical::gen_cstring,
-    keys::gen_public_key,
+use crate::{
+    canonical::gen_cstring,
+    librad::{identities::urn::gen_oid, keys::gen_public_key},
 };
 
 lazy_static! {

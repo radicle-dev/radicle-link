@@ -7,24 +7,22 @@ use std::{convert::TryFrom, path::PathBuf};
 
 use either::Either;
 use git_ext::{self as ext, is_not_found_err};
+use link_canonical::Cjson;
 use std_ext::result::ResultExt as _;
 
-use crate::{
-    identities::{
-        delegation,
-        generic,
-        payload::{
-            PersonDelegations,
-            PersonPayload,
-            ProjectDelegations,
-            ProjectPayload,
-            SomeDelegations,
-            SomePayload,
-        },
-        sign::Signatures,
-        urn::Urn,
+use crate::identities::{
+    delegation,
+    generic,
+    payload::{
+        PersonDelegations,
+        PersonPayload,
+        ProjectDelegations,
+        ProjectPayload,
+        SomeDelegations,
+        SomePayload,
     },
-    internal::canonical::Cjson,
+    sign::Signatures,
+    urn::Urn,
 };
 
 use super::{error, ContentId, Doc, Identity, Person, Project, Revision, SomeIdentity};

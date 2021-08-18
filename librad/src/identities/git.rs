@@ -8,6 +8,7 @@ use std::{convert::TryFrom, fmt::Debug, marker::PhantomData};
 use either::*;
 use futures::executor::block_on;
 use git_ext as ext;
+use link_canonical::Cjson;
 use multihash::Multihash;
 
 use crate::{
@@ -18,7 +19,6 @@ use crate::{
         sign::{Signature, Signatures},
         urn,
     },
-    internal::canonical::Cjson,
     PublicKey,
     Signer,
 };

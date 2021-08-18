@@ -5,17 +5,15 @@
 
 use std::{fmt::Debug, path::PathBuf};
 
+use link_canonical::CjsonError;
 use thiserror::Error;
 
-use crate::{
-    identities::{
-        delegation::indirect::error::FromIter as DelegationsFromIterError,
-        generic,
-        sign,
-        ContentId,
-        Revision,
-    },
-    internal::canonical::CjsonError,
+use crate::identities::{
+    delegation::indirect::error::FromIter as DelegationsFromIterError,
+    generic,
+    sign,
+    ContentId,
+    Revision,
 };
 
 #[derive(Debug, Error)]

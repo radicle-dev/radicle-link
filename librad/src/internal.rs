@@ -7,5 +7,4 @@
 //!
 //! Code here may change in incompatible ways without prior notice.
 
-pub mod canonical;
 pub mod sync;

@@ -13,12 +13,13 @@ use std::{
 };
 
 use either::Either;
+use link_canonical::Cstring;
 use multihash::Multihash;
 use serde::ser::SerializeMap;
 use thiserror::Error;
 use url::Url;
 
-use crate::{internal::canonical::Cstring, PublicKey};
+use crate::PublicKey;
 
 use super::{
     delegation,

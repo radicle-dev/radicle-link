@@ -5,7 +5,6 @@
 
 pub mod git;
 pub mod identities;
-pub mod internal;
 pub mod keys;
 pub mod net;
 pub mod peer;

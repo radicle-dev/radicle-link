@@ -30,4 +30,4 @@ force_explicit_abi = true
 
 license_template_path = ".license-header-check"
 
-ignore = ["librad/src/internal/canonical/formatter.rs"]
+ignore = ["link-canonical/src/formatter.rs"]
