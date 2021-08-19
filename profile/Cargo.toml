@@ -1,5 +1,5 @@
 [package]
-name = "radicle-profile"
+name = "rad-profile"
 version = "0.1.0"
 authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
@@ -19,8 +19,8 @@ structopt = "0.3"
 [dependencies.librad]
 path = "../librad"
 
-[dependencies.link-crypto]
-path = "../link-crypto"
+[dependencies.link-clib]
+path = "../clib"
 
 [dependencies.thrussh-agent]
 git = "https://github.com/FintanH/thrussh"

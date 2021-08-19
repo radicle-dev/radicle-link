@@ -3,11 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use link_crypto::keystore::{
-    crypto::{KdfParams, Pwhash},
-    pinentry::Prompt,
-};
 use thrussh_agent::Constraint;
+
+use link_clib::keys;
 
 use crate::{create, get, list, paths, peer_id, set, ssh_add};
 
@@ -17,15 +15,10 @@ pub async fn main(Args { command }: Args) -> anyhow::Result<()> {
     eval(command).await
 }
 
-fn crypto() -> Pwhash<Prompt<'static>> {
-    let prompt = Prompt::new("please enter your passphrase: ");
-    Pwhash::new(prompt, KdfParams::recommended())
-}
-
 async fn eval(command: Command) -> anyhow::Result<()> {
     match command {
         Command::Create(Create {}) => {
-            let (profile, peer_id) = create(crypto())?;
+            let (profile, peer_id) = create(keys::prompt())?;
             println!("profile id: {}", profile.id());
             println!("peer id: {}", peer_id);
         },
@@ -62,7 +55,7 @@ async fn eval(command: Command) -> anyhow::Result<()> {
             let constraint = time.map_or(Constraint::Confirm, |seconds| Constraint::KeyLifetime {
                 seconds,
             });
-            let (id, peer_id) = ssh_add(id, crypto(), &[constraint]).await?;
+            let (id, peer_id) = ssh_add(id, keys::prompt(), &[constraint]).await?;
             println!(
                 "added key for profile id `{}` and peer id `{}`",
                 id, peer_id

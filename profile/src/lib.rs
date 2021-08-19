@@ -11,21 +11,20 @@ use thiserror::Error;
 use thrussh_agent::Constraint;
 
 use librad::{
+    crypto::{
+        keystore::{crypto::Crypto, file, sign::ssh, FileStorage, Keystore as _},
+        IntoSecretKeyError,
+        PeerId,
+        PublicKey,
+        SecretKey,
+    },
     git::storage::{self, read, ReadOnly, Storage},
     paths::Paths,
     profile::{self, Profile, ProfileId, RadHome},
 };
-use link_crypto::{
-    keystore::{crypto::Crypto, file, sign::ssh, FileStorage, Keystore as _},
-    IntoSecretKeyError,
-    PeerId,
-    PublicKey,
-    SecretKey,
-};
+use link_clib::keys;
 
 pub mod cli;
-
-const KEY_FILE: &str = "librad.key";
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -55,20 +54,13 @@ where
     }
 }
 
-fn file_storage<C>(profile: &Profile, crypto: C) -> FileStorage<C, PublicKey, SecretKey, ()>
-where
-    C: Crypto,
-{
-    FileStorage::new(&profile.paths().keys_dir().join(KEY_FILE), crypto)
-}
-
 fn get_or_active<P>(home: &RadHome, id: P) -> Result<Profile, Error>
 where
     P: Into<Option<ProfileId>>,
 {
     match id.into() {
-        Some(id) => Profile::get(&home, id.clone())?.ok_or_else(|| Error::NoProfile(id)),
-        None => Profile::active(&home)?.ok_or(Error::NoActiveProfile),
+        Some(id) => Profile::get(home, id.clone())?.ok_or(Error::NoProfile(id)),
+        None => Profile::active(home)?.ok_or(Error::NoActiveProfile),
     }
 }
 
@@ -82,7 +74,7 @@ where
     let profile = Profile::new(&home)?;
     Profile::set(&home, profile.id().clone())?;
     let key = SecretKey::new();
-    let mut store: FileStorage<C, PublicKey, SecretKey, _> = file_storage(&profile, crypto);
+    let mut store: FileStorage<C, PublicKey, SecretKey, _> = keys::file_storage(&profile, crypto);
     store.put_key(key.clone())?;
     Storage::open(profile.paths(), key.clone())?;
 
@@ -140,7 +132,7 @@ where
 {
     let home = RadHome::new();
     let profile = get_or_active(&home, id)?;
-    let store = file_storage(&profile, crypto);
+    let store = keys::file_storage(&profile, crypto);
     let key = store.get_key()?;
     let peer_id = PeerId::from(key.public_key);
     ssh::add_key::<UnixStream>(key.secret_key.into(), constraints).await?;
