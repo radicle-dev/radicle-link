@@ -3,18 +3,16 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use radicle_keystore as keystore;
-
 use std::{
     env,
     path::{Path, PathBuf},
     process::Command,
 };
 
-use keystore::{crypto, pinentry::SecUtf8, Keystore};
 use tempfile::tempdir;
 
 use librad::{
+    crypto::keystore::{self, crypto, pinentry::SecUtf8, Keystore},
     git::{local::url::LocalUrl, storage::Storage, Urn},
     paths::Paths,
     profile::Profile,

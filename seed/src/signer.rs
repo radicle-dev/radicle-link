@@ -5,8 +5,7 @@
 
 use std::io;
 
-use librad::{PeerId, SecStr, SecretKey};
-use radicle_keystore::sign::ed25519;
+use librad::{crypto::keystore::sign::ed25519, PeerId, SecStr, SecretKey};
 
 #[derive(Clone)]
 pub struct Signer {
@@ -21,7 +20,7 @@ impl From<Signer> for PeerId {
 
 impl Signer {
     pub fn new<R: io::Read>(mut r: R) -> Result<Self, io::Error> {
-        use radicle_keystore::SecretKeyExt;
+        use librad::crypto::keystore::SecretKeyExt;
 
         let mut bytes = Vec::new();
         r.read_to_end(&mut bytes)?;

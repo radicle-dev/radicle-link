@@ -10,8 +10,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use keystore::pinentry::SecUtf8;
-use librad::git::local::url::LocalUrl;
+use librad::{crypto::keystore::pinentry::SecUtf8, git::local::url::LocalUrl};
 
 pub type Passphrase = SecUtf8;
 

@@ -79,7 +79,7 @@ fn parse_bootstrap_node(s: &str) -> Result<BoostrapNode, String> {
 }
 
 fn parse_secret_key(s: &str) -> Result<SecretKey, String> {
-    use radicle_keystore::SecretKeyExt as _;
+    use librad::crypto::keystore::SecretKeyExt as _;
 
     base64::decode(s)
         .map_err(|e| e.to_string())

@@ -4,17 +4,20 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use librad::{
-    crypto::{BoxedSigner, IntoSecretKeyError},
+    crypto::{
+        keystore::{
+            crypto::{Crypto, KdfParams, Pwhash, SecretBoxError},
+            file,
+            pinentry::Prompt,
+            FileStorage,
+            Keystore as _,
+        },
+        BoxedSigner,
+        IntoSecretKeyError,
+    },
     profile::Profile,
     PublicKey,
     SecretKey,
-};
-use radicle_keystore::{
-    crypto::{Crypto, KdfParams, Pwhash, SecretBoxError},
-    file,
-    pinentry::Prompt,
-    FileStorage,
-    Keystore as _,
 };
 
 /// The filename for storing the secret key.
@@ -36,7 +39,7 @@ pub fn prompt() -> Pwhash<Prompt<'static>> {
 /// for production use.
 #[cfg(feature = "unsafe")]
 pub fn unsafe_prompt() -> Pwhash<Prompt<'static>> {
-    use radicle_keystore::crypto::KDF_PARAMS_TEST;
+    use librad::crypto::keystore::crypto::KDF_PARAMS_TEST;
 
     let prompt = Prompt::new("please enter your passphrase: ");
     Pwhash::new(prompt, *KDF_PARAMS_TEST)

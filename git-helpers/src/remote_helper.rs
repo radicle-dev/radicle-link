@@ -10,7 +10,15 @@ use std::{
 };
 
 use librad::{
-    crypto::{BoxedSigner, SomeSigner},
+    crypto::{
+        keystore::{
+            crypto::{self, Pwhash},
+            FileStorage,
+            Keystore,
+        },
+        BoxedSigner,
+        SomeSigner,
+    },
     git::local::{
         transport::{CanOpenStorage, LocalTransport, Localio, Mode::Stateful, Settings},
         url::LocalUrl,
@@ -18,11 +26,6 @@ use librad::{
     profile::Profile,
     PublicKey,
     SecretKey,
-};
-use radicle_keystore::{
-    crypto::{self, Pwhash},
-    FileStorage,
-    Keystore,
 };
 
 use crate::credential;
