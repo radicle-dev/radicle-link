@@ -12,7 +12,7 @@ use std::{
 
 use bstr::ByteSlice as _;
 use futures::{AsyncReadExt as _, TryFutureExt as _};
-use radicle_link_git_protocol::{fetch, ls, packwriter, upload_pack, ObjectId, PackWriter, Ref};
+use link_git_protocol::{fetch, ls, packwriter, upload_pack, ObjectId, PackWriter, Ref};
 use tempfile::{tempdir, TempDir};
 
 fn upstream() -> TempDir {

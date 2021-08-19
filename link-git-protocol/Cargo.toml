@@ -1,5 +1,5 @@
 [package]
-name = "radicle-link-git-protocol"
+name = "link-git-protocol"
 version = "0.1.0"
 authors = ["Kim Altintop <kim@eagain.st>"]
 edition = "2018"

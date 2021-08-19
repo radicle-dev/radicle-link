@@ -62,6 +62,10 @@ path = "../librad"
 [dependencies.link-canonical]
 path = "../link-canonical"
 
+[dependencies.link-git-protocol]
+path = "../link-git-protocol"
+features = ["git2"]
+
 [dependencies.radicle-daemon]
 path = "../daemon"
 
@@ -70,10 +74,6 @@ path = "../git-ext"
 
 [dependencies.radicle-git-helpers]
 path = "../git-helpers"
-
-[dependencies.radicle-link-git-protocol]
-path = "../git-protocol"
-features = ["git2"]
 
 [dependencies.rand]
 version = "0.7"

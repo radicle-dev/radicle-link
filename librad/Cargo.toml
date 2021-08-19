@@ -99,6 +99,10 @@ path = "../link-canonical"
 [dependencies.link-crypto]
 path = "../link-crypto"
 
+[dependencies.link-git-protocol]
+path = "../link-git-protocol"
+features = ["git2"]
+
 [dependencies.link-identities]
 path = "../link-identities"
 
