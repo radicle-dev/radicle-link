@@ -3,17 +3,18 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use radicle_keystore::{
+use link_crypto::keystore::{
     crypto::{KdfParams, Pwhash},
     pinentry::Prompt,
 };
+use thrussh_agent::Constraint;
 
 use crate::{create, get, list, paths, peer_id, set, ssh_add};
 
 use super::args::*;
 
-pub fn main(Args { command }: Args) -> anyhow::Result<()> {
-    eval(command)
+pub async fn main(Args { command }: Args) -> anyhow::Result<()> {
+    eval(command).await
 }
 
 fn crypto() -> Pwhash<Prompt<'static>> {
@@ -21,7 +22,7 @@ fn crypto() -> Pwhash<Prompt<'static>> {
     Pwhash::new(prompt, KdfParams::recommended())
 }
 
-fn eval(command: Command) -> anyhow::Result<()> {
+async fn eval(command: Command) -> anyhow::Result<()> {
     match command {
         Command::Create(Create {}) => {
             let (profile, peer_id) = create(crypto())?;
@@ -57,8 +58,11 @@ fn eval(command: Command) -> anyhow::Result<()> {
             println!("git includes: {}", paths.git_includes_dir().display());
             println!("keys: {}", paths.keys_dir().display());
         },
-        Command::SshAdd(SshAdd { id }) => {
-            let (id, peer_id) = ssh_add(id, crypto())?;
+        Command::SshAdd(SshAdd { id, time }) => {
+            let constraint = time.map_or(Constraint::Confirm, |seconds| Constraint::KeyLifetime {
+                seconds,
+            });
+            let (id, peer_id) = ssh_add(id, crypto(), &[constraint]).await?;
             println!(
                 "added key for profile id `{}` and peer id `{}`",
                 id, peer_id

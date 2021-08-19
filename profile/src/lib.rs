@@ -6,16 +6,22 @@
 use std::{error, fmt};
 
 use serde::{de::DeserializeOwned, Serialize};
+use smol::net::unix::UnixStream;
 use thiserror::Error;
+use thrussh_agent::Constraint;
 
 use librad::{
     git::storage::{self, read, ReadOnly, Storage},
-    keys::{IntoSecretKeyError, PublicKey, SecretKey},
     paths::Paths,
-    peer::PeerId,
     profile::{self, Profile, ProfileId, RadHome},
 };
-use radicle_keystore::{crypto::Crypto, file, FileStorage, Keystore as _};
+use link_crypto::{
+    keystore::{crypto::Crypto, file, sign::ssh, FileStorage, Keystore as _},
+    IntoSecretKeyError,
+    PeerId,
+    PublicKey,
+    SecretKey,
+};
 
 pub mod cli;
 
@@ -24,6 +30,8 @@ const KEY_FILE: &str = "librad.key";
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
+    #[error(transparent)]
+    AddKey(#[from] ssh::error::AddKey),
     #[error(transparent)]
     Keystore(Box<dyn error::Error + Send + Sync + 'static>),
     #[error("no active profile was found, perhaps you need to create one")]
@@ -119,7 +127,11 @@ where
 }
 
 /// Add a profile's [`SecretKey`] to the `ssh-agent`.
-pub fn ssh_add<P, C>(id: P, crypto: C) -> Result<(ProfileId, PeerId), Error>
+pub async fn ssh_add<P, C>(
+    id: P,
+    crypto: C,
+    constraints: &[Constraint],
+) -> Result<(ProfileId, PeerId), Error>
 where
     C: Crypto,
     C::Error: fmt::Debug + fmt::Display + Send + Sync + 'static,
@@ -131,7 +143,6 @@ where
     let store = file_storage(&profile, crypto);
     let key = store.get_key()?;
     let peer_id = PeerId::from(key.public_key);
-    println!("TODO: {}", peer_id);
-
+    ssh::add_key::<UnixStream>(key.secret_key.into(), constraints).await?;
     Ok((profile.id().clone(), peer_id))
 }

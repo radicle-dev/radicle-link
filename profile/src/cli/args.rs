@@ -71,4 +71,8 @@ pub struct SshAdd {
     /// the identifier to look up    
     #[structopt(long)]
     pub id: Option<ProfileId>,
+    /// the lifetime of the key being added to the ssh-agent, if none is
+    /// provided then agent will ask to confirm each time
+    #[structopt(long, short)]
+    pub time: Option<u32>,
 }

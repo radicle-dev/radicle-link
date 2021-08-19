@@ -151,6 +151,12 @@ impl<'a> sign::Signer for &'a SecretKey {
     }
 }
 
+impl From<SecretKey> for ed25519::SigningKey {
+    fn from(key: SecretKey) -> Self {
+        key.0
+    }
+}
+
 // PublicKey
 
 impl PublicKey {
