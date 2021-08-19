@@ -399,7 +399,7 @@ impl Node {
 
                     if mode.is_trackable(peer_id, urn) {
                         // Attempt to track, but keep going if it fails.
-                        if Node::track_project(api, urn, provider).await.is_ok() {
+                        if let Ok(true) = Node::track_project(api, urn, provider).await {
                             let event = Event::project_tracked(urn.clone(), *peer_id, api).await?;
                             api.announce(Payload {
                                 urn: urn.clone(),
@@ -425,11 +425,14 @@ impl Node {
     }
 
     /// Attempt to track a project.
+    ///
+    /// Returns `false` if the project was already tracked (so this call had no
+    /// effect), `true` otherwise.
     async fn track_project(
         api: &Peer<Signer>,
         urn: &Urn,
         peer_info: &PeerInfo<std::net::SocketAddr>,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         let peer_id = peer_info.peer_id;
         let addr_hints = peer_info.seen_addrs.iter().copied().collect::<Vec<_>>();
 
@@ -440,17 +443,24 @@ impl Node {
                 let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
                     .build(storage)
                     .map_err(|e| Error::MkFetcher(e.into()))??;
-                replication::replicate(storage, fetcher, cfg, None)?;
-                tracking::track(storage, &urn, peer_id)?;
+                let was_updated = tracking::track(storage, &urn, peer_id)?;
+                // Skip explicit replication if we already track the peer --
+                // normal gossip should take care of that.
+                if was_updated {
+                    replication::replicate(storage, fetcher, cfg, None)?;
+                }
 
-                Ok::<_, Error>(())
+                Ok::<_, Error>(was_updated)
             })
             .await?
         };
 
         match &result {
-            Ok(()) => {
+            Ok(true) => {
                 tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id);
+            },
+            Ok(false) => {
+                tracing::debug!("Project {} from peer {} already tracked", urn, peer_id);
             },
             Err(err) => {
                 tracing::info!(
