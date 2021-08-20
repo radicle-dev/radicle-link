@@ -48,6 +48,12 @@ impl From<sign::PublicKey> for PublicKey {
     }
 }
 
+impl From<PublicKey> for sign::PublicKey {
+    fn from(other: PublicKey) -> Self {
+        Self(other.0.into())
+    }
+}
+
 /// A signature produced by `Key::sign`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Signature(ed25519::Signature);
