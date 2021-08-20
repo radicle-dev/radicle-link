@@ -3,18 +3,26 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::sync::Arc;
+
+use thiserror::Error;
+use thrussh_agent::client::ClientStream;
+
 use librad::{
     crypto::{
         keystore::{
             crypto::{Crypto, KdfParams, Pwhash, SecretBoxError},
             file,
             pinentry::Prompt,
+            sign::ssh::{self, SshAgent},
             FileStorage,
             Keystore as _,
         },
         BoxedSigner,
         IntoSecretKeyError,
+        SomeSigner,
     },
+    git::storage::ReadOnly,
     profile::Profile,
     PublicKey,
     SecretKey,
@@ -23,7 +31,13 @@ use librad::{
 /// The filename for storing the secret key.
 pub const LIBRAD_KEY_FILE: &str = "librad.key";
 
-pub type Error = file::Error<SecretBoxError<std::io::Error>, IntoSecretKeyError>;
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error(transparent)]
+    File(#[from] file::Error<SecretBoxError<std::io::Error>, IntoSecretKeyError>),
+    #[error(transparent)]
+    SshConnect(#[from] ssh::error::Connect),
+}
 
 /// Create a [`Prompt`] for unlocking the key storage.
 pub fn prompt() -> Pwhash<Prompt<'static>> {
@@ -59,6 +73,20 @@ pub fn signer_prompt(profile: &Profile) -> Result<BoxedSigner, Error> {
     let store = file_storage(profile, prompt());
     let key = store.get_key()?.secret_key;
     Ok(key.into())
+}
+
+pub async fn signer_ssh<S>(profile: &Profile) -> Result<BoxedSigner, Error>
+where
+    S: ClientStream + Unpin + 'static,
+{
+    let storage = ReadOnly::open(profile.paths()).unwrap();
+    let peer_id = storage.peer_id();
+    let agent = SshAgent::new((**peer_id).into());
+    let signer = agent.connect::<S>().await?;
+    Ok(SomeSigner {
+        signer: Arc::new(signer),
+    }
+    .into())
 }
 
 /// Get the signer from the file store, decrypting the secret key by asking for

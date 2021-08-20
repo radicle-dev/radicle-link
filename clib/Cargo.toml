@@ -23,3 +23,8 @@ path = "../librad"
 [dependencies.minicbor]
 version = "0.9.1"
 features = ["std"]
+
+[dependencies.thrussh-agent]
+git = "https://github.com/FintanH/thrussh"
+branch = "generic-agent"
+default-features = false

@@ -22,28 +22,41 @@ pub enum Error {
     Keys(#[from] super::keys::Error),
 }
 
-/// How to decrypt the secret key from the file store when initialising the
-/// [`Storage`].
-pub enum Crypto {
-    /// The decryption will happen by prompting the person for their passphrase
-    /// at the command line.
-    Prompt,
-    // TODO(finto): SshAgent
-}
-
 /// Intialise a [`ReadOnly`] storage.
 pub fn read_only(profile: &Profile) -> Result<ReadOnly, Error> {
     let paths = profile.paths();
     Ok(ReadOnly::open(paths)?)
 }
 
-/// Initialise [`Storage`] based on the [`Crypto`] provided.
-pub fn read_write(profile: &Profile, crypto: Crypto) -> Result<Storage, Error> {
-    let paths = profile.paths();
-    match crypto {
-        Crypto::Prompt => {
-            let signer = keys::signer_prompt(profile)?;
-            Ok(Storage::open(paths, signer)?)
-        },
+pub mod prompt {
+    use super::*;
+
+    /// Initialise [`Storage`].
+    ///
+    /// The decryption will happen by prompting the person for their passphrase
+    /// at the command line.
+    pub fn storage(profile: &Profile) -> Result<Storage, Error> {
+        let paths = profile.paths();
+        let signer = keys::signer_prompt(profile)?;
+        Ok(Storage::open(paths, signer)?)
+    }
+}
+
+pub mod ssh {
+    use thrussh_agent::client::ClientStream;
+
+    use super::*;
+
+    /// Initialise [`Storage`].
+    ///
+    /// The signing key will be retrieved from the ssh-agent. If the key was not
+    /// added to the agent then this result in an error.
+    pub async fn storage<S>(profile: &Profile) -> Result<Storage, Error>
+    where
+        S: ClientStream + Unpin + 'static,
+    {
+        let paths = profile.paths();
+        let signer = keys::signer_ssh::<S>(profile).await?;
+        Ok(Storage::open(paths, signer)?)
     }
 }
