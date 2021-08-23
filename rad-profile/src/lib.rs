@@ -6,9 +6,8 @@
 use std::{error, fmt};
 
 use serde::{de::DeserializeOwned, Serialize};
-use smol::net::unix::UnixStream;
 use thiserror::Error;
-use thrussh_agent::Constraint;
+use thrussh_agent::{client::ClientStream, Constraint};
 
 use librad::{
     crypto::{
@@ -119,7 +118,7 @@ where
 }
 
 /// Add a profile's [`SecretKey`] to the `ssh-agent`.
-pub async fn ssh_add<P, C>(
+pub async fn ssh_add<S, P, C>(
     id: P,
     crypto: C,
     constraints: &[Constraint],
@@ -129,12 +128,13 @@ where
     C::Error: fmt::Debug + fmt::Display + Send + Sync + 'static,
     C::SecretBox: Serialize + DeserializeOwned,
     P: Into<Option<ProfileId>>,
+    S: ClientStream + Unpin + 'static,
 {
     let home = RadHome::new();
     let profile = get_or_active(&home, id)?;
     let store = keys::file_storage(&profile, crypto);
     let key = store.get_key()?;
     let peer_id = PeerId::from(key.public_key);
-    ssh::add_key::<UnixStream>(key.secret_key.into(), constraints).await?;
+    ssh::add_key::<S>(key.secret_key.into(), constraints).await?;
     Ok((profile.id().clone(), peer_id))
 }

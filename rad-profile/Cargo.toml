@@ -13,7 +13,6 @@ test = false
 anyhow = "1"
 thiserror = "1"
 serde = "1"
-smol = "1.2.5"
 structopt = "0.3"
 
 [dependencies.librad]
@@ -25,5 +24,4 @@ path = "../clib"
 [dependencies.thrussh-agent]
 git = "https://github.com/FintanH/thrussh"
 branch = "generic-agent"
-features = [ "smol-agent" ]
 default-features = false
