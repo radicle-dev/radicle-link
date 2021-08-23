@@ -66,6 +66,9 @@ represent it as a JSON schema. We use this simple schema:
 [source,json]
 ----
 {
+    "$vocabulary": {
+        "https://alexjg.github.io/automerge-jsonschema/spec": true
+    },
     "type": "object",
     "properties": {
         "id": {
@@ -107,7 +110,9 @@ An issue consists of a title, description, and author. This schema may well be
 the subject of its own mini standardisation process as it is very likely that
 many different applications will want to interoperate with the same issue
 model. The important thing is that this standardisation process can happen
-independently of the radicle protocol.
+independently of the radicle protocol. Note the `$vocabulary`, this is a
+vocabulary which only contains keywords which can be used in a CRDT such as 
+automerge.
 
 In addition to the schema, the developer must choose a name for their type.
 This is similar to an XML namespace and probably standardised as part of the
@@ -413,8 +418,13 @@ a `m̀anifest.toml` blob:
 |-- manifest.toml
 ----
 
-`schema.json` contains a draft 2020-12 JSON schema whilst `manifest.toml` is a
-TOML file with the following contents:
+`schema.json` contains a draft 2020-12 JSON schema. This schema MUST use the
+https://alexjg.github.io/automerge-jsonschema/spec[Automerge JSON schema vocabulary],
+which specifies a subset of the keywords from the JSON schema spec which 
+distribute across the merge operation and therefore can be used to validate
+automerge documents.
+
+`manifest.toml` is a TOML file with the following contents:
 
 [source,toml]
 ---
