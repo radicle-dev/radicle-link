@@ -67,16 +67,6 @@ represent it as a JSON schema. We use this simple schema:
 ----
 {
     "type": "object",
-    "rad_signed_by": {
-        "fields": [
-            "title",
-            "description",
-            "author"
-        ],
-        "keys": [
-            "<authors URN>"
-        ]
-    },
     "properties": {
         "id": {
             "type": "string"
@@ -97,16 +87,6 @@ represent it as a JSON schema. We use this simple schema:
             "type": "array",
             "items": {
                 "type": "object",
-                "rad_signed_by": {
-                    "properties": [
-                        "text",
-                        "id",
-                        "author"
-                    ],
-                    "data": {
-                        "keys": "0/author"
-                    }
-                },
                 "properties": {
                     "text": {
                         "type": "string"
@@ -123,23 +103,11 @@ represent it as a JSON schema. We use this simple schema:
 }
 ----
 
-An issue consists of a title, description, and author along with the author's
-signature; followed by a list of comments, each of which is signed by it's
-respective author. This is an extremely simplified model. Note the presence of
-the `rad_signed_by` key This key tells librad to validate that the given
-properties (for example the `title`, `description`, and `author` properties)
-are signed by one of the keys belonging to the given identities.  
-
-Note that comments are also signed, but here the key that is signing the
-comment depends on the data in the document. For this reason we use the
-https://gregsdennis.github.io/json-everything/usage/vocabs-data.html[data JSON
-schema vocabulary] to allow the `rad_signed_by` schema to reference the authors
-key.
-
-This schema may well be the subject of its own mini standardisation process
-as it is very likely that many different applications will want to interoperate
-with the same issue model. The important thing is that this standardisation
-process can happen independently of the radicle protocol.
+An issue consists of a title, description, and author. This schema may well be
+the subject of its own mini standardisation process as it is very likely that
+many different applications will want to interoperate with the same issue
+model. The important thing is that this standardisation process can happen
+independently of the radicle protocol.
 
 In addition to the schema, the developer must choose a name for their type.
 This is similar to an XML namespace and probably standardised as part of the
@@ -165,13 +133,7 @@ import * as Automerge from "automerge"
 const doc = Automerge.from({
     "title": "Librad doesn't implement the metadata RFC",
     "description": "it's in the name",
-    "author": "<the authors URN>",
-    "signatures": [
-        {
-            "key": "<some base32-z>",
-            "signature": "<some base32-z>"
-        }
-    ]
+    "author": "<the authors URN>"
 })
 const change = Automerge.getChanges(doc, null)
 const changeBytes = uint8ToBase64(change)
@@ -222,7 +184,6 @@ This will return something like this:
             "title": "Librad doesn't implement the metadata RFC",
             "description": "It's in the name",
             "author": "<some base64>",
-            "signature": "<some base64>",
             "comments": [],
         },
         "history": {
@@ -253,7 +214,6 @@ const updatedDoc = Automerge.change(doc, d => {
     d.comments.push({
         "text": "I completely agree!",
         "author": "<some base64>",
-        "signature": "<some base64>"
     })
 })
 const change = Automerge.getChanges(doc, updatedDoc)
@@ -310,10 +270,12 @@ the following layout
 |--manifest.toml
 ----
 
-This tree contains a single change to a collaborative object. We will go into
-more details shortly. Any direct dependencies of this change are encoded in the 
-same manner and become the parents of this commit. This allows us to
-reconstruct the automerge depdency graph. 
+This tree contains a batch of automerge changes to a collaborative object. The
+changes must all be from a single actor ID, which is the peer ID of the peer
+which created the change. We will go into more details shortly. Any direct
+dependencies of this change are encoded in the same manner and become the
+parents of this commit. This allows us to reconstruct the automerge depdency
+graph. 
 
 Along with the dependencies of the commit we also need to add the commit of the
 identity which created this commit. We need this identity to validate
@@ -329,7 +291,7 @@ A valid change commit must have three trailers:
 * `X-Rad-Schema-Parent`, this is the hash of the parent commit which contains 
   the schema of this object. See [schema commits](#schema-commits).
 
-Furthermore a change commit must be signed by an identity who was at some point
+Furthermore a change commit MUST be signed by an identity which was at some point
 a maintainer of the project (note that we can't stipulate that the identity is
 _currently_ a maintainer as we do not know when the change was made). For
 collaborative objects created in a direct identity (i.e a person identity) then
@@ -441,13 +403,24 @@ otherwise we impose the problem of schema validation on application developers.
 Schemas will need to be able to change over time. Schema migration is out of 
 scope for this RFC but we need a minimal mechanism to support it in future. To
 this end schemas are represented using their own hash graph. For the purposes
-of this RFC a schema is a commit with a tree that contains a single `schema.json`
-blob:
+of this RFC a schema is a commit with a tree that contains a `schema.json` and
+a `m̀anifest.toml` blob:
 
 [source]
 ----
---- schema.json
+|
+|-- schema.json
+|-- manifest.toml
 ----
+
+`schema.json` contains a draft 2020-12 JSON schema whilst `manifest.toml` is a
+TOML file with the following contents:
+
+[source,toml]
+---
+type: jsonschema
+version: 1
+---
 
 This can be extended in future by creating schema commits that reference this
 schema commit and add migrations.
@@ -462,80 +435,6 @@ With the same definition as for change commits.
 
 Change commits have a schema commit as one of their parents and reference that
 commit via the `X-Rad-Schema-Parent` trailer.
-
-
-=== Schema extensions
-
-To allow for structural validation of schemas we support the
-https://gregsdennis.github.io/json-everything/usage/vocabs-data.html[Data
-Access] vocabulary of JSON Schema. This allows a schema to reference other
-parts of a document via a
-https://tools.ietf.org/id/draft-handrews-relative-json-pointer-00.html[relative
-JSON pointer] when expressing constraints.
-
-==== `rad_signed_by`
-
-Many collaborative data structures will need to make statements about who is
-allowed to change what parts of a structure. To achieve this we extend the 
-json schema language with some custom metadata, the `rad_signed_by` property. This
-property can be placed on any `object` schema. It's value is an
-object with two keys, an array of properties which must be signed, and array of 
-radicle URNs who's signature must be present.
-
-This property implies a required `signatures` property with the following schema:
-
-[source,json]
-----
-{
-    "type": "array",
-    "items": {
-        "type": "object",
-        "properties": {
-            "key": {
-                "type": "string",
-                "$comment": "A multibase base32-z encoding of the public key"
-            },
-            "signature": {
-                "type": "string",
-                "$comment": "A multibase base32-z encoding the signature"
-            }
-        }
-    }
-}
-----
-
-Any schema which has this property results in some additional validation.  A
-signature is computed over the given properties and checked against the given
-key and signature.
-
-To compute a signature, the values at the keys specified in rad_signed_by.keys
-are looked up from the document in the order given, and converted back-to-back
-into CBOR according to the following canonicalisation rules:
-
-* `integer` values are encoded as major types 0 and 1, respectively, with
-  additional value 27 (64-bit)
-* `number` types are encoded as major type 7 with 5-bit value 27 (IEEE 754
-  double-precision float)
-* object types are encoded as major type 5 (maps), applying the
-  canonicalisation rules as per RFC 7049, section 2.3
-* The remaining schema types have unambiguous mappings to CBOR types
-
-When the input is in the automerge data model, the mappings are as follows:
-
-[horizontal]
-f32,f64:: major type 7,27 
-int:: major type 0 or 1,27
-uint: major type 1,27
-bytes:: major type 2, where the length is represented as a 64-bit unsigned integer (major type 1,27)
-str:: major type 3, where the length is represented as a 64-bit unsigned integer (major type 1,27)
-boolean:: major type 7, 20 or 21 respectively
-counter, timestamp:: as their corresponding integer value
-null:: major type 7, 22
-
-Cursors, undefined values, and constructions which can not be represented as
-definite-length arrays / maps in CBOR are illegal for signed values.
-
-Finally, the signature is computed over the binary CBOR representation
 
 
 === Strange Perspectives
