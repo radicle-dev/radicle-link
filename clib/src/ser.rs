@@ -3,6 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::{fmt, str::FromStr};
+
 use thiserror::Error;
 
 use minicbor::Encode;
@@ -21,11 +23,33 @@ pub enum Error {
 /// An enumeration of the formats the CLI can output. Note that since any of
 /// these formats can be used, the corresponding data type needs to implement
 /// the required traits.
+#[derive(Debug, Clone, Copy)]
 pub enum Format {
     /// Requires the data type to implement [`Serialize`].
     Json,
     /// Requires the data type to implement [`Encode`].
     Cbor,
+}
+
+impl fmt::Display for Format {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Json => write!(f, "json"),
+            Self::Cbor => write!(f, "cbor"),
+        }
+    }
+}
+
+impl FromStr for Format {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "json" => Ok(Self::Json),
+            "cbor" => Ok(Self::Cbor),
+            _ => Err("unknown format type"),
+        }
+    }
 }
 
 impl Format {
