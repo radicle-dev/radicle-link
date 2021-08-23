@@ -6,6 +6,7 @@
 use thiserror::Error;
 
 use librad::{
+    crypto::BoxedSigner,
     git::storage::{error, read, ReadOnly, Storage},
     profile::Profile,
 };
@@ -35,10 +36,10 @@ pub mod prompt {
     ///
     /// The decryption will happen by prompting the person for their passphrase
     /// at the command line.
-    pub fn storage(profile: &Profile) -> Result<Storage, Error> {
+    pub fn storage(profile: &Profile) -> Result<(BoxedSigner, Storage), Error> {
         let paths = profile.paths();
         let signer = keys::signer_prompt(profile)?;
-        Ok(Storage::open(paths, signer)?)
+        Ok((signer.clone(), Storage::open(paths, signer)?))
     }
 }
 
@@ -51,12 +52,12 @@ pub mod ssh {
     ///
     /// The signing key will be retrieved from the ssh-agent. If the key was not
     /// added to the agent then this result in an error.
-    pub async fn storage<S>(profile: &Profile) -> Result<Storage, Error>
+    pub async fn storage<S>(profile: &Profile) -> Result<(BoxedSigner, Storage), Error>
     where
         S: ClientStream + Unpin + 'static,
     {
         let paths = profile.paths();
         let signer = keys::signer_ssh::<S>(profile).await?;
-        Ok(Storage::open(paths, signer)?)
+        Ok((signer.clone(), Storage::open(paths, signer)?))
     }
 }
