@@ -10,6 +10,7 @@ members = [
   "git-trailers",
   "librad",
   "link-canonical",
+  "link-cbor",
   "link-crypto",
   "link-git-protocol",
   "link-identities",
