@@ -38,7 +38,6 @@ use super::{
     gossip,
     include,
     run_state::{command, config, input, Command, Config as RunConfig, Event, Input, RunState},
-    sync,
     waiting_room,
     RECEIVER_CAPACITY,
 };
@@ -103,11 +102,6 @@ where
         let mut waiting_room_timer = interval(run_config.waiting_room.interval);
         let (input_sender, mut external_inputs) = mpsc::channel::<Input>(RECEIVER_CAPACITY);
         let mut stats_timer = interval(run_config.stats.interval);
-        let sync_timer = if run_config.sync.interval.is_zero() {
-            None
-        } else {
-            Some(interval(run_config.sync.interval))
-        };
 
         let run_state = RunState::new(waiting_room);
 
@@ -145,17 +139,6 @@ where
                         loop {
                             timer.tick().await;
                             yield Input::Announce(input::Announce::Tick);
-                        }
-                    }
-                    .boxed(),
-                );
-            }
-            if let Some(mut timer) = sync_timer {
-                coalesced.push(
-                    stream! {
-                        loop {
-                            timer.tick().await;
-                            yield Input::PeerSync(input::Sync::Tick);
                         }
                     }
                     .boxed(),
@@ -265,9 +248,6 @@ where
                 })
             },
             Command::Stats => tokio::spawn(get_stats(self.peer.clone(), self.input_sender.clone())),
-            Command::SyncPeer(peer_id) => {
-                tokio::spawn(sync(self.peer.clone(), peer_id, self.input_sender.clone()))
-            },
             Command::EmitEvent(event) => {
                 self.subscriber.send(event).ok();
                 tokio::spawn(async move {})
@@ -383,34 +363,6 @@ async fn persist_waiting_room(waiting_room: WaitingRoom<SystemTime, Duration>, s
     match waiting_room::save(&store, waiting_room) {
         Ok(()) => tracing::debug!("Successfully persisted the waiting room"),
         Err(err) => tracing::debug!(?err, "Error while persisting the waiting room"),
-    }
-}
-
-/// Run the sync with a single peer to reach state parity for locally tracked
-/// projects. On completion report back with the success or failure.
-async fn sync<S>(peer: net::peer::Peer<S>, peer_id: PeerId, sender: mpsc::Sender<Input>)
-where
-    S: Clone + Signer,
-{
-    sender
-        .send(Input::PeerSync(input::Sync::Started(peer_id)))
-        .await
-        .ok();
-
-    match sync::sync(&peer, peer_id).await {
-        Ok(_) => {
-            sender
-                .send(Input::PeerSync(input::Sync::Succeeded(peer_id)))
-                .await
-                .ok();
-        },
-        Err(err) => {
-            tracing::error!(%peer_id, ?err, "sync error");
-            sender
-                .send(Input::PeerSync(input::Sync::Failed(peer_id)))
-                .await
-                .ok();
-        },
     }
 }
 

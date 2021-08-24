@@ -25,8 +25,6 @@ pub enum Input {
     ListenAddrs(Vec<SocketAddr>),
     /// Inputs from the underlying coco protocol.
     Protocol(ProtocolEvent),
-    /// Lifecycle events during peer sync operations.
-    PeerSync(Sync),
     /// Request subroutine events that wish to attempt to fetch an identity from
     /// the network.
     Request(Request),
@@ -97,16 +95,4 @@ pub enum Request {
 pub enum Stats {
     Tick,
     Values(net::protocol::event::downstream::Stats),
-}
-
-/// Lifecycle events during peer sync operations.
-#[derive(Debug)]
-pub enum Sync {
-    /// A sync has been initiated for `PeerId`.
-    Started(PeerId),
-    /// A sync has failed for `PeerId`.
-    Failed(PeerId),
-    /// A sync has succeeded for `PeerId`.
-    Succeeded(PeerId),
-    Tick,
 }

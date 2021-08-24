@@ -3,12 +3,10 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom, time::Duration};
+use std::convert::TryFrom;
 
 use assert_matches::assert_matches;
-use futures::{future, StreamExt as _};
 use pretty_assertions::assert_eq;
-use tokio::time::timeout;
 
 use librad::{
     git::{
@@ -242,43 +240,6 @@ fn can_fetch_project_changes() -> Result<(), anyhow::Error> {
         )
         .await?;
         assert!(has_commit, "bob's missing the commit");
-
-        Ok(())
-    })
-}
-
-#[test]
-fn can_sync_on_startup() -> Result<(), anyhow::Error> {
-    logging::init();
-
-    let mut harness = Harness::new();
-    let config = RunConfig {
-        sync: radicle_daemon::peer::run_config::Sync {
-            interval: Duration::from_millis(500),
-        },
-        ..RunConfig::default()
-    };
-    let mut alice = harness.add_peer("alice", config.clone(), &[])?;
-    let bob = harness.add_peer(
-        "bob",
-        config,
-        &[Seed {
-            addrs: alice.listen_addrs.clone(),
-            peer_id: alice.peer_id,
-        }],
-    )?;
-    harness.enter(async move {
-        state::init_project(
-            &alice.peer,
-            &alice.owner,
-            shia_le_pathbuf(alice.path.join("radicle")),
-        )
-        .await?;
-
-        assert_event!(
-            alice.events,
-            radicle_daemon::PeerEvent::PeerSynced(peer_id) if peer_id == bob.peer_id
-        )?;
 
         Ok(())
     })

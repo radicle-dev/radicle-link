@@ -24,8 +24,6 @@ pub enum Command {
     PersistWaitingRoom(WaitingRoom<SystemTime, Duration>),
     /// Fulfill request commands.
     Request(Request),
-    /// Initiate a full sync with [`PeerId`].
-    SyncPeer(PeerId),
     Stats,
     /// Emit an external event to all subscribers
     EmitEvent(super::Event),

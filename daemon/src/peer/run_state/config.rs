@@ -12,8 +12,6 @@ const DEFAULT_ANNOUNCE_INTERVAL: Duration = std::time::Duration::from_secs(1);
 
 const DEFAULT_STATS_INTERVAL: Duration = Duration::from_millis(1000);
 
-const DEFAULT_SYNC_INTERVAL: Duration = std::time::Duration::from_secs(30);
-
 /// Default period at which we query the waiting room.
 const DEFAULT_WAITING_ROOM_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -27,8 +25,6 @@ pub struct Config {
     pub announce: Announce,
     /// Set of knobs to alter stats polling.
     pub stats: Stats,
-    /// Set of knobs to alter sync behaviour.
-    pub sync: Sync,
     /// Set of knobs to alter [`WaitingRoom`] behaviour.
     pub waiting_room: WaitingRoom,
 }
@@ -59,21 +55,6 @@ impl Default for Stats {
     fn default() -> Self {
         Self {
             interval: DEFAULT_STATS_INTERVAL,
-        }
-    }
-}
-
-/// Set of knobs to alter sync behaviour.
-#[derive(Clone, Debug)]
-pub struct Sync {
-    /// Duration to issue periodic syncs.
-    pub interval: Duration,
-}
-
-impl Default for Sync {
-    fn default() -> Self {
-        Self {
-            interval: DEFAULT_SYNC_INTERVAL,
         }
     }
 }
