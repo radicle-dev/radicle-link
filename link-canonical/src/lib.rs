@@ -138,9 +138,9 @@ where
 /// [Canonical JSON]: http://wiki.laptop.org/go/Canonical_JSON
 /// [RFC 7159]: https://tools.ietf.org/html/rfc7159
 /// [Unicode Standard Annex #15]: http://www.unicode.org/reports/tr15/
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, minicbor::Encode)]
 #[serde(transparent)]
-pub struct Cstring(String);
+pub struct Cstring(#[n(0)] String);
 
 impl<'de> serde::Deserialize<'de> for Cstring {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

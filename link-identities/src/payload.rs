@@ -61,10 +61,14 @@ impl sealed::Sealed for Person {}
 
 /// Structure `radicle-link` expects to be part of a [`Payload`] describing a
 /// project identity.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, minicbor::Encode)]
+#[cbor(map)]
 pub struct Project {
+    #[n(0)]
     pub name: Cstring,
+    #[n(1)]
     pub description: Option<Cstring>,
+    #[n(2)]
     pub default_branch: Option<Cstring>,
 }
 
