@@ -16,6 +16,7 @@ use std::{
 };
 
 use dashmap::DashMap;
+use quinn::VarInt;
 use rustc_hash::FxHasher;
 
 use super::{CloseReason, Connection, ConnectionId, RemotePeer as _};
@@ -33,6 +34,14 @@ type PeerConnections = DashMap<PeerId, Vec<Weak<Tracked>>, BuildHasherDefault<Fx
 struct Tracked {
     connection: Connection,
     epoch: AtomicUsize,
+}
+
+impl Tracked {
+    fn close(&self, reason: CloseReason) {
+        self.connection
+            .conn
+            .close(VarInt::from(reason as u8), reason.reason_phrase())
+    }
 }
 
 #[derive(Clone)]
@@ -179,7 +188,7 @@ impl Conntrack {
                 if conns.len() >= MAX_PEER_CONNECTIONS {
                     let reason = CloseReason::TooManyConnections;
                     for evict in conns.drain(0..).filter_map(|weak| Weak::upgrade(&weak)) {
-                        evict.connection.close(reason);
+                        evict.close(reason);
                     }
                 }
                 conns.push(weak);
@@ -190,7 +199,7 @@ impl Conntrack {
     /// Close the given connection (if it is tracked), optionally with a reason.
     pub fn disconnect(&self, conn_id: &ConnectionId, reason: CloseReason) {
         if let Some((_, tracked)) = self.connections.remove(conn_id) {
-            tracked.connection.close(reason)
+            tracked.close(reason)
         }
     }
 
@@ -256,7 +265,7 @@ fn spawn_gc(
                             "GC"
                         );
                         if tracked_epoch <= prev_epoch {
-                            tracked.connection.close(CLOSE_REASON);
+                            tracked.close(CLOSE_REASON);
                             false
                         } else {
                             // Tickle the connection immediately.
