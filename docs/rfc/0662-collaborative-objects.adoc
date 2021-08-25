@@ -290,7 +290,7 @@ A valid change commit must have three trailers:
   author identity. We use this trailer to avoid following the author commit
   reference when constructing the automerge change graph
 * `X-Rad-Schema-Parent`, this is the hash of the parent commit which contains 
-  the schema of this object. See [schema commits](#schema-commits).
+  the schema of this object. See <<Schema Commits>>.
 
 Furthermore a change commit MUST be signed by a delegate of the namespace that
 the change occurs in, or an identity that was at some point a delegate. This
@@ -421,10 +421,10 @@ automerge documents.
 `manifest.toml` is a TOML file with the following contents:
 
 [source,toml]
----
+----
 type: jsonschema
 version: 1
----
+----
 
 This can be extended in future by creating schema commits that reference this
 schema commit and add migrations.
