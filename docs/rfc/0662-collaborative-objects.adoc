@@ -81,7 +81,7 @@ represent it as a JSON schema. We use this simple schema:
         },
         "author": {
             "description": "The radicle ID of the author of the issue",
-            "const": "<the authors URN>"
+            "type": "string"
         },
         "comments": {
             "type": "array",
@@ -197,7 +197,7 @@ This will return something like this:
 
 === Adding a comment
 
-Up to this point this has been a mostly straightforward ReST API, it is at the
+Up to this point this has been a mostly straightforward REST API, it is at the
 point that we wish to make changes that the distributed nature of the data
 structure intrudes. We cannot directly mutate the data, instead we need to
 create a change which describes how we want to update the data - this change
@@ -220,7 +220,7 @@ const change = Automerge.getChanges(doc, updatedDoc)
 const changeBytes = uint8ToBase64(change)
 ----
 
-What we do here is load the automerge document from it's history, then use the
+What we do here is load the automerge document from its history, then use the
 automerge Javscript library to mutate the document (the `Automerge.change`
 call) and then finally get the change between the original version of the 
 document and the new one. 
@@ -252,9 +252,6 @@ graph under a `/cob/<typename>/<object ID>` reference, this allows us to
 reconstruct the state of a collaborative object for a particular peer as 
 described in <<Reconstructing Collaborative Objects>>. This allows us to use
 git to replicate collaborative objects, see <<Fetching Collaborative Objects>>.
-
-We require some schema extensions to authenticate data in collaborative objects,
-these are described in <<Schema Extensions>>.
 
 
 === Change Commits
@@ -291,11 +288,9 @@ A valid change commit must have three trailers:
 * `X-Rad-Schema-Parent`, this is the hash of the parent commit which contains 
   the schema of this object. See [schema commits](#schema-commits).
 
-Furthermore a change commit MUST be signed by an identity which was at some point
-a maintainer of the project (note that we can't stipulate that the identity is
-_currently_ a maintainer as we do not know when the change was made). For
-collaborative objects created in a direct identity (i.e a person identity) then
-the change must be signed by the owner of the namespace.
+Furthermore a change commit MUST be signed by a delegate of the namespace that
+the change occurs in, or an identity that was at some point a delegate. This
+second requirement is because we never know when we might receive an old change.
 
 ==== `manifest.toml`
 
@@ -304,7 +299,7 @@ Specifically it will contain:
 
 * `typename`, discussed above
 * `history_type`, always `"automerge"`, this is here to allow for different
-  CRDT implementations in future.
+  CRDT implementations in the future.
 
 
 Each object is also created with a JSON schema. The schema is represented by an
@@ -363,13 +358,13 @@ merge-then-commit step.
 === Fetching Collaborative Objects
 
 Each time a repository creates a collaborative object tree it creates a ref
-pointing to that object at `refs/namespaces/<project>/cob/<typename>/<object ID>`, 
+pointing to that object at `refs/namespaces/<namespace>/cob/<typename>/<object ID>`, 
 where `object ID` is a unique identifier generated at creation time. We then
 fetch collaborative objects by replicating these refs, much as we do with
 any other ref category in a radicle repository.
 
-Collaborative objects are not replicated over gits V1 protocol, this is because
-v1 starts every interaction with a ref advertisment. Consider that we are
+Collaborative objects are not replicated over git's V1 protocol, this is because
+v1 starts every interaction with a ref advertisement. Consider that we are
 adding a reference for each collaborative object, and that a popular repository
 such as https://github.com/facebook/react/ has over 10000 issues, which would
 translate to 10000 refs. Each ref is about 250 bytes, so every replication
@@ -413,8 +408,9 @@ a `m̀anifest.toml` blob:
 |-- manifest.toml
 ----
 
-`schema.json` contains a draft 2020-12 JSON schema whilst `manifest.toml` is a
-TOML file with the following contents:
+`schema.json` contains a 
+https://json-schema.org/draft/2020-12/json-schema-core.html[draft 2020-12] JSON
+schema whilst `manifest.toml` is a TOML file with the following contents:
 
 [source,toml]
 ---
@@ -464,7 +460,7 @@ The APIs librad will provide:
 Note that I am referring to "the binary representation of an automerge x" 
 because the automerge API works in terms of binary changes.
 
-This new api will live in a new top level module at
+This new API will live in a new top-level module at
 `librad::collaborative_objects`. An initial sketch looks like this:
 
 [source,rust]
