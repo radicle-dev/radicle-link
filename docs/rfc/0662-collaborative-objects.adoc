@@ -39,7 +39,7 @@ raises the problem of how to merge those changes. I see two options here:
   objects to the user to resolve.
 
 The latter here is undesirable for a lot of reasons but most relevant is that
-it conflicts with extensibility and interoperability. in order to provide a good 
+it conflicts with extensibility and interoperability. In order to provide a good 
 UX tools would need to provide a UI for users to do a three way merge of the 
 data they are working on. This contradicts the interoperability goal.
 
