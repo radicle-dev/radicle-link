@@ -83,7 +83,7 @@ represent it as a JSON schema. We use this simple schema:
             "automerge_type": "text"
         },
         "author": {
-            "description": "The radicle ID of the author of the issue",
+            "description": "The radicle URN of the author of the issue",
             "type": "string"
         },
         "comments": {
