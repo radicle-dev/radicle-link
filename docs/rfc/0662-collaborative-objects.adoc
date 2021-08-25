@@ -40,7 +40,7 @@ raises the problem of how to merge those changes. I see two options here:
 
 The latter here is undesirable for a lot of reasons but most relevant is that
 it conflicts with extensibility and interoperability. In order to provide a good 
-UX tools would need to provide a UI for users to do a three way merge of the 
+UX, tools would need to provide a UI for users to do a three-way merge of the 
 data they are working on. This contradicts the interoperability goal.
 
 This leaves us with CRDTs. For the purposes of this RFC I am going to assume
