@@ -225,7 +225,7 @@ const change = Automerge.getChanges(doc, updatedDoc)
 const changeBytes = uint8ToBase64(change)
 ----
 
-What we do here is load the automerge document from it's history, then use the
+What we do here is load the automerge document from its history, then use the
 automerge Javscript library to mutate the document (the `Automerge.change`
 call) and then finally get the change between the original version of the 
 document and the new one. 
@@ -368,7 +368,7 @@ fetch collaborative objects by replicating these refs, much as we do with
 any other ref category in a radicle repository.
 
 Collaborative objects are not replicated over git's V1 protocol, this is because
-v1 starts every interaction with a ref advertisement. Consider that we are
+V1 starts every interaction with a ref advertisement. Consider that we are
 adding a reference for each collaborative object, and that a popular repository
 such as https://github.com/facebook/react/ has over 10000 issues, which would
 translate to 10000 refs. Each ref is about 250 bytes, so every replication
