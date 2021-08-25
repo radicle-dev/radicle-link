@@ -281,7 +281,9 @@ impl RunState {
                         provider: PeerInfo { peer_id, .. },
                         result,
                     } => {
-                        cmds.extend(self.waiting_room.found(&urn, peer_id, SystemTime::now()));
+                        if self.waiting_room.get(&urn).is_some() {
+                            cmds.extend(self.waiting_room.found(&urn, peer_id, SystemTime::now()));
+                        }
 
                         if let PutResult::Applied(_) = result {
                             cmds.push(Command::Include(urn));
