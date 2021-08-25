@@ -58,7 +58,7 @@ which is dear to many peoples hearts; issues. We imagine this from the
 perspective of the application developer. For expositional purposes we assume
 that the application communicates with a radicle implementation via an HTTP
 RPC. However, the HTTP RPC is not a proposal of this RFC, the proposed API will
-be specified in terms of `librad` later in this document.
+be specified in terms of `radicle-link` later in this document.
 
 The first thing the developer must do is decide on the schema of their data and
 represent it as a JSON schema. We use this simple schema:
