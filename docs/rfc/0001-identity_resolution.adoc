@@ -149,7 +149,7 @@ ref: refs/namespaces/C/rad/id
 Any certifiers of the `self` identity must be included under `rad/ids/`.
 The `rad/self` branch is equivalent to the contributor file in the
 <<radicle-link-spec, radicle-link spec, rev1-draft>>, which is
-required if the `refs/heads/` hierarchy of `$PEER_ID` is non-empty (ie.
+required if and only if the `refs/heads/` hierarchy of `$PEER_ID` is non-empty (ie.
 it is permissible to omit it if `$PEER_ID` does not publish any branches
 of their own).
 
