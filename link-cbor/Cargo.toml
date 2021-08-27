@@ -9,3 +9,6 @@ edition = "2018"
 url = "2.1"
 minicbor = "0.9.1"
 serde_json = "1.0"
+
+[dependencies.link-canonical]
+path = "../link-canonical"
