@@ -1,0 +1,17 @@
+[package]
+name = "rad-exe"
+version = "0.1.0"
+authors = ["Fintan Halpenny fintan.halpenny@gmail.com"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[lib]
+doctest = true
+test = false
+
+[dependencies]
+anyhow = "1.0"
+structopt = "0.3"
+
+[dependencies.librad]
+path = "../librad"

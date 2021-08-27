@@ -14,6 +14,7 @@ members = [
   "link-git-protocol",
   "link-identities",
   "macros",
+  "rad-exe",
   "seed",
   "std-ext",
   "test",

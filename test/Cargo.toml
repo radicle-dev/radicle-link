@@ -66,6 +66,9 @@ path = "../link-canonical"
 path = "../link-git-protocol"
 features = ["git2"]
 
+[dependencies.rad-exe]
+path = "../rad-exe"
+
 [dependencies.radicle-daemon]
 path = "../daemon"
 
