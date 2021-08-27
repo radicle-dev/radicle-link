@@ -189,8 +189,7 @@ impl PackWriter for Standard {
             prog,
             &self.stop,
             Some(Box::new(move |oid, buf| {
-                odb.find_existing(oid, buf, &mut git_pack::cache::Never)
-                    .ok()
+                odb.find(oid, buf, &mut git_pack::cache::Never).ok()
             })),
             opts,
         )

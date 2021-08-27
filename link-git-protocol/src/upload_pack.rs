@@ -8,7 +8,7 @@ use std::{future::Future, io, path::Path, process::ExitStatus, str::FromStr};
 use async_process::{Command, Stdio};
 use futures_lite::io::{copy, AsyncRead, AsyncWrite};
 use futures_util::try_join;
-use git_packetline::PacketLine;
+use git_packetline::PacketLineRef;
 use once_cell::sync::Lazy;
 use versions::Version;
 
@@ -78,7 +78,7 @@ where
             .map_err(invalid_data)?
             .map_err(invalid_data)?;
         match pkt {
-            PacketLine::Data(data) => std::str::from_utf8(data)
+            PacketLineRef::Data(data) => std::str::from_utf8(data)
                 .map_err(invalid_data)?
                 .parse()
                 .map_err(invalid_data),
