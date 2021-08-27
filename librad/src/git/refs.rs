@@ -322,8 +322,10 @@ impl Refs {
     /// `rad/signed_refs` branch of [`Urn`].
     ///
     /// If the result of [`Self::compute`] is the same as the alread-stored
-    /// [`Refs`], no commit is made and `None` is returned. Otherwise, the
-    /// new and persisted [`Refs`] are returned in a `Some`.
+    /// [`Refs`], no commit is made and `None` is returned. If a concurrent
+    /// [`Self::update`] commits first, the result of [`Self::load`] is
+    /// returned. Otherwise, the new and persisted [`Refs`] are returned in a
+    /// `Some`.
     #[tracing::instrument(skip(storage, urn), fields(urn = %urn))]
     pub fn update(storage: &Storage, urn: &Urn) -> Result<Option<Self>, stored::Error> {
         let branch = Reference::rad_signed_refs(Namespace::from(urn), None);
@@ -357,25 +359,34 @@ impl Refs {
             }
         }
 
-        let commit_id = {
-            let author = raw_git.signature()?;
-            raw_git.commit(
-                Some(reference::RefLike::from(&branch).as_str()),
-                &author,
-                &author,
-                &format!("Update rad/signed_refs for {}", urn),
-                &tree,
-                &parent.iter().collect::<Vec<&git2::Commit>>(),
-            )?
-        };
-        tracing::trace!(
-            "updated signed refs at {} to {}: {:?}",
-            branch,
-            commit_id,
-            signed_refs.refs
+        let author = raw_git.signature()?;
+        let commit = raw_git.commit(
+            Some(reference::RefLike::from(&branch).as_str()),
+            &author,
+            &author,
+            &format!("Update rad/signed_refs for {}", urn),
+            &tree,
+            &parent.iter().collect::<Vec<&git2::Commit>>(),
         );
+        match commit {
+            Ok(commit_id) => {
+                tracing::trace!(
+                    "updated signed refs at {} to {}: {:?}",
+                    branch,
+                    commit_id,
+                    signed_refs.refs
+                );
 
-        Ok(Some(signed_refs.refs))
+                Ok(Some(signed_refs.refs))
+            },
+            Err(e) => match (e.class(), e.code()) {
+                (git2::ErrorClass::Object, git2::ErrorCode::Modified) => {
+                    tracing::debug!("concurrent modification of signed refs at {}", branch);
+                    Self::load(storage, urn, None)
+                },
+                _ => Err(e.into()),
+            },
+        }
     }
 
     pub fn sign<S>(self, signer: &S) -> Result<Signed<Verified>, signing::Error>
