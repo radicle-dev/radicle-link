@@ -10,35 +10,32 @@ use minicbor::{
     encode::{self, Encoder, Write},
 };
 
-use ::url::Url;
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Url(pub url::Url);
 
-pub struct Encode(pub Url);
-
-impl From<Url> for Encode {
-    fn from(url: Url) -> Self {
+impl From<url::Url> for Url {
+    fn from(url: url::Url) -> Self {
         Self(url)
     }
 }
 
-impl minicbor::Encode for Encode {
+impl minicbor::Encode for Url {
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> Result<(), encode::Error<W::Error>> {
         e.str(self.0.as_str()).map(|_| ())
     }
 }
 
-pub struct Decode(pub Url);
-
-impl From<Decode> for Url {
-    fn from(d: Decode) -> Self {
+impl From<Url> for url::Url {
+    fn from(d: Url) -> Self {
         d.0
     }
 }
 
-impl minicbor::Decode<'_> for Decode {
+impl minicbor::Decode<'_> for Url {
     fn decode(d: &mut Decoder) -> Result<Self, decode::Error> {
         let url = d.str()?;
-        Url::try_from(url)
+        url::Url::try_from(url)
             .map_err(|_| decode::Error::Message("failed to parse Url"))
-            .map(Decode)
+            .map(Url)
     }
 }
