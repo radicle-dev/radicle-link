@@ -8,6 +8,7 @@ use std::{
     convert::TryFrom,
     hash::BuildHasherDefault,
     net::SocketAddr,
+    sync::Arc,
     time::Duration,
 };
 
@@ -43,7 +44,7 @@ pub struct Info {
 ///
 /// Create via [`Default`].
 #[derive(Clone, Default)]
-pub struct Fetchers(DashMap<Urn, Info, BuildHasherDefault<FxHasher>>);
+pub struct Fetchers(Arc<DashMap<Urn, Info, BuildHasherDefault<FxHasher>>>);
 
 /// [`Storage`]-specific [`fetch::Fetcher`] impl.
 pub struct Fetcher<'a> {

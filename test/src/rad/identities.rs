@@ -158,12 +158,11 @@ impl TestProject {
         let urn = self.project.urn();
         let cfg = to.protocol_config().replication;
         let res = to
-            .using_storage(move |storage| {
+            .using_storage(move |storage| -> anyhow::Result<ReplicateResult> {
                 let fetcher = fetcher::PeerToPeer::new(urn, remote_peer, remote_addrs)
                     .build(storage)
-                    .unwrap()
-                    .unwrap();
-                replication::replicate(storage, fetcher, cfg, None)
+                    .expect("creating a git2 remote should not normally fail")?;
+                Ok(replication::replicate(storage, fetcher, cfg, None)?)
             })
             .await??;
         Ok(res)

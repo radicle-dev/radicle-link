@@ -51,10 +51,14 @@ fn replication_does_not_exceed_limit() {
             .unwrap()
             .unwrap();
 
-        for &peer in &[peer2, peer3, peer4, peer5] {
-            proj.pull(peer1, peer).await.unwrap();
-            proj.pull(peer, peer1).await.unwrap();
+        for (i, peer) in [peer2, peer3, peer4, peer5].iter().enumerate() {
+            let peerno = i + 2;
+            proj.pull(peer1, *peer)
+                .await
+                .unwrap_or_else(|e| panic!("pull peer1 -> peer{} failed: {:?}", peerno, e));
         }
-        proj.pull(peer1, peer6).await.ok().unwrap();
+        proj.pull(peer1, peer6)
+            .await
+            .expect("pull peer1 to peer6 failed");
     })
 }
