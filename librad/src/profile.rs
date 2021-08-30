@@ -14,8 +14,8 @@ use crate::paths::{project_dirs, Paths};
 pub mod id;
 pub use id::ProfileId;
 
-const RAD_HOME: &str = "RAD_HOME";
-const RAD_PROFILE: &str = "RAD_PROFILE";
+pub const RAD_HOME: &str = "RAD_HOME";
+pub const RAD_PROFILE: &str = "RAD_PROFILE";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
