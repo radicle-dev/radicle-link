@@ -7,7 +7,7 @@ use std::env;
 
 use structopt::StructOpt;
 
-use librad::profile::ProfileId;
+use librad::profile::{ProfileId, RAD_PROFILE};
 
 /// `--rad-profile` command line name
 pub const RAD_PROFILE_ARG: &str = "--rad-profile";
@@ -73,7 +73,7 @@ pub fn sanitise_globals(mut args: Args) -> Args {
         Command::External(external) => {
             sanitise_option(
                 RAD_PROFILE_ARG,
-                "RAD_PROFILE",
+                RAD_PROFILE,
                 args.rad_profile.clone().map(|id| id.to_string()),
                 external,
             );
