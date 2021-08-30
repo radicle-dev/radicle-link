@@ -28,8 +28,8 @@ where
             println!("profile id: {}", profile.id());
             println!("peer id: {}", peer_id);
         },
-        Command::Get(Get {}) => {
-            let profile = get()?;
+        Command::Get(Get { id }) => {
+            let profile = get(id)?;
             match profile {
                 Some(profile) => println!("{}", profile.id()),
                 None => println!(

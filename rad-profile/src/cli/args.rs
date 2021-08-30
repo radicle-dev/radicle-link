@@ -30,9 +30,13 @@ pub enum Command {
 #[derive(Debug, StructOpt)]
 pub struct Create {}
 
-/// Get the currently active profile.
+/// Get a profile, defaulting to the active profile if no identifier is given.
 #[derive(Debug, StructOpt)]
-pub struct Get {}
+pub struct Get {
+    /// the identifier of the profile requested
+    #[structopt(long)]
+    pub id: Option<ProfileId>,
+}
 
 /// Set the active profile.
 #[derive(Debug, StructOpt)]

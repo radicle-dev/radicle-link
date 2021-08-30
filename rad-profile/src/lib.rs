@@ -81,9 +81,12 @@ where
 }
 
 /// Get the current active `ProfileId`.
-pub fn get() -> Result<Option<Profile>, Error> {
+pub fn get(id: Option<ProfileId>) -> Result<Option<Profile>, Error> {
     let home = RadHome::new();
-    Profile::active(&home).map_err(Error::from)
+    match id {
+        Some(id) => Profile::get(&home, id).map_err(Error::from),
+        None => Profile::active(&home).map_err(Error::from),
+    }
 }
 
 /// Set the active profile to the given `ProfileId`.
