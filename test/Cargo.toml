@@ -76,6 +76,9 @@ path = "../node-lib"
 [dependencies.rad-exe]
 path = "../rad-exe"
 
+[dependencies.rad-identities]
+path = "../rad-identities"
+
 [dependencies.radicle-daemon]
 path = "../daemon"
 

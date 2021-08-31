@@ -90,11 +90,7 @@ impl TestProject {
         let proj = identities::project::create(
             storage,
             local_id,
-            payload::Project {
-                name: "radicle-link".into(),
-                description: Some("pea two pea".into()),
-                default_branch: Some("next".into()),
-            },
+            radicle_link(),
             delegation::Indirect::from(alice.clone()),
         )?;
 
@@ -110,11 +106,7 @@ impl TestProject {
         let proj = identities::project::create(
             storage,
             local_id,
-            payload::Project {
-                name: "radicle-link".into(),
-                description: Some("pea two pea".into()),
-                default_branch: Some("next".into()),
-            },
+            radicle_link(),
             delegation::Indirect::from(person.owner.clone()),
         )?;
 
@@ -171,4 +163,12 @@ impl TestProject {
 
 pub fn create_test_project(storage: &Storage) -> Result<TestProject, anyhow::Error> {
     TestProject::create(storage)
+}
+
+pub fn radicle_link() -> payload::Project {
+    payload::Project {
+        name: "radicle-link".into(),
+        description: Some("pea two pea".into()),
+        default_branch: Some("next".into()),
+    }
 }
