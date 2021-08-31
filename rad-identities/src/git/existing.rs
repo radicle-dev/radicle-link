@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{marker::PhantomData, path::PathBuf};
+use std::{fmt, marker::PhantomData, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -90,8 +90,17 @@ impl<P: HasName + HasBranch> Existing<Invalid, P> {
     }
 }
 
+/// A validated git Repository.
+///
+/// Note: the `Debug` implementation prints the path to the repository.
 pub struct Valid {
     repo: git2::Repository,
+}
+
+impl fmt::Debug for Valid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Valid {{ repo: {} }}", self.repo.path().display())
+    }
 }
 
 impl<P: HasBranch> Existing<Valid, P> {
