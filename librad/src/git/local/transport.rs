@@ -39,6 +39,9 @@ pub enum Error {
     #[error("no rad/self present and no default identity configured")]
     NoLocalIdentity,
 
+    #[error("refs signature updated by another process")]
+    SigrefsRace,
+
     #[error(transparent)]
     OpenStorage(#[from] OpenStorageError),
 
@@ -244,7 +247,9 @@ impl LocalTransport {
                         let storage = _dyn.as_ref();
 
                         // Update `rad/signed_refs`
-                        Refs::update(storage, &urn)?;
+                        if let refs::Updated::ConcurrentlyModified = Refs::update(storage, &urn)? {
+                            return Err(Error::SigrefsRace);
+                        }
 
                         // Ensure we have a `rad/self`
                         let local_id = identities::local::load(storage, urn.clone())

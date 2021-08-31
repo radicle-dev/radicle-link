@@ -197,6 +197,23 @@ pub mod stored {
     }
 }
 
+/// Success result of [`Refs::update`]
+pub enum Updated {
+    /// The computed [`Refs`] were stored as a new commit.
+    Updated { refs: Refs, at: git2::Oid },
+    /// The stored [`Refs`] were the same as the computed ones, so no new commit
+    /// was created.
+    Unchanged { refs: Refs, at: git2::Oid },
+    /// Another process committed [`Refs`], so the computed ones were discarded.
+    ///
+    /// This should typically be treated as a warning for interactive updates.
+    /// See [0], [1] for further discussion.
+    ///
+    /// [0]: https://github.com/radicle-dev/radicle-link/pull/777
+    /// [1]: https://lists.sr.ht/~radicle-link/dev/%3C20210830224202.GE10879%40schmidt.localdomain%3E
+    ConcurrentlyModified,
+}
+
 /// The published state of a local repository.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Refs {
@@ -320,14 +337,8 @@ impl Refs {
 
     /// Compute the current [`Refs`], sign them, and store them at the
     /// `rad/signed_refs` branch of [`Urn`].
-    ///
-    /// If the result of [`Self::compute`] is the same as the alread-stored
-    /// [`Refs`], no commit is made and `None` is returned. If a concurrent
-    /// [`Self::update`] commits first, the result of [`Self::load`] is
-    /// returned. Otherwise, the new and persisted [`Refs`] are returned in a
-    /// `Some`.
     #[tracing::instrument(skip(storage, urn), fields(urn = %urn))]
-    pub fn update(storage: &Storage, urn: &Urn) -> Result<Option<Self>, stored::Error> {
+    pub fn update(storage: &Storage, urn: &Urn) -> Result<Updated, stored::Error> {
         let branch = Reference::rad_signed_refs(Namespace::from(urn), None);
         tracing::debug!("updating signed refs for {}", branch);
 
@@ -354,8 +365,10 @@ impl Refs {
 
         if let Some(ref parent) = parent {
             if parent.tree()?.id() == tree.id() {
-                tracing::debug!("signed refs already up-to-date");
-                return Ok(None);
+                return Ok(Updated::Unchanged {
+                    refs: signed_refs.refs,
+                    at: parent.id(),
+                });
             }
         }
 
@@ -377,12 +390,14 @@ impl Refs {
                     signed_refs.refs
                 );
 
-                Ok(Some(signed_refs.refs))
+                Ok(Updated::Updated {
+                    refs: signed_refs.refs,
+                    at: commit_id,
+                })
             },
             Err(e) => match (e.class(), e.code()) {
                 (git2::ErrorClass::Object, git2::ErrorCode::Modified) => {
-                    tracing::debug!("concurrent modification of signed refs at {}", branch);
-                    Self::load(storage, urn, None)
+                    Ok(Updated::ConcurrentlyModified)
                 },
                 _ => Err(e.into()),
             },
