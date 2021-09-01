@@ -75,8 +75,11 @@ fn creation() -> anyhow::Result<()> {
 
     let branch = payload.default_branch.unwrap();
     assert_eq!(
-        repo.path().to_path_buf(),
-        temp.path().join(payload.name.as_str()).join(".git")
+        repo.path().canonicalize()?,
+        temp.path()
+            .join(payload.name.as_str())
+            .join(".git")
+            .canonicalize()?
     );
     assert_head(&repo, &branch)?;
     assert_remote(&repo, &branch, &url)?;
