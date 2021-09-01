@@ -6,53 +6,56 @@
 use std::{
     collections::BTreeSet,
     io,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{atomic::AtomicBool, Arc},
 };
 
 use bstr::ByteSlice as _;
 use futures::{AsyncReadExt as _, TryFutureExt as _};
+use git::{
+    prelude::*,
+    refs::transaction::{Change, PreviousValue, RefEdit},
+};
+use git_repository as git;
 use link_git_protocol::{fetch, ls, packwriter, upload_pack, ObjectId, PackWriter, Ref};
 use tempfile::{tempdir, TempDir};
 
 fn upstream() -> TempDir {
     let tmp = tempdir().unwrap();
 
-    let repo = git2::Repository::init_bare(&tmp).unwrap();
-    let auth = git2::Signature::now("apollo", "apollo@cree.de").unwrap();
+    let repo = git::init_bare(&tmp).unwrap().into_easy();
+    let auth = git::actor::Signature::now_local_or_utc("apollo", "apollo@cree.de");
 
-    let tree = {
-        let empty = repo.treebuilder(None).unwrap();
-        let oid = empty.write().unwrap();
-        repo.find_tree(oid).unwrap()
-    };
-    let base = {
-        let oid = repo
-            .commit(
-                Some("refs/namespaces/foo/refs/heads/main"),
-                &auth,
-                &auth,
-                "initial",
-                &tree,
-                &[],
-            )
-            .unwrap();
-        repo.find_commit(oid).unwrap()
-    };
-    let next = repo
-        .commit(
-            Some("refs/namespaces/foo/refs/heads/next"),
-            &auth,
-            &auth,
-            "ng",
-            &tree,
-            &[&base],
+    let empty_tree_id = repo
+        .write_object(&git::objs::Tree::empty())
+        .unwrap()
+        .detach();
+    let base_id = {
+        repo.commit(
+            "refs/namespaces/foo/refs/heads/main",
+            &auth.to_ref(),
+            &auth.to_ref(),
+            "initial",
+            empty_tree_id,
+            git::commit::NO_PARENT_IDS,
         )
-        .unwrap();
+        .unwrap()
+    };
+    let next_commit_id = repo
+        .commit(
+            "refs/namespaces/foo/refs/heads/next",
+            &auth.to_ref(),
+            &auth.to_ref(),
+            "ng",
+            empty_tree_id,
+            [base_id],
+        )
+        .unwrap()
+        .detach();
     repo.reference(
         "refs/namespaces/foo/refs/pulls/1/head",
-        next,
-        true,
+        next_commit_id,
+        PreviousValue::Any,
         "pee arrr",
     )
     .unwrap();
@@ -60,37 +63,47 @@ fn upstream() -> TempDir {
     tmp
 }
 
-fn collect_refs(repo: &git2::Repository) -> Result<Vec<(String, git2::Oid)>, git2::Error> {
+fn collect_refs(repo: &impl git::easy::Access) -> anyhow::Result<Vec<git::refs::Reference>> {
     repo.references()?
-        .map(|x| x.map(|r| (r.name().unwrap().to_owned(), r.target().unwrap())))
+        .all()?
+        .map(|x| x.map(|r| r.detach()).map_err(|err| anyhow::anyhow!(err)))
         .collect()
 }
 
-fn update_tips<'a, T>(repo: &git2::Repository, tips: T) -> Result<(), anyhow::Error>
+fn update_tips<'a, T>(repo: &impl git::easy::Access, tips: T) -> Result<(), anyhow::Error>
 where
     T: IntoIterator<Item = &'a Ref>,
 {
-    for r in tips {
-        match r {
-            Ref::Direct { path, object } => {
-                repo.reference(
-                    path.to_str()?,
-                    git2::Oid::from_bytes(object.as_slice())?,
-                    true,
-                    "",
-                )?;
-            },
+    use std::convert::TryInto;
+    let edits = tips
+        .into_iter()
+        .map(|r| match r {
+            Ref::Direct { path, object } => Ok(RefEdit {
+                change: Change::Update {
+                    log: Default::default(),
+                    expected: PreviousValue::Any,
+                    new: object.to_owned().into(),
+                },
+                name: path.as_bstr().try_into()?,
+                deref: false,
+            }),
             x => anyhow::bail!("unexpected ref variant: {:?}", x),
-        }
-    }
-
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    repo.edit_references(edits, git::lock::acquire::Fail::Immediately, None)?;
     Ok(())
 }
 
-fn collect_history(repo: &git2::Repository, tip: &str) -> Result<Vec<git2::Oid>, git2::Error> {
-    let mut revwalk = repo.revwalk()?;
-    revwalk.push_ref(tip)?;
-    revwalk.collect()
+fn collect_history(
+    repo: &impl git::easy::Access,
+    tip: &str,
+) -> anyhow::Result<Vec<git::hash::ObjectId>> {
+    repo.find_reference(tip)?
+        .into_fully_peeled_id()?
+        .ancestors()?
+        .all()
+        .map(|res| res.map(|oid| oid.detach()).map_err(Into::into))
+        .collect()
 }
 
 fn run_ls_refs<R: AsRef<Path>>(remote: R, opt: ls::Options) -> io::Result<Vec<Ref>> {
@@ -225,12 +238,13 @@ fn empty_fetch() {
 
 fn clone_with<R, L, B, P>(remote: R, local: L, build_pack_writer: B)
 where
-    R: AsRef<Path>,
-    L: AsRef<Path>,
+    R: Into<PathBuf>,
+    L: Into<PathBuf>,
     B: FnOnce(Arc<AtomicBool>) -> P,
     P: PackWriter + Send + 'static,
     P::Output: Send + 'static,
 {
+    let (remote, local) = (remote.into(), local.into());
     let refs = run_ls_refs(
         &remote,
         ls::Options {
@@ -255,9 +269,9 @@ where
 
     assert!(out.pack.is_some());
 
-    let remote_repo = git2::Repository::open(remote).unwrap();
+    let mut remote_repo = git::open(remote).unwrap().into_easy_arc_exclusive();
     remote_repo.set_namespace("foo").unwrap();
-    let local_repo = git2::Repository::open(&local).unwrap();
+    let local_repo = git::open(local).unwrap().into_easy();
 
     update_tips(&local_repo, &out.wanted_refs).unwrap();
 
@@ -276,7 +290,7 @@ fn clone_libgit() {
     let local = tempdir().unwrap();
     let local_repo = git2::Repository::init(&local).unwrap();
 
-    clone_with(&remote, &local, move |stop| {
+    clone_with(remote.path(), local.path(), move |stop| {
         packwriter::Libgit::new(packwriter::Options::default(), local_repo, stop)
     })
 }
@@ -285,21 +299,22 @@ fn clone_libgit() {
 fn clone_gitoxide() {
     let remote = upstream();
     let local = tempdir().unwrap();
-    let local_repo = git2::Repository::init(&local).unwrap();
+    let local_repo = git::init(&local).unwrap();
 
-    clone_with(&remote, &local, move |stop| {
+    clone_with(remote.path(), &local.path(), move |stop| {
         packwriter::Standard::new(local_repo.path(), packwriter::Options::default(), stop)
     })
 }
 
 fn thin_pack_with<R, L, B, P>(remote: R, local: L, build_pack_writer: B)
 where
-    R: AsRef<Path>,
-    L: AsRef<Path>,
+    R: Into<PathBuf>,
+    L: Into<PathBuf>,
     B: Fn(Arc<AtomicBool>) -> P,
     P: PackWriter + Send + 'static,
     P::Output: Send + 'static,
 {
+    let (remote, local) = (remote.into(), local.into());
     // Clone main only
     {
         let out = run_fetch(
@@ -317,13 +332,17 @@ where
         assert!(out.pack.is_some());
     }
 
-    let remote_repo = git2::Repository::open(&remote).unwrap();
+    let mut remote_repo = git::open(remote.clone()).unwrap().into_easy_arc_exclusive(); // TODO: use `into_easy()` once GATs have landed
     remote_repo.set_namespace("foo").unwrap();
-    let local_repo = git2::Repository::open(&local).unwrap();
+    let local_repo = git::open(local).unwrap().into_easy_arc_exclusive();
 
     // Fetch next, which is ahead of main
     {
-        let head = remote_repo.refname_to_id("refs/heads/main").unwrap();
+        let head = remote_repo
+            .find_reference("main")
+            .unwrap()
+            .into_fully_peeled_id()
+            .unwrap();
         let out = run_fetch(
             &remote,
             fetch::Options {
@@ -341,6 +360,8 @@ where
         update_tips(&local_repo, &out.wanted_refs).unwrap();
     }
 
+    // Need to refresh it as it didn't notice the new pack
+    local_repo.refresh_object_database().unwrap();
     let remote_history = collect_history(&remote_repo, "refs/heads/next").unwrap();
     let local_history = collect_history(&local_repo, "refs/heads/next").unwrap();
 
@@ -353,7 +374,7 @@ fn thin_pack_libgit() {
     let remote = upstream();
     let local = tempdir().unwrap();
 
-    thin_pack_with(&remote, &local, |stop| {
+    thin_pack_with(remote.path(), local.path(), |stop| {
         let local_repo = git2::Repository::init(&local).unwrap();
         packwriter::Libgit::new(packwriter::Options::default(), local_repo, stop)
     })
@@ -363,10 +384,10 @@ fn thin_pack_libgit() {
 fn thin_pack_gitoxide() {
     let remote = upstream();
     let local = tempdir().unwrap();
-    let local_repo = git2::Repository::init(&local).unwrap();
+    let local_repo = git::init(&local).unwrap();
     let git_dir = local_repo.path().to_owned();
 
-    thin_pack_with(&remote, &local, move |stop| {
+    thin_pack_with(remote.path(), local.path(), move |stop| {
         packwriter::Standard::new(git_dir.clone(), packwriter::Options::default(), stop)
-    })
+    });
 }
