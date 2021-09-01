@@ -174,6 +174,25 @@ pub fn urn_context(local_peer_id: PeerId, urn: Either<Urn, Originates<Urn>>) -> 
     }
 }
 
+#[cfg(feature = "usdt")]
+fn report_have(peer: &PeerId, urn: &Urn) {
+    let p: &str = &peer.default_encoding();
+    let u: &str = &urn.encode_id();
+    crate::usdt::radicle_link::have_recv(p.as_ptr() as *mut _, u.as_ptr() as *mut _);
+}
+
+#[cfg(not(feature = "usdt"))]
+fn report_have(peer: &PeerId, urn: &Urn) { }
+
+#[cfg(feature = "usdt")]
+fn report_want(peer: &Option<PeerId>, urn: &Urn) {
+    let p: &str = &peer.map_or_else(|| "unknown".to_owned(), |o| o.default_encoding());
+    let u: &str = &urn.encode_id();
+    crate::usdt::radicle_link::want_recv(p.as_ptr() as *mut _, u.as_ptr() as *mut _);
+}
+#[cfg(not(feature = "usdt"))]
+fn report_want(peer: &Option<PeerId>, urn: &Urn) { }
+
 #[async_trait]
 impl broadcast::LocalStorage<SocketAddr> for Storage {
     type Update = gossip::Payload;
@@ -186,6 +205,8 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
         use broadcast::PutResult;
 
         let (provider, addr_hints) = provider.into();
+
+        report_have(&provider, &has.urn);
 
         // If the `has` doesn't tell us to look into a specific remote-tracking
         // branch, assume we want the `provider`'s.
@@ -258,6 +279,8 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
 
     #[tracing::instrument(level = "debug", skip(self))]
     async fn ask(&self, want: Self::Update) -> bool {
+        report_want(&want.origin, &want.urn);
+
         self.git_has(
             match want.origin {
                 Some(origin) => Right(Originates {
