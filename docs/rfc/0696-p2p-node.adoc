@@ -1,0 +1,300 @@
+= RFC: Peer-to-peer Node
+:author: @xla
+:revdate: 2021-09-02
+:revremark: accepted
+:toc:
+:toc-placement: preamble
+
+* Author: {author}
+* Date: {revdate}
+* Status: {revremark}
+* Community discussion: n/a
+* Tracking Issue: https://github.com/radicle-dev/radicle-link/issues/722
+
+== Overview
+
+This RFC expands on the peer-to-peer node outlined in <<rfc-0682, RFC 0682>> to
+propose a new stand-alone daemon with focus on driving the p2p stack, exposing a
+minimal API and defer supervision to more integrated and mature system services.
+Furthermore it will prove that all daemons are made equal and only distinct with
+regards to the configuration given (e.g. tracking behaviour) and lifetime of the
+process (i.e. socket-activated or long-running).
+
+It also strives to recommend APIs and mechanisms -- in the form of non-core
+protocols -- which remove the need for online requests made by clients to a
+running node.
+
+== Terminology and Conventions
+
+The key words "`MUST`", "`MUST NOT`", "`REQUIRED`", "`SHALL`", "`SHALL NOT`",
+"`SHOULD`", "`SHOULD NOT`", "`RECOMMENDED`", "`NOT RECOMMENDED`", "`MAY`", and
+"`OPTIONAL`" in this document are to be interpreted as described in <<RFC2119>>
+and <<RFC8174>> when, and only when, they appear in all capitals, as shown here.
+
+CBOR <<RFC8949>> datatype definitions are given using the notation devised in
+CDDL <<RFC8610>>. By convention, `struct`-like datatypes are encoded as CBOR
+maps, where the map key is the zero-based numeric index of the field in
+declaration order.
+
+== Protocols
+
+The main purpose of the node is to operate the core protocol of link currently
+implemented in `librad::net::peer`, which currently consists of holding onto the
+futures du jour and dropping them at opportune moments. Furthermore all
+information in form of synchrounous calls and events obtainable internally via
+the sufficiently space-engineered tincans SHALL be made available.
+
+Besides the core protocol other functionality will be encapsulated in protocols
+which will be driven by a stream of well-defined inputs. The well-defined
+outputs of these protocols are used for effect management.
+
+=== Subroutines
+
+This section expands on the auxiliary routines driven by the node on top of the
+core protocol. Where each SHOULD be allowed to be disabled through configuration.
+A subroutine acts as a reactor driving a protocol by feeding inputs - usually
+results of effects (i/o, timers, etc.) - to it and capturing the outputs to
+schedule new effects (i/o, timers, etc.).
+
+==== Public API
+
+For other processes to be able to talk to the node, it SHALL keep an API
+subroutine running, which offers introspection into its state. See the dedicated
+section for the surface the node will expose.
+
+==== Announcements
+
+Until superseded by <<pr-653, graftier ways>>, currently the main means of
+dissemination is through gossiping new interesting `Have`s. This is achieved by
+maintainig a persisted view on the list of identities and their current refs.
+During periodic runs a delta is created which serves as the basis of the
+announcements. In turn that list is made known to actively connected peers via
+the core protocols gossip.
+
+The delta mechanism works by recording a snapshot of the state of the monorepo,
+specifically the refs, and on the next iteration diffing against the current
+state. Relevant refs from that diff can be used to announce or perform other
+periodic tasks.
+
+==== Replication Requests
+
+The core protocol implicitly tracks projects after replication, and explicitly
+with the `track` operation for remotes in the context of a `Urn`. To enable the
+same approach as for announcements where offline changes to the storage can be
+picked up at any point the node is running and online, this subroutine will
+maintain a persisted view and periodically (potentially provoked by a request
+over the <<API>>) build the delta for new tracked `Urn`s and remotes in their
+context.
+
+Note: A blocking issue for that is
+https://github.com/radicle-dev/radicle-link/issues/141[#141]
+
+==== Tracking
+
+Given the ability to configure a set of urn, peers, both or anything observed
+from connected peers, the node will automatically track and replicate. This
+strategy is currently in use in the seed node and SHALL be preserved.
+
+== API
+
+=== IPC
+
+All communication with daemon processes SHALL occur over UNIX domain sockets in
+`SOCK_STREAM` mode. The socket files MUST be stored in a directory only
+accessible by the logged-in user (typically `$XDG_RUNTIME_DIR`), and have
+permissions `0700` by default. Per-service socket paths are considered "well
+known".
+
+RPC calls over those sockets use <<cbor, CBOR>> for their payload encoding. As
+incremental decoders are not available on all platforms, CBOR-encoded messages
+shall be prepended by their length in bytes, encoded as a 32-bit unsigned
+integer in network byte order.
+
+RPC messages are wrapped in either a `request` or `response` envelope structure
+as defined below:
+
+_Verbatim copy from <<rfc-0682, RFC 0682>> to contextualise the payloads below_
+
+[source,cddl]
+----
+request = [
+    request-headers,
+    ? payload: bstr,
+]
+response = ok / error
+ok = [
+    response-headers,
+    ? payload: bstr,
+]
+error = [
+    response-headers,
+    code: uint,
+    ? message: tstr,
+]
+request-headers = {
+    ua: client-id,
+    rq: request-id,
+    ? token: token,
+}
+response-headers = {
+    rq: request-id,
+}
+; Unambiguous, human-readable string identifying the client application. Mainly
+; for diagnostic purposes. Example: "radicle-link-cli/v1.2+deaf"
+client-id: tstr .size (4..16)
+; Request identifier, choosen by the client. The responder includes the
+; client-supplied value in the response, enabling request pipelining.
+;
+; Note that streaming / multi-valued responses may include the same id in
+; several response messages.
+request-id: bstr .size (4..16)
+
+; Placeholder for future one-time-token support.
+token: bstr
+----
+
+
+=== Request/Response payloads
+
+There is a supported set of requests a daemon will answer to which are as follows:
+
+[source,cddl]
+----
+request = get-connected-peers / get-membership-info / get-stats
+get-connected-peers = [0]
+get-membership-info = [1]
+get-stats = [2]
+
+response = connected-peers / membership-info / stats
+connected-peers = [* peer-id]
+membership-info = {
+  active: [* peer-id],
+  passive: [* peer-id],
+}
+stats = {
+  "connections-total": uint,
+  "membership-active": uint,
+  "membership-passive": uint,
+  * tstr => any
+}
+
+connect-info = [
+  peer_id,
+  [address],
+]
+
+address = address-ipv4 / address-ipv6
+address-ipv4 = [
+  ip4,
+  port,
+]
+address-ipv6 = [
+  ip6,
+  port,
+]
+
+ip4 = bstr .size 4
+ip6 = bstr .size 16
+
+; Canonical representation of a peer.
+peer-id: bstr
+
+; Network port.
+port: uint
+----
+
+All types representing requests and responses and their serialisation logic MUST
+be exposed as linkable libraries. It is RECOMMENDED to also expose the
+functionality to communicate with the node via IPC as a library.
+
+== Operations
+
+=== Supervision
+
+Process supervision SHOULD be deferred to established system level service
+managers i.e. `<<systemd>>` and `<<launchd>>` for Linux and macOS respectively.
+To support both long-running as well as ad-hoc usage the daemon implementation
+SHALL be equipped with the ability to detect and read the information from its
+environment necessary to determine if it has been activated via socket. When
+binding to a socket it SHALL use the file descriptors provided by the init
+process. If none are provided it SHALL assume long-running operation and SHALL
+bind to the well-known path on a UNIX domain socket in mode `SOCK_STREAM` under
+Linux:
+
+  $XDG_RUNTIME_DIR/radicle/<srv>-<peer-id>.sock
+
+macOS:
+
+  $TMPDIR/radicle/<srv>-<peer-id>.sock
+
+Both service managers offer support to fullfil the legacy `inetd` interface.
+Which is deemed insufficient for concerns over security, lack of support for
+UNIX domain sockets and the design focusing on a process per connection.
+
+==== systemd
+
+Socket activation under systemd is passed on via: 
+
+* `LISTEN_PID` - MUST be equal to the PID of the daemon.
+* `LISTEN_FDS` - Number of received file descriptors, starting at 3.
+* `LISTEN_NAMES` - Contains colon-separated list of names corresponding to the
+  `FileDescriptorName` option in the service file.
+
+==== launchd
+
+* `LAUNCH_DAEMON_SOCKET_NAME` - Name of the socket according to the `.plist`
+  configuration file.
+
+The name passed to the process MUST be used to check-in with launchd as
+documented in `launch(3)` which in essence involves obtaining the FDs via
+`launch_activate_socket` expecting a name.
+
+=== Configuration
+
+Common service configuration files SHALL be provided alongside the source code
+of the node binary. To support the semi-dynamic nature of one process per
+profile, facilities to manage services with both systemd and launchd SHALL be
+provided through the CLI and automated together with the profile lifecycle
+management.
+
+The binary SHALL expose all knobs necessary to fine-tune the internal configs of
+the core protocol, i.e. `membership`, `protocol`, `storage`. Additionally,
+any switches and configuration that subroutines require. The configuration surface
+SHALL be exposed as command line arguments, until further evidence is brought
+forward which makes a strong case for external config files.
+
+== Key Access
+
+Access to key material SHALL be done through the facilities provided by
+`<<radicle-keystore>>`. Except for debug/development purpose this SHOULD be
+limited to the use of the `ssh-agent`.
+
+The author assumes that the `rad` CLI provides functionality to manage keys on a
+per profile basis including adding them to a running ssh-agent.
+
+== Future Work
+
+Originally this document included a section outlining PubSub solutions. As it
+affects too many other parts of the overall architecture, specifying it will be
+deferred to a follow-up RFC.
+
+Developers! Developers! Developers! - or how nobody knows what to do with
+Windows. While solutions like WSL are present, it's unclear at this point how/if
+a native solution could look like.
+
+
+[bibliography]
+== References
+
+* [[[cbor]]] https://datatracker.ietf.org/doc/html/rfc8949
+* [[[cddl]]] https://datatracker.ietf.org/doc/html/rfc8610
+* [[[launchd]]] https://en.wikipedia.org/wiki/Launchd
+* [[[radicle-keystore]]] https://github.com/radicle-dev/radicle-keystore/
+* [[[systemd]]] https://systemd.io/
+* [[[pr-653]]] https://github.com/radicle-dev/radicle-link/pull/653
+* [[[rk-17]]] https://github.com/radicle-dev/radicle-keystore/pull/17
+* [[[rfc-0682]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc
+* [[[RFC2219]]] https://datatracker.ietf.org/doc/html/rfc2119
+* [[[RFC8174]]] https://datatracker.ietf.org/doc/html/rfc8174
+* [[[RFC8610]]] https://datatracker.ietf.org/doc/html/rfc8610
+* [[[RFC8949]]] https://datatracker.ietf.org/doc/html/rfc8949
