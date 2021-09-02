@@ -88,7 +88,7 @@ impl From<identities::Error> for Error {
 ///     remote = rad
 ///     merge = refs/heads/master
 /// [include]
-///     path = /home/user/.config/radicle/git-includes/hwd1yrerzpjbmtshsqw6ajokqtqrwaswty6p7kfeer3yt1n76t46iqggzcr.inc
+///     path = /home/user/.config/radicle-link/git-includes/hwd1yrerzpjbmtshsqw6ajokqtqrwaswty6p7kfeer3yt1n76t46iqggzcr.inc
 pub fn checkout<F, I>(
     open_storage: F,
     identity: &I,
