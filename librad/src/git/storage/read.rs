@@ -125,6 +125,12 @@ pub trait ReadOnlyStorage {
         path: &'a Path,
     ) -> Result<Option<git2::Blob<'a>>, Error>;
 
+    fn blob_at<'a>(
+        &'a self,
+        oid: ext::Oid,
+        path: &'a Path,
+    ) -> Result<Option<git2::Blob<'a>>, Error>;
+
     fn remotes(&self) -> Result<StringArray, Error>;
 
     fn has_remote(&self, urn: &Urn, peer: PeerId) -> Result<bool, Error>;
@@ -359,6 +365,20 @@ impl ReadOnlyStorage for ReadOnly {
     ) -> Result<Option<git2::Blob<'a>>, Error> {
         ext::Blob::Tip {
             branch: reference.into(),
+            path,
+        }
+        .get(&self.backend)
+        .map(Some)
+        .or_matches(|e| matches!(e, blob::Error::NotFound(_)), || Ok(None))
+    }
+
+    fn blob_at<'a>(
+        &'a self,
+        oid: ext::Oid,
+        path: &'a Path,
+    ) -> Result<Option<git2::Blob<'a>>, Error> {
+        ext::Blob::At {
+            object: oid.into(),
             path,
         }
         .get(&self.backend)

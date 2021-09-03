@@ -324,6 +324,14 @@ impl ReadOnlyStorage for Storage {
         self.inner.blob(reference, path)
     }
 
+    fn blob_at<'a>(
+        &'a self,
+        oid: ext::Oid,
+        path: &'a Path,
+    ) -> Result<Option<git2::Blob<'a>>, Error> {
+        self.inner.blob_at(oid, path)
+    }
+
     fn remotes(&self) -> Result<StringArray, Error> {
         self.inner.remotes()
     }
