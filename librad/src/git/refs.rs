@@ -495,6 +495,14 @@ impl Signed<Verified> {
     }
 }
 
+impl<V> Deref for Signed<V> {
+    type Target = Refs;
+
+    fn deref(&self) -> &Self::Target {
+        &self.refs
+    }
+}
+
 impl<'de> Deserialize<'de> for Signed<Unverified> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
