@@ -13,7 +13,7 @@ use std::{
     path::Path,
 };
 
-use git_ext::reference;
+use git_ext::{is_not_found_err, reference};
 use link_canonical::{Cjson, CjsonError};
 use serde::{
     de,
@@ -21,6 +21,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use std_ext::result::ResultExt as _;
 use thiserror::Error;
 
 use super::{
@@ -309,30 +310,13 @@ impl Refs {
     ///
     /// If the blob where the signed [`Refs`] are expected to be stored is not
     /// found, `None` is returned.
-    #[tracing::instrument(skip(storage, urn), fields(urn = %urn))]
+    #[tracing::instrument(level = "debug", skip(storage, urn), fields(urn = %urn))]
     pub fn load<S, P>(storage: &S, urn: &Urn, peer: P) -> Result<Option<Self>, stored::Error>
     where
         S: AsRef<storage::ReadOnly>,
         P: Into<Option<PeerId>> + Debug,
     {
-        let storage = storage.as_ref();
-        let peer = peer.into();
-        let signer = peer.unwrap_or_else(|| *storage.peer_id());
-
-        let blob_ref = Reference::rad_signed_refs(Namespace::from(urn), peer);
-        let blob_path = Path::new(stored::BLOB_PATH);
-
-        tracing::debug!(
-            "loading signed_refs from {} {}",
-            &blob_ref,
-            blob_path.display()
-        );
-
-        let maybe_blob = storage.blob(&blob_ref, blob_path)?;
-        maybe_blob
-            .map(|blob| Signed::from_json(blob.content(), &signer).map(|signed| signed.refs))
-            .transpose()
-            .map_err(stored::Error::from)
+        load(storage, urn, peer).map(|may| may.map(|Loaded { refs, .. }| Self::from(refs)))
     }
 
     /// Compute the current [`Refs`], sign them, and store them at the
@@ -583,5 +567,48 @@ impl Serialize for Signed<Verified> {
         state.serialize_field("refs", &self.refs)?;
         state.serialize_field("signature", &self.signature)?;
         state.end()
+    }
+}
+
+pub(crate) struct Loaded {
+    #[allow(unused)]
+    pub at_commit: git_ext::Oid,
+    pub refs: Signed<Verified>,
+}
+
+pub(crate) fn load<S, P>(storage: &S, urn: &Urn, peer: P) -> Result<Option<Loaded>, stored::Error>
+where
+    S: AsRef<storage::ReadOnly>,
+    P: Into<Option<PeerId>> + Debug,
+{
+    let storage = storage.as_ref();
+    let peer = peer.into();
+    let signer = peer.unwrap_or_else(|| *storage.peer_id());
+
+    let sigrefs = Reference::rad_signed_refs(Namespace::from(urn), peer);
+    let at = storage.reference_oid(&sigrefs).map(Some).or_matches(
+        |e| matches!(e, storage::read::Error::Git(e) if is_not_found_err(e)),
+        || Ok::<_, storage::read::Error>(None),
+    )?;
+    match at {
+        None => Ok(None),
+        Some(at_commit) => {
+            let path = Path::new(stored::BLOB_PATH);
+
+            tracing::debug!(
+                "loading signed_refs from {}:{} {}",
+                &sigrefs,
+                &at_commit,
+                path.display()
+            );
+
+            let maybe_refs = storage
+                .blob_at(at_commit, path)?
+                .map(|blob| Signed::from_json(blob.content(), &signer))
+                .transpose()
+                .map_err(stored::Error::from)?;
+
+            Ok(maybe_refs.map(|refs| Loaded { at_commit, refs }))
+        },
     }
 }
