@@ -8,7 +8,10 @@ use std::time::Duration;
 use librad::{net::protocol::event::downstream::MembershipInfo, PeerId};
 use thiserror::Error;
 use tokio::{
-    sync::{mpsc, oneshot},
+    sync::{
+        mpsc::{self, error::TrySendError},
+        oneshot,
+    },
     time,
 };
 
@@ -21,14 +24,26 @@ pub enum NodeError {
     #[error("request response failed")]
     RequestResponseFailed(#[from] oneshot::error::RecvError),
 
-    #[error("request send failed")]
-    RequestSendFailed,
+    #[error("request send failed: channel full")]
+    RequestSendFailedChannelFull,
+
+    #[error("request send failed: channel closed")]
+    RequestSendFailedChannelClosed,
 
     #[error("request failed: the node disconnected")]
     RequestFailed,
 
     #[error("request timed out")]
     RequestTimeout(#[from] time::error::Elapsed),
+}
+
+impl NodeError {
+    fn from_send_error<T>(try_send_error: TrySendError<T>) -> Self {
+        match try_send_error {
+            TrySendError::Full(_) => Self::RequestSendFailedChannelFull,
+            TrySendError::Closed(_) => Self::RequestSendFailedChannelClosed,
+        }
+    }
 }
 
 /// Handle used to interact with the seed node.
@@ -46,7 +61,7 @@ impl NodeHandle {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::GetMembership(tx))
-            .map_err(|_| NodeError::RequestSendFailed)?;
+            .map_err(NodeError::from_send_error)?;
 
         time::timeout(self.timeout, rx)
             .await?
@@ -58,7 +73,7 @@ impl NodeHandle {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::GetProjects(tx))
-            .map_err(|_| NodeError::RequestSendFailed)?;
+            .map_err(NodeError::from_send_error)?;
 
         time::timeout(self.timeout, rx)
             .await?
@@ -70,7 +85,7 @@ impl NodeHandle {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::GetPeers(tx))
-            .map_err(|_| NodeError::RequestSendFailed)?;
+            .map_err(NodeError::from_send_error)?;
 
         time::timeout(self.timeout, rx)
             .await?
