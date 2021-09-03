@@ -450,6 +450,19 @@ impl Remote<LocalUrl> {
     /// This is not currently panic safe -- ie. if the closure panics, we might
     /// leak the temporary remote. Also, no effort is made to ensure a
     /// remote can safely be used concurrently.
+    ///
+    /// # Note
+    ///
+    /// `remote_delete` will remove all matching references in its refspecs
+    /// for its `fetch` and `push` entries. For example, if the refspec was
+    /// `refs/heads/foo/*`, when we delete the remote, all references under
+    /// `heads/foo` will be removed. This is not desirable here because we are
+    /// creating the temporary remote to persist references fetched. There is no
+    /// API for removing an entire section of a git config so we do the
+    /// removal in piece-meal fashion. First we remove the entries for
+    /// `fetch` and `push`, followed by a call to `remote_delete`. The
+    /// temporary remote is thus removed from the config file, the original
+    /// is left untouched, and the references we fetched are persisted.
     fn with_tmp_copy<F, A>(&mut self, repo: &git2::Repository, f: F) -> Result<A, git2::Error>
     where
         F: FnOnce(&mut Self) -> A,
@@ -460,6 +473,15 @@ impl Remote<LocalUrl> {
         tracing::debug!("creating temporary remote {}", self.name);
         self.save(repo).unwrap();
         let res = f(self);
+        {
+            let mut config = repo.config()?;
+            config
+                .remove_multivar(&format!("remote.{}.fetch", self.name), ".*")
+                .or_matches::<git2::Error, _, _>(is_not_found_err, || Ok(()))?;
+            config
+                .remove_multivar(&format!("remote.{}.push", self.name), ".*")
+                .or_matches::<git2::Error, _, _>(is_not_found_err, || Ok(()))?;
+        }
         let deleted = repo.remote_delete(self.name.as_str());
         self.name = orig_name;
         self.url = orig_url;
