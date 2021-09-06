@@ -15,3 +15,11 @@ structopt = "0.3"
 
 [dependencies.librad]
 path = "../librad"
+
+[dependencies.rad-profile]
+path = "../rad-profile"
+
+[dependencies.thrussh-agent]
+git = "https://github.com/FintanH/thrussh"
+branch = "generic-agent"
+default-features = false

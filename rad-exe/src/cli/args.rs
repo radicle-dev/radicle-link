@@ -39,9 +39,8 @@ pub struct Args {
 
 #[derive(Debug, StructOpt)]
 pub enum Command {
-    /// This is just a stub, sshhhh
-    // TODO(finto): Fill in core commands
-    Profile,
+    /// Manage your Radicle profiles
+    Profile(rad_profile::cli::args::Args),
     #[structopt(external_subcommand)]
     External(Vec<String>),
 }

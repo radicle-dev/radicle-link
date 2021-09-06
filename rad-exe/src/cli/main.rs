@@ -9,16 +9,17 @@ use std::{
 };
 
 use structopt::StructOpt;
+use thrussh_agent::client::ClientStream;
 
 use super::args::{self, sanitise_globals, Args};
 
-pub fn main() -> anyhow::Result<()> {
+pub async fn main<S>() -> anyhow::Result<()>
+where
+    S: ClientStream + Unpin + 'static,
+{
     let args = sanitise_globals(Args::from_args());
     match args.command {
-        args::Command::Profile => {
-            println!("whoops, this is in beta");
-            Ok(())
-        },
+        args::Command::Profile(args) => rad_profile::cli::main::<S>(args).await,
         args::Command::External(external) => {
             let exe = external.first();
             match exe {
