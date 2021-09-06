@@ -29,6 +29,9 @@ pub enum NotFound {
     #[error("branch {0} not found")]
     NoSuchBranch(String),
 
+    #[error("object {0} not found")]
+    NoSuchObject(git2::Oid),
+
     #[error("the supplied git2::Reference does not have a target")]
     NoRefTarget,
 }
@@ -56,9 +59,19 @@ impl<'a> From<git2::Reference<'a>> for Branch<'a> {
     }
 }
 
+/// Conveniently read a [`git2::Blob`] from a starting point.
 pub enum Blob<'a> {
+    /// Look up the tip of the reference specified by [`Branch`], peel until a
+    /// tree is found, and traverse the tree along the given [`Path`] until
+    /// the blob is found.
     Tip { branch: Branch<'a>, path: &'a Path },
+    /// Traverse the history from the tip of [`Branch`] along the first parent
+    /// until a commit without parents is found. Try to get the blob in that
+    /// commit's tree at [`Path`].
     Init { branch: Branch<'a>, path: &'a Path },
+    /// Look up `object`, peel until a tree is found, and try to get at the blob
+    /// at [`Path`].
+    At { object: git2::Oid, path: &'a Path },
 }
 
 impl<'a> Blob<'a> {
@@ -103,6 +116,16 @@ impl<'a> Blob<'a> {
                         blob(git, tree, path)
                     },
                 }
+            },
+
+            Self::At { object, path } => {
+                let tree = git
+                    .find_object(object, None)
+                    .or_matches(is_not_found_err, || {
+                        Err(Error::NotFound(NotFound::NoSuchObject(object)))
+                    })
+                    .and_then(|obj| Ok(obj.peel_to_tree()?))?;
+                blob(git, tree, path)
             },
         }
     }
