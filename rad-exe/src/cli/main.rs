@@ -17,8 +17,11 @@ pub async fn main<S>() -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
-    let args = sanitise_globals(Args::from_args());
-    match args.command {
+    let global = sanitise_globals(Args::from_args());
+    match global.command {
+        args::Command::Identities(args) => {
+            rad_identities::cli::main::<S>(args, global.rad_profile).await
+        },
         args::Command::Profile(args) => rad_profile::cli::main::<S>(args).await,
         args::Command::External(external) => {
             let exe = external.first();

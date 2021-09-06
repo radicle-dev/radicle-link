@@ -16,6 +16,9 @@ structopt = "0.3"
 [dependencies.librad]
 path = "../librad"
 
+[dependencies.rad-identities]
+path = "../rad-identities"
+
 [dependencies.rad-profile]
 path = "../rad-profile"
 
