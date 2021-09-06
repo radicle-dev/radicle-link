@@ -1,7 +1,7 @@
 [package]
-name = "link-clib"
+name = "rad-clib"
 version = "0.1.0"
-authors = ["The Radicle Team <dev@radicle.xyz>"]
+authors = ["Fintan Halpenny fintan.halpenny@gmail.com"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 

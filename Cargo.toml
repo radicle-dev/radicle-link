@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "clib",
   "copy",
   "daemon",
   "data",
@@ -14,6 +13,7 @@ members = [
   "link-git-protocol",
   "link-identities",
   "macros",
+  "rad-clib",
   "rad-exe",
   "rad-profile",
   "seed",
