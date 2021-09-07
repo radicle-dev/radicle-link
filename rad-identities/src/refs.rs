@@ -14,7 +14,7 @@ use librad::{
         types::Namespace,
         Urn,
     },
-    git_ext::{self as ext, OneLevel, RefLike},
+    git_ext::{self as ext, reference, OneLevel},
     reflike,
     refspec_pattern,
     PeerId,
@@ -79,27 +79,23 @@ where
 {
     let peer = peer.into();
     let namespace = Namespace::from(urn);
-    let namespace_prefix = reflike!("refs/namespaces").join(namespace);
+    let namespace_prefix = format!("refs/namespaces/{}/", namespace);
 
-    // TODO(finto): this is cribbed from refs, maybe we could deduplicate
-    fn peeled(r: Result<git2::Reference, storage::Error>) -> Option<(String, git2::Oid)> {
-        r.ok().and_then(|head| {
-            head.name()
-                .and_then(|name| head.target().map(|target| (name.to_owned(), target)))
-        })
-    }
-
+    let peeled = |head: Result<git2::Reference, _>| -> Option<(String, git2::Oid)> {
+        head.ok().and_then(reference::peeled)
+    };
     let refined =
         |(name, oid): (String, git2::Oid)| -> Result<(OneLevel, ext::Oid), refs::stored::Error> {
-            let name = RefLike::try_from(
-                name.strip_prefix(namespace_prefix.as_str())
-                    .unwrap_or(&name),
-            )?;
-            Ok((OneLevel::from(name), oid.into()))
+            Ok(reference::refined((
+                name.strip_prefix(&namespace_prefix).unwrap_or(&name),
+                oid,
+            ))?)
         };
 
+    let namespace_prefix =
+        ext::RefLike::try_from(namespace_prefix.clone()).map_err(refs::stored::Error::from)?;
     let reference = match peer {
-        None => namespace_prefix.clone(),
+        None => namespace_prefix,
         Some(peer) => namespace_prefix.join(reflike!("refs/remotes")).join(peer),
     };
     let reference = reference

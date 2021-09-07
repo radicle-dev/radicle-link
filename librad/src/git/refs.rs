@@ -5,7 +5,6 @@
 
 use std::{
     collections::{btree_map, BTreeMap},
-    convert::TryFrom,
     fmt::{self, Debug},
     iter::FromIterator,
     marker::PhantomData,
@@ -248,20 +247,14 @@ impl Refs {
         let namespace = Namespace::from(urn);
         let namespace_prefix = format!("refs/namespaces/{}/", namespace);
 
-        fn peeled(r: Result<git2::Reference, storage::Error>) -> Option<(String, git2::Oid)> {
-            r.ok().and_then(|head| {
-                head.name()
-                    .and_then(|name| head.target().map(|target| (name.to_owned(), target)))
-            })
-        }
-
-        let refined = |(name, oid): (String, git2::Oid)|
-             -> Result<(reference::OneLevel, Oid), stored::Error>
-        {
-            let name = reference::RefLike::try_from(
-                name.strip_prefix(&namespace_prefix).unwrap_or(&name)
-            )?;
-            Ok((reference::OneLevel::from(name), oid.into()))
+        let peeled = |head: Result<git2::Reference, _>| -> Option<(String, git2::Oid)> {
+            head.ok().and_then(reference::peeled)
+        };
+        let refined = |(name, oid): (String, git2::Oid)| -> Result<(reference::OneLevel, Oid), stored::Error> {
+            Ok(reference::refined((
+                name.strip_prefix(&namespace_prefix).unwrap_or(&name),
+                oid,
+            ))?)
         };
 
         let heads = storage
