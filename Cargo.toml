@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "copy",
   "daemon",
   "data",
   "e2e",
