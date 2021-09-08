@@ -18,8 +18,8 @@ structopt = "0.3"
 [dependencies.librad]
 path = "../librad"
 
-[dependencies.link-clib]
-path = "../clib"
+[dependencies.rad-clib]
+path = "../rad-clib"
 
 [dependencies.thrussh-agent]
 git = "https://github.com/FintanH/thrussh"

@@ -21,7 +21,7 @@ use librad::{
     paths::Paths,
     profile::{self, Profile, ProfileId, RadHome},
 };
-use link_clib::keys;
+use rad_clib::keys;
 
 pub mod cli;
 
