@@ -320,6 +320,10 @@ where
             .map(serde_json::from_value)
             .transpose()
     }
+
+    pub fn exts(&self) -> impl Iterator<Item = (&Url, &serde_json::Value)> {
+        self.ext.iter()
+    }
 }
 
 impl<T> serde::Serialize for Payload<T>
