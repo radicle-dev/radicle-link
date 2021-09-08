@@ -15,7 +15,7 @@ use librad::{
         types::{Namespace, Reference},
         Urn,
     },
-    identities::payload::PersonPayload,
+    identities::payload,
     profile::Profile,
     PeerId,
 };
@@ -35,8 +35,9 @@ where
             urn,
             whoami,
             payload,
+            ext,
             delegations,
-        }) => eval_update::<S>(profile, urn, whoami, payload, delegations).await?,
+        }) => eval_update::<S>(profile, urn, whoami, payload, ext, delegations).await?,
         Options::Checkout(Checkout { urn, path, peer }) => {
             eval_checkout::<S>(profile, urn, path, peer).await?
         },
@@ -53,18 +54,20 @@ where
     let (signer, storage) = ssh::storage::<S>(profile).await?;
     let paths = profile.paths();
     let person = match create {
-        Create::New(New { payload, path }) => person::create(
+        Create::New(New { payload, ext, path }) => person::create(
             &storage,
             paths.clone(),
             signer,
             payload,
+            ext,
             person::Creation::New { path },
         )?,
-        Create::Existing(Existing { payload, path }) => person::create(
+        Create::Existing(Existing { payload, ext, path }) => person::create(
             &storage,
             paths.clone(),
             signer,
             payload,
+            ext,
             person::Creation::Existing { path },
         )?,
     };
@@ -96,14 +99,22 @@ async fn eval_update<S>(
     profile: &Profile,
     urn: Urn,
     whoami: Option<Urn>,
-    payload: Option<PersonPayload>,
+    payload: Option<payload::Person>,
+    ext: Vec<payload::Ext<serde_json::Value>>,
     delegations: Vec<PublicKey>,
 ) -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
     let (_, storage) = ssh::storage::<S>(profile).await?;
-    let person = person::update(&storage, &urn, whoami, payload, delegations.into_iter())?;
+    let person = person::update(
+        &storage,
+        &urn,
+        whoami,
+        payload,
+        ext,
+        delegations.into_iter(),
+    )?;
     println!("{}", serde_json::to_string(person.payload())?);
     Ok(())
 }

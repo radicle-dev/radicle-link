@@ -12,7 +12,7 @@ use librad::{
     git::Urn,
     identities::{
         git::Revision,
-        payload::{KeyOrUrn, PersonPayload, ProjectPayload},
+        payload::{self, KeyOrUrn, ProjectPayload},
     },
     PeerId,
 };
@@ -207,7 +207,11 @@ pub mod project {
 pub mod person {
     use super::*;
 
-    fn person_payload(value: &str) -> Result<PersonPayload, String> {
+    fn person_payload(value: &str) -> Result<payload::Person, String> {
+        serde_json::from_str(value).map_err(|err| err.to_string())
+    }
+
+    fn ext_payload(value: &str) -> Result<payload::Ext<serde_json::Value>, String> {
         serde_json::from_str(value).map_err(|err| err.to_string())
     }
 
@@ -243,10 +247,14 @@ pub mod person {
     /// specified
     #[derive(Debug, StructOpt)]
     pub struct New {
-        /// the payload to create a person. The `name` field is expected, along
-        /// with any extensions defined by the upstream application.
+        /// the payload to create a person. The `name` field is expected
         #[structopt(long, parse(try_from_str = person_payload))]
-        pub payload: PersonPayload,
+        pub payload: payload::Person,
+        #[structopt(long, parse(try_from_str = ext_payload))]
+        /// provide a list of extensions to extend the payload. The extension
+        /// must be a JSON object consisting of a namespace URL and the extended
+        /// JSON payload
+        pub ext: Vec<payload::Ext<serde_json::Value>>,
         /// the path where the working copy should be created
         #[structopt(long)]
         pub path: Option<PathBuf>,
@@ -258,7 +266,12 @@ pub mod person {
         /// the payload to create a person. The `name` field is expected, along
         /// with any extensions defined by the upstream application.
         #[structopt(long, parse(try_from_str = person_payload))]
-        pub payload: PersonPayload,
+        pub payload: payload::Person,
+        /// provide a list of extensions to extend the payload. The extension
+        /// must be a JSON object consisting of a namespace URL and the extended
+        /// JSON payload
+        #[structopt(long, parse(try_from_str = ext_payload))]
+        pub ext: Vec<payload::Ext<serde_json::Value>>,
         /// the path where the working copy should be created
         #[structopt(long)]
         pub path: PathBuf,
@@ -288,7 +301,12 @@ pub mod person {
         #[structopt(long)]
         pub whoami: Option<Urn>,
         #[structopt(long, parse(try_from_str = person_payload))]
-        pub payload: Option<PersonPayload>,
+        pub payload: Option<payload::Person>,
+        /// provide a list of extensions to extend the payload. The extension
+        /// must be a JSON object consisting of a namespace URL and the extended
+        /// JSON payload
+        #[structopt(long, parse(try_from_str = ext_payload))]
+        pub ext: Vec<payload::Ext<serde_json::Value>>,
         #[structopt(long, parse(try_from_str = direct_delegation))]
         pub delegations: Vec<PublicKey>,
     }

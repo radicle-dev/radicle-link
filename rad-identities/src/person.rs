@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom as _, fmt, path::PathBuf};
+use std::{convert::TryFrom as _, path::PathBuf};
 
 use thiserror::Error;
 
@@ -16,7 +16,10 @@ use librad::{
         types::{Namespace, Reference},
         Urn,
     },
-    identities::{delegation::Direct, payload::PersonPayload},
+    identities::{
+        delegation::Direct,
+        payload::{self, PersonPayload},
+    },
     paths::Paths,
     PeerId,
 };
@@ -27,6 +30,9 @@ use crate::git::{self, checkout, include};
 pub enum Error {
     #[error(transparent)]
     Checkout(#[from] checkout::Error),
+
+    #[error(transparent)]
+    Ext(#[from] payload::ExtError),
 
     #[error(transparent)]
     Identities(#[from] identities::Error),
@@ -43,17 +49,22 @@ pub enum Creation {
     Existing { path: PathBuf },
 }
 
-pub fn create<P>(
+pub fn create<T>(
     storage: &Storage,
     paths: Paths,
     signer: BoxedSigner,
-    payload: P,
+    payload: payload::Person,
+    ext: Vec<payload::Ext<T>>,
     creation: Creation,
 ) -> anyhow::Result<Person>
 where
-    P: Into<PersonPayload> + fmt::Debug,
+    T: serde::Serialize,
 {
-    let payload = payload.into();
+    let mut payload = PersonPayload::new(payload);
+    for e in ext.into_iter() {
+        payload.set_ext(e)?;
+    }
+
     let key = *storage.peer_id().as_public_key();
     let delegations: Direct = Some(key).into_iter().collect();
 
@@ -99,16 +110,36 @@ where
     Ok(crate::any::list(storage, |i| i.person())?)
 }
 
-pub fn update<P>(
+pub fn update(
     storage: &Storage,
     urn: &Urn,
     whoami: Option<Urn>,
-    payload: P,
+    payload: Option<payload::Person>,
+    mut ext: Vec<payload::Ext<serde_json::Value>>,
     delegations: impl Iterator<Item = PublicKey>,
-) -> Result<Person, Error>
-where
-    P: Into<Option<PersonPayload>> + fmt::Debug,
-{
+) -> Result<Person, Error> {
+    let old =
+        person::verify(storage, urn)?.ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
+    let mut old_payload = old.payload().clone();
+    let payload = match payload {
+        None => {
+            for e in ext {
+                old_payload.set_ext(e)?;
+            }
+            old_payload
+        },
+        Some(payload) => {
+            let mut payload = payload::PersonPayload::new(payload);
+            ext.extend(old_payload.exts().map(|(url, val)| payload::Ext {
+                namespace: url.clone(),
+                val: val.clone(),
+            }));
+            for e in ext {
+                payload.set_ext(e)?;
+            }
+            payload
+        },
+    };
     let whoami = whoami
         .and_then(|me| identities::local::load(storage, me).transpose())
         .transpose()?;
@@ -116,7 +147,7 @@ where
         storage,
         urn,
         whoami,
-        payload,
+        Some(payload),
         Some(delegations.collect()),
     )?)
 }
