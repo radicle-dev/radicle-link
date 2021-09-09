@@ -23,29 +23,13 @@ pin-project = "1.0.7"
 tempfile = "3.2.0"
 versions = "3.0.2"
 
-[dependencies.git-features]
-version = "0.16.1"
-
-[dependencies.git-hash]
-version = "0.6.0"
-
-[dependencies.git-odb]
-version = "0.21.0"
-
-[dependencies.git-pack]
-version = "0.10.0"
+[dependencies.git-repository]
+version = "0.9.0"
+features = [ "async-network-client", "unstable" ]
 
 [dependencies.git-packetline]
 version = "0.10.0"
 features = ["async-io"]
-
-[dependencies.git-protocol]
-version = "0.10.0"
-features = ["async-client"]
-
-[dependencies.git-transport]
-version = "0.11.0"
-features = ["async-client"]
 
 [dependencies.git2]
 version = "=0.13.20"

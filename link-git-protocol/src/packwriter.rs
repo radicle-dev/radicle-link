@@ -13,7 +13,7 @@ use std::{
 };
 
 use futures_lite::io::{AsyncBufRead, BlockOn};
-use git_features::progress::Progress;
+use git_repository::{odb::pack, Progress};
 
 use crate::take::TryTake;
 
@@ -22,8 +22,9 @@ pub use libgit::Libgit;
 
 /// What to do with the `packfile` response.
 ///
-/// _This is mostly the same as [`git_protocol::fetch::Delegate`], but without
-/// incurring the [`git_protocol::fetch::DelegateBlocking`] super-trait
+/// _This is mostly the same as [`git_repository::protocol::fetch::Delegate`],
+/// but without incurring the
+/// [`git_repository::protocol::fetch::DelegateBlocking`] super-trait
 /// constraint. We can simply make [`crate::fetch::Fetch`] parametric over the
 /// packfile sink._
 pub trait PackWriter {
@@ -137,7 +138,7 @@ pub mod libgit {
     }
 }
 
-pub type PackReceived = git_pack::bundle::write::Outcome;
+pub type PackReceived = pack::bundle::write::Outcome;
 
 /// The default [`PackWriter`].
 ///
@@ -173,8 +174,11 @@ impl PackWriter for Standard {
         pack: impl AsyncBufRead + Unpin,
         prog: impl Progress,
     ) -> io::Result<Self::Output> {
-        use git_odb::{linked::Store, FindExt as _};
-        use git_pack::{bundle::write::Options, data::input::Mode, index::Version, Bundle};
+        use git_repository::odb::{
+            linked::Store,
+            pack::{bundle::write::Options, data::input::Mode, index::Version, Bundle},
+            FindExt as _,
+        };
 
         let odb =
             Store::at(self.git_dir.clone()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
@@ -189,7 +193,7 @@ impl PackWriter for Standard {
             prog,
             &self.stop,
             Some(Box::new(move |oid, buf| {
-                odb.find(oid, buf, &mut git_pack::cache::Never).ok()
+                odb.find(oid, buf, &mut pack::cache::Never).ok()
             })),
             opts,
         )

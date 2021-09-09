@@ -13,6 +13,9 @@ use std::{
 use multihash::{Multihash, MultihashRef};
 use thiserror::Error;
 
+#[cfg(feature = "git-repository")]
+use git_repository::hash as git_hash;
+
 /// Serializable [`git2::Oid`]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Oid(git2::Oid);
@@ -113,7 +116,7 @@ impl AsRef<[u8]> for Oid {
     }
 }
 
-#[cfg(feature = "git-hash")]
+#[cfg(feature = "git-repository")]
 impl AsRef<git_hash::oid> for Oid {
     fn as_ref(&self) -> &git_hash::oid {
         // SAFETY: checks the length of the slice, which we know is correct
@@ -133,7 +136,7 @@ impl From<Oid> for git2::Oid {
     }
 }
 
-#[cfg(feature = "git-hash")]
+#[cfg(feature = "git-repository")]
 impl From<git_hash::ObjectId> for Oid {
     fn from(git_hash::ObjectId::Sha1(bs): git_hash::ObjectId) -> Self {
         // SAFETY: checks the length of the slice, which we statically know
@@ -141,14 +144,14 @@ impl From<git_hash::ObjectId> for Oid {
     }
 }
 
-#[cfg(feature = "git-hash")]
+#[cfg(feature = "git-repository")]
 impl From<Oid> for git_hash::ObjectId {
     fn from(oid: Oid) -> Self {
         Self::from_20_bytes(oid.as_ref())
     }
 }
 
-#[cfg(feature = "git-hash")]
+#[cfg(feature = "git-repository")]
 impl<'a> From<&'a Oid> for &'a git_hash::oid {
     fn from(oid: &'a Oid) -> Self {
         oid.as_ref()

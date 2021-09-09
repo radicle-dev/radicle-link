@@ -20,21 +20,18 @@ use futures_lite::{
     future,
     io::{AsyncBufRead, AsyncRead, AsyncWrite},
 };
-use git_features::progress::{self, Progress};
-use git_protocol::fetch::{
-    response,
-    Action,
-    Arguments,
-    Delegate,
-    DelegateBlocking,
-    LsRefsAction,
-    Response,
+use git_repository::{
+    progress,
+    protocol::{
+        self,
+        fetch::{response, Action, Arguments, Delegate, DelegateBlocking, LsRefsAction, Response},
+        transport::client,
+    },
+    Progress,
 };
-use git_transport::client;
 use pin_project::{pin_project, pinned_drop};
 
-pub use git_hash::ObjectId;
-pub use git_protocol::fetch::Ref;
+pub use git_repository::{hash::ObjectId, protocol::fetch::Ref};
 
 use crate::{packwriter::PackWriter, transport};
 
@@ -123,7 +120,7 @@ impl<P: PackWriter> DelegateBlocking for Fetch<P, P::Output> {
 
     fn prepare_fetch(
         &mut self,
-        _: git_transport::Protocol,
+        _: protocol::transport::Protocol,
         caps: &client::Capabilities,
         _: &mut Vec<(&str, Option<&str>)>,
         _: &[Ref],
@@ -250,12 +247,12 @@ where
 
         move || {
             let mut delegate = Fetch::new(opt, pack_writer);
-            future::block_on(git_protocol::fetch(
+            future::block_on(protocol::fetch(
                 &mut conn,
                 &mut delegate,
                 |_| unreachable!("credentials helper requested"),
                 progress::Discard,
-                git_protocol::FetchConnection::AllowReuse,
+                protocol::FetchConnection::AllowReuse,
             ))
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 

@@ -7,13 +7,19 @@ use std::io;
 
 use bstr::{BString, ByteVec as _};
 use futures_lite::io::{AsyncBufRead, AsyncRead, AsyncWrite};
-use git_features::progress::{self, Progress};
-use git_protocol::fetch::{Action, Arguments, Delegate, DelegateBlocking, LsRefsAction, Response};
-use git_transport::client;
+use git_repository::{
+    progress,
+    protocol::{
+        self,
+        fetch::{Action, Arguments, Delegate, DelegateBlocking, LsRefsAction, Response},
+        transport::client,
+    },
+    Progress,
+};
 use once_cell::sync::Lazy;
 use versions::Version;
 
-pub use git_protocol::fetch::Ref;
+pub use git_repository::protocol::fetch::Ref;
 
 use crate::{remote_git_version, transport};
 
@@ -93,7 +99,7 @@ impl DelegateBlocking for LsRefs {
 
     fn prepare_fetch(
         &mut self,
-        _: git_transport::Protocol,
+        _: protocol::transport::Protocol,
         _: &client::Capabilities,
         _: &mut Vec<(&str, Option<&str>)>,
         refs: &[Ref],
@@ -132,12 +138,12 @@ where
 {
     let mut conn = transport::Stateless::new(opt.repo.clone(), recv, send);
     let mut delegate = LsRefs::new(opt);
-    git_protocol::fetch(
+    git_repository::protocol::fetch(
         &mut conn,
         &mut delegate,
         |_| unreachable!("credentials helper requested"),
         progress::Discard,
-        git_protocol::FetchConnection::AllowReuse,
+        protocol::FetchConnection::AllowReuse,
     )
     .await
     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;

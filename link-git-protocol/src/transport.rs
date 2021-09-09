@@ -5,7 +5,7 @@
 
 use bstr::BString;
 use futures_lite::io::{AsyncRead, AsyncWrite};
-use git_transport::{
+use git_repository::protocol::transport::{
     client::{
         self,
         git::{ConnectMode, Connection},

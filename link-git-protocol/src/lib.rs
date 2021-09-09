@@ -7,7 +7,7 @@
 extern crate async_trait;
 
 use bstr::ByteSlice as _;
-use git_transport::client;
+use git_repository::protocol::transport::client;
 use versions::Version;
 
 pub mod fetch;
