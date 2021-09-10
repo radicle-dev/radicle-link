@@ -74,11 +74,17 @@ features = ["git2"]
 [dependencies.node-lib]
 path = "../node-lib"
 
+[dependencies.rad-clib]
+path = "../rad-clib"
+
 [dependencies.rad-exe]
 path = "../rad-exe"
 
 [dependencies.rad-identities]
 path = "../rad-identities"
+
+[dependencies.rad-profile]
+path = "../rad-profile"
 
 [dependencies.radicle-daemon]
 path = "../daemon"
@@ -97,6 +103,10 @@ features = [ "small_rng" ]
 [dependencies.rustls]
 version  = "0.19"
 features = ["logging", "dangerous_configuration"]
+
+[dependencies.thrussh-agent]
+git = "https://github.com/FintanH/thrussh"
+branch = "generic-agent"
 
 [dependencies.zeroize]
 version = "1.1"

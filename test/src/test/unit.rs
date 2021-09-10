@@ -8,5 +8,6 @@ mod git_trailers;
 mod librad;
 mod link_git_protocol;
 mod node_lib;
+mod rad_clib;
 mod rad_exe;
 mod rad_identities;
