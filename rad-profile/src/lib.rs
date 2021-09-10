@@ -64,12 +64,13 @@ where
 }
 
 /// Initialise a [`Profile`], generating a new [`SecretKey`] and [`Storage`].
-pub fn create<C: Crypto>(crypto: C) -> Result<(Profile, PeerId), Error>
+pub fn create<H, C: Crypto>(home: H, crypto: C) -> Result<(Profile, PeerId), Error>
 where
+    H: Into<Option<RadHome>>,
     C::Error: fmt::Debug + fmt::Display + Send + Sync + 'static,
     C::SecretBox: Serialize + DeserializeOwned,
 {
-    let home = RadHome::default();
+    let home = home.into().unwrap_or_default();
     let profile = Profile::new(&home)?;
     Profile::set(&home, profile.id().clone())?;
     let key = SecretKey::new();
@@ -81,8 +82,11 @@ where
 }
 
 /// Get the current active `ProfileId`.
-pub fn get(id: Option<ProfileId>) -> Result<Option<Profile>, Error> {
-    let home = RadHome::default();
+pub fn get<H>(home: H, id: Option<ProfileId>) -> Result<Option<Profile>, Error>
+where
+    H: Into<Option<RadHome>>,
+{
+    let home = home.into().unwrap_or_default();
     match id {
         Some(id) => Profile::get(&home, id).map_err(Error::from),
         None => Profile::active(&home).map_err(Error::from),
@@ -90,46 +94,60 @@ pub fn get(id: Option<ProfileId>) -> Result<Option<Profile>, Error> {
 }
 
 /// Set the active profile to the given `ProfileId`.
-pub fn set(id: ProfileId) -> Result<(), Error> {
-    let home = RadHome::default();
+pub fn set<H>(home: H, id: ProfileId) -> Result<(), Error>
+where
+    H: Into<Option<RadHome>>,
+{
+    let home = home.into().unwrap_or_default();
     Profile::set(&home, id).map_err(Error::from).map(|_| ())
 }
 
 /// List the set of active profiles that exist.
-pub fn list() -> Result<Vec<Profile>, Error> {
-    let home = RadHome::default();
+pub fn list<H>(home: H) -> Result<Vec<Profile>, Error>
+where
+    H: Into<Option<RadHome>>,
+{
+    let home = home.into().unwrap_or_default();
     Profile::list(&home).map_err(Error::from)
 }
 
 /// Get the `PeerId` associated to the given [`ProfileId`]
-pub fn peer_id<P>(id: P) -> Result<PeerId, Error>
+pub fn peer_id<H, P>(home: H, id: P) -> Result<PeerId, Error>
 where
+    H: Into<Option<RadHome>>,
     P: Into<Option<ProfileId>>,
 {
-    let home = RadHome::default();
+    let home = home.into().unwrap_or_default();
     let profile = get_or_active(&home, id)?;
     let read = ReadOnly::open(profile.paths())?;
     Ok(*read.peer_id())
 }
 
-pub fn paths<P>(id: P) -> Result<Paths, Error>
+pub fn paths<H, P>(home: H, id: P) -> Result<Paths, Error>
 where
+    H: Into<Option<RadHome>>,
     P: Into<Option<ProfileId>>,
 {
-    let home = RadHome::default();
+    let home = home.into().unwrap_or_default();
     get_or_active(&home, id).map(|p| p.paths().clone())
 }
 
 /// Add a profile's [`SecretKey`] to the `ssh-agent`.
-pub fn ssh_add<S, P, C>(id: P, crypto: C, constraints: &[Constraint]) -> Result<ProfileId, Error>
+pub fn ssh_add<S, H, P, C>(
+    home: H,
+    id: P,
+    crypto: C,
+    constraints: &[Constraint],
+) -> Result<ProfileId, Error>
 where
+    H: Into<Option<RadHome>>,
     C: Crypto,
     C::Error: fmt::Debug + fmt::Display + Send + Sync + 'static,
     C::SecretBox: Serialize + DeserializeOwned,
     P: Into<Option<ProfileId>>,
     S: ClientStream + Unpin + 'static,
 {
-    let home = RadHome::default();
+    let home = home.into().unwrap_or_default();
     let profile = get_or_active(&home, id)?;
     keys::ssh::add_signer::<S, _>(&profile, crypto, constraints)?;
     Ok(profile.id().clone())
