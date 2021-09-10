@@ -19,10 +19,8 @@ where
 {
     let global = sanitise_globals(Args::from_args());
     match global.command {
-        args::Command::Identities(args) => {
-            rad_identities::cli::main::<S>(args, global.rad_profile).await
-        },
-        args::Command::Profile(args) => rad_profile::cli::main::<S>(args).await,
+        args::Command::Identities(args) => rad_identities::cli::main::<S>(args, global.rad_profile),
+        args::Command::Profile(args) => rad_profile::cli::main::<S>(args),
         args::Command::External(external) => {
             let exe = external.first();
             match exe {

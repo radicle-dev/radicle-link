@@ -57,7 +57,7 @@ pub enum Error {
     Init(#[from] storage::error::Init),
 
     #[error(transparent)]
-    Keys(#[from] keys::Error),
+    Keys(#[from] keys::ssh::Error),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
@@ -156,9 +156,7 @@ where
     S: ClientStream + Unpin + 'static,
 {
     match args.signer {
-        args::Signer::SshAgent => keys::signer_ssh::<S>(profile)
-            .await
-            .map_err(anyhow::Error::from),
+        args::Signer::SshAgent => keys::ssh::signer::<S>(profile).map_err(anyhow::Error::from),
         args::Signer::Key => {
             let bytes = match args.key.source {
                 args::KeySource::Ephemeral => {

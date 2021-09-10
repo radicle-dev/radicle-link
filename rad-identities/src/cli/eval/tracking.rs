@@ -10,24 +10,21 @@ use rad_clib::storage::ssh;
 
 use crate::{cli::args::tracking::*, tracking};
 
-pub async fn eval_track<S>(profile: &Profile, Track { urn, peer }: Track) -> anyhow::Result<()>
+pub fn eval_track<S>(profile: &Profile, Track { urn, peer }: Track) -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
-    let (_, storage) = ssh::storage::<S>(profile).await?;
+    let (_, storage) = ssh::storage::<S>(profile)?;
     let paths = profile.paths();
     tracking::track(&storage, paths, &urn, peer)?;
     Ok(())
 }
 
-pub async fn eval_untrack<S>(
-    profile: &Profile,
-    Untrack { urn, peer }: Untrack,
-) -> anyhow::Result<()>
+pub fn eval_untrack<S>(profile: &Profile, Untrack { urn, peer }: Untrack) -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
-    let (_, storage) = ssh::storage::<S>(profile).await?;
+    let (_, storage) = ssh::storage::<S>(profile)?;
     let paths = profile.paths();
     tracking::untrack(&storage, paths, &urn, peer)?;
     Ok(())

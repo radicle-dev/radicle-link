@@ -11,20 +11,20 @@ use crate::{create, get, list, paths, peer_id, set, ssh_add};
 
 use super::args::*;
 
-pub async fn main<S>(Args { command }: Args) -> anyhow::Result<()>
+pub fn main<S>(Args { command }: Args) -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
-    eval::<S>(command).await
+    eval::<S>(command)
 }
 
-async fn eval<S>(command: Command) -> anyhow::Result<()>
+fn eval<S>(command: Command) -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
     match command {
         Command::Create(Create {}) => {
-            let (profile, peer_id) = create(keys::prompt())?;
+            let (profile, peer_id) = create(keys::prompt::new())?;
             println!("profile id: {}", profile.id());
             println!("peer id: {}", peer_id);
         },
@@ -61,11 +61,8 @@ where
             let constraint = time.map_or(Constraint::Confirm, |seconds| Constraint::KeyLifetime {
                 seconds,
             });
-            let (id, peer_id) = ssh_add::<S, _, _>(id, keys::prompt(), &[constraint]).await?;
-            println!(
-                "added key for profile id `{}` and peer id `{}`",
-                id, peer_id
-            );
+            let id = ssh_add::<S, _, _>(id, keys::prompt::new(), &[constraint])?;
+            println!("added key for profile id `{}`", id);
         },
     }
 

@@ -12,22 +12,22 @@ use super::{
     eval::{any, local, person, project, rad_refs, refs, tracking},
 };
 
-pub async fn main<S>(Args { command }: Args, profile: Option<ProfileId>) -> anyhow::Result<()>
+pub fn main<S>(Args { command }: Args, profile: Option<ProfileId>) -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
-    let home = RadHome::new();
+    let home = RadHome::default();
     let profile = Profile::from_home(&home, profile)?;
 
     match command {
-        Command::Project(opts) => project::eval::<S>(&profile, opts.project).await?,
-        Command::Person(opts) => person::eval::<S>(&profile, opts.person).await?,
+        Command::Project(opts) => project::eval::<S>(&profile, opts.project)?,
+        Command::Person(opts) => person::eval::<S>(&profile, opts.person)?,
         Command::Any(opts) => any::eval(&profile, opts.any)?,
-        Command::Local(opts) => local::eval::<S>(&profile, opts.local).await?,
+        Command::Local(opts) => local::eval::<S>(&profile, opts.local)?,
         Command::RadRefs(opts) => rad_refs::eval(&profile, opts.rad_refs)?,
         Command::Refs(opts) => refs::eval(&profile, opts.refs)?,
-        Command::Track(track) => tracking::eval_track::<S>(&profile, track).await?,
-        Command::Untrack(untrack) => tracking::eval_untrack::<S>(&profile, untrack).await?,
+        Command::Track(track) => tracking::eval_track::<S>(&profile, track)?,
+        Command::Untrack(untrack) => tracking::eval_untrack::<S>(&profile, untrack)?,
     }
 
     Ok(())

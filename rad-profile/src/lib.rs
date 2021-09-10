@@ -11,7 +11,7 @@ use thrussh_agent::{client::ClientStream, Constraint};
 
 use librad::{
     crypto::{
-        keystore::{crypto::Crypto, file, sign::ssh, FileStorage, Keystore as _},
+        keystore::{crypto::Crypto, file, FileStorage, Keystore as _},
         IntoSecretKeyError,
         PeerId,
         PublicKey,
@@ -29,7 +29,7 @@ pub mod cli;
 #[non_exhaustive]
 pub enum Error {
     #[error(transparent)]
-    AddKey(#[from] ssh::error::AddKey),
+    AddKey(#[from] keys::ssh::Error),
     #[error(transparent)]
     Keystore(Box<dyn error::Error + Send + Sync + 'static>),
     #[error("no active profile was found, perhaps you need to create one")]
@@ -121,11 +121,7 @@ where
 }
 
 /// Add a profile's [`SecretKey`] to the `ssh-agent`.
-pub async fn ssh_add<S, P, C>(
-    id: P,
-    crypto: C,
-    constraints: &[Constraint],
-) -> Result<(ProfileId, PeerId), Error>
+pub fn ssh_add<S, P, C>(id: P, crypto: C, constraints: &[Constraint]) -> Result<ProfileId, Error>
 where
     C: Crypto,
     C::Error: fmt::Debug + fmt::Display + Send + Sync + 'static,
@@ -135,9 +131,6 @@ where
 {
     let home = RadHome::default();
     let profile = get_or_active(&home, id)?;
-    let store = keys::file_storage(&profile, crypto);
-    let key = store.get_key()?;
-    let peer_id = PeerId::from(key.public_key);
-    ssh::add_key::<S>(key.secret_key.into(), constraints).await?;
-    Ok((profile.id().clone(), peer_id))
+    keys::ssh::add_signer::<S, _>(&profile, crypto, constraints)?;
+    Ok(profile.id().clone())
 }

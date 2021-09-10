@@ -13,24 +13,24 @@ use rad_clib::storage::ssh;
 
 use crate::{cli::args::local::*, local};
 
-pub async fn eval<S>(profile: &Profile, opts: Options) -> anyhow::Result<()>
+pub fn eval<S>(profile: &Profile, opts: Options) -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
     match opts {
-        Options::Set(Set { urn }) => eval_set::<S>(profile, urn).await?,
-        Options::Get(Get { urn }) => eval_get::<S>(profile, urn).await?,
-        Options::Default(Default {}) => eval_default::<S>(profile).await?,
+        Options::Set(Set { urn }) => eval_set::<S>(profile, urn)?,
+        Options::Get(Get { urn }) => eval_get::<S>(profile, urn)?,
+        Options::Default(Default {}) => eval_default::<S>(profile)?,
     }
 
     Ok(())
 }
 
-async fn eval_set<S>(profile: &Profile, urn: Urn) -> anyhow::Result<()>
+fn eval_set<S>(profile: &Profile, urn: Urn) -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
-    let (_, storage) = ssh::storage::<S>(profile).await?;
+    let (_, storage) = ssh::storage::<S>(profile)?;
     let identity = local::get(&storage, urn.clone())?
         .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
     local::set(&storage, identity)?;
@@ -38,11 +38,11 @@ where
     Ok(())
 }
 
-async fn eval_get<S>(profile: &Profile, urn: Urn) -> anyhow::Result<()>
+fn eval_get<S>(profile: &Profile, urn: Urn) -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
-    let (_, storage) = ssh::storage::<S>(profile).await?;
+    let (_, storage) = ssh::storage::<S>(profile)?;
     let identity = local::get(&storage, urn.clone())?
         .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
     println!(
@@ -52,11 +52,11 @@ where
     Ok(())
 }
 
-async fn eval_default<S>(profile: &Profile) -> anyhow::Result<()>
+fn eval_default<S>(profile: &Profile) -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
-    let (_, storage) = ssh::storage::<S>(profile).await?;
+    let (_, storage) = ssh::storage::<S>(profile)?;
     let identity = local::default(&storage)?;
     println!("{}", identity.urn());
     println!(
