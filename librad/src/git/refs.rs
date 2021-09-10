@@ -230,6 +230,9 @@ pub struct Refs {
     /// `refs/notes/*`
     pub notes: BTreeMap<reference::OneLevel, Oid>,
 
+    /// `refs/cob/*`
+    pub cob: BTreeMap<reference::OneLevel, Oid>,
+
     /// The [`Remotes`], ie. tracking graph.
     ///
     /// Note that this does does not include the oids, as they can be determined
@@ -281,7 +284,12 @@ impl Refs {
             .map(refined)
             .collect::<Result<_, _>>()?;
         let notes = storage
-            .references(&Reference::notes(namespace, None))?
+            .references(&Reference::notes(namespace.clone(), None))?
+            .filter_map(peeled)
+            .map(refined)
+            .collect::<Result<_, _>>()?;
+        let cob = storage
+            .references(&Reference::cob(namespace, None))?
             .filter_map(peeled)
             .map(refined)
             .collect::<Result<_, _>>()?;
@@ -299,6 +307,7 @@ impl Refs {
             tags,
             notes,
             remotes,
+            cob,
         })
     }
 
@@ -411,6 +420,7 @@ impl Refs {
             rad,
             tags,
             notes,
+            cob,
             remotes: _,
         } = self;
         heads
@@ -419,6 +429,7 @@ impl Refs {
             .chain(rad.iter().map(|x| (x, RefsCategory::Rad)))
             .chain(tags.iter().map(|x| (x, RefsCategory::Tags)))
             .chain(notes.iter().map(|x| (x, RefsCategory::Notes)))
+            .chain(cob.iter().map(|x| (x, RefsCategory::Cob)))
     }
 
     fn canonical_form(&self) -> Result<Vec<u8>, CjsonError> {

@@ -23,7 +23,7 @@ lazy_static! {
 #[test]
 fn create_anonymous() -> anyhow::Result<()> {
     let storage = storage(DYLAN.clone());
-    let whoami = git::dylan(&storage, &DYLAN)?;
+    let whoami = git::local(&storage, &DYLAN, "dylan")?;
     let proj = identities::project::create(
         &storage,
         whoami,

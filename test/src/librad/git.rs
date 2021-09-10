@@ -18,15 +18,14 @@ use crate::tempdir::WithTmpDir;
 
 pub mod storage;
 
-pub fn dylan(
+pub fn local(
     storage: &Storage,
     key: &SecretKey,
+    name: &'static str,
 ) -> anyhow::Result<identities::local::LocalIdentity> {
     let dylan = identities::person::create(
         storage,
-        payload::Person {
-            name: "dylan".into(),
-        },
+        payload::Person { name: name.into() },
         Some(key.public()).into_iter().collect(),
     )?;
     identities::local::load(storage, dylan.urn())?

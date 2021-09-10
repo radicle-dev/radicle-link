@@ -1,0 +1,38 @@
+[package]
+name = "cob"
+version = "0.1.0"
+authors = ["The Radicle Team <dev@radicle.xyz>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[lib]
+
+[dependencies]
+jsonschema = "0.12.0"
+petgraph = "0.5"
+regex = "1.3"
+serde = "1.0"
+serde_json = "1.0"
+thiserror = "1.0"
+toml = "0.5"
+tracing = "0.1"
+either = ">= 1.3, 1"
+
+[dependencies.git2]
+version = ">= 0.13.12, 0.13"
+default-features = false
+features = []
+
+[dependencies.link-crypto]
+path = "../link-crypto"
+
+[dependencies.link-identities]
+path = "../link-identities"
+
+[dependencies.git-trailers]
+path = "../git-trailers"
+
+[dependencies.automerge]
+git = "https://github.com/automerge/automerge-rs.git"
+branch = "main"
+

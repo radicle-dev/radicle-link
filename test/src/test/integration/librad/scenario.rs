@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 mod collaboration;
+mod collaborative_objects;
 mod menage;
 mod tracked_references;
 mod updated_delegate;

@@ -13,7 +13,8 @@ use std::{
 
 use serde::ser::SerializeStruct;
 
-use super::{delegation::Delegations, payload::Payload, sealed, sign::Signatures, urn::Urn};
+use super::{delegation::Delegations, payload::Payload, sealed, urn::Urn};
+use crate::sign::Signatures;
 
 pub mod error;
 

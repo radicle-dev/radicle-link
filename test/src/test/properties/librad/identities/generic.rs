@@ -11,9 +11,10 @@ use proptest::prelude::*;
 use librad::identities::{
     delegation::{self, Delegations},
     generic::{error, Doc, Identity},
-    sign::Signatures,
     Verifying,
 };
+
+use link_identities::sign::Signatures;
 
 use crate::librad::identities::generic::*;
 

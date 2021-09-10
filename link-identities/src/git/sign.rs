@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use git_trailers::Trailer;
+
 use std::{
     convert::TryFrom,
     fmt::{self, Display},
@@ -29,11 +30,14 @@ pub struct CommitMessage<'a> {
 }
 
 impl<'a> CommitMessage<'a> {
-    pub fn new(body: &'a str, signatures: &'a Signatures) -> Self {
-        Self {
-            body,
-            trailers: signatures.into(),
-        }
+    pub fn new<I, It>(body: &'a str, signatures: &'a Signatures, extra_trailers: It) -> Self
+    where
+        I: Iterator<Item = Trailer<'a>>,
+        It: IntoIterator<Item = Trailer<'a>, IntoIter = I>,
+    {
+        let mut trailers: Vec<Trailer<'a>> = signatures.into();
+        trailers.extend(extra_trailers.into_iter());
+        Self { body, trailers }
     }
 }
 

@@ -18,12 +18,13 @@ use librad::{
     identities::{
         delegation::{self, Delegations, SomeDelegations},
         generic::{Doc, Identity},
-        sign::Signatures,
     },
     PublicKey,
     SecretKey,
     Signature,
 };
+
+use link_identities::sign::Signatures;
 
 use crate::librad::keys::{gen_secret_key, RESKey};
 

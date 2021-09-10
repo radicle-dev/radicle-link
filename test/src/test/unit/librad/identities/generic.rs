@@ -5,7 +5,9 @@
 
 use std::{collections::BTreeMap, iter};
 
-use librad::identities::{delegation, generic::error, sign::Signatures, Verifying};
+use librad::identities::{delegation, generic::error, Verifying};
+
+use link_identities::sign::Signatures;
 
 use crate::librad::identities::generic::*;
 

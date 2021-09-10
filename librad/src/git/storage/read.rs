@@ -92,6 +92,10 @@ pub trait ReadOnlyStorage {
     where
         Oid: AsRef<git2::Oid> + Debug;
 
+    fn find_commit(&self, oid: git2::Oid) -> Result<Option<git2::Commit<'_>>, Error>;
+
+    fn find_tree(&self, oid: git2::Oid) -> Result<Option<git2::Tree<'_>>, Error>;
+
     fn tip(&self, urn: &Urn, kind: git2::ObjectType) -> Result<Option<git2::Object>, Error>;
 
     fn reference<'a>(
@@ -281,6 +285,26 @@ impl ReadOnlyStorage for ReadOnly {
 
         self.backend
             .find_object(*oid, None)
+            .map(Some)
+            .or_matches(is_not_found_err, || Ok(None))
+    }
+
+    fn find_commit(&self, oid: git2::Oid) -> Result<Option<git2::Commit<'_>>, Error> {
+        if oid.is_zero() {
+            return Ok(None);
+        }
+        self.backend
+            .find_commit(oid)
+            .map(Some)
+            .or_matches(is_not_found_err, || Ok(None))
+    }
+
+    fn find_tree(&self, oid: git2::Oid) -> Result<Option<git2::Tree<'_>>, Error> {
+        if oid.is_zero() {
+            return Ok(None);
+        }
+        self.backend
+            .find_tree(oid)
             .map(Some)
             .or_matches(is_not_found_err, || Ok(None))
     }
