@@ -5,4 +5,4 @@ echo '--- Build'
 cargo build --workspace --all-features
 
 echo '--- Test'
-RUST_LOG=error cargo test --workspace --all-features
+eval $(ssh-agent -s) && RUST_LOG=error cargo test --workspace --all-features
