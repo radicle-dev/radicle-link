@@ -1,0 +1,93 @@
+= Submitting Patches to `radicle-link`
+:author: @kim
+:revdate: 2021-09-13
+:expires: 2021-10-12
+
+* Author: {author}
+* Date: {revdate}
+* Discussion: https://lists.sr.ht/~radicle-link/dev/%3C20210902113703.GD7400%40schmidt.localdomain%3E
+* Expires: {expires}
+
+== Overview
+
+This document describes a preliminary patch-based workflow for contributing to
+`radicle-link`. We adopt this to familiarise ourselves with fully distributed
+collaboration and cut our reliance on proprietary hosting platforms. As
+`radicle-link` stabilises, expect things to change, and be replaced by our own
+stack.
+
+NOTE: This document describes an experimental workflow, and is expected to be
+amended by 2021-10-12
+
+== Prerequisites
+
+Patches are to be submitted via link:https://git-scm.com/docs/git-send-email[git
+send-email] for review. For a blitz introduction, refer to
+link:https://git-send-email.io[https://git-send-email.io]
+
+== Submitting patches
+
+- For now, base your work off of the `master` branch published to
+  link:https://github.com/radicle-dev/radicle-link[github]
+
+- Send patches to
+mailto:~radicle-link/dev@lists.sr.ht[~radicle-link/dev@lists.sr.ht] using `git
+send-email`
+
+- During review, make sure to keep CC lists intact. This allows people to
+participate without subscribing to the mailing list.
+
+- For your own and the reviewers/maintainers convenience, consider to push your
+patch (series) to a git server as well (eg. your github, sr.ht, ...). This will
+allow you to run CI before submitting (if there's no build definition for your
+platform in the `radicle-link` repo -- patches welcome!).
++
+If you do this, let reviewers know by including a URL in your cover letter,
+e.g. as a git trailer:
++
+    Published-As: https://github.com/kim/radicle-link/tree/my-patch
++
+It is a good idea to point this URL to a signed tag of the current iteration
+of your patch, e.g. `patches/my-patch/v1`. An example trailer for github would
+then look like:
++
+    Published-As: https://github.com/kim/radicle-link/releases/tag/patches/my-patch/v1
+
+- Keep in mind that, unlike with PRs, people will look at the individual commits
+of your patch. So make sure the commits are self-contained, not too big not
+too small, and carry context information in their commit messages. If you're
+submitting a patch series, make sure to include a cover letter (`git send-email
+--compose`, `git format-patch --cover-letter`) which serves roughly the same
+purpose as a PR description (i.e. it is usually not included verbatim in the
+commit history). Additional commentary (e.g. "I did this, but am not sure
+because...") goes after the three dashes of each patch.
++
+In general, a good commit message is of the form:
++
+----
+subsystem: what
+
+The whys and the hows.
+
+Signed-off-by: A U Thor <au.thor@example.com>
+----
+
+== Responding to review
+
+- Reviewers may comment on invividual commits, or on the cover letter. It is
+considered polite to respond to every comment and let reviewers know if you have
+questions, if you plan to address the feedback, or if you don't, why not. It is
+also okay to summarise which comments you've addressed in your reroll's cover
+letter -- but make sure you CC'ed the reviewer.
+
+- After you've addressed the feedback, tidy up your commit history using `git
+rebase -i`. You're now ready to "reroll" the patch. Conventionally, the patch
+subject is changed to reflect the _revision_ of the patch, and the email is sent
+as a reply to your original patch (for all subsequent revisions). This is done
+via the `-v` and `--in-reply-to` switches, e.g.:
++
+    git send-email -v2 --to=~radicle-link/dev@lists.sr.ht \
+        --in-reply-to="<20210902113703.GD7400@schmidt.localdomain>"
++
+The `Message-Id` header to use for the `In-Reply-To` can be found behind the
+"Details" or "Export" links in the web UI. Mind the angle brackets!

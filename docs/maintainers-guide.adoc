@@ -1,0 +1,113 @@
+= `radicle-link` Maintainers Guide
+:author: @kim
+:revdate: 2021-09-13
+:expires: 2021-10-12
+
+* Author: {author}
+* Date: {revdate}
+* Discussion: https://lists.sr.ht/~radicle-link/dev/%3C20210902113703.GD7400%40schmidt.localdomain%3E
+* Expires: {expires}
+
+== Overview
+
+This document describes a preliminary patch-based workflow for maintaining
+`radicle-link`. We adopt this to familiarise ourselves with fully distributed
+collaboration and cut our reliance on proprietary hosting platforms. As
+`radicle-link` stabilises, expect things to change, and be replaced by our own
+stack.
+
+NOTE: This document describes an experimental workflow, and is expected to be
+amended by 2021-10-12
+
+== Prerequisites
+
+Read link:submitting-patches.adoc[Submitting Patches] first.
+
+== Overview
+
+Below is described a somewhat simplified version of ``git.git``'s workflow. The
+most notable difference is that we don't maintain a second long lived branch
+besides `master`, as we don't at this point need a stabilisation or QA phase
+before releasing.
+
+== Setup
+
+For the purpose of this experiment, we rotate maintainership duties on a
+week-by-week basis. At the end of each week, we publish a "release" by tagging
+the state of the `master` branch. Conventionally, these tags should be of the
+form `cycle/DATE-OF-CYLCE-CLOSING`, e.g. `cycle/2021-09-21`.
+
+When it is your turn as a maintainer, create a branch `seen` off of the most
+recent `cycle` tag. You will use this branch to "queue" patches before merging
+them to `master`. Think of this as a staging area which allows you to resolve
+conflicts (or ask the patch submitter), and to run CI before committing to
+`master`.
+
+NOTE: The history of the `seen` branch is expected to be rewritten, as patches
+are dropped or reordered before being promoted to `master`.
+
+If there are unmerged patches in the `seen` branch of the previous cycle's
+maintainer, you may decide to build on top of their branch, or re-queue any of
+the outstanding patches yourself.
+
+It is a good idea to publish your `seen` branch, e.g under your github account.
+
+== Applying patches
+
+You'll want to track patches each in its own topic branch, e.g.
+`kim/rewrite-everything`. If the submitter has published their patch, that's as
+easy as adding their origin as a remote.  Otherwise, create a tracking branch
+locally and apply the patches from the emails.
+
+You'll also want to promote patches to `master` quickly as they become stable,
+in order to avoid having to massage the history of `seen` repeatedly (and
+potentially having to resolve conflicts). In case more than one patch is
+in-flight, the following strategy is recommended:
+
+.  Apply any already-approved patches
++
+You may run CI now, and if it passes promote the patches to `master` already.
+. Apply small patches
+. Apply the rest (use your judgement to order them by stability)
+. Run CI
+. Notify people if something broke
+
+As rerolls are coming in, you may need to reorder patches. You may also need to
+replace previously applied patches with a revisited version. While keeping the
+`master` history somewhat linear is desirable, you may want to apply long-ish
+series with a merge commit -- when `git rebase -i`-ing `seen`, you can then just
+drop the patch by dropping the merge commit. If you do this, please make sure to
+include a summary of the series being merged, and a list of the commits it pulls
+in in the commit message (see `git.git` for examples).
+
+== Approval
+
+We don't (yet) employ a very formal patch approval process. Replying to the
+(first message) of the patch with some utterance of approval is enough. It is up
+to the current maintainer to decide if enough approvals have been gathered, if
+unsure, ask.
+
+Amending the commit(s) to add `Reviewed-By`, `Approved-By`, `Praised-By`, or
+whatever attribution-carrying git trailers is thus not required, but may enhance
+overall entertainment.
+
+== Patch Status + Release
+
+At the beginning of a cycle, send out an email with the subject "Release cycle
+DATE-OF-CYCLE-CLOSING". Include the URL of where you intend to publish `seen`,
+enumerate patches carried over from the last cycle, and any new ones.
+
+Whenever a patch moves from `seen` to `master`, reply to this email to say which
+ones made it. Also reply if you're unsure about promoting to `master`.
+
+On the day the cycle ends, tag your `master` as described above, and publish it
+wherever you have access to (i.e. `radicle-dev/radicle-link`). The tag message
+should describe what went into the release, if there are breaking changes, etc.
+It should **not** list the individual commits, as that information is available
+through `git log`. The tag **must** be signed with the maintainer's GPG key.
+
+WARNING: Make sure to use `git push tag cycle/XYZ`, **not** `git push --tags`.
+
+Reply a last time to the cycle email. Information to include: URL of where to
+retrieve the tag on the web, patches which **did not** make it into the release
+(so the next maintainer can pick them up).
