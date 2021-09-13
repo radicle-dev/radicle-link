@@ -12,7 +12,7 @@ use librad::{
     git::Urn,
     identities::{
         git::Revision,
-        payload::{self, KeyOrUrn, ProjectPayload},
+        payload::{self, KeyOrUrn},
     },
     PeerId,
 };
@@ -85,7 +85,7 @@ pub struct Refs {
 pub mod project {
     use super::*;
 
-    fn project_payload(value: &str) -> Result<ProjectPayload, String> {
+    fn project_payload(value: &str) -> Result<payload::Project, String> {
         serde_json::from_str(value).map_err(|err| err.to_string())
     }
 
@@ -125,7 +125,12 @@ pub mod project {
         /// `default_branch` and `description` are optional, along with any
         /// extensions defined by the upstream application.
         #[structopt(long, parse(try_from_str = project_payload))]
-        pub payload: ProjectPayload,
+        pub payload: payload::Project,
+        #[structopt(long, parse(try_from_str = ext_payload))]
+        /// provide a list of extensions to extend the payload. The extension
+        /// must be a JSON object consisting of a namespace URL and the extended
+        /// JSON payload
+        pub ext: Vec<payload::Ext<serde_json::Value>>,
         /// the Radicle URN pointing to a local identity that will be used for
         /// setting `rad/self` on this project. If no URN is provided the
         /// default identity will be used instead.
@@ -143,7 +148,12 @@ pub mod project {
         /// `default_branch` and `description` are optional, along with any
         /// extensions defined by the upstream application.
         #[structopt(long, parse(try_from_str = project_payload))]
-        pub payload: ProjectPayload,
+        pub payload: payload::Project,
+        #[structopt(long, parse(try_from_str = ext_payload))]
+        /// provide a list of extensions to extend the payload. The extension
+        /// must be a JSON object consisting of a namespace URL and the extended
+        /// JSON payload
+        pub ext: Vec<payload::Ext<serde_json::Value>>,
         /// the Radicle URN pointing to a local identity that will be used for
         /// setting `rad/self` on this project. If no URN is provided the
         /// default identity will be used instead.
@@ -178,7 +188,12 @@ pub mod project {
         #[structopt(long)]
         pub whoami: Option<Urn>,
         #[structopt(long, parse(try_from_str = project_payload))]
-        pub payload: Option<ProjectPayload>,
+        pub payload: Option<payload::Project>,
+        #[structopt(long, parse(try_from_str = ext_payload))]
+        /// provide a list of extensions to extend the payload. The extension
+        /// must be a JSON object consisting of a namespace URL and the extended
+        /// JSON payload
+        pub ext: Vec<payload::Ext<serde_json::Value>>,
         #[structopt(long, parse(try_from_str = indirect_delegation))]
         pub delegations: BTreeSet<KeyOrUrn<Revision>>,
     }
@@ -210,11 +225,6 @@ pub mod person {
     fn person_payload(value: &str) -> Result<payload::Person, String> {
         serde_json::from_str(value).map_err(|err| err.to_string())
     }
-
-    fn ext_payload(value: &str) -> Result<payload::Ext<serde_json::Value>, String> {
-        serde_json::from_str(value).map_err(|err| err.to_string())
-    }
-
     fn direct_delegation(value: &str) -> Result<PublicKey, String> {
         serde_json::from_str(value).map_err(|err| err.to_string())
     }
@@ -528,4 +538,8 @@ pub mod tracking {
         #[structopt(long)]
         pub peer: PeerId,
     }
+}
+
+fn ext_payload(value: &str) -> Result<payload::Ext<serde_json::Value>, String> {
+    serde_json::from_str(value).map_err(|err| err.to_string())
 }

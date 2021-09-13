@@ -16,7 +16,7 @@ use librad::{
     },
     identities::{
         git::Revision,
-        payload::{KeyOrUrn, ProjectPayload},
+        payload::{self, KeyOrUrn},
     },
     profile::Profile,
     PeerId,
@@ -37,8 +37,9 @@ where
             urn,
             whoami,
             payload,
+            ext,
             delegations,
-        }) => eval_update::<S>(profile, urn, whoami, payload, delegations)?,
+        }) => eval_update::<S>(profile, urn, whoami, payload, ext, delegations)?,
         Options::Checkout(Checkout { urn, path, peer }) => {
             eval_checkout::<S>(profile, urn, path, peer)?
         },
@@ -57,6 +58,7 @@ where
     let project = match create {
         Create::New(New {
             payload,
+            ext,
             path,
             whoami,
         }) => project::create(
@@ -65,10 +67,12 @@ where
             signer,
             whoami.into(),
             payload,
+            ext,
             project::Creation::New { path },
         )?,
         Create::Existing(Existing {
             payload,
+            ext,
             path,
             whoami,
         }) => project::create(
@@ -77,6 +81,7 @@ where
             signer,
             whoami.into(),
             payload,
+            ext,
             project::Creation::Existing { path },
         )?,
     };
@@ -108,14 +113,15 @@ fn eval_update<S>(
     profile: &Profile,
     urn: Urn,
     whoami: Option<Urn>,
-    payload: Option<ProjectPayload>,
+    payload: Option<payload::Project>,
+    ext: Vec<payload::Ext<serde_json::Value>>,
     delegations: BTreeSet<KeyOrUrn<Revision>>,
 ) -> anyhow::Result<()>
 where
     S: ClientStream + Unpin + 'static,
 {
     let (_, storage) = ssh::storage::<S>(profile)?;
-    let project = project::update(&storage, &urn, whoami, payload, delegations)?;
+    let project = project::update(&storage, &urn, whoami, payload, ext, delegations)?;
     println!("{}", serde_json::to_string(project.payload())?);
     Ok(())
 }

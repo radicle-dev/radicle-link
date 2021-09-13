@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeSet, convert::TryFrom as _, fmt, path::PathBuf};
+use std::{collections::BTreeSet, convert::TryFrom as _, path::PathBuf};
 
 use either::Either;
 use thiserror::Error;
@@ -20,7 +20,7 @@ use librad::{
     identities::{
         delegation::{indirect, Indirect},
         git::Revision,
-        payload::{KeyOrUrn, ProjectPayload},
+        payload::{self, KeyOrUrn, ProjectPayload},
         IndirectDelegation,
     },
     paths::Paths,
@@ -36,6 +36,9 @@ use crate::{
 pub enum Error {
     #[error(transparent)]
     Checkout(#[from] checkout::Error),
+
+    #[error(transparent)]
+    Ext(#[from] payload::ExtError),
 
     #[error(transparent)]
     Identities(Box<identities::Error>),
@@ -91,18 +94,23 @@ impl WhoAmI {
     }
 }
 
-pub fn create<P>(
+pub fn create<T>(
     storage: &Storage,
     paths: Paths,
     signer: BoxedSigner,
     whoami: WhoAmI,
-    payload: P,
+    payload: payload::Project,
+    ext: Vec<payload::Ext<T>>,
     creation: Creation,
 ) -> anyhow::Result<Project>
 where
-    P: Into<ProjectPayload> + fmt::Debug,
+    T: serde::Serialize,
 {
-    let payload = payload.into();
+    let mut payload = ProjectPayload::new(payload);
+    for e in ext.into_iter() {
+        payload.set_ext(e)?;
+    }
+
     let whoami = whoami.resolve(storage)?;
     let delegations = Indirect::from(whoami.clone().into_inner().into_inner());
 
@@ -148,16 +156,36 @@ where
     Ok(crate::any::list(storage, |i| i.project())?)
 }
 
-pub fn update<P>(
+pub fn update(
     storage: &Storage,
     urn: &Urn,
     whoami: Option<Urn>,
-    payload: P,
+    payload: Option<payload::Project>,
+    mut ext: Vec<payload::Ext<serde_json::Value>>,
     delegations: BTreeSet<KeyOrUrn<Revision>>,
-) -> Result<Project, Error>
-where
-    P: Into<Option<ProjectPayload>> + fmt::Debug,
-{
+) -> Result<Project, Error> {
+    let old =
+        project::verify(storage, urn)?.ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
+    let mut old_payload = old.payload().clone();
+    let payload = match payload {
+        None => {
+            for e in ext {
+                old_payload.set_ext(e)?;
+            }
+            old_payload
+        },
+        Some(payload) => {
+            let mut payload = payload::ProjectPayload::new(payload);
+            ext.extend(old_payload.exts().map(|(url, val)| payload::Ext {
+                namespace: url.clone(),
+                val: val.clone(),
+            }));
+            for e in ext {
+                payload.set_ext(e)?;
+            }
+            payload
+        },
+    };
     let whoami = whoami
         .and_then(|me| identities::local::load(storage, me).transpose())
         .transpose()?;
