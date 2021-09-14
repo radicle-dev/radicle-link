@@ -33,16 +33,19 @@ services:
     - 'graphite-exporter'
     build:
       context: ../
-      dockerfile: e2e/ephemeral-peer.dockerfile
-    image: ephemeral-peer
+      dockerfile: e2e/linkd.dockerfile
+    image: linkd
     init: true
     ports:
     - '12345:12345/udp'
-    command: |
-      ephemeral-peer
-        --secret-key hIfobTmxKMemyXPOC8EmUNdufwi2MsKucEB9EikOyDE
-        --listen 0.0.0.0:12345
-        --graphite graphite:9109
+    command: bash -c 'echo -n "hIfobTmxKMemyXPOC8EmUNdufwi2MsKucEB9EikOyDE" |
+        linkd
+          --signer key
+          --key-format base64
+          --protocol-listen 0.0.0.0:12345
+          --tmp-root
+          --metrics-provider graphite
+          --graphite-addr graphite:9109'
     environment:
     - 'RUST_LOG=${RUST_LOG:-debug}'
     - 'TRACING_FMT=${TRACING_FMT:-compact}'
@@ -52,15 +55,19 @@ services:
   passive-peer:
     depends_on:
     - 'bootstrap-peer'
-    image: ephemeral-peer
+    image: linkd
     init: true
     ports:
     - '12346/udp'
     command: |
-      ephemeral-peer
-        --listen 0.0.0.0:12346
+      linkd
+        --signer key
+        --key-source ephemeral
+        --protocol-listen 0.0.0.0:12346
+        --tmp-root
         --bootstrap hyne66jefcpkobg91qzdy6ysetr8fn3p3d6myce61uwf7s67g3i79e@bootstrap:12345
-        --graphite graphite:9109
+        --metrics-provider graphite
+        --graphite-addr graphite:9109
     environment:
     - 'RUST_LOG=${RUST_LOG:-debug}'
     - 'TRACING_FMT=${TRACING_FMT:-compact}'

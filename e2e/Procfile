@@ -1,2 +1,2 @@
-bootstrap: cargo run --bin ephemeral-peer -- --secret-key hIfobTmxKMemyXPOC8EmUNdufwi2MsKucEB9EikOyDE --listen 127.0.0.1:54321
-peer: sleep 5; cargo run --bin ephemeral-peer -- --bootstrap hyne66jefcpkobg91qzdy6ysetr8fn3p3d6myce61uwf7s67g3i79e@127.0.0.1:54321
+bootstrap: cd ../bins && echo -n "hIfobTmxKMemyXPOC8EmUNdufwi2MsKucEB9EikOyDE" | cargo run -p linkd -- --signer key --key-format base64 --protocol-listen 127.0.0.1:54321 --tmp-root
+peer: sleep 5; cd ../bins && cargo run -p linkd -- --signer key --key-source ephemeral --tmp-root --protocol-listen localhost --bootstrap hyne66jefcpkobg91qzdy6ysetr8fn3p3d6myce61uwf7s67g3i79e@127.0.0.1:54321

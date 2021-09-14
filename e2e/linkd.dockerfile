@@ -7,9 +7,10 @@ RUN --mount=type=bind,source=.,target=/build,rw \
     --mount=type=cache,target=/cache \
     set -eux pipefail; \
     mkdir -p /cache/target; \
-    ln -s /cache/target target ; \
-    cargo build --release --package radicle-link-e2e --bin ephemeral-peer; \
-    mv target/release/ephemeral-peer /ephemeral-peer
+    ln -s /cache/target target; \
+    cd bins; \
+    cargo build --release --package linkd; \
+    mv target/release/linkd /linkd
 
 FROM debian:buster-slim
 RUN set -eux; \
@@ -21,5 +22,5 @@ RUN set -eux; \
     ; \
     apt-get autoremove; \
     rm -rf /var/lib/apt/lists/*
-COPY --from=build /ephemeral-peer /usr/local/bin/ephemeral-peer
-CMD ["ephemeral-peer"]
+COPY --from=build /linkd /usr/local/bin/linkd
+CMD ["linkd"]
