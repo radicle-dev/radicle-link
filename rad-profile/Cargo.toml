@@ -25,4 +25,3 @@ path = "../rad-clib"
 [dependencies.thrussh-agent]
 git = "https://github.com/FintanH/thrussh"
 branch = "generic-agent"
-default-features = false
