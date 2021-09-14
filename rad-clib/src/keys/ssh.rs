@@ -10,11 +10,11 @@ use librad::{crypto::keystore::sign::ssh, git::storage::read};
 #[derive(Debug, Error)]
 pub enum Error {
     #[error(transparent)]
-    SshConnect(#[from] ssh::error::Connect),
-    #[error(transparent)]
     AddKey(#[from] ssh::error::AddKey),
+    #[error("failed to get the key material from your file storage")]
+    GetKey(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
-    GetKey(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
+    SshConnect(#[from] ssh::error::Connect),
     #[error(transparent)]
     StorageInit(#[from] read::error::Init),
 }
