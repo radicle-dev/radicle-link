@@ -22,7 +22,7 @@ use librad::{
         IntoSecretKeyError,
         SomeSigner,
     },
-    git::storage::ReadOnly,
+    git::storage::{self, ReadOnly},
     profile::Profile,
     PublicKey,
     SecretKey,
@@ -37,6 +37,8 @@ pub enum Error {
     File(#[from] file::Error<SecretBoxError<std::io::Error>, IntoSecretKeyError>),
     #[error(transparent)]
     SshConnect(#[from] ssh::error::Connect),
+    #[error(transparent)]
+    StorageInit(#[from] storage::read::error::Init),
 }
 
 /// Create a [`Prompt`] for unlocking the key storage.
@@ -79,7 +81,7 @@ pub async fn signer_ssh<S>(profile: &Profile) -> Result<BoxedSigner, Error>
 where
     S: ClientStream + Unpin + 'static,
 {
-    let storage = ReadOnly::open(profile.paths()).unwrap();
+    let storage = ReadOnly::open(profile.paths())?;
     let peer_id = storage.peer_id();
     let agent = SshAgent::new((**peer_id).into());
     let signer = agent.connect::<S>().await?;
