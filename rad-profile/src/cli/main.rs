@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use thrussh_agent::{client::ClientStream, Constraint};
+use thrussh_agent::Constraint;
 
 use rad_clib::keys;
 
@@ -11,17 +11,11 @@ use crate::{create, get, list, paths, peer_id, set, ssh_add};
 
 use super::args::*;
 
-pub fn main<S>(Args { command }: Args) -> anyhow::Result<()>
-where
-    S: ClientStream + Unpin + 'static,
-{
-    eval::<S>(command)
+pub fn main(Args { command }: Args) -> anyhow::Result<()> {
+    eval(command)
 }
 
-fn eval<S>(command: Command) -> anyhow::Result<()>
-where
-    S: ClientStream + Unpin + 'static,
-{
+fn eval(command: Command) -> anyhow::Result<()> {
     match command {
         Command::Create(Create {}) => {
             let (profile, peer_id) = create(None, keys::prompt::new())?;
@@ -61,7 +55,7 @@ where
             let constraint = time.map_or(Constraint::Confirm, |seconds| Constraint::KeyLifetime {
                 seconds,
             });
-            let id = ssh_add::<S, _, _, _>(None, id, keys::prompt::new(), &[constraint])?;
+            let id = ssh_add(None, id, keys::prompt::new(), &[constraint])?;
             println!("added key for profile id `{}`", id);
         },
     }

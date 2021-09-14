@@ -4,7 +4,6 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use tempfile::tempdir;
-use tokio::net::UnixStream;
 
 use librad::{
     crypto::{
@@ -36,8 +35,8 @@ fn agent_signature() -> anyhow::Result<()> {
     let mut key_store = file_storage(&profile, pass.clone());
     key_store.put_key(key.clone())?;
     let _ = Storage::open(profile.paths(), key)?;
-    ssh::add_signer::<UnixStream, _>(&profile, pass, &[]).unwrap();
-    let signer = ssh::signer::<UnixStream>(&profile).unwrap();
+    ssh::add_signer(&profile, pass, &[]).unwrap();
+    let signer = ssh::signer(&profile).unwrap();
     let sig = signer.sign_blocking(b"secret message").unwrap();
     let peer_id = signer.peer_id();
     let pk = peer_id.as_public_key();

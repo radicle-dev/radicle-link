@@ -46,7 +46,6 @@ pub mod prompt {
 }
 
 pub mod ssh {
-    use thrussh_agent::client::ClientStream;
 
     use super::*;
 
@@ -54,12 +53,9 @@ pub mod ssh {
     ///
     /// The signing key will be retrieved from the ssh-agent. If the key was not
     /// added to the agent then this result in an error.
-    pub fn storage<S>(profile: &Profile) -> Result<(BoxedSigner, Storage), Error>
-    where
-        S: ClientStream + Unpin + 'static,
-    {
+    pub fn storage(profile: &Profile) -> Result<(BoxedSigner, Storage), Error> {
         let paths = profile.paths();
-        let signer = keys::ssh::signer::<S>(profile)?;
+        let signer = keys::ssh::signer(profile)?;
         Ok((signer.clone(), Storage::open(paths, signer)?))
     }
 }

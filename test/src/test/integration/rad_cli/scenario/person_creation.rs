@@ -5,8 +5,6 @@
 
 use tempfile::tempdir;
 
-use tokio::net::UnixStream;
-
 use librad::{
     crypto::keystore::{
         crypto::{Pwhash, KDF_PARAMS_TEST},
@@ -30,8 +28,8 @@ fn create() -> anyhow::Result<()> {
     let pass = Pwhash::new(SecUtf8::from(b"42".to_vec()), *KDF_PARAMS_TEST);
     let home = RadHome::Root(temp.path().to_path_buf());
     let (profile, _) = profile::create(home.clone(), pass.clone())?;
-    profile::ssh_add::<UnixStream, _, _, _>(home, profile.id().clone(), pass, &[])?;
-    identities::cli::eval::person::eval::<UnixStream>(
+    profile::ssh_add(home, profile.id().clone(), pass, &[])?;
+    identities::cli::eval::person::eval(
         &profile,
         Options::Create(CreateOptions {
             create: Create::New(New {

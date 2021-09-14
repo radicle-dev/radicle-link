@@ -3,8 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use thrussh_agent::client::ClientStream;
-
 use librad::{
     git::{identities, Urn},
     profile::Profile,
@@ -13,24 +11,18 @@ use rad_clib::storage::ssh;
 
 use crate::{cli::args::local::*, local};
 
-pub fn eval<S>(profile: &Profile, opts: Options) -> anyhow::Result<()>
-where
-    S: ClientStream + Unpin + 'static,
-{
+pub fn eval(profile: &Profile, opts: Options) -> anyhow::Result<()> {
     match opts {
-        Options::Set(Set { urn }) => eval_set::<S>(profile, urn)?,
-        Options::Get(Get { urn }) => eval_get::<S>(profile, urn)?,
-        Options::Default(Default {}) => eval_default::<S>(profile)?,
+        Options::Set(Set { urn }) => eval_set(profile, urn)?,
+        Options::Get(Get { urn }) => eval_get(profile, urn)?,
+        Options::Default(Default {}) => eval_default(profile)?,
     }
 
     Ok(())
 }
 
-fn eval_set<S>(profile: &Profile, urn: Urn) -> anyhow::Result<()>
-where
-    S: ClientStream + Unpin + 'static,
-{
-    let (_, storage) = ssh::storage::<S>(profile)?;
+fn eval_set(profile: &Profile, urn: Urn) -> anyhow::Result<()> {
+    let (_, storage) = ssh::storage(profile)?;
     let identity = local::get(&storage, urn.clone())?
         .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
     local::set(&storage, identity)?;
@@ -38,11 +30,8 @@ where
     Ok(())
 }
 
-fn eval_get<S>(profile: &Profile, urn: Urn) -> anyhow::Result<()>
-where
-    S: ClientStream + Unpin + 'static,
-{
-    let (_, storage) = ssh::storage::<S>(profile)?;
+fn eval_get(profile: &Profile, urn: Urn) -> anyhow::Result<()> {
+    let (_, storage) = ssh::storage(profile)?;
     let identity = local::get(&storage, urn.clone())?
         .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
     println!(
@@ -52,11 +41,8 @@ where
     Ok(())
 }
 
-fn eval_default<S>(profile: &Profile) -> anyhow::Result<()>
-where
-    S: ClientStream + Unpin + 'static,
-{
-    let (_, storage) = ssh::storage::<S>(profile)?;
+fn eval_default(profile: &Profile) -> anyhow::Result<()> {
+    let (_, storage) = ssh::storage(profile)?;
     let identity = local::default(&storage)?;
     println!("{}", identity.urn());
     println!(

@@ -9,18 +9,14 @@ use std::{
 };
 
 use structopt::StructOpt;
-use thrussh_agent::client::ClientStream;
 
 use super::args::{self, sanitise_globals, Args};
 
-pub async fn main<S>() -> anyhow::Result<()>
-where
-    S: ClientStream + Unpin + 'static,
-{
+pub fn main() -> anyhow::Result<()> {
     let global = sanitise_globals(Args::from_args());
     match global.command {
-        args::Command::Identities(args) => rad_identities::cli::main::<S>(args, global.rad_profile),
-        args::Command::Profile(args) => rad_profile::cli::main::<S>(args),
+        args::Command::Identities(args) => rad_identities::cli::main(args, global.rad_profile),
+        args::Command::Profile(args) => rad_profile::cli::main(args),
         args::Command::External(external) => {
             let exe = external.first();
             match exe {

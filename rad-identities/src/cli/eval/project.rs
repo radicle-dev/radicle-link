@@ -6,7 +6,6 @@
 use std::{collections::BTreeSet, convert::TryFrom as _, path::PathBuf};
 
 use anyhow::anyhow;
-use thrussh_agent::client::ClientStream;
 
 use librad::{
     git::{
@@ -25,12 +24,9 @@ use rad_clib::storage::{self, ssh};
 
 use crate::{cli::args::project::*, project};
 
-pub fn eval<S>(profile: &Profile, opts: Options) -> anyhow::Result<()>
-where
-    S: ClientStream + Unpin + 'static,
-{
+pub fn eval(profile: &Profile, opts: Options) -> anyhow::Result<()> {
     match opts {
-        Options::Create(CreateOptions { create }) => eval_create::<S>(profile, create)?,
+        Options::Create(CreateOptions { create }) => eval_create(profile, create)?,
         Options::Get(Get { urn, peer }) => eval_get(profile, urn, peer)?,
         Options::List(List {}) => eval_list(profile)?,
         Options::Update(Update {
@@ -39,21 +35,16 @@ where
             payload,
             ext,
             delegations,
-        }) => eval_update::<S>(profile, urn, whoami, payload, ext, delegations)?,
-        Options::Checkout(Checkout { urn, path, peer }) => {
-            eval_checkout::<S>(profile, urn, path, peer)?
-        },
+        }) => eval_update(profile, urn, whoami, payload, ext, delegations)?,
+        Options::Checkout(Checkout { urn, path, peer }) => eval_checkout(profile, urn, path, peer)?,
         Options::Review(Review {}) => unimplemented!(),
     }
 
     Ok(())
 }
 
-fn eval_create<S>(profile: &Profile, create: Create) -> anyhow::Result<()>
-where
-    S: ClientStream + Unpin + 'static,
-{
-    let (signer, storage) = ssh::storage::<S>(profile)?;
+fn eval_create(profile: &Profile, create: Create) -> anyhow::Result<()> {
+    let (signer, storage) = ssh::storage(profile)?;
     let paths = profile.paths();
     let project = match create {
         Create::New(New {
@@ -113,33 +104,27 @@ fn eval_list(profile: &Profile) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn eval_update<S>(
+fn eval_update(
     profile: &Profile,
     urn: Urn,
     whoami: Option<Urn>,
     payload: Option<payload::Project>,
     ext: Vec<payload::Ext<serde_json::Value>>,
     delegations: BTreeSet<KeyOrUrn<Revision>>,
-) -> anyhow::Result<()>
-where
-    S: ClientStream + Unpin + 'static,
-{
-    let (_, storage) = ssh::storage::<S>(profile)?;
+) -> anyhow::Result<()> {
+    let (_, storage) = ssh::storage(profile)?;
     let project = project::update(&storage, &urn, whoami, payload, ext, delegations)?;
     println!("{}", serde_json::to_string(project.payload())?);
     Ok(())
 }
 
-fn eval_checkout<S>(
+fn eval_checkout(
     profile: &Profile,
     urn: Urn,
     path: PathBuf,
     peer: Option<PeerId>,
-) -> anyhow::Result<()>
-where
-    S: ClientStream + Unpin + 'static,
-{
-    let (signer, storage) = ssh::storage::<S>(profile)?;
+) -> anyhow::Result<()> {
+    let (signer, storage) = ssh::storage(profile)?;
     let paths = profile.paths();
     let repo = project::checkout(&storage, paths.clone(), signer, &urn, peer, path)?;
     println!("working copy created at `{}`", repo.path().display());

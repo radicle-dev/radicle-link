@@ -7,7 +7,7 @@ use std::{error, fmt};
 
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
-use thrussh_agent::{client::ClientStream, Constraint};
+use thrussh_agent::Constraint;
 
 use librad::{
     crypto::{
@@ -133,7 +133,7 @@ where
 }
 
 /// Add a profile's [`SecretKey`] to the `ssh-agent`.
-pub fn ssh_add<S, H, P, C>(
+pub fn ssh_add<H, P, C>(
     home: H,
     id: P,
     crypto: C,
@@ -145,10 +145,9 @@ where
     C::Error: fmt::Debug + fmt::Display + Send + Sync + 'static,
     C::SecretBox: Serialize + DeserializeOwned,
     P: Into<Option<ProfileId>>,
-    S: ClientStream + Unpin + 'static,
 {
     let home = home.into().unwrap_or_default();
     let profile = get_or_active(&home, id)?;
-    keys::ssh::add_signer::<S, _>(&profile, crypto, constraints)?;
+    keys::ssh::add_signer(&profile, crypto, constraints)?;
     Ok(profile.id().clone())
 }

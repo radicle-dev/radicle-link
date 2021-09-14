@@ -73,10 +73,10 @@ pub async fn run() -> anyhow::Result<()> {
 
 #[cfg(unix)]
 async fn cfg(args: &Args) -> anyhow::Result<Cfg<discovery::Static, BoxedSigner>> {
-    Ok(Cfg::from_args::<tokio::net::UnixStream>(args).await?)
+    Ok(Cfg::from_args(args).await?)
 }
 
 #[cfg(windows)]
 async fn cfg(args: &Args) -> anyhow::Result<Cfg<discovery::Static, BoxedSigner>> {
-    Ok(Cfg::from_args::<tokio::net::TcpStream>(args).await?)
+    unimplemented!("Windows is not supported, contributions are welcome :)")
 }
