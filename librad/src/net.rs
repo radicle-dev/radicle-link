@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{borrow::Cow, str::FromStr};
+use std::{borrow::Cow, fmt::Display, str::FromStr};
 
 pub mod codec;
 pub mod connection;
@@ -43,7 +43,7 @@ pub const PROTOCOL_VERSION: u8 = 2;
 /// should be kept short.
 ///
 /// [ALPN]: https://tools.ietf.org/html/rfc7301
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Network {
     Main,
     Custom(Cow<'static, [u8]>),
@@ -52,6 +52,12 @@ pub enum Network {
 impl Default for Network {
     fn default() -> Self {
         Self::Main
+    }
+}
+
+impl Display for Network {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
