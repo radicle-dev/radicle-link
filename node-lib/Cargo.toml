@@ -1,0 +1,40 @@
+[package]
+name    = "node-lib"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-or-later"
+authors = [
+  "xla <self@xla.is>",
+]
+
+[lib]
+doctest = true
+test    = false
+
+[dependencies]
+anyhow              = "1.0"
+base64              = "0.13"
+env_logger          = "0.9"
+futures             = "0.3"
+lazy_static         = "1.4"
+log                 = "0.4"
+nix                 = "0.22"
+structopt           = { version = "0.3", default-features = false }
+thiserror           = "1.0"
+tempfile            = "3.2"
+tokio               = { version = "1.10", default-features = false, features = [ "fs", "io-std", "macros", "process", "rt-multi-thread", "signal" ] }
+tracing             = { version = "0.1", default-features = false, features = [ "attributes", "std" ] }
+tracing-subscriber  = "0.2"
+
+[dependencies.rad-clib]
+path    = "../rad-clib"
+version = "0.1.0"
+
+[dependencies.librad]
+path    = "../librad"
+version = "0.1.0"
+
+[dependencies.thrussh-agent]
+git               = "https://github.com/FintanH/thrussh"
+branch            = "generic-agent"
+features          = [ "tokio-agent" ]

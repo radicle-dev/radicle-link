@@ -7,3 +7,4 @@ mod daemon;
 mod git_helpers;
 mod librad;
 mod link_git_protocol;
+mod node_lib;
