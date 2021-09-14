@@ -126,16 +126,24 @@ pub mod project {
         /// extensions defined by the upstream application.
         #[structopt(long, parse(try_from_str = project_payload))]
         pub payload: payload::Project,
-        #[structopt(long, parse(try_from_str = ext_payload))]
+
         /// provide a list of extensions to extend the payload. The extension
         /// must be a JSON object consisting of a namespace URL and the extended
         /// JSON payload
+        #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
+
         /// the Radicle URN pointing to a local identity that will be used for
         /// setting `rad/self` on this project. If no URN is provided the
         /// default identity will be used instead.
         #[structopt(long)]
         pub whoami: Option<Urn>,
+
+        /// the initial set of delegates to initialise the project with. Note
+        /// that the delegates must exist within your local store.
+        #[structopt(long, parse(try_from_str = indirect_delegation))]
+        pub delegations: BTreeSet<KeyOrUrn<Revision>>,
+
         /// the path where the working copy should be created
         #[structopt(long)]
         pub path: Option<PathBuf>,
@@ -145,20 +153,27 @@ pub mod project {
     #[derive(Debug, StructOpt)]
     pub struct Existing {
         /// the payload to create a project. The `name` field is expected, while
-        /// `default_branch` and `description` are optional, along with any
-        /// extensions defined by the upstream application.
+        /// `default_branch` and `description` are optional.
         #[structopt(long, parse(try_from_str = project_payload))]
         pub payload: payload::Project,
-        #[structopt(long, parse(try_from_str = ext_payload))]
+
         /// provide a list of extensions to extend the payload. The extension
         /// must be a JSON object consisting of a namespace URL and the extended
         /// JSON payload
+        #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
+
         /// the Radicle URN pointing to a local identity that will be used for
         /// setting `rad/self` on this project. If no URN is provided the
         /// default identity will be used instead.
         #[structopt(long)]
         pub whoami: Option<Urn>,
+
+        /// the initial set of delegates to initialise the project with. Note
+        /// that the delegates must exist within your local store.
+        #[structopt(long, parse(try_from_str = indirect_delegation))]
+        pub delegations: BTreeSet<KeyOrUrn<Revision>>,
+
         /// the path where the working copy should be created
         #[structopt(long)]
         pub path: PathBuf,
@@ -170,6 +185,7 @@ pub mod project {
         /// the Radicle URN of the project
         #[structopt(long)]
         pub urn: Urn,
+
         /// the peer's version of the project
         #[structopt(long)]
         pub peer: Option<PeerId>,
@@ -185,15 +201,25 @@ pub mod project {
         /// the Radicle URN of the project
         #[structopt(long)]
         pub urn: Urn,
+
+        /// the Radicle URN pointing to a local identity that will be used for
+        /// setting `rad/self` on this project.
         #[structopt(long)]
         pub whoami: Option<Urn>,
+
+        /// the payload to create a project. The `name` field is expected, while
+        /// `default_branch` and `description` are optional.
         #[structopt(long, parse(try_from_str = project_payload))]
         pub payload: Option<payload::Project>,
-        #[structopt(long, parse(try_from_str = ext_payload))]
+
         /// provide a list of extensions to extend the payload. The extension
         /// must be a JSON object consisting of a namespace URL and the extended
         /// JSON payload
+        #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
+
+        /// the set of delegates to update the project with. Note
+        /// that the delegates must exist within your local store.
         #[structopt(long, parse(try_from_str = indirect_delegation))]
         pub delegations: BTreeSet<KeyOrUrn<Revision>>,
     }
@@ -204,9 +230,11 @@ pub mod project {
         /// the Radicle URN of the project
         #[structopt(long)]
         pub urn: Urn,
+
         /// the location for creating the working copy in
         #[structopt(long)]
         pub path: PathBuf,
+
         /// the peer for which the initial working copy is based off. Note that
         /// if this value is not provided, or the value that is provided is the
         /// local peer, then the local version of the project is checked out.
@@ -257,14 +285,20 @@ pub mod person {
     /// specified
     #[derive(Debug, StructOpt)]
     pub struct New {
-        /// the payload to create a person. The `name` field is expected
+        /// the payload to create a person. The `name` field is expected.
         #[structopt(long, parse(try_from_str = person_payload))]
         pub payload: payload::Person,
-        #[structopt(long, parse(try_from_str = ext_payload))]
+
         /// provide a list of extensions to extend the payload. The extension
         /// must be a JSON object consisting of a namespace URL and the extended
         /// JSON payload
+        #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
+
+        /// the initial set of delegates to initialise the person with.
+        #[structopt(long, parse(try_from_str = direct_delegation))]
+        pub delegations: Vec<PublicKey>,
+
         /// the path where the working copy should be created
         #[structopt(long)]
         pub path: Option<PathBuf>,
@@ -273,15 +307,20 @@ pub mod person {
     /// create a new Radicle person using an existing working copy
     #[derive(Debug, StructOpt)]
     pub struct Existing {
-        /// the payload to create a person. The `name` field is expected, along
-        /// with any extensions defined by the upstream application.
+        /// the payload to create a person. The `name` field is expected.
         #[structopt(long, parse(try_from_str = person_payload))]
         pub payload: payload::Person,
+
         /// provide a list of extensions to extend the payload. The extension
         /// must be a JSON object consisting of a namespace URL and the extended
         /// JSON payload
         #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
+
+        /// the initial set of delegates to initialise the person with.
+        #[structopt(long, parse(try_from_str = direct_delegation))]
+        pub delegations: Vec<PublicKey>,
+
         /// the path where the working copy should be created
         #[structopt(long)]
         pub path: PathBuf,
@@ -293,6 +332,7 @@ pub mod person {
         /// the Radicle URN of the person
         #[structopt(long)]
         pub urn: Urn,
+
         /// the peer's version of the person
         #[structopt(long)]
         pub peer: Option<PeerId>,
@@ -308,15 +348,23 @@ pub mod person {
         /// the Radicle URN of the person
         #[structopt(long)]
         pub urn: Urn,
+
+        /// the Radicle URN pointing to a local identity that will be used for
+        /// setting `rad/self` on this project.
         #[structopt(long)]
         pub whoami: Option<Urn>,
+
+        /// the payload to create a person. The `name` field is expected.
         #[structopt(long, parse(try_from_str = person_payload))]
         pub payload: Option<payload::Person>,
+
         /// provide a list of extensions to extend the payload. The extension
         /// must be a JSON object consisting of a namespace URL and the extended
         /// JSON payload
         #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
+
+        /// the set of delegates to initialise the person with.
         #[structopt(long, parse(try_from_str = direct_delegation))]
         pub delegations: Vec<PublicKey>,
     }
@@ -327,9 +375,11 @@ pub mod person {
         /// the Radicle URN of the project
         #[structopt(long)]
         pub urn: Urn,
+
         /// the location for creating the working copy in
         #[structopt(long)]
         pub path: PathBuf,
+
         /// the peer for which the initial working copy is based off. Note that
         /// if this value is not provided, or the value that is provided is the
         /// local peer, then the local version of the person is checked out.
@@ -413,6 +463,7 @@ pub mod rad_refs {
         /// the Radicle URN to look under
         #[structopt(long)]
         pub urn: Urn,
+
         /// the remote peer to look under
         #[structopt(long)]
         pub peer: Option<PeerId>,
@@ -424,6 +475,7 @@ pub mod rad_refs {
         /// the Radicle URN to look under
         #[structopt(long)]
         pub urn: Urn,
+
         /// the remote peer to look under
         #[structopt(long)]
         pub peer: Option<PeerId>,
@@ -435,6 +487,7 @@ pub mod rad_refs {
         /// the Radicle URN to look under
         #[structopt(long)]
         pub urn: Urn,
+
         /// the remote peer to look under
         #[structopt(long)]
         pub peer: Option<PeerId>,
@@ -446,9 +499,11 @@ pub mod rad_refs {
         /// the Radicle URN to look under
         #[structopt(long)]
         pub urn: Urn,
+
         /// the delegate's Radicle URN
         #[structopt(long)]
         pub delegate: Urn,
+
         /// the remote peer to look under
         #[structopt(long)]
         pub peer: Option<PeerId>,
@@ -472,6 +527,7 @@ pub mod refs {
         /// the Radicle URN to look under
         #[structopt(long)]
         pub urn: Urn,
+
         /// the remote peer to look under
         #[structopt(long)]
         pub peer: Option<PeerId>,
@@ -483,6 +539,7 @@ pub mod refs {
         /// the Radicle URN to look under
         #[structopt(long)]
         pub urn: Urn,
+
         /// the remote peer to look under
         #[structopt(long)]
         pub peer: Option<PeerId>,
@@ -494,6 +551,7 @@ pub mod refs {
         /// the Radicle URN to look under
         #[structopt(long)]
         pub urn: Urn,
+
         /// the remote peer to look under
         #[structopt(long)]
         pub peer: Option<PeerId>,
@@ -505,9 +563,11 @@ pub mod refs {
         /// the arbitrary category to look under
         #[structopt(long)]
         pub category: String,
+
         /// the Radicle URN to look under
         #[structopt(long)]
         pub urn: Urn,
+
         /// the remote peer to look under
         #[structopt(long)]
         pub peer: Option<PeerId>,
@@ -523,6 +583,7 @@ pub mod tracking {
         /// the Radicle URN to track
         #[structopt(long)]
         pub urn: Urn,
+
         /// the peer to track
         #[structopt(long)]
         pub peer: PeerId,
@@ -534,6 +595,7 @@ pub mod tracking {
         /// the Radicle URN to untrack
         #[structopt(long)]
         pub urn: Urn,
+
         /// the peer to untrack
         #[structopt(long)]
         pub peer: PeerId,

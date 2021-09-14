@@ -94,11 +94,13 @@ impl WhoAmI {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn create<T>(
     storage: &Storage,
     paths: Paths,
     signer: BoxedSigner,
     whoami: WhoAmI,
+    mut delegations: BTreeSet<KeyOrUrn<Revision>>,
     payload: payload::Project,
     ext: Vec<payload::Ext<T>>,
     creation: Creation,
@@ -112,7 +114,8 @@ where
     }
 
     let whoami = whoami.resolve(storage)?;
-    let delegations = Indirect::from(whoami.clone().into_inner().into_inner());
+    delegations.insert(KeyOrUrn::from(Either::Right(whoami.urn())));
+    let delegations = resolve_indirect(storage, delegations)?;
 
     let urn = project::urn(storage, payload.clone(), delegations.clone())?;
     let url = LocalUrl::from(urn);

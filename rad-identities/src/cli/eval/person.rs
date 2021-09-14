@@ -54,20 +54,32 @@ where
     let (signer, storage) = ssh::storage::<S>(profile)?;
     let paths = profile.paths();
     let person = match create {
-        Create::New(New { payload, ext, path }) => person::create(
+        Create::New(New {
+            payload,
+            ext,
+            delegations,
+            path,
+        }) => person::create(
             &storage,
             paths.clone(),
             signer,
             payload,
             ext,
+            delegations,
             person::Creation::New { path },
         )?,
-        Create::Existing(Existing { payload, ext, path }) => person::create(
+        Create::Existing(Existing {
+            payload,
+            ext,
+            delegations,
+            path,
+        }) => person::create(
             &storage,
             paths.clone(),
             signer,
             payload,
             ext,
+            delegations,
             person::Creation::Existing { path },
         )?,
     };

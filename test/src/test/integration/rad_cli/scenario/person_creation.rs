@@ -39,6 +39,7 @@ fn create() -> anyhow::Result<()> {
                     name: "Ralph Wiggums".into(),
                 },
                 ext: vec![],
+                delegations: vec![],
                 path: None,
             }),
         }),

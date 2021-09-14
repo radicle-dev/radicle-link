@@ -55,6 +55,7 @@ pub fn create<T>(
     signer: BoxedSigner,
     payload: payload::Person,
     ext: Vec<payload::Ext<T>>,
+    mut delegations: Vec<PublicKey>,
     creation: Creation,
 ) -> anyhow::Result<Person>
 where
@@ -66,7 +67,8 @@ where
     }
 
     let key = *storage.peer_id().as_public_key();
-    let delegations: Direct = Some(key).into_iter().collect();
+    delegations.push(key);
+    let delegations: Direct = delegations.into_iter().collect();
 
     let urn = person::urn(storage, payload.clone(), delegations.clone())?;
     let url = LocalUrl::from(urn);
