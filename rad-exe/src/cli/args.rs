@@ -20,6 +20,15 @@ pub const RAD_VERBOSE_ARG: &str = "--rad-verbose";
 
 #[derive(Debug, StructOpt)]
 pub struct Args {
+    #[structopt(flatten)]
+    pub global: Global,
+
+    #[structopt(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Debug, StructOpt)]
+pub struct Global {
     /// The profile identifier, if not given then the currently active profile
     /// is used
     #[structopt(long)]
@@ -32,9 +41,6 @@ pub struct Args {
     /// Use verbose output
     #[structopt(long)]
     pub rad_verbose: bool,
-
-    #[structopt(subcommand)]
-    pub command: Command,
 }
 
 #[derive(Debug, StructOpt)]
@@ -75,13 +81,18 @@ pub fn sanitise_globals(mut args: Args) -> Args {
             sanitise_option(
                 RAD_PROFILE_ARG,
                 RAD_PROFILE,
-                args.rad_profile.clone().map(|id| id.to_string()),
+                args.global.rad_profile.clone().map(|id| id.to_string()),
                 external,
             );
 
-            sanitise_flag(RAD_QUIET_ARG, "RAD_QUIET", args.rad_quiet, external);
+            sanitise_flag(RAD_QUIET_ARG, "RAD_QUIET", args.global.rad_quiet, external);
 
-            sanitise_flag(RAD_VERBOSE_ARG, "RAD_VERBOSE", args.rad_verbose, external);
+            sanitise_flag(
+                RAD_VERBOSE_ARG,
+                "RAD_VERBOSE",
+                args.global.rad_verbose,
+                external,
+            );
 
             args
         },
