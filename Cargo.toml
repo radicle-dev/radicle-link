@@ -21,6 +21,9 @@ members = [
   "std-ext",
   "test",
 ]
+exclude = [
+  "bins"
+]
 
 [patch.crates-io.git2]
 git = "https://github.com/radicle-dev/git2-rs.git"

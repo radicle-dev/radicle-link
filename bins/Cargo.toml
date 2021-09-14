@@ -1,0 +1,8 @@
+[workspace]
+members = [
+  "linkd"
+]
+
+[patch.crates-io.thrussh-encoding]
+git = "https://github.com/FintanH/thrussh.git"
+branch = "generic-agent"
