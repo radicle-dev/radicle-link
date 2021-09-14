@@ -1,6 +1,9 @@
 [workspace]
 members = [
-  "linkd"
+  "linkd",
+  "rad",
+  "rad-identities-dev",
+  "rad-profile-dev",
 ]
 
 [patch.crates-io.thrussh-encoding]
