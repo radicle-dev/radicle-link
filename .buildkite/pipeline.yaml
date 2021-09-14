@@ -69,3 +69,16 @@ steps:
       - "Cargo.lock"
     agents: *build-agent
     env: *build-docker
+
+  - label: "Build Bins"
+    timeout_in_minutes: 20
+    if: |
+        build.pull_request.repository.fork == null ||
+        build.pull_request.repository.fork == false
+    commands:
+      - ".buildkite/env"
+      - "ci/build-bins"
+    artifact_paths:
+      - "Cargo.lock"
+    agents: *build-agent
+    env: *build-docker
