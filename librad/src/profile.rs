@@ -5,6 +5,7 @@
 
 use std::{
     env,
+    fmt,
     io,
     path::{Path, PathBuf},
 };
@@ -37,6 +38,7 @@ pub struct Profile {
 }
 
 /// An enumeration of where the root directory for a `Profile` lives.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RadHome {
     /// The system specific directories given by [`directories::ProjectDirs`].
     ProjectDirs,
@@ -45,23 +47,25 @@ pub enum RadHome {
 }
 
 impl Default for RadHome {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RadHome {
     /// If `RAD_HOME` is defined then the path supplied there is used and
     /// [`RadHome::Root`] is constructed. Otherwise, [`RadHome::ProjectDirs`] is
     /// constructed.
-    pub fn new() -> Self {
+    fn default() -> Self {
         if let Ok(root) = env::var(RAD_HOME) {
             Self::Root(Path::new(&root).to_path_buf())
         } else {
             Self::ProjectDirs
         }
     }
+}
 
+impl fmt::Display for RadHome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl RadHome {
     fn config(&self) -> Result<PathBuf, io::Error> {
         Ok(match self {
             Self::ProjectDirs => project_dirs()?.config_dir().to_path_buf(),
@@ -151,7 +155,7 @@ impl Profile {
     /// `ProjectDirs_DATA_HOME/radicle-link/<profile-id>`.
     pub fn load() -> Result<Self, Error> {
         let env_profile_id = ProfileId::from_env()?;
-        let home = RadHome::new();
+        let home = RadHome::default();
         Self::from_home(&home, env_profile_id)
     }
 

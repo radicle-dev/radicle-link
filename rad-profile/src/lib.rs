@@ -69,7 +69,7 @@ where
     C::Error: fmt::Debug + fmt::Display + Send + Sync + 'static,
     C::SecretBox: Serialize + DeserializeOwned,
 {
-    let home = RadHome::new();
+    let home = RadHome::default();
     let profile = Profile::new(&home)?;
     Profile::set(&home, profile.id().clone())?;
     let key = SecretKey::new();
@@ -82,7 +82,7 @@ where
 
 /// Get the current active `ProfileId`.
 pub fn get(id: Option<ProfileId>) -> Result<Option<Profile>, Error> {
-    let home = RadHome::new();
+    let home = RadHome::default();
     match id {
         Some(id) => Profile::get(&home, id).map_err(Error::from),
         None => Profile::active(&home).map_err(Error::from),
@@ -91,13 +91,13 @@ pub fn get(id: Option<ProfileId>) -> Result<Option<Profile>, Error> {
 
 /// Set the active profile to the given `ProfileId`.
 pub fn set(id: ProfileId) -> Result<(), Error> {
-    let home = RadHome::new();
+    let home = RadHome::default();
     Profile::set(&home, id).map_err(Error::from).map(|_| ())
 }
 
 /// List the set of active profiles that exist.
 pub fn list() -> Result<Vec<Profile>, Error> {
-    let home = RadHome::new();
+    let home = RadHome::default();
     Profile::list(&home).map_err(Error::from)
 }
 
@@ -106,7 +106,7 @@ pub fn peer_id<P>(id: P) -> Result<PeerId, Error>
 where
     P: Into<Option<ProfileId>>,
 {
-    let home = RadHome::new();
+    let home = RadHome::default();
     let profile = get_or_active(&home, id)?;
     let read = ReadOnly::open(profile.paths())?;
     Ok(*read.peer_id())
@@ -116,7 +116,7 @@ pub fn paths<P>(id: P) -> Result<Paths, Error>
 where
     P: Into<Option<ProfileId>>,
 {
-    let home = RadHome::new();
+    let home = RadHome::default();
     get_or_active(&home, id).map(|p| p.paths().clone())
 }
 
@@ -133,7 +133,7 @@ where
     P: Into<Option<ProfileId>>,
     S: ClientStream + Unpin + 'static,
 {
-    let home = RadHome::new();
+    let home = RadHome::default();
     let profile = get_or_active(&home, id)?;
     let store = keys::file_storage(&profile, crypto);
     let key = store.get_key()?;
