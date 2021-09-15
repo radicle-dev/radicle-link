@@ -146,6 +146,92 @@ pub enum SomePayload {
     Project(ProjectPayload),
 }
 
+/// A runtime representation of a payload extension.
+///
+/// When defining an extension natively, in Rust, it can be defined as any
+/// canonical JSON value and the namespace defined using the [`HasNamespace`]
+/// trait. This trait cannot be defined for outside sources of extension, due to
+/// the requirement of defining the `&'static Url`.
+///
+/// For compatibility between a native extension and a runtime extension there
+/// is a `From` implementation if the type implemenets [`HasNamespace`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ext<T> {
+    pub namespace: Url,
+    pub val: T,
+}
+
+impl<T> From<T> for Ext<T>
+where
+    T: HasNamespace,
+{
+    fn from(val: T) -> Self {
+        Self {
+            namespace: T::namespace().clone(),
+            val,
+        }
+    }
+}
+
+impl<T> serde::Serialize for Ext<T>
+where
+    T: serde::Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut ext = serializer.serialize_map(Some(1))?;
+        ext.serialize_entry(&self.namespace, &self.val)?;
+        ext.end()
+    }
+}
+
+impl<'de, T> serde::Deserialize<'de> for Ext<T>
+where
+    T: serde::Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor<T>(PhantomData<T>);
+
+        impl<'de, T> serde::de::Visitor<'de> for Visitor<T>
+        where
+            T: serde::Deserialize<'de>,
+        {
+            type Value = Ext<T>;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an extension payload")
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                let ext = match access.next_entry()? {
+                    None => {
+                        return Err(serde::de::Error::custom(
+                            "expected extension of the form `{<namespace>: <value>}`",
+                        ))
+                    },
+                    Some((namespace, val)) => Ext { namespace, val },
+                };
+
+                if access.next_entry::<Url, T>()?.is_some() {
+                    return Err(serde::de::Error::custom("expecting a single extension"));
+                }
+
+                Ok(ext)
+            }
+        }
+
+        deserializer.deserialize_map(Visitor(PhantomData))
+    }
+}
+
 /// Payload of an identity document.
 ///
 /// This type is a simple formulation of an "open sum", where the type of one
@@ -183,24 +269,27 @@ where
         }
     }
 
-    pub fn with_ext<U>(mut self, val: U) -> Result<Self, ExtError>
+    pub fn with_ext<U, V>(mut self, val: U) -> Result<Self, ExtError>
     where
-        U: HasNamespace + serde::Serialize,
+        U: Into<Ext<V>>,
+        V: serde::Serialize,
     {
         self.set_ext(val)?;
         Ok(self)
     }
 
-    pub fn set_ext<U>(&mut self, val: U) -> Result<(), ExtError>
+    pub fn set_ext<U, V>(&mut self, val: U) -> Result<(), ExtError>
     where
-        U: HasNamespace + serde::Serialize,
+        U: Into<Ext<V>>,
+        V: serde::Serialize,
     {
-        if T::namespace_matches(U::namespace()) {
+        let ext = val.into();
+        if T::namespace_matches(&ext.namespace) {
             return Err(ExtError::ExtensionIsSubject);
         }
 
-        let val = serde_json::to_value(val)?;
-        self.ext.insert(U::namespace().clone(), val);
+        let val = serde_json::to_value(ext.val)?;
+        self.ext.insert(ext.namespace, val);
 
         Ok(())
     }
@@ -230,6 +319,10 @@ where
             .remove(U::namespace())
             .map(serde_json::from_value)
             .transpose()
+    }
+
+    pub fn exts(&self) -> impl Iterator<Item = (&Url, &serde_json::Value)> {
+        self.ext.iter()
     }
 }
 

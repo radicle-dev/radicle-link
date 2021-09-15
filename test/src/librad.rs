@@ -7,4 +7,5 @@ pub mod git;
 pub mod identities;
 pub mod keys;
 pub mod net;
+pub mod paths;
 pub mod peer;

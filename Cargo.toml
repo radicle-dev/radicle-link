@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "copy",
   "daemon",
   "data",
   "e2e",
@@ -16,6 +15,7 @@ members = [
   "node-lib",
   "rad-clib",
   "rad-exe",
+  "rad-identities",
   "rad-profile",
   "seed",
   "std-ext",

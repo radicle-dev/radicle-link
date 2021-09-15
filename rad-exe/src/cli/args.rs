@@ -39,6 +39,8 @@ pub struct Args {
 
 #[derive(Debug, StructOpt)]
 pub enum Command {
+    /// Manage Radicle Identities
+    Identities(rad_identities::cli::args::Args),
     /// Manage your Radicle profiles
     Profile(rad_profile::cli::args::Args),
     #[structopt(external_subcommand)]

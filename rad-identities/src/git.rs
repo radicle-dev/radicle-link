@@ -1,4 +1,4 @@
-// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+// Copyright © 2021 The Radicle Link Contributors
 //
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
@@ -26,6 +26,15 @@ use librad::{
     refspec_pattern,
     std_ext::result::ResultExt as _,
 };
+
+pub mod checkout;
+pub mod existing;
+pub mod include;
+pub mod new;
+
+lazy_static! {
+    pub static ref MAIN_BRANCH: OneLevel = OneLevel::from(reflike!("main"));
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

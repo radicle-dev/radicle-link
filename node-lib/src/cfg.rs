@@ -11,7 +11,6 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use thrussh_agent::client::ClientStream;
 use tokio::{
     fs::File,
     io::{stdin, AsyncReadExt as _},
@@ -57,7 +56,7 @@ pub enum Error {
     Init(#[from] storage::error::Init),
 
     #[error(transparent)]
-    Keys(#[from] keys::Error),
+    Keys(#[from] keys::ssh::Error),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
@@ -82,14 +81,11 @@ pub struct Cfg<Disco, Signer> {
 }
 
 impl Cfg<discovery::Static, BoxedSigner> {
-    pub async fn from_args<S>(args: &args::Args) -> Result<Self, Error>
-    where
-        S: ClientStream + Unpin + 'static,
-    {
+    pub async fn from_args(args: &args::Args) -> Result<Self, Error> {
         let seeds = Seeds::resolve(&args.bootstraps).await?;
         let disco = discovery::Static::try_from(seeds)?;
         let profile = Profile::try_from(args)?;
-        let signer = construct_signer::<S>(args, &profile).await?;
+        let signer = construct_signer(args, &profile).await?;
 
         // Ensure the storage is accessible for the created profile and signer.
         storage::Storage::init(profile.paths(), signer.clone())?;
@@ -151,14 +147,9 @@ impl TryFrom<&args::Args> for Profile {
     }
 }
 
-async fn construct_signer<S>(args: &args::Args, profile: &Profile) -> anyhow::Result<BoxedSigner>
-where
-    S: ClientStream + Unpin + 'static,
-{
+async fn construct_signer(args: &args::Args, profile: &Profile) -> anyhow::Result<BoxedSigner> {
     match args.signer {
-        args::Signer::SshAgent => keys::signer_ssh::<S>(profile)
-            .await
-            .map_err(anyhow::Error::from),
+        args::Signer::SshAgent => keys::ssh::signer(profile).map_err(anyhow::Error::from),
         args::Signer::Key => {
             let bytes = match args.key.source {
                 args::KeySource::Ephemeral => {

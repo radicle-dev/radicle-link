@@ -1,4 +1,4 @@
-// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+// Copyright © 2021 The Radicle Link Contributors
 //
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
@@ -7,15 +7,17 @@ use std::{convert::TryFrom as _, path::PathBuf};
 
 use librad::{
     git::{
-        identities::{self, Project},
+        identities,
         include::{self, Include},
         local::url::LocalUrl,
-        storage::Storage,
+        storage::ReadOnly,
     },
     git_ext,
     identities::relations,
     paths::Paths,
 };
+
+use crate::field::HasUrn;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -32,13 +34,17 @@ pub enum Error {
     Relations(#[from] identities::relations::Error),
 }
 
-/// Update the include file for the given `project`.
+/// Update the include file for the given `identity`.
 ///
-/// It looks at the tracked peers of the `project` and creates an entry for each
-/// one in an include file. The file can be located by using
+/// It looks at the tracked peers of the `identity` and creates an entry for
+/// each one in an include file. The file can be located by using
 /// [`Paths::git_includes_dir`], and the name of the file will be the `Urn`.
-pub fn update(storage: &Storage, paths: &Paths, project: &Project) -> Result<PathBuf, Error> {
-    let urn = project.urn();
+pub fn update<S, I>(storage: &S, paths: &Paths, identity: &I) -> Result<PathBuf, Error>
+where
+    S: AsRef<ReadOnly>,
+    I: HasUrn,
+{
+    let urn = identity.urn();
     let url = LocalUrl::from(urn.clone());
     let tracked = identities::relations::tracked(storage, &urn)?;
     let include = Include::from_tracked_persons(

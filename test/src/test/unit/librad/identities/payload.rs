@@ -11,6 +11,7 @@ use proptest::prelude::*;
 use librad::{
     git_ext::Oid,
     identities::payload::{
+        Ext,
         Person,
         PersonDelegations,
         PersonPayload,
@@ -31,12 +32,18 @@ fn person_example() {
     .with_ext(UpstreamUser {
         registered_as: "cloudhead".into(),
     })
+    .unwrap()
+    .with_ext(Ext {
+        namespace: "https://radicle.xyz/upstream/ethereum/v1".parse().unwrap(),
+        val: "0x42",
+    })
     .unwrap();
 
     let json_pretty = r#"{
   "https://radicle.xyz/link/identities/person/v1": {
     "name": "cloudhead"
   },
+  "https://radicle.xyz/upstream/ethereum/v1": "0x42",
   "https://radicle.xyz/upstream/user/v1": {
     "radicle-registry-name": "cloudhead"
   }

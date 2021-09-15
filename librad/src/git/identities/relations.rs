@@ -19,7 +19,7 @@ use crate::{
     identities::{
         relations::{Peer, Role, Status},
         Person,
-        Project,
+        SomeIdentity,
     },
     PeerId,
 };
@@ -34,9 +34,11 @@ pub enum Error {
     Stored(#[from] stored::Error),
     #[error(transparent)]
     Tracking(#[from] tracking::Error),
+    #[error("the identity `{0}` found is not recognised/supported")]
+    UknownIdentity(Urn),
 }
 
-/// Determine the [`Role`] for a given [`Project`] and [`PeerId`].
+/// Determine the [`Role`] for [`SomeIdentity`] and [`PeerId`].
 ///
 /// The rules for determining the role are:
 ///   * If the peer is one of the delegates they are considred a
@@ -52,28 +54,33 @@ pub enum Error {
 /// looking at `refs/<remote>/rad/signed_refs`.
 pub fn role<S>(
     storage: &S,
-    project: &Project,
+    urn: &Urn,
+    identity: &SomeIdentity,
     peer: Either<PeerId, PeerId>,
-) -> Result<Role, stored::Error>
+) -> Result<Role, Error>
 where
     S: AsRef<storage::ReadOnly>,
 {
     let storage = storage.as_ref();
-    let role = if project
-        .delegations()
-        .owner(peer.into_inner().as_public_key())
-        .is_some()
-    {
+    let role = if is_delegate(identity, urn, peer.into_inner())? {
         Role::Maintainer
-    } else if Refs::load(storage, &project.urn(), peer.right())?
-        .map_or(false, |refs| !refs.heads.is_empty())
-    {
+    } else if Refs::load(storage, urn, peer.right())?.map_or(false, |refs| !refs.heads.is_empty()) {
         Role::Contributor
     } else {
         Role::Tracker
     };
 
     Ok(role)
+}
+
+fn is_delegate(identity: &SomeIdentity, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
+    match identity {
+        SomeIdentity::Project(ref project) => {
+            Ok(project.delegations().owner(peer.as_public_key()).is_some())
+        },
+        SomeIdentity::Person(ref person) => Ok(person.delegations().contains(peer.as_public_key())),
+        _ => Err(Error::UknownIdentity(urn.clone())),
+    }
 }
 
 /// Builds the list of tracked peers determining their relation to the `urn`
@@ -90,7 +97,7 @@ where
     S: AsRef<storage::ReadOnly>,
 {
     let storage = storage.as_ref();
-    let project = identities::project::verify(storage, urn)?
+    let identity = identities::any::get(storage, urn)?
         .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
 
     let mut peers = vec![];
@@ -102,7 +109,7 @@ where
             let malkovich = identities::person::get(storage, &rad_self)?
                 .ok_or(identities::Error::NotFound(rad_self))?;
 
-            let role = role(storage, &project, Either::Right(peer_id))?;
+            let role = role(storage, urn, &identity, Either::Right(peer_id))?;
             Status::replicated(role, malkovich)
         } else {
             Status::NotReplicated
