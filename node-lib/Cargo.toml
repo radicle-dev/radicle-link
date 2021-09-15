@@ -26,15 +26,15 @@ tokio               = { version = "1.10", default-features = false, features = [
 tracing             = { version = "0.1", default-features = false, features = [ "attributes", "std" ] }
 tracing-subscriber  = "0.2"
 
-[dependencies.rad-clib]
-path    = "../rad-clib"
-version = "0.1.0"
-
 [dependencies.librad]
 path    = "../librad"
 version = "0.1.0"
 
+[dependencies.rad-clib]
+path    = "../rad-clib"
+version = "0.1.0"
+
 [dependencies.thrussh-agent]
-git               = "https://github.com/FintanH/thrussh"
-branch            = "generic-agent"
-features          = [ "tokio-agent" ]
+git       = "https://github.com/FintanH/thrussh"
+features  = [ "tokio-agent" ]
+branch    = "generic-agent"
