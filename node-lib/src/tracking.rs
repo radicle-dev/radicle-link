@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use futures::{pin_mut, StreamExt as _};
 use tracing::{error, info, instrument};
@@ -21,8 +21,8 @@ use librad::{
 pub enum Tracker {
     Everything,
     Selected {
-        peer_ids: HashSet<PeerId>,
-        urns: HashSet<Urn>,
+        peer_ids: BTreeSet<PeerId>,
+        urns: BTreeSet<Urn>,
     },
 }
 
@@ -40,7 +40,7 @@ impl Tracker {
 }
 
 #[instrument(name = "tracking subroutine", skip(peer, tracker))]
-pub async fn routine<D, S>(peer: Peer<S>, tracker: Tracker) -> anyhow::Result<()>
+pub async fn routine<S>(peer: Peer<S>, tracker: Tracker) -> anyhow::Result<()>
 where
     S: Signer + Clone,
 {

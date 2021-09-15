@@ -13,6 +13,7 @@ use structopt::StructOpt;
 
 use librad::{
     crypto,
+    git::Urn,
     net::Network,
     profile::{ProfileId, RadHome},
     PeerId,
@@ -51,6 +52,9 @@ pub struct Args {
     /// used for debug and testing only.
     #[structopt(long)]
     pub tmp_root: bool,
+
+    #[structopt(flatten)]
+    pub tracking: TrackingArgs,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -319,5 +323,42 @@ fn parse_protocol_network(src: &str) -> Result<Network, String> {
         _main if src.to_lowercase() == "main" => Ok(Network::Main),
         custom if !src.is_empty() => Ok(Network::from_str(custom)?),
         _ => Err("custom network can't be empty".to_string()),
+    }
+}
+
+#[derive(Debug, Default, Eq, PartialEq, StructOpt)]
+pub struct TrackingArgs {
+    /// Instruct the node to automatically track either everything it observes
+    /// or a selected set of peer ids and urns which need to be provided
+    /// through extra arguments to take effect.
+    #[structopt(long = "track", name = "track")]
+    pub mode: Option<TrackingMode>,
+
+    /// Track all updates from a specific peer. Argument can be repeated. Use in
+    /// conjunction with `--track="selected"`.
+    #[structopt(long = "track-peer-id", name = "track-peer-id")]
+    pub peer_ids: Vec<PeerId>,
+
+    /// Track all updates for a specific project urn. Argument can be repeated.
+    /// Use in conjunction with `--track="selected"`.
+    #[structopt(long = "track-urn", name = "track-urn")]
+    pub urns: Vec<Urn>,
+}
+
+#[derive(Debug, Eq, PartialEq, StructOpt)]
+pub enum TrackingMode {
+    Everything,
+    Selected,
+}
+
+impl FromStr for TrackingMode {
+    type Err = String;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
+            "everything" => Ok(Self::Everything),
+            "selected" => Ok(Self::Selected),
+            _ => Err(format!("unsupported tracking mode `{}`", input)),
+        }
     }
 }
