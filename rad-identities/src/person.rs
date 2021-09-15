@@ -44,6 +44,12 @@ pub enum Error {
     Local(#[from] identities::local::Error),
 }
 
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct PersonDisplay {
+    pub urn: Urn,
+    pub payload: PersonPayload,
+}
+
 pub enum Creation {
     New { path: Option<PathBuf> },
     Existing { path: PathBuf },

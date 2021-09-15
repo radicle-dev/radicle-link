@@ -97,7 +97,12 @@ fn eval_list(profile: &Profile) -> anyhow::Result<()> {
     let storage = storage::read_only(profile)?;
     let persons = person::list(&storage)?;
     let persons = persons
-        .map(|p| p.map(|p| p.payload().clone()))
+        .map(|p| {
+            p.map(|p| person::PersonDisplay {
+                urn: p.urn(),
+                payload: p.payload().clone(),
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
     println!("{}", serde_json::to_string(&persons)?);
     Ok(())
