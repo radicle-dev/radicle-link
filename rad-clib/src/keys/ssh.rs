@@ -5,7 +5,11 @@
 
 use thiserror::Error;
 
-use librad::{crypto::keystore::sign::ssh, git::storage::read};
+use librad::{
+    crypto::{keystore::sign::ssh, BoxedSignError},
+    git::storage::read,
+    PeerId,
+};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -13,6 +17,16 @@ pub enum Error {
     AddKey(#[from] ssh::error::AddKey),
     #[error("failed to get the key material from your file storage")]
     GetKey(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error(transparent)]
+    ListKeys(#[from] ssh::error::ListKeys),
+    #[error(
+        "the key for {0} is not in the ssh-agent, consider adding it via `rad profile ssh-add`"
+    )]
+    NoSuchKey(PeerId),
+    #[error(transparent)]
+    RemoveKey(#[from] ssh::error::RemoveKey),
+    #[error(transparent)]
+    SignError(#[from] BoxedSignError),
     #[error(transparent)]
     SshConnect(#[from] ssh::error::Connect),
     #[error(transparent)]
