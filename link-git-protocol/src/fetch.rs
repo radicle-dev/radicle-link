@@ -29,11 +29,25 @@ use git_repository::{
     },
     Progress,
 };
+use once_cell::sync::Lazy;
 use pin_project::{pin_project, pinned_drop};
+use versions::Version;
 
 pub use git_repository::{hash::ObjectId, protocol::fetch::Ref};
 
-use crate::{packwriter::PackWriter, transport};
+use crate::{packwriter::PackWriter, remote_git_version, transport};
+
+// Work around `git-upload-pack` not handling namespaces properly,
+//
+// cf. https://lore.kernel.org/git/CD2XNXHACAXS.13J6JTWZPO1JA@schmidt/
+// Fixed in `git.git` 1ab13eb, which should land in 2.34
+fn must_namespace_want_ref(caps: &client::Capabilities) -> bool {
+    static FIXED_AFTER: Lazy<Version> = Lazy::new(|| Version::new("2.33.0").unwrap());
+
+    remote_git_version(caps)
+        .map(|version| version <= *FIXED_AFTER)
+        .unwrap_or(false)
+}
 
 #[derive(Debug)]
 pub struct Options {
@@ -84,6 +98,7 @@ pub struct Fetch<P, O> {
     opt: Options,
     pack_writer: P,
     out: Outputs<O>,
+    need_namespaced_want_ref: bool,
 }
 
 impl<P, O> Fetch<P, O> {
@@ -92,6 +107,7 @@ impl<P, O> Fetch<P, O> {
             opt,
             pack_writer,
             out: Outputs::default(),
+            need_namespaced_want_ref: false,
         }
     }
 
@@ -139,6 +155,8 @@ impl<P: PackWriter> DelegateBlocking for Fetch<P, P::Output> {
             ));
         }
 
+        self.need_namespaced_want_ref = must_namespace_want_ref(caps);
+
         Ok(Action::Continue)
     }
 
@@ -157,10 +175,12 @@ impl<P: PackWriter> DelegateBlocking for Fetch<P, P::Output> {
         }
 
         for name in &self.opt.want_refs {
-            // Work around `git-upload-pack` not handling namespaces properly,
-            // cf. https://lore.kernel.org/git/CD2XNXHACAXS.13J6JTWZPO1JA@schmidt/
-            let want_ref = format!("refs/namespaces/{}/{}", self.opt.repo, name);
-            args.want_ref(BString::from(want_ref).as_bstr());
+            if self.need_namespaced_want_ref {
+                let want_ref = format!("refs/namespaces/{}/{}", self.opt.repo, name);
+                args.want_ref(BString::from(want_ref).as_bstr());
+            } else {
+                args.want_ref(name.as_bstr());
+            }
         }
 
         // send done, as we don't bother with further negotiation
