@@ -22,7 +22,7 @@ pub enum Command {
     List(List),
     Peer(GetPeerId),
     Paths(GetPaths),
-    SshAdd(SshAdd),
+    Ssh(Ssh),
 }
 
 /// Create a new profile, generating a new secret key and initialising
@@ -68,15 +68,51 @@ pub struct GetPaths {
     pub id: Option<ProfileId>,
 }
 
-/// Add the profile's associated secrety key to the ssh-agent. If no profile was
-/// provided, then the active one is used.
+/// Manage the profile's key material on the ssh-agent
 #[derive(Debug, StructOpt)]
-pub struct SshAdd {
-    /// the identifier to look up    
-    #[structopt(long)]
-    pub id: Option<ProfileId>,
-    /// the lifetime of the key being added to the ssh-agent, if none is
-    /// provided then agent will ask to confirm each time
-    #[structopt(long, short)]
-    pub time: Option<u32>,
+pub struct Ssh {
+    #[structopt(subcommand)]
+    pub options: ssh::Options,
+}
+
+pub mod ssh {
+    use super::*;
+
+    #[derive(Debug, StructOpt)]
+    pub enum Options {
+        Add(Add),
+        Rm(Rm),
+        Test(Test),
+    }
+
+    /// Add the profile's associated secret key to the ssh-agent. If no profile
+    /// was provided, then the active one is used.
+    #[derive(Debug, StructOpt)]
+    pub struct Add {
+        /// the identifier to look up
+        #[structopt(long)]
+        pub id: Option<ProfileId>,
+        /// the lifetime of the key being added to the ssh-agent, if none is
+        /// provided then agent will ask to confirm each time
+        #[structopt(long, short)]
+        pub time: Option<u32>,
+    }
+
+    /// Remove the profile's associated secret key from the ssh-agent. If no
+    /// profile was provided, then the active one is used.
+    #[derive(Debug, StructOpt)]
+    pub struct Rm {
+        /// the identifier to look up
+        #[structopt(long)]
+        pub id: Option<ProfileId>,
+    }
+
+    /// Test if the profile's associated secret key is present in the ssh-agent.
+    /// If no profile was provided, then the active one is used.
+    #[derive(Debug, StructOpt)]
+    pub struct Test {
+        /// the identifier to look up
+        #[structopt(long)]
+        pub id: Option<ProfileId>,
+    }
 }

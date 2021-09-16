@@ -151,3 +151,30 @@ where
     keys::ssh::add_signer(&profile, crypto, constraints)?;
     Ok(profile.id().clone())
 }
+
+/// Remove a profile's [`SecretKey`] from the `ssh-agent`.
+pub fn ssh_remove<H, P, C>(home: H, id: P, crypto: C) -> Result<ProfileId, Error>
+where
+    H: Into<Option<RadHome>>,
+    C: Crypto,
+    C::Error: fmt::Debug + fmt::Display + Send + Sync + 'static,
+    C::SecretBox: Serialize + DeserializeOwned,
+    P: Into<Option<ProfileId>>,
+{
+    let home = home.into().unwrap_or_default();
+    let profile = get_or_active(&home, id)?;
+    keys::ssh::remove_signer(&profile, crypto)?;
+    Ok(profile.id().clone())
+}
+
+/// Test to see if a profile's [`SecretKey`] is present in the `ssh-agent`.
+pub fn ssh_test<H, P>(home: H, id: P) -> Result<(ProfileId, bool), Error>
+where
+    H: Into<Option<RadHome>>,
+    P: Into<Option<ProfileId>>,
+{
+    let home = home.into().unwrap_or_default();
+    let profile = get_or_active(&home, id)?;
+    let present = keys::ssh::test_signer(&profile)?;
+    Ok((profile.id().clone(), present))
+}

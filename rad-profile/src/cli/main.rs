@@ -7,7 +7,7 @@ use thrussh_agent::Constraint;
 
 use rad_clib::keys;
 
-use crate::{create, get, list, paths, peer_id, set, ssh_add};
+use crate::{create, get, list, paths, peer_id, set, ssh_add, ssh_remove, ssh_test};
 
 use super::args::*;
 
@@ -51,12 +51,25 @@ fn eval(command: Command) -> anyhow::Result<()> {
             println!("git includes: {}", paths.git_includes_dir().display());
             println!("keys: {}", paths.keys_dir().display());
         },
-        Command::SshAdd(SshAdd { id, time }) => {
-            let constraint = time.map_or(Constraint::Confirm, |seconds| Constraint::KeyLifetime {
-                seconds,
-            });
-            let id = ssh_add(None, id, keys::prompt::new(), &[constraint])?;
-            println!("added key for profile id `{}`", id);
+        Command::Ssh(Ssh { options }) => match options {
+            ssh::Options::Add(ssh::Add { id, time }) => {
+                let constraints =
+                    time.map_or(vec![], |seconds| vec![Constraint::KeyLifetime { seconds }]);
+                let id = ssh_add(None, id, keys::prompt::new(), &constraints)?;
+                println!("added key for profile id `{}`", id);
+            },
+            ssh::Options::Rm(ssh::Rm { id }) => {
+                let id = ssh_remove(None, id, keys::prompt::new())?;
+                println!("removed key for profile id `{}`", id);
+            },
+            ssh::Options::Test(ssh::Test { id }) => {
+                let (id, present) = ssh_test(None, id)?;
+                if present {
+                    println!("key is on ssh-agent for profile id `{}`", id);
+                } else {
+                    println!("key is *not* on ssh-agent for profile id `{}`", id);
+                }
+            },
         },
     }
 
