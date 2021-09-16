@@ -1,26 +1,5 @@
 [workspace]
-members = [
-  "copy",
-  "daemon",
-  "data",
-  "e2e",
-  "git-ext",
-  "git-helpers",
-  "git-trailers",
-  "librad",
-  "link-canonical",
-  "link-crypto",
-  "link-git-protocol",
-  "link-identities",
-  "macros",
-  "node-lib",
-  "rad-clib",
-  "rad-exe",
-  "rad-profile",
-  "seed",
-  "std-ext",
-  "test",
-]
+members = ["crates/*"]
 exclude = [
   "bins"
 ]
