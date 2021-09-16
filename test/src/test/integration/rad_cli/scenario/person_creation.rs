@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use tempfile::tempdir;
+use thrussh_agent::Constraint;
 
 use librad::{
     crypto::keystore::{
@@ -28,7 +29,12 @@ fn create() -> anyhow::Result<()> {
     let pass = Pwhash::new(SecUtf8::from(b"42".to_vec()), *KDF_PARAMS_TEST);
     let home = RadHome::Root(temp.path().to_path_buf());
     let (profile, _) = profile::create(home.clone(), pass.clone())?;
-    profile::ssh_add(home, profile.id().clone(), pass, &[])?;
+    profile::ssh_add(
+        home,
+        profile.id().clone(),
+        pass,
+        &[Constraint::KeyLifetime { seconds: 10 }],
+    )?;
     identities::cli::eval::person::eval(
         &profile,
         Options::Create(CreateOptions {
