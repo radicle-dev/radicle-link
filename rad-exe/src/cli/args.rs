@@ -8,6 +8,7 @@ use std::env;
 use structopt::StructOpt;
 
 use librad::profile::{ProfileId, RAD_PROFILE};
+use rad_clib::keys::ssh::SshAuthSock;
 
 /// `--rad-profile` command line name
 pub const RAD_PROFILE_ARG: &str = "--rad-profile";
@@ -33,6 +34,12 @@ pub struct Global {
     /// is used
     #[structopt(long)]
     pub rad_profile: Option<ProfileId>,
+
+    /// Which unix domain socket to use for connecting to the ssh-agent. The
+    /// default will defer to SSH_AUTH_SOCK, otherwise the value given should be
+    /// a valid path.
+    #[structopt(long, default_value)]
+    pub rad_ssh_auth_sock: SshAuthSock,
 
     /// No output printed to stdout
     #[structopt(long)]

@@ -46,16 +46,18 @@ pub mod prompt {
 }
 
 pub mod ssh {
-
     use super::*;
 
     /// Initialise [`Storage`].
     ///
     /// The signing key will be retrieved from the ssh-agent. If the key was not
     /// added to the agent then this result in an error.
-    pub fn storage(profile: &Profile) -> Result<(BoxedSigner, Storage), Error> {
+    pub fn storage(
+        profile: &Profile,
+        sock: keys::ssh::SshAuthSock,
+    ) -> Result<(BoxedSigner, Storage), Error> {
         let paths = profile.paths();
-        let signer = keys::ssh::signer(profile)?;
+        let signer = keys::ssh::signer(profile, sock)?;
         Ok((signer.clone(), Storage::open(paths, signer)?))
     }
 }

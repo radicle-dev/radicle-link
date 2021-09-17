@@ -15,8 +15,10 @@ use super::args::{self, sanitise_globals, Args};
 pub fn main() -> anyhow::Result<()> {
     let Args { global, command } = sanitise_globals(Args::from_args());
     match command {
-        args::Command::Identities(args) => rad_identities::cli::main(args, global.rad_profile),
-        args::Command::Profile(args) => rad_profile::cli::main(args),
+        args::Command::Identities(args) => {
+            rad_identities::cli::main(args, global.rad_profile, global.rad_ssh_auth_sock)
+        },
+        args::Command::Profile(args) => rad_profile::cli::main(args, global.rad_ssh_auth_sock),
         args::Command::External(external) => {
             let exe = external.first();
             match exe {

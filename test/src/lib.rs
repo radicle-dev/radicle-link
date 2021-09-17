@@ -6,6 +6,7 @@
 #![feature(bool_to_option)]
 #![feature(never_type)]
 #![feature(assert_matches)]
+#![feature(path_try_exists)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -24,6 +25,7 @@ pub mod librad;
 pub mod logging;
 pub mod rad;
 pub mod roundtrip;
+pub mod ssh;
 pub mod tempdir;
 
 #[cfg(test)]

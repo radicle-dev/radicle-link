@@ -18,6 +18,7 @@ use librad::{
     profile::{ProfileId, RadHome},
     PeerId,
 };
+use rad_clib::keys::ssh::SshAuthSock;
 
 #[derive(Debug, Default, Eq, PartialEq, StructOpt)]
 pub struct Args {
@@ -34,6 +35,12 @@ pub struct Args {
     /// and falls back to project dirs.
     #[structopt(long, default_value, parse(from_str = parse_rad_home))]
     pub rad_home: RadHome,
+
+    /// Which unix domain socket to use for connecting to the ssh-agent. The
+    /// default will defer to SSH_AUTH_SOCK, otherwise the value given should be
+    /// a valid path.
+    #[structopt(long, default_value)]
+    pub ssh_auth_sock: SshAuthSock,
 
     /// Configures the type of signer used to get access to the storage.
     #[structopt(long, default_value)]

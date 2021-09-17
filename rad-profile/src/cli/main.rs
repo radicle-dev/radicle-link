@@ -8,7 +8,7 @@ use std::convert::TryInto as _;
 use thrussh_agent::Constraint;
 
 use librad::crypto::keystore::sign;
-use rad_clib::keys;
+use rad_clib::keys::{self, ssh::SshAuthSock};
 
 use crate::{
     create,
@@ -26,11 +26,11 @@ use crate::{
 
 use super::args::*;
 
-pub fn main(Args { command }: Args) -> anyhow::Result<()> {
-    eval(command)
+pub fn main(Args { command }: Args, sock: SshAuthSock) -> anyhow::Result<()> {
+    eval(sock, command)
 }
 
-fn eval(command: Command) -> anyhow::Result<()> {
+fn eval(sock: SshAuthSock, command: Command) -> anyhow::Result<()> {
     match command {
         Command::Create(Create {}) => {
             let (profile, peer_id) = create(None, keys::prompt::new())?;
@@ -70,19 +70,19 @@ fn eval(command: Command) -> anyhow::Result<()> {
             ssh::Options::Add(ssh::Add { id, time }) => {
                 let constraints =
                     time.map_or(vec![], |seconds| vec![Constraint::KeyLifetime { seconds }]);
-                let id = ssh_add(None, id, keys::prompt::new(), &constraints)?;
+                let id = ssh_add(None, id, sock, keys::prompt::new(), &constraints)?;
                 println!("added key for profile id `{}`", id);
             },
             ssh::Options::Rm(ssh::Rm { id }) => {
-                let id = ssh_remove(None, id, keys::prompt::new())?;
+                let id = ssh_remove(None, id, sock, keys::prompt::new())?;
                 println!("removed key for profile id `{}`", id);
             },
             ssh::Options::Sign(ssh::Sign { id, payload }) => {
-                let (id, sig) = ssh_sign(None, id, payload)?;
+                let (id, sig) = ssh_sign(None, id, sock, payload)?;
                 println!("`{}` signature for profile id `{}`", sig, id);
             },
             ssh::Options::Ready(ssh::Ready { id }) => {
-                let (id, present) = ssh_ready(None, id)?;
+                let (id, present) = ssh_ready(None, id, sock)?;
                 if present {
                     println!("key is on ssh-agent for profile id `{}`", id);
                 } else {
