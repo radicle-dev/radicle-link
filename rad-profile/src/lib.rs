@@ -21,7 +21,7 @@ use librad::{
     paths::Paths,
     profile::{self, Profile, ProfileId, RadHome},
 };
-use rad_clib::keys;
+use rad_clib::keys::{self, ssh::SshAuthSock};
 
 pub mod cli;
 
@@ -136,6 +136,7 @@ where
 pub fn ssh_add<H, P, C>(
     home: H,
     id: P,
+    sock: SshAuthSock,
     crypto: C,
     constraints: &[Constraint],
 ) -> Result<ProfileId, Error>
@@ -148,12 +149,12 @@ where
 {
     let home = home.into().unwrap_or_default();
     let profile = get_or_active(&home, id)?;
-    keys::ssh::add_signer(&profile, crypto, constraints)?;
+    keys::ssh::add_signer(&profile, sock, crypto, constraints)?;
     Ok(profile.id().clone())
 }
 
 /// Remove a profile's [`SecretKey`] from the `ssh-agent`.
-pub fn ssh_remove<H, P, C>(home: H, id: P, crypto: C) -> Result<ProfileId, Error>
+pub fn ssh_remove<H, P, C>(home: H, id: P, sock: SshAuthSock, crypto: C) -> Result<ProfileId, Error>
 where
     H: Into<Option<RadHome>>,
     C: Crypto,
@@ -163,18 +164,18 @@ where
 {
     let home = home.into().unwrap_or_default();
     let profile = get_or_active(&home, id)?;
-    keys::ssh::remove_signer(&profile, crypto)?;
+    keys::ssh::remove_signer(&profile, sock, crypto)?;
     Ok(profile.id().clone())
 }
 
 /// Test to see if a profile's [`SecretKey`] is present in the `ssh-agent`.
-pub fn ssh_test<H, P>(home: H, id: P) -> Result<(ProfileId, bool), Error>
+pub fn ssh_test<H, P>(home: H, id: P, sock: SshAuthSock) -> Result<(ProfileId, bool), Error>
 where
     H: Into<Option<RadHome>>,
     P: Into<Option<ProfileId>>,
 {
     let home = home.into().unwrap_or_default();
     let profile = get_or_active(&home, id)?;
-    let present = keys::ssh::test_signer(&profile)?;
+    let present = keys::ssh::test_signer(&profile, sock)?;
     Ok((profile.id().clone(), present))
 }

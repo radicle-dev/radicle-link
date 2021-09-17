@@ -18,5 +18,5 @@ pub struct Args {
 
 fn main() -> anyhow::Result<()> {
     let Args { global, identities } = Args::from_args();
-    rad_identities::cli::main(identities, global.rad_profile)
+    rad_identities::cli::main(identities, global.rad_profile, global.rad_ssh_auth_sock)
 }

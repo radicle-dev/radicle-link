@@ -24,6 +24,7 @@ pub mod librad;
 pub mod logging;
 pub mod rad;
 pub mod roundtrip;
+pub mod ssh;
 pub mod tempdir;
 
 #[cfg(test)]

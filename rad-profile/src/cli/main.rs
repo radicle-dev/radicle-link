@@ -5,17 +5,17 @@
 
 use thrussh_agent::Constraint;
 
-use rad_clib::keys;
+use rad_clib::keys::{self, ssh::SshAuthSock};
 
 use crate::{create, get, list, paths, peer_id, set, ssh_add, ssh_remove, ssh_test};
 
 use super::args::*;
 
-pub fn main(Args { command }: Args) -> anyhow::Result<()> {
-    eval(command)
+pub fn main(Args { command }: Args, sock: SshAuthSock) -> anyhow::Result<()> {
+    eval(sock, command)
 }
 
-fn eval(command: Command) -> anyhow::Result<()> {
+fn eval(sock: SshAuthSock, command: Command) -> anyhow::Result<()> {
     match command {
         Command::Create(Create {}) => {
             let (profile, peer_id) = create(None, keys::prompt::new())?;
@@ -55,15 +55,15 @@ fn eval(command: Command) -> anyhow::Result<()> {
             ssh::Options::Add(ssh::Add { id, time }) => {
                 let constraints =
                     time.map_or(vec![], |seconds| vec![Constraint::KeyLifetime { seconds }]);
-                let id = ssh_add(None, id, keys::prompt::new(), &constraints)?;
+                let id = ssh_add(None, id, sock, keys::prompt::new(), &constraints)?;
                 println!("added key for profile id `{}`", id);
             },
             ssh::Options::Rm(ssh::Rm { id }) => {
-                let id = ssh_remove(None, id, keys::prompt::new())?;
+                let id = ssh_remove(None, id, sock, keys::prompt::new())?;
                 println!("removed key for profile id `{}`", id);
             },
             ssh::Options::Test(ssh::Test { id }) => {
-                let (id, present) = ssh_test(None, id)?;
+                let (id, present) = ssh_test(None, id, sock)?;
                 if present {
                     println!("key is on ssh-agent for profile id `{}`", id);
                 } else {
