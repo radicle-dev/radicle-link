@@ -27,6 +27,8 @@ use node_lib::args::{
     ProtocolArgs,
     ProtocolListen,
     Signer,
+    TrackingArgs,
+    TrackingMode,
 };
 
 #[test]
@@ -369,5 +371,46 @@ fn tmp_root() -> Result<()> {
         }
     );
 
+    Ok(())
+}
+
+#[test]
+fn tracking() -> Result<()> {
+    #[rustfmt::skip]
+    let parsed = Args::from_iter_safe(vec![
+        "linkd",
+            "--protocol-listen", "localhost",
+            "--track", "everything",
+    ])?;
+    assert_eq!(
+        parsed,
+        Args {
+            tracking: TrackingArgs {
+                mode: Some(TrackingMode::Everything),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    );
+
+    #[rustfmt::skip]
+    let parsed = Args::from_iter_safe(vec![
+        "linkd",
+            "--protocol-listen", "localhost",
+            "--track", "selected",
+            "--track-peer-id", "hynkyndc6w3p8urucakobzna7sxwgcqny7xxtw88dtx3pkf7m3nrzc",
+            "--track-urn", "rad:git:hnrkb39fr6f4jj59nfiq7tfd9aznirdu7b59o",
+    ])?;
+    assert_eq!(
+        parsed,
+        Args {
+            tracking: TrackingArgs {
+                mode: Some(TrackingMode::Selected),
+                peer_ids: vec!["hynkyndc6w3p8urucakobzna7sxwgcqny7xxtw88dtx3pkf7m3nrzc".parse()?,],
+                urns: vec!["rad:git:hnrkb39fr6f4jj59nfiq7tfd9aznirdu7b59o".parse()?],
+            },
+            ..Default::default()
+        }
+    );
     Ok(())
 }

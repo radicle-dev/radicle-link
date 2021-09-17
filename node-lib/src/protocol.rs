@@ -14,7 +14,7 @@ use librad::{
     Signer,
 };
 
-#[instrument(name = "peer subroutine", skip(disco, peer, shutdown_rx))]
+#[instrument(name = "protocol subroutine", skip(disco, peer, shutdown_rx))]
 pub async fn routine<D, S>(
     peer: Peer<S>,
     disco: D,

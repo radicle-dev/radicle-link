@@ -29,7 +29,7 @@ use librad::{
 };
 use rad_clib::keys;
 
-use crate::args;
+use crate::{args, tracking::Tracker};
 
 mod seed;
 pub use seed::{Seed, Seeds};
@@ -78,6 +78,7 @@ pub struct Cfg<Disco, Signer> {
     pub disco: Disco,
     pub metrics: Option<Metrics>,
     pub peer: PeerConfig<Signer>,
+    pub tracker: Option<Tracker>,
 }
 
 impl Cfg<discovery::Static, BoxedSigner> {
@@ -124,6 +125,13 @@ impl Cfg<discovery::Static, BoxedSigner> {
                 },
                 storage: Default::default(),
             },
+            tracker: args.tracking.mode.as_ref().map(|arg| match arg {
+                args::TrackingMode::Everything => Tracker::Everything,
+                args::TrackingMode::Selected => Tracker::Selected {
+                    peer_ids: args.tracking.peer_ids.clone().into_iter().collect(),
+                    urns: args.tracking.urns.clone().into_iter().collect(),
+                },
+            }),
         })
     }
 }

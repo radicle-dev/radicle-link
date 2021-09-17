@@ -22,6 +22,7 @@ use crate::{
     metrics::graphite,
     protocol,
     signals,
+    tracking,
 };
 
 pub async fn run() -> anyhow::Result<()> {
@@ -39,8 +40,13 @@ pub async fn run() -> anyhow::Result<()> {
     coalesced.push(peer_task);
 
     if let Some(cfg::Metrics::Graphite(addr)) = cfg.metrics {
-        let graphite_task = spawn(graphite::routine(peer, addr)).fuse();
+        let graphite_task = spawn(graphite::routine(peer.clone(), addr)).fuse();
         coalesced.push(graphite_task);
+    }
+
+    if let Some(tracker) = cfg.tracker {
+        let tracking_task = spawn(tracking::routine(peer.clone(), tracker)).fuse();
+        coalesced.push(tracking_task);
     }
 
     // if let Some(_listener) = socket_activation::env()? {
