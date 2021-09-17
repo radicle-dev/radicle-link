@@ -17,9 +17,11 @@ fn rad_profile_first_precedence() {
         "def".to_string(),
     ];
     let args = Args {
-        rad_profile: Some("abc".parse().unwrap()),
-        rad_quiet: false,
-        rad_verbose: false,
+        global: Global {
+            rad_profile: Some("abc".parse().unwrap()),
+            rad_quiet: false,
+            rad_verbose: false,
+        },
         command: Command::External(external),
     };
 
@@ -40,9 +42,11 @@ fn rad_profile_first_precedence_multiple_externals() {
         "ghi".to_string(),
     ];
     let args = Args {
-        rad_profile: Some("abc".parse().unwrap()),
-        rad_quiet: false,
-        rad_verbose: false,
+        global: Global {
+            rad_profile: Some("abc".parse().unwrap()),
+            rad_quiet: false,
+            rad_verbose: false,
+        },
         command: Command::External(external),
     };
 
@@ -60,21 +64,23 @@ rusty_fork_test! {
 fn rad_profile_second_precedence() {
     env::set_var("RAD_PROFILE", "ghi");
     let external = vec![
-            "xxx".to_string(),
-            RAD_PROFILE_ARG.to_string(),
-            "def".to_string(),
+        "xxx".to_string(),
+        RAD_PROFILE_ARG.to_string(),
+        "def".to_string(),
     ];
     let args = Args {
+        global: Global {
             rad_profile: None,
             rad_quiet: false,
             rad_verbose: false,
-            command: Command::External(external),
+        },
+        command: Command::External(external),
     };
 
     let args = sanitise_globals(args);
     if let Command::External(external) = args.command {
-            let index = find_arg(RAD_PROFILE_ARG, &external);
-            assert_eq!("def", external[index.unwrap() + 1]);
+        let index = find_arg(RAD_PROFILE_ARG, &external);
+        assert_eq!("def", external[index.unwrap() + 1]);
     }
 }
 
@@ -82,23 +88,25 @@ fn rad_profile_second_precedence() {
 fn rad_profile_second_precedence_multiple() {
     env::set_var("RAD_PROFILE", "ghi");
     let external = vec![
-            "xxx".to_string(),
-            RAD_PROFILE_ARG.to_string(),
-            "def".to_string(),
-            RAD_PROFILE_ARG.to_string(),
-            "ghi".to_string(),
+        "xxx".to_string(),
+        RAD_PROFILE_ARG.to_string(),
+        "def".to_string(),
+        RAD_PROFILE_ARG.to_string(),
+        "ghi".to_string(),
     ];
     let args = Args {
+        global: Global {
             rad_profile: None,
             rad_quiet: false,
             rad_verbose: false,
-            command: Command::External(external),
+        },
+        command: Command::External(external),
     };
 
     let args = sanitise_globals(args);
     if let Command::External(external) = args.command {
-            let index = find_arg(RAD_PROFILE_ARG, &external);
-            assert_eq!("ghi", external[index.unwrap() + 1]);
+        let index = find_arg(RAD_PROFILE_ARG, &external);
+        assert_eq!("ghi", external[index.unwrap() + 1]);
     }
 }
 
@@ -107,16 +115,18 @@ fn rad_profile_env_var() {
     env::set_var("RAD_PROFILE", "ghi");
     let external = vec!["xxx".to_string()];
     let args = Args {
+        global: Global {
             rad_profile: None,
             rad_quiet: false,
             rad_verbose: false,
-            command: Command::External(external),
+        },
+        command: Command::External(external),
     };
 
     let args = sanitise_globals(args);
     if let Command::External(external) = args.command {
-            let index = find_arg(RAD_PROFILE_ARG, &external);
-            assert_eq!("ghi", external[index.unwrap() + 1]);
+        let index = find_arg(RAD_PROFILE_ARG, &external);
+        assert_eq!("ghi", external[index.unwrap() + 1]);
     }
 }
 
@@ -125,16 +135,18 @@ fn rad_verbose_second_precedence() {
     env::set_var("RAD_PROFILE", "ghi");
     let external = vec!["xxx".to_string(), RAD_VERBOSE_ARG.to_string()];
     let args = Args {
+        global: Global {
             rad_profile: None,
             rad_quiet: false,
             rad_verbose: false,
-            command: Command::External(external),
+        },
+        command: Command::External(external),
     };
 
     let args = sanitise_globals(args);
     if let Command::External(external) = args.command {
-            let index = find_arg(RAD_VERBOSE_ARG, &external);
-            assert!(index.is_some());
+        let index = find_arg(RAD_VERBOSE_ARG, &external);
+        assert!(index.is_some());
     }
 }
 
@@ -143,16 +155,18 @@ fn rad_verbose_env_var() {
     env::set_var("RAD_VERBOSE", "1");
     let external = vec!["xxx".to_string()];
     let args = Args {
+        global: Global {
             rad_profile: None,
             rad_quiet: false,
             rad_verbose: false,
-            command: Command::External(external),
+        },
+        command: Command::External(external),
     };
 
     let args = sanitise_globals(args);
     if let Command::External(external) = args.command {
-            let index = find_arg(RAD_VERBOSE_ARG, &external);
-            assert!(index.is_some());
+        let index = find_arg(RAD_VERBOSE_ARG, &external);
+        assert!(index.is_some());
     }
 }
 /* end rusty_fork! */
@@ -162,9 +176,11 @@ fn rad_verbose_env_var() {
 fn rad_verbose_first_precedence() {
     let external = vec!["xxx".to_string()];
     let args = Args {
-        rad_profile: Some("abc".parse().unwrap()),
-        rad_quiet: false,
-        rad_verbose: true,
+        global: Global {
+            rad_profile: Some("abc".parse().unwrap()),
+            rad_quiet: false,
+            rad_verbose: true,
+        },
         command: Command::External(external),
     };
 
