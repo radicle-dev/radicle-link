@@ -20,13 +20,16 @@ use librad::{
     profile::Profile,
     PeerId,
 };
-use rad_clib::storage::{self, ssh};
+use rad_clib::{
+    keys::ssh::SshAuthSock,
+    storage::{self, ssh},
+};
 
 use crate::{cli::args::project::*, project};
 
-pub fn eval(profile: &Profile, opts: Options) -> anyhow::Result<()> {
+pub fn eval(profile: &Profile, sock: SshAuthSock, opts: Options) -> anyhow::Result<()> {
     match opts {
-        Options::Create(CreateOptions { create }) => eval_create(profile, create)?,
+        Options::Create(CreateOptions { create }) => eval_create(profile, sock, create)?,
         Options::Get(Get { urn, peer }) => eval_get(profile, urn, peer)?,
         Options::List(List {}) => eval_list(profile)?,
         Options::Update(Update {
@@ -35,16 +38,18 @@ pub fn eval(profile: &Profile, opts: Options) -> anyhow::Result<()> {
             payload,
             ext,
             delegations,
-        }) => eval_update(profile, urn, whoami, payload, ext, delegations)?,
-        Options::Checkout(Checkout { urn, path, peer }) => eval_checkout(profile, urn, path, peer)?,
+        }) => eval_update(profile, sock, urn, whoami, payload, ext, delegations)?,
+        Options::Checkout(Checkout { urn, path, peer }) => {
+            eval_checkout(profile, sock, urn, path, peer)?
+        },
         Options::Review(Review {}) => unimplemented!(),
     }
 
     Ok(())
 }
 
-fn eval_create(profile: &Profile, create: Create) -> anyhow::Result<()> {
-    let (signer, storage) = ssh::storage(profile)?;
+fn eval_create(profile: &Profile, sock: SshAuthSock, create: Create) -> anyhow::Result<()> {
+    let (signer, storage) = ssh::storage(profile, sock)?;
     let paths = profile.paths();
     let project = match create {
         Create::New(New {
@@ -106,13 +111,14 @@ fn eval_list(profile: &Profile) -> anyhow::Result<()> {
 
 fn eval_update(
     profile: &Profile,
+    sock: SshAuthSock,
     urn: Urn,
     whoami: Option<Urn>,
     payload: Option<payload::Project>,
     ext: Vec<payload::Ext<serde_json::Value>>,
     delegations: BTreeSet<KeyOrUrn<Revision>>,
 ) -> anyhow::Result<()> {
-    let (_, storage) = ssh::storage(profile)?;
+    let (_, storage) = ssh::storage(profile, sock)?;
     let project = project::update(&storage, &urn, whoami, payload, ext, delegations)?;
     println!("{}", serde_json::to_string(project.payload())?);
     Ok(())
@@ -120,11 +126,12 @@ fn eval_update(
 
 fn eval_checkout(
     profile: &Profile,
+    sock: SshAuthSock,
     urn: Urn,
     path: PathBuf,
     peer: Option<PeerId>,
 ) -> anyhow::Result<()> {
-    let (signer, storage) = ssh::storage(profile)?;
+    let (signer, storage) = ssh::storage(profile, sock)?;
     let paths = profile.paths();
     let repo = project::checkout(&storage, paths.clone(), signer, &urn, peer, path)?;
     println!("working copy created at `{}`", repo.path().display());

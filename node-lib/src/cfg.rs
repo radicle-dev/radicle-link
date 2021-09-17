@@ -157,7 +157,14 @@ impl TryFrom<&args::Args> for Profile {
 
 async fn construct_signer(args: &args::Args, profile: &Profile) -> anyhow::Result<BoxedSigner> {
     match args.signer {
-        args::Signer::SshAgent => keys::ssh::signer(profile).map_err(anyhow::Error::from),
+        args::Signer::SshAgent => {
+            tokio::task::spawn_blocking({
+                let profile = profile.clone();
+                let sock = args.ssh_auth_sock.clone();
+                move || keys::ssh::signer(&profile, sock).map_err(anyhow::Error::from)
+            })
+            .await?
+        },
         args::Signer::Key => {
             let bytes = match args.key.source {
                 args::KeySource::Ephemeral => {
