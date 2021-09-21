@@ -20,7 +20,7 @@ use librad::{
 };
 use rad_clib::keys::{file_storage, ssh};
 
-use crate::logging;
+use crate::{logging, ssh::with_ssh_agent};
 
 #[test]
 fn agent_signature() -> anyhow::Result<()> {
@@ -35,10 +35,14 @@ fn agent_signature() -> anyhow::Result<()> {
     let mut key_store = file_storage(&profile, pass.clone());
     key_store.put_key(key.clone())?;
     let _ = Storage::open(profile.paths(), key)?;
-    ssh::add_signer(&profile, pass, &[]).unwrap();
-    let signer = ssh::signer(&profile).unwrap();
-    let sig = signer.sign_blocking(b"secret message").unwrap();
-    let peer_id = signer.peer_id();
+
+    let (sig, peer_id) = with_ssh_agent(|sock| {
+        ssh::add_signer(&profile, sock.clone(), pass, &[])?;
+        let signer = ssh::signer(&profile, sock)?;
+        let sig = signer.sign_blocking(b"secret message")?;
+        Ok((sig, signer.peer_id()))
+    })?;
+
     let pk = peer_id.as_public_key();
     assert!(pk.verify(&sig.into(), b"secret message"));
 

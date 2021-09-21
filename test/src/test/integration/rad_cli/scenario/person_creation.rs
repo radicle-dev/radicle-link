@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use tempfile::tempdir;
+use thrussh_agent::Constraint;
 
 use librad::{
     crypto::keystore::{
@@ -16,7 +17,7 @@ use librad::{
 use rad_identities as identities;
 use rad_profile as profile;
 
-use crate::logging;
+use crate::{logging, ssh::with_ssh_agent};
 
 #[test]
 fn create() -> anyhow::Result<()> {
@@ -28,19 +29,29 @@ fn create() -> anyhow::Result<()> {
     let pass = Pwhash::new(SecUtf8::from(b"42".to_vec()), *KDF_PARAMS_TEST);
     let home = RadHome::Root(temp.path().to_path_buf());
     let (profile, _) = profile::create(home.clone(), pass.clone())?;
-    profile::ssh_add(home, profile.id().clone(), pass, &[])?;
-    identities::cli::eval::person::eval(
-        &profile,
-        Options::Create(CreateOptions {
-            create: Create::New(New {
-                payload: payload::Person {
-                    name: "Ralph Wiggums".into(),
-                },
-                ext: vec![],
-                delegations: vec![],
-                path: None,
+
+    with_ssh_agent(|sock| {
+        profile::ssh_add(
+            home,
+            profile.id().clone(),
+            sock.clone(),
+            pass,
+            &[Constraint::KeyLifetime { seconds: 10 }],
+        )?;
+        identities::cli::eval::person::eval(
+            &profile,
+            sock,
+            Options::Create(CreateOptions {
+                create: Create::New(New {
+                    payload: payload::Person {
+                        name: "Ralph Wiggums".into(),
+                    },
+                    ext: vec![],
+                    delegations: vec![],
+                    path: None,
+                }),
             }),
-        }),
-    )?;
+        )
+    })?;
     Ok(())
 }

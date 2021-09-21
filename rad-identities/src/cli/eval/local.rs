@@ -7,22 +7,22 @@ use librad::{
     git::{identities, Urn},
     profile::Profile,
 };
-use rad_clib::storage::ssh;
+use rad_clib::{keys::ssh::SshAuthSock, storage::ssh};
 
 use crate::{cli::args::local::*, local};
 
-pub fn eval(profile: &Profile, opts: Options) -> anyhow::Result<()> {
+pub fn eval(profile: &Profile, sock: SshAuthSock, opts: Options) -> anyhow::Result<()> {
     match opts {
-        Options::Set(Set { urn }) => eval_set(profile, urn)?,
-        Options::Get(Get { urn }) => eval_get(profile, urn)?,
-        Options::Default(Default {}) => eval_default(profile)?,
+        Options::Set(Set { urn }) => eval_set(profile, sock, urn)?,
+        Options::Get(Get { urn }) => eval_get(profile, sock, urn)?,
+        Options::Default(Default {}) => eval_default(profile, sock)?,
     }
 
     Ok(())
 }
 
-fn eval_set(profile: &Profile, urn: Urn) -> anyhow::Result<()> {
-    let (_, storage) = ssh::storage(profile)?;
+fn eval_set(profile: &Profile, sock: SshAuthSock, urn: Urn) -> anyhow::Result<()> {
+    let (_, storage) = ssh::storage(profile, sock)?;
     let identity = local::get(&storage, urn.clone())?
         .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
     local::set(&storage, identity)?;
@@ -30,8 +30,8 @@ fn eval_set(profile: &Profile, urn: Urn) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn eval_get(profile: &Profile, urn: Urn) -> anyhow::Result<()> {
-    let (_, storage) = ssh::storage(profile)?;
+fn eval_get(profile: &Profile, sock: SshAuthSock, urn: Urn) -> anyhow::Result<()> {
+    let (_, storage) = ssh::storage(profile, sock)?;
     let identity = local::get(&storage, urn.clone())?
         .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
     println!(
@@ -41,8 +41,8 @@ fn eval_get(profile: &Profile, urn: Urn) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn eval_default(profile: &Profile) -> anyhow::Result<()> {
-    let (_, storage) = ssh::storage(profile)?;
+fn eval_default(profile: &Profile, sock: SshAuthSock) -> anyhow::Result<()> {
+    let (_, storage) = ssh::storage(profile, sock)?;
     let identity = local::default(&storage)?;
     println!("{}", identity.urn());
     println!(

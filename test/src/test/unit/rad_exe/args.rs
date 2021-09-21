@@ -19,6 +19,7 @@ fn rad_profile_first_precedence() {
     let args = Args {
         global: Global {
             rad_profile: Some("abc".parse().unwrap()),
+            rad_ssh_auth_sock: Default::default(),
             rad_quiet: false,
             rad_verbose: false,
         },
@@ -44,6 +45,7 @@ fn rad_profile_first_precedence_multiple_externals() {
     let args = Args {
         global: Global {
             rad_profile: Some("abc".parse().unwrap()),
+            rad_ssh_auth_sock: Default::default(),
             rad_quiet: false,
             rad_verbose: false,
         },
@@ -71,6 +73,7 @@ fn rad_profile_second_precedence() {
     let args = Args {
         global: Global {
             rad_profile: None,
+        rad_ssh_auth_sock: Default::default(),
             rad_quiet: false,
             rad_verbose: false,
         },
@@ -97,6 +100,7 @@ fn rad_profile_second_precedence_multiple() {
     let args = Args {
         global: Global {
             rad_profile: None,
+        rad_ssh_auth_sock: Default::default(),
             rad_quiet: false,
             rad_verbose: false,
         },
@@ -117,6 +121,7 @@ fn rad_profile_env_var() {
     let args = Args {
         global: Global {
             rad_profile: None,
+        rad_ssh_auth_sock: Default::default(),
             rad_quiet: false,
             rad_verbose: false,
         },
@@ -137,6 +142,7 @@ fn rad_verbose_second_precedence() {
     let args = Args {
         global: Global {
             rad_profile: None,
+        rad_ssh_auth_sock: Default::default(),
             rad_quiet: false,
             rad_verbose: false,
         },
@@ -157,6 +163,7 @@ fn rad_verbose_env_var() {
     let args = Args {
         global: Global {
             rad_profile: None,
+        rad_ssh_auth_sock: Default::default(),
             rad_quiet: false,
             rad_verbose: false,
         },
@@ -178,6 +185,7 @@ fn rad_verbose_first_precedence() {
     let args = Args {
         global: Global {
             rad_profile: Some("abc".parse().unwrap()),
+            rad_ssh_auth_sock: Default::default(),
             rad_quiet: false,
             rad_verbose: true,
         },

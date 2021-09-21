@@ -20,8 +20,9 @@ use librad::{
     git::storage::{self, read, ReadOnly, Storage},
     paths::Paths,
     profile::{self, Profile, ProfileId, RadHome},
+    Signature,
 };
-use rad_clib::keys;
+use rad_clib::keys::{self, ssh::SshAuthSock};
 
 pub mod cli;
 
@@ -136,6 +137,7 @@ where
 pub fn ssh_add<H, P, C>(
     home: H,
     id: P,
+    sock: SshAuthSock,
     crypto: C,
     constraints: &[Constraint],
 ) -> Result<ProfileId, Error>
@@ -148,6 +150,67 @@ where
 {
     let home = home.into().unwrap_or_default();
     let profile = get_or_active(&home, id)?;
-    keys::ssh::add_signer(&profile, crypto, constraints)?;
+    keys::ssh::add_signer(&profile, sock, crypto, constraints)?;
     Ok(profile.id().clone())
+}
+
+/// Remove a profile's [`SecretKey`] from the `ssh-agent`.
+pub fn ssh_remove<H, P, C>(home: H, id: P, sock: SshAuthSock, crypto: C) -> Result<ProfileId, Error>
+where
+    H: Into<Option<RadHome>>,
+    C: Crypto,
+    C::Error: fmt::Debug + fmt::Display + Send + Sync + 'static,
+    C::SecretBox: Serialize + DeserializeOwned,
+    P: Into<Option<ProfileId>>,
+{
+    let home = home.into().unwrap_or_default();
+    let profile = get_or_active(&home, id)?;
+    keys::ssh::remove_signer(&profile, sock, crypto)?;
+    Ok(profile.id().clone())
+}
+
+/// See if a profile's [`SecretKey`] is present in the `ssh-agent`.
+pub fn ssh_ready<H, P>(home: H, id: P, sock: SshAuthSock) -> Result<(ProfileId, bool), Error>
+where
+    H: Into<Option<RadHome>>,
+    P: Into<Option<ProfileId>>,
+{
+    let home = home.into().unwrap_or_default();
+    let profile = get_or_active(&home, id)?;
+    let present = keys::ssh::is_signer_present(&profile, sock)?;
+    Ok((profile.id().clone(), present))
+}
+
+/// Sign a payload with a profile's [`SecretKey`] from the `ssh-agent`.
+pub fn ssh_sign<H, P>(
+    home: H,
+    id: P,
+    sock: SshAuthSock,
+    payload: String,
+) -> Result<(ProfileId, Signature), Error>
+where
+    H: Into<Option<RadHome>>,
+    P: Into<Option<ProfileId>>,
+{
+    let home = home.into().unwrap_or_default();
+    let profile = get_or_active(&home, id)?;
+    let sig = keys::ssh::sign(&profile, sock, payload.as_bytes())?;
+    Ok((profile.id().clone(), sig.into()))
+}
+
+/// Verify a signature and payload with a profile's [`PublicKey`].
+pub fn ssh_verify<H, P>(
+    home: H,
+    id: P,
+    payload: String,
+    signature: Signature,
+) -> Result<(ProfileId, bool), Error>
+where
+    H: Into<Option<RadHome>>,
+    P: Into<Option<ProfileId>>,
+{
+    let home = home.into().unwrap_or_default();
+    let profile = get_or_active(&home, id)?;
+    let verified = keys::ssh::verify(&profile, payload.as_bytes(), &signature)?;
+    Ok((profile.id().clone(), verified))
 }
