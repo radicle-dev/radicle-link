@@ -3,11 +3,18 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use librad::git::{
-    identities::{any, Error, SomeIdentity},
-    storage::ReadOnly,
-    Urn,
+use librad::{
+    git::{
+        identities::{any, Error, SomeIdentity},
+        storage::ReadOnly,
+        Urn,
+    },
+    identities::payload::SomePayload,
 };
+
+use crate::display;
+
+pub type Display = display::Display<SomePayload>;
 
 pub fn get<S>(storage: &S, urn: &Urn) -> Result<Option<SomeIdentity>, Error>
 where
