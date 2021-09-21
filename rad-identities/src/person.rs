@@ -118,7 +118,7 @@ pub fn update(
     whoami: Option<Urn>,
     payload: Option<payload::Person>,
     mut ext: Vec<payload::Ext<serde_json::Value>>,
-    delegations: impl Iterator<Item = PublicKey>,
+    delegations: Option<impl Iterator<Item = PublicKey>>,
 ) -> Result<Person, Error> {
     let old =
         person::verify(storage, urn)?.ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
@@ -145,12 +145,13 @@ pub fn update(
     let whoami = whoami
         .and_then(|me| identities::local::load(storage, me).transpose())
         .transpose()?;
+    let delegations = delegations.map(|ds| ds.collect());
     Ok(person::update(
         storage,
         urn,
         whoami,
         Some(payload),
-        Some(delegations.collect()),
+        delegations,
     )?)
 }
 
