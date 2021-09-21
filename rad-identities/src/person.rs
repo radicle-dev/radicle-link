@@ -24,7 +24,12 @@ use librad::{
     PeerId,
 };
 
-use crate::git::{self, checkout, include};
+use crate::{
+    display,
+    git::{self, checkout, include},
+};
+
+pub type Display = display::Display<PersonPayload>;
 
 #[derive(Debug, Error)]
 pub enum Error {

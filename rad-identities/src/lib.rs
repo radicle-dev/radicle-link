@@ -24,6 +24,7 @@ pub mod rad_refs;
 pub mod refs;
 pub mod tracking;
 
+pub mod display;
 mod field;
 pub mod git;
 
