@@ -17,7 +17,7 @@ use librad::{
         Urn,
     },
     identities::{
-        delegation::Direct,
+        delegation::{direct, Direct},
         payload::{self, PersonPayload},
     },
     paths::Paths,
@@ -30,6 +30,9 @@ use crate::git::{self, checkout, include};
 pub enum Error {
     #[error(transparent)]
     Checkout(#[from] checkout::Error),
+
+    #[error(transparent)]
+    Delegations(#[from] direct::Error),
 
     #[error(transparent)]
     Ext(#[from] payload::ExtError),
@@ -68,7 +71,7 @@ where
 
     let key = *storage.peer_id().as_public_key();
     delegations.push(key);
-    let delegations: Direct = delegations.into_iter().collect();
+    let delegations = Direct::try_from_iter(delegations.into_iter())?;
 
     let urn = person::urn(storage, payload.clone(), delegations.clone())?;
     let url = LocalUrl::from(urn);
@@ -118,7 +121,7 @@ pub fn update(
     whoami: Option<Urn>,
     payload: Option<payload::Person>,
     mut ext: Vec<payload::Ext<serde_json::Value>>,
-    delegations: impl Iterator<Item = PublicKey>,
+    delegations: Option<impl Iterator<Item = PublicKey>>,
 ) -> Result<Person, Error> {
     let old =
         person::verify(storage, urn)?.ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
@@ -145,12 +148,13 @@ pub fn update(
     let whoami = whoami
         .and_then(|me| identities::local::load(storage, me).transpose())
         .transpose()?;
+    let delegations = delegations.map(Direct::try_from_iter).transpose()?;
     Ok(person::update(
         storage,
         urn,
         whoami,
         Some(payload),
-        Some(delegations.collect()),
+        delegations,
     )?)
 }
 

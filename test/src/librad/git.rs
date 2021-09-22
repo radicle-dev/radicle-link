@@ -27,7 +27,7 @@ pub fn dylan(
         payload::Person {
             name: "dylan".into(),
         },
-        Some(key.public()).into_iter().collect(),
+        delegation::Direct::new(key.public()),
     )?;
     identities::local::load(storage, dylan.urn())?
         .ok_or_else(|| anyhow::anyhow!("where did dylan go?"))
@@ -74,11 +74,7 @@ impl<'a> Device<'a> {
         git: Identities<'a, Person>,
         payload: payload::Person,
     ) -> anyhow::Result<Self> {
-        let cur = git.create(
-            payload.into(),
-            Some(key.public()).into_iter().collect(),
-            key,
-        )?;
+        let cur = git.create(payload.into(), delegation::Direct::new(key.public()), key)?;
 
         Ok(Self { key, git, cur })
     }

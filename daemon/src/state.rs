@@ -38,7 +38,7 @@ use librad::{
     },
     git_ext::{OneLevel, RefLike},
     identities::{
-        delegation::Indirect,
+        delegation::{Direct, Indirect},
         payload::{self, PersonPayload},
         Person,
         Project,
@@ -125,7 +125,7 @@ where
 
     let payload = payload.try_into()?;
     let pk = PublicKey::from(peer.signer().public_key());
-    let delegations = Some(pk).into_iter().collect();
+    let delegations = Direct::try_from_iter(Some(pk).into_iter()).expect("delegation is non-empty");
     let person = peer
         .using_storage(move |store| person::create(store, payload, delegations))
         .await??;
@@ -531,7 +531,7 @@ where
             payload::Person {
                 name: Cstring::from(name),
             },
-            Some(pk).into_iter().collect(),
+            Direct::try_from_iter(Some(pk).into_iter()).expect("delegation is non-empty"),
         )?;
 
         Ok::<_, Error>(local::load(store, malkovich.urn())?)

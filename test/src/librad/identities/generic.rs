@@ -278,7 +278,8 @@ where
         .collect::<BTreeMap<_, _>>()
         .into();
 
-    let delegations: delegation::Direct = signatures.iter().map(|(pk, _)| *pk).collect();
+    let delegations = delegation::Direct::try_from_iter(signatures.iter().map(|(pk, _)| *pk))
+        .expect("delelgations should not be empty");
 
     (signatures, delegations)
 }
