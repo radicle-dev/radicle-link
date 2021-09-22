@@ -4,7 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 //! Implementation of the systemd socket activation protocol.
-//! http://0pointer.de/blog/projects/socket-activation.html
+//! <http://0pointer.de/blog/projects/socket-activation.html>
 //!
 //! TODO
 //! * support FDs beyond 3

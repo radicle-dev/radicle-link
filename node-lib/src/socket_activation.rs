@@ -22,8 +22,11 @@ use unix as imp;
 /// environment variables set that are applicable for the current platform or no
 /// suitable implementations are activated/supported:
 ///
-/// * systemd under unix systems with an OS other than macos: https://www.freedesktop.org/software/systemd/man/systemd.socket.html
-/// * launchd under macos: https://en.wikipedia.org/wiki/Launchd#Socket_activation_protocol
+/// * [systemd] under unix systems with an OS other than macos
+/// * [launchd] under macos
+///
+/// [systemd]: https://www.freedesktop.org/software/systemd/man/systemd.socket.html
+/// [launchd]: https://en.wikipedia.org/wiki/Launchd#Socket_activation_protocol
 pub fn env() -> Result<Option<UnixListener>> {
     imp::env()
 }
