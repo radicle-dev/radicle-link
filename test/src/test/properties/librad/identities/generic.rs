@@ -3,13 +3,13 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeMap, iter};
+use std::collections::BTreeMap;
 
 use nonempty::NonEmpty;
 use proptest::prelude::*;
 
 use librad::identities::{
-    delegation::{self, Delegations},
+    delegation::Delegations,
     generic::{error, Doc, Identity},
     sign::Signatures,
     Verifying,
@@ -180,16 +180,4 @@ proptest! {
 
         assert_eq!(folded.head.into_inner(), expected)
     }
-}
-
-#[test]
-fn signed_no_signatures() {
-    assert_matches!(
-        Verifying::from(boring(
-            iter::empty().collect::<delegation::Direct>(),
-            Signatures::from(BTreeMap::new())
-        ))
-        .signed(),
-        Err(error::Verify::NoSignatures)
-    )
 }

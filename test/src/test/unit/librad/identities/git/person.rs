@@ -5,6 +5,7 @@
 
 use librad::{
     identities::{
+        delegation::Direct,
         git::{error, VerificationError},
         Identities,
     },
@@ -40,11 +41,8 @@ fn create() -> anyhow::Result<()> {
 fn update() -> anyhow::Result<()> {
     let repo = repo()?;
     {
-        let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?.update(Some(
-            vec![DESKTOP.public(), LAPTOP.public()]
-                .into_iter()
-                .collect(),
-        ))?;
+        let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?
+            .update(Direct::new(DESKTOP.public()).insert(LAPTOP.public()))?;
         desktop.assert_no_quorum()?;
 
         // Gotta confirm from laptop
@@ -60,17 +58,12 @@ fn update() -> anyhow::Result<()> {
 fn revoke_a_deux() -> anyhow::Result<()> {
     let repo = repo()?;
     {
-        let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?.update(Some(
-            vec![DESKTOP.public(), LAPTOP.public()]
-                .into_iter()
-                .collect(),
-        ))?;
+        let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?
+            .update(Direct::new(DESKTOP.public()).insert(LAPTOP.public()))?;
 
         // Kick out desktop
         let laptop = Device::create_from(&*LAPTOP, &desktop)?;
-        let laptop_revokes_desktop = laptop
-            .clone()
-            .update(Some(Some(LAPTOP.public()).into_iter().collect()))?;
+        let laptop_revokes_desktop = laptop.clone().update(Some(Direct::new(LAPTOP.public())))?;
         // Cannot do that unilaterally -- laptop is now invalid
         assert_matches!(
             laptop_revokes_desktop.verify(),
@@ -95,13 +88,13 @@ fn revoke_a_deux() -> anyhow::Result<()> {
 fn revoke_a_trois() -> anyhow::Result<()> {
     let repo = repo()?;
     {
-        let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?.update(Some(
-            vec![DESKTOP.public(), LAPTOP.public(), PALMTOP.public()]
-                .into_iter()
-                .collect(),
-        ))?;
+        let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?.update(
+            Direct::new(DESKTOP.public())
+                .insert(LAPTOP.public())
+                .insert(PALMTOP.public()),
+        )?;
 
-        // We don't have to ask palmtop for it to be added
+        // We don't have to ask palmtop for it to be inserted
         let laptop = Device::create_from(&*LAPTOP, &desktop)?;
         laptop.assert_verifies()?;
 
@@ -109,11 +102,7 @@ fn revoke_a_trois() -> anyhow::Result<()> {
         desktop.assert_verifies()?;
 
         // And we don't have to ask it to be removed either
-        let desktop = desktop.update(Some(
-            vec![DESKTOP.public(), LAPTOP.public()]
-                .into_iter()
-                .collect(),
-        ))?;
+        let desktop = desktop.update(Direct::new(DESKTOP.public()).insert(LAPTOP.public()))?;
 
         let laptop = laptop.update_from(&desktop)?;
         laptop.assert_verifies()?;

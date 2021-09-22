@@ -11,6 +11,7 @@ use librad::{
     git::Urn,
     identities::{
         self,
+        delegation::Direct,
         git::{error, VerificationError},
         payload,
         Identities,
@@ -148,11 +149,7 @@ fn revoke_indirect() -> anyhow::Result<()> {
                 name: "cheyenne".into(),
             },
         )?
-        .update(Some(
-            vec![CHEYENNE_DESKTOP.public(), CHEYENNE_LAPTOP.public()]
-                .into_iter()
-                .collect(),
-        ))?;
+        .update(Direct::new(CHEYENNE_DESKTOP.public()).insert(CHEYENNE_LAPTOP.public()))?;
 
         let cheyenne_laptop = Device::create_from(&*CHEYENNE_LAPTOP, &cheyenne_desktop)?;
         let cheyenne_desktop = cheyenne_desktop.update_from(&cheyenne_laptop)?;
@@ -179,11 +176,8 @@ fn revoke_indirect() -> anyhow::Result<()> {
         dylan_project.assert_verifies(lookup(&heads))?;
 
         // Swap lap with palm
-        let cheyenne_desktop = cheyenne_desktop.update(Some(
-            vec![CHEYENNE_DESKTOP.public(), CHEYENNE_PALMTOP.public()]
-                .into_iter()
-                .collect(),
-        ))?;
+        let cheyenne_desktop = cheyenne_desktop
+            .update(Direct::new(CHEYENNE_DESKTOP.public()).insert(CHEYENNE_PALMTOP.public()))?;
         let cheyenne_palmtop = Device::create_from(&*CHEYENNE_PALMTOP, &cheyenne_desktop)?;
         // Doesn't check out
         assert_matches!(
@@ -216,11 +210,7 @@ fn double_vote() -> anyhow::Result<()> {
                 name: "cheyenne".into(),
             },
         )?
-        .update(Some(
-            vec![CHEYENNE_DESKTOP.public(), CHEYENNE_LAPTOP.public()]
-                .into_iter()
-                .collect(),
-        ))?;
+        .update(Direct::new(CHEYENNE_DESKTOP.public()).insert(CHEYENNE_LAPTOP.public()))?;
 
         let cheyenne_laptop = Device::create_from(&*CHEYENNE_LAPTOP, &cheyenne_desktop)?;
         let cheyenne_desktop = cheyenne_desktop.update_from(&cheyenne_laptop)?;

@@ -34,6 +34,9 @@ pub mod error {
 
         #[error("duplicate identity with root `{0}`")]
         DuplicateIdentity(R),
+
+        #[error("the set of delegations provided was empty")]
+        EmptyDelegations,
     }
 
     #[derive(Debug, Error, Eq, PartialEq)]
@@ -96,6 +99,10 @@ impl<T, R, C> Indirect<T, R, C> {
                     }
                 },
             }
+        }
+
+        if ids.is_empty() && dels.is_empty() {
+            return Err(EmptyDelegations);
         }
 
         Ok(Self {

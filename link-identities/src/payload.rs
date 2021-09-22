@@ -14,6 +14,7 @@ use std::{
 
 use canonical::Cstring;
 use crypto::PublicKey;
+use data::NonEmptyOrderedSet;
 use either::Either;
 use multihash::Multihash;
 use serde::ser::SerializeMap;
@@ -434,10 +435,10 @@ where
 /// This is just a set of [`PublicKey`]s. Note that it is a deserialisation
 /// error if duplicate elements are found in the input.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
-pub struct PersonDelegations(BTreeSet<PublicKey>);
+pub struct PersonDelegations(NonEmptyOrderedSet<PublicKey>);
 
 impl Deref for PersonDelegations {
-    type Target = BTreeSet<PublicKey>;
+    type Target = NonEmptyOrderedSet<PublicKey>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -457,6 +458,12 @@ impl From<delegation::Direct> for PersonDelegations {
 }
 
 impl From<PersonDelegations> for BTreeSet<PublicKey> {
+    fn from(PersonDelegations(set): PersonDelegations) -> Self {
+        set.into_inner()
+    }
+}
+
+impl From<PersonDelegations> for NonEmptyOrderedSet<PublicKey> {
     fn from(PersonDelegations(set): PersonDelegations) -> Self {
         set
     }
@@ -492,10 +499,9 @@ impl<'de> serde::Deserialize<'de> for PersonDelegations {
                     set.insert(key);
                 }
 
-                if set.is_empty() {
-                    Err(serde::de::Error::custom("no delegations"))
-                } else {
-                    Ok(PersonDelegations(set))
+                match NonEmptyOrderedSet::from_maybe_empty(set) {
+                    None => Err(serde::de::Error::custom("no delegations")),
+                    Some(set) => Ok(PersonDelegations(set)),
                 }
             }
         }

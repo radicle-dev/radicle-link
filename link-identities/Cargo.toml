@@ -50,7 +50,7 @@ features = ["std", "derive"]
 
 [dependencies.radicle-data]
 path = "../data"
-features = ["minicbor"]
+features = ["serde", "minicbor"]
 
 [dependencies.radicle-git-ext]
 path = "../git-ext"

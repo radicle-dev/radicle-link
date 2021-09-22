@@ -3,17 +3,24 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeMap, iter};
+use std::collections::BTreeMap;
 
-use librad::identities::{delegation, generic::error, sign::Signatures, Verifying};
+use librad::identities::{
+    crypto::SecretKey,
+    delegation,
+    generic::error,
+    sign::Signatures,
+    Verifying,
+};
 
 use crate::librad::identities::generic::*;
 
 #[test]
 fn signed_no_signatures() {
+    let key = SecretKey::new();
     assert_matches!(
         Verifying::from(boring(
-            iter::empty().collect::<delegation::Direct>(),
+            delegation::Direct::new(key.public()),
             Signatures::from(BTreeMap::new())
         ))
         .signed(),

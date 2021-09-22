@@ -119,7 +119,11 @@ fn eval_update(
         whoami,
         payload,
         ext,
-        delegations.into_iter(),
+        if delegations.is_empty() {
+            None
+        } else {
+            Some(delegations.into_iter())
+        },
     )?;
     println!("{}", serde_json::to_string(person.payload())?);
     Ok(())

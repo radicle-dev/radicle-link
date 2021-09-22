@@ -11,7 +11,10 @@ use librad::{
         replication::{self, ReplicateResult},
         storage::{fetcher, Storage},
     },
-    identities::{delegation, payload},
+    identities::{
+        delegation::{self, Direct},
+        payload,
+    },
     net::{connection::LocalInfo, peer::Peer},
     Signer,
 };
@@ -28,7 +31,7 @@ impl TestPerson {
             payload::Person {
                 name: "alice".into(),
             },
-            Some(*peer_id.as_public_key()).into_iter().collect(),
+            Direct::new(*peer_id.as_public_key()),
         )?;
 
         Ok(Self { owner: alice })
@@ -83,7 +86,7 @@ impl TestProject {
             payload::Person {
                 name: "alice".into(),
             },
-            Some(*peer_id.as_public_key()).into_iter().collect(),
+            Direct::new(*peer_id.as_public_key()),
         )?;
         let local_id = identities::local::load(storage, alice.urn())?
             .expect("local id must exist as we just created it");

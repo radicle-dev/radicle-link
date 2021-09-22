@@ -3,12 +3,12 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    collections::{btree_set, BTreeSet},
-    iter::FromIterator,
-};
+use std::collections::{btree_set, BTreeSet};
+
+use thiserror::Error;
 
 use crypto::PublicKey;
+use data::{nonempty::Set as _, NonEmptyOrderedSet};
 
 use super::Delegations;
 use crate::{payload, sealed};
@@ -17,10 +17,34 @@ use crate::{payload, sealed};
 ///
 /// Untrusted input must be deserialised via [`payload::PersonDelegations`],
 /// which ensures that duplicates in the source document translate to an error.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Direct(BTreeSet<PublicKey>);
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Direct(NonEmptyOrderedSet<PublicKey>);
+
+#[non_exhaustive]
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("the set of keys provided was empty")]
+    EmptyKeys,
+}
 
 impl Direct {
+    pub fn new(key: PublicKey) -> Self {
+        Self(NonEmptyOrderedSet::new(key))
+    }
+
+    pub fn insert(mut self, key: PublicKey) -> Self {
+        self.0.insert(key);
+        self
+    }
+
+    pub fn try_from_iter(keys: impl Iterator<Item = PublicKey>) -> Result<Self, Error> {
+        let keys = keys.collect::<BTreeSet<_>>();
+        match NonEmptyOrderedSet::from_maybe_empty(keys) {
+            Some(keys) => Ok(Self(keys)),
+            None => Err(Error::EmptyKeys),
+        }
+    }
+
     pub fn contains(&self, key: &PublicKey) -> bool {
         self.0.contains(key)
     }
@@ -56,23 +80,20 @@ impl From<payload::PersonDelegations> for Direct {
 
 impl From<Direct> for BTreeSet<PublicKey> {
     fn from(here: Direct) -> Self {
+        here.0.into_inner()
+    }
+}
+
+impl From<Direct> for NonEmptyOrderedSet<PublicKey> {
+    fn from(here: Direct) -> Self {
         here.0
     }
 }
 
 #[cfg(test)]
-impl From<BTreeSet<PublicKey>> for Direct {
-    fn from(set: BTreeSet<PublicKey>) -> Self {
+impl From<NonEmptyOrderedSet<PublicKey>> for Direct {
+    fn from(set: NonEmptyOrderedSet<PublicKey>) -> Self {
         Self(set)
-    }
-}
-
-impl FromIterator<PublicKey> for Direct {
-    fn from_iter<T>(iter: T) -> Self
-    where
-        T: IntoIterator<Item = PublicKey>,
-    {
-        Self(iter.into_iter().collect())
     }
 }
 
@@ -91,5 +112,14 @@ impl IntoIterator for Direct {
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
+    }
+}
+
+impl Extend<PublicKey> for Direct {
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = PublicKey>,
+    {
+        self.0.extend(iter)
     }
 }

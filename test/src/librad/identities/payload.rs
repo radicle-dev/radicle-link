@@ -118,8 +118,9 @@ pub fn gen_payload() -> impl Strategy<Value = SomePayload> {
 }
 
 pub fn gen_person_delegations() -> impl Strategy<Value = PersonDelegations> {
-    proptest::collection::btree_set(gen_public_key(), 1..32)
-        .prop_map(|keys| PersonDelegations::from(keys.into_iter().collect::<delegation::Direct>()))
+    proptest::collection::btree_set(gen_public_key(), 1..32).prop_map(|keys| {
+        PersonDelegations::from(delegation::Direct::try_from_iter(keys.into_iter()).unwrap())
+    })
 }
 
 pub fn gen_key_or_urn() -> impl Strategy<Value = KeyOrUrn<Oid>> {
