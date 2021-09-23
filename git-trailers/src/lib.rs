@@ -1,4 +1,5 @@
 // Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+// Copyright © 2021 The Radicle Link Contributors
 //
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
@@ -33,10 +34,47 @@ impl<'a> Trailer<'a> {
             separator,
         }
     }
+
+    pub fn to_owned(&self) -> OwnedTrailer {
+        OwnedTrailer::from(self)
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Token<'a>(&'a str);
+
+/// A version of the Trailer<'a> which owns it's token and values. Useful for
+/// when you need to carry trailers around in a long lived data structure.
+pub struct OwnedTrailer {
+    token: OwnedToken,
+    values: Vec<String>,
+}
+
+pub struct OwnedToken(String);
+
+impl<'a> From<&Trailer<'a>> for OwnedTrailer {
+    fn from(t: &Trailer<'a>) -> Self {
+        OwnedTrailer {
+            token: OwnedToken(t.token.0.to_string()),
+            values: t.values.iter().map(|v| v.to_string()).collect(),
+        }
+    }
+}
+
+impl<'a> From<Trailer<'a>> for OwnedTrailer {
+    fn from(t: Trailer<'a>) -> Self {
+        (&t).into()
+    }
+}
+
+impl<'a> From<&'a OwnedTrailer> for Trailer<'a> {
+    fn from(t: &'a OwnedTrailer) -> Self {
+        Trailer {
+            token: Token(t.token.0.as_str()),
+            values: t.values.iter().map(Cow::from).collect(),
+        }
+    }
+}
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
