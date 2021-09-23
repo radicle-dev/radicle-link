@@ -32,6 +32,8 @@ pub enum RefsCategory {
     Rad,
     Tags,
     Notes,
+    /// Collaborative objects
+    Cob,
 }
 
 impl RefsCategory {
@@ -41,6 +43,7 @@ impl RefsCategory {
             "rad" => Some(Self::Rad),
             "tags" => Some(Self::Tags),
             "notes" => Some(Self::Notes),
+            "cob" => Some(Self::Cob),
             _ => None,
         }
     }
@@ -53,6 +56,7 @@ impl Display for RefsCategory {
             Self::Rad => f.write_str("rad"),
             Self::Tags => f.write_str("tags"),
             Self::Notes => f.write_str("notes"),
+            Self::Cob => f.write_str("cob"),
         }
     }
 }
@@ -85,7 +89,7 @@ impl sealed::Sealed for &ext::RefLike {}
 pub struct Reference<Namespace, Remote, Cardinality> {
     /// The remote portion of this reference.
     pub remote: Option<Remote>,
-    /// Where this reference falls under, i.e. `heads`, `tags` or`rad`.
+    /// Where this reference falls under, i.e. `heads`, `tags`, `cob`, or`rad`.
     pub category: RefsCategory,
     /// The path of the reference, e.g. `feature/123`, `dev`, `heads/*`.
     pub name: Cardinality,
@@ -279,6 +283,27 @@ impl<N, R> Reference<N, R, One> {
             namespace: namespace.into(),
         }
     }
+
+    /// Build a reference that points to:
+    ///     * `refs/namespaces/<namespace>/refs/cob/<typename>/<object id>`
+    ///     * `refs/namespaces/<namespace>/refs/remote/<peer_id>/cob/<typename>/
+    ///       <object id>`
+    pub fn rad_collaborative_object(
+        namespace: impl Into<Option<N>>,
+        remote: impl Into<Option<R>>,
+        typename: cob::TypeName,
+        oid: cob::ObjectId,
+    ) -> Self {
+        Self {
+            remote: remote.into(),
+            category: RefsCategory::Cob,
+            // TODO: fix these unwraps
+            name: ext::RefLike::try_from(typename.to_string())
+                .unwrap()
+                .join(ext::RefLike::try_from(oid.to_string()).unwrap()),
+            namespace: namespace.into(),
+        }
+    }
 }
 
 impl<N, R> Display for Reference<N, R, One>
@@ -418,6 +443,17 @@ impl<N, R> Reference<N, R, Many> {
         Self {
             remote: remote.into(),
             category: RefsCategory::Notes,
+            name: refspec_pattern!("*"),
+            namespace: namespace.into(),
+        }
+    }
+
+    /// Build a reference that points to
+    ///     * `refs[/namespaces/namespace]/refs[/remotes/<remote>]/cob/*`
+    pub fn cob(namespace: impl Into<Option<N>>, remote: impl Into<Option<R>>) -> Self {
+        Self {
+            remote: remote.into(),
+            category: RefsCategory::Cob,
             name: refspec_pattern!("*"),
             namespace: namespace.into(),
         }
