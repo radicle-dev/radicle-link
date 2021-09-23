@@ -21,6 +21,7 @@ pub struct Paths {
     keys_dir: PathBuf,
     git_dir: PathBuf,
     git_includes_dir: PathBuf,
+    cob_cache_dir: PathBuf,
 }
 
 impl Paths {
@@ -32,11 +33,13 @@ impl Paths {
         let proj = project_dirs()?;
         let config_dir = proj.config_dir().join(profile_id);
         let data_dir = proj.data_dir().join(profile_id);
+        let cache_dir = proj.cache_dir().join(profile_id);
 
         Self {
             keys_dir: config_dir.join("keys"),
             git_dir: data_dir.join("git"),
             git_includes_dir: config_dir.join("git-includes"),
+            cob_cache_dir: cache_dir.join("cob-cache"),
         }
         .init()
     }
@@ -48,6 +51,7 @@ impl Paths {
             keys_dir: root.join("keys"),
             git_dir: root.join("git"),
             git_includes_dir: root.join("git-includes"),
+            cob_cache_dir: root.join("cob-cache"),
         }
         .init()
     }
@@ -64,6 +68,10 @@ impl Paths {
         &self.git_includes_dir
     }
 
+    pub fn cob_cache_dir(&self) -> &Path {
+        &self.cob_cache_dir
+    }
+
     pub fn all_dirs(&self) -> impl Iterator<Item = &Path> {
         // Nb. this pattern match is here to keep the map consistent with the
         // struct fields
@@ -71,12 +79,14 @@ impl Paths {
             keys_dir,
             git_dir,
             git_includes_dir,
+            cob_cache_dir,
         } = self;
 
         vec![
             keys_dir.as_path(),
             git_dir.as_path(),
             git_includes_dir.as_path(),
+            cob_cache_dir.as_path(),
         ]
         .into_iter()
     }
