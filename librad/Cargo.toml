@@ -61,6 +61,11 @@ uuid = { version = "0.8", features = ["v4"] }
 webpki = "0.21"
 xorf = "0.7"
 
+[build-dependencies.sonde]
+git = "https://github.com/viraptor/sonde-rs"
+rev = "88c3b872eaa7fdfe6ffbef34e1c920d4c9401544"
+optional = true
+
 [dependencies.deadpool]
 version = "0.7"
 default-features = false
@@ -143,3 +148,6 @@ features = ["serde"]
 [dependencies.zeroize]
 version = "1.1"
 features = ["zeroize_derive"]
+
+[features]
+usdt = ["sonde"]
