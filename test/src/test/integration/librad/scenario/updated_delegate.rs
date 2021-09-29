@@ -43,6 +43,11 @@ fn can_replicate_with_updated_delegate() {
                 .await
                 .unwrap()
                 .unwrap();
+            tracing::info!(
+                rev = %person.owner.revision,
+                head = %person.owner.content_id,
+                "created test person"
+            );
             person.pull(peer1, peer2).await.ok().unwrap();
             person
         };
@@ -63,6 +68,11 @@ fn can_replicate_with_updated_delegate() {
                 .await
                 .unwrap()
                 .unwrap();
+            tracing::info!(
+                rev = %person.owner.revision,
+                head = %person.owner.content_id,
+                "updated test person"
+            );
             person
         };
 

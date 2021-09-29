@@ -19,6 +19,7 @@ use librad::{
     self,
     git::{
         local::url::LocalUrl,
+        refs::Refs,
         storage::{ReadOnlyStorage as _, Storage},
         tracking,
         types::{remote, Flat, Force, GenericRef, Namespace, Reference, Refspec, Remote},
@@ -29,6 +30,7 @@ use librad::{
     refspec_pattern,
     PeerId,
 };
+use tracing::info;
 
 fn config() -> testnet::Config {
     testnet::Config {
@@ -227,6 +229,10 @@ fn threes_a_crowd() {
         let peer2 = net.peers().index(1);
         let peer3 = net.peers().index(2);
 
+        for x in 0..=2 {
+            info!("peer{}: {}", x + 1, net.peers().index(x).peer_id())
+        }
+
         let proj = peer1
             .using_storage(move |storage| TestProject::create(storage))
             .await
@@ -235,16 +241,21 @@ fn threes_a_crowd() {
 
         peer1
             .using_storage({
-                let peer_id = peer2.peer_id();
+                let peer2_id = peer2.peer_id();
                 let urn = proj.project.urn();
-                move |storage| tracking::track(storage, &urn, peer_id)
+                move |storage| -> anyhow::Result<()> {
+                    tracking::track(storage, &urn, peer2_id)?;
+                    Refs::update(storage, &urn)?;
+                    Ok(())
+                }
             })
             .await
             .unwrap()
             .unwrap();
-        proj.pull(peer1, peer2).await.ok().unwrap();
-        proj.pull(peer2, peer1).await.ok().unwrap();
-        proj.pull(peer1, peer3).await.ok().unwrap();
+
+        proj.pull(peer1, peer2).await.unwrap();
+        proj.pull(peer2, peer1).await.unwrap();
+        proj.pull(peer1, peer3).await.unwrap();
 
         // Has peer1 refs?
         let peer3_expected = peer3
