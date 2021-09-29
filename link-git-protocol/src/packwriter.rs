@@ -13,7 +13,11 @@ use std::{
 };
 
 use futures_lite::io::{AsyncBufRead, BlockOn};
-use git_repository::{odb::pack, Progress};
+use git_repository::{
+    hash::ObjectId,
+    odb::{self, pack},
+    Progress,
+};
 
 use crate::take::TryTake;
 
@@ -140,33 +144,89 @@ pub mod libgit {
 
 pub type PackReceived = pack::bundle::write::Outcome;
 
+/// A lookup function to help "thicken" thin packs by finding missing base
+/// objects.
+///
+/// The impl provided for [`odb::linked::Store`] does not use any pack caching.
+pub trait Thickener {
+    fn find_object<'a>(&self, id: ObjectId, buf: &'a mut Vec<u8>)
+        -> Option<pack::data::Object<'a>>;
+}
+
+impl Thickener for odb::linked::Store {
+    fn find_object<'a>(
+        &self,
+        id: ObjectId,
+        buf: &'a mut Vec<u8>,
+    ) -> Option<pack::data::Object<'a>> {
+        use git_repository::prelude::FindExt as _;
+        self.find(id, buf, &mut pack::cache::Never).ok()
+    }
+}
+
+/// A factory spewing out new [`Thickener`]s with static lifetimes.
+///
+/// `gitoxide` doesn't currently allow us to initialise thickening lazily (the
+/// pack file may not be thin after all), but requires a static lookup function.
+/// Instead of initialising a new [`odb::linked::Store`] for every pack stream,
+/// users may share a pre-initialised object database provided appropriate
+/// thread safety measures.
+pub trait BuildThickener {
+    type Error: std::error::Error + Send + Sync + 'static;
+    type Thick: Thickener + 'static;
+
+    fn build_thickener(&self) -> Result<Self::Thick, Self::Error>;
+}
+
+pub struct StandardThickener {
+    git_dir: PathBuf,
+}
+
+impl StandardThickener {
+    pub fn new(git_dir: impl Into<PathBuf>) -> Self {
+        let git_dir = git_dir.into();
+        Self { git_dir }
+    }
+}
+
+impl BuildThickener for StandardThickener {
+    type Error = odb::linked::init::Error;
+    type Thick = odb::linked::Store;
+
+    fn build_thickener(&self) -> Result<Self::Thick, Self::Error> {
+        odb::linked::Store::at(self.git_dir.join("objects"))
+    }
+}
+
 /// The default [`PackWriter`].
 ///
 /// Writes the packfile into the given output directory, along with a v2
 /// index. The packfile is verified.
-pub struct Standard {
+pub struct Standard<F> {
     git_dir: PathBuf,
     opt: Options,
+    thick: F,
     stop: Arc<AtomicBool>,
 }
 
-impl Standard {
-    pub fn new(git_dir: impl AsRef<Path>, opt: Options, stop: Arc<AtomicBool>) -> Self {
+impl<F> Standard<F> {
+    pub fn new(git_dir: impl AsRef<Path>, opt: Options, thick: F, stop: Arc<AtomicBool>) -> Self {
         Self {
             git_dir: git_dir.as_ref().to_owned(),
             opt,
+            thick,
             stop,
         }
     }
 }
 
-impl Drop for Standard {
+impl<F> Drop for Standard<F> {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
     }
 }
 
-impl PackWriter for Standard {
+impl<F: BuildThickener> PackWriter for Standard<F> {
     type Output = PackReceived;
 
     fn write_pack(
@@ -174,27 +234,23 @@ impl PackWriter for Standard {
         pack: impl AsyncBufRead + Unpin,
         prog: impl Progress,
     ) -> io::Result<Self::Output> {
-        use git_repository::odb::{
-            linked::Store,
-            pack::{bundle::write::Options, data::input::Mode, index::Version, Bundle},
-            FindExt as _,
-        };
+        use pack::{bundle::write::Options, data::input::Mode, index::Version, Bundle};
 
-        let odb =
-            Store::at(self.git_dir.clone()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         let opts = Options {
             thread_limit: self.opt.max_indexer_threads,
             index_kind: Version::V2,
             iteration_mode: Mode::Verify,
         };
+        let thickener = self
+            .thick
+            .build_thickener()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         Bundle::write_to_directory(
             BlockOn::new(TryTake::new(pack, self.opt.max_pack_bytes)),
             Some(self.git_dir.join("objects").join("pack")),
             prog,
             &self.stop,
-            Some(Box::new(move |oid, buf| {
-                odb.find(oid, buf, &mut pack::cache::Never).ok()
-            })),
+            Some(Box::new(move |oid, buf| thickener.find_object(oid, buf))),
             opts,
         )
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))

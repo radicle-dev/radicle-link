@@ -12,11 +12,11 @@ use std::{
 
 use bstr::ByteSlice as _;
 use futures::{AsyncReadExt as _, TryFutureExt as _};
-use git::{
+use git_repository::{
+    self as git,
     prelude::*,
     refs::transaction::{Change, PreviousValue, RefEdit},
 };
-use git_repository as git;
 use link_git_protocol::{fetch, ls, packwriter, upload_pack, ObjectId, PackWriter, Ref};
 use tempfile::{tempdir, TempDir};
 
@@ -302,7 +302,13 @@ fn clone_gitoxide() {
     let local_repo = git::init(&local).unwrap();
 
     clone_with(remote.path(), &local.path(), move |stop| {
-        packwriter::Standard::new(local_repo.path(), packwriter::Options::default(), stop)
+        let git_dir = local_repo.path();
+        packwriter::Standard::new(
+            git_dir,
+            packwriter::Options::default(),
+            packwriter::StandardThickener::new(git_dir),
+            stop,
+        )
     })
 }
 
@@ -385,9 +391,14 @@ fn thin_pack_gitoxide() {
     let remote = upstream();
     let local = tempdir().unwrap();
     let local_repo = git::init(&local).unwrap();
-    let git_dir = local_repo.path().to_owned();
 
     thin_pack_with(remote.path(), local.path(), move |stop| {
-        packwriter::Standard::new(git_dir.clone(), packwriter::Options::default(), stop)
+        let git_dir = local_repo.path();
+        packwriter::Standard::new(
+            git_dir,
+            packwriter::Options::default(),
+            packwriter::StandardThickener::new(git_dir),
+            stop,
+        )
     });
 }
