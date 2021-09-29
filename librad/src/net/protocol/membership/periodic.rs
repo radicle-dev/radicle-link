@@ -40,7 +40,7 @@ where
         move |_| {
             let p = hpv.shuffle().map(Periodic::Shuffle);
             if p.is_none() {
-                tracing::warn!("nothing to shuffle");
+                tracing::debug!("nothing to shuffle");
             }
             future::ready(p)
         }
@@ -50,7 +50,7 @@ where
         Interval::new(params.promote_interval, Duration::from_secs(5)).filter_map(move |_| {
             let candidates = hpv.choose_passive_to_promote();
             if candidates.is_empty() {
-                tracing::warn!("nothing to promote");
+                tracing::debug!("nothing to promote");
                 future::ready(None)
             } else {
                 future::ready(Some(Periodic::RandomPromotion { candidates }))
