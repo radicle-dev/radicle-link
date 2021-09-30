@@ -190,7 +190,11 @@ struct RadSubTransport {
 impl RadSubTransport {
     async fn ensure_header_sent(&mut self) -> io::Result<()> {
         if let Some(header) = self.header.take() {
-            self.stream.write_all(header.to_string().as_bytes()).await?;
+            let header = header.to_string();
+            self.stream
+                .write_all(format!("{:04x}", 4 + header.len()).as_bytes())
+                .await?;
+            self.stream.write_all(header.as_bytes()).await?;
         }
 
         Ok(())
