@@ -23,8 +23,6 @@ pub(super) mod connections;
 pub(super) use connections::connect;
 
 pub mod error;
-
-pub mod graft;
 pub(super) mod recv;
 
 pub mod send;

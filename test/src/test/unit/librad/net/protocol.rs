@@ -4,4 +4,3 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 mod gossip;
-mod io;
