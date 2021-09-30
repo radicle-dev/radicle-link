@@ -6,11 +6,13 @@
 use std::{future::Future, io, path::Path, process::ExitStatus, str::FromStr};
 
 use async_process::{Command, Stdio};
-use futures_lite::io::{copy, AsyncRead, AsyncWrite};
+use futures_lite::io::{copy, AsyncBufReadExt as _, AsyncRead, AsyncWrite, BufReader};
 use futures_util::try_join;
 use git_packetline::PacketLineRef;
 use once_cell::sync::Lazy;
 use versions::Version;
+
+mod legacy;
 
 #[derive(Debug, PartialEq)]
 pub struct Header {
@@ -69,52 +71,103 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let mut recv = git_packetline::StreamingPeekableIter::new(recv, &[]);
-    let header: Header = {
-        let pkt = recv
-            .read_line()
-            .await
-            .ok_or_else(|| invalid_data("missing header"))?
-            .map_err(invalid_data)?
-            .map_err(invalid_data)?;
-        match pkt {
-            PacketLineRef::Data(data) => std::str::from_utf8(data)
+    let mut recv = BufReader::new(recv);
+    let header: Header = match recv.fill_buf().await?.get(0) {
+        // legacy clients don't send a proper pktline header :(
+        Some(b'g') => {
+            let mut buf = String::with_capacity(256);
+            recv.read_line(&mut buf).await?;
+            buf.parse().map_err(invalid_data)?
+        },
+        Some(_) => {
+            let mut pktline = git_packetline::StreamingPeekableIter::new(recv, &[]);
+            let pkt = pktline
+                .read_line()
+                .await
+                .ok_or_else(|| invalid_data("missing header"))?
                 .map_err(invalid_data)?
-                .parse()
-                .map_err(invalid_data),
-            _ => Err(invalid_data("not a header packet")),
-        }?
+                .map_err(invalid_data)?;
+            let hdr = match pkt {
+                PacketLineRef::Data(data) => std::str::from_utf8(data)
+                    .map_err(invalid_data)?
+                    .parse()
+                    .map_err(invalid_data),
+                _ => Err(invalid_data("not a header packet")),
+            }?;
+            recv = pktline.into_inner();
+
+            hdr
+        },
+        None => {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "expected header",
+            ))
+        },
     };
-    let namespace = header.path.clone();
-    let mut recv = recv.into_inner();
+
+    let namespace = header
+        .path
+        // legacy clients redundantly send a full URN
+        .strip_prefix("rad:git:")
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| header.path.clone());
+    let protocol_version = header
+        .extra
+        .iter()
+        .find_map(|kv| match kv {
+            (ref k, Some(v)) if k == "version" => {
+                let version = match v.as_str() {
+                    "2" => 2,
+                    "1" => 1,
+                    _ => 0,
+                };
+                Some(version)
+            },
+            _ => None,
+        })
+        .unwrap_or(0);
+    // legacy
+    let stateless_ls = header.extra.iter().any(|(k, _)| k == "ls");
 
     let fut = async move {
-        advertise_capabilities(&mut send).await?;
+        if protocol_version < 2 {
+            if stateless_ls {
+                return legacy::advertise_refs(git_dir, &namespace, recv, send).await;
+            }
+        } else {
+            advertise_capabilities(&mut send).await?;
+        }
 
-        let mut child = Command::new("git")
-            .current_dir(git_dir)
-            .env_clear()
-            .envs(std::env::vars().filter(|(key, _)| key == "PATH" || key.starts_with("GIT_TRACE")))
-            .env("GIT_PROTOCOL", "version=2")
-            .env("GIT_NAMESPACE", namespace)
-            .args(&[
-                "-c",
-                "uploadpack.allowanysha1inwant=true",
-                "-c",
-                "uploadpack.allowrefinwant=true",
-                "-c",
-                "lsrefs.unborn=ignore",
-                "upload-pack",
-                "--strict",
-                "--stateless-rpc",
-                ".",
-            ])
-            .stdout(Stdio::piped())
-            .stdin(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .kill_on_drop(true)
-            .reap_on_drop(true)
-            .spawn()?;
+        let mut child = {
+            let mut cmd = Command::new("git");
+            cmd.current_dir(git_dir)
+                .env_clear()
+                .envs(
+                    std::env::vars()
+                        .filter(|(key, _)| key == "PATH" || key.starts_with("GIT_TRACE")),
+                )
+                .env("GIT_PROTOCOL", format!("version={}", protocol_version))
+                .env("GIT_NAMESPACE", namespace)
+                .args(&[
+                    "-c",
+                    "uploadpack.allowanysha1inwant=true",
+                    "-c",
+                    "uploadpack.allowrefinwant=true",
+                    "-c",
+                    "lsrefs.unborn=ignore",
+                    "upload-pack",
+                    "--strict",
+                    "--stateless-rpc",
+                    ".",
+                ])
+                .stdout(Stdio::piped())
+                .stdin(Stdio::piped())
+                .stderr(Stdio::inherit())
+                .kill_on_drop(true)
+                .reap_on_drop(true)
+                .spawn()?
+        };
 
         let mut stdin = child.stdin.take().unwrap();
         let mut stdout = child.stdout.take().unwrap();
