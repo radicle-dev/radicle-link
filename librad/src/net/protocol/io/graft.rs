@@ -91,7 +91,7 @@ where
     fetcher::retrying(
         spawner,
         storage,
-        fetcher::PeerToPeer::new(urn.clone(), remote_peer, addr_hints).nonced(false),
+        fetcher::PeerToPeer::new(urn.clone(), remote_peer, addr_hints),
         config.fetch_slot_wait_timeout,
         move |storage, fetcher| {
             let remote_heads = fetcher.remote_heads();

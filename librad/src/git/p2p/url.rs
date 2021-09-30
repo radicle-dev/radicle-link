@@ -22,7 +22,6 @@ pub struct GitUrl<R> {
     pub remote_peer: PeerId,
     pub addr_hints: Vec<SocketAddr>,
     pub repo: R,
-    pub nonce: Option<u32>,
 }
 
 impl<R> GitUrl<R> {
@@ -32,7 +31,6 @@ impl<R> GitUrl<R> {
             remote_peer: &self.remote_peer,
             addr_hints: &self.addr_hints,
             repo: &self.repo,
-            nonce: self.nonce.as_ref(),
         }
     }
 }
@@ -110,28 +108,19 @@ where
                 let mhash = Multihash::from_bytes(bytes)?;
                 R::try_from(mhash).map_err(|e| Self::Err::Repo(Box::new(e)))
             })?;
-        let (addr_hints, nonce) = url
+        let addr_hints = url
             .query_pairs()
-            .fold((Vec::new(), None), |mut acc, (k, v)| {
-                match k.as_ref() {
-                    "addr" => {
-                        if let Ok(addr) = v.parse() {
-                            acc.0.push(addr)
-                        }
-                    },
-                    "n" => acc.1 = v.parse().ok(),
-
-                    _ => {},
-                }
-                acc
-            });
+            .filter_map(|(k, v)| match k.as_ref() {
+                "addr" => v.parse().ok(),
+                _ => None,
+            })
+            .collect();
 
         Ok(Self {
             local_peer,
             remote_peer,
             addr_hints,
             repo,
-            nonce,
         })
     }
 }
@@ -142,7 +131,6 @@ pub struct GitUrlRef<'a, R> {
     pub remote_peer: &'a PeerId,
     pub addr_hints: &'a [SocketAddr],
     pub repo: &'a R,
-    pub nonce: Option<&'a u32>,
 }
 
 impl<'a, R> GitUrlRef<'a, R>
@@ -163,7 +151,6 @@ where
             remote_peer,
             addr_hints: addr_hints.as_ref(),
             repo: &urn.id,
-            nonce: None,
         }
     }
 }
@@ -178,7 +165,6 @@ impl<R> GitUrlRef<'_, R> {
             remote_peer: *self.remote_peer,
             addr_hints: self.addr_hints.to_vec(),
             repo: self.repo.clone(),
-            nonce: self.nonce.copied(),
         }
     }
 }
@@ -191,7 +177,6 @@ impl<'a, R> Clone for GitUrlRef<'a, R> {
             remote_peer: self.remote_peer,
             addr_hints: self.addr_hints,
             repo: self.repo,
-            nonce: self.nonce,
         }
     }
 }
@@ -223,9 +208,6 @@ where
         {
             let mut query = url.query_pairs_mut();
             query.extend_pairs(git.addr_hints.iter().map(|addr| ("addr", addr.to_string())));
-            if let Some(n) = git.nonce {
-                query.append_pair("n", &n.to_string());
-            }
         }
         let repo: Multihash = git.repo.into();
         url.set_path(&format!(

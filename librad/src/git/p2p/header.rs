@@ -19,16 +19,14 @@ pub struct Header<Urn> {
     pub service: Service,
     pub repo: Urn,
     pub peer: PeerId,
-    pub nonce: Option<u32>,
 }
 
 impl<Urn> Header<Urn> {
-    pub fn new(service: GitService, repo: Urn, peer: PeerId, nonce: Option<u32>) -> Self {
+    pub fn new(service: GitService, repo: Urn, peer: PeerId) -> Self {
         Self {
             service: Service(service),
             repo,
             peer,
-            nonce,
         }
     }
 }
@@ -50,9 +48,6 @@ impl<Urn: Display> Display for Header<Urn> {
             },
         }?;
 
-        if let Some(n) = self.nonce {
-            write!(f, "\0n={}", n)?;
-        }
         writeln!(f, "\0")
     }
 }
@@ -103,17 +98,12 @@ where
 
         let mut peer = None;
         let mut ls = false;
-        let mut nonce = None;
 
         for part in parts {
             if part == "ls" {
                 ls = true
-            } else if let Some((k, v)) = part.split_once('=') {
-                match k {
-                    "host" => peer = Some(v.parse::<PeerId>()?),
-                    "n" => nonce = v.parse().ok(),
-                    _ => {},
-                }
+            } else if let Some(("host", v)) = part.split_once('=') {
+                peer = Some(v.parse::<PeerId>()?);
             }
         }
 
@@ -138,7 +128,7 @@ where
             unknown => Err(ParseError::InvalidService(unknown.to_owned())),
         }?;
 
-        Ok(Self::new(service, repo, peer, nonce))
+        Ok(Self::new(service, repo, peer))
     }
 }
 

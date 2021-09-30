@@ -24,7 +24,6 @@ fn test_str_roundtrip() {
             )),
         ],
         repo: git::Revision::from(git2::Oid::zero()),
-        nonce: Some(42),
     };
 
     str_roundtrip(url)

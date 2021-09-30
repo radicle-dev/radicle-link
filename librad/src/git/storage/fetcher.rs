@@ -103,7 +103,6 @@ pub struct PeerToPeer {
     pub urn: Urn,
     pub remote_peer: PeerId,
     pub addr_hints: Vec<SocketAddr>,
-    pub nonced: bool,
 }
 
 impl PeerToPeer {
@@ -115,14 +114,6 @@ impl PeerToPeer {
             urn: Urn::new(urn.id),
             remote_peer,
             addr_hints: addr_hints.into_iter().collect(),
-            nonced: true,
-        }
-    }
-
-    pub fn nonced(self, doit: bool) -> Self {
-        Self {
-            nonced: doit,
-            ..self
         }
     }
 
@@ -130,18 +121,11 @@ impl PeerToPeer {
         &self,
         storage: &'a Storage,
     ) -> Result<Result<Fetcher<'a>, Info>, git2::Error> {
-        let nonce = if self.nonced {
-            Some(rand::random())
-        } else {
-            None
-        };
-
         let url = GitUrlRef {
             local_peer: &PeerId::from_signer(storage.signer()),
             remote_peer: &self.remote_peer,
             repo: &self.urn.id,
             addr_hints: &self.addr_hints,
-            nonce: nonce.as_ref(),
         };
         AnyUrl {
             urn: self.urn.clone(),

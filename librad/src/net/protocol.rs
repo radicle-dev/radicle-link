@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{fmt::Debug, future::Future, net::SocketAddr, sync::Arc, time::Duration};
+use std::{fmt::Debug, future::Future, net::SocketAddr, sync::Arc};
 
 use async_stream::stream;
 use futures::{stream::BoxStream, StreamExt};
@@ -45,7 +45,6 @@ pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
 mod accept;
 
 mod control;
-mod nonce;
 mod tick;
 
 mod tincans;
@@ -174,8 +173,6 @@ where
         config.membership,
     );
     let storage = Storage::new(storage, config.rate_limits.storage);
-    // TODO: make configurable
-    let nonces = nonce::NonceBag::new(Duration::from_secs(300));
     let limits = RateLimits {
         membership: Arc::new(RateLimiter::keyed(
             config.rate_limits.membership,
@@ -194,7 +191,6 @@ where
             replication: config.replication,
             fetch: config.fetch,
         },
-        nonces,
         caches,
         spawner,
         limits,

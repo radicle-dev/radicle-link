@@ -12,24 +12,11 @@ use librad::{
 };
 
 #[test]
-fn roundtrip_unnonced() {
+fn roundtrip() {
     let hdr = Header::new(
         GitService::UploadPackLs,
         Urn::new(ext::Oid::from(git2::Oid::zero())),
         PeerId::from(SecretKey::new()),
-        None,
-    );
-
-    assert_eq!(hdr, hdr.to_string().parse::<Header<Urn>>().unwrap())
-}
-
-#[test]
-fn roundtrip_nonced() {
-    let hdr = Header::new(
-        GitService::UploadPackLs,
-        Urn::new(ext::Oid::from(git2::Oid::zero())),
-        PeerId::from(SecretKey::new()),
-        Some(69),
     );
 
     assert_eq!(hdr, hdr.to_string().parse::<Header<Urn>>().unwrap())
