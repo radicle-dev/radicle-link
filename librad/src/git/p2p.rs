@@ -4,7 +4,6 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 pub mod header;
-pub mod server;
 pub mod transport;
 pub mod url;
 

@@ -20,12 +20,7 @@ use super::{
 };
 use crate::{
     executor,
-    git::{
-        self,
-        p2p::{server::GitServer, transport::GitStreamFactory},
-        replication,
-        storage,
-    },
+    git::{self, p2p::transport::GitStreamFactory, replication, storage},
     paths::Paths,
     rate_limit::RateLimiter,
     PeerId,
@@ -165,7 +160,6 @@ where
     Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
     let local_id = PeerId::from_signer(&signer);
-    let git = GitServer::new(&config.paths);
     let quic::BoundEndpoint { endpoint, incoming } = quic::Endpoint::bind(
         signer,
         &spawner,
@@ -192,7 +186,6 @@ where
     let state = State {
         local_id,
         endpoint,
-        git,
         membership,
         storage,
         phone: phone.clone(),

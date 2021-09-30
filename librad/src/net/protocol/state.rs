@@ -27,10 +27,7 @@ use super::{
 use crate::{
     executor,
     git::{
-        p2p::{
-            server::GitServer,
-            transport::{GitStream, GitStreamFactory},
-        },
+        p2p::transport::{GitStream, GitStreamFactory},
         replication,
         storage::{self, PoolError, PooledRef},
     },
@@ -54,7 +51,6 @@ pub(super) struct StateConfig {
 pub(super) struct State<S> {
     pub local_id: PeerId,
     pub endpoint: Endpoint,
-    pub git: GitServer,
     pub membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     pub storage: Storage<S>,
     pub phone: TinCans,
