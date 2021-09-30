@@ -88,7 +88,7 @@ mod incoming {
                 stream.close(CloseReason::InvalidUpgrade)
             },
 
-            Ok(Git(up)) => recv::git(state, up).await,
+            Ok(Git(up)) => recv::git(&state, up).await,
             Ok(Gossip(up)) => recv::gossip(state, up).await,
             Ok(Membership(up)) => recv::membership(state, up).await,
             Ok(Interrogation(up)) => recv::interrogation(state, up).await,

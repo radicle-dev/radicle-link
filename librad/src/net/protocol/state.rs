@@ -35,12 +35,14 @@ use crate::{
         storage::{self, PoolError, PooledRef},
     },
     net::{quic, upgrade},
+    paths::Paths,
     rate_limit::{self, Direct, Keyed, RateLimiter},
     PeerId,
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct StateConfig {
+    pub paths: Arc<Paths>,
     pub replication: replication::Config,
     pub fetch: config::Fetch,
 }

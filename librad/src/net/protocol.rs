@@ -197,6 +197,7 @@ where
         storage,
         phone: phone.clone(),
         config: StateConfig {
+            paths: Arc::new(config.paths),
             replication: config.replication,
             fetch: config.fetch,
         },

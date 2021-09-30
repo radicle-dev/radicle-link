@@ -1,139 +1,59 @@
 // Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
+// Copyright © 2021      The Radicle Link Contributors
 //
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{io, net::SocketAddr};
+use std::{io, process::ExitStatus};
 
-use futures::{
-    future::{self, TryFutureExt as _},
-    io::{AsyncRead, AsyncWrite},
-    stream::{FuturesUnordered, StreamExt as _},
-};
+use futures::io::{AsyncRead, AsyncWrite};
+use link_git_protocol::upload_pack::{upload_pack, Header};
 use thiserror::Error;
+use tracing::{error, info};
 
-use crate::{
-    git::{replication::ReplicateResult, Urn},
-    net::{
-        connection::{Duplex, RemoteInfo},
-        protocol::{self, control, gossip, io::graft, ProtocolStorage, State},
-        upgrade::{self, Upgraded},
-    },
-    PeerId,
+use crate::net::{
+    connection::Duplex,
+    protocol::State,
+    upgrade::{self, Upgraded},
 };
 
 #[derive(Debug, Error)]
 enum Error {
-    #[error(transparent)]
-    Rere(#[from] graft::error::Rere),
+    #[error("upload-pack exited with {0}")]
+    UploadPack(ExitStatus),
 
     #[error(transparent)]
     Io(#[from] io::Error),
 }
 
-pub(in crate::net::protocol) async fn git<S, T>(state: State<S>, stream: Upgraded<upgrade::Git, T>)
+pub(in crate::net::protocol) async fn git<S, T>(state: &State<S>, stream: Upgraded<upgrade::Git, T>)
 where
-    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
-    T: Duplex + RemoteInfo<Addr = SocketAddr>,
-    <T as Duplex>::Read: AsyncRead + Send + Sync + Unpin + 'static,
-    <T as Duplex>::Write: AsyncWrite + Send + Sync + Unpin + 'static,
+    T: Duplex,
+    T::Read: AsyncRead + Unpin,
+    T::Write: AsyncWrite + Unpin,
 {
-    let remote_peer = stream.remote_peer_id();
-    let remote_addr = stream.remote_addr();
-    let (recv, send) = stream.into_stream().split();
-    match state.git.service(recv, send).await {
-        Err(e) => tracing::warn!(err = ?e, "git service setup error"),
-        Ok(srv) => {
-            let repo = srv.header.repo.clone();
-            let nonce = srv.header.nonce;
-            let res = srv
-                .run()
-                .err_into::<Error>()
-                .and_then(|()| async {
-                    if let Some(n) = nonce {
-                        // Only rere if we have a fresh nonce
-                        if !state.nonces.contains(&n) {
-                            return rere(state.clone(), repo, remote_peer, remote_addr).await;
-                        }
-                    }
-
-                    Ok(())
-                })
-                .await;
-
-            if let Some(n) = nonce {
-                state.nonces.insert(n);
-            }
-
-            if let Err(e) = res {
-                tracing::warn!(err = ?e, "recv git error")
-            }
-        },
+    if let Err(e) = serve(state, stream).await {
+        error!(err = ?e, "upload-pack error");
     }
 }
 
-#[tracing::instrument(
-    skip(state, urn, remote_peer, remote_addr),
-    fields(urn = %urn, remote_peer = %remote_peer)
-)]
-async fn rere<S>(
-    state: State<S>,
-    urn: Urn,
-    remote_peer: PeerId,
-    remote_addr: SocketAddr,
-) -> Result<(), Error>
+async fn serve<S, T>(state: &State<S>, stream: Upgraded<upgrade::Git, T>) -> Result<(), Error>
 where
-    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    T: Duplex,
+    T::Read: AsyncRead + Unpin,
+    T::Write: AsyncWrite + Unpin,
 {
-    use protocol::event::downstream::Gossip::Announce;
+    let (recv, send) = stream.into_stream().split();
+    let git_dir = state.config.paths.git_dir();
 
-    tracing::info!("attempting rere");
+    let (Header { path, host, extra }, run) = upload_pack(git_dir, recv, send).await?;
+    info!(%path, ?host, ?extra, "upload-pack");
 
-    let config = graft::config::Rere {
-        replication: state.config.replication,
-        fetch_slot_wait_timeout: state.config.fetch.fetch_slot_wait_timeout,
-    };
-    let updated_tips = graft::rere(
-        &state.spawner,
-        &state.storage,
-        config,
-        urn.clone(),
-        remote_peer,
-        Some(remote_addr),
-    )
-    .await
-    .map_err(Error::from)?
-    .map(|ReplicateResult { updated_tips, .. }| updated_tips);
-
-    match updated_tips {
-        None => tracing::info!("rere skipped"),
-        Some(xs) => {
-            tracing::info!("rere updated {} refs", xs.len());
-            if !xs.is_empty() {
-                tracing::trace!("refs updated by rere: {:?}", xs);
-            }
-            xs.into_iter()
-                .map(|(refl, head)| {
-                    control::gossip(
-                        &state,
-                        Announce(gossip::Payload {
-                            urn: urn.clone(),
-                            rev: Some(head.into()),
-                            origin: refl
-                                .split('/')
-                                .skip_while(|&x| x != "remotes")
-                                .skip(1)
-                                .take(1)
-                                .next()
-                                .and_then(|remote| remote.parse().ok()),
-                        }),
-                        Some(remote_peer),
-                    )
-                })
-                .collect::<FuturesUnordered<_>>()
-                .for_each(future::ready)
-                .await
-        },
+    let status = run.await?;
+    // XXX: #![feature(exit_status_error)] ?
+    // https://github.com/rust-lang/rust/issues/84908
+    if !status.success() {
+        return Err(Error::UploadPack(status));
     }
 
     Ok(())

@@ -24,6 +24,7 @@ fn config() -> testnet::Config {
 }
 
 #[test]
+#[ignore]
 fn mutual_fetch() {
     logging::init();
 
