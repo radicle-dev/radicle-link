@@ -108,7 +108,16 @@ On the day the cycle ends, tag your `master` as described above, and publish it
 wherever you have access to (i.e. `radicle-dev/radicle-link`). The tag message
 should describe what went into the release, if there are breaking changes, etc.
 It should **not** list the individual commits, as that information is available
-through `git log`. The tag **must** be signed with the maintainer's GPG key.
+through `git log`. It may, however, include a `shortlog` of the history between
+the last release tag and the current state of the `master`
+branch. This can be generated using the following command:
+
+```
+git shortlog cylce/XXXX-XX-XX master
+```
+
+The tag **must** be signed with the maintainer's
+GPG key, by passing the `-s` flag to the `git tag` command.
 
 WARNING: Make sure to use `git push tag cycle/XYZ`, **not** `git push --tags`.
 
