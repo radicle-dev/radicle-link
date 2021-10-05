@@ -100,6 +100,10 @@ enumerate patches carried over from the last cycle, and any new ones.
 Whenever a patch moves from `seen` to `master`, reply to this email to say which
 ones made it. Also reply if you're unsure about promoting to `master`.
 
+Throughout the cycle, on each new day, reply to the release e-mail
+with an update with a summary of the past day. This can include what
+has been merged, what has been seen, what may need more approval, etc.
+
 On the day the cycle ends, tag your `master` as described above, and publish it
 wherever you have access to (i.e. `radicle-dev/radicle-link`). The tag message
 should describe what went into the release, if there are breaking changes, etc.
