@@ -1,0 +1,81 @@
+= `radicle-link` Maintainer's Checklist
+:author: @FintanH
+:revdate: 2021-10-05
+
+* Author: {author}
+* Date: {revdate}
+* Discussion: N/A
+
+== Overview
+
+This document provides a summary of the xref:maintainers-guide.adoc[Maintainer's Guide] in the
+form of a checklist to help maintainers in their duties.
+
+== Start of Cycle
+
+The previous maitainer will have published a tag `cycle/XXXX-XX-XX`,
+if not then you should track them down and give out to them.
+
+* [ ] Create `seen` branch for your mirror
+* [ ] Send email
+  * [ ] Subject: Release Cycle XXXX-XX-XX -- XXXX-XX-XX is the end of
+        the cycle
+  * [ ] Include the tag's object hash & commit hash of the last
+        release cycle, i.e. `cycle-XXXX-XX-XX` mentioned above.
+  * [ ] Include the URL to the `master` branch
+  * [ ] Include the URL to the `seen` branch
+  * [ ] Include seen patches -- commit hash, tag name, and Published-as
+
+The hash for the tag can be retrieved by using `git-show-ref`, for example:
+
+```
+$ git show-ref cycle/2021-10-05
+c37a6ff141aea58615a72f974732c077a7f396a1 refs/tags/cycle/2021-10-05
+```
+
+The commit for the tag can be seen by using `git log` and seeing the
+SHA it points to.
+
+NOTE: all URL's above should point to your mirror of the
+`radicle-link` repository.
+
+== Daily
+
+* [ ] Reply to `Release Cycle XXXX-XX-XX`
+  * [ ] Inlcude what has been merged
+  * [ ] Inlcude what has been seen
+  * [ ] Inlcude what needs more approval
+
+== End of Cycle
+
+* [ ] Generate shortlog, `git shortlog $PREVIOUS_CYCLE master`, where
+  `$PREVIOUS_CYCLE` is the `cycle/XXXX-XX-XX` tag created by the
+  previous maintainer. These will be the changes that were made since
+  the start of the cycle up until the point of the latest head on `master`.
+* [ ] Create tag for end of cycle: `git tag -s cycle/XXXX-XX-XX`
+  * [ ] Includes breaking changes
+  * [ ] Includes new features
+  * [ ] Includes improvements
+  * [ ] Includes shortlog
+* Reply to `Release Cycle XXXX-XX-XX` -- includes tag message from
+  above
+
+== Patch Review
+
+* [ ] Add remote to mirror, e.g. `git remote add alexj https://github.com/alexjg/radicle-link.git`
+* [ ] Pull patch from remote
+* [ ] Checkout patch & create topic branch, e.g. `git checkout
+      patches/cobs`, `git checkout -b alex/patches/cobs`.
+* [ ] Review
+* [ ] Merge & push to `seen`
+
+It is advised that you merge often to the `master` branch. This is to
+avoid ending up in complex rebasing of your `seen` branch, attempting
+to order many patch requests and re-rerolls.
+
+== Patch Promotion
+
+* [ ] Ensure enough reviews have been made
+* [ ] Run `seen` on CI
+* [ ] If CI **passes**, then merge to `master`
+* [ ] If CI **does not pass**, then notify people of breakage
