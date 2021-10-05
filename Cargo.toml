@@ -17,7 +17,6 @@ members = [
   "rad-exe",
   "rad-identities",
   "rad-profile",
-  "seed",
   "std-ext",
   "test",
 ]
