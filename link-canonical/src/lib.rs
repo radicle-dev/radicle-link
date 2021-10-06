@@ -15,6 +15,7 @@ use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
 
 pub mod formatter;
+pub mod json;
 
 /// Types which have a canonical representation
 pub trait Canonical {
