@@ -7,10 +7,12 @@ use std::{
     collections::{btree_map, btree_set, BTreeMap, BTreeSet},
     convert::Infallible,
     iter::FromIterator,
+    str::FromStr,
 };
 
 use crate::{Canonical, Cstring};
 
+mod parser;
 mod ser;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -21,6 +23,29 @@ pub enum Value {
     Number(Number),
     Bool(bool),
     Null,
+}
+
+impl FromStr for Value {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use nom::{
+            error::{convert_error, VerboseError},
+            Err::{Error, Failure, Incomplete},
+        };
+
+        match parser::json::<VerboseError<&str>>(s) {
+            Ok((rem, value)) => {
+                if rem.trim().is_empty() {
+                    Ok(value)
+                } else {
+                    Err(format!("expected EOF, found: {}", rem))
+                }
+            },
+            Err(Error(e)) | Err(Failure(e)) => Err(convert_error(s, e)),
+            Err(Incomplete(_)) => Err("unexpected end of input".to_string()),
+        }
+    }
 }
 
 impl Canonical for Value {
