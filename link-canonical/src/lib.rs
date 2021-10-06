@@ -17,6 +17,13 @@ use unicode_normalization::UnicodeNormalization;
 pub mod formatter;
 pub mod json;
 
+#[cfg(feature = "derive")]
+#[allow(unused_imports)]
+#[macro_use]
+extern crate link_canonical_derive;
+#[cfg(feature = "derive")]
+pub use link_canonical_derive::*;
+
 /// Types which have a canonical representation
 pub trait Canonical {
     type Error;
