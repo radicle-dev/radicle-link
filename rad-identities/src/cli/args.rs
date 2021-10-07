@@ -3,8 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeSet, path::PathBuf};
+use std::path::PathBuf;
 
+use either::Either;
 use structopt::StructOpt;
 
 use librad::{
@@ -89,8 +90,17 @@ pub mod project {
         serde_json::from_str(value).map_err(|err| err.to_string())
     }
 
-    fn indirect_delegation(value: &str) -> Result<BTreeSet<KeyOrUrn<Revision>>, String> {
-        serde_json::from_str(value).map_err(|err| err.to_string())
+    fn indirect_delegation(value: &str) -> Result<KeyOrUrn<Revision>, String> {
+        match value.parse::<Urn>() {
+            Ok(urn) => Ok(Either::Right(urn).into()),
+            Err(urn_err) => match value.parse::<PeerId>() {
+                Ok(key) => Ok(Either::Left(*key.as_public_key()).into()),
+                Err(key_err) => Err(format!(
+                    "Could not parse URN: \"{}\", nor Peer ID: \"{}\"",
+                    urn_err, key_err
+                )),
+            },
+        }
     }
 
     #[derive(Debug, StructOpt)]
@@ -140,11 +150,13 @@ pub mod project {
         pub whoami: Option<Urn>,
 
         /// the initial set of delegates to initialise the project with. The
-        /// local identity is always used as a delegate, so it is not necessary
-        /// to include it here. Note that the delegates must exist
-        /// within your local store.
+        /// delegate can either be a Rad URN or Peer ID.
+        /// The local identity is always used as a delegate, so it is not
+        /// necessary to include it here.
+        /// Note that the delegates must exist within your local store, if in
+        /// URN form.
         #[structopt(long, parse(try_from_str = indirect_delegation))]
-        pub delegations: BTreeSet<KeyOrUrn<Revision>>,
+        pub delegations: Vec<KeyOrUrn<Revision>>,
 
         /// the path where the working copy should be created
         #[structopt(long)]
@@ -172,11 +184,13 @@ pub mod project {
         pub whoami: Option<Urn>,
 
         /// the initial set of delegates to initialise the project with. The
-        /// local identity is always used as a delegate, so it is not necessary
-        /// to include it here. Note that the delegates must exist
-        /// within your local store.
+        /// delegate can either be a Rad URN or Peer ID. Note
+        /// The local identity is always used as a delegate, so it is not
+        /// necessary to include it here.
+        /// that the delegates must exist within your local store, if in URN
+        /// form.
         #[structopt(long, parse(try_from_str = indirect_delegation))]
-        pub delegations: BTreeSet<KeyOrUrn<Revision>>,
+        pub delegations: Vec<KeyOrUrn<Revision>>,
 
         /// the path where the working copy should be created
         #[structopt(long)]
@@ -225,10 +239,11 @@ pub mod project {
         /// the set of delegates to update the project with. This set is
         /// required to be absolute, so if the previous delegates are to be kept
         /// then they MUST be included here. If no delegates are provided then
-        /// they will not be updated. Note that the delegates must exist within
-        /// your local store.
+        /// they will not be updated. The delegate can either be a Rad URN or
+        /// Peer ID. Note that the delegates must exist within
+        /// your local store, if in URN form.
         #[structopt(long, parse(try_from_str = indirect_delegation))]
-        pub delegations: BTreeSet<KeyOrUrn<Revision>>,
+        pub delegations: Vec<KeyOrUrn<Revision>>,
     }
 
     /// checkout a Radicle project to a working copy
@@ -260,8 +275,12 @@ pub mod person {
     fn person_payload(value: &str) -> Result<payload::Person, String> {
         serde_json::from_str(value).map_err(|err| err.to_string())
     }
+
     fn direct_delegation(value: &str) -> Result<PublicKey, String> {
-        serde_json::from_str(value).map_err(|err| err.to_string())
+        value
+            .parse::<PeerId>()
+            .map(|peer| *peer.as_public_key())
+            .map_err(|err| err.to_string())
     }
 
     #[derive(Debug, StructOpt)]
@@ -302,9 +321,9 @@ pub mod person {
         #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
 
-        /// the initial set of delegates to initialise the project with. The
-        /// local key is always used as a delegate, so it is not necessary
-        /// to include it here.
+        /// the initial set of delegates, in Peer ID form, to initialise the
+        /// project with. The local key is always used as a delegate, so
+        /// it is not necessary to include it here.
         #[structopt(long, parse(try_from_str = direct_delegation))]
         pub delegations: Vec<PublicKey>,
 
@@ -326,9 +345,9 @@ pub mod person {
         #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
 
-        /// the initial set of delegates to initialise the project with. The
-        /// local key is always used as a delegate, so it is not necessary
-        /// to include it here.
+        /// the initial set of delegates, in Peer ID form, to initialise the
+        /// project with. The local key is always used as a delegate, so
+        /// it is not necessary to include it here.
         #[structopt(long, parse(try_from_str = direct_delegation))]
         pub delegations: Vec<PublicKey>,
 
@@ -375,10 +394,10 @@ pub mod person {
         #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
 
-        /// the set of delegates to update the project with. This set is
-        /// required to be absolute, so if the previous delegates are to be kept
-        /// then they MUST be included here. If no delegates are provided then
-        /// they will not be updated.
+        /// the set of delegates, in Peer ID form, to update the project with.
+        /// This set is required to be absolute, so if the previous
+        /// delegates are to be kept then they MUST be included here. If
+        /// no delegates are provided then they will not be updated.
         #[structopt(long, parse(try_from_str = direct_delegation))]
         pub delegations: Vec<PublicKey>,
     }

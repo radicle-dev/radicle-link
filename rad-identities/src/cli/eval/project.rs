@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeSet, convert::TryFrom as _, path::PathBuf};
+use std::{convert::TryFrom as _, path::PathBuf};
 
 use anyhow::anyhow;
 
@@ -63,7 +63,7 @@ fn eval_create(profile: &Profile, sock: SshAuthSock, create: Create) -> anyhow::
             paths.clone(),
             signer,
             whoami.into(),
-            delegations,
+            delegations.into_iter().collect(),
             payload,
             ext,
             project::Creation::New { path },
@@ -79,7 +79,7 @@ fn eval_create(profile: &Profile, sock: SshAuthSock, create: Create) -> anyhow::
             paths.clone(),
             signer,
             whoami.into(),
-            delegations,
+            delegations.into_iter().collect(),
             payload,
             ext,
             project::Creation::Existing { path },
@@ -122,9 +122,10 @@ fn eval_update(
     whoami: Option<Urn>,
     payload: Option<payload::Project>,
     ext: Vec<payload::Ext<serde_json::Value>>,
-    delegations: BTreeSet<KeyOrUrn<Revision>>,
+    delegations: Vec<KeyOrUrn<Revision>>,
 ) -> anyhow::Result<()> {
     let (_, storage) = ssh::storage(profile, sock)?;
+    let delegations = delegations.into_iter().collect();
     let project = project::update(&storage, &urn, whoami, payload, ext, delegations)?;
     println!(
         "{}",
