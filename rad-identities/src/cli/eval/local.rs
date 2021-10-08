@@ -9,7 +9,7 @@ use librad::{
 };
 use rad_clib::{keys::ssh::SshAuthSock, storage::ssh};
 
-use crate::{cli::args::local::*, local};
+use crate::{cli::args::local::*, local, person};
 
 pub fn eval(profile: &Profile, sock: SshAuthSock, opts: Options) -> anyhow::Result<()> {
     match opts {
@@ -36,7 +36,7 @@ fn eval_get(profile: &Profile, sock: SshAuthSock, urn: Urn) -> anyhow::Result<()
         .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
     println!(
         "{}",
-        serde_json::to_string(&identity.into_inner().payload())?
+        serde_json::to_string(&person::Display::from(identity.into_inner()))?
     );
     Ok(())
 }
@@ -44,10 +44,9 @@ fn eval_get(profile: &Profile, sock: SshAuthSock, urn: Urn) -> anyhow::Result<()
 fn eval_default(profile: &Profile, sock: SshAuthSock) -> anyhow::Result<()> {
     let (_, storage) = ssh::storage(profile, sock)?;
     let identity = local::default(&storage)?;
-    println!("{}", identity.urn());
     println!(
         "{}",
-        serde_json::to_string(identity.into_inner().payload())?
+        serde_json::to_string(&person::Display::from(identity.into_inner()))?
     );
     Ok(())
 }

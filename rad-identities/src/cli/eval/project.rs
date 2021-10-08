@@ -85,7 +85,10 @@ fn eval_create(profile: &Profile, sock: SshAuthSock, create: Create) -> anyhow::
             project::Creation::Existing { path },
         )?,
     };
-    println!("{}", serde_json::to_string(&project.subject())?);
+    println!(
+        "{}",
+        serde_json::to_string(&project::Display::from(project))?
+    );
     Ok(())
 }
 
@@ -95,7 +98,10 @@ fn eval_get(profile: &Profile, urn: Urn, peer: Option<PeerId>) -> anyhow::Result
     let urn = Urn::try_from(rad).map_err(|err| anyhow!(err))?;
     let project =
         project::get(&storage, &urn)?.ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
-    println!("{}", serde_json::to_string(&project.payload())?);
+    println!(
+        "{}",
+        serde_json::to_string(&project::Display::from(project))?
+    );
     Ok(())
 }
 
@@ -103,7 +109,7 @@ fn eval_list(profile: &Profile) -> anyhow::Result<()> {
     let storage = storage::read_only(profile)?;
     let projects = project::list(&storage)?;
     let projects = projects
-        .map(|p| p.map(|p| p.payload().clone()))
+        .map(|p| p.map(project::Display::from))
         .collect::<Result<Vec<_>, _>>()?;
     println!("{}", serde_json::to_string(&projects)?);
     Ok(())
@@ -120,7 +126,10 @@ fn eval_update(
 ) -> anyhow::Result<()> {
     let (_, storage) = ssh::storage(profile, sock)?;
     let project = project::update(&storage, &urn, whoami, payload, ext, delegations)?;
-    println!("{}", serde_json::to_string(project.payload())?);
+    println!(
+        "{}",
+        serde_json::to_string(&project::Display::from(project))?
+    );
     Ok(())
 }
 

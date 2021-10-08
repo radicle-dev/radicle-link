@@ -139,8 +139,10 @@ pub mod project {
         #[structopt(long)]
         pub whoami: Option<Urn>,
 
-        /// the initial set of delegates to initialise the project with. Note
-        /// that the delegates must exist within your local store.
+        /// the initial set of delegates to initialise the project with. The
+        /// local identity is always used as a delegate, so it is not necessary
+        /// to include it here. Note that the delegates must exist
+        /// within your local store.
         #[structopt(long, parse(try_from_str = indirect_delegation))]
         pub delegations: BTreeSet<KeyOrUrn<Revision>>,
 
@@ -169,8 +171,10 @@ pub mod project {
         #[structopt(long)]
         pub whoami: Option<Urn>,
 
-        /// the initial set of delegates to initialise the project with. Note
-        /// that the delegates must exist within your local store.
+        /// the initial set of delegates to initialise the project with. The
+        /// local identity is always used as a delegate, so it is not necessary
+        /// to include it here. Note that the delegates must exist
+        /// within your local store.
         #[structopt(long, parse(try_from_str = indirect_delegation))]
         pub delegations: BTreeSet<KeyOrUrn<Revision>>,
 
@@ -218,8 +222,11 @@ pub mod project {
         #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
 
-        /// the set of delegates to update the project with. Note
-        /// that the delegates must exist within your local store.
+        /// the set of delegates to update the project with. This set is
+        /// required to be absolute, so if the previous delegates are to be kept
+        /// then they MUST be included here. If no delegates are provided then
+        /// they will not be updated. Note that the delegates must exist within
+        /// your local store.
         #[structopt(long, parse(try_from_str = indirect_delegation))]
         pub delegations: BTreeSet<KeyOrUrn<Revision>>,
     }
@@ -295,7 +302,9 @@ pub mod person {
         #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
 
-        /// the initial set of delegates to initialise the person with.
+        /// the initial set of delegates to initialise the project with. The
+        /// local key is always used as a delegate, so it is not necessary
+        /// to include it here.
         #[structopt(long, parse(try_from_str = direct_delegation))]
         pub delegations: Vec<PublicKey>,
 
@@ -317,7 +326,9 @@ pub mod person {
         #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
 
-        /// the initial set of delegates to initialise the person with.
+        /// the initial set of delegates to initialise the project with. The
+        /// local key is always used as a delegate, so it is not necessary
+        /// to include it here.
         #[structopt(long, parse(try_from_str = direct_delegation))]
         pub delegations: Vec<PublicKey>,
 
@@ -364,7 +375,10 @@ pub mod person {
         #[structopt(long, parse(try_from_str = ext_payload))]
         pub ext: Vec<payload::Ext<serde_json::Value>>,
 
-        /// the set of delegates to initialise the person with.
+        /// the set of delegates to update the project with. This set is
+        /// required to be absolute, so if the previous delegates are to be kept
+        /// then they MUST be included here. If no delegates are provided then
+        /// they will not be updated.
         #[structopt(long, parse(try_from_str = direct_delegation))]
         pub delegations: Vec<PublicKey>,
     }
