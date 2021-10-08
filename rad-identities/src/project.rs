@@ -28,9 +28,12 @@ use librad::{
 };
 
 use crate::{
+    display,
     git::{self, checkout, include},
     MissingDefaultIdentity,
 };
+
+pub type Display = display::Display<ProjectPayload>;
 
 #[derive(Debug, Error)]
 pub enum Error {

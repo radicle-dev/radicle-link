@@ -79,7 +79,7 @@ fn eval_create(profile: &Profile, sock: SshAuthSock, create: Create) -> anyhow::
             person::Creation::Existing { path },
         )?,
     };
-    println!("{}", serde_json::to_string(&person.subject())?);
+    println!("{}", serde_json::to_string(&person::Display::from(person))?);
     Ok(())
 }
 
@@ -87,9 +87,9 @@ fn eval_get(profile: &Profile, urn: Urn, peer: Option<PeerId>) -> anyhow::Result
     let storage = storage::read_only(profile)?;
     let rad = Reference::rad_id(Namespace::from(&urn)).with_remote(peer);
     let urn = Urn::try_from(rad).map_err(|err| anyhow!(err))?;
-    let project =
+    let person =
         person::get(&storage, &urn)?.ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
-    println!("{}", serde_json::to_string(&project.payload())?);
+    println!("{}", serde_json::to_string(&person::Display::from(person))?);
     Ok(())
 }
 
@@ -97,7 +97,7 @@ fn eval_list(profile: &Profile) -> anyhow::Result<()> {
     let storage = storage::read_only(profile)?;
     let persons = person::list(&storage)?;
     let persons = persons
-        .map(|p| p.map(|p| p.payload().clone()))
+        .map(|p| p.map(person::Display::from))
         .collect::<Result<Vec<_>, _>>()?;
     println!("{}", serde_json::to_string(&persons)?);
     Ok(())
@@ -125,7 +125,7 @@ fn eval_update(
             Some(delegations.into_iter())
         },
     )?;
-    println!("{}", serde_json::to_string(person.payload())?);
+    println!("{}", serde_json::to_string(&person::Display::from(person))?);
     Ok(())
 }
 
