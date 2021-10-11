@@ -69,6 +69,21 @@ where
         gossip::announce(peer, urn, Some(*hash));
     }
 }
+pub async fn announce_identities<S>(peer: &Peer<S>) -> Result<(), Error>
+where
+    S: Clone + Signer,
+{
+    let identities = state::list_identities(peer).await?;
+    for identity in identities {
+        let urn = match identity {
+            SomeIdentity::Person(person) => person.urn(),
+            SomeIdentity::Project(project) => project.urn(),
+            _ => continue,
+        };
+        gossip::announce(peer, &urn, None);
+    }
+    Ok(())
+}
 
 /// Builds the latest list of [`Announcement`]s for the current state of the
 /// peer.

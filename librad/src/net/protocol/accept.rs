@@ -28,7 +28,8 @@ where
     D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)>,
 {
     disco
-        .for_each(|(peer, addrs)| {
+        .for_each_concurrent(3, |(peer, addrs)| {
+            tracing::warn!(?peer, ?addrs);
             let state = state.clone();
             async move { io::discovered(state, peer, addrs).await }
         })

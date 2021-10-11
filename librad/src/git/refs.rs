@@ -303,7 +303,8 @@ impl Refs {
     ///
     /// If the blob where the signed [`Refs`] are expected to be stored is not
     /// found, `None` is returned.
-    #[tracing::instrument(level = "debug", skip(storage, urn), fields(urn = %urn))]
+    // #[tracing::instrument(level = "debug", skip(storage, urn), fields(urn =
+    // %urn))]
     pub fn load<S, P>(storage: &S, urn: &Urn, peer: P) -> Result<Option<Self>, stored::Error>
     where
         S: AsRef<storage::ReadOnly>,
@@ -596,12 +597,12 @@ where
         Some(at_commit) => {
             let path = Path::new(stored::BLOB_PATH);
 
-            tracing::debug!(
-                "loading signed_refs from {}:{} {}",
-                &sigrefs,
-                &at_commit,
-                path.display()
-            );
+            // tracing::debug!(
+            //     "loading signed_refs from {}:{} {}",
+            //     &sigrefs,
+            //     &at_commit,
+            //     path.display()
+            // );
 
             let maybe_refs = storage
                 .blob_at(at_commit, path)?

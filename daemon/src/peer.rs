@@ -22,7 +22,7 @@ use crate::state;
 use librad::{net, Signer};
 
 mod announcement;
-pub use announcement::Announcement;
+pub use announcement::{announce_identities, Announcement};
 
 mod control;
 pub use control::Control;

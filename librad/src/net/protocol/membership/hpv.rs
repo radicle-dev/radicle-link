@@ -297,7 +297,7 @@ where
     }
 
     pub fn connection_established(&mut self, info: PartialPeerInfo<Addr>) -> TnT<Addr> {
-        tracing::debug!("connection established");
+        tracing::debug!(?info, "connection established");
         self.view.add_active(info).into_iter().collect()
     }
 
