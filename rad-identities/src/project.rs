@@ -127,20 +127,25 @@ where
         signer,
     };
 
-    match creation {
+    let project = match creation {
         Creation::New { path } => {
             if let Some(path) = path {
                 let valid = git::new::New::new(payload.clone(), path).validate()?;
+                let project = project::create(storage, whoami, payload, delegations)?;
                 valid.init(url, settings)?;
+                project
+            } else {
+                project::create(storage, whoami, payload, delegations)?
             }
         },
         Creation::Existing { path } => {
             let valid = git::existing::Existing::new(payload.clone(), path).validate()?;
+            let project = project::create(storage, whoami, payload, delegations)?;
             valid.init(url, settings)?;
+            project
         },
-    }
+    };
 
-    let project = project::create(storage, whoami, payload, delegations)?;
     include::update(storage, &paths, &project)?;
 
     Ok(project)
