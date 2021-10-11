@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+# Usage: `patch-push me new-feature v1 "https://github.com/FintanH/radicle-link"`
+# where:
+#   * `me` is the remote to my mirror of radicle-link
+#   * `new-feature` is the name given to the patch
+#   * `v1` is the version of the patch
+#   * "https://github.com/FintanH/radicle-link" is where the mirror is hosted
+#
+# Pushes the tag `patches/new-feature/v1` to the remote specified, and
+# reports the URL for use in the email
+
+REMOTE=$1
+PREFIX=$2
+VERSION=$3
+URL=$4
+PATCH_URL="${URL}/trees/patches" 
+TAG_NAME="${PREFIX}/${VERSION}"
+
+urlencode() {
+    # urlencode <string>
+
+    old_lc_collate=${LC_COLLATE:-""}
+    LC_COLLATE=C
+
+    local length="${#1}"
+    for (( i = 0; i < length; i++ )); do
+        local c="${1:$i:1}"
+        case $c in
+            [a-zA-Z0-9.~_-]) printf '%s' "$c" ;;
+            *) printf '%%%02X' "'$c" ;;
+        esac
+    done
+
+    LC_COLLATE=$old_lc_collate
+}
+
+echo "pushing patches/${TAG_NAME}"
+git push $1 tag patches/${TAG_NAME}
+
+ENCODED_TAG=$(urlencode $TAG_NAME)
+echo "Published-as: ${PATCH_URL}/${ENCODED_TAG}"
