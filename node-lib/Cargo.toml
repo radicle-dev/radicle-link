@@ -18,7 +18,7 @@ env_logger          = "0.9"
 futures             = "0.3"
 lazy_static         = "1.4"
 log                 = "0.4"
-nix                 = "0.22"
+nix                 = "0.23"
 structopt           = { version = "0.3", default-features = false }
 thiserror           = "1.0"
 tempfile            = "3.2"
