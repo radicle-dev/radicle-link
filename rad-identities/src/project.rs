@@ -11,7 +11,7 @@ use thiserror::Error;
 use librad::{
     crypto::BoxedSigner,
     git::{
-        identities::{self, local::LocalIdentity, project, Project},
+        identities::{self, local::LocalIdentity, project, relations, Person, Project},
         local::{transport, url::LocalUrl},
         storage::{ReadOnly, Storage},
         types::{Namespace, Reference},
@@ -21,6 +21,7 @@ use librad::{
         delegation::{indirect, Indirect},
         git::Revision,
         payload::{self, KeyOrUrn, ProjectPayload},
+        relations::{Peer, Status},
         IndirectDelegation,
     },
     paths::Paths,
@@ -57,6 +58,15 @@ pub enum Error {
 
     #[error(transparent)]
     MissingDefault(#[from] MissingDefaultIdentity),
+
+    #[error(transparent)]
+    Relations(Box<relations::Error>),
+}
+
+impl From<relations::Error> for Error {
+    fn from(err: relations::Error) -> Self {
+        Self::Relations(Box::new(err))
+    }
 }
 
 impl From<identities::Error> for Error {
@@ -267,4 +277,13 @@ where
 
 pub fn review() {
     todo!()
+}
+
+pub fn tracked<S>(storage: &S, urn: &Urn) -> Result<Vec<Peer<Status<Person>>>, Error>
+where
+    S: AsRef<ReadOnly>,
+{
+    // ensure that the URN exists and is indeed a project
+    let _guard = get(storage, urn)?.ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
+    Ok(identities::relations::tracked(storage, urn)?)
 }

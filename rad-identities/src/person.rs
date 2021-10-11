@@ -10,7 +10,7 @@ use thiserror::Error;
 use librad::{
     crypto::{BoxedSigner, PublicKey},
     git::{
-        identities::{self, person, Person},
+        identities::{self, person, relations, Person},
         local::{transport, url::LocalUrl},
         storage::{ReadOnly, Storage},
         types::{Namespace, Reference},
@@ -19,6 +19,7 @@ use librad::{
     identities::{
         delegation::{direct, Direct},
         payload::{self, PersonPayload},
+        relations::{Peer, Status},
     },
     paths::Paths,
     PeerId,
@@ -50,6 +51,9 @@ pub enum Error {
 
     #[error(transparent)]
     Local(#[from] identities::local::Error),
+
+    #[error(transparent)]
+    Relations(#[from] relations::Error),
 }
 
 pub enum Creation {
@@ -203,4 +207,13 @@ where
 
 pub fn review() {
     todo!()
+}
+
+pub fn tracked<S>(storage: &S, urn: &Urn) -> Result<Vec<Peer<Status<Person>>>, Error>
+where
+    S: AsRef<ReadOnly>,
+{
+    // ensure that the URN exists and is indeed a person
+    let _guard = get(storage, urn)?.ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
+    Ok(identities::relations::tracked(storage, urn)?)
 }
