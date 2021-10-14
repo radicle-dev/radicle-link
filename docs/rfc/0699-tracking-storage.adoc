@@ -1,0 +1,306 @@
+= RFC: Tracking Storage
+Fintan Halpenny <fintan.halpenny@gmail.com>; Kim Altintop <kim@eagain.st>; xla <self@xla.is>
+
+:revdate: 2021-10-12
+:revremark: draft
+:toc: preamble
+
+* Author: {author_1}, {author_2}, {author_3}
+* Date: {revdate}
+* Status: {revremark}
+* Discussion: https://lists.sr.ht/~radicle-link/dev/%3Cc2aae5c561e6c1d3b75394de8d570209%40xla.is%3E
+
+== Motivation
+
+The motivation for this RFC is two-fold, as can be seen in the linked
+discussion. The first is the want to have a protocol mechanism for
+replicating a resource when only the URN is known. The second is the
+want to be able to configure the fetching of references for a given
+remote.
+
+The <<Current Implementation>> had left us with some limitations,
+which informed us for this motivation. Learning from these
+limitations, the goals for this proposed, reference-based solution are
+to scale concurrently and relieve memory pressure.
+
+== Overview
+
+Given the <<Motivation>>, this RFC proposes a replacement of how
+tracking is implemented at the time of writing. It will describe how
+the tracking relationships will be stored using git, and the format
+for the storage contents.
+
+While replication is stated as a motivation, it is out of scope for
+this RFC to propose any novel additions to replication of URNs. It
+will, however, propose a modification of the existing protocol
+semantics for replication when a peer receives a new gossip message.
+
+== Terminology and Conventions
+
+The key words "`MUST`", "`MUST NOT`", "`REQUIRED`", "`SHALL`", "`SHALL NOT`",
+"`SHOULD`", "`SHOULD NOT`", "`RECOMMENDED`", "`NOT RECOMMENDED`", "`MAY`", and
+"`OPTIONAL`" in this document are to be interpreted as described in <<RFC2119>>
+and <<RFC8174>> when, and only when, they appear in all capitals, as
+shown here.
+
+== Storage
+
+The base requirements for tracking are the capabilities of creating,
+updating, deleting, and reading the tracking entries along with their
+configurations. The keys for this storage are given by a URN and Peer
+ID pairing. The value stored for a given key is the configuration for
+that tracking entry. The capabilities that we wish to capture
+are:
+
+* *track* a URN with an optional Peer ID
+* *untrack* a URN and Peer ID
+* *list* tracked URN and PeerIDs
+* *update* the configuration of a tracking entry for a given URN and
+Peer ID
+* *get* the configuration of a tracking entry for a given URN and Peer ID
+
+Any storage backend MUST implement these capabilities, using URN
+and Peer IDs as keys. Where a tracking relationship is not using a
+Peer ID -- in the case that no Peer IDs are known -- a default MUST be
+established.
+
+== Configuration
+
+As mentioned in the <<Motivation>>, we wish to be able to configure
+which references we fetch for a given remote. The natural place to
+configure this is in the entry for a URN/Peer ID pair.
+
+All data that can be fetched is currently organised into pre-existing
+categories found in radicle-link's git implementation today -- stored
+as git references. The categories enumerated are:
+
+* `rad`
+* `cobs`
+* `heads`
+* `tags`
+* `notes`
+
+The `rad` category is necessary for the verification of data exchanged
+on the network. The `cobs` category is the home for
+application-defined, code-collaboration artifacts. The `heads`,
+`tags`, and `notes` categories are well-known in the domain of git.
+
+The `rad` category MUST always be fetched to persist the validity of
+the data found within this category.
+
+Since the `cobs` category can vary in structure and size, as well as
+being application specific, we allow the filtering of this data.
+
+The remaining categories are consolidated under the key of `"data"`,
+and are referred to as data-refs. The filtering on these categories is
+all-or-nothing. This choice is made to ensure the reasoning of
+replicating git data. If a portion of data is filtered, it becomes
+hard to reason whether this is a protocol error or a node filtering
+out this data.
+
+The configuration is REQUIRED to be a key/value format. The
+following scheme is REQUIRED to be adhered to:
+
+[source,json]
+----
+{
+  "data": bool,
+  "cobs": {
+    ("*" | <typename>): {
+      "policy": <policy> <1>
+      "pattern": <pattern> <2>
+    }
+  }
+}
+----
+<1> `<policy> = "allow" | "deny"`
+<2> `<pattern> = "*" | [<object id>]`
+
+[NOTE]
+======
+. `<typename>` is any valid name for a collaborative object.
+. `<object id>` is any valid collaborative object identifier.
+. `"*"` is the wildcard for matching all types, or all objects
+under `<typename>`.
+======
+
+If `"data"` is set to `true` then all data-refs SHALL be
+replicated, and none if set to `false`.
+
+The `"cobs"` filter is first based on the `<typename>` -- `"\*"`
+meaning _all_ types. For every given typename, the `"pattern"`
+specifies which collaborative objects are in question -- `"*"`
+meaning _all_ objects for that type. The `"policy"` designates whether
+this set of objects are allowed (`"allow"`) or denied (`"deny"`). If
+the former, the objects SHALL be replicated to the device. If the
+latter, the object SHALL NOT be replicated to the device.
+
+When a policy is created for a type, it is implicit that the opposite
+policy holds for the complement of the set. For example, if the
+following policy is given:
+
+[source,json,id="cobs-example"]
+----
+{
+  "data": true,
+  "cobs": {
+    "discussions": { "policy": "deny", "pattern": [1, 2, 3] }
+  }
+}
+----
+
+This implies that any `"discussions"` that are _not_ 1, 2, or 3 are
+_allowed_.
+
+If a typename is not specified and if `"*"` is also not specified,
+then the typename SHALL NOT be replicated. In the <<cobs-example,
+example above>>, only `"discussions"` will be replicated.
+
+Finally, if `"*"` is specified as a `<typename>`, the policy for any
+other `<typename>` will take precedence over the catch-all policy. For
+example, if the following policy is given:
+
+[source,json]
+----
+{
+  "data": true,
+  "cobs": {
+    "*": { "policy": "allow", "pattern": "*" },
+    "discussions": { "policy": "deny", "pattern": [1, 2, 3] }
+  }
+}
+----
+
+Then the `"discussions"` 1, 2, and 3 are denied, as opposed to being
+allowed by the `"*"` policy.
+
+The *default configuration* SHALL be to fetch all data and collaborative objects, i.e.
+[source,json,id="default-config"]
+----
+{
+  "data": true,
+  "cobs": {
+    "*": { "policy": "allow", "pattern": "*" }
+  }
+}
+----
+
+=== Delegates
+
+The data provided by delegates is privileged, as it is generally the
+canonical view of the data. It SHALL NOT be possible to filter out any
+of the data for a delegate Peer ID. Thus, the configuration for a
+delegate Peer ID SHALL be ignored when fetching.
+
+== Git Storage
+
+Given the outlines in <<Storage>> and <<Configuration>>, we propose
+the following implementation using git as the storage layer. The
+configuration SHALL be stored as a blob and to retrieve this blob we
+SHALL use a well formed reference name for a given URN and Peer ID.
+
+=== Tracking Reference
+
+The reference SHALL be of the form:
+
+----
+refs/rad/remotes/<namespace>/(<peer id> | default) <1> <2> <3>
+----
+<1> `<namespace>` is the multibase-multihash encoded hash of the URN
+<2> `<peer id>` is the same format as `<namespace>` based on the
+public key of the peer
+<3> `default` is the value used when a `<peer id>` is not specified
+
+The reference MUST point directly to the SHA identifier of the blob
+that contains the configuration. This differs from the usual use of
+references pointing directly to commits. This is intended as we do not
+want to keep track of the history of changes for the configuration.
+
+=== Configuration Format
+
+The configuration is REQUIRED to use <<Canonical-JSON>>. This provides
+a key/value format, while also being hash friendly for git
+purposes. If multiple configurations are equivalent, for example the
+default configuration, they can all be represented by the same SHA --
+saving storage space.
+
+=== Tracking Semantics
+
+To *track* a new peer the reference (see <<Tracking Reference>>) is
+created with the given configuration or <<default-config, default
+configuration>> if not specified.
+
+To *untrack* a peer, we remove the reference for the given URN and
+Peer ID. We then MAY prune any existing references under
+`refs/namespaces/<urn>/refs/remotes/<peer>`.
+
+To *list* the remotes for a given URN, we can use the refspec:
+----
+refs/rad/remotes/<urn>/*
+----
+
+To *list* the remotes for all URNs, we can use the refspec:
+----
+refs/rad/remotes/**/*
+----
+
+To *update* a configuration the new configuration blob can be
+created and the reference SHALL point to the new SHA.
+
+To *get* a configuration the blob, located by the reference for the
+given URN and Peer ID, read into memory.
+
+== Replication
+
+At the time of writing the protocol has a mechanism for replicating
+interesting gossip. When a gossip message is received by the running
+peer it will replicate the changes if the running peer is tracking the
+URN and Peer ID contained in the gossip message _and_ does not already
+store the object corresponding to the git SHA inside the message.
+
+We propose here that this be modified to account for the case where
+the running peer has tracked a URN without a Peer ID. The conditions
+are modified as follows. If the running peer is *only* tracking the
+`default` entry, it SHALL replicate the changes. Otherwise, if the
+running peer is tracking the URN and Peer ID contained in the gossip
+message _and_ does not already store the object corresponding to the
+git SHA inside the message.
+
+== Appendix
+
+=== Current Implementation
+
+We note that an implementation of tracking exists today. The current
+implementation utilises the git `<<config>>` file in the monorepo.
+Each URN and Peer ID pairing is stored as a `[remote]` key in the
+`config`. One downside to this is that it causes memory pressure as
+the file grows with each new remote entry. The other downside is that
+multiple processes may try to access the single file concurrently.
+
+=== Banning Peers
+
+While researching and discussing this RFC, it came to our attention
+that untracking a peer may not be a permanent action. The protocol
+transitively tracks peers through other peers that are tracked. If a
+peer is untracked and they are part of the transitive set, then they
+will appear as tracked. This is unintuitive from a usability point of
+view. This can be partly remedied, however, by denying any extra data
+published by this peer, i.e.
+
+[source,json]
+----
+{
+  "data": false,
+  "cobs": {
+    "*": { "policy": "deny", "pattern": "*" }
+  }
+}
+----
+
+[bibliography]
+== References
+
+* [[[RFC2119]]]: https://datatracker.ietf.org/doc/html/rfc2119
+* [[[RFC8174]]]: https://datatracker.ietf.org/doc/html/rfc8174
+* [[[Canonical-JSON]]]: http://wiki.laptop.org/go/Canonical_JSON
+* [[[config]]]: https://git-scm.com/docs/git-config
