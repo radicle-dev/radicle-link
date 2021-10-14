@@ -1,0 +1,283 @@
+= RFC: Tracking and Replication
+
+:author: @Fintan Halpenny
+:revdate: 2021-10-12
+:revremark: draft
+:toc: preamble
+
+* Author: {author}
+* Date: {revdate}
+* Status: {revremark}
+* Discussion: https://lists.sr.ht/~radicle-link/dev/%3Cc2aae5c561e6c1d3b75394de8d570209%40xla.is%3E
+
+== Overview
+
+A key attribute of decentralized collaboration is the idea of "offline
+first". This attribute should permeate through many of the features of
+the `radicle-link` stack. Tracking is no exception. In this RFC, we
+will describe what we mean by "tracking", how it exists today, how we
+want to implement it going forward, and how it will play into the
+replication of Radicle resources -- ``Person```'s  and ``Project```'s.
+
+== Terminology and Conventions
+
+The key words "`MUST`", "`MUST NOT`", "`REQUIRED`", "`SHALL`", "`SHALL NOT`",
+"`SHOULD`", "`SHOULD NOT`", "`RECOMMENDED`", "`NOT RECOMMENDED`", "`MAY`", and
+"`OPTIONAL`" in this document are to be interpreted as described in <<RFC2119>>
+and <<RFC8174>> when, and only when, they appear in all capitals, as
+shown here.
+
+== Tracking
+
+Tracking can be described as you, as a user of the Radicle protocol,
+being interested in a URN and peer. This means that when a gossip
+message is received which concerns this URN and peer, the changes will
+be replicated onto your machine.
+
+[NOTE]
+======
+The tracking for a seed node can be described in 3 modes:
+
+* Track everything -- replicate anything and everything seen via gossip
+* Track URNs -- replicate anything related to a specific set of URNs
+* Track Peers -- replicate anything related to a specific set of peers
+======
+
+== Current Implementation
+
+Tracking offline exists today. We can note, however, that it does not
+play any role in replication. The current implementation utilises the
+git `config` file in the monorepo. For a URN/peer pairing it will
+create a `remote` entry in the `config` file. This entry will contain
+a `url` key/value, but this is not used. An example of one of these
+entries is shown below:
+
+```
+[remote "hnrk8dpger17oxjqx4xhmcbkqpnkz78afztay/hyycq9t5dhhhh9i1q19u3gxhxquhhkcs78wad7xyg6so838m66nyqr"]
+	url = rad-p2p://hyycq9t5dhhhh9i1q19u3gxhxquhhkcs78wad7xyg6so838m66nyqq@hyycq9t5dhhhh9i1q19u3gxhxquhhkcs78wad7xyg6so838m66nyqr/hnrk8dpger17oxjqx4xhmcbkqpnkz78afztay.git?
+```
+
+Tracking a URN/peer is simply adding an entry, untracking is removing
+an entry, and listing the tracked peers is reading all remotes,
+stripping out the `PeerId` portion of the remote name.
+
+One downside to this approach is that working with the git config can
+be quite cumbersome. We're at the behest of the config's semantics.
+
+Another downside is that if we would want to use the remote entries
+for anything else other than tracking remotes -- for example, limiting
+references fetched -- then access to the configuration becomes a point
+of contention for reads and writes. This is due to _all_ remotes being
+stored in a single file.
+
+== Proposal
+
+The proposal for going forward is to utilise git's blobs and
+references. A reference can point to any object id, including a blob's
+object id. In the following sections we will describe what will be
+contained in this blob, the format for the references, and the
+semantics for adding, removing, and listing peers for tracking.
+
+=== Blob Format & Contents
+
+Using blobs instead of the git config allows us to choose what can be
+used as the contents. A key/value format is desirable to make the
+configuration easy to read and easy to use in code. It should,
+however, be amenable to normalization and have a low cardinality of
+configurations. Both of these requirements are related to the hash of
+a blob being based on its contents. Following this, we want to
+minimise the number of different blobs that can exist, also minimising
+storage space needed.
+
+To illustrate this point, if two blobs _represent_ the same contents
+then they should lead to the same hash. For example, suppose we had
+two similar blobs:
+
+```
+fetch = refs/**/{heads,rad,remotes}/*
+```
+
+and
+
+```
+fetch = refs/**/{rad,remotes,heads}/*
+```
+
+They would lead to different hashes and we would be taking up needless
+storage memory. We would want to normalise the contents of these two
+blobs so that they would lead to the same hash.
+
+We propose that <<TOML>> SHALL be the format for the content of these blobs. The
+content of each file MUST be formatted in a normalized form. To ensure
+this, we define a domain-specific set of entries.
+
+```
+fetch = <fetchspec>
+[replication]
+state = <state>
+
+where
+  fetchspec = refs/<subdir>/[remote/<peer id>/]<category>/<name>
+
+  subdir = ** | set(<namespaces>) | empty
+
+  namespaces = namespaces/<namespace>
+
+  category = set(heads | rad | tags | notes | cobs)
+
+  name = set(<string>) | *
+
+  state = created | found | cloning | cancelled | timed_out
+```
+
+* A `set` denotes a series of entries separated by `,` between `{}`, and
+is sorted in a lexicographical order.
+
+* `empty` denotes no subdirectory
+
+* `<string>` denotes any string value,
+
+* `<namespace>` and `<peer id>` are their respective well defined strings
+
+All keys MUST be output in lexicographical order.
+
+[NOTE]
+======
+The Rust <<toml>> library stores key/value in a `BTreeMap` and so it
+is already sorted in lexicographical order.
+======
+
+The default value SHALL be:
+
+```
+fetch = refs/**/{heads,rad,remotes,tags}/*
+```
+
+==== Git Notes for Internal State
+
+It is useful for the replication of a URN to keep track of state --
+see <<Replication>>. To avoid the increase of cardinality of blob
+hashes, we propose that internal state MAY be kept track of using
+<<git-notes>>. Since this does not change the hash of the blob object,
+we are less strict on the contents. It is RECOMMENDED that <<TOML>>
+should still be used to be coherent with the blob contents.
+
+=== Reference Format
+
+The reference naming SHALL follow the following format:
+
+```
+refs/rad/remotes/<urn base>/(<peer id> | default)
+```
+
+* `<urn base>` is the encoded ID portion of a Radicle URN.
+* `<peer id>` is the `PeerId` of the peer we are tracking
+
+Each reference SHALL point to its blob's object id. Two references for
+the same URN but different peers could point to different blobs -- for
+example, if a different configuration is required.
+
+==== Normalized blobs and packed-refs
+
+Here we show an example of having a blob that consists of:
+
+```
+fetch = refs/**/{heads,rad,remotes}/*
+```
+
+This leads to a blob hash of
+`32454cadcbcc7f0d92b8de4a4d4c19025044390d`.  Now suppose we are
+tracking 3 peers, then the tracking of a project with those 3 peers
+can be expressed in packed-refs format:
+
+```
+32454cadcbcc7f0d92b8de4a4d4c19025044390d refs/rad/remotes/hnrkpbic9q6xyqzx1c8p34assefr8hqqzeq9y/default
+32454cadcbcc7f0d92b8de4a4d4c19025044390d refs/rad/remotes/hnrkpbic9q6xyqzx1c8p34assefr8hqqzeq9y/hyd7z9zy7ngkccxf1tdijf8wohc44guoph6idkwhkffhggxi9xkn9y
+32454cadcbcc7f0d92b8de4a4d4c19025044390d refs/rad/remotes/hnrkpbic9q6xyqzx1c8p34assefr8hqqzeq9y/hynt3f81uedxnunqythxmhoppm7neau9zx3cje6xei7i8m1gixq7zn
+32454cadcbcc7f0d92b8de4a4d4c19025044390d refs/rad/remotes/hnrkpbic9q6xyqzx1c8p34assefr8hqqzeq9y/hyysrned656ib9tz4asw1iu9cg8kifcp8hwxiq4uzyp1hj1d9dketg
+```
+
+=== Tracking Semantics
+
+To *track* a new peer for for a given URN, first we check if
+`refs/rad/remotes/<urn>/default` exists. If not, then we create the
+blob, with the default contents. Then, we point
+`refs/rad/remotes/<urn>/default` and `refs/rad/remotes/<urn>/<peer>`
+to the blob hash.
+If there was an entry for `refs/rad/remotes/<urn>/default` then we
+simply create the `refs/rad/remotes/<urn>/<peer>` reference, pointing
+it to the existing blob hash.
+
+To *untrack* a peer for a given URN, we MAY prune any existing
+references under `refs/namespaces/<urn>/refs/remotes/<peer>`. We can
+then remove the reference `refs/rad/remotes/<urn>/<peer>/*`.
+
+To *list* the remotes, the refspecs:
+```
+refs/rad/remotes/<urn>/*
+refs/rad/remotes/**/*
+```
+can list all remotes for a given URN or for all URNs, respectively.
+
+== Replication
+
+As mentioned in <<Current Implementation>>, tracking does not lead to
+replication. It is desirable that we improve upon this and link the
+two.
+
+We suppose a scenario where a person has the URN of a project they
+wish to replicate to their monorepo, as it does not exist locally
+yet. They should be able to track this URN -- whether they are online
+or offline. If their peer comes into an online state, it should begin
+the process of attempting to replicate the URN to their local state.
+
+We propose there will be a method for requesting a URN. As opposed to
+needing a URN/peer pair, this method will be tracking the URN without
+the peer. It SHALL create the `refs/rad/remotes/<urn>/<default>`
+reference pointing it to the default blob for creation, that is:
+
+```
+fetch = refs/**/{heads,rad,remotes,tags}/*
+[replication]
+state = created
+```
+
+When the peer-to-peer node is online, it can calculate which URNs are
+tracked with only the `default` reference, and which do not exist in
+their local storage. This is the set URNs that we wish to replicate.
+
+For each URN, the replication protocol SHALL send a `Want` message. The
+`state` for this URN SHALL then be updated to `requested`.
+
+If the URN is found for a given peer, the `state` SHALL be updated to
+`found`.
+
+Once a peer is found, the replication protocol SHALL attempt to
+replicate the URN from the peer -- updating the `state` to `cloning`.
+
+If the replication fails, and there are no more peers to attempt to
+replicate from, then the `state` shall regress back to
+`requested`. Otherwise, it will attempt to replicate from the next
+available peer.
+
+If the replication succeeds then the `[replication]` entry will be
+removed and the blob contents SHALL consist of:
+
+```
+fetch = refs/**/{heads,rad,remotes,tags}/*
+```
+
+[NOTE]
+======
+Any of these state transitions MAY also update the git notes (see <<Git Notes
+for Internal State>>).
+======
+
+[bibliography]
+== References
+
+* [[[git-notes]]]: https://git-scm.com/docs/git-notes
+* [[[RFC2119]]]: https://datatracker.ietf.org/doc/html/rfc2119
+* [[[RFC8174]]]: https://datatracker.ietf.org/doc/html/rfc8174
+* [[[TOML]]]: https://toml.io
+* [[[toml]]]: https://crates.io/crates/toml
