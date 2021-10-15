@@ -32,6 +32,7 @@ pub extern crate radicle_data as data;
 pub extern crate radicle_git_ext as git_ext;
 pub extern crate radicle_std_ext as std_ext;
 
+pub mod collaborative_objects;
 pub mod executor;
 pub mod git;
 pub mod internal;
