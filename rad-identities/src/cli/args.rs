@@ -111,6 +111,7 @@ pub mod project {
         Update(Update),
         Checkout(Checkout),
         Review(Review),
+        Tracked(Tracked),
     }
 
     /// create a new Radicle project, either with a fresh working copy or based
@@ -267,6 +268,13 @@ pub mod project {
     /// review a Radicle project for merging
     #[derive(Debug, StructOpt)]
     pub struct Review {}
+
+    #[derive(Debug, StructOpt)]
+    pub struct Tracked {
+        /// the Radicle URN of the project
+        #[structopt(long)]
+        pub urn: Urn,
+    }
 }
 
 pub mod person {
@@ -291,6 +299,7 @@ pub mod person {
         Update(Update),
         Checkout(Checkout),
         Review(Review),
+        Tracked(Tracked),
     }
 
     /// create a new Radicle person, either with a fresh working copy or based
@@ -423,6 +432,13 @@ pub mod person {
     /// review a Radicle person for merging    
     #[derive(Debug, StructOpt)]
     pub struct Review {}
+
+    #[derive(Debug, StructOpt)]
+    pub struct Tracked {
+        /// the Radicle URN of the person
+        #[structopt(long)]
+        pub urn: Urn,
+    }
 }
 
 pub mod any {

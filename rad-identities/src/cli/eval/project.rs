@@ -25,7 +25,7 @@ use rad_clib::{
     storage::{self, ssh},
 };
 
-use crate::{cli::args::project::*, project};
+use crate::{cli::args::project::*, person, project};
 
 pub fn eval(profile: &Profile, sock: SshAuthSock, opts: Options) -> anyhow::Result<()> {
     match opts {
@@ -43,6 +43,7 @@ pub fn eval(profile: &Profile, sock: SshAuthSock, opts: Options) -> anyhow::Resu
             eval_checkout(profile, sock, urn, path, peer)?
         },
         Options::Review(Review {}) => unimplemented!(),
+        Options::Tracked(Tracked { urn }) => eval_tracked(profile, urn)?,
     }
 
     Ok(())
@@ -145,5 +146,15 @@ fn eval_checkout(
     let paths = profile.paths();
     let repo = project::checkout(&storage, paths.clone(), signer, &urn, peer, path)?;
     println!("working copy created at `{}`", repo.path().display());
+    Ok(())
+}
+
+fn eval_tracked(profile: &Profile, urn: Urn) -> anyhow::Result<()> {
+    let storage = storage::read_only(profile)?;
+    let peers = project::tracked(&storage, &urn)?
+        .into_iter()
+        .map(|peer| peer.map(|status| status.map(person::Display::from)))
+        .collect::<Vec<_>>();
+    println!("{}", serde_json::to_string(&peers)?);
     Ok(())
 }
