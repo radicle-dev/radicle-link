@@ -1,0 +1,18 @@
+[package]
+name = "link-canonical-derive"
+version = "0.1.0"
+authors = ["Fintan Halpenny <fintan.halpenny@gmail.com>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+convert_case = "0.4"
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "1.0", features = [ "full" ] }
+
+[dev-dependencies.link-canonical]
+path = "../link-canonical"

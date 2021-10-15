@@ -16,6 +16,9 @@ extern crate nonzero_ext;
 #[cfg(test)]
 #[macro_use]
 extern crate futures_await_test;
+#[cfg(test)]
+#[macro_use]
+extern crate link_canonical;
 
 #[macro_use]
 pub mod daemon;

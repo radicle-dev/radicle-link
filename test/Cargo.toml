@@ -73,6 +73,7 @@ path = "../librad"
 
 [dependencies.link-canonical]
 path = "../link-canonical"
+features = [ "derive" ]
 
 [dependencies.link-identities]
 path = "../link-identities"
