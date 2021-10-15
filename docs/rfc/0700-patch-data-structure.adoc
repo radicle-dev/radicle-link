@@ -1,0 +1,341 @@
+= RFC: A data structure for patches
+:author: @alexjg
+:revate: 2021-10-12
+:revmark: draft
+:toc:
+:source-highlighter: highlight.js
+
+== Motivation
+
+We've been using a mailing list for managing contributions for the last month.
+The email based workflow has a number of attractive aspects to it - not least of
+which is that it more naturally fits the distributed nature of the Radicle
+network - but it depends heavily on a detailed understanding of Git and email,
+requires a lot of fairly manual work, and exposes many opportunities for human
+error.
+
+In this RFC we introduce a data structure which models the workflow of patch
+based contribution as seen on a mailing list. By defining this data more
+precisely we hope to make building tooling to work with this workflow easier,
+which should make patch based workflows easier, more accessible, and more fun.
+
+We start by introducing the things we learned from the patch based workflow
+we've been using on the mailing list. We then imagine how we would like to
+improve the tooling available to do this. Finally we propose a data structure
+which supports these improved tools.
+
+NOTE: The intention is that ultimately this data structure would be realised as a
+collaborative object and distributed along with the radicle monorepo. However,
+from the perspective of most tooling the storage of the data could be seen as an
+implementation detail so we avoid talking about it in this RFC.
+
+== The mailing list workflow
+
+The most salient thing about the mailing list based workflow we adopted is that
+there is no central version of the code which is considered current. Instead
+each week we nominate one of the core contributers of the project to be "the
+maintainer". The maintainer sends an email to the mailing list at the beginning
+of their cycle stating where they are publishing their `"master"` branch of the
+project. Throughout the week the maintainer merges patches and pushes to this
+location. In principle there is no reason this maintainer couldn't be a machine
+(modulo some complicated email parsing logic) but so far they've been a human.
+
+In this workflow then, there are two roles: core contributors, and the lead
+maintainer. Core contributors submit patches via email and review patches via
+email. The lead maintainer integrates these patches, ensures that tests pass,
+and merges patches to a `"master"` branch at a published location.
+
+Patches are "append only" in the sense that because they are sent by email there
+is no way to amend a patch (in contrast to GitHub PRs). Instead when one wants
+to update a patch in response to feedback you email a new version of that patch
+in reply to the initial patch - this is known as a re-roll.
+
+=== The good and the bad
+
+The first thing everyone notices is that there is a lot of work to do to get
+your tools set up. You need an email client which supports threading and plain
+text. You probably also need to setup a bunch of tagging and filtering systems
+to manage the large number of emails you will receive. On top of this there is a
+lot of manual work in using `git format-patch` and `git send-email` correctly so
+that they produce nice threaded email, and in including the correct tags so that
+people know where to get your code. This is table stakes, once set up I think
+these are the takeaways:
+
+The Good::
+
+    * Surfacing commit messages and diffs on a per commit basis encourages
+      contributors to organise their commits in order to make them more
+      comprehensible
+    * Re-rolls make it explicit when a patch has changed, with some explanation as
+      to what the change was. Contrast with GitHub PRs which silently change under
+      you
+    * Not having to switch context (out of the terminal into the browser) makes
+      reviewing small changes very pleasant (but see below re. larger changes).
+
+The Bad::
+
+    * Managing the various in flight patches and integrating with email requires
+      a deep understanding of git and of email and lots of setting up of command
+      line mail clients
+    * There's a lot of manual work in creating and submitting patches, it's very
+      easy to get this wrong and flood everyone's inbox
+    * Managing large reviews is quite painful. Keeping track of open discussions
+      is complicated. For small patches one can just review in your mail client.
+      But for larger patches you typically check the code out and examine the
+      changes. At this point it is very tedious to keep switching from code to
+      email client and back.
+
+My takeaway is the the underlying model of immutable patches with well crafted
+commits and commit messages and nested discussion threads is a better model
+for contribution than GitHub's PR; but the current tools are absurdly hard to
+use. I believe that this is because email is a difficult medium to work with
+programmatically. On that basis, let's imagine what good tools might look like.
+
+== Better tools for patches
+
+Good tools don't require you to leave your workbench. Most developers work in a
+particular context - an editor, a terminal, a browser based IDE, there are many.
+We must design tools which can easily be adapted to all these contexts. Email is
+not that.
+
+To motivate this discussion I am going to imagine a few different contexts which
+must be supported by the approach we choose:
+
+* An editor plugin (substitute your favourite editor or IDE here)
+* Upstream and/or browser based code review tools
+* Automated maintainers (i.e. CI)
+* A bridge to GitHub PRs or GitLab MRs
+
+All of these must be possible with very little domain knowledge on the part of
+the application developer - that is to say, if you know how to write a web app,
+you should be able to write a browser based code review tool which interoperates
+with a VS code plugin.
+
+=== In the editor
+
+Most of the work of submitting a patch is in creating a neat commit trail where
+each commit is reasonably self contained and commit messages do a good job of
+explaining what has happened. One can imagine editor tools which help with this,
+but they are mainly about how you use git, not about patches in particular.
+
+The interesting work in the editor is when you're reviewing code. The editor is
+a natural place to do this for many developers because it's where their tools
+for navigating the codebase are most sophisticated. I imagine a plugin which
+allows me to list currently outstanding patches and on selecting a patch it
+allows me to see the files which are changed and to navigate through the diff of
+that change in the editor. The diff is displayed in the editor as a split screen
+with comments on the patch available inline with the diff. I can write comments
+directly in my editor. This means all your normal tools for jumping to
+definitions, syntax highlighting etc. are available. 
+
+Approving a patch should just be a question of adding a flag to the patch.
+
+=== In Upstream
+
+Upstream is able to show a list of outstanding patches with a similar diff and
+conversation UI to GitHub. Creating a patch is also similar to GitHub.
+
+=== Automated maintainers
+
+An automated maintainer doesn't need to be able to review code, or submit
+patches. But they do need to be able to unambiguously see what the new code for
+a particular patch is, run tests, and report the results of those tests to other
+maintainers. They also need to be able to merge the patch when some number of
+approvals (and other constraints) has been reached.
+
+=== Bridges
+
+Ideally we want this to be a two way bridge. There is a machine somewhere which
+provides a bridge to a centralised code collab service. This machine has a
+maintainer key to the project, and also has API access to GitHub.  Building
+bridges is a whole other project, but we want to ensure that it is at least
+feasible.
+
+Whenever a PR is submitted on GitHub the bridge creates a patch in the Radicle
+repository with itself as the author, but with additional details that allow
+Radicle applications to know that it is a bridged patch. The bridge creates a
+tag in it's own remote for each PR and attaches that to the patch.
+
+Every time the PR changes on GitHub due to code being pushed the bridge creates
+a new tag and updates the Radicle patch.
+
+When a user comments on radicle, the bridge adds a comment to the github PR.
+When a user comments on GitHub, the bridge adds a comment to the patch.
+
+== The patch data structure
+
+Our design goals are:
+
+* Preserve the ability to submit a patch from anywhere that speaks git
+* Represent multiple versions of a patch as separate series of commits
+* Allow posting comments that reference particular parts of the code 
+* Allow flexible mechanisms for approving or rejecting patches
+* Be easy to integrate into existing tools and workflows
+* Allow automated tools to run against a patch, report results, and perform
+  merges
+
+At a high level then we are imagining a patch as a series of versions, each
+version superceding a previous version. Each version of a patch has a set of
+commits, one or more authors, a cover letter, a set of comment trees (more on
+this shortly) and a set of approval or rejection votes. The patch in its
+entirety has a status: open or rejected. If the patch is merged there
+is a reference to the version which was merged and the commit which merged it.
+If the patch is rejected there is an optional reason why. A patch also has a
+target branch.
+
+=== Identifying commits
+
+Mailing lists transport the code you are submitting directly in the email. This
+allows people to submit code without hosting a repository somewhere and it also
+makes it easy to read and reply to the code using anything that speaks email. We
+may not want to take quite the same approach.
+
+In practice we have published the code for a patch at a well known network
+location (identified by a `Published-At` trailer in the patch cover letter) and
+typically use that location to pull code rather than using `git am` to apply
+code from the patch email. This suggests that much of the time it is 
+unnecessary to ship the code directly in the patch, instead the patch can just
+contain a start and end commit, and a network location of a git repository where
+those commits can be found. Tooling can then pull this code to the local
+repository and display a diff. This raises two questions; firstly how do people
+who don't want to run a publicly available git server submit patches, secondly
+what happens if the git repository goes away?
+
+To the first point we can allow people to submit patches which actually contain
+the commits in question using `git bundle`. We don't do this by default because
+whatever repliaction mechanism we use for patches we would like to avoid
+replicating the code using that mechanism.
+
+To the latter point, we can imagine that an automated maintainer may be running
+which automatically fetches the contents of any new patch, imports them into
+radicle and adds a URN containing the commits to the patch. The automated
+maintainer can continue to host these commits for archival purposes so that even
+if the orignal URL goes away the patch is still available.
+
+=== Patch status
+
+// TODO: I am very unsure of this, more thought needed
+
+The open or closed state of a patch exists purely to allow maintainers to filter
+out patches which have been reviewed and rejected in the UI. The merge state of
+a patch is independent of the open or closed state and is represented by
+references to merge commits in the patch version. This is because the lifecycle
+of the patch metadata is separate to the lifecycle of the repository(ies).
+Different maintainers could merge the patch into their remotes at different
+times. Therefore merges are represented as a reference to a commit and a remote,
+each patch version can have multiple merges associated with it. Figuring out the
+merge status is then a question for the local tooling - is the merge commit
+on the target branch in our local repository?
+
+
+=== Comments
+
+Comments on a patch may reference code in the patch. Comments are also tree
+like. That is, we allow arbitrary depth threading - in contrast to GitHub's flat
+comment hierarchy.
+
+To allow code references a comment may refer to code that it is commenting on by
+including a commit, blob hash, and line number. A comment also has a parent
+comment which it is replying to.
+
+=== Automated tools
+
+Much of the work of an automated maintainer is made possible just by identifying
+the code and patch statuses unambiguously. However, there is the question of how
+automated tooling can report the results of test runs. For this purpose we
+propose that each patch version allow storing arbitrary JSON along with the core
+attributes specified in this RFC. This allows CI tools to store test results and
+other metadata for each version.
+
+=== Specification
+
+We specify the patch data structure in two forms. First the Rust data structures
+we would use to represent a patch. Second a JSON schema which all
+representations of a patch must be isomorphic to.
+
+==== Rust
+
+[source,rust]
+----
+struct Patch {
+    authors: Vec<Author>,
+    status: PatchStatus,
+    versions: Vec<PatchVersion>,
+}
+
+enum Author {
+    Urn(Urn),
+    Email(String),
+    Other(String),
+}
+
+enum PatchStatus {
+    Open,
+    Rejected{reason: String},
+}
+
+
+struct PatchVersion {
+    version_number: u64,
+    cover_letter: Text,
+    date: chrono::DateTime<Utc>,
+    code: CommitRange,
+    comments: Vec<CommentTree>,
+    ext: HashMap<String, serde_json::Value>,
+    merges: Vec<Merge>,
+    votes: HashMap<Urn, Vote>
+}
+
+enum Vote {
+    Approve,
+    Reject,
+}
+
+struct CommitRange {
+    location: CodeLocation,
+    start_commit: radicle_git_ext::Oid,
+    end_commit: radicle_git_ext::Oid,
+}
+
+enum CodeLocation {
+    Bundle(Vec<u8>),
+    Git(url::Url),
+    Radicle(Urn),
+}
+
+struct CommentTree {
+    comment: Comment,
+    children: Vec<CommentTree>
+}
+
+struct Comment {
+    author: Urn,
+    text: Text,
+    code_reference: Option<CodeReference>,
+    time: chrono::DateTime<Utc>,
+}
+
+struct CodeReference {
+    commit: radicle_git_ext::Oid,
+    blob: radicle_git_ext::Oid,
+    lines: LineRange,
+}
+
+struct LineRange {
+    start: u64,
+    end: Option<u64>,
+}
+
+enum Text {
+    Plain(String),
+    Markdown(String),
+    AsciiDoc(String),
+    Other{raw: String, mime_type: String},
+}
+
+struct Merge {
+    remote: String,
+    time: chrono::DateTime<Utc>
+    commit: radicle_git_ext::Oid,
+}
+----
