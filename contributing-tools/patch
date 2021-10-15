@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+# Usage: `patch me new-feature v1 "https://github.com/FintanH/radicle-link"`
+# where:
+#   * `me` is the remote to my mirror of radicle-link
+#   * `new-feature` is the name given to the patch
+#   * `v1` is the version of the patch
+#   * "https://github.com/FintanH/radicle-link" is where the mirror is hosted
+#
+# Creates a local, signed tag with the name `patches/new-feature/v1`
+# This tag is then pushed to the remote specified, and it reports the
+# URL for use in the email
+
+REMOTE=$1
+PREFIX=$2
+VERSION=$3
+URL=$4
+
+./patch-creation $PREFIX $VERSION
+./patch-push $REMOTE $PREFIX $VERSION $URL

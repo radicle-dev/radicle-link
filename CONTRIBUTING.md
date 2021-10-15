@@ -32,6 +32,48 @@ source file. The template for this header can be found [here][header-template].
 If you are creating a new file in the repository you will have to add this
 header to the file.
 
+# Submitting Changes
+
+We decided to experiment with using mailing lists as the vehicle for
+submitting and discussing changes. This decision was documented in:
+
+* [Submitting Patches to radicle-link][submit-patch]
+* [radicle-link Maintainers Guide][maintainers-guide]
+
+If you are interested in submitting some changes to `radicle-link`, we
+kindly ask that you first read the [guidelines][submit-patch].
+
+Note that you will need to setup [gpg signing][signing-your-work]
+before submitting a patch, and point us to where we can fetch your
+public key for verification.
+
+The simplest way to contribute is by using the [patch] script to
+create patch, e.g.
+
+```
+$ git remote add me https://github.com/FintanH/radicle-link
+$ cd contributing-tools
+$ ./patch me update-docs v1 "https://github.com/FintanH/radicle-link"
+```
+
+If this is the first version of the patch, and you have the latest
+`master` up-to-date, you can generate the `*.patch` files by running:
+
+```
+$ git format-patch --cover-letter origin/master..HEAD --to "~radicle-link/dev@lists.sr.ht" -v1
+```
+
+You can then edit the `v1-0000-cover-letter.patch` file by replacing
+`**SUBJECT** and `**BLURB HERE**`, as well as adding the
+`Published-as` trailer.
+
+The final step is to send the patch series to the mailing list by
+running:
+
+```
+$ git send-email *.patch
+```
+
 ## Modifying the specs
 
 When any of the spec files is modified, e.g. one from `docs/spec/sections`,
@@ -41,3 +83,7 @@ updated. To do this, run `scripts/render-docs`.
 [dco]: ./DCO
 [fixing-dco]: https://docs.github.com/en/free-pro-team@latest/github/building-a-strong-community/creating-a-pull-request-template-for-your-repository
 [header-template]: ./.license-header-template
+[maintainers-guide]: https://github.com/radicle-dev/radicle-link/blob/master/docs/maintainers-guide.adoc
+[patch]: ./contributing-tools/patch
+[signing-your-work]: https://git-scm.com/book/en/v2/Git-Tools-Signing-Your-Work
+[submit-patch]: https://github.com/radicle-dev/radicle-link/blob/master/docs/submitting-patches.adoc
