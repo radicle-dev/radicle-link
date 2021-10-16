@@ -21,7 +21,7 @@ default-features = false
 features = []
 
 [dependencies.git-repository]
-version = "0.9.1"
+version = "0.10.0"
 optional = true
 
 [dependencies.minicbor]
