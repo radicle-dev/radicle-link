@@ -24,11 +24,11 @@ tempfile = "3.2.0"
 versions = "3.0.2"
 
 [dependencies.git-repository]
-version = "0.9.1"
+version = "0.11.0"
 features = [ "async-network-client", "unstable" ]
 
 [dependencies.git-packetline]
-version = "0.10.0"
+version = "0.12.0"
 features = ["async-io"]
 
 [dependencies.git2]
