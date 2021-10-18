@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{ops::Deref, time::Duration};
+use std::{convert::TryFrom as _, ops::Deref, time::Duration};
 
 use futures::executor::block_on;
 use picky_asn1::{
@@ -30,7 +30,7 @@ use picky_asn1_x509::{
     Version,
 };
 use thiserror::Error;
-use time::{Date, OffsetDateTime};
+use time::{Date, Month, OffsetDateTime};
 
 use crate::{keystore::sign::Signer, PeerId};
 
@@ -195,13 +195,13 @@ fn valid_until(d: Duration) -> Validity {
 }
 
 fn into_validity_time(t: OffsetDateTime) -> validity::Time {
-    let (y, m, d) = t.date().as_ymd();
+    let (y, m, d) = t.date().to_calendar_date();
     // Safety: `OffsetDateTime` cannot yield out-of-range values, and we're checking
     // for UTC vs. Generalized
     if y > 2049 {
-        unsafe { GeneralizedTime::new_unchecked(y as u16, m, d, 0, 0, 0).into() }
+        unsafe { GeneralizedTime::new_unchecked(y as u16, m.into(), d, 0, 0, 0).into() }
     } else {
-        unsafe { UTCTime::new_unchecked(y as u16, m, d, 0, 0, 0).into() }
+        unsafe { UTCTime::new_unchecked(y as u16, m.into(), d, 0, 0, 0).into() }
     }
 }
 
@@ -214,5 +214,5 @@ pub(crate) fn validity_time_as_date(t: &validity::Time) -> Date {
     };
 
     // Safety: we construct validity time from `OffsetDateTime`
-    Date::try_from_ymd(y, m, d).unwrap()
+    Date::from_calendar_date(y, Month::try_from(m).unwrap(), d).unwrap()
 }
