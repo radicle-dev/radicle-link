@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
 set -eou pipefail
 
-# Usage: `patch-create new-feature v1`
+# Usage: `patch-create new-feature v1 [sign]`
 # where:
 #   * `new-feature` is the name given to the patch
 #   * `v1` is the version of the patch
+#   * if sign is set use `git tag -s`, if not then `git tag -a`.
 #
-# Creates a local, signed tag with the name `patches/new-feature/v1`
+# Creates a local, annotated/signed tag with the name
+# `patches/new-feature/v1`
 
 PREFIX=$1
 VERSION=$2
+SIGN=${3:-}
 
-git tag -s patches/${PREFIX}/${VERSION}
+if [ -z $SIGN ]
+then
+   git tag -a patches/${PREFIX}/${VERSION}
+else
+    git tag -s patches/${PREFIX}/${VERSION}
+fi
