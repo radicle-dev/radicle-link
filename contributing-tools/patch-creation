@@ -11,4 +11,4 @@ set -eou pipefail
 PREFIX=$1
 VERSION=$2
 
-git tag -s patches/${PREFIX}/${VERSION}
+git tag patches/${PREFIX}/${VERSION}

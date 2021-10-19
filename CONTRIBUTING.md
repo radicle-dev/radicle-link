@@ -43,12 +43,8 @@ submitting and discussing changes. This decision was documented in:
 If you are interested in submitting some changes to `radicle-link`, we
 kindly ask that you first read the [guidelines][submit-patch].
 
-Note that you will need to setup [gpg signing][signing-your-work]
-before submitting a patch, and point us to where we can fetch your
-public key for verification.
-
 The simplest way to contribute is by using the [patch] script to
-create patch, e.g.
+create the patch, e.g.
 
 ```
 $ git remote add me https://github.com/FintanH/radicle-link
@@ -85,5 +81,4 @@ updated. To do this, run `scripts/render-docs`.
 [header-template]: ./.license-header-template
 [maintainers-guide]: https://github.com/radicle-dev/radicle-link/blob/master/docs/maintainers-guide.adoc
 [patch]: ./contributing-tools/patch
-[signing-your-work]: https://git-scm.com/book/en/v2/Git-Tools-Signing-Your-Work
 [submit-patch]: https://github.com/radicle-dev/radicle-link/blob/master/docs/submitting-patches.adoc
