@@ -7,10 +7,11 @@ use std::fmt;
 
 use librad::{
     git::{
-        identities::{Doc, Identity, SomeIdentity, VerifiedIdentity},
+        identities::{relations, Doc, Identity, SomeIdentity, VerifiedIdentity},
+        refs::Refs,
         Urn,
     },
-    identities::payload::{Payload, SomePayload},
+    identities::payload::{Payload, PersonPayload, SomePayload},
 };
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -70,6 +71,27 @@ where
         match serde_json::to_string_pretty(&self.payload) {
             Ok(payload) => write!(f, "urn={}, payload={}", self.urn, payload),
             Err(_) => write!(f, "urn={}, payload={:?}", self.urn, self.payload),
+        }
+    }
+}
+
+/// A specialised display for [`relations::Persona`].
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct Persona {
+    urn: Urn,
+    payload: PersonPayload,
+    delegate: bool,
+    refs: Option<Refs>,
+}
+
+impl From<relations::Persona> for Persona {
+    fn from(persona: relations::Persona) -> Self {
+        let person = persona.person();
+        Self {
+            urn: person.urn(),
+            payload: person.payload().clone(),
+            delegate: persona.delegate(),
+            refs: persona.refs().cloned(),
         }
     }
 }

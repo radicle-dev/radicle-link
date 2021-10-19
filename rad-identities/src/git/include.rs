@@ -54,7 +54,8 @@ where
             .into_iter()
             .filter_map(|peer| {
                 relations::Peer::replicated_remote(peer).map(|(p, u)| {
-                    git_ext::RefLike::try_from(u.subject().name.to_string()).map(|r| (r, p))
+                    git_ext::RefLike::try_from(u.person().subject().name.to_string())
+                        .map(|r| (r, p))
                 })
             })
             .collect::<Result<Vec<_>, _>>()?,
