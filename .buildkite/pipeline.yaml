@@ -25,7 +25,7 @@ steps:
         build.pull_request.repository.fork == false
     commands:
       - ".buildkite/env"
-      - "ci/build-test"
+      - "scripts/ci/build-test"
     artifact_paths:
       - "Cargo.lock"
     agents: *build-agent
@@ -38,7 +38,7 @@ steps:
         build.pull_request.repository.fork == false
     commands:
       - ".buildkite/env"
-      - "ci/clippy"
+      - "scripts/ci/clippy"
     artifact_paths:
       - "Cargo.lock"
     agents: *build-agent
@@ -51,7 +51,7 @@ steps:
         build.pull_request.repository.fork == false
     commands:
       - ".buildkite/env"
-      - "ci/advisory"
+      - "scripts/ci/advisory"
     artifact_paths:
       - "Cargo.lock"
     agents: *build-agent
@@ -64,7 +64,7 @@ steps:
         build.pull_request.repository.fork == false
     commands:
       - ".buildkite/env"
-      - "ci/docs"
+      - "scripts/ci/docs"
     artifact_paths:
       - "Cargo.lock"
     agents: *build-agent
@@ -77,7 +77,7 @@ steps:
         build.pull_request.repository.fork == false
     commands:
       - ".buildkite/env"
-      - "ci/build-bins"
+      - "scripts/ci/build-bins"
     artifact_paths:
       - "Cargo.lock"
     agents: *build-agent

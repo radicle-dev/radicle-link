@@ -19,7 +19,7 @@ jobs:
       - name: Install Rust
         run: rustup update nightly-2021-03-25 --no-self-update && rustup default nightly-2021-03-25 && rustup component add clippy rustfmt
         shell: bash
-      - run: ./ci/clippy
+      - run: ./scripts/ci/clippy
         shell: bash
 
   test-linux:
@@ -40,7 +40,7 @@ jobs:
       - name: Install Rust
         run: rustup update nightly-2021-03-25 --no-self-update && rustup default nightly-2021-03-25
         shell: bash
-      - run: ./ci/test-fast
+      - run: ./scripts/ci/test-fast
         shell: bash
 
   test-macos:
@@ -63,9 +63,9 @@ jobs:
       # NB: We install gnu-tar because BSD tar is buggy on Github's macos machines. https://github.com/actions/cache/issues/403
       - name: Install GNU tar
         run: |
-          ./ci/macos-gnu
+          ./scripts/ci/macos-gnu
           echo "/usr/local/opt/gnu-tar/libexec/gnubin" >> $GITHUB_PATH
-      - run: ./ci/test-fast
+      - run: ./scripts/ci/test-fast
         timeout-minutes: 20
         shell: bash
 
@@ -86,6 +86,6 @@ jobs:
       - name: Install Rust
         run: rustup update nightly-2021-06-17 --no-self-update && rustup default nightly-2021-06-17
         shell: bash
-      - run: ./ci/test-fast
+      - run: ./scripts/ci/test-fast
         timeout-minutes: 20
         shell: bash
