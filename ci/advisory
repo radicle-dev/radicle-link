@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -eou pipefail
 
-if [[ "${CI:-false}" = "true" ]]
-then
-    sed -i -e 's|db-path.*|db-path = "/cache/cargo/advisory-db"|' deny.toml
-fi
-
 echo '--- deny: Version'
 cargo deny --version
 

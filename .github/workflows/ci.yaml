@@ -1,0 +1,104 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
+      - run: ./ci/clippy
+        shell: bash
+
+  # Hilariously, we cannot usually do anything about security advisories,
+  # because they typically affect transitive dependencies. Thus, allow this job
+  # to fail, but keep it around hoping for a nudging effect.
+  advisories:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          components: rustfmt, clippy
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-deny
+          version: latest
+      - uses: Swatinem/rust-cache@v1
+      - uses: actions-rs/cargo@v1
+        with:
+          command: deny
+          args: check advisories
+
+  # cargo deny checks which ought to pass
+  compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          components: rustfmt, clippy
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-deny
+          version: latest
+      - uses: Swatinem/rust-cache@v1
+      - uses: actions-rs/cargo@v1
+        with:
+          command: deny
+          args: check licenses
+      - uses: actions-rs/cargo@v1
+        with:
+          command: deny
+          args: check bans
+      - uses: actions-rs/cargo@v1
+        with:
+          command: deny
+          args: check sources
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
+      - run: ./ci/build-test
+        shell: bash
+      - run: ./ci/build-bins
+        shell: bash
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
+      - run: ./ci/build-test
+        shell: bash
+      - run: ./ci/build-bins
+        shell: bash
+
+  windows:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
+      - run: ./ci/test-fast
+        shell: bash
