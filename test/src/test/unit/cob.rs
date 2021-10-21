@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 mod cache;
+mod schema;
 mod thin_change_graph;
 
 use cob::TypeName;

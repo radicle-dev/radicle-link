@@ -110,13 +110,13 @@ impl ValidatedAutomerge {
         // This can only go wrong if the patch is delivered out of order, which we
         // promise we aren't doing
         self.frontend.apply_patch(patch).unwrap();
-        let value = self.frontend.state();
-        let validation_error = self.schema.validate(&value.to_json()).err();
+        let validation_error = self.schema.validate(&mut self.frontend).err();
         match validation_error {
             None => {
                 self.valid_history.extend(change_bytes);
             },
             Some(e) => {
+                let value = self.frontend.state();
                 tracing::debug!(invalid_json=?value.to_json().to_string(), "change invalidated schema");
                 self.reset(old_backend);
                 return Err(error::ProposalError::InvalidatesSchema(Box::new(e)));

@@ -24,6 +24,9 @@ use link_identities::git::Urn;
 
 lazy_static! {
     static ref SCHEMA: Schema = Schema::try_from(&serde_json::json!({
+        "$vocabulary": {
+            "https://alexjg.github.io/automerge-jsonschema/spec": true,
+        },
         "type": "object",
         "properties": {
             "name": { "type": "string" }
@@ -181,10 +184,10 @@ fn test_load_v1() {
     let fixture_path = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
         .join("fixtures")
         .join("cache");
-    let first_tip: radicle_git_ext::Oid = "a587846c7294f53c541df546bf73cbe308b81821"
+    let first_tip: radicle_git_ext::Oid = "1c2f5e27ca7e62d65c3d74040879150f725d1a4f"
         .try_into()
         .unwrap();
-    let second_tip: radicle_git_ext::Oid = "7f31041aad51476ed63e924bd1f6e527db008da8"
+    let second_tip: radicle_git_ext::Oid = "d4b88943c5d64c918f6a32ce2f4033fccc68f029"
         .try_into()
         .unwrap();
     let mut tips: BTreeSet<git2::Oid> = BTreeSet::new();
@@ -193,7 +196,7 @@ fn test_load_v1() {
     let mut cache = FileSystemCache::open(fixture_path).unwrap();
     assert!(cache
         .load(
-            "hnrk86cerdksint5q4a9jr16t6511xsaytswy".parse().unwrap(),
+            "hnrk84dch6jk1kj83q3fbu5x159gxdaiopako".parse().unwrap(),
             &tips,
         )
         .unwrap()

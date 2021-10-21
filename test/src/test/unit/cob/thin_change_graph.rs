@@ -15,6 +15,9 @@ fn test_thin_change_graph_encode_decode() {
     let commit = git2::Oid::from_str("f41a052ad0a6b8a17ddae486cf2322cc48215222").unwrap();
     let some_urn = radicle_git_ext::Oid::from(commit).into();
     let schema = Schema::try_from(&serde_json::json!({
+        "$vocabulary": {
+            "https://alexjg.github.io/automerge-jsonschema/spec": true,
+        },
         "type": "object",
         "properties": {
             "name": {"type": "string"}

@@ -32,7 +32,8 @@ default-features = false
 features = []
 
 [dependencies.jsonschema]
-version = "0.12.0"
+git = "https://github.com/Stranger6667/jsonschema-rs.git"
+rev = "0f050b860e35c1b5145b210d26e22b4534fde5be"
 default-features = false
 features = []
 
@@ -50,7 +51,7 @@ path = "../git-ext"
 
 [dependencies.automerge]
 git = "https://github.com/automerge/automerge-rs.git"
-rev = "d279819bfc1464c3ba9681eb0846a141d811f302"
+rev = "e72571962b51c2f0726fb534890ef3b4f7c74dfc"
 
 
 [dev-dependencies]

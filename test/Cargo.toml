@@ -54,7 +54,7 @@ webpki = "0.21"
 
 [dependencies.automerge]
 git = "https://github.com/automerge/automerge-rs.git"
-rev = "d279819bfc1464c3ba9681eb0846a141d811f302"
+rev = "e72571962b51c2f0726fb534890ef3b4f7c74dfc"
 
 [dependencies.cob]
 path = "../cob"
