@@ -31,7 +31,7 @@ features = ["serde", "minicbor"]
 
 [dependencies.radicle-keystore]
 git = "https://github.com/radicle-dev/radicle-keystore"
-rev = "0b917947ed16396ffdf914e1c2a8990f06eca41b"
+rev = "00f8fb6135f8e4cd097a48e6f0700e08ce4abb04"
 features = [ "ssh-agent" ]
 
 [dependencies.serde]

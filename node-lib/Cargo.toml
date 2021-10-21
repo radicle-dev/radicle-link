@@ -24,7 +24,6 @@ thiserror           = "1.0"
 tempfile            = "3.2"
 tokio               = { version = "1.10", default-features = false, features = [ "fs", "io-std", "macros", "process", "rt-multi-thread", "signal" ] }
 tracing             = { version = "0.1", default-features = false, features = [ "attributes", "std" ] }
-tracing-subscriber  = "0.2"
 
 [dependencies.librad]
 path    = "../librad"
@@ -38,3 +37,7 @@ version = "0.1.0"
 git       = "https://github.com/FintanH/thrussh"
 features  = [ "tokio-agent" ]
 branch    = "generic-agent"
+
+[dependencies.tracing-subscriber]
+version = "0.3.0"
+features = ["std", "env-filter", "fmt", "json"]
