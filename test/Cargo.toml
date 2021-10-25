@@ -65,6 +65,7 @@ path = "../librad"
 
 [dependencies.link-canonical]
 path = "../link-canonical"
+features = [ "derive" ]
 
 [dependencies.link-git-protocol]
 path = "../link-git-protocol"

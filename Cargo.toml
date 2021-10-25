@@ -8,6 +8,7 @@ members = [
   "git-trailers",
   "librad",
   "link-canonical",
+  "link-canonical-derive",
   "link-crypto",
   "link-git-protocol",
   "link-identities",
