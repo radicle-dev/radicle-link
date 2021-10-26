@@ -25,7 +25,7 @@ use rad_clib::{
     storage::{self, ssh},
 };
 
-use crate::{cli::args::project::*, person, project};
+use crate::{cli::args::project::*, display, project};
 
 pub fn eval(profile: &Profile, sock: SshAuthSock, opts: Options) -> anyhow::Result<()> {
     match opts {
@@ -153,7 +153,7 @@ fn eval_tracked(profile: &Profile, urn: Urn) -> anyhow::Result<()> {
     let storage = storage::read_only(profile)?;
     let peers = project::tracked(&storage, &urn)?
         .into_iter()
-        .map(|peer| peer.map(|status| status.map(person::Display::from)))
+        .map(|peer| peer.map(|status| status.map(display::Persona::from)))
         .collect::<Vec<_>>();
     println!("{}", serde_json::to_string(&peers)?);
     Ok(())

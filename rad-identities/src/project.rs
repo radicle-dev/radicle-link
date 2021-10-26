@@ -11,7 +11,7 @@ use thiserror::Error;
 use librad::{
     crypto::BoxedSigner,
     git::{
-        identities::{self, local::LocalIdentity, project, relations, Person, Project},
+        identities::{self, local::LocalIdentity, project, relations, Project},
         local::{transport, url::LocalUrl},
         storage::{ReadOnly, Storage},
         types::{Namespace, Reference},
@@ -21,7 +21,6 @@ use librad::{
         delegation::{indirect, Indirect},
         git::Revision,
         payload::{self, KeyOrUrn, ProjectPayload},
-        relations::{Peer, Status},
         IndirectDelegation,
     },
     paths::Paths,
@@ -279,7 +278,7 @@ pub fn review() {
     todo!()
 }
 
-pub fn tracked<S>(storage: &S, urn: &Urn) -> Result<Vec<Peer<Status<Person>>>, Error>
+pub fn tracked<S>(storage: &S, urn: &Urn) -> Result<relations::Tracked, Error>
 where
     S: AsRef<ReadOnly>,
 {

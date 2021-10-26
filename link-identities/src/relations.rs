@@ -13,18 +13,6 @@
 use crypto::PeerId;
 use serde::Serialize;
 
-/// Relation of the peer to the project.
-#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Role {
-    /// Replicating, but not participating.
-    Tracker,
-    /// Participated with unique changes.
-    Contributor,
-    /// Part of the set of maintainers.
-    Maintainer,
-}
-
 /// A peer is split between a `Local` peer and a `Remote` peer. The `Local`
 /// variant corresponds to the user browsing from their own machine. The
 /// `Remote` variant corresponds to a peer that they have connected with by
@@ -145,13 +133,12 @@ impl<S> Peer<S> {
     }
 }
 
-/// If data has been replicated locally we should be able to determine the
-/// [`Role`] the peer had with this project as well as their user metadata.
+/// A newtype to represent that the user's data has been replicated locally.
+///
+/// The payload is left generic, but is generally represented by `Person`.
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Replicated<U> {
-    /// The role this peer has with the project.
-    pub role: Role,
     /// The user metadata the peer used with the project.
     pub user: U,
 }
@@ -166,10 +153,7 @@ impl<U> Replicated<U> {
     where
         F: FnOnce(U) -> V,
     {
-        Replicated {
-            role: self.role,
-            user: f(self.user),
-        }
+        Replicated { user: f(self.user) }
     }
 }
 
@@ -192,8 +176,8 @@ pub enum Status<U> {
 
 impl<U> Status<U> {
     /// Helper for constructing the `Status::Replicated` variant.
-    pub const fn replicated(role: Role, user: U) -> Self {
-        Self::Replicated(Replicated { role, user })
+    pub const fn replicated(user: U) -> Self {
+        Self::Replicated(Replicated { user })
     }
 }
 

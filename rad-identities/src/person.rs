@@ -19,7 +19,6 @@ use librad::{
     identities::{
         delegation::{direct, Direct},
         payload::{self, PersonPayload},
-        relations::{Peer, Status},
     },
     paths::Paths,
     PeerId,
@@ -209,7 +208,7 @@ pub fn review() {
     todo!()
 }
 
-pub fn tracked<S>(storage: &S, urn: &Urn) -> Result<Vec<Peer<Status<Person>>>, Error>
+pub fn tracked<S>(storage: &S, urn: &Urn) -> Result<relations::Tracked, Error>
 where
     S: AsRef<ReadOnly>,
 {
