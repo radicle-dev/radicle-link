@@ -10,7 +10,7 @@ jobs:
           profile: minimal
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v1
-      - run: ./ci/clippy
+      - run: ./scripts/ci/clippy
         shell: bash
 
   # Hilariously, we cannot usually do anything about security advisories,
@@ -71,9 +71,9 @@ jobs:
           profile: minimal
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v1
-      - run: ./ci/build-test
+      - run: ./scripts/ci/build-test
         shell: bash
-      - run: ./ci/build-bins
+      - run: ./scripts/ci/build-bins
         shell: bash
 
   macos:
@@ -85,9 +85,9 @@ jobs:
           profile: minimal
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v1
-      - run: ./ci/build-test
+      - run: ./scripts/ci/build-test
         shell: bash
-      - run: ./ci/build-bins
+      - run: ./scripts/ci/build-bins
         shell: bash
 
   windows:
@@ -100,5 +100,5 @@ jobs:
           profile: minimal
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v1
-      - run: ./ci/test-fast
+      - run: ./scripts/ci/test-fast
         shell: bash

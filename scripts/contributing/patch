@@ -16,6 +16,7 @@ REMOTE=$1
 PREFIX=$2
 VERSION=$3
 URL=$4
+SIGN=${5:-}
 
-./patch-creation $PREFIX $VERSION
+./patch-creation $PREFIX $VERSION $SIGN
 ./patch-push $REMOTE $PREFIX $VERSION $URL
