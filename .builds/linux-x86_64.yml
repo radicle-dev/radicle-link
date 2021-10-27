@@ -1,0 +1,38 @@
+image: archlinux
+packages:
+  - cmake
+  - rustup
+sources:
+  - https://git.sr.ht/~radicle-link/radicle-link
+tasks:
+  - setup: |
+      toolchain=$(cat radicle-link/rust-toolchain)
+      rustup toolchain install "$toolchain" \
+          --profile minimal --component clippy --component rustfmt
+      cargo install cargo-deny
+      cd radicle-link/
+      cargo fetch
+  - lint: |
+      cd radicle-link/
+      ./scripts/ci/clippy
+  - advisories: |
+      cd radicle-link/
+      cargo deny check advisories ||:
+  - licenses: |
+      cd radicle-link/
+      cargo deny check licenses
+  - bans: |
+      cd radicle-link/
+      cargo deny check bans
+  - sources: |
+      cd radicle-link/
+      cargo deny check sources
+  - build-test: |
+      cd radicle-link/
+      ./scripts/ci/build-test
+  - bins: |
+      cd radicle-link/
+      ./scripts/ci/build-bins
+  - docs: |
+      cd radicle-link/
+      ./scripts/ci/docs
