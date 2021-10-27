@@ -24,7 +24,7 @@ use librad::{
     PeerId,
 };
 
-use crate::request::{Clones, Queries, Request, RequestState, SomeRequest, Status, TimedOut};
+use crate::request::{Clones, Queries, Request, RequestState, SomeRequest, TimedOut};
 
 /// The maximum number of query attempts that can be made for a single request.
 const MAX_QUERIES: Queries = Queries::Infinite;
@@ -443,16 +443,12 @@ impl<T, D> WaitingRoom<T, D> {
     /// Get the next `Request` that is in the the `Found` state and the status
     /// of the peer is `Available`.
     pub fn next_clone(&self) -> Option<(Urn, PeerId)> {
-        self.find_by_state(RequestState::Found)
-            .and_then(|(urn, request)| match request {
-                SomeRequest::Found(request) => {
-                    request.iter().find_map(|(peer_id, status)| match status {
-                        Status::Available => Some((urn.clone(), *peer_id)),
-                        _ => None,
-                    })
-                },
-                _ => None,
-            })
+        self.iter().find_map(|(urn, request)| match request {
+            SomeRequest::Found(request) => request
+                .iter()
+                .find_map(|(peer_id, _status)| Some((urn.clone(), *peer_id))),
+            _ => None,
+        })
     }
 
     #[cfg(test)]
