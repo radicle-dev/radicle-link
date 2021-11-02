@@ -258,6 +258,13 @@ reconstruct the state of a collaborative object for a particular peer as
 described in <<Reconstructing Collaborative Objects>>. This allows us to use
 git to replicate collaborative objects, see <<Fetching Collaborative Objects>>.
 
+=== Type names
+
+A type name is one or more sequences of alphabetic characters separated by
+periods. That is to say, it must match the following regular expression
+
+`^([a-zA-Z0-9])+(\.[a-zA-Z0-9]+)*$`
+
 === Change Commits
 
 Given that automerge changes are a hash linked graph, we can map them to Git.
@@ -283,18 +290,28 @@ identity which created this commit. We need this identity to validate
 signatures and by making the commit a parent we ensure that git will replicate
 it for us. 
 
-A valid change commit must have three trailers:
+Finally, a change is authorized with respect to the identity which it belongs
+under. Only changes which are signed by valid delegates of the identity are
+considered. To ensure that this does not lead to non commuting changes as
+delegates are updated the change references the tip of it's authorizing identity
+at the time the change was made.
+
+All trailers which reference a git OID use a multibase-multihash encoding of the
+bytes of the object ID using the base32-z multibase.
+
+Therefore a valid change commit must have four trailers:
 
 * `X-Rad-Signature`, as for identity documents
-* `X-Rad-Author-Parent`, this is the hash of the commit which references the
-  author identity. We use this trailer to avoid following the author commit
-  reference when constructing the automerge change graph
-* `X-Rad-Schema-Parent`, this is the hash of the parent commit which contains 
+* `X-Rad-Author`, this is the multibase-multihash of the parent commit which
+  references the author identity. We use this trailer to avoid following the
+  author commit reference when constructing the automerge change graph
+* `X-Rad-Schema`, this is the multibase-multihash of the parent commit which contains 
   the schema of this object. See <<Schema Commits>>.
+* `X-Rad-Authorizing-Identity`, the multibase-multihash of the parent commit
+  which points to the identity which authorizes this change.
 
-Furthermore a change commit MUST be signed by a delegate of the namespace that
-the change occurs in, or an identity that was at some point a delegate. This
-second requirement is because we never know when we might receive an old change.
+Furthermore a change commit MUST be signed by a delegate of the authorizing
+identity.
 
 ==== `manifest.toml`
 
@@ -343,7 +360,9 @@ so this will not be a problem.
 Assuming we have replicated a number of collaborative objects from our tracking
 graph, we can now view the merged state of those objects. To do this we search
 through every `/cob/<typename>/<object ID>` reference for
-every remote we have and collect the change files for each object ID.
+every remote we have and collect the change files for each object ID. The object
+ID in this reference is a multibase-multihash encoding of the object ID using
+the base32-z encoding.
 
 At this point we have the hash linked graph of automerge changes, but we need
 to make sure that the merged document is authenticated and valid with respect
@@ -432,13 +451,13 @@ schema commit and add migrations.
 As with change commits the schema commit is signed and references an author
 commit, therefore the commit has two trailers:
 
-- `X-Rad-Author-Parent`
-- `X-Rad-Signatures`
+- `X-Rad-Author`
+- `X-Rad-Signature`
 
 With the same definition as for change commits.
 
 Change commits have a schema commit as one of their parents and reference that
-commit via the `X-Rad-Schema-Parent` trailer.
+commit via the `X-Rad-Schema` trailer.
 
 
 === Strange Perspectives
