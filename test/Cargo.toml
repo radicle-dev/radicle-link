@@ -52,6 +52,13 @@ unicode-normalization = "0.1"
 url = "2.1"
 webpki = "0.21"
 
+[dependencies.automerge]
+git = "https://github.com/automerge/automerge-rs.git"
+rev = "d279819bfc1464c3ba9681eb0846a141d811f302"
+
+[dependencies.cob]
+path = "../cob"
+
 [dependencies.git2]
 version = "0.13"
 default-features = false
@@ -66,6 +73,9 @@ path = "../librad"
 [dependencies.link-canonical]
 path = "../link-canonical"
 features = [ "derive" ]
+
+[dependencies.link-identities]
+path = "../link-identities"
 
 [dependencies.link-git-protocol]
 path = "../link-git-protocol"
