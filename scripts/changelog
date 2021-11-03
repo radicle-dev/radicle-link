@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+# Render a Changelog by enumerating the cycle/* tag contents, in reverse
+# chronological order.
+set -eou pipefail
+
+git tag \
+	--format='= %(contents:subject)%0a%0a%(contents:body)%0a' \
+	--sort='-v:refname' \
+	--list 'cycle/*'
