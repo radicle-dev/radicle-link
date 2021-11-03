@@ -16,6 +16,7 @@ use git2::string_array::StringArray;
 use git_ext::{self as ext, is_not_found_err};
 
 use crate::{
+    collaborative_objects::CollaborativeObjects,
     git::types::{Many, One, Reference},
     identities::git::Urn,
     paths::Paths,
@@ -215,12 +216,19 @@ impl Storage {
     // TODO: we would need to wrap a few more low-level git operations (such as:
     // create commit, manipulate refs, manipulate config) in order to be able to
     // model "capabilities" in terms of traits.
-    pub(super) fn as_raw(&self) -> &git2::Repository {
+    pub(crate) fn as_raw(&self) -> &git2::Repository {
         &self.inner.backend
     }
 
     fn fetchers(&self) -> &Fetchers {
         &self.fetchers
+    }
+
+    pub fn collaborative_objects(
+        &self,
+        cache_dir: Option<std::path::PathBuf>,
+    ) -> CollaborativeObjects<'_> {
+        CollaborativeObjects::new(self.signer.clone(), self, cache_dir)
     }
 }
 

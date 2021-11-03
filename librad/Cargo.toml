@@ -51,10 +51,11 @@ socket2 = "0.4"
 tempfile = "3.1"
 thiserror = "1.0"
 time = "0.3"
+toml = "0.5"
 tracing = "0.1"
 tracing-attributes = "<0.12.0, ^0.1.13"
 typenum = "1.13"
-uuid = { version = "0.8", features = ["v4"] }
+uuid = { version = "0.8", features = ["v4", "serde"] }
 webpki = "0.21"
 xorf = "0.7"
 
@@ -107,6 +108,9 @@ features = ["minicbor"]
 path = "../git-ext"
 features = ["serde", "minicbor"]
 
+[dependencies.git-trailers]
+path = "../git-trailers"
+
 [dependencies.radicle-macros]
 path = "../macros"
 
@@ -133,3 +137,6 @@ features = ["compat"]
 [dependencies.url]
 version = "2.1"
 features = ["serde"]
+
+[dependencies.cob]
+path = "../cob"
