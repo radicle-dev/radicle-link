@@ -1,0 +1,25 @@
+[package]
+name = "link-async"
+version = "0.1.0"
+authors = ["Kim Altintop <kim@eagain.st>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+blocking = "1.0"
+futures-util = "0.3"
+rand = "0.8"
+thiserror = "1.0"
+tracing = "0.1"
+
+[dependencies.tokio]
+version = "1.1"
+features = ["time"]
+
+[dependencies.tokio-stream]
+version = "0.1.8"
+features = ["time"]

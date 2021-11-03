@@ -4,7 +4,6 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 mod canonical;
-mod executor;
 mod git;
 mod identities;
 mod keys;

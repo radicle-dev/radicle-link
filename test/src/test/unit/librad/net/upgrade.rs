@@ -49,17 +49,17 @@ async fn test_upgrade(
     .map(|(_, upgrade)| upgrade)
 }
 
-#[async_test]
+#[tokio::test]
 async fn upgrade_gossip() {
     assert_matches!(test_upgrade(Git).await, Ok(SomeUpgraded::Git(_)))
 }
 
-#[async_test]
+#[tokio::test]
 async fn upgrade_git() {
     assert_matches!(test_upgrade(Gossip).await, Ok(SomeUpgraded::Gossip(_)))
 }
 
-#[async_test]
+#[tokio::test]
 async fn upgrade_membership() {
     assert_matches!(
         test_upgrade(Membership).await,
@@ -67,7 +67,7 @@ async fn upgrade_membership() {
     )
 }
 
-#[async_test]
+#[tokio::test]
 async fn upgrade_interrogation() {
     assert_matches!(
         test_upgrade(Interrogation).await,

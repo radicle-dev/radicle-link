@@ -7,6 +7,7 @@ members = [
   "git-helpers",
   "git-trailers",
   "librad",
+  "link-async",
   "link-canonical",
   "link-canonical-derive",
   "link-crypto",

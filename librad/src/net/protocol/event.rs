@@ -90,8 +90,7 @@ pub mod upstream {
 
     use std::time::Duration;
 
-    use futures::{FutureExt as _, StreamExt as _};
-    use futures_timer::Delay;
+    use futures::{pin_mut, FutureExt as _, StreamExt as _};
     use thiserror::Error;
 
     use crate::net::protocol::{PeerInfo, RecvError};
@@ -168,7 +167,8 @@ pub mod upstream {
         S: futures::Stream<Item = Result<Upstream, RecvError>> + Unpin,
         P: Fn(&Upstream) -> bool,
     {
-        let mut timeout = Delay::new(timeout).fuse();
+        let timeout = link_async::sleep(timeout).fuse();
+        pin_mut!(timeout);
         let mut events = events.fuse();
         loop {
             futures::select! {

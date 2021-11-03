@@ -17,11 +17,10 @@ use std::{
 };
 
 use futures::{
-    future::{self, TryFutureExt as _},
+    future::TryFutureExt as _,
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     task::{Context, Poll},
 };
-use futures_timer::Delay;
 use thiserror::Error;
 
 use crate::git::p2p::transport::GitStream;
@@ -273,19 +272,9 @@ where
     let recv = async {
         let mut buf = [0u8; UPGRADE_REQUEST_ENCODING_LEN];
         {
-            let timeout = async {
-                Delay::new(RECV_UPGRADE_TIMEOUT).await;
-                Err(ErrorSource::Timeout)
-            };
-            let recv = async { Ok(incoming.read_exact(&mut buf).await?) };
-
-            futures::pin_mut!(timeout);
-            futures::pin_mut!(recv);
-
-            future::try_select(timeout, recv)
-                .map_ok(|ok| future::Either::factor_first(ok).0)
-                .map_err(|er| future::Either::factor_first(er).0)
-                .await?;
+            link_async::timeout(RECV_UPGRADE_TIMEOUT, incoming.read_exact(&mut buf))
+                .map_err(|link_async::Elapsed| ErrorSource::Timeout)
+                .await??;
         }
 
         Ok(minicbor::decode(&buf)?)

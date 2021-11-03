@@ -13,6 +13,7 @@ use std::{
 
 use futures::stream::{BoxStream, StreamExt as _, TryStreamExt as _};
 use if_watch::IfWatcher;
+use link_async::Spawner;
 use nonempty::NonEmpty;
 use parking_lot::RwLock;
 use quinn::{NewConnection, TransportConfig};
@@ -20,7 +21,6 @@ use socket2::{Domain, Protocol, Socket, Type};
 
 use super::{BoxedIncomingStreams, Connection, Conntrack, Error, Result};
 use crate::{
-    executor,
     net::{
         connection::{CloseReason, LocalAddr, LocalPeer},
         tls,
@@ -69,7 +69,7 @@ pub struct Endpoint<const R: usize> {
 impl<const R: usize> Endpoint<R> {
     pub async fn bind<'a, S>(
         signer: S,
-        spawner: &executor::Spawner,
+        spawner: &Spawner,
         listen_addr: SocketAddr,
         advertised_addrs: Option<NonEmpty<SocketAddr>>,
         network: Network,
@@ -214,7 +214,7 @@ fn bind_socket(listen_addr: SocketAddr) -> Result<UdpSocket> {
 
 #[tracing::instrument(skip(spawner, listen_addrs))]
 async fn ifwatch(
-    spawner: &executor::Spawner,
+    spawner: &Spawner,
     bound_addr: SocketAddr,
     listen_addrs: Weak<RwLock<BTreeSet<SocketAddr>>>,
 ) -> io::Result<()> {

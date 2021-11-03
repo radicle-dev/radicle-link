@@ -7,6 +7,7 @@ use std::{fmt::Debug, future::Future, net::SocketAddr, sync::Arc};
 
 use async_stream::stream;
 use futures::{stream::BoxStream, StreamExt};
+use link_async::Spawner;
 use nonempty::NonEmpty;
 use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
@@ -19,7 +20,6 @@ use super::{
     Network,
 };
 use crate::{
-    executor,
     git::{self, p2p::transport::GitStreamFactory, replication, storage},
     paths::Paths,
     rate_limit::RateLimiter,
@@ -147,7 +147,7 @@ impl<S> LocalAddr for Bound<S> {
 }
 
 pub async fn bind<Sign, Store>(
-    spawner: Arc<executor::Spawner>,
+    spawner: Arc<Spawner>,
     phone: TinCans,
     config: Config,
     signer: Sign,
