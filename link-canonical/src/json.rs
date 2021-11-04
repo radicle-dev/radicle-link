@@ -25,6 +25,19 @@ pub enum Value {
     Null,
 }
 
+impl Value {
+    pub fn ty_name(&self) -> &'static str {
+        match self {
+            Value::Object(_) => "object",
+            Value::Array(_) => "array",
+            Value::String(_) => "string",
+            Value::Number(_) => "number",
+            Value::Bool(_) => "bool",
+            Value::Null => "null",
+        }
+    }
+}
+
 impl FromStr for Value {
     type Err = String;
 
