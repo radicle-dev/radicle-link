@@ -111,6 +111,12 @@ impl<T: ToCjson + Ord> ToCjson for BTreeSet<T> {
     }
 }
 
+impl<T: ToCjson> ToCjson for Vec<T> {
+    fn into_cjson(self) -> Value {
+        into_array(self.into_iter())
+    }
+}
+
 // Option
 
 impl<T: ToCjson> ToCjson for Option<T> {
@@ -205,7 +211,7 @@ impl ToCjson for bool {
 fn into_array<I, T>(it: I) -> Value
 where
     I: Iterator<Item = T>,
-    T: Ord + ToCjson,
+    T: ToCjson,
 {
     Value::Array(it.map(ToCjson::into_cjson).collect())
 }
