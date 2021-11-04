@@ -213,4 +213,6 @@ allow-git = [
     "https://github.com/FintanH/thrussh",
     "https://github.com/radicle-dev/git2-rs",
     "https://github.com/radicle-dev/radicle-keystore",
+    "https://github.com/automerge/automerge-rs.git",
+    "https://github.com/Stranger6667/jsonschema-rs.git",
 ]
