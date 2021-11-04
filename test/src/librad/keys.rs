@@ -6,7 +6,7 @@
 use std::{fmt, ops::Deref};
 
 use proptest::prelude::*;
-use rand::{rngs::SmallRng, SeedableRng as _};
+use rand::{rngs::SmallRng, Rng as _, SeedableRng as _};
 use zeroize::Zeroize;
 
 use librad::{PeerId, PublicKey, SecretKey};

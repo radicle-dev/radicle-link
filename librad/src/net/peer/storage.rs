@@ -8,10 +8,10 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use crypto::peer::Originates;
 use either::Either::{self, Left, Right};
 use git_ext::{self as ext, reference};
+use link_async::Spawner;
 use nonzero_ext::nonzero;
 
 use crate::{
-    executor,
     git::{
         replication,
         storage::{self, fetcher, Pool, PoolError, PooledRef, ReadOnlyStorage as _},
@@ -40,12 +40,12 @@ pub struct Storage {
     config: Config,
     urns: cache::urns::Filter,
     limits: Arc<RateLimiter<Keyed<(PeerId, Urn)>>>,
-    spawner: Arc<executor::Spawner>,
+    spawner: Arc<Spawner>,
 }
 
 impl Storage {
     pub fn new(
-        spawner: Arc<executor::Spawner>,
+        spawner: Arc<Spawner>,
         pool: Pool<storage::Storage>,
         config: Config,
         urns: cache::urns::Filter,

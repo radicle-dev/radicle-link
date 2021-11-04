@@ -14,13 +14,13 @@ use std::{
 
 use dashmap::DashMap;
 use git_ext::RefLike;
+use link_async::Spawner;
 use rustc_hash::FxHasher;
 use thiserror::Error;
 use url::Url;
 
 use super::{PoolError, Storage};
 use crate::{
-    executor,
     git::{
         fetch::{self, FetchResult, Fetchspecs, RemoteHeads},
         p2p::url::GitUrlRef,
@@ -279,7 +279,7 @@ pub mod error {
 /// strategy increases the sleep interval after each attempt, so is biased
 /// towards more recent requests for the same resource.
 pub async fn retrying<P, B, E, F, A>(
-    spawner: &executor::Spawner,
+    spawner: &Spawner,
     pool: &P,
     builder: B,
     timeout: Duration,
@@ -303,7 +303,7 @@ where
     }
 
     async fn go<P, B, F, A, E>(
-        spawner: &executor::Spawner,
+        spawner: &Spawner,
         pool: &P,
         builder: B,
         f: F,

@@ -6,11 +6,10 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use futures::{future, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
-use futures_timer::Delay;
+use link_async::Spawner;
 
 use super::protocol::{self, gossip};
 use crate::{
-    executor,
     git::{self, storage::Fetchers, Urn},
     PeerId,
     Signer,
@@ -93,7 +92,7 @@ pub struct Peer<S> {
     peer_store: PeerStorage,
     user_store: git::storage::Pool<git::storage::Storage>,
     caches: protocol::Caches,
-    spawner: Arc<executor::Spawner>,
+    spawner: Arc<Spawner>,
 }
 
 impl<S> Peer<S>
@@ -101,7 +100,7 @@ where
     S: Signer + Clone,
 {
     pub fn new(config: Config<S>) -> Result<Self, error::Init> {
-        let spawner = executor::Spawner::from_current()
+        let spawner = Spawner::from_current()
             .map(Arc::new)
             .ok_or(error::Init::Runtime)?;
         let phone = protocol::TinCans::default();
@@ -182,7 +181,7 @@ where
         let events = self.subscribe();
         let providers = futures::stream::select(
             futures::stream::once(async move {
-                Delay::new(timeout).await;
+                link_async::sleep(timeout).await;
                 Err("timed out")
             }),
             {

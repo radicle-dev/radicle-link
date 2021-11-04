@@ -70,6 +70,9 @@ path = "../git-trailers"
 [dependencies.librad]
 path = "../librad"
 
+[dependencies.link-async]
+path = "../link-async"
+
 [dependencies.link-canonical]
 path = "../link-canonical"
 features = [ "derive" ]
@@ -106,7 +109,7 @@ path = "../git-ext"
 path = "../git-helpers"
 
 [dependencies.rand]
-version = "0.7"
+version = "0.8"
 features = [ "small_rng" ]
 
 # Note: this MUST always match the exact patch version `quinn` uses

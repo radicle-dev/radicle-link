@@ -19,7 +19,6 @@ dashmap = "4.0"
 directories = "3.0"
 futures = "0.3"
 futures_codec = "0.4"
-futures-timer = "3.0"
 globset = "0.4"
 governor = ">=0.3.2"
 if-watch = "0.2"
@@ -40,8 +39,8 @@ picky-asn1 = "0.3.2"
 picky-asn1-der = "0.2.5"
 picky-asn1-x509 = "0.6.0"
 priority-queue = "1.0"
-rand = "0.7"
-rand_pcg = "0.2"
+rand = "0.8"
+rand_pcg = "0.3.1"
 regex = "1.3"
 rustc-hash = "1.1"
 serde_bytes = "0.11"
@@ -86,6 +85,9 @@ features = ["std", "derive"]
 version = "0.7"
 default-features = false
 features = ["tls-rustls"]
+
+[dependencies.link-async]
+path = "../link-async"
 
 [dependencies.link-canonical]
 path = "../link-canonical"

@@ -6,6 +6,7 @@
 use std::{net::SocketAddr, ops::Deref, sync::Arc};
 
 use futures::future::TryFutureExt as _;
+use link_async::Spawner;
 use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
 use tracing::Instrument as _;
@@ -24,7 +25,6 @@ use super::{
     TinCans,
 };
 use crate::{
-    executor,
     git::{
         p2p::transport::{GitStream, GitStreamFactory},
         replication,
@@ -55,7 +55,7 @@ pub(super) struct State<S> {
     pub phone: TinCans,
     pub config: StateConfig,
     pub caches: cache::Caches,
-    pub spawner: Arc<executor::Spawner>,
+    pub spawner: Arc<Spawner>,
     pub limits: RateLimits,
 }
 

@@ -5,7 +5,6 @@
 
 mod canonical;
 mod collaborative_objects;
-mod executor;
 mod git;
 mod identities;
 mod keys;
