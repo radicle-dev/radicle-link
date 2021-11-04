@@ -27,7 +27,7 @@ pub enum Error {
     #[error(transparent)]
     ListKeys(#[from] ssh::error::ListKeys),
     #[error(
-        "the key for {0} is not in the ssh-agent, consider adding it via `rad profile ssh-add`"
+        "the key for {0} is not in the ssh-agent, consider adding it via `rad profile ssh add`"
     )]
     NoSuchKey(PeerId),
     #[error(transparent)]
