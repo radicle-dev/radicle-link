@@ -32,8 +32,7 @@ default-features = false
 features = []
 
 [dependencies.jsonschema]
-git = "https://github.com/Stranger6667/jsonschema-rs.git"
-rev = "0f050b860e35c1b5145b210d26e22b4534fde5be"
+version = ">= 0.13.2"
 default-features = false
 features = []
 
