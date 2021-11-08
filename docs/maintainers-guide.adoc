@@ -124,3 +124,5 @@ WARNING: Make sure to use `git push tag cycle/XYZ`, **not** `git push --tags`.
 Reply a last time to the cycle email. Information to include: URL of where to
 retrieve the tag on the web, patches which **did not** make it into the release
 (so the next maintainer can pick them up).
+
+Also post this email to the mailto:~radicle-link/announce@lists.sr.ht[announcements list].
