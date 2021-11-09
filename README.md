@@ -1,53 +1,41 @@
-[![Build status](https://badge.buildkite.com/c76805e51e194fb0cdf4bf537306e3b6270cb1ebc4db48f21c.svg?branch=master)](https://buildkite.com/monadic/radicle-link)
-
 # Radicle Link 🌱
 
-This is the working repo for the second iteration of the [Radicle] code
-collaboration protocol.
+Radicle Link is an experimental protocol for peer-to-peer code collaboration.
 
-**🚨 WORK IN PROGRESS 🚨**
+[![ci](https://github.com/radicle-dev/radicle-link/actions/workflows/ci.yaml/badge.svg?branch=master)](https://github.com/radicle-dev/radicle-link/actions/workflows/ci.yaml)
+[![sr.ht](https://builds.sr.ht/~radicle-link/radicle-link.svg)](https://builds.sr.ht/~radicle-link/radicle-link/?)
 
-While `radicle-link` is currently being used in the [Upstream] application it is
-under heavy development. If you came here from [Upstream], please note that it
-may be pinned to an earlier commit than what you see here.
+To receive updates about the project, subscribe to the announcements mailing
+([archives][annml]) list by sending an empty email to:
 
-Pop into [#general on our Matrix server][matrix] for development updates.
+[~radicle-link/announce+subscribe@lists.sr.ht](mailto:~radicle-link/announce+subscribe@lists.sr.ht)
+
+Please direct questions or bug reports to the development mailing list at
+[~radice-link/dev@lists.sr.ht](mailto:~radicle-link/dev@lists.sr.ht)
+([archives][devml]). You do not have to be subscribed to the list to post.
 
 ## Build
 
-Besides a Rust build environment (best obtained using [rustup]), you may need to
-install the following packages on a Debian system:
+To build the project, you need a Rust build enviroment (best obtained using
+[rustup]). To compile, run `cargo build`.
 
-* `file`
-* `gcc`
-* `git`
-* `libc6-dev`
-* `liblzma-dev`
-* `libssl-dev`
-* `make` (GNU make)
-* `pkg-config`
-* `zlib1g-dev`
-
-For an up-to-date specification of the build and development toolchain, see the
-[Dockerfile used for CI][docker].
-
-To compile, run `cargo build`.
+External dependencies vary across operating systems / distributions. A `git`
+installation is currently required as a runtime dependency.
 
 ## License
 
 Unless otherwise noted, all source code in this repository is licensed under the
 [GPLv3] with Radicle Linking Exception. See the [LICENSE] file for details.
 
+## Contributing
+
 If you are considering to contribute to this project, please review the
 [contributing guidelines][contributing].
 
 
-
-[Radicle]: https://radicle.xyz
-[Upstream]: https://github.com/radicle-dev/radicle-upstream
-[matrix]: https://matrix.radicle.community/#/room/#general:radicle.community
+[annml]: https://lists.sr.ht/~radicle-link/announce
+[devml]: https://lists.sr.ht/~radicle-link/dev
 [rustup]: https://rustup.rs
-[docker]: ./.buildkite/docker/rust/Dockerfile
 [GPLv3]: https://www.gnu.org/licenses/gpl-3.0.txt
 [LICENSE]: ./LICENSE
 [contributing]: ./CONTRIBUTING.md

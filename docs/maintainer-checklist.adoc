@@ -59,6 +59,7 @@ NOTE: all URL's above should point to your mirror of the
   * [ ] Includes shortlog
 * Reply to `Release Cycle XXXX-XX-XX` -- includes tag message from
   above
+* X-post to announcements ml
 
 == Patch Review
 
