@@ -12,6 +12,8 @@ use std::{
     path::Path,
 };
 
+mod serde_impls;
+
 use git_ext::{is_not_found_err, reference};
 use link_canonical::{Cjson, CjsonError};
 use serde::{
@@ -41,6 +43,12 @@ pub const TRACKING_GRAPH_DEPTH: usize = 3;
 // **NOTE**: A recursion limit of 128 is imposed by `serde_json` when deserialising.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Remotes<A: Ord>(BTreeMap<A, Box<Remotes<A>>>);
+
+impl<A: Ord> From<BTreeMap<A, Box<Remotes<A>>>> for Remotes<A> {
+    fn from(bm: BTreeMap<A, Box<Remotes<A>>>) -> Self {
+        Self(bm)
+    }
+}
 
 impl<A> Default for Remotes<A>
 where
@@ -215,7 +223,7 @@ pub enum Updated {
 }
 
 /// The published state of a local repository.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Refs {
     /// `refs/heads/*`
     pub heads: BTreeMap<reference::OneLevel, Oid>,
@@ -230,7 +238,10 @@ pub struct Refs {
     pub notes: BTreeMap<reference::OneLevel, Oid>,
 
     /// `refs/cob/*`
-    pub cob: BTreeMap<reference::OneLevel, Oid>,
+    pub cob: Option<BTreeMap<reference::OneLevel, Oid>>,
+
+    /// References for which we don't know the category
+    pub unknown_categories: BTreeMap<String, BTreeMap<String, Oid>>,
 
     /// The [`Remotes`], ie. tracking graph.
     ///
@@ -281,11 +292,13 @@ impl Refs {
             .filter_map(peeled)
             .map(refined)
             .collect::<Result<_, _>>()?;
-        let cob = storage
-            .references(&Reference::cob(namespace, None))?
-            .filter_map(peeled)
-            .map(refined)
-            .collect::<Result<_, _>>()?;
+        let cob = Some(
+            storage
+                .references(&Reference::cob(namespace, None))?
+                .filter_map(peeled)
+                .map(refined)
+                .collect::<Result<_, _>>()?,
+        );
 
         let mut remotes = tracking::tracked(storage, urn)?.collect::<Remotes<PeerId>>();
         for (peer, tracked) in remotes.iter_mut() {
@@ -300,6 +313,7 @@ impl Refs {
             tags,
             notes,
             remotes,
+            unknown_categories: BTreeMap::new(),
             cob,
         })
     }
@@ -415,6 +429,7 @@ impl Refs {
             notes,
             cob,
             remotes: _,
+            unknown_categories: _,
         } = self;
         heads
             .iter()
@@ -422,7 +437,10 @@ impl Refs {
             .chain(rad.iter().map(|x| (x, RefsCategory::Rad)))
             .chain(tags.iter().map(|x| (x, RefsCategory::Tags)))
             .chain(notes.iter().map(|x| (x, RefsCategory::Notes)))
-            .chain(cob.iter().map(|x| (x, RefsCategory::Cob)))
+            .chain(
+                cob.iter()
+                    .flat_map(|c| c.iter().map(|x| (x, RefsCategory::Cob))),
+            )
     }
 
     fn canonical_form(&self) -> Result<Vec<u8>, CjsonError> {
