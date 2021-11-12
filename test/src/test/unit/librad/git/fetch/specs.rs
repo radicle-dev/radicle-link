@@ -100,6 +100,7 @@ fn replicate_looks_legit() {
                 notes: Default::default(),
                 cob: Default::default(),
                 remotes: Remotes::new(),
+                unknown_categories: Default::default(),
             },
         ),
         (
@@ -117,6 +118,7 @@ fn replicate_looks_legit() {
                 notes: Default::default(),
                 cob: Default::default(),
                 remotes: Remotes::new(),
+                unknown_categories: Default::default(),
             },
         ),
     ]

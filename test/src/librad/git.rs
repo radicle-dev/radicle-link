@@ -16,6 +16,7 @@ use librad::{
 
 use crate::tempdir::WithTmpDir;
 
+pub mod refs;
 pub mod storage;
 
 pub fn dylan(
