@@ -718,9 +718,8 @@ impl<'a> Identities<'a, Project> {
 
         let root = base.root;
         let revision = {
-            // Create a fresh tree so we don't have to bother about stale
-            // indirect delegations
-            let mut builder = self.repo.treebuilder(None)?;
+            let base_tree = self.repo.find_tree(*base.revision)?;
+            let mut builder = self.repo.treebuilder(Some(&base_tree))?;
             if let Some(ref indirect) = delegations {
                 self.inline_indirect(&mut builder, indirect)?;
             }
