@@ -71,12 +71,33 @@ fn update() -> anyhow::Result<()> {
                 Right(cheyenne.current().clone()),
                 Right(dylan.current().clone()),
             ])?;
-            Project::new(cheyenne)?.update(update)
+            Project::new(cheyenne)?.update(None, update)
         }?;
         project.assert_no_quorum()?;
 
         // Dylan's view
         let project = Project::create_from(dylan, &project)?;
+        project.assert_verifies(lookup(&heads))
+    }
+}
+
+#[test]
+fn update_payload() -> anyhow::Result<()> {
+    let repo = repo()?;
+    {
+        let cheyenne = Device::new(&*CHEYENNE_DESKTOP, Identities::from(&*repo))?;
+
+        let heads = current_heads_from(vec![&cheyenne]);
+
+        // Cheyenne's view
+        let project = {
+            let update = payload::ProjectPayload::new(payload::Project {
+                name: "updated-name".into(),
+                description: None,
+                default_branch: None,
+            });
+            Project::new(cheyenne)?.update(update, None)
+        }?;
         project.assert_verifies(lookup(&heads))
     }
 }
@@ -106,7 +127,7 @@ fn revoke() -> anyhow::Result<()> {
                 Right(cheyenne.current().clone()),
                 Right(dylan.current().clone()),
             ])?;
-            Project::new(cheyenne.clone())?.update(update)
+            Project::new(cheyenne.clone())?.update(None, update)
         }?;
         cheyennes.assert_no_quorum()?;
 
@@ -115,12 +136,10 @@ fn revoke() -> anyhow::Result<()> {
         let dylans = Project::create_from(dylan, &cheyennes)?;
         dylans.assert_verifies(lookup(&heads))?;
 
-        let cheyennes =
-            cheyennes
-                .update_from(&dylans)?
-                .update(IndirectDelegation::try_from_iter(Some(Right(
-                    cheyenne.current().clone(),
-                )))?)?;
+        let cheyennes = cheyennes.update_from(&dylans)?.update(
+            None,
+            IndirectDelegation::try_from_iter(Some(Right(cheyenne.current().clone())))?,
+        )?;
         assert_matches!(
             cheyennes.verify(lookup(&heads)),
             Err(error::VerifyProject::Verification(
@@ -168,7 +187,7 @@ fn revoke_indirect() -> anyhow::Result<()> {
                 Right(cheyenne_desktop.current().clone()),
                 Right(dylan.current().clone()),
             ])?;
-            Project::new(cheyenne_desktop.clone())?.update(update)
+            Project::new(cheyenne_desktop.clone())?.update(None, update)
         }?;
         let dylan_project = Project::create_from(dylan.clone(), &cheyenne_project)?;
 
@@ -229,7 +248,7 @@ fn double_vote() -> anyhow::Result<()> {
                 Right(cheyenne_desktop.current().clone()),
                 Right(dylan.current().clone()),
             ])?;
-            Project::new(cheyenne_desktop.clone())?.update(update)
+            Project::new(cheyenne_desktop.clone())?.update(None, update)
         }?;
         let dylan_project = Project::create_from(dylan.clone(), &cheyenne_project)?;
 
@@ -237,6 +256,7 @@ fn double_vote() -> anyhow::Result<()> {
         dylan_project.assert_verifies(lookup(&heads))?;
 
         let cheyenne_project = cheyenne_project.update_from(&dylan_project)?.update(
+            None,
             IndirectDelegation::try_from_iter(vec![Right(cheyenne_desktop.current().clone())])?,
         )?;
         // That doesn't pass parent-quorum
@@ -293,7 +313,7 @@ fn fork() -> anyhow::Result<()> {
                 Right(cheyenne.current().clone()),
                 Right(dylan.current().clone()),
             ])?;
-            Project::new(cheyenne.clone())?.update(update)
+            Project::new(cheyenne.clone())?.update(None, update)
         }?;
         let dylan_project = Project::create_from(dylan.clone(), &cheyenne_project)?;
         dylan_project.assert_verifies(lookup(&heads))?;

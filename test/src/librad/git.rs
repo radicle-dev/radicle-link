@@ -210,11 +210,12 @@ impl<'a> Project<'a> {
 
     pub fn update(
         self,
+        payload: impl Into<Option<payload::ProjectPayload>>,
         delegations: impl Into<Option<IndirectDelegation>>,
     ) -> anyhow::Result<Self> {
         let cur = self.dev.git.as_project().update(
             Verifying::from(self.cur).signed()?,
-            None,
+            payload,
             delegations,
             self.dev.key,
         )?;
