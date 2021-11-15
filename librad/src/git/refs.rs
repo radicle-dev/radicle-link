@@ -237,8 +237,8 @@ pub struct Refs {
     /// `refs/notes/*`
     pub notes: BTreeMap<reference::OneLevel, Oid>,
 
-    /// `refs/cob/*`
-    pub cob: Option<BTreeMap<reference::OneLevel, Oid>>,
+    /// `refs/cobs/*`
+    pub cobs: Option<BTreeMap<reference::OneLevel, Oid>>,
 
     /// References for which we don't know the category
     pub unknown_categories: BTreeMap<String, BTreeMap<String, Oid>>,
@@ -292,7 +292,7 @@ impl Refs {
             .filter_map(peeled)
             .map(refined)
             .collect::<Result<_, _>>()?;
-        let cob = Some(
+        let cobs = Some(
             storage
                 .references(&Reference::cob(namespace, None))?
                 .filter_map(peeled)
@@ -314,7 +314,7 @@ impl Refs {
             notes,
             remotes,
             unknown_categories: BTreeMap::new(),
-            cob,
+            cobs,
         })
     }
 
@@ -427,7 +427,7 @@ impl Refs {
             rad,
             tags,
             notes,
-            cob,
+            cobs,
             remotes: _,
             unknown_categories: _,
         } = self;
@@ -438,8 +438,8 @@ impl Refs {
             .chain(tags.iter().map(|x| (x, RefsCategory::Tags)))
             .chain(notes.iter().map(|x| (x, RefsCategory::Notes)))
             .chain(
-                cob.iter()
-                    .flat_map(|c| c.iter().map(|x| (x, RefsCategory::Cob))),
+                cobs.iter()
+                    .flat_map(|c| c.iter().map(|x| (x, RefsCategory::Cobs))),
             )
     }
 

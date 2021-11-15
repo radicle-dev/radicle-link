@@ -60,7 +60,7 @@ prop_compose! {
     pub fn gen_refs()(
             heads in gen_references(),
             notes in gen_references(),
-            cob in proptest::option::of(gen_references()),
+            cobs in proptest::option::of(gen_references()),
             tags in gen_references(),
             rad in gen_references(),
             unknown_categories in gen_unknown(),
@@ -71,7 +71,7 @@ prop_compose! {
             rad,
             tags,
             notes,
-            cob,
+            cobs,
             unknown_categories,
             remotes,
         }
