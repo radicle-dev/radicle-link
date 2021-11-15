@@ -318,7 +318,7 @@ pub mod refspecs {
                     remote_peer,
                     tracked_peer,
                     name.clone(),
-                    category,
+                    category.clone(),
                 );
                 // Only include the advertised ref if its target OID
                 // is the same as the signed one.
@@ -350,7 +350,7 @@ pub mod refspecs {
                     let dst = Reference {
                         remote: Some(tracked_peer.clone()),
                         category,
-                        name: ext::RefLike::from(name.clone()),
+                        name: ext::RefLike::from(name),
                         namespace: Some(namespace.clone()),
                     };
                     let src = if tracked_peer == remote_peer {

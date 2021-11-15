@@ -75,6 +75,7 @@ fn peek_looks_legit() {
 
 #[test]
 fn replicate_looks_legit() {
+    use crate::make_refs;
     use librad::git::refs::{Refs, Remotes};
 
     lazy_static! {
@@ -91,34 +92,22 @@ fn replicate_looks_legit() {
         (
             LOLEK.clone(),
             Refs {
-                heads: [(ext::OneLevel::from(reflike!("mister")), *ZERO)]
-                    .iter()
-                    .cloned()
-                    .collect(),
-                rad: Default::default(),
-                tags: Default::default(),
-                notes: Default::default(),
-                cobs: Default::default(),
+                categorised_refs: make_refs! {
+                    "heads" => {"mister" => *ZERO,},
+                },
                 remotes: Remotes::new(),
-                unknown_categories: Default::default(),
             },
         ),
         (
             BOLEK.clone(),
             Refs {
-                heads: [
-                    (ext::OneLevel::from(reflike!("mister")), *ZERO),
-                    (ext::OneLevel::from(reflike!("next")), *ZERO),
-                ]
-                .iter()
-                .cloned()
-                .collect(),
-                rad: Default::default(),
-                tags: Default::default(),
-                notes: Default::default(),
-                cobs: Default::default(),
+                categorised_refs: make_refs! {
+                    "heads" => {
+                        "mister" => *ZERO,
+                        "next" => *ZERO,
+                    },
+                },
                 remotes: Remotes::new(),
-                unknown_categories: Default::default(),
             },
         ),
     ]

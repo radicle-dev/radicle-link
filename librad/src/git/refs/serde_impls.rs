@@ -6,7 +6,7 @@
 use super::{Refs, Remotes};
 
 use crypto::PeerId;
-use git_ext::{reference, Oid};
+use git_ext::Oid;
 use serde::ser::SerializeMap;
 
 use std::collections::BTreeMap;
@@ -30,58 +30,24 @@ impl<'de> serde::Deserialize<'de> for Refs {
                 A: serde::de::MapAccess<'vde>,
             {
                 let mut remotes: Option<Remotes<PeerId>> = None;
-                let mut heads: Option<BTreeMap<reference::OneLevel, Oid>> = None;
-                let mut rad: Option<BTreeMap<reference::OneLevel, Oid>> = None;
-                let mut tags: Option<BTreeMap<reference::OneLevel, Oid>> = None;
-                let mut notes: Option<BTreeMap<reference::OneLevel, Oid>> = None;
-                let mut cobs: Option<BTreeMap<reference::OneLevel, Oid>> = None;
-                let mut unknown: BTreeMap<String, BTreeMap<String, Oid>> = BTreeMap::new();
+                let mut categorised_refs: BTreeMap<String, BTreeMap<String, Oid>> = BTreeMap::new();
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
-                        "heads" => {
-                            let value = map.next_value()?;
-                            heads = Some(value);
-                        },
-                        "rad" => {
-                            let value = map.next_value()?;
-                            rad = Some(value);
-                        },
-                        "tags" => {
-                            let value = map.next_value()?;
-                            tags = Some(value);
-                        },
-                        "notes" => {
-                            let value = map.next_value()?;
-                            notes = Some(value);
-                        },
-                        "cobs" => {
-                            let value = map.next_value()?;
-                            cobs = Some(value);
-                        },
                         "remotes" => {
                             let value = map.next_value()?;
                             remotes = Some(value);
                         },
                         _ => {
                             let value = map.next_value()?;
-                            unknown.insert(key, value);
+                            categorised_refs.insert(key, value);
                         },
                     }
                 }
                 let remotes = remotes.ok_or_else(|| serde::de::Error::missing_field("remotes"))?;
-                let heads = heads.ok_or_else(|| serde::de::Error::missing_field("heads"))?;
-                let rad = rad.ok_or_else(|| serde::de::Error::missing_field("rad"))?;
-                let tags = tags.ok_or_else(|| serde::de::Error::missing_field("tags"))?;
-                let notes = notes.ok_or_else(|| serde::de::Error::missing_field("notes"))?;
                 Ok(Refs {
-                    heads,
-                    rad,
-                    tags,
-                    notes,
-                    cobs,
                     remotes,
-                    unknown_categories: unknown,
+                    categorised_refs,
                 })
             }
         }
@@ -95,14 +61,7 @@ impl serde::Serialize for Refs {
         S: serde::Serializer,
     {
         let mut map_s = serializer.serialize_map(Some(6))?;
-        map_s.serialize_entry("heads", &self.heads)?;
-        map_s.serialize_entry("rad", &self.rad)?;
-        map_s.serialize_entry("tags", &self.tags)?;
-        map_s.serialize_entry("notes", &self.notes)?;
-        if let Some(cob) = &self.cobs {
-            map_s.serialize_entry("cobs", cob)?;
-        }
-        for (category, values) in &self.unknown_categories {
+        for (category, values) in &self.categorised_refs {
             map_s.serialize_entry(category, &values)?;
         }
         map_s.serialize_entry("remotes", &self.remotes)?;

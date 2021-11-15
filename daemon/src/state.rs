@@ -977,7 +977,7 @@ fn role(
     {
         peer::Role::Maintainer
     } else if Refs::load(store, &project.urn(), peer.right())?
-        .map_or(false, |refs| !refs.heads.is_empty())
+        .map_or(false, |refs| refs.heads().next().is_some())
     {
         peer::Role::Contributor
     } else {

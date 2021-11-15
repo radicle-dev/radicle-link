@@ -6,6 +6,7 @@
 use std::{
     convert::TryFrom,
     fmt::{self, Display},
+    str::FromStr,
 };
 
 use git_ext as ext;
@@ -26,7 +27,7 @@ pub type Many = ext::RefspecPattern;
 /// Alias for [`Many`].
 pub type Multiple = Many;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RefsCategory {
     Heads,
     Rad,
@@ -34,18 +35,30 @@ pub enum RefsCategory {
     Notes,
     /// Collaborative objects
     Cobs,
+    Unknown(ext::RefLike),
 }
 
 impl RefsCategory {
     fn parse(s: &str) -> Option<Self> {
-        match s {
-            "heads" => Some(Self::Heads),
-            "rad" => Some(Self::Rad),
-            "tags" => Some(Self::Tags),
-            "notes" => Some(Self::Notes),
-            "cobs" => Some(Self::Cobs),
-            _ => None,
-        }
+        s.parse().ok()
+    }
+}
+
+impl FromStr for RefsCategory {
+    type Err = ext::reference::name::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "heads" => Self::Heads,
+            "rad" => Self::Rad,
+            "tags" => Self::Tags,
+            "notes" => Self::Notes,
+            "cobs" => Self::Cobs,
+            other => {
+                let reflike = ext::RefLike::try_from(other)?;
+                Self::Unknown(reflike)
+            },
+        })
     }
 }
 
@@ -57,6 +70,7 @@ impl Display for RefsCategory {
             Self::Tags => f.write_str("tags"),
             Self::Notes => f.write_str("notes"),
             Self::Cobs => f.write_str("cobs"),
+            Self::Unknown(cat) => f.write_str(cat),
         }
     }
 }
@@ -64,6 +78,31 @@ impl Display for RefsCategory {
 impl From<RefsCategory> for ext::RefLike {
     fn from(cat: RefsCategory) -> Self {
         ext::RefLike::try_from(cat.to_string()).unwrap()
+    }
+}
+
+impl From<&RefsCategory> for ext::RefLike {
+    fn from(cat: &RefsCategory) -> Self {
+        ext::RefLike::try_from(cat.to_string()).unwrap()
+    }
+}
+
+impl From<ext::RefLike> for RefsCategory {
+    fn from(r: ext::RefLike) -> Self {
+        (&r).into()
+    }
+}
+
+impl From<&ext::RefLike> for RefsCategory {
+    fn from(r: &ext::RefLike) -> Self {
+        match r.as_str() {
+            "heads" => Self::Heads,
+            "rad" => Self::Rad,
+            "tags" => Self::Tags,
+            "notes" => Self::Notes,
+            "cobs" => Self::Cobs,
+            _ => Self::Unknown(r.clone()),
+        }
     }
 }
 
@@ -344,7 +383,7 @@ where
             refl = refl.join(reflike!("remotes")).join(remote);
         }
 
-        refl.join(r.category)
+        refl.join(&r.category)
             .join(ext::OneLevel::from(r.name.to_owned()))
     }
 }
@@ -498,7 +537,8 @@ where
             refl = refl.join(reflike!("remotes")).join(remote);
         }
 
-        refl.join(r.category).with_pattern_suffix(r.name.to_owned())
+        refl.join(&r.category)
+            .with_pattern_suffix(r.name.to_owned())
     }
 }
 

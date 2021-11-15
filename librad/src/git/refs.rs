@@ -225,23 +225,8 @@ pub enum Updated {
 /// The published state of a local repository.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Refs {
-    /// `refs/heads/*`
-    pub heads: BTreeMap<reference::OneLevel, Oid>,
-
-    /// `refs/rad/*`, excluding `refs/rad/signed_refs`
-    pub rad: BTreeMap<reference::OneLevel, Oid>,
-
-    /// `refs/tags/*`
-    pub tags: BTreeMap<reference::OneLevel, Oid>,
-
-    /// `refs/notes/*`
-    pub notes: BTreeMap<reference::OneLevel, Oid>,
-
-    /// `refs/cobs/*`
-    pub cobs: Option<BTreeMap<reference::OneLevel, Oid>>,
-
-    /// References for which we don't know the category
-    pub unknown_categories: BTreeMap<String, BTreeMap<String, Oid>>,
+    /// The signed references
+    pub categorised_refs: BTreeMap<String, BTreeMap<String, Oid>>,
 
     /// The [`Remotes`], ie. tracking graph.
     ///
@@ -264,41 +249,44 @@ impl Refs {
         let peeled = |head: Result<git2::Reference, _>| -> Option<(String, git2::Oid)> {
             head.ok().and_then(reference::peeled)
         };
-        let refined = |(name, oid): (String, git2::Oid)| -> Result<(reference::OneLevel, Oid), stored::Error> {
-            Ok(reference::refined((
-                name.strip_prefix(&namespace_prefix).unwrap_or(&name),
-                oid,
-            ))?)
-        };
 
-        let heads = storage
-            .references(&Reference::heads(namespace.clone(), None))?
+        let mut categorised_refs = BTreeMap::new();
+        let glob = globset::Glob::new(format!("{}*", namespace_prefix).as_str())
+            .unwrap()
+            .compile_matcher();
+        for (category, reference, oid) in storage
+            .references_glob(glob)?
             .filter_map(peeled)
-            .map(refined)
-            .collect::<Result<_, _>>()?;
-        let rad = storage
-            .references(&Reference::rads(namespace.clone(), None))?
-            .filter_map(peeled)
-            .filter(|(name, _)| !name.ends_with("rad/signed_refs"))
-            .map(refined)
-            .collect::<Result<_, _>>()?;
-        let tags = storage
-            .references(&Reference::tags(namespace.clone(), None))?
-            .filter_map(peeled)
-            .map(refined)
-            .collect::<Result<_, _>>()?;
-        let notes = storage
-            .references(&Reference::notes(namespace.clone(), None))?
-            .filter_map(peeled)
-            .map(refined)
-            .collect::<Result<_, _>>()?;
-        let cobs = Some(
-            storage
-                .references(&Reference::cob(namespace, None))?
-                .filter_map(peeled)
-                .map(refined)
-                .collect::<Result<_, _>>()?,
-        );
+            .filter_map(|(r, oid)| {
+                r.strip_prefix(&namespace_prefix)
+                    .map(|s| (s.to_string(), oid))
+            })
+            .filter_map(|(ref_str, oid)| {
+                ref_str
+                    .parse::<reference::RefLike>()
+                    .ok()
+                    .map(reference::Qualified::from)
+                    .and_then(|q| {
+                        let (reference, category) = reference::OneLevel::from_qualified(q);
+                        category.and_then(|c| {
+                            let category: RefsCategory = c.into();
+                            if ref_str.starts_with("refs/remotes")
+                                || (RefsCategory::Rad == category
+                                    && ref_str.ends_with("rad/signed_refs"))
+                            {
+                                None
+                            } else {
+                                Some((category.to_string(), reference, oid))
+                            }
+                        })
+                    })
+            })
+        {
+            let cat = categorised_refs
+                .entry(category.to_string())
+                .or_insert_with(BTreeMap::new);
+            cat.insert(reference.to_string(), oid.into());
+        }
 
         let mut remotes = tracking::tracked(storage, urn)?.collect::<Remotes<PeerId>>();
         for (peer, tracked) in remotes.iter_mut() {
@@ -308,13 +296,8 @@ impl Refs {
         }
 
         Ok(Self {
-            heads,
-            rad,
-            tags,
-            notes,
+            categorised_refs,
             remotes,
-            unknown_categories: BTreeMap::new(),
-            cobs,
         })
     }
 
@@ -421,30 +404,88 @@ impl Refs {
     /// corresponding `RefsCategory`.
     pub fn iter_categorised(
         &self,
-    ) -> impl Iterator<Item = ((&reference::OneLevel, &Oid), RefsCategory)> {
+    ) -> impl Iterator<Item = ((reference::OneLevel, &Oid), RefsCategory)> {
         let Refs {
-            heads,
-            rad,
-            tags,
-            notes,
-            cobs,
+            categorised_refs,
             remotes: _,
-            unknown_categories: _,
         } = self;
-        heads
+        categorised_refs
             .iter()
-            .map(|x| (x, RefsCategory::Heads))
-            .chain(rad.iter().map(|x| (x, RefsCategory::Rad)))
-            .chain(tags.iter().map(|x| (x, RefsCategory::Tags)))
-            .chain(notes.iter().map(|x| (x, RefsCategory::Notes)))
-            .chain(
-                cobs.iter()
-                    .flat_map(|c| c.iter().map(|x| (x, RefsCategory::Cobs))),
-            )
+            .filter_map(|(category_str, refs)| {
+                category_str.parse::<RefsCategory>().ok().map(|c| (c, refs))
+            })
+            .flat_map(move |(c, refs)| {
+                refs.iter().filter_map(move |(ref_str, oid)| {
+                    ref_str
+                        .parse::<reference::RefLike>()
+                        .ok()
+                        .map(|r| ((r.into(), oid), c.clone()))
+                })
+            })
     }
 
     fn canonical_form(&self) -> Result<Vec<u8>, CjsonError> {
         Cjson(self).canonical_form()
+    }
+
+    fn refs_for_category(
+        &self,
+        category: RefsCategory,
+    ) -> impl Iterator<Item = (reference::OneLevel, Oid)> + '_ {
+        self.categorised_refs
+            .get(&category.to_string())
+            .into_iter()
+            .flat_map(|refs| {
+                refs.iter().filter_map(|(r, oid)| {
+                    r.parse::<reference::RefLike>()
+                        .ok()
+                        .map(|r| (r.into(), *oid))
+                })
+            })
+    }
+
+    /// References under 'refs/heads'
+    pub fn heads(&self) -> impl Iterator<Item = (reference::OneLevel, Oid)> + '_ {
+        self.refs_for_category(RefsCategory::Heads)
+    }
+
+    /// References under 'refs/rad'
+    pub fn rad(&self) -> impl Iterator<Item = (reference::OneLevel, Oid)> + '_ {
+        self.refs_for_category(RefsCategory::Rad)
+    }
+
+    /// References under 'refs/tags'
+    pub fn tags(&self) -> impl Iterator<Item = (reference::OneLevel, Oid)> + '_ {
+        self.refs_for_category(RefsCategory::Tags)
+    }
+
+    /// References under 'refs/notes'
+    pub fn notes(&self) -> impl Iterator<Item = (reference::OneLevel, Oid)> + '_ {
+        self.refs_for_category(RefsCategory::Notes)
+    }
+
+    /// References under 'refs/cobs'
+    pub fn cobs(&self) -> impl Iterator<Item = (reference::OneLevel, Oid)> + '_ {
+        self.refs_for_category(RefsCategory::Cobs)
+    }
+
+    /// References where we don't know the category
+    ///
+    /// Returns an iterator of (category, reference, oid)
+    pub fn other_refs(&self) -> impl Iterator<Item = (&str, &str, Oid)> {
+        self.categorised_refs
+            .iter()
+            .filter(|(c, _)| {
+                c.parse::<RefsCategory>()
+                    .ok()
+                    .map(|c| matches!(c, RefsCategory::Unknown(_)))
+                    .unwrap_or(false)
+            })
+            .flat_map(|(category, references)| {
+                references
+                    .iter()
+                    .map(move |(reference, oid)| (category.as_str(), reference.as_str(), *oid))
+            })
     }
 }
 
@@ -631,7 +672,6 @@ where
                 &at_commit,
                 path.display()
             );
-
             let maybe_refs = storage
                 .blob_at(at_commit, path)?
                 .map(|blob| Signed::from_json(blob.content(), &signer))

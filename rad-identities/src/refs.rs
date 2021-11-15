@@ -38,7 +38,7 @@ where
     S: AsRef<ReadOnly>,
     P: Into<Option<PeerId>> + fmt::Debug,
 {
-    Ok(Refs::load(storage, urn, peer)?.map(|refs| refs.heads))
+    Ok(Refs::load(storage, urn, peer)?.map(|refs| refs.heads().collect()))
 }
 
 pub fn tags<S, P>(
@@ -50,7 +50,7 @@ where
     S: AsRef<ReadOnly>,
     P: Into<Option<PeerId>> + fmt::Debug,
 {
-    Ok(Refs::load(storage, urn, peer)?.map(|refs| refs.tags))
+    Ok(Refs::load(storage, urn, peer)?.map(|refs| refs.tags().collect()))
 }
 
 pub fn notes<S, P>(
@@ -62,7 +62,7 @@ where
     S: AsRef<ReadOnly>,
     P: Into<Option<PeerId>> + fmt::Debug,
 {
-    Ok(Refs::load(storage, urn, peer)?.map(|refs| refs.notes))
+    Ok(Refs::load(storage, urn, peer)?.map(|refs| refs.notes().collect()))
 }
 
 /// List all reference names and Oids under
