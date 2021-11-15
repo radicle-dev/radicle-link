@@ -110,7 +110,8 @@ pub mod project {
         List(List),
         Update(Update),
         Checkout(Checkout),
-        Review(Review),
+        Diff(Diff),
+        Accept(Accept),
         Tracked(Tracked),
     }
 
@@ -265,9 +266,31 @@ pub mod project {
         pub peer: Option<PeerId>,
     }
 
-    /// review a Radicle project for merging
+    /// review the difference between the local Radicle project and a peer's
     #[derive(Debug, StructOpt)]
-    pub struct Review {}
+    pub struct Diff {
+        /// the Radicle URN of the project
+        #[structopt(long)]
+        pub urn: Urn,
+        /// the peer to compare to
+        #[structopt(long)]
+        pub peer: PeerId,
+    }
+
+    /// accept the proposed changes between the local Radicle project and a
+    /// peer's
+    #[derive(Debug, StructOpt)]
+    pub struct Accept {
+        /// the Radicle URN of the project
+        #[structopt(long)]
+        pub urn: Urn,
+        /// the peer to compare to, and accept from
+        #[structopt(long)]
+        pub peer: PeerId,
+        /// skip the prompt to accept the change
+        #[structopt(long, short)]
+        pub force: bool,
+    }
 
     #[derive(Debug, StructOpt)]
     pub struct Tracked {
@@ -298,7 +321,8 @@ pub mod person {
         List(List),
         Update(Update),
         Checkout(Checkout),
-        Review(Review),
+        Diff(Diff),
+        Accept(Accept),
         Tracked(Tracked),
     }
 
@@ -429,9 +453,31 @@ pub mod person {
         pub peer: Option<PeerId>,
     }
 
-    /// review a Radicle person for merging    
+    /// review the difference between the local Radicle person and a peer's
     #[derive(Debug, StructOpt)]
-    pub struct Review {}
+    pub struct Diff {
+        /// the Radicle URN of the person
+        #[structopt(long)]
+        pub urn: Urn,
+        /// the peer to compare to, and accept from
+        #[structopt(long)]
+        pub peer: PeerId,
+    }
+
+    /// accept the proposed changes between the local Radicle person and a
+    /// peer's
+    #[derive(Debug, StructOpt)]
+    pub struct Accept {
+        /// the Radicle URN of the person
+        #[structopt(long)]
+        pub urn: Urn,
+        /// the peer to compare to, and accept from
+        #[structopt(long)]
+        pub peer: PeerId,
+        /// skip the prompt to accept the change
+        #[structopt(long, short)]
+        pub force: bool,
+    }
 
     #[derive(Debug, StructOpt)]
     pub struct Tracked {

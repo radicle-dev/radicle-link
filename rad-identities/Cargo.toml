@@ -43,6 +43,10 @@ path = "../git-ext"
 version = "1.0"
 features = [ "derive" ]
 
+[dependencies.similar]
+version = "2.1"
+features = [ "text" ]
+
 [dependencies.thrussh-agent]
 git = "https://github.com/FintanH/thrussh"
 branch = "generic-agent"

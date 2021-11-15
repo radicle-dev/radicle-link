@@ -274,10 +274,6 @@ where
     Ok(repo)
 }
 
-pub fn review() {
-    todo!()
-}
-
 pub fn tracked<S>(storage: &S, urn: &Urn) -> Result<relations::Tracked, Error>
 where
     S: AsRef<ReadOnly>,
