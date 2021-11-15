@@ -7,21 +7,17 @@ use std::io;
 
 use bstr::{BString, ByteVec as _};
 use futures_lite::io::{AsyncBufRead, AsyncRead, AsyncWrite};
-use git_repository::{
-    progress,
-    protocol::{
-        self,
-        fetch::{Action, Arguments, Delegate, DelegateBlocking, LsRefsAction, Response},
-        transport::client,
-    },
-    Progress,
+use git_features::progress::{self, Progress};
+use git_protocol::{
+    fetch::{Action, Arguments, Delegate, DelegateBlocking, LsRefsAction, Response},
+    transport::client,
 };
 use once_cell::sync::Lazy;
 use versions::Version;
 
-pub use git_repository::protocol::fetch::Ref;
+pub use git_protocol::fetch::Ref;
 
-use crate::{remote_git_version, transport};
+use super::{remote_git_version, transport};
 
 // Work around `git-upload-pack` not handling namespaces properly
 //
@@ -99,7 +95,7 @@ impl DelegateBlocking for LsRefs {
 
     fn prepare_fetch(
         &mut self,
-        _: protocol::transport::Protocol,
+        _: git_protocol::transport::Protocol,
         _: &client::Capabilities,
         _: &mut Vec<(&str, Option<&str>)>,
         refs: &[Ref],
@@ -138,12 +134,12 @@ where
 {
     let mut conn = transport::Stateless::new(opt.repo.clone(), recv, send);
     let mut delegate = LsRefs::new(opt);
-    git_repository::protocol::fetch(
+    git_protocol::fetch(
         &mut conn,
         &mut delegate,
         |_| unreachable!("credentials helper requested"),
         progress::Discard,
-        protocol::FetchConnection::AllowReuse,
+        git_protocol::FetchConnection::AllowReuse,
     )
     .await
     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;

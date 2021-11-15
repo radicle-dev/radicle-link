@@ -13,24 +13,21 @@ use std::{
 };
 
 use futures_lite::io::{AsyncBufRead, BlockOn};
-use git_repository::{
-    hash::ObjectId,
-    odb::{self, pack},
-    Progress,
-};
+use git_features::progress::Progress;
+use git_hash::ObjectId;
+use git_odb::{self as odb, pack};
 
-use crate::take::TryTake;
+use super::take::TryTake;
 
 #[cfg(feature = "git2")]
 pub use libgit::Libgit;
 
 /// What to do with the `packfile` response.
 ///
-/// _This is mostly the same as [`git_repository::protocol::fetch::Delegate`],
-/// but without incurring the
-/// [`git_repository::protocol::fetch::DelegateBlocking`] super-trait
-/// constraint. We can simply make [`crate::fetch::Fetch`] parametric over the
-/// packfile sink._
+/// _This is mostly the same as [`git_protocol::fetch::Delegate`], but without
+/// incurring the [`git_protocol::fetch::DelegateBlocking`] super-trait
+/// constraint. We can simply make [`crate::protocol::fetch::Fetch`] parametric
+/// over the packfile sink._
 pub trait PackWriter {
     type Output;
 
@@ -159,7 +156,8 @@ impl Thickener for odb::linked::Store {
         id: ObjectId,
         buf: &'a mut Vec<u8>,
     ) -> Option<pack::data::Object<'a>> {
-        use git_repository::prelude::FindExt as _;
+        use git_odb::FindExt as _;
+
         self.find(id, buf, &mut pack::cache::Never).ok()
     }
 }

@@ -7,7 +7,7 @@
 use std::{io, process::ExitStatus};
 
 use futures::io::{AsyncRead, AsyncWrite};
-use link_git_protocol::upload_pack::{upload_pack, Header};
+use link_git::protocol::upload_pack::{upload_pack, Header};
 use thiserror::Error;
 use tracing::{error, info};
 

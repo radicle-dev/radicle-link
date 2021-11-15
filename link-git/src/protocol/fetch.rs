@@ -20,22 +20,19 @@ use futures_lite::{
     future,
     io::{AsyncBufRead, AsyncRead, AsyncWrite},
 };
-use git_repository::{
-    progress,
-    protocol::{
-        self,
-        fetch::{response, Action, Arguments, Delegate, DelegateBlocking, LsRefsAction, Response},
-        transport::client,
-    },
-    Progress,
+use git_features::progress::{self, Progress};
+use git_protocol::{
+    fetch::{response, Action, Arguments, Delegate, DelegateBlocking, LsRefsAction, Response},
+    transport::client,
 };
 use once_cell::sync::Lazy;
 use pin_project::{pin_project, pinned_drop};
 use versions::Version;
 
-pub use git_repository::{hash::ObjectId, protocol::fetch::Ref};
+pub use git_hash::ObjectId;
+pub use git_protocol::fetch::Ref;
 
-use crate::{packwriter::PackWriter, remote_git_version, transport};
+use super::{packwriter::PackWriter, remote_git_version, transport};
 
 // Work around `git-upload-pack` not handling namespaces properly,
 //
@@ -136,7 +133,7 @@ impl<P: PackWriter> DelegateBlocking for Fetch<P, P::Output> {
 
     fn prepare_fetch(
         &mut self,
-        _: protocol::transport::Protocol,
+        _: git_protocol::transport::Protocol,
         caps: &client::Capabilities,
         _: &mut Vec<(&str, Option<&str>)>,
         _: &[Ref],
@@ -267,12 +264,12 @@ where
 
         move || {
             let mut delegate = Fetch::new(opt, pack_writer);
-            future::block_on(protocol::fetch(
+            future::block_on(git_protocol::fetch(
                 &mut conn,
                 &mut delegate,
                 |_| unreachable!("credentials helper requested"),
                 progress::Discard,
-                protocol::FetchConnection::AllowReuse,
+                git_protocol::FetchConnection::AllowReuse,
             ))
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 

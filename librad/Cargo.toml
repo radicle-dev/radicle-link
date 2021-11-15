@@ -95,8 +95,8 @@ path = "../link-canonical"
 [dependencies.link-crypto]
 path = "../link-crypto"
 
-[dependencies.link-git-protocol]
-path = "../link-git-protocol"
+[dependencies.link-git]
+path = "../link-git"
 features = ["git2"]
 
 [dependencies.link-identities]

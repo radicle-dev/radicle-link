@@ -4,7 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use futures::{executor::block_on, io::Cursor, AsyncReadExt as _};
-use link_git_protocol::take::TryTake;
+use link_git::protocol::take::TryTake;
 use std::io;
 
 #[test]

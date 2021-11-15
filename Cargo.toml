@@ -12,7 +12,7 @@ members = [
   "link-canonical",
   "link-canonical-derive",
   "link-crypto",
-  "link-git-protocol",
+  "link-git",
   "link-identities",
   "macros",
   "node-lib",

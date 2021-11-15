@@ -9,7 +9,7 @@ use std::{io, path::Path, process::ExitStatus};
 use async_process::{Command, Stdio};
 use futures_lite::io::{copy, AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 use futures_util::try_join;
-use git_repository::refs::{
+use git_ref::{
     file::{Store as Refdb, WriteReflog},
     FullName,
     Reference,
