@@ -8,6 +8,7 @@
 #[macro_use]
 extern crate async_trait;
 
+pub mod odb;
 pub mod protocol;
 
 pub use git_actor as actor;
