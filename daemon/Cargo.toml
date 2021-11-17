@@ -16,7 +16,6 @@ nonempty = "0.6"
 serde = { version = "1.0", features = [ "derive" ] }
 serde_millis = "0.1"
 thiserror = "1.0"
-tokio = { version = "1.2", features = [ "macros", "net", "rt-multi-thread", "sync", "time" ] }
 
 [dependencies.git2]
 version = "0.13"
@@ -35,6 +34,10 @@ path = "../git-ext"
 
 [dependencies.radicle-git-helpers]
 path = "../git-helpers"
+
+[dependencies.tokio]
+version = "1.13.1"
+features = [ "macros", "net", "rt-multi-thread", "sync", "time" ]
 
 [dev-dependencies]
 assert_matches = "1.3"
