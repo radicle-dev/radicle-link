@@ -333,7 +333,7 @@ fn remote_glob(identity_urn: &Urn, typename: &TypeName, oid: &ObjectId) -> globs
         format!(
             "refs/namespaces/{}/refs/remotes/**/{}/{}/{}",
             namespace.to_string(),
-            RefsCategory::Cob.to_string(),
+            RefsCategory::Cobs.to_string(),
             typename.to_string(),
             oid.to_string(),
         )
@@ -380,7 +380,7 @@ impl ObjRefMatcher {
         let remote_ref_str = format!(
             r"refs/namespaces/{}/refs/remotes/([0-9a-zA-Z]+)/{}/{}/([0-9a-z]+)",
             project_urn.encode_id(),
-            RefsCategory::Cob.to_string(),
+            RefsCategory::Cobs.to_string(),
             typename.regex_safe_string(),
         );
         let remote_regex = regex::Regex::new(remote_ref_str.as_str()).unwrap();
@@ -388,7 +388,7 @@ impl ObjRefMatcher {
         let local_ref_str = format!(
             r"refs/namespaces/{}/refs/{}/{}/([0-9a-z]+)",
             project_urn.encode_id(),
-            RefsCategory::Cob.to_string(),
+            RefsCategory::Cobs.to_string(),
             typename.regex_safe_string(),
         );
         let local_regex = regex::Regex::new(local_ref_str.as_str()).unwrap();

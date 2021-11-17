@@ -34,7 +34,7 @@ impl<'de> serde::Deserialize<'de> for Refs {
                 let mut rad: Option<BTreeMap<reference::OneLevel, Oid>> = None;
                 let mut tags: Option<BTreeMap<reference::OneLevel, Oid>> = None;
                 let mut notes: Option<BTreeMap<reference::OneLevel, Oid>> = None;
-                let mut cob: Option<BTreeMap<reference::OneLevel, Oid>> = None;
+                let mut cobs: Option<BTreeMap<reference::OneLevel, Oid>> = None;
                 let mut unknown: BTreeMap<String, BTreeMap<String, Oid>> = BTreeMap::new();
 
                 while let Some(key) = map.next_key::<String>()? {
@@ -55,9 +55,9 @@ impl<'de> serde::Deserialize<'de> for Refs {
                             let value = map.next_value()?;
                             notes = Some(value);
                         },
-                        "cob" => {
+                        "cobs" => {
                             let value = map.next_value()?;
-                            cob = Some(value);
+                            cobs = Some(value);
                         },
                         "remotes" => {
                             let value = map.next_value()?;
@@ -79,7 +79,7 @@ impl<'de> serde::Deserialize<'de> for Refs {
                     rad,
                     tags,
                     notes,
-                    cob,
+                    cobs,
                     remotes,
                     unknown_categories: unknown,
                 })
@@ -99,8 +99,8 @@ impl serde::Serialize for Refs {
         map_s.serialize_entry("rad", &self.rad)?;
         map_s.serialize_entry("tags", &self.tags)?;
         map_s.serialize_entry("notes", &self.notes)?;
-        if let Some(cob) = &self.cob {
-            map_s.serialize_entry("cob", cob)?;
+        if let Some(cob) = &self.cobs {
+            map_s.serialize_entry("cobs", cob)?;
         }
         for (category, values) in &self.unknown_categories {
             map_s.serialize_entry(category, &values)?;
