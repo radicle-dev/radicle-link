@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom as _, path::PathBuf};
+use std::{collections::BTreeSet, convert::TryFrom as _, io, path::PathBuf};
 
 use anyhow::anyhow;
 
@@ -11,6 +11,7 @@ use librad::{
     crypto::PublicKey,
     git::{
         identities,
+        storage::ReadOnly,
         types::{Namespace, Reference},
         Urn,
     },
@@ -40,7 +41,10 @@ pub fn eval(profile: &Profile, sock: SshAuthSock, opts: Options) -> anyhow::Resu
         Options::Checkout(Checkout { urn, path, peer }) => {
             eval_checkout(profile, sock, urn, path, peer)?
         },
-        Options::Review(Review {}) => unimplemented!(),
+        Options::Diff(Diff { urn, peer }) => eval_diff(profile, urn, peer)?,
+        Options::Accept(Accept { urn, peer, force }) => {
+            eval_accept(profile, sock, urn, peer, force)?
+        },
         Options::Tracked(Tracked { urn }) => eval_tracked(profile, urn)?,
     }
 
@@ -151,5 +155,98 @@ fn eval_tracked(profile: &Profile, urn: Urn) -> anyhow::Result<()> {
         .map(|peer| peer.map(|status| status.map(display::Persona::from)))
         .collect::<Vec<_>>();
     println!("{}", serde_json::to_string(&peers)?);
+    Ok(())
+}
+
+fn eval_diff(profile: &Profile, urn: Urn, peer: PeerId) -> anyhow::Result<()> {
+    let storage = storage::read_only(profile)?;
+    diff(&storage, urn, peer)?;
+    Ok(())
+}
+
+fn eval_accept(
+    profile: &Profile,
+    sock: SshAuthSock,
+    urn: Urn,
+    peer: PeerId,
+    force: bool,
+) -> anyhow::Result<()> {
+    let (_, storage) = storage::ssh::storage(profile, sock)?;
+
+    diff(&storage, urn.clone(), peer)?;
+
+    let accept = || -> anyhow::Result<()> {
+        let person = identities::person::merge(&storage, &urn, peer)?;
+        println!("{}", serde_json::to_string(&person::Display::from(person))?);
+        Ok(())
+    };
+
+    let accept_loop = || -> anyhow::Result<()> {
+        use std::io::Write as _;
+
+        let yes: BTreeSet<String> = vec!["y", "yes"]
+            .into_iter()
+            .map(|y| y.to_string())
+            .collect();
+        let no: BTreeSet<String> = vec!["n", "no"].into_iter().map(|n| n.to_string()).collect();
+
+        print!("Would like to accept these changes [yes/no]?: ");
+        io::stdout().flush()?;
+        let answer = {
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+
+            input.trim().to_ascii_lowercase()
+        };
+
+        loop {
+            if yes.contains(&answer) {
+                accept()?;
+                break;
+            } else if no.contains(&answer) {
+                println!("not accepting changes");
+                break;
+            } else {
+                println!("invalid choice");
+            }
+        }
+
+        Ok(())
+    };
+
+    if force {
+        return accept();
+    } else {
+        accept_loop()?;
+    }
+
+    Ok(())
+}
+
+fn diff<S>(storage: &S, urn: Urn, peer: PeerId) -> anyhow::Result<()>
+where
+    S: AsRef<ReadOnly>,
+{
+    let storage = storage.as_ref();
+    let local = storage.peer_id();
+    let ours = identities::person::get(&storage, &urn)?
+        .ok_or_else(|| person::Error::Identities(identities::Error::NotFound(urn.clone())))?;
+    let theirs = {
+        let urn = Urn::try_from(Reference::rad_id(Namespace::from(&urn)).with_remote(peer))
+            .expect("namespace is set");
+        identities::person::get(&storage, &urn)?
+            .ok_or(person::Error::Identities(identities::Error::NotFound(urn)))?
+    };
+
+    let ours = &serde_json::to_string_pretty(&ours.payload()).unwrap();
+    let theirs = &serde_json::to_string_pretty(&theirs.payload()).unwrap();
+
+    println!(
+        "{}",
+        similar::TextDiff::from_lines(ours, theirs)
+            .unified_diff()
+            .context_radius(10)
+            .header(&format!("ours @ {}", local), &format!("theirs @ {}", peer))
+    );
     Ok(())
 }
