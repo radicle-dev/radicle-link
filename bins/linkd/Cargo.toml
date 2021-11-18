@@ -7,8 +7,10 @@ authors = [
   "xla <self@xla.is>",
 ]
 
-[dependencies]
-tokio   = { version = "1.10", default-features = false, features = [ "macros", "process", "rt-multi-thread" ] }
+[dependencies.tokio]
+version = "1.13.1"
+default-features = false
+features = [ "macros", "process", "rt-multi-thread" ]
 
 [dependencies.node-lib]
 path    = "../../node-lib"

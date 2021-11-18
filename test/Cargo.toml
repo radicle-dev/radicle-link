@@ -46,7 +46,7 @@ sized-vec = "0.3"
 structopt = { version = "0.3", default-features = false }
 tempfile = "3"
 typenum = "1.13"
-tokio = "1.1"
+tokio = "1.13.1"
 tracing = ">= 0.1"
 unicode-normalization = "0.1"
 url = "2.1"
