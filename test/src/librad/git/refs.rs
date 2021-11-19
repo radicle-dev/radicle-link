@@ -7,11 +7,32 @@ use crate::librad::peer::gen_peer_id;
 use std::collections::BTreeMap;
 
 use librad::{
-    git::refs::{Refs, Remotes},
+    git::{
+        refs::{Refs, Remotes},
+        types::RefsCategory,
+    },
     PeerId,
 };
 use proptest::{prelude::*, strategy::Strategy};
 use radicle_git_ext::{reference, Oid, RefLike};
+
+// Convenience macro for making a BTreeMap<String, BTreeMap<String, Oid>>
+#[macro_export]
+macro_rules! make_refs{
+    ($($category:literal => {$($reference:literal => $oid:expr,)*},)*) => {
+        {
+            use std::collections::BTreeMap;
+            let mut refs: BTreeMap<String, BTreeMap<String, radicle_git_ext::Oid>> = BTreeMap::new();
+            $(
+                let cat = refs.entry($category.to_string()).or_insert_with(BTreeMap::new);
+                $(
+                    cat.insert($reference.to_string(), $oid.into());
+                )*
+            )*
+            refs
+        }
+    }
+}
 
 use crate::librad::identities::urn::gen_oid;
 
@@ -66,13 +87,27 @@ prop_compose! {
             unknown_categories in gen_unknown(),
             remotes in gen_remotes()
         ) -> Refs {
+        let mut with_categories = vec![
+            (RefsCategory::Heads, heads),
+            (RefsCategory::Notes, notes),
+            (RefsCategory::Tags, tags),
+            (RefsCategory::Rad, rad),
+        ];
+        if let Some(cobs) = cobs {
+            with_categories.push((RefsCategory::Cobs, cobs));
+        }
+        let mut all_categories = BTreeMap::new();
+        for (category, refs) in with_categories {
+            all_categories.insert(
+                category.to_string(),
+                refs.into_iter()
+                    .map(|(r, oid)| (r.to_string(), oid))
+                    .collect()
+            );
+        }
+        all_categories.extend(unknown_categories);
         Refs {
-            heads,
-            rad,
-            tags,
-            notes,
-            cobs,
-            unknown_categories,
+            categorised_refs: all_categories,
             remotes,
         }
     }
