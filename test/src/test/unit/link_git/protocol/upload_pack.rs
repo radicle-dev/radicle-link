@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use link_git_protocol::upload_pack;
+use link_git::protocol::upload_pack;
 
 mod header {
     use super::*;

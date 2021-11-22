@@ -80,8 +80,8 @@ features = [ "derive" ]
 [dependencies.link-identities]
 path = "../link-identities"
 
-[dependencies.link-git-protocol]
-path = "../link-git-protocol"
+[dependencies.link-git]
+path = "../link-git"
 features = ["git2"]
 
 [dependencies.node-lib]

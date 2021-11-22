@@ -3,11 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#[macro_use]
-extern crate async_trait;
-
 use bstr::ByteSlice as _;
-use git_repository::protocol::transport::client;
+use git_protocol::transport::client;
 use versions::Version;
 
 pub mod fetch;

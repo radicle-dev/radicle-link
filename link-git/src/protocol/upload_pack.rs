@@ -8,7 +8,7 @@ use std::{future::Future, io, path::Path, process::ExitStatus, str::FromStr};
 use async_process::{Command, Stdio};
 use futures_lite::io::{copy, AsyncBufReadExt as _, AsyncRead, AsyncWrite, BufReader};
 use futures_util::try_join;
-use git_packetline::PacketLineRef;
+use git_packetline::{self as packetline, PacketLineRef};
 use once_cell::sync::Lazy;
 use versions::Version;
 
@@ -80,7 +80,7 @@ where
             buf.parse().map_err(invalid_data)?
         },
         Some(_) => {
-            let mut pktline = git_packetline::StreamingPeekableIter::new(recv, &[]);
+            let mut pktline = packetline::StreamingPeekableIter::new(recv, &[]);
             let pkt = pktline
                 .read_line()
                 .await
@@ -187,8 +187,6 @@ async fn advertise_capabilities<W>(mut send: W) -> io::Result<()>
 where
     W: AsyncWrite + Unpin,
 {
-    use git_packetline::encode;
-
     // Thou shallt not upgrade your `git` installation while a link instance is
     // running!
     static GIT_VERSION: Lazy<Version> = Lazy::new(|| git_version().unwrap());
@@ -203,9 +201,9 @@ where
     });
 
     for cap in *CAPABILITIES {
-        encode::text_to_write(cap, &mut send).await?;
+        packetline::encode::text_to_write(cap, &mut send).await?;
     }
-    encode::flush_to_write(&mut send).await?;
+    packetline::encode::flush_to_write(&mut send).await?;
 
     Ok(())
 }
