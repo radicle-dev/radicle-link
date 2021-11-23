@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeSet, convert::TryFrom as _, io, path::PathBuf};
+use std::{convert::TryFrom as _, io, path::PathBuf};
 
 use anyhow::anyhow;
 
@@ -192,30 +192,35 @@ fn eval_accept(
     let accept_loop = || -> anyhow::Result<()> {
         use std::io::Write as _;
 
-        let yes: BTreeSet<String> = vec!["y", "yes"]
-            .into_iter()
-            .map(|y| y.to_string())
-            .collect();
-        let no: BTreeSet<String> = vec!["n", "no"].into_iter().map(|n| n.to_string()).collect();
-
-        print!("Would like to accept these changes [yes/no]?: ");
-        io::stdout().flush()?;
-        let answer = {
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-
-            input.trim().to_ascii_lowercase()
+        let prompt = || -> anyhow::Result<()> {
+            print!("Would like to accept these changes [yes/no] (default is 'no')?: ");
+            io::stdout().flush()?;
+            Ok(())
         };
 
         loop {
-            if yes.contains(&answer) {
-                accept()?;
-                break;
-            } else if no.contains(&answer) {
-                println!("not accepting changes");
-                break;
-            } else {
-                println!("invalid choice");
+            prompt()?;
+            let answer = {
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+
+                input.trim().to_ascii_lowercase().chars().next()
+            };
+
+            match answer {
+                Some(answer) if answer == 'y' => {
+                    accept()?;
+                    break;
+                },
+                Some(answer) if answer == 'n' => {
+                    println!("not accepting changes");
+                    break;
+                },
+                None => {
+                    println!("not accepting changes");
+                    break;
+                },
+                _ => println!("invalid choice"),
             }
         }
 
