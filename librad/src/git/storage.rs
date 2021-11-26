@@ -285,14 +285,22 @@ impl ReadOnlyStorage for Storage {
         self.inner.tip(urn, kind)
     }
 
-    fn reference<'a>(
+    fn reference<'a, 'b, Ref: 'b>(
         &'a self,
-        reference: &Reference<One>,
-    ) -> Result<Option<git2::Reference<'a>>, Error> {
+        reference: &'b Ref,
+    ) -> Result<Option<git2::Reference<'a>>, Error>
+    where
+        ext::RefLike: From<&'b Ref>,
+        Ref: Debug,
+    {
         self.inner.reference(reference)
     }
 
-    fn references<'a>(&'a self, reference: &Reference<Many>) -> Result<References<'a>, Error> {
+    fn references<'a, 'b, Refs: 'b>(&'a self, reference: &'b Refs) -> Result<References<'a>, Error>
+    where
+        ext::RefspecPattern: From<&'b Refs>,
+        Refs: Debug,
+    {
         self.inner.references(reference)
     }
 
