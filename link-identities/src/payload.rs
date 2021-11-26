@@ -424,7 +424,7 @@ where
 pub enum SomeDelegations<R, E>
 where
     R: Debug + Ord + HasProtocol + TryFrom<Multihash, Error = E>,
-    E: std::error::Error + 'static,
+    E: std::error::Error + Send + Sync + 'static,
 {
     Person(PersonDelegations),
     Project(ProjectDelegations<R>),
@@ -547,7 +547,7 @@ where
 impl<'de, R, E> serde::Deserialize<'de> for KeyOrUrn<R>
 where
     R: HasProtocol + TryFrom<Multihash, Error = E> + Debug,
-    E: std::error::Error + 'static,
+    E: std::error::Error + Send + Sync + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -616,7 +616,7 @@ where
 impl<'de, R, E> serde::Deserialize<'de> for ProjectDelegations<R>
 where
     R: Debug + Ord + HasProtocol + TryFrom<Multihash, Error = E>,
-    E: std::error::Error + 'static,
+    E: std::error::Error + Send + Sync + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -627,7 +627,7 @@ where
         impl<'de, R, E> serde::de::Visitor<'de> for Visitor<R>
         where
             R: Debug + Ord + HasProtocol + TryFrom<Multihash, Error = E>,
-            E: std::error::Error + 'static,
+            E: std::error::Error + Send + Sync + 'static,
         {
             type Value = ProjectDelegations<R>;
 

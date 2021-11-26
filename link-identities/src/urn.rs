@@ -25,7 +25,7 @@ pub mod error {
 
     #[derive(Debug, Error)]
     #[non_exhaustive]
-    pub enum DecodeId<E: std::error::Error + 'static> {
+    pub enum DecodeId<E: std::error::Error + Send + Sync + 'static> {
         #[error("invalid id")]
         InvalidId(#[source] E),
 
@@ -38,7 +38,7 @@ pub mod error {
 
     #[derive(Debug, Error)]
     #[non_exhaustive]
-    pub enum FromRefLike<E: std::error::Error + 'static> {
+    pub enum FromRefLike<E: std::error::Error + Send + Sync + 'static> {
         #[error("missing {0}")]
         Missing(&'static str),
 
@@ -54,7 +54,7 @@ pub mod error {
 
     #[derive(Debug, Error)]
     #[non_exhaustive]
-    pub enum FromStr<E: std::error::Error + 'static> {
+    pub enum FromStr<E: std::error::Error + Send + Sync + 'static> {
         #[error("missing {0}")]
         Missing(&'static str),
 
@@ -143,7 +143,7 @@ impl<R> Urn<R> {
     pub fn try_from_id(s: impl AsRef<str>) -> Result<Self, error::DecodeId<R::Error>>
     where
         R: TryFrom<Multihash>,
-        R::Error: std::error::Error + 'static,
+        R::Error: std::error::Error + Send + Sync + 'static,
     {
         let bytes = multibase::decode(s.as_ref()).map(|x| x.1)?;
         let mhash = Multihash::from_bytes(bytes)?;
@@ -254,7 +254,7 @@ where
 impl<R, E> FromStr for Urn<R>
 where
     R: HasProtocol + TryFrom<Multihash, Error = E>,
-    E: std::error::Error + 'static,
+    E: std::error::Error + Send + Sync + 'static,
 {
     type Err = error::FromStr<E>;
 
@@ -310,7 +310,7 @@ where
 impl<'de, R, E> serde::Deserialize<'de> for Urn<R>
 where
     R: HasProtocol + TryFrom<Multihash, Error = E>,
-    E: std::error::Error + 'static,
+    E: std::error::Error + Send + Sync + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
