@@ -94,12 +94,18 @@ pub trait ReadOnlyStorage {
 
     fn tip(&self, urn: &Urn, kind: git2::ObjectType) -> Result<Option<git2::Object>, Error>;
 
-    fn reference<'a>(
+    fn reference<'a, 'b, Ref: 'b>(
         &'a self,
-        reference: &Reference<One>,
-    ) -> Result<Option<git2::Reference<'a>>, Error>;
+        reference: &'b Ref,
+    ) -> Result<Option<git2::Reference<'a>>, Error>
+    where
+        RefLike: From<&'b Ref>,
+        Ref: Debug;
 
-    fn references<'a>(&'a self, reference: &Reference<Many>) -> Result<References<'a>, Error>;
+    fn references<'a, 'b, Refs: 'b>(&'a self, reference: &'b Refs) -> Result<References<'a>, Error>
+    where
+        RefspecPattern: From<&'b Refs>,
+        Refs: Debug;
 
     fn reference_names<'a>(
         &'a self,
@@ -300,18 +306,26 @@ impl ReadOnlyStorage for ReadOnly {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    fn reference<'a>(
+    fn reference<'a, 'b, Ref: 'b>(
         &'a self,
-        reference: &Reference<One>,
-    ) -> Result<Option<git2::Reference<'a>>, Error> {
-        reference
-            .find(&self.backend)
+        reference: &'b Ref,
+    ) -> Result<Option<git2::Reference<'a>>, Error>
+    where
+        RefLike: From<&'b Ref>,
+        Ref: Debug,
+    {
+        self.backend
+            .find_reference(RefLike::from(reference).as_str())
             .map(Some)
             .or_matches(is_not_found_err, || Ok(None))
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    fn references<'a>(&'a self, reference: &Reference<Many>) -> Result<References<'a>, Error> {
+    fn references<'a, 'b, Refs: 'b>(&'a self, reference: &'b Refs) -> Result<References<'a>, Error>
+    where
+        RefspecPattern: From<&'b Refs>,
+        Refs: Debug,
+    {
         self.references_glob(glob::RefspecMatcher::from(RefspecPattern::from(reference)))
             .map(|inner| References { inner })
     }
