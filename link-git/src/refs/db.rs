@@ -9,7 +9,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     sync::Arc,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use git_ref::{
@@ -237,7 +237,11 @@ impl Packed {
     fn open(path: PathBuf) -> Result<Option<Self>, error::Snapshot> {
         use git_lock::{acquire, Marker};
 
-        let _lock = Marker::acquire_to_hold_resource(&path, acquire::Fail::Immediately, None)?;
+        let _lock = Marker::acquire_to_hold_resource(
+            &path,
+            acquire::Fail::AfterDurationWithBackoff(Duration::from_millis(500)),
+            None,
+        )?;
         match path.metadata() {
             // `git-lock` will happily lock a non-existent file
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
