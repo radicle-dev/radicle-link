@@ -167,8 +167,7 @@ impl Snapshot {
         N: TryInto<PartialNameRef<'a>, Error = E>,
         file::find::Error: From<E>,
     {
-        self.store
-            .try_find_packed(name, self.packed.as_ref().map(|arc| arc.as_ref()))
+        self.store.try_find_packed(name, self.packed.as_deref())
     }
 
     pub fn transaction(&self) -> Transaction {
@@ -176,7 +175,7 @@ impl Snapshot {
     }
 
     pub fn iter(&self, prefix: Option<impl AsRef<Path>>) -> io::Result<LooseThenPacked> {
-        let packed = self.packed.as_ref().map(|arc| arc.as_ref());
+        let packed = self.packed.as_deref();
         match prefix {
             None => self.store.iter_packed(packed),
             Some(p) => self.store.iter_prefixed_packed(p, packed),
