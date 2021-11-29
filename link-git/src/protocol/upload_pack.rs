@@ -218,9 +218,11 @@ fn git_version() -> io::Result<Version> {
             "failed to read `git` version",
         ));
     }
+
+    // parse: git version 2.30.1 <other optional tokens>
     out.stdout
-        .rsplit(|x| x == &b' ')
-        .next()
+        .split(|x| x == &b' ')
+        .nth(2)
         .and_then(|s| {
             let s = std::str::from_utf8(s).ok()?;
             Version::new(s.trim())
