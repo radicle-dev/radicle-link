@@ -18,7 +18,7 @@ where
     R: Clone + Debug + PartialEq + TryFrom<Multihash, Error = E> + HasProtocol,
     for<'a> R: TryFrom<MultihashRef<'a>>,
     for<'a> &'a R: Into<Multihash>,
-    E: std::error::Error + 'static,
+    E: std::error::Error + Send + Sync + 'static,
 {
     str_roundtrip(urn.clone());
     json_roundtrip(urn.clone());
