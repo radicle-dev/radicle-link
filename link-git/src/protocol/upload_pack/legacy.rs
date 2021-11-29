@@ -9,11 +9,7 @@ use std::{io, path::Path, process::ExitStatus};
 use async_process::{Command, Stdio};
 use futures_lite::io::{copy, AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 use futures_util::try_join;
-use git_ref::{
-    file::{Store as Refdb, WriteReflog},
-    FullName,
-    Reference,
-};
+use git_ref::{file::Store as Refdb, store::WriteReflog, FullName, Reference};
 
 pub(super) async fn advertise_refs<R, W>(
     git_dir: impl AsRef<Path>,
@@ -34,11 +30,11 @@ where
         move || -> io::Result<Vec<FullName>> {
             let refdb = Refdb::at(git_dir, WriteReflog::Disable);
             let packed = refdb
-                .packed_buffer()
+                .open_packed_buffer()
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
             let refs = refdb
-                .iter_prefixed(packed.as_ref(), prefix)?
+                .iter_prefixed_packed(prefix, packed.as_ref())?
                 .filter_map(|r| r.ok().map(|Reference { name, .. }| name))
                 .filter(|name| {
                     const PATTERN: &[u8] = b"rad/ids/any";

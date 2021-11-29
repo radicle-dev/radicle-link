@@ -13,8 +13,9 @@ use std::{
 };
 
 use git_ref::{
-    file::{self, iter::LooseThenPacked, Transaction, WriteReflog},
+    file::{self, iter::LooseThenPacked, Transaction},
     packed,
+    store::WriteReflog,
     FullName,
     PartialNameRef,
     Reference,
@@ -167,7 +168,7 @@ impl Snapshot {
         file::find::Error: From<E>,
     {
         self.store
-            .try_find(name, self.packed.as_ref().map(|arc| arc.as_ref()))
+            .try_find_packed(name, self.packed.as_ref().map(|arc| arc.as_ref()))
     }
 
     pub fn transaction(&self) -> Transaction {
@@ -177,8 +178,8 @@ impl Snapshot {
     pub fn iter(&self, prefix: Option<impl AsRef<Path>>) -> io::Result<LooseThenPacked> {
         let packed = self.packed.as_ref().map(|arc| arc.as_ref());
         match prefix {
-            None => self.store.iter(packed),
-            Some(p) => self.store.iter_prefixed(packed, p),
+            None => self.store.iter_packed(packed),
+            Some(p) => self.store.iter_prefixed_packed(p, packed),
         }
     }
 
