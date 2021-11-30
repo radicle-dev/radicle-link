@@ -11,6 +11,7 @@ test = false
 
 [dependencies]
 blocking = "1.0"
+futures = "0.3"
 futures-util = "0.3"
 rand = "0.8"
 thiserror = "1.0"

@@ -253,6 +253,20 @@ impl JoinError {
             Self::Panicked(panik) => panic::resume_unwind(panik),
         }
     }
+
+    /// Consumes the join error, returning the object with which the task
+    /// panicked.
+    ///
+    /// # Panics
+    /// into_panic() panics if the Error does not represent the underlying task
+    /// terminating with a panic. Use is_panic to check the error reason.
+    // Note: This documentation is copied verbatim from tokio::task::JoinError
+    pub fn into_panic(self) -> Box<dyn Any + Send + 'static> {
+        match self {
+            Self::Cancelled => panic!("Task was cancelled, not panicked"),
+            Self::Panicked(payload) => payload,
+        }
+    }
 }
 
 impl From<tokio::task::JoinError> for JoinError {

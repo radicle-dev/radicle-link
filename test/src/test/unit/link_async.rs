@@ -6,6 +6,8 @@
 use link_async::Spawner;
 use tokio::runtime::Runtime;
 
+mod tasks;
+
 #[test]
 #[should_panic(expected = "task has failed")]
 fn unhelpful_panic() {

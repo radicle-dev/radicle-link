@@ -25,6 +25,7 @@ pub mod daemon;
 pub mod canonical;
 pub mod git;
 pub mod librad;
+pub mod link_async;
 pub mod logging;
 pub mod rad;
 pub mod roundtrip;
