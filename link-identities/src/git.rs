@@ -223,6 +223,13 @@ impl<'a, T: 'a> Identities<'a, T> {
     }
 
     fn is_in_ancestry_path(&self, commit: git2::Oid, tree: git2::Oid) -> Result<bool, git2::Error> {
+        {
+            let commit = self.repo.find_commit(commit)?;
+            if tree == commit.tree_id() {
+                return Ok(true);
+            }
+        }
+
         let mut revwalk = self.repo.revwalk()?;
         revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
         revwalk.push(commit)?;
@@ -792,9 +799,10 @@ impl<'a> Identities<'a, Project> {
             self.as_person().verify(latest_head)
         } else {
             Err(error::VerifyPerson::NotInAncestryPath {
+                urn: known.urn(),
                 revision: known.revision,
-                root: known.root,
-                head: latest_head.into(),
+                known_head: known.content_id,
+                latest_head: latest_head.into(),
             })
         }
     }

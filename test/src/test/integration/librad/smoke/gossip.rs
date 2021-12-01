@@ -166,7 +166,11 @@ fn fetches_on_gossip_notify() {
                     let peer2_has_commit = storage
                         .has_commit(&commit_urn, Box::new(commit_id))
                         .unwrap();
-                    assert!(peer2_has_commit);
+                    assert!(
+                        peer2_has_commit,
+                        "expected commit {} at {}",
+                        commit_urn, commit_id
+                    );
 
                     let remote_tag_ref =
                         Reference::tag(Some(project.urn().into()), peer1_id, reflike!("MY-TAG"));

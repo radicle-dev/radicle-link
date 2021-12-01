@@ -39,7 +39,7 @@ fn can_add_maintainer() {
                 .await
                 .unwrap()
                 .unwrap();
-            proj.pull(peer1, peer2).await.ok().unwrap();
+            proj.pull(peer1, peer2).await.unwrap();
             proj
         };
 
@@ -69,7 +69,7 @@ fn can_add_maintainer() {
             .unwrap()
             .unwrap();
 
-        proj.pull(peer1, peer2).await.ok().unwrap();
+        proj.pull(peer1, peer2).await.unwrap();
         let verified = peer2
             .using_storage({
                 let urn = proj.project.urn();

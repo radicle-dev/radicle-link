@@ -8,6 +8,7 @@ use std::{fmt::Debug, path::PathBuf};
 use canonical::CjsonError;
 use thiserror::Error;
 
+use super::Urn;
 use crate::{
     delegation::indirect::error::FromIter as DelegationsFromIterError,
     generic,
@@ -129,11 +130,12 @@ pub enum VerifyProject {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum VerifyPerson {
-    #[error("Revision {revision} of {root} not in ancestry path of {head}")]
+    #[error("{urn} rev={revision} head={known_head} not a parent of {latest_head}")]
     NotInAncestryPath {
+        urn: Urn,
         revision: Revision,
-        root: Revision,
-        head: ContentId,
+        known_head: ContentId,
+        latest_head: ContentId,
     },
 
     #[error(transparent)]

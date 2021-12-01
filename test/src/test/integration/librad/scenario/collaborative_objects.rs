@@ -257,7 +257,7 @@ fn collab_object_crud() {
             );
         }
 
-        proj.pull(peer1, peer2).await.ok().unwrap();
+        proj.pull(peer1, peer2).await.unwrap();
 
         // Check that peer 2
         // sees the same object state

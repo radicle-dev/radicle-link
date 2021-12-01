@@ -95,7 +95,7 @@ fn saturate_a_peer_with_projects() {
             event::upstream::expect(
                 peer2_events.boxed(),
                 gossip_from(peer1.peer_id()),
-                Duration::from_secs(5),
+                Duration::from_secs(15),
             )
             .await
             .unwrap();
