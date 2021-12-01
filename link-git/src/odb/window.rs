@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 use arc_swap::{ArcSwap, Guard};
 use parking_lot::Mutex;
@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use super::pack;
 
 mod metrics;
-pub use metrics::{Metrics, Stats, StatsView, Void};
+pub use metrics::{Metrics, Stats, StatsView};
 
 /// A threadsafe, shareable cache of packfiles.
 pub trait Cache {
@@ -84,12 +84,12 @@ impl<M, const B: usize, const S: usize> AsRef<Fixed<M, B, S>> for Fixed<M, B, S>
     }
 }
 
-impl<const B: usize, const S: usize> Default for Fixed<Void, B, S> {
+impl<const B: usize, const S: usize> Default for Fixed<(), B, S> {
     fn default() -> Self {
         Self {
             entries: [(); B].map(|_| ArcSwap::new(Arc::new([(); S].map(|_| None)))),
             locks: [(); B].map(|_| Mutex::new(())),
-            stats: PhantomData,
+            stats: (),
         }
     }
 }

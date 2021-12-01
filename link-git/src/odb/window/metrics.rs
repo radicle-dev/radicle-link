@@ -3,10 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    marker::PhantomData,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tracing::trace;
 
@@ -32,8 +29,6 @@ pub struct Stats {
     miss: AtomicUsize,
     load: AtomicUsize,
 }
-
-pub type Void = PhantomData<!>;
 
 pub trait Metrics {
     type Snapshot;
@@ -73,14 +68,12 @@ impl Metrics for Stats {
     }
 }
 
-impl Metrics for Void {
-    type Snapshot = usize;
+impl Metrics for () {
+    type Snapshot = ();
 
     fn record_hit(&self) {}
     fn record_miss(&self) {}
     fn record_load(&self) {}
 
-    fn snapshot(&self, open_files: usize) -> Self::Snapshot {
-        open_files
-    }
+    fn snapshot(&self, _: usize) -> Self::Snapshot {}
 }
