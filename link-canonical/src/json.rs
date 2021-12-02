@@ -5,10 +5,10 @@
 
 use std::{
     collections::{btree_map, BTreeMap, BTreeSet},
-    convert::Infallible,
+    convert::{Infallible, TryFrom},
     iter::FromIterator,
     slice,
-    str::FromStr,
+    str::{self, FromStr},
 };
 
 use crate::{Canonical, Cstring};
@@ -68,6 +68,17 @@ impl FromStr for Value {
             Err(Error(e)) | Err(Failure(e)) => Err(convert_error(s, e)),
             Err(Incomplete(_)) => Err("unexpected end of input".to_string()),
         }
+    }
+}
+
+impl TryFrom<&[u8]> for Value {
+    type Error = String;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        // XXX: could make the `parser` generic over input
+        str::from_utf8(bytes)
+            .map_err(|err| err.to_string())
+            .and_then(|s| s.parse())
     }
 }
 
