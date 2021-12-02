@@ -70,31 +70,30 @@ where
     A: Clone + Debug + PartialEq,
     F: Fn() -> PeerAdvertisement<A>,
 {
-    use Tick::*;
     use Tock::*;
 
     let mut tocks = Vec::new();
     match tick {
-        Forget { peer } => {
+        Tick::Forget { peer } => {
             tocks.push(Disconnect { peer });
         },
 
-        Connect { to } => {
+        Tick::Connect { to } => {
             let message = hpv.hello(info()).into();
-            tocks.push(AttemptSend { to, message });
+            tocks.push(Connect { to, message });
         },
 
-        Reply { to, message } => tocks.push(SendConnected {
+        Tick::Reply { to, message } => tocks.push(SendConnected {
             to,
             message: message.into(),
         }),
 
-        Try { recipient, message } => tocks.push(AttemptSend {
+        Tick::Try { recipient, message } => tocks.push(AttemptSend {
             to: recipient,
             message: message.into(),
         }),
 
-        All {
+        Tick::All {
             recipients,
             message,
         } => {
