@@ -159,23 +159,17 @@ where
             } else {
                 let have = storage.ask(val.clone()).await;
                 let tocks = if have {
-                    let reply = || Have {
+                    let reply = Have {
                         origin: info(),
                         val,
                     };
                     if origin.peer_id == remote_id {
                         vec![SendConnected {
                             to: remote_id,
-                            message: reply().into(),
+                            message: reply.into(),
                         }]
                     } else {
-                        // FIXME: if we cannot reach origin, we may still want to
-                        // broadcast the `Have`, in the hopes that it will travel
-                        // back the path it came here
-                        vec![AttemptSend {
-                            to: origin,
-                            message: reply().into(),
-                        }]
+                        broadcast(reply, Some(remote_id))
                     }
                 } else {
                     broadcast(Want { origin, val }, Some(remote_id))
