@@ -14,10 +14,12 @@ pub mod take;
 pub mod transport;
 pub mod upload_pack;
 
-pub use fetch::{fetch, ObjectId, Ref};
+pub use fetch::{fetch, Ref};
 pub use ls::ls_refs;
 pub use packwriter::PackWriter;
 pub use upload_pack::upload_pack;
+
+pub use git_hash::{oid, ObjectId};
 
 fn remote_git_version(caps: &client::Capabilities) -> Option<Version> {
     let agent = caps.capability("agent").and_then(|cap| {
