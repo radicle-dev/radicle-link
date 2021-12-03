@@ -288,6 +288,17 @@ impl Refs {
             cat.insert(reference.to_string(), oid.into());
         }
 
+        // Older librad implementations _always_ serialize the default git categories
+        // and will throw an error if these categories are not present in the
+        // signed refs, even if the repository contains no refs in those
+        // categories. By adding empty maps for those categories here we
+        // maintain backwards compatibility.
+        for default_category in RefsCategory::default_categories() {
+            if !categorised_refs.contains_key(default_category.to_string().as_str()) {
+                categorised_refs.insert(default_category.to_string(), BTreeMap::new());
+            }
+        }
+
         let mut remotes = tracking::tracked(storage, urn)?.collect::<Remotes<PeerId>>();
         for (peer, tracked) in remotes.iter_mut() {
             if let Some(refs) = Self::load(storage, urn, *peer)? {

@@ -42,6 +42,11 @@ impl RefsCategory {
     fn parse(s: &str) -> Option<Self> {
         s.parse().ok()
     }
+
+    /// The categories that are present in a default git repository
+    pub const fn default_categories() -> [RefsCategory; 3] {
+        [Self::Heads, Self::Tags, Self::Notes]
+    }
 }
 
 impl FromStr for RefsCategory {

@@ -182,7 +182,7 @@ mod verifying_refs {
 
 mod computing_refs {
     use librad::{
-        git::{refs::Refs, types::Namespace, Storage},
+        git::{refs::Refs, types::Namespace, Storage, Urn},
         paths::Paths,
         reflike,
         PeerId,
@@ -204,18 +204,19 @@ mod computing_refs {
         }
     }
 
-    #[test]
-    fn test_compute_valid_refs() {
-        // Create a project and some storage
-        let project_dir = tempfile::TempDir::new().unwrap();
-        let paths = Paths::from_root(project_dir.path()).unwrap();
+    fn temp_storage<P: AsRef<std::path::Path>>(path: P) -> (Urn, git2::Repository, Storage) {
+        let paths = Paths::from_root(path.as_ref()).unwrap();
         let key = SecretKey::new();
         let storage = Storage::open(&paths, key).unwrap();
         let project = TestProject::create(&storage).unwrap();
-
-        // Get raw access to the underlying repo so we can forcibly create some
-        // references
         let raw_repo = git2::Repository::open(paths.git_dir()).unwrap();
+        (project.project.urn(), raw_repo, storage)
+    }
+
+    #[test]
+    fn test_compute_valid_refs() {
+        let project_dir = tempfile::TempDir::new().unwrap();
+        let (urn, raw_repo, storage) = temp_storage(&project_dir);
 
         // Create a bunch of blobs to create references to
         let some_head = raw_repo.blob("some head".as_bytes()).unwrap();
@@ -232,7 +233,7 @@ mod computing_refs {
 
         // Create references in the places the Refs expects to look when computing
         // itself
-        let namespace: Namespace<radicle_git_ext::Oid> = project.project.urn().into();
+        let namespace: Namespace<radicle_git_ext::Oid> = urn.clone().into();
         let namespace_prefix = format!("refs/namespaces/{}/refs/", namespace);
         let refs_to_create = vec![
             ("heads/somehead", some_head),
@@ -257,7 +258,7 @@ mod computing_refs {
         }
 
         // Now assert that the computed refs are the ones we created
-        let refs = Refs::compute(&storage, &project.project.urn()).unwrap();
+        let refs = Refs::compute(&storage, &urn).unwrap();
         assert_refs!(refs.heads(), ["somehead" => some_head]);
         assert_refs!(refs.rad(), ["id" => some_radid]);
         assert_refs!(refs.tags(), ["sometag" => some_tag]);
@@ -277,6 +278,32 @@ mod computing_refs {
             "notes" => {"somenote" => some_note,},
             "cobs" => {"somecob" => some_cob,},
             "somecategory" => {"something" => some_otherblob,},
+        };
+        assert_eq!(refs.categorised_refs, expected_refs);
+    }
+
+    #[test]
+    fn test_entries_serialised_for_default_ref_categories() {
+        let project_dir = tempfile::TempDir::new().unwrap();
+        let (urn, raw_repo, storage) = temp_storage(&project_dir);
+
+        // Now assert that the computed refs are the ones we created
+        let refs = Refs::compute(&storage, &urn).unwrap();
+        assert!(refs.other_refs().next().is_none());
+
+        let namespace: Namespace<radicle_git_ext::Oid> = urn.into();
+        let rad_id_ref = format!("refs/namespaces/{}/refs/rad/id", namespace);
+        let rad_id = raw_repo
+            .find_reference(rad_id_ref.as_str())
+            .unwrap()
+            .target()
+            .unwrap();
+
+        let expected_refs = make_refs! {
+            "rad" => {"id" => rad_id, },
+            "heads" => {},
+            "tags" => {},
+            "notes" => {},
         };
         assert_eq!(refs.categorised_refs, expected_refs);
     }

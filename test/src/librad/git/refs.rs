@@ -24,10 +24,13 @@ macro_rules! make_refs{
             use std::collections::BTreeMap;
             let mut refs: BTreeMap<String, BTreeMap<String, radicle_git_ext::Oid>> = BTreeMap::new();
             $(
-                let cat = refs.entry($category.to_string()).or_insert_with(BTreeMap::new);
-                $(
-                    cat.insert($reference.to_string(), $oid.into());
-                )*
+                #[allow(unused_variables)]
+                {
+                    let cat = refs.entry($category.to_string()).or_insert_with(BTreeMap::new);
+                    $(
+                        cat.insert($reference.to_string(), $oid.into());
+                    )*
+                }
             )*
             refs
         }
