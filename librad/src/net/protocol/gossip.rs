@@ -3,11 +3,13 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::hash::Hash;
+
 use minicbor::{Decode, Decoder, Encode, Encoder};
 
 use crate::{identities::git::Urn, PeerId};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq)]
 pub enum Rev {
     Git(git2::Oid),
 }
@@ -56,7 +58,7 @@ impl<'de> Decode<'de> for Rev {
 }
 
 /// The gossip payload type
-#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Debug, Hash, PartialEq, Encode, Decode)]
 #[cbor(array)]
 pub struct Payload {
     /// URN of an updated or wanted repo.

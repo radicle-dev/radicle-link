@@ -3,13 +3,15 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::hash_map::RandomState, net::SocketAddr, sync::Arc, time::Duration};
 
+use bloom_filters::{DefaultBuildHashKernels, StableBloomFilter};
 use crypto::peer::Originates;
 use either::Either::{self, Left, Right};
 use git_ext::{self as ext, reference};
 use link_async::Spawner;
 use nonzero_ext::nonzero;
+use parking_lot::RwLock;
 
 use crate::{
     git::{
@@ -34,11 +36,14 @@ pub struct Config {
     pub fetch_quota: governor::Quota,
 }
 
+type SeenFilter = StableBloomFilter<DefaultBuildHashKernels<RandomState>>;
+
 #[derive(Clone)]
 pub struct Storage {
     pool: Pool<storage::Storage>,
     config: Config,
     urns: cache::urns::Filter,
+    seen: Arc<RwLock<SeenFilter>>,
     limits: Arc<RateLimiter<Keyed<(PeerId, Urn)>>>,
     spawner: Arc<Spawner>,
 }
@@ -54,11 +59,34 @@ impl Storage {
             pool,
             config,
             urns,
+            // TODO: parameters pulled out of thin air
+            seen: Arc::new(RwLock::new(StableBloomFilter::new(
+                100_000,
+                1,
+                0.001,
+                DefaultBuildHashKernels::new(rand::random(), RandomState::new()),
+            ))),
             limits: Arc::new(RateLimiter::keyed(
                 config.fetch_quota,
                 nonzero!(256 * 1024usize),
             )),
             spawner,
+        }
+    }
+
+    fn seen(&self, payload: &gossip::Payload) -> bool {
+        use bloom_filters::BloomFilter as _;
+
+        let filter = self.seen.read();
+        if filter.contains(payload) {
+            true
+        } else {
+            drop(filter);
+            let mut filter = self.seen.write();
+            filter.insert(payload);
+
+            // We haven't seen it this time, but will next time
+            false
         }
     }
 
@@ -185,6 +213,11 @@ impl broadcast::LocalStorage<SocketAddr> for Storage {
         P: Into<(PeerId, Vec<SocketAddr>)> + Send,
     {
         use broadcast::PutResult;
+
+        if self.seen(&has) {
+            tracing::debug!(seen = ?has, "seen update before");
+            return PutResult::Stale;
+        }
 
         let (provider, addr_hints) = provider.into();
 
