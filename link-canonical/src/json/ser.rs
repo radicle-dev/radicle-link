@@ -11,10 +11,9 @@ impl Value {
     pub(super) fn to_bytes(&self) -> Vec<u8> {
         match self {
             Value::Object(obj) => {
-                let n = obj.len();
                 let mut buf = vec![];
                 between(&mut buf, b'{', b'}', |buf| {
-                    intercalate(buf, n, obj.iter(), |buf, (key, val)| {
+                    intercalate(buf, obj.iter(), |buf, (key, val)| {
                         string(buf, key);
                         buf.push(b':');
                         buf.extend(val.to_bytes());
@@ -23,10 +22,9 @@ impl Value {
                 buf
             },
             Value::Array(array) => {
-                let n = array.len();
                 let mut buf = vec![];
                 between(&mut buf, b'[', b']', |buf| {
-                    intercalate(buf, n, array.iter(), |buf, v| buf.extend(v.to_bytes()))
+                    intercalate(buf, array.iter(), |buf, v| buf.extend(v.to_bytes()))
                 });
                 buf
             },
@@ -69,14 +67,11 @@ fn string(buf: &mut Vec<u8>, string: &Cstring) {
     });
 }
 
-fn intercalate<F, T>(
-    buf: &mut Vec<u8>,
-    length: usize,
-    collection: impl Iterator<Item = T>,
-    callback: F,
-) where
+fn intercalate<F, T>(buf: &mut Vec<u8>, collection: impl ExactSizeIterator<Item = T>, callback: F)
+where
     F: Fn(&mut Vec<u8>, T),
 {
+    let length = collection.len();
     for (i, v) in collection.enumerate() {
         callback(buf, v);
         if i + 1 != length {

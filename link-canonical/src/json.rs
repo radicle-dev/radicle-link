@@ -309,6 +309,12 @@ impl<'a> Iterator for MapIter<'a> {
     }
 }
 
+impl<'a> ExactSizeIterator for MapIter<'a> {
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+}
+
 impl Default for Map {
     fn default() -> Self {
         Self::new()
@@ -368,6 +374,12 @@ impl<'a> Iterator for ArrayIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
+    }
+}
+
+impl<'a> ExactSizeIterator for ArrayIter<'a> {
+    fn len(&self) -> usize {
+        self.iter.len()
     }
 }
 
