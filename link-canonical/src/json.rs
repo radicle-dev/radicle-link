@@ -4,9 +4,10 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    collections::{btree_map, btree_set, BTreeMap, BTreeSet},
+    collections::{btree_map, BTreeMap, BTreeSet},
     convert::Infallible,
     iter::FromIterator,
+    slice,
     str::FromStr,
 };
 
@@ -339,15 +340,15 @@ impl ToCjson for Map {
 // Array
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Array(BTreeSet<Value>);
+pub struct Array(Vec<Value>);
 
 impl Array {
     pub fn new() -> Self {
-        Self(BTreeSet::new())
+        Self(Vec::new())
     }
 
-    pub fn insert(&mut self, val: Value) -> bool {
-        self.0.insert(val)
+    pub fn insert(&mut self, val: Value) {
+        self.0.push(val)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -366,7 +367,7 @@ impl Array {
 }
 
 pub struct ArrayIter<'a> {
-    iter: btree_set::Iter<'a, Value>,
+    iter: slice::Iter<'a, Value>,
 }
 
 impl<'a> Iterator for ArrayIter<'a> {
