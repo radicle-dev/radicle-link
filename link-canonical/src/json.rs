@@ -39,6 +39,15 @@ impl Value {
     }
 }
 
+impl<A: ToCjson> FromIterator<(Cstring, A)> for Value {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (Cstring, A)>,
+    {
+        Self::Object(Map::from_iter(iter))
+    }
+}
+
 impl FromStr for Value {
     type Err = String;
 

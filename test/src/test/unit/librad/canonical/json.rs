@@ -23,11 +23,24 @@ struct Bar(bool, bool);
 struct Baz;
 
 #[derive(ToCjson)]
+struct Newtype(bool);
+
+#[derive(ToCjson)]
+#[cjson(tag = "type", content = "payload")]
 enum E {
     W { a: u32, b: i32 },
     X(u32, i32),
     Y(i32),
     Z,
+}
+
+#[derive(ToCjson)]
+#[cjson(tag = "t")]
+enum F {
+    I(u64),
+    N(bool, bool),
+    T { x: String },
+    O,
 }
 
 fn roundtrip(s: &str) -> Result<(), String> {
@@ -110,19 +123,12 @@ fn foo_canon() {
     };
     assert_eq!(
         val.into_cjson(),
-        vec![(
-            "Foo".into(),
-            vec![
-                ("xFoo".into(), 42u64.into_cjson()),
-                ("yFoo".into(), "hello".into_cjson())
-            ]
-            .into_iter()
-            .collect::<Map>()
-            .into_cjson()
-        )]
+        vec![
+            ("xFoo".into(), 42u64.into_cjson()),
+            ("yFoo".into(), "hello".into_cjson())
+        ]
         .into_iter()
-        .collect::<Map>()
-        .into_cjson()
+        .collect::<Value>()
     );
 }
 
@@ -131,17 +137,16 @@ fn bar_canon() {
     let val = Bar(true, false);
     assert_eq!(
         val.into_cjson(),
-        vec![(
-            "Bar".into(),
-            vec![true, false]
-                .into_iter()
-                .collect::<Array>()
-                .into_cjson()
-        )]
-        .into_iter()
-        .collect::<Map>()
-        .into_cjson()
+        vec![true, false]
+            .into_iter()
+            .collect::<Array>()
+            .into_cjson()
     );
+}
+
+#[test]
+fn newtype_canon() {
+    assert_eq!(Newtype(true).into_cjson(), Value::Bool(true));
 }
 
 #[test]
@@ -154,50 +159,98 @@ fn e_canon() {
     let val = E::W { a: 42, b: -3 };
     assert_eq!(
         val.into_cjson(),
-        vec![(
-            "W".into(),
-            vec![
-                ("a".into(), 42u64.into_cjson()),
-                ("b".into(), (-3).into_cjson()),
-            ]
-            .into_iter()
-            .collect::<Map>()
-            .into_cjson()
-        )]
+        vec![
+            ("type".into(), "W".into_cjson()),
+            (
+                "payload".into(),
+                vec![
+                    ("a".into(), 42u64.into_cjson()),
+                    ("b".into(), (-3).into_cjson()),
+                ]
+                .into_iter()
+                .collect::<Map>()
+                .into_cjson()
+            )
+        ]
         .into_iter()
-        .collect::<Map>()
-        .into_cjson()
+        .collect::<Value>()
     );
 
     let val = E::X(42, 3);
     assert_eq!(
         val.into_cjson(),
-        vec![(
-            "X".into(),
-            vec![42u64.into_cjson(), 3.into_cjson()]
-                .into_iter()
-                .collect::<Array>()
-                .into_cjson(),
-        )]
+        vec![
+            ("type".into(), "X".into_cjson()),
+            (
+                "payload".into(),
+                vec![42u64.into_cjson(), 3.into_cjson()].into_cjson()
+            ),
+        ]
         .into_iter()
-        .collect::<Map>()
-        .into_cjson()
+        .collect::<Value>()
     );
 
     let val = E::Y(42);
     assert_eq!(
         val.into_cjson(),
-        vec![(
-            "Y".into(),
-            vec![42.into_cjson()]
-                .into_iter()
-                .collect::<Array>()
-                .into_cjson()
-        )]
+        vec![
+            ("type".into(), "Y".into_cjson()),
+            ("payload".into(), 42.into_cjson())
+        ]
         .into_iter()
-        .collect::<Map>()
-        .into_cjson()
+        .collect::<Value>()
     );
 
-    assert_eq!(E::Z.into_cjson(), Value::String("Z".into()))
+    assert_eq!(
+        E::Z.into_cjson(),
+        vec![("type".into(), "Z".into_cjson())]
+            .into_iter()
+            .collect::<Value>()
+    )
+}
+
+#[test]
+fn f_canon() {
+    let val = F::I(42);
+    assert_eq!(
+        val.into_cjson(),
+        vec![
+            ("t".into(), "I".into_cjson()),
+            ("0".into(), 42u64.into_cjson())
+        ]
+        .into_iter()
+        .collect::<Value>()
+    );
+
+    let val = F::N(true, false);
+    assert_eq!(
+        val.into_cjson(),
+        vec![
+            ("t".into(), "N".into_cjson()),
+            ("0".into(), true.into_cjson()),
+            ("1".into(), false.into_cjson())
+        ]
+        .into_iter()
+        .collect::<Value>()
+    );
+
+    let val = F::T {
+        x: "isolation station".to_string(),
+    };
+    assert_eq!(
+        val.into_cjson(),
+        vec![
+            ("t".into(), "T".into_cjson()),
+            ("x".into(), "isolation station".into_cjson()),
+        ]
+        .into_iter()
+        .collect::<Value>()
+    );
+
+    assert_eq!(
+        F::O.into_cjson(),
+        vec![("t".into(), "O".into_cjson())]
+            .into_iter()
+            .collect::<Value>()
+    );
 }
