@@ -163,7 +163,7 @@ impl fmt::Display for HistoryType {
 /// The typename of an object. Valid typenames MUST be sequences of alphanumeric
 /// characters separated by a period. The name must start and end with an
 /// alphanumeric character
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct TypeName(String);
 
 impl TypeName {
@@ -197,7 +197,7 @@ impl FromStr for TypeName {
 }
 
 /// The id of an object
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ObjectId(git2::Oid);
 
 impl FromStr for ObjectId {
