@@ -123,12 +123,9 @@ fn foo_canon() {
     };
     assert_eq!(
         val.into_cjson(),
-        vec![
-            ("xFoo".into(), 42u64.into_cjson()),
-            ("yFoo".into(), "hello".into_cjson())
-        ]
-        .into_iter()
-        .collect::<Value>()
+        vec![("xFoo", 42u64.into_cjson()), ("yFoo", "hello".into_cjson())]
+            .into_iter()
+            .collect::<Value>()
     );
 }
 
@@ -160,16 +157,13 @@ fn e_canon() {
     assert_eq!(
         val.into_cjson(),
         vec![
-            ("type".into(), "W".into_cjson()),
+            ("type", "W".into_cjson()),
             (
-                "payload".into(),
-                vec![
-                    ("a".into(), 42u64.into_cjson()),
-                    ("b".into(), (-3).into_cjson()),
-                ]
-                .into_iter()
-                .collect::<Map>()
-                .into_cjson()
+                "payload",
+                vec![("a", 42u64.into_cjson()), ("b", (-3).into_cjson()),]
+                    .into_iter()
+                    .collect::<Map>()
+                    .into_cjson()
             )
         ]
         .into_iter()
@@ -180,9 +174,9 @@ fn e_canon() {
     assert_eq!(
         val.into_cjson(),
         vec![
-            ("type".into(), "X".into_cjson()),
+            ("type", "X".into_cjson()),
             (
-                "payload".into(),
+                "payload",
                 vec![42u64.into_cjson(), 3.into_cjson()].into_cjson()
             ),
         ]
@@ -193,17 +187,14 @@ fn e_canon() {
     let val = E::Y(42);
     assert_eq!(
         val.into_cjson(),
-        vec![
-            ("type".into(), "Y".into_cjson()),
-            ("payload".into(), 42.into_cjson())
-        ]
-        .into_iter()
-        .collect::<Value>()
+        vec![("type", "Y".into_cjson()), ("payload", 42.into_cjson())]
+            .into_iter()
+            .collect::<Value>()
     );
 
     assert_eq!(
         E::Z.into_cjson(),
-        vec![("type".into(), "Z".into_cjson())]
+        vec![("type", "Z".into_cjson())]
             .into_iter()
             .collect::<Value>()
     )
@@ -214,21 +205,18 @@ fn f_canon() {
     let val = F::I(42);
     assert_eq!(
         val.into_cjson(),
-        vec![
-            ("t".into(), "I".into_cjson()),
-            ("0".into(), 42u64.into_cjson())
-        ]
-        .into_iter()
-        .collect::<Value>()
+        vec![("t", "I".into_cjson()), ("0", 42u64.into_cjson())]
+            .into_iter()
+            .collect::<Value>()
     );
 
     let val = F::N(true, false);
     assert_eq!(
         val.into_cjson(),
         vec![
-            ("t".into(), "N".into_cjson()),
-            ("0".into(), true.into_cjson()),
-            ("1".into(), false.into_cjson())
+            ("t", "N".into_cjson()),
+            ("0", true.into_cjson()),
+            ("1", false.into_cjson())
         ]
         .into_iter()
         .collect::<Value>()
@@ -240,8 +228,8 @@ fn f_canon() {
     assert_eq!(
         val.into_cjson(),
         vec![
-            ("t".into(), "T".into_cjson()),
-            ("x".into(), "isolation station".into_cjson()),
+            ("t", "T".into_cjson()),
+            ("x", "isolation station".into_cjson()),
         ]
         .into_iter()
         .collect::<Value>()
@@ -249,8 +237,6 @@ fn f_canon() {
 
     assert_eq!(
         F::O.into_cjson(),
-        vec![("t".into(), "O".into_cjson())]
-            .into_iter()
-            .collect::<Value>()
+        vec![("t", "O".into_cjson())].into_iter().collect::<Value>()
     );
 }

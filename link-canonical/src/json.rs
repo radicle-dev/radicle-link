@@ -39,10 +39,10 @@ impl Value {
     }
 }
 
-impl<A: ToCjson> FromIterator<(Cstring, A)> for Value {
+impl<K: Into<Cstring>, A: ToCjson> FromIterator<(K, A)> for Value {
     fn from_iter<T>(iter: T) -> Self
     where
-        T: IntoIterator<Item = (Cstring, A)>,
+        T: IntoIterator<Item = (K, A)>,
     {
         Self::Object(Map::from_iter(iter))
     }
@@ -107,7 +107,7 @@ impl ToCjson for Value {
 
 // Object
 
-impl<T: ToCjson> ToCjson for BTreeMap<Cstring, T> {
+impl<K: Into<Cstring>, T: ToCjson> ToCjson for BTreeMap<K, T> {
     fn into_cjson(self) -> Value {
         into_object(self.into_iter())
     }
@@ -226,15 +226,13 @@ where
     Value::Array(it.map(ToCjson::into_cjson).collect())
 }
 
-fn into_object<I, T>(it: I) -> Value
+fn into_object<I, K, T>(it: I) -> Value
 where
-    I: Iterator<Item = (Cstring, T)>,
+    I: Iterator<Item = (K, T)>,
+    K: Into<Cstring>,
     T: ToCjson,
 {
-    Value::Object(
-        it.map(|(key, value)| (key, ToCjson::into_cjson(value)))
-            .collect(),
-    )
+    Value::Object(it.collect())
 }
 
 // Map
@@ -331,12 +329,16 @@ impl Default for Map {
     }
 }
 
-impl<A: ToCjson> FromIterator<(Cstring, A)> for Map {
+impl<K: Into<Cstring>, A: ToCjson> FromIterator<(K, A)> for Map {
     fn from_iter<T>(iter: T) -> Self
     where
-        T: IntoIterator<Item = (Cstring, A)>,
+        T: IntoIterator<Item = (K, A)>,
     {
-        Self(iter.into_iter().map(|(k, v)| (k, v.into_cjson())).collect())
+        Self(
+            iter.into_iter()
+                .map(|(k, v)| (k.into(), v.into_cjson()))
+                .collect(),
+        )
     }
 }
 
