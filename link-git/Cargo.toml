@@ -56,7 +56,7 @@ features = ["async-client"]
 
 # compat
 [dependencies.git2]
-version = "=0.13.20"
+version = ">= 0.13.23"
 default-features = false
-features = []
+features = ["vendored-libgit2"]
 optional = true

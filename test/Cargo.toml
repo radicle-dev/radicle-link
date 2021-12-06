@@ -60,9 +60,9 @@ rev = "e72571962b51c2f0726fb534890ef3b4f7c74dfc"
 path = "../cob"
 
 [dependencies.git2]
-version = "0.13"
+version = ">= 0.13.24"
 default-features = false
-features = []
+features = ["vendored-libgit2"]
 
 [dependencies.git-trailers]
 path = "../git-trailers"

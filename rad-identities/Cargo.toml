@@ -24,14 +24,14 @@ tracing = "0.1"
 path = "../rad-clib"
 
 [dependencies.git2]
-version = "=0.13.20"
+version = ">= 0.13.23"
 default-features = false
-features = []
+features = ["vendored-libgit2"]
 
 [dependencies.libgit2-sys]
-version = "0.12"
+version = ">= 0.12.24"
 default-features = false
-features = []
+features = ["vendored"]
 
 [dependencies.librad]
 path = "../librad"
