@@ -18,9 +18,9 @@ serde_millis = "0.1"
 thiserror = "1.0"
 
 [dependencies.git2]
-version = "0.13"
+version = ">= 0.13.23"
 default-features = false
-features = []
+features = ["vendored-libgit2"]
 
 [dependencies.kv]
 version = "0.22"
