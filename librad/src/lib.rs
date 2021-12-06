@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 #![allow(private_intra_doc_links)]
+#![allow(incomplete_features)]
 #![warn(clippy::extra_unused_lifetimes)]
 #![deny(broken_intra_doc_links)]
 #![feature(associated_type_bounds)]
@@ -11,12 +12,13 @@
 #![feature(bool_to_option)]
 #![feature(box_patterns)]
 #![feature(btree_drain_filter)]
+#![feature(control_flow_enum)]
 #![feature(core_intrinsics)]
 #![feature(drain_filter)]
+#![feature(generic_associated_types)]
 #![feature(ip)]
 #![feature(never_type)]
 #![feature(try_trait_v2)]
-#![feature(control_flow_enum)]
 
 #[macro_use]
 extern crate async_trait;

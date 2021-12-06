@@ -10,11 +10,13 @@ doctest = true
 test = false
 
 [dependencies]
+async-lock = "2.4.0"
 async-stream = "0.3"
 async-trait = "0.1"
 backoff = "0.3"
 blocking = "1.0.2"
 bloom-filters = "0.1.2"
+bstr = "0.2.16"
 bytes = "0.5"
 dashmap = "4.0"
 directories = "3.0"
@@ -103,13 +105,16 @@ features = ["git2"]
 [dependencies.link-identities]
 path = "../link-identities"
 
+[dependencies.link-replication]
+path = "../link-replication"
+
 [dependencies.radicle-data]
 path = "../data"
 features = ["minicbor"]
 
 [dependencies.radicle-git-ext]
 path = "../git-ext"
-features = ["serde", "minicbor"]
+features = ["serde", "minicbor", "link-git"]
 
 [dependencies.git-trailers]
 path = "../git-trailers"
