@@ -20,18 +20,31 @@ impl<Urn> Success<Urn>
 where
     Urn: ids::Urn,
 {
+    /// All refs which have been created or updated as a result of the
+    /// replication run.
     pub fn updated_refs(&self) -> &[Updated] {
         &self.applied.updated
     }
 
+    /// Ref updates which have been rejected, eg. due to not being fast-forwards
+    /// when required.
     pub fn rejected_updates(&self) -> &[Update<'static>] {
         &self.applied.rejected
     }
 
+    /// New tracking relationships which have been established as a result of
+    /// the replication run.
+    ///
+    /// New trackings are established when new delegations or `refs/rad/ids/*`
+    /// are discovered.
     pub fn tracked(&self) -> &[(PeerId, Option<Urn>)] {
         &self.tracked
     }
 
+    /// Top-level URNs created as a result of the replication run.
+    ///
+    /// This happens due to new `refs/rad/ids/*` being discovered, which are
+    /// tracked automatically.
     pub fn urns_created(&self) -> impl Iterator<Item = Urn> + '_ {
         use refs::component::*;
 
@@ -52,10 +65,15 @@ where
             })
     }
 
+    /// Whether the identity for the replicated URN requires confirmation.
+    ///
+    /// `true` if the local peer is in the set of delegations, and another
+    /// delegate has proposed an update.
     pub fn requires_confirmation(&self) -> bool {
         self.requires_confirmation
     }
 
+    /// Any post-validation errors.
     pub fn validation_errors(&self) -> &[error::Validation] {
         &self.validation
     }
