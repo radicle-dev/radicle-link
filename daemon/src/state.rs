@@ -27,11 +27,7 @@ use librad::{
         include::{self, Include},
         local::{transport, url::LocalUrl},
         refs::Refs,
-        replication::{self, ReplicateResult},
-        storage::{
-            fetcher::{self, BuildFetcher},
-            ReadOnlyStorage as _,
-        },
+        storage::ReadOnlyStorage as _,
         tracking,
         types::{Namespace, Reference, Single},
         Urn,
@@ -44,7 +40,7 @@ use librad::{
         Project,
         SomeIdentity,
     },
-    net::peer::Peer,
+    net::{peer::Peer, replication},
     paths,
     PeerId,
     PublicKey,
@@ -170,38 +166,21 @@ where
 ///   * Could not open librad storage.
 ///   * Failed to clone the project.
 ///   * Failed to set the rad/self of this project.
-pub async fn clone_project<S, C, Addrs>(
+pub async fn clone_project<S, Addrs>(
     peer: &Peer<S>,
     urn: Urn,
     remote_peer: PeerId,
     addr_hints: Addrs,
-    config: C,
-) -> Result<ReplicateResult, Error>
+) -> Result<replication::Success, Error>
 where
     S: Clone + Signer,
-    C: Into<Option<replication::Config>> + Send,
     Addrs: IntoIterator<Item = SocketAddr> + Send + 'static,
 {
-    let config = config
-        .into()
-        .unwrap_or_else(|| peer.protocol_config().replication);
     let owner = default_owner(peer).await?.ok_or(Error::MissingOwner)?;
+    let addr_hints = addr_hints.into_iter().collect::<Vec<_>>();
     Ok(peer
-        .using_storage(move |store| {
-            // FIXME(finto): we could configure retry logic
-            let fetcher =
-                fetcher::PeerToPeer::new(urn, remote_peer, addr_hints).build_fetcher(store)?;
-            match fetcher {
-                Ok(fetcher) => {
-                    replication::replicate(store, fetcher, config, Some(owner)).map_err(Error::from)
-                },
-                Err(info) => Err(Error::FetchLocked {
-                    urn: info.urn,
-                    remote_peer: info.remote_peer,
-                }),
-            }
-        })
-        .await??)
+        .replicate((remote_peer, addr_hints), urn, Some(owner))
+        .await?)
 }
 
 /// Get the project found at `urn`.
@@ -323,37 +302,20 @@ where
 ///   * Could not successfully acquire a lock to the API.
 ///   * Could not open librad storage.
 ///   * Failed to clone the user.
-pub async fn clone_user<S, C, Addrs>(
+pub async fn clone_user<S, Addrs>(
     peer: &Peer<S>,
     urn: Urn,
     remote_peer: PeerId,
     addr_hints: Addrs,
-    config: C,
-) -> Result<ReplicateResult, Error>
+) -> Result<replication::Success, Error>
 where
     S: Clone + Signer,
-    C: Into<Option<replication::Config>> + Send,
     Addrs: IntoIterator<Item = SocketAddr> + Send + 'static,
 {
-    let config = config
-        .into()
-        .unwrap_or_else(|| peer.protocol_config().replication);
-    peer.using_storage(move |store| {
-        // FIXME(finto): we could configure retry logic
-        let fetcher =
-            fetcher::PeerToPeer::new(urn, remote_peer, addr_hints).build_fetcher(store)?;
-        match fetcher {
-            Ok(fetcher) => {
-                replication::replicate(store, fetcher, config, None).map_err(Error::from)
-            },
-            Err(info) => Err(Error::FetchLocked {
-                urn: info.urn,
-                remote_peer: info.remote_peer,
-            }),
-        }
-    })
-    .await?
-    .map_err(Error::from)
+    let addr_hints = addr_hints.into_iter().collect::<Vec<_>>();
+    peer.replicate((remote_peer, addr_hints), urn, None)
+        .await
+        .map_err(Error::from)
 }
 
 /// Get the user found at `urn`.
@@ -396,38 +358,20 @@ where
 ///   * Could not open librad storage.
 ///   * Failed to fetch the updates.
 ///   * Failed to set the rad/self of this project.
-pub async fn fetch<S, C, Addrs>(
+pub async fn fetch<S, Addrs>(
     peer: &Peer<S>,
     urn: Urn,
     remote_peer: PeerId,
     addr_hints: Addrs,
-    config: C,
-) -> Result<ReplicateResult, Error>
+) -> Result<replication::Success, Error>
 where
     S: Clone + Signer,
-    C: Into<Option<replication::Config>> + Send,
     Addrs: IntoIterator<Item = SocketAddr> + Send + 'static,
 {
-    let config = config
-        .into()
-        .unwrap_or_else(|| peer.protocol_config().replication);
-
-    Ok(peer
-        .using_storage(move |store| -> Result<_, Error> {
-            // FIXME(finto): we could configure retry logic
-            let fetcher =
-                fetcher::PeerToPeer::new(urn, remote_peer, addr_hints).build_fetcher(store)?;
-            match fetcher {
-                Ok(fetcher) => {
-                    replication::replicate(store, fetcher, config, None).map_err(Error::from)
-                },
-                Err(info) => Err(Error::FetchLocked {
-                    urn: info.urn,
-                    remote_peer: info.remote_peer,
-                }),
-            }
-        })
-        .await??)
+    let addr_hints = addr_hints.into_iter().collect::<Vec<_>>();
+    peer.replicate((remote_peer, addr_hints), urn, None)
+        .await
+        .map_err(Error::from)
 }
 
 /// Initialize a [`Project`] that is owned by the `owner`.

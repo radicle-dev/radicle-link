@@ -9,7 +9,7 @@ use futures::{pin_mut, StreamExt as _};
 use tracing::{error, info, instrument};
 
 use librad::{
-    git::{replication, storage::fetcher, tracking, Urn},
+    git::{tracking, Urn},
     net::{
         peer::{event::upstream::Gossip, Peer, PeerInfo, ProtocolEvent},
         protocol::{broadcast::PutResult::Uninteresting, gossip::Payload},
@@ -44,7 +44,6 @@ pub async fn routine<S>(peer: Peer<S>, tracker: Tracker) -> anyhow::Result<()>
 where
     S: Signer + Clone,
 {
-    let replication_cfg = peer.protocol_config().replication;
     let events = peer.subscribe();
     pin_mut!(events);
 
@@ -69,25 +68,25 @@ where
                 continue;
             }
 
-            let res = {
-                let urn = urn.clone();
-                peer.using_storage(move |storage| {
-                    let updated = tracking::track(storage, &urn, peer_id)?;
+            let go = async {
+                let updated = peer
+                    .using_storage({
+                        let urn = urn.clone();
+                        move |storage| tracking::track(storage, &urn, peer_id)
+                    })
+                    .await??;
 
-                    // Skip explicit replication if the peer is already tracked.
-                    if updated {
-                        let addr_hints = seen_addrs.iter().copied().collect::<Vec<_>>();
-                        let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
-                            .build(storage)??;
-                        replication::replicate(storage, fetcher, replication_cfg, None)?;
-                    }
+                // Skip explicit replication if the peer is already tracked.
+                if updated {
+                    let addr_hints = seen_addrs.iter().copied().collect::<Vec<_>>();
+                    peer.replicate((peer_id, addr_hints), urn.clone(), None)
+                        .await?;
+                }
 
-                    Ok::<_, anyhow::Error>(updated)
-                })
-                .await?
+                Ok::<_, anyhow::Error>(updated)
             };
 
-            match res {
+            match go.await {
                 Ok(true) => info!("tracked project {} from {}", urn, peer_id),
                 Ok(false) => info!("already tracked {} from {}", urn, peer_id),
                 Err(err) => error!(?err, "tracking failed for {} from {}", urn, peer_id),

@@ -36,8 +36,8 @@ fn list_identities_returns_only_local_projects() {
             .unwrap()
             .unwrap();
 
-        proj.pull(peer1, peer2).await.ok().unwrap();
-        proj.pull(peer2, peer3).await.ok().unwrap();
+        proj.pull(peer1, peer2).await.unwrap();
+        proj.pull(peer2, peer3).await.unwrap();
 
         let all_identities = peer3
             .using_storage(move |storage| -> Result<Vec<SomeIdentity>, anyhow::Error> {

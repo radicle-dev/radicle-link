@@ -48,7 +48,7 @@ fn can_replicate_with_updated_delegate() {
                 head = %person.owner.content_id,
                 "created test person"
             );
-            person.pull(peer1, peer2).await.ok().unwrap();
+            person.pull(peer1, peer2).await.unwrap();
             person
         };
 

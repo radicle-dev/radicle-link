@@ -3,11 +3,12 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::hash_map::RandomState, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::hash_map::RandomState, net::SocketAddr, sync::Arc};
 
 use bloom_filters::{DefaultBuildHashKernels, StableBloomFilter};
 use crypto::peer::Originates;
 use either::Either::{self, Left, Right};
+use futures::TryFutureExt as _;
 use git_ext::{self as ext, reference};
 use link_async::Spawner;
 use nonzero_ext::nonzero;
@@ -15,13 +16,15 @@ use parking_lot::RwLock;
 
 use crate::{
     git::{
-        replication,
-        storage::{self, fetcher, Pool, PoolError, PooledRef, ReadOnlyStorage as _},
+        storage::{self, Pool, PoolError, PooledRef, ReadOnlyStorage as _},
         tracking,
         Urn,
     },
     identities::urn,
-    net::protocol::{broadcast, cache, gossip},
+    net::{
+        protocol::{broadcast, cache, gossip, TinCans},
+        replication::{self, Replication},
+    },
     rate_limit::{Keyed, RateLimiter},
     PeerId,
 };
@@ -31,8 +34,6 @@ pub use error::Error;
 
 #[derive(Clone, Copy)]
 pub struct Config {
-    pub replication: replication::Config,
-    pub fetch_slot_wait_timeout: Duration,
     pub fetch_quota: governor::Quota,
 }
 
@@ -40,24 +41,28 @@ type SeenFilter = StableBloomFilter<DefaultBuildHashKernels<RandomState>>;
 
 #[derive(Clone)]
 pub struct Storage {
+    conf: Config,
     pool: Pool<storage::Storage>,
-    config: Config,
     urns: cache::urns::Filter,
     seen: Arc<RwLock<SeenFilter>>,
-    limits: Arc<RateLimiter<Keyed<(PeerId, Urn)>>>,
-    spawner: Arc<Spawner>,
+    rate: Arc<RateLimiter<Keyed<(PeerId, Urn)>>>,
+    exec: Arc<Spawner>,
+    repl: Replication,
+    tins: TinCans,
 }
 
 impl Storage {
     pub fn new(
-        spawner: Arc<Spawner>,
+        conf: Config,
+        exec: Arc<Spawner>,
         pool: Pool<storage::Storage>,
-        config: Config,
         urns: cache::urns::Filter,
+        repl: Replication,
+        tins: TinCans,
     ) -> Self {
         Self {
+            conf,
             pool,
-            config,
             urns,
             // TODO: parameters pulled out of thin air
             seen: Arc::new(RwLock::new(StableBloomFilter::new(
@@ -66,11 +71,13 @@ impl Storage {
                 0.001,
                 DefaultBuildHashKernels::new(rand::random(), RandomState::new()),
             ))),
-            limits: Arc::new(RateLimiter::keyed(
-                config.fetch_quota,
+            rate: Arc::new(RateLimiter::keyed(
+                conf.fetch_quota,
                 nonzero!(256 * 1024usize),
             )),
-            spawner,
+            exec,
+            repl,
+            tins,
         }
     }
 
@@ -91,7 +98,7 @@ impl Storage {
     }
 
     fn is_rate_limited(&self, remote_peer: PeerId, urn: Urn) -> bool {
-        self.limits.check_key(&(remote_peer, urn)).is_err()
+        self.rate.check_key(&(remote_peer, urn)).is_err()
     }
 
     async fn git_fetch(
@@ -99,34 +106,43 @@ impl Storage {
         from: impl Into<(PeerId, Vec<SocketAddr>)>,
         urn: Either<Urn, Originates<Urn>>,
         head: impl Into<Option<git2::Oid>>,
-    ) -> Result<replication::ReplicateResult, Error> {
+    ) -> Result<replication::Success, Error> {
         if let Some(head) = head.into() {
             if self.git_has(urn.clone(), Some(head)).await {
                 return Err(Error::KnownObject(head));
             }
         }
 
-        let urn = {
-            let git = self.pool.get().await?;
-            urn_context(*git.peer_id(), urn)
-        };
-        let (remote_peer, addr_hints) = from.into();
+        let git = self.pool.get().await?;
+        let urn = urn_context(*git.peer_id(), urn);
+        let from = from.into();
+        let remote_peer = from.0;
         if self.is_rate_limited(remote_peer, urn.clone().with_path(None)) {
             return Err(Error::RateLimited { remote_peer, urn });
         }
 
-        let config = self.config;
-        fetcher::retrying(
-            &self.spawner,
-            &self.pool,
-            fetcher::PeerToPeer::new(urn.clone(), remote_peer, addr_hints),
-            config.fetch_slot_wait_timeout,
-            move |storage, fetcher| {
-                replication::replicate(storage, fetcher, config.replication, None)
-                    .map_err(Error::from)
-            },
-        )
-        .await?
+        #[cfg(feature = "replication-v3")]
+        {
+            use crate::net::protocol::Connected;
+
+            match self.tins.connect(from).await {
+                None => Err(Error::NoConnection { remote_peer }),
+                Some(Connected(conn)) => {
+                    self.repl
+                        .replicate(&self.exec, git, conn, urn, None)
+                        .err_into::<Error>()
+                        .await
+                },
+            }
+        }
+        #[cfg(not(feature = "replication-v3"))]
+        {
+            drop(git);
+            self.repl
+                .replicate(&self.exec, &self.pool, from, urn, None)
+                .err_into::<Error>()
+                .await
+        }
     }
 
     /// Determine if we have the given object locally
@@ -135,20 +151,19 @@ impl Storage {
         urn: Either<Urn, Originates<Urn>>,
         head: impl Into<Option<git2::Oid>>,
     ) -> bool {
-        let git = self.pool.get().await.unwrap();
+        let git = self
+            .pool
+            .get()
+            .await
+            .expect("unable to acquire storage from pool");
         let urn = urn_context(*git.peer_id(), urn);
 
         if !self.urns.contains(&urn.clone().with_path(None).into()) {
             return false;
         }
 
-        let git = self
-            .pool
-            .get()
-            .await
-            .expect("unable to acquire storage from pool");
         let head = head.into().map(ext::Oid::from);
-        self.spawner
+        self.exec
             .blocking(move || match head {
                 None => git.as_ref().has_urn(&urn).unwrap_or(false),
                 Some(head) => {
@@ -162,7 +177,7 @@ impl Storage {
     async fn is_tracked(&self, urn: Urn, peer: PeerId) -> Result<bool, Error> {
         let git = self.pool.get().await?;
         Ok(self
-            .spawner
+            .exec
             .blocking(move || tracking::is_tracked(&git, &urn, peer))
             .await?)
     }

@@ -152,7 +152,7 @@ fn collab_object_crud() {
             .unwrap()
             .unwrap();
 
-        proj.pull(peer1, peer2).await.ok().unwrap();
+        proj.pull(peer1, peer2).await.unwrap();
 
         peer2
             .using_storage({

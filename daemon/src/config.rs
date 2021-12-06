@@ -14,7 +14,7 @@ use async_stream::stream;
 use futures::stream::BoxStream;
 use tokio::sync::watch;
 
-use librad::{crypto::BoxedSigner, git::replication, net, net::discovery, paths, PeerId, Signer};
+use librad::{crypto::BoxedSigner, net, net::discovery, paths, PeerId, Signer};
 
 use crate::seed;
 
@@ -63,8 +63,7 @@ where
             advertised_addrs: None,
             membership: net::protocol::membership::Params::default(),
             network: net::Network::default(),
-            replication: replication::Config::default(),
-            fetch: net::protocol::config::Fetch::default(),
+            replication: net::replication::Config::default(),
             rate_limits: net::protocol::Quota::default(),
         },
         storage: net::peer::config::Storage::default(),

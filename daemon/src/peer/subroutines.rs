@@ -396,7 +396,7 @@ async fn clone<S>(
         .await
         .ok();
 
-    match state::clone_project(&peer, urn.clone(), remote_peer, None, None).await {
+    match state::clone_project(&peer, urn.clone(), remote_peer, None).await {
         Ok(_urn) => {
             sender
                 .send(Input::Request(input::Request::Cloned(

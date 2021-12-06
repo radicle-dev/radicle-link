@@ -8,14 +8,13 @@ use std::{net::SocketAddr, ops::Deref};
 use librad::{
     git::{
         identities::{self, Person, Project},
-        replication::{self, ReplicateResult},
-        storage::{fetcher, Storage},
+        storage::Storage,
     },
     identities::{
         delegation::{self, Direct},
         payload,
     },
-    net::{connection::LocalInfo, peer::Peer},
+    net::{connection::LocalInfo, peer::Peer, replication},
     Signer,
 };
 use tracing::{info, instrument};
@@ -51,7 +50,7 @@ impl TestPerson {
     /// Pull (fetch or clone) the project from known running peer `A` to peer
     /// `B`.
     #[instrument(name = "test_person", skip(self, from, to), err)]
-    pub async fn pull<A, B, S>(&self, from: &A, to: &B) -> anyhow::Result<ReplicateResult>
+    pub async fn pull<A, B, S>(&self, from: &A, to: &B) -> anyhow::Result<replication::Success>
     where
         A: Deref<Target = Peer<S>> + LocalInfo<Addr = SocketAddr>,
         B: Deref<Target = Peer<S>>,
@@ -64,17 +63,7 @@ impl TestPerson {
 
         info!("pull from {} to {}", remote_peer, to.peer_id());
 
-        let cfg = to.protocol_config().replication;
-        let res = to
-            .using_storage(move |storage| {
-                let fetcher = fetcher::PeerToPeer::new(urn, remote_peer, remote_addrs)
-                    .build(storage)
-                    .unwrap()
-                    .unwrap();
-                replication::replicate(storage, fetcher, cfg, None)
-            })
-            .await??;
-        Ok(res)
+        Ok(to.replicate((remote_peer, remote_addrs), urn, None).await?)
     }
 }
 
@@ -147,7 +136,7 @@ impl TestProject {
     /// Pull (fetch or clone) the project from known running peer `A` to peer
     /// `B`.
     #[instrument(name = "test_project", skip(self, from, to))]
-    pub async fn pull<A, B, S>(&self, from: &A, to: &B) -> anyhow::Result<ReplicateResult>
+    pub async fn pull<A, B, S>(&self, from: &A, to: &B) -> anyhow::Result<replication::Success>
     where
         A: Deref<Target = Peer<S>> + LocalInfo<Addr = SocketAddr>,
         B: Deref<Target = Peer<S>>,
@@ -160,16 +149,7 @@ impl TestProject {
 
         info!("pull from {} to {}", remote_peer, to.peer_id());
 
-        let cfg = to.protocol_config().replication;
-        let res = to
-            .using_storage(move |storage| -> anyhow::Result<ReplicateResult> {
-                let fetcher = fetcher::PeerToPeer::new(urn, remote_peer, remote_addrs)
-                    .build(storage)
-                    .expect("creating a git2 remote should not normally fail")?;
-                Ok(replication::replicate(storage, fetcher, cfg, None)?)
-            })
-            .await??;
-        Ok(res)
+        Ok(to.replicate((remote_peer, remote_addrs), urn, None).await?)
     }
 }
 

@@ -130,11 +130,10 @@ where
             },
 
             Ok(evt) => match evt {
-                Downstream::Gossip(gossip) => control::gossip(&state, gossip, None).await,
-                Downstream::Info(info) => control::info(&state, info),
-                Downstream::Interrogation(inter) => {
-                    control::interrogation(state.clone(), inter).await
-                },
+                Downstream::Gossip(x) => control::gossip(&state, x, None).await,
+                Downstream::Info(x) => control::info(&state, x),
+                Downstream::Interrogation(x) => control::interrogation(state.clone(), x).await,
+                Downstream::Connect(x) => control::connect(&state, x).await,
             },
         }
     }

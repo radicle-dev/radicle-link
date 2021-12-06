@@ -8,19 +8,23 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use futures::{future, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use link_async::Spawner;
 
-use super::protocol::{self, gossip};
 use crate::{
-    git::{self, storage::Fetchers, Urn},
+    git::{self, identities::local::LocalIdentity, Urn},
+    net::{
+        protocol::{self, gossip},
+        replication::{self, Replication},
+    },
     PeerId,
     Signer,
 };
 
-pub use super::protocol::{
+pub use crate::net::protocol::{
     event::{
         self,
         downstream::{MembershipInfo, Stats},
         Upstream as ProtocolEvent,
     },
+    Connected,
     Interrogation,
     PeerInfo,
 };
@@ -37,8 +41,6 @@ pub struct Config<Signer> {
 }
 
 pub mod config {
-    use super::*;
-
     #[derive(Clone, Copy, Default)]
     pub struct Storage {
         pub user: UserStorage,
@@ -47,10 +49,10 @@ pub mod config {
 
     /// Settings for the user-facing storage.
     ///
-    /// Cf. [`Peer::using_storage`]
+    /// Cf. [`super::Peer::using_storage`]
     #[derive(Clone, Copy)]
     pub struct UserStorage {
-        /// Number of [`git::storage::Storage`] instances to reserve.
+        /// Number of [`crate::git::storage::Storage`] instances to reserve.
         pub pool_size: usize,
     }
 
@@ -64,22 +66,17 @@ pub mod config {
 
     /// Settings for the protocol storage.
     ///
-    /// Cf. [`PeerStorage`]
+    /// Cf. [`super::PeerStorage`]
     #[derive(Clone, Copy)]
     pub struct ProtocolStorage {
-        /// Number of [`git::storage::Storage`] instances to reserve.
+        /// Number of [`crate::git::storage::Storage`] instances to reserve.
         pub pool_size: usize,
-        /// Maximum amount of time to wait until a fetch slot becomes available.
-        ///
-        /// Applies to fetches initiated by incoming gossip messages.
-        pub fetch_slot_wait_timeout: Duration,
     }
 
     impl Default for ProtocolStorage {
         fn default() -> Self {
             Self {
                 pool_size: num_cpus::get_physical(),
-                fetch_slot_wait_timeout: Duration::from_secs(20),
             }
         }
     }
@@ -93,6 +90,7 @@ pub struct Peer<S> {
     user_store: git::storage::Pool<git::storage::Storage>,
     caches: protocol::Caches,
     spawner: Arc<Spawner>,
+    repl: Replication,
 }
 
 impl<S> Peer<S>
@@ -105,13 +103,11 @@ where
             .ok_or(error::Init::Runtime)?;
         let phone = protocol::TinCans::default();
         let storage_lock = git::storage::pool::Initialised::no();
-        let fetchers = Fetchers::default();
         let pool = git::storage::Pool::new(
-            git::storage::pool::Config::with_fetchers(
+            git::storage::pool::ReadWriteConfig::new(
                 config.protocol.paths.clone(),
                 config.signer.clone(),
                 storage_lock.clone(),
-                fetchers.clone(),
             ),
             config.storage.protocol.pool_size,
         );
@@ -121,22 +117,27 @@ where
             let urns = protocol::cache::urns::Filter::new(store, move |ev| phone.emit(ev))?;
             protocol::Caches { urns }
         };
+
+        #[cfg(feature = "replication-v3")]
+        let repl = Replication::new(&config.protocol.paths, config.protocol.replication)?;
+        #[cfg(not(feature = "replication-v3"))]
+        let repl = Replication::new(config.protocol.replication);
+
         let peer_store = PeerStorage::new(
-            spawner.clone(),
-            pool,
             storage::Config {
-                replication: config.protocol.replication,
-                fetch_slot_wait_timeout: config.storage.protocol.fetch_slot_wait_timeout,
                 fetch_quota: config.protocol.rate_limits.gossip.fetches_per_peer_and_urn,
             },
+            spawner.clone(),
+            pool,
             caches.urns.clone(),
+            repl.clone(),
+            phone.clone(),
         );
         let user_store = git::storage::Pool::new(
-            git::storage::pool::Config::with_fetchers(
+            git::storage::pool::ReadWriteConfig::new(
                 config.protocol.paths.clone(),
                 config.signer.clone(),
                 storage_lock,
-                fetchers,
             ),
             config.storage.user.pool_size,
         );
@@ -148,6 +149,7 @@ where
             user_store,
             caches,
             spawner,
+            repl,
         })
     }
 
@@ -234,6 +236,57 @@ where
         self.phone.interrogate(peer)
     }
 
+    /// Initiate replication of `urn` from the given peer.
+    ///
+    /// If a connection to `from` does not already exist, the supplied addresses
+    /// are used to establish a new one. It is legal to supply empty address
+    /// hints so that only existing connections are used.
+    ///
+    /// `urn` may or may not already exist locally.
+    ///
+    /// The optional `whoami` parameter is used to advertise the identity the
+    /// caller whishes to identify as, ie. the `rad/self` branch.
+    ///
+    /// Note that this method is subject to the experimental `replication-v3`
+    /// feature. Do not enable `replication-v3` unless you know what you're
+    /// doing.
+    pub async fn replicate(
+        &self,
+        from: impl Into<(PeerId, Vec<SocketAddr>)>,
+        urn: Urn,
+        whoami: Option<LocalIdentity>,
+    ) -> Result<replication::Success, error::Replicate> {
+        #[cfg(feature = "replication-v3")]
+        {
+            // TODO: errors
+            let from = from.into();
+            let remote_peer = from.0;
+            let Connected(conn) = self
+                .connect(from)
+                .await
+                .ok_or(error::Replicate::NoConnection(remote_peer))?;
+            let store = self.user_store.get().await?;
+            self.repl
+                .replicate(&self.spawner, store, conn, urn, whoami)
+                .err_into()
+                .await
+        }
+        #[cfg(not(feature = "replication-v3"))]
+        {
+            self.repl
+                .replicate(&self.spawner, &self.user_store, from, urn, whoami)
+                .err_into()
+                .await
+        }
+    }
+
+    // TODO: Augment `Connected` such that we can provide an alternative API,
+    // a la `peer.connect((peer_id, addrs)).await.unwrap().replicate()`
+    #[allow(unused)] // unused without replication-v3
+    async fn connect(&self, to: impl Into<(PeerId, Vec<SocketAddr>)>) -> Option<Connected> {
+        self.phone.connect(to).await
+    }
+
     pub fn subscribe(
         &self,
     ) -> impl futures::Stream<Item = Result<ProtocolEvent, protocol::RecvError>> {
@@ -293,6 +346,7 @@ where
             self.phone.clone(),
             self.config.protocol.clone(),
             self.config.signer.clone(),
+            self.repl.clone(),
             self.peer_store.clone(),
             self.caches.clone(),
         )

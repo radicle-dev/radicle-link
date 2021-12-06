@@ -23,8 +23,6 @@ use futures::{
 };
 use thiserror::Error;
 
-use crate::git::p2p::transport::GitStream;
-
 /// Timeout waiting for an [`UpgradeRequest`].
 // NOTE: This is a magic constant, which should account for very slow
 // links. May need to become a protocol config parameter if we see very busy
@@ -225,7 +223,11 @@ where
     }
 }
 
-impl<S> GitStream for Upgraded<Git, S> where S: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
+#[cfg(not(feature = "replication-v3"))]
+impl<S> crate::git::p2p::transport::GitStream for Upgraded<Git, S> where
+    S: AsyncRead + AsyncWrite + Unpin + Send + Sync
+{
+}
 
 #[derive(Debug)]
 pub enum SomeUpgraded<S> {

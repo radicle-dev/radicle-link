@@ -73,7 +73,7 @@ impl ExpectedReferences {
 }
 
 #[test]
-#[ignore]
+#[cfg_attr(not(feature = "replication-v3"), ignore)]
 fn a_trois() {
     logging::init();
 
@@ -150,8 +150,8 @@ fn a_trois() {
                 .join(&default_branch),
         );
 
-        proj.pull(peer1, peer2).await.ok().unwrap();
-        proj.pull(peer2, peer3).await.ok().unwrap();
+        proj.pull(peer1, peer2).await.unwrap();
+        proj.pull(peer2, peer3).await.unwrap();
 
         let peer2_expected = peer2
             .using_storage({
@@ -219,7 +219,7 @@ fn a_trois() {
 /// When `peer3` replicates from `peer1` they should have references for `peer1`
 /// and `peer2`, due to the tracking graph.
 #[test]
-#[ignore]
+#[cfg_attr(not(feature = "replication-v3"), ignore)]
 fn threes_a_crowd() {
     logging::init();
 

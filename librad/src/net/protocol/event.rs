@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, net::SocketAddr};
 
-use super::{broadcast, cache, error, gossip, interrogation, membership};
+use super::{broadcast, cache, error, gossip, interrogation, membership, quic};
 use crate::PeerId;
 
 #[derive(Clone)]
@@ -13,6 +13,7 @@ pub enum Downstream {
     Gossip(downstream::Gossip),
     Info(downstream::Info),
     Interrogation(downstream::Interrogation),
+    Connect(downstream::Connect),
 }
 
 pub mod downstream {
@@ -73,6 +74,12 @@ pub mod downstream {
         pub request: interrogation::Request,
         pub reply:
             Reply<Result<interrogation::Response<'static, SocketAddr>, error::Interrogation>>,
+    }
+
+    #[derive(Clone)]
+    pub struct Connect {
+        pub peer: (PeerId, Vec<SocketAddr>),
+        pub reply: Reply<Option<quic::Connection>>,
     }
 }
 

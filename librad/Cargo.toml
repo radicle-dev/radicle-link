@@ -9,6 +9,10 @@ license = "GPL-3.0-or-later"
 doctest = true
 test = false
 
+[features]
+default = []
+replication-v3 = []
+
 [dependencies]
 async-lock = "2.4.0"
 async-stream = "0.3"

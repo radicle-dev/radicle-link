@@ -118,6 +118,9 @@ pub mod error {
 
 type Network = io::Network<Urn, io::Refdb<io::Odb>, io::Odb, quic::Connection>;
 
+/// Context for a replication v3 run.
+///
+/// Implements the (effect) traits required by the `link-replication` crate.
 pub struct Context<'a> {
     pub(super) urn: Urn,
     pub(super) store: &'a Storage,

@@ -82,7 +82,7 @@ fn can_fetch() {
             .await
             .unwrap()
             .unwrap();
-        proj.pull(peer1, peer2).await.ok().unwrap();
+        proj.pull(peer1, peer2).await.unwrap();
 
         let tracked_persons = {
             let urn = proj.project.urn();
