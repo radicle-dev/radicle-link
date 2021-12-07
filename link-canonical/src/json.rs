@@ -4,9 +4,10 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    collections::{btree_map, btree_set, BTreeMap, BTreeSet},
+    collections::{btree_map, BTreeMap, BTreeSet},
     convert::Infallible,
     iter::FromIterator,
+    slice,
     str::FromStr,
 };
 
@@ -35,6 +36,15 @@ impl Value {
             Value::Bool(_) => "bool",
             Value::Null => "null",
         }
+    }
+}
+
+impl<K: Into<Cstring>, A: ToCjson> FromIterator<(K, A)> for Value {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (K, A)>,
+    {
+        Self::Object(Map::from_iter(iter))
     }
 }
 
@@ -97,7 +107,7 @@ impl ToCjson for Value {
 
 // Object
 
-impl<T: ToCjson> ToCjson for BTreeMap<Cstring, T> {
+impl<K: Into<Cstring>, T: ToCjson> ToCjson for BTreeMap<K, T> {
     fn into_cjson(self) -> Value {
         into_object(self.into_iter())
     }
@@ -216,15 +226,13 @@ where
     Value::Array(it.map(ToCjson::into_cjson).collect())
 }
 
-fn into_object<I, T>(it: I) -> Value
+fn into_object<I, K, T>(it: I) -> Value
 where
-    I: Iterator<Item = (Cstring, T)>,
+    I: Iterator<Item = (K, T)>,
+    K: Into<Cstring>,
     T: ToCjson,
 {
-    Value::Object(
-        it.map(|(key, value)| (key, ToCjson::into_cjson(value)))
-            .collect(),
-    )
+    Value::Object(it.collect())
 }
 
 // Map
@@ -309,18 +317,28 @@ impl<'a> Iterator for MapIter<'a> {
     }
 }
 
+impl<'a> ExactSizeIterator for MapIter<'a> {
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+}
+
 impl Default for Map {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<A: ToCjson> FromIterator<(Cstring, A)> for Map {
+impl<K: Into<Cstring>, A: ToCjson> FromIterator<(K, A)> for Map {
     fn from_iter<T>(iter: T) -> Self
     where
-        T: IntoIterator<Item = (Cstring, A)>,
+        T: IntoIterator<Item = (K, A)>,
     {
-        Self(iter.into_iter().map(|(k, v)| (k, v.into_cjson())).collect())
+        Self(
+            iter.into_iter()
+                .map(|(k, v)| (k.into(), v.into_cjson()))
+                .collect(),
+        )
     }
 }
 
@@ -333,15 +351,15 @@ impl ToCjson for Map {
 // Array
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Array(BTreeSet<Value>);
+pub struct Array(Vec<Value>);
 
 impl Array {
     pub fn new() -> Self {
-        Self(BTreeSet::new())
+        Self(Vec::new())
     }
 
-    pub fn insert(&mut self, val: Value) -> bool {
-        self.0.insert(val)
+    pub fn insert(&mut self, val: Value) {
+        self.0.push(val)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -360,7 +378,7 @@ impl Array {
 }
 
 pub struct ArrayIter<'a> {
-    iter: btree_set::Iter<'a, Value>,
+    iter: slice::Iter<'a, Value>,
 }
 
 impl<'a> Iterator for ArrayIter<'a> {
@@ -368,6 +386,12 @@ impl<'a> Iterator for ArrayIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
+    }
+}
+
+impl<'a> ExactSizeIterator for ArrayIter<'a> {
+    fn len(&self) -> usize {
+        self.iter.len()
     }
 }
 
