@@ -42,7 +42,14 @@ fn replication_does_not_exceed_limit() {
                 move |storage| {
                     let proj = TestProject::create(storage)?;
                     for remote in remotes.into_iter() {
-                        tracking::track(storage, &proj.project.urn(), remote)?;
+                        assert!(tracking::track(
+                            storage,
+                            &proj.project.urn(),
+                            Some(remote),
+                            tracking::Config::default(),
+                            tracking::policy::Track::Any,
+                        )?
+                        .is_ok());
                     }
                     Ok::<_, anyhow::Error>(proj)
                 }

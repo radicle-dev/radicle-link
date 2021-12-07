@@ -99,6 +99,14 @@ pub mod error {
         #[error(transparent)]
         Quic(#[from] quic::Error),
     }
+
+    #[derive(Debug, Error)]
+    pub enum Tracking {
+        #[error(transparent)]
+        Track(#[from] tracking::error::Track),
+        #[error(transparent)]
+        Tracked(#[from] tracking::error::TrackedPeers),
+    }
 }
 
 type Network = io::Network<Urn, io::Refdb<io::Odb>, io::Odb, quic::Connection>;
@@ -385,45 +393,34 @@ impl SignedRefs for Context<'_> {
     }
 }
 
-impl Tracking for Context<'_> {
+impl<'a> Tracking for Context<'a> {
     type Urn = Urn;
-    type Tracked = Tracked;
-    type Error = tracking::Error;
+    type Tracked = tracking::TrackedPeers<
+        'a,
+        <Storage as tracking::git::refdb::Read<'a>>::References,
+        <Storage as tracking::git::refdb::Read<'a>>::IterError,
+    >;
+    type TrackedError = tracking::error::TrackedPeers;
+    type TrackError = tracking::error::Track;
 
-    fn track(&mut self, id: &PeerId, urn: Option<&Self::Urn>) -> Result<bool, Self::Error> {
-        // TODO: should track without data, as per rfc0699
-        tracking::track(self.store, urn.unwrap_or(&self.urn), *id)
-    }
-
-    fn tracked(&self) -> Self::Tracked {
-        let inner = Some(tracking::tracked(self.store, &self.urn));
-        Tracked { inner }
-    }
-}
-
-pub struct Tracked {
-    inner: Option<Result<tracking::Tracked, tracking::Error>>,
-}
-
-impl Iterator for Tracked {
-    type Item = Result<PeerId, tracking::Error>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.inner.take() {
-            Some(res) => match res {
-                // we got an iterator: advance it and put it back into inner
-                Ok(mut iter) => {
-                    let next = iter.next();
-                    self.inner = Some(Ok(iter));
-                    next.map(Ok)
-                },
-                // error setting up the iterator: yield the error once and
-                // leave `None` in inner
-                Err(e) => Some(Err(e)),
+    fn track(&mut self, id: &PeerId, urn: Option<&Self::Urn>) -> Result<bool, Self::TrackError> {
+        // If tracking entry existed already then the MustNotExist check will error, in
+        // this case it's safe to use `is_ok`
+        tracking::track(
+            self.store,
+            urn.unwrap_or(&self.urn),
+            Some(*id),
+            tracking::Config {
+                data: false,
+                ..tracking::Config::default()
             },
-            // the iterator setup error was aleady yielded
-            None => None,
-        }
+            tracking::policy::Track::MustNotExist,
+        )
+        .map(|r| r.is_ok())
+    }
+
+    fn tracked(&self) -> Result<Self::Tracked, Self::TrackedError> {
+        tracking::tracked_peers(self.store, Some(&self.urn))
     }
 }
 

@@ -20,17 +20,28 @@ pub enum Error {
     Include(#[from] include::Error),
 
     #[error(transparent)]
-    Tracking(#[from] tracking::Error),
+    Track(#[from] tracking::error::Track),
+
+    #[error(transparent)]
+    Untrack(#[from] tracking::error::Untrack),
 }
 
+// TODO(finto): allow specification of Config
+// TODO(finto): perhaps we want a flag to force track?
 pub fn track(storage: &Storage, paths: &Paths, urn: &Urn, peer: PeerId) -> Result<(), Error> {
-    let _tracked = tracking::track(storage, urn, peer)?;
+    let _tracked = tracking::track(
+        storage,
+        urn,
+        Some(peer),
+        tracking::Config::default(),
+        tracking::policy::Track::Any,
+    )?;
     include::update(storage, paths, urn)?;
     Ok(())
 }
 
 pub fn untrack(storage: &Storage, paths: &Paths, urn: &Urn, peer: PeerId) -> Result<(), Error> {
-    let _untracked = tracking::untrack(storage, urn, peer)?;
+    let _untracked = tracking::untrack(storage, urn, peer, tracking::policy::Untrack::Any)?;
     include::update(storage, paths, urn)?;
     Ok(())
 }

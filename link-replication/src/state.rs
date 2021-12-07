@@ -280,14 +280,15 @@ where
     type Urn = U;
 
     type Tracked = T::Tracked;
-    type Error = T::Error;
+    type TrackError = T::TrackError;
+    type TrackedError = T::TrackedError;
 
-    fn track(&mut self, id: &PeerId, urn: Option<&Self::Urn>) -> Result<bool, Self::Error> {
+    fn track(&mut self, id: &PeerId, urn: Option<&Self::Urn>) -> Result<bool, Self::TrackError> {
         self.fetch.track(*id, urn.cloned());
         Ok(true)
     }
 
-    fn tracked(&self) -> Self::Tracked {
+    fn tracked(&self) -> Result<Self::Tracked, Self::TrackedError> {
         self.inner.tracked()
     }
 }

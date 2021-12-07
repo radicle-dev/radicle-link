@@ -72,7 +72,15 @@ fn can_see_tracked_references() {
                         .expect("local ID should have been created by TestProject::create")
                         .unwrap();
                     id.link(storage, &urn).unwrap();
-                    tracking::track(storage, &urn, peer2_id).unwrap();
+                    assert!(tracking::track(
+                        storage,
+                        &urn,
+                        Some(peer2_id),
+                        tracking::Config::default(),
+                        tracking::policy::Track::Any,
+                    )
+                    .unwrap()
+                    .is_ok());
                 }
             })
             .await

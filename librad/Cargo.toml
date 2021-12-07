@@ -111,6 +111,9 @@ path = "../link-identities"
 [dependencies.link-replication]
 path = "../link-replication"
 
+[dependencies.link-tracking]
+path = "../link-tracking"
+
 [dependencies.radicle-data]
 path = "../data"
 features = ["minicbor"]

@@ -152,7 +152,7 @@ impl Storage {
         let git = self.pool.get().await?;
         Ok(self
             .exec
-            .blocking(move || tracking::is_tracked(&git, &urn, peer))
+            .blocking(move || tracking::is_tracked(git.as_ref(), &urn, Some(peer)))
             .await?)
     }
 }
