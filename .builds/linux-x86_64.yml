@@ -9,7 +9,20 @@ tasks:
       toolchain=$(cat radicle-link/rust-toolchain)
       rustup toolchain install "$toolchain" \
           --profile minimal --component clippy --component rustfmt
-      cargo install cargo-deny
+
+      deny_version="0.11.0"
+      deny_sha256="bdac664b436fd8501b3bea5461bbf8566086ab0cf5555d83178c3209a848f9f8"
+      curl -sSfL -o cargo-deny.tar.gz \
+        "https://github.com/EmbarkStudios/cargo-deny/releases/download/${deny_version}/cargo-deny-${deny_version}-x86_64-unknown-linux-musl.tar.gz"
+      deny_sha256_actual=$(sha256sum cargo-deny.tar.gz|cut -d ' ' -f1)
+      if [ "$deny_sha256_actual" != "$deny_sha256" ]; then
+          echo "sha256 mismatch:"
+          echo "expected: $deny_sha256"
+          echo "actual: $deny_sha256_actual"
+          exit 1
+      fi
+      sudo tar -xvC /usr/bin --strip-components=1 -f cargo-deny.tar.gz
+
       cd radicle-link/
       cargo fetch
   - lint: |
