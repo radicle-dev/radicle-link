@@ -2,7 +2,10 @@
 set -eou pipefail
 
 echo '--- Build'
-cargo build --workspace --all-features
+cargo build --workspace
 
-echo '--- Test'
-RUST_LOG=error ssh-agent cargo test --workspace --all-features
+echo '--- Test (replication v2)'
+RUST_LOG=error ssh-agent cargo test --workspace
+
+echo '--- Test (replication v3)'
+RUST_LOG=error ssh-agent cargo test --workspace  --features replication-v3

@@ -16,7 +16,9 @@ use super::{
     info::PeerAdvertisement,
     interrogation,
 };
-use crate::{identities::xor::Xor, PeerId};
+use crate::{identities::xor::Xor, net::quic, PeerId};
+
+pub struct Connected(pub(crate) quic::Connection);
 
 #[derive(Clone)]
 pub struct TinCans {
@@ -131,6 +133,33 @@ impl TinCans {
             peer: peer.into(),
             chan: self.downstream.clone(),
         }
+    }
+
+    pub async fn connect(&self, peer: impl Into<(PeerId, Vec<SocketAddr>)>) -> Option<Connected> {
+        use event::downstream::Connect;
+
+        let (tx, rx) = replier();
+        if let Err(tincan::error::SendError(e)) =
+            self.downstream.send(Downstream::Connect(Connect {
+                peer: peer.into(),
+                reply: tx,
+            }))
+        {
+            match e {
+                Downstream::Connect(Connect { reply, .. }) => {
+                    reply
+                        .lock()
+                        .take()
+                        .expect("if chan send failed, there can't be another contender")
+                        .send(None)
+                        .ok();
+                },
+
+                _ => unreachable!(),
+            }
+        }
+
+        rx.await.ok().flatten().map(Connected)
     }
 
     pub fn subscribe(&self) -> impl futures::Stream<Item = Result<event::Upstream, RecvError>> {

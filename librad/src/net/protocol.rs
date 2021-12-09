@@ -20,7 +20,8 @@ use super::{
     Network,
 };
 use crate::{
-    git::{self, p2p::transport::GitStreamFactory, replication, storage},
+    git::storage,
+    net::replication::{self, Replication},
     paths::Paths,
     rate_limit::RateLimiter,
     PeerId,
@@ -49,7 +50,7 @@ mod tick;
 
 mod tincans;
 pub(super) use tincans::TinCans;
-pub use tincans::{Interrogation, RecvError};
+pub use tincans::{Connected, Interrogation, RecvError};
 
 mod state;
 pub use state::Quota;
@@ -65,7 +66,6 @@ pub struct Config {
     pub membership: membership::Params,
     pub network: Network,
     pub replication: replication::Config,
-    pub fetch: config::Fetch,
     pub rate_limits: Quota,
     // TODO: transport, ...
 }
@@ -151,6 +151,7 @@ pub async fn bind<Sign, Store>(
     phone: TinCans,
     config: Config,
     signer: Sign,
+    replication: Replication,
     storage: Store,
     caches: cache::Caches,
 ) -> Result<Bound<Store>, error::Bootstrap>
@@ -185,11 +186,10 @@ where
         endpoint,
         membership,
         storage,
+        replication,
         phone: phone.clone(),
         config: StateConfig {
             paths: Arc::new(config.paths),
-            replication: config.replication,
-            fetch: config.fetch,
         },
         caches,
         spawner,
@@ -224,9 +224,14 @@ where
     Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     Disco: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
 {
-    let _git_factory = Arc::new(Box::new(state.clone()) as Box<dyn GitStreamFactory>);
-    git::p2p::transport::register()
-        .register_stream_factory(state.local_id, Arc::downgrade(&_git_factory));
+    #[cfg(not(feature = "replication-v3"))]
+    let git_factory = {
+        use crate::git::p2p::transport::{self, GitStreamFactory};
+
+        let gf = Arc::new(Box::new(state.clone()) as Box<dyn GitStreamFactory>);
+        transport::register().register_stream_factory(state.local_id, Arc::downgrade(&gf));
+        gf
+    };
 
     let endpoint = state.endpoint.clone();
     let spawner = state.spawner.clone();
@@ -246,7 +251,8 @@ where
         let endpoint = endpoint.clone();
         async move {
             let res = io::connections::incoming(state, incoming).await;
-            drop(_git_factory);
+            #[cfg(not(feature = "replication-v3"))]
+            drop(git_factory);
             tracing::debug!("waiting on idle connections...");
             endpoint.wait_idle().await;
             drop(tasks);

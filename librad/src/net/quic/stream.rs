@@ -36,6 +36,10 @@ impl BidiStream {
         debug_assert!(x == y);
         x
     }
+
+    pub fn connection(&self) -> &Connection {
+        &self.conn
+    }
 }
 
 impl RemotePeer for BidiStream {

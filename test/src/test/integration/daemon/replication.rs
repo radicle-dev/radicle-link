@@ -44,14 +44,7 @@ fn can_clone_project() -> Result<(), anyhow::Error> {
         )
         .await?;
 
-        state::clone_project(
-            &bob.peer,
-            project.urn(),
-            alice.peer_id,
-            alice.listen_addrs,
-            None,
-        )
-        .await?;
+        state::clone_project(&bob.peer, project.urn(), alice.peer_id, alice.listen_addrs).await?;
 
         let have = state::list_projects(&bob.peer)
             .await?
@@ -101,7 +94,6 @@ fn can_clone_user() -> Result<(), anyhow::Error> {
             alice.owner.urn(),
             alice.peer_id,
             alice.listen_addrs,
-            None,
         )
         .await?;
 
@@ -138,7 +130,6 @@ fn can_fetch_project_changes() -> Result<(), anyhow::Error> {
             project.urn(),
             alice.peer_id,
             alice.listen_addrs.clone(),
-            None,
         )
         .await
         .expect("unable to clone project");
@@ -217,14 +208,7 @@ fn can_fetch_project_changes() -> Result<(), anyhow::Error> {
         })
         .await?;
 
-        state::fetch(
-            &bob.peer,
-            project.urn(),
-            alice.peer_id,
-            alice.listen_addrs,
-            None,
-        )
-        .await?;
+        state::fetch(&bob.peer, project.urn(), alice.peer_id, alice.listen_addrs).await?;
 
         let has_commit = state::has_commit(
             &bob.peer,
@@ -262,21 +246,14 @@ fn can_create_working_copy_of_peer() -> Result<(), anyhow::Error> {
             )
             .await?;
 
-            state::clone_project(
-                &bob.peer,
-                project.urn(),
-                alice.peer_id,
-                alice.listen_addrs,
-                None,
-            )
-            .await
-            .expect("unable to clone project");
+            state::clone_project(&bob.peer, project.urn(), alice.peer_id, alice.listen_addrs)
+                .await
+                .expect("unable to clone project");
             state::clone_project(
                 &eve.peer,
                 project.urn(),
                 bob.peer_id,
                 bob.listen_addrs.clone(),
-                None,
             )
             .await
             .expect("unable to clone project");
@@ -352,14 +329,9 @@ fn can_create_working_copy_of_peer() -> Result<(), anyhow::Error> {
         })
         .await?;
 
-        state::fetch(
-            &eve.peer,
-            project.urn(),
-            bob.peer_id,
-            bob.listen_addrs,
-            None,
-        )
-        .await?;
+        state::fetch(&eve.peer, project.urn(), bob.peer_id, bob.listen_addrs)
+            .await
+            .expect("fetch from bob");
 
         let path = state::checkout(
             &eve.peer,
@@ -406,7 +378,6 @@ fn track_peer() -> Result<(), anyhow::Error> {
             project.urn(),
             alice.peer_id,
             alice.listen_addrs.clone(),
-            None,
         )
         .await?;
 
@@ -429,6 +400,7 @@ fn track_peer() -> Result<(), anyhow::Error> {
 }
 
 #[test]
+#[cfg_attr(feature = "replication-v3", ignore)]
 fn replication_includes_user() -> Result<(), anyhow::Error> {
     logging::init();
 
@@ -455,7 +427,6 @@ fn replication_includes_user() -> Result<(), anyhow::Error> {
             project.urn(),
             alice.peer_id,
             alice.listen_addrs.clone(),
-            None,
         )
         .await?;
 
@@ -465,7 +436,6 @@ fn replication_includes_user() -> Result<(), anyhow::Error> {
             project.urn(),
             bob.peer_id,
             bob.listen_addrs.clone(),
-            None,
         )
         .await?;
 

@@ -6,7 +6,8 @@
 use thiserror::Error;
 
 use crate::{
-    git::{self, replication, storage, storage::fetcher, tracking},
+    git::{self, storage, tracking},
+    net::replication,
     PeerId,
 };
 
@@ -19,14 +20,14 @@ pub enum Error {
     #[error("too many fetches from {remote_peer}")]
     RateLimited { remote_peer: PeerId, urn: git::Urn },
 
+    #[error("no connection to {remote_peer}")]
+    NoConnection { remote_peer: PeerId },
+
     #[error(transparent)]
     Tracking(#[from] tracking::Error),
 
     #[error(transparent)]
-    Replication(#[from] replication::Error),
-
-    #[error("unable to obtain fetcher")]
-    Fetcher(#[from] fetcher::error::Retrying<git2::Error>),
+    Replication(#[from] replication::error::Replicate),
 
     #[error(transparent)]
     Store(#[from] storage::Error),

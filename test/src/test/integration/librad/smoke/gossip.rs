@@ -64,7 +64,7 @@ fn fetches_on_gossip_notify() {
             .await
             .unwrap()
             .unwrap();
-        proj.pull(peer1, peer2).await.ok().unwrap();
+        proj.pull(peer1, peer2).await.unwrap();
 
         let TestProject { project, owner: _ } = proj;
         let peer1_events = peer2.subscribe();
@@ -255,7 +255,7 @@ fn ask_and_clone() {
             project_urn
         );
 
-        proj.pull(peer1, peer2).await.ok().unwrap();
+        proj.pull(peer1, peer2).await.unwrap();
 
         assert!(
             has_urn(peer2, project_urn.clone()).await,

@@ -9,6 +9,9 @@ license = "GPL-3.0-or-later"
 [lib]
 test = true
 
+[features]
+replication-v3 = ["librad/replication-v3"]
+
 [dependencies]
 assert_cmd = "2"
 assert_matches = "1"
@@ -45,6 +48,7 @@ sha-1 = "0.9"
 sized-vec = "0.3"
 structopt = { version = "0.3", default-features = false }
 tempfile = "3"
+thiserror = "1"
 typenum = "1.13"
 tokio = "1.13.1"
 tracing = ">= 0.1"

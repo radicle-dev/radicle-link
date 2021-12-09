@@ -84,7 +84,7 @@ pub enum Error {
 
     /// An error occurred when attempting to replicate data from another peer.
     #[error(transparent)]
-    Replication(#[from] librad::git::replication::Error),
+    Replication(#[from] librad::net::peer::error::Replicate),
 
     /// Peer storage error.
     #[error(transparent)]

@@ -13,7 +13,7 @@ use deadpool::managed::{self, Manager, Object, RecycleResult};
 use parking_lot::RwLock;
 use thiserror::Error;
 
-use super::{error, read, Fetchers, ReadOnly, Storage};
+use super::{error, read, ReadOnly, Storage};
 use crate::{paths::Paths, Signer};
 
 #[derive(Debug, Error)]
@@ -96,7 +96,6 @@ impl Initialised {
 
 pub struct Write<S> {
     signer: S,
-    fetchers: Fetchers,
     init: Initialised,
 }
 
@@ -120,11 +119,7 @@ impl ReadConfig {
     pub fn write<S>(self, signer: S, init: Initialised) -> ReadWriteConfig<S> {
         Config {
             paths: self.paths,
-            write: Write {
-                signer,
-                fetchers: Default::default(),
-                init,
-            },
+            write: Write { signer, init },
         }
     }
 }
@@ -142,17 +137,9 @@ impl Manager<ReadOnly, InitError> for ReadConfig {
 
 impl<S> ReadWriteConfig<S> {
     pub fn new(paths: Paths, signer: S, init: Initialised) -> Self {
-        Self::with_fetchers(paths, signer, init, Default::default())
-    }
-
-    pub fn with_fetchers(paths: Paths, signer: S, init: Initialised, fetchers: Fetchers) -> Self {
         Self {
             paths,
-            write: Write {
-                signer,
-                fetchers,
-                init,
-            },
+            write: Write { signer, init },
         }
     }
 
@@ -161,12 +148,7 @@ impl<S> ReadWriteConfig<S> {
         S: Signer + Clone,
         S::Error: std::error::Error + Send + Sync + 'static,
     {
-        Storage::with_fetchers(
-            &self.paths,
-            self.write.signer.clone(),
-            self.write.fetchers.clone(),
-        )
-        .map_err(InitError::from)
+        Storage::open(&self.paths, self.write.signer.clone()).map_err(InitError::from)
     }
 }
 

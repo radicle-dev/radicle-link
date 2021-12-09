@@ -5,20 +5,20 @@
 
 use std::ops::Index as _;
 
+use librad::{
+    self,
+    git::{
+        identities,
+        storage::ReadOnlyStorage as _,
+        types::{Namespace, Reference},
+    },
+};
+
 use crate::{
     logging,
     rad::{
         identities::TestProject,
         testnet::{self, RunningTestPeer},
-    },
-};
-use librad::{
-    self,
-    git::{
-        identities,
-        replication,
-        storage::{fetcher, ReadOnlyStorage as _},
-        types::{Namespace, Reference},
     },
 };
 
@@ -57,30 +57,34 @@ fn not_present() {
 
         contributor.clone_from(maintainer, true).await.unwrap();
 
-        let cfg = contributor.0.protocol_config().replication;
+        let rad_self = Reference::rad_self(Namespace::from(&urn), maintainer_id);
+        // check rad/self of maintainer exists
+        contributor
+            .0
+            .using_storage({
+                let rad_self = rad_self.clone();
+                move |storage| {
+                    assert!(
+                        storage.has_ref(&rad_self).unwrap(),
+                        "`refs/remotes/<maintainer>/rad/self` should exist before"
+                    );
+                }
+            })
+            .await
+            .unwrap();
+
+        contributor
+            .0
+            .replicate((voyeur_id, voyeur_addrs), urn, None)
+            .await
+            .expect("error replicating voyeur->contributor");
+
+        // check again rad/self of maintainer exists
         contributor
             .0
             .using_storage(move |storage| {
-                // check rad/self of maintainer exists
                 assert!(
-                    storage
-                        .has_ref(&Reference::rad_self(Namespace::from(&urn), maintainer_id))
-                        .unwrap(),
-                    "`refs/remotes/<maintainer>/rad/self` should exist before"
-                );
-
-                let fetcher = fetcher::PeerToPeer::new(urn.clone(), voyeur_id, voyeur_addrs)
-                    .build(storage)
-                    .unwrap()
-                    .unwrap();
-                let res = replication::replicate(storage, fetcher, cfg, None);
-                assert!(res.is_ok());
-
-                // check rad/self of maintainer exists
-                assert!(
-                    storage
-                        .has_ref(&Reference::rad_self(Namespace::from(&urn), maintainer_id))
-                        .unwrap(),
+                    storage.has_ref(&rad_self).unwrap(),
                     "`refs/remotes/<maintainer>/rad/self` should exist after"
                 );
             })
@@ -126,9 +130,13 @@ fn when_disconnected_and_no_addr_hints() {
         let host = Host::init(&net.peers()[0]).await;
         Leecher(&net.peers()[1]).clone_from(host, false).await
     });
-    assert!(
-        matches!(res, Err(e) if e.to_string().starts_with("git p2p transport: no connection to"))
-    )
+    #[cfg(feature = "replication-v3")]
+    assert!(matches!(res, Err(e) if e.to_string().starts_with("no connection to")));
+    #[cfg(not(feature = "replication-v3"))]
+    assert!(matches!(
+        res,
+        Err(e) if e.root_cause().to_string().starts_with("git p2p transport: no connection to")
+    ))
 }
 
 struct Host<'a> {
@@ -152,24 +160,27 @@ struct Leecher<'a>(&'a RunningTestPeer);
 
 impl Leecher<'_> {
     async fn clone_from(&self, host: Host<'_>, supply_addr_hints: bool) -> anyhow::Result<()> {
-        let cfg = self.0.protocol_config().replication;
         let urn = host.project.project.urn();
         let owner = host.project.owner;
         let host_peer = host.peer.peer_id();
         let host_addrs = host.peer.listen_addrs().iter().copied().collect::<Vec<_>>();
+
         self.0
-            .using_storage(move |storage| {
-                let fetcher = fetcher::PeerToPeer::new(
-                    urn.clone(),
+            .replicate(
+                (
                     host_peer,
                     supply_addr_hints
                         .then_some(host_addrs)
                         .into_iter()
-                        .flatten(),
-                )
-                .build(storage)??;
-                replication::replicate(storage, fetcher, cfg, None)?;
-
+                        .flatten()
+                        .collect(),
+                ),
+                urn.clone(),
+                None,
+            )
+            .await?;
+        self.0
+            .using_storage(move |storage| {
                 // check rad/self of peer1 exists
                 {
                     let has_ref =

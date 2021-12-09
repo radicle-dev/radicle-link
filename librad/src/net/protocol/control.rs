@@ -115,3 +115,19 @@ pub(super) async fn interrogation<S>(
         tx.send(resp).ok();
     }
 }
+
+pub(super) async fn connect<S>(
+    state: &State<S>,
+    event::downstream::Connect {
+        peer: (peer, addr_hints),
+        reply,
+    }: event::downstream::Connect,
+) where
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+{
+    let chan = reply.lock().take();
+    if let Some(tx) = chan {
+        let conn = state.connection(peer, addr_hints).await;
+        tx.send(conn).ok();
+    }
+}

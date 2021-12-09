@@ -5,7 +5,6 @@
 
 use std::{net::SocketAddr, ops::Deref, sync::Arc};
 
-use futures::future::TryFutureExt as _;
 use link_async::Spawner;
 use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
@@ -14,7 +13,6 @@ use tracing::Instrument as _;
 use super::{
     broadcast,
     cache,
-    config,
     event,
     gossip,
     io,
@@ -25,12 +23,8 @@ use super::{
     TinCans,
 };
 use crate::{
-    git::{
-        p2p::transport::{GitStream, GitStreamFactory},
-        replication,
-        storage::{self, PoolError, PooledRef},
-    },
-    net::{quic, upgrade},
+    git::storage::{self, PoolError, PooledRef},
+    net::{quic, replication::Replication},
     paths::Paths,
     rate_limit::{self, Direct, Keyed, RateLimiter},
     PeerId,
@@ -39,8 +33,6 @@ use crate::{
 #[derive(Clone)]
 pub(super) struct StateConfig {
     pub paths: Arc<Paths>,
-    pub replication: replication::Config,
-    pub fetch: config::Fetch,
 }
 
 /// Runtime state of a protocol instance.
@@ -52,6 +44,7 @@ pub(super) struct State<S> {
     pub endpoint: Endpoint,
     pub membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     pub storage: Storage<S>,
+    pub replication: Replication,
     pub phone: TinCans,
     pub config: StateConfig,
     pub caches: cache::Caches,
@@ -108,8 +101,9 @@ where
     }
 }
 
+#[cfg(not(feature = "replication-v3"))]
 #[async_trait]
-impl<S> GitStreamFactory for State<S>
+impl<S> crate::git::p2p::transport::GitStreamFactory for State<S>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
 {
@@ -117,7 +111,10 @@ where
         &self,
         to: &PeerId,
         addr_hints: &[SocketAddr],
-    ) -> Option<Box<dyn GitStream>> {
+    ) -> Option<Box<dyn crate::git::p2p::transport::GitStream>> {
+        use crate::net::upgrade;
+        use futures::TryFutureExt as _;
+
         let span = tracing::info_span!("open-git-stream", remote_id = %to);
         match self
             .connection(*to, addr_hints.iter().copied().collect::<Vec<_>>())

@@ -5,7 +5,11 @@
 
 use thiserror::Error;
 
-use crate::{git::storage, net::protocol::cache};
+use crate::{
+    git::storage,
+    net::{protocol::cache, replication},
+    PeerId,
+};
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -33,10 +37,26 @@ pub enum Init {
 
     #[error(transparent)]
     Cache(#[from] Box<cache::urns::Error>),
+
+    #[cfg(feature = "replication-v3")]
+    #[error(transparent)]
+    Replication(#[from] replication::error::Init),
 }
 
 impl From<cache::urns::Error> for Init {
     fn from(e: cache::urns::Error) -> Self {
         Self::from(Box::new(e))
     }
+}
+
+#[derive(Debug, Error)]
+pub enum Replicate {
+    #[error("no connection to {0}")]
+    NoConnection(PeerId),
+
+    #[error("failed to borrow storage from pool")]
+    Pool(#[from] storage::PoolError),
+
+    #[error(transparent)]
+    Replicate(#[from] replication::error::Replicate),
 }

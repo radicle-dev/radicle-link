@@ -11,6 +11,7 @@ pub mod discovery;
 pub mod peer;
 pub mod protocol;
 pub mod quic;
+pub mod replication;
 pub mod tls;
 pub mod upgrade;
 pub mod x509;

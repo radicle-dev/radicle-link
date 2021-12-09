@@ -200,7 +200,7 @@ impl ReadOnly {
         Ok(Config::try_from(&self.backend)?)
     }
 
-    pub(in crate::git) fn identities<'a, T: 'a>(&'a self) -> Identities<'a, T> {
+    pub fn identities<'a, T: 'a>(&'a self) -> Identities<'a, T> {
         Identities::from(&self.backend)
     }
 }

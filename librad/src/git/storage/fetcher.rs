@@ -93,6 +93,7 @@ pub trait BuildFetcher {
     fn build_fetcher<'a>(
         &self,
         storage: &'a Storage,
+        fetchers: &'a Fetchers,
     ) -> Result<Result<Fetcher<'a>, Info>, Self::Error>;
 }
 
@@ -120,6 +121,7 @@ impl PeerToPeer {
     pub fn build<'a>(
         &self,
         storage: &'a Storage,
+        fetchers: &'a Fetchers,
     ) -> Result<Result<Fetcher<'a>, Info>, git2::Error> {
         let url = GitUrlRef {
             local_peer: &PeerId::from_signer(storage.signer()),
@@ -132,7 +134,7 @@ impl PeerToPeer {
             remote_peer: self.remote_peer,
             url: Url::from(url),
         }
-        .build(storage)
+        .build(storage, fetchers)
     }
 }
 
@@ -150,8 +152,9 @@ impl BuildFetcher for PeerToPeer {
     fn build_fetcher<'a>(
         &self,
         storage: &'a Storage,
+        fetchers: &'a Fetchers,
     ) -> Result<Result<Fetcher<'a>, Info>, Self::Error> {
-        self.build(storage)
+        self.build(storage, fetchers)
     }
 }
 
@@ -170,10 +173,10 @@ impl AnyUrl {
     pub fn build<'a>(
         &self,
         storage: &'a Storage,
+        fetchers: &'a Fetchers,
     ) -> Result<Result<Fetcher<'a>, Info>, git2::Error> {
         use dashmap::mapref::entry::Entry;
 
-        let fetchers = storage.fetchers();
         // The joy of concurrent maps:
         //
         // We cannot place a lock on just the URN key during construction of the
@@ -226,8 +229,9 @@ impl BuildFetcher for AnyUrl {
     fn build_fetcher<'a>(
         &self,
         storage: &'a Storage,
+        fetchers: &'a Fetchers,
     ) -> Result<Result<Fetcher<'a>, Info>, Self::Error> {
-        self.build(storage)
+        self.build(storage, fetchers)
     }
 }
 
@@ -280,6 +284,7 @@ pub mod error {
 /// towards more recent requests for the same resource.
 pub async fn retrying<P, B, E, F, A>(
     spawner: &Spawner,
+    fetchers: Fetchers,
     pool: &P,
     builder: B,
     timeout: Duration,
@@ -304,6 +309,7 @@ where
 
     async fn go<P, B, F, A, E>(
         spawner: &Spawner,
+        fetchers: Fetchers,
         pool: &P,
         builder: B,
         f: F,
@@ -323,7 +329,7 @@ where
         spawner
             .blocking(move || {
                 let fetcher = builder
-                    .build_fetcher(&storage)
+                    .build_fetcher(&storage, &fetchers)
                     .map_err(error::Retrying::MkFetcher)
                     .map_err(Inner::Fatal)?;
 
@@ -354,7 +360,7 @@ where
         max_elapsed_time: Some(timeout),
         ..Default::default()
     };
-    let mut fut = go(spawner, pool, builder, f);
+    let mut fut = go(spawner, fetchers.clone(), pool, builder, f);
     loop {
         match fut.await {
             Err(Inner::Retry { b, f, err }) => match policy.next_backoff() {
@@ -366,7 +372,7 @@ where
                         "unable to obtain fetcher, retrying in {:?}", next
                     );
                     tokio::time::sleep(next).await;
-                    fut = go(spawner, pool, b, f);
+                    fut = go(spawner, fetchers.clone(), pool, b, f);
                     continue;
                 },
             },

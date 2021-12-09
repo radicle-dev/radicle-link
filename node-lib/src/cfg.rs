@@ -120,7 +120,6 @@ impl Cfg<discovery::Static, BoxedSigner> {
                     membership: Default::default(),
                     network: args.protocol.network.clone(),
                     replication: Default::default(),
-                    fetch: Default::default(),
                     rate_limits: Default::default(),
                 },
                 storage: Default::default(),
