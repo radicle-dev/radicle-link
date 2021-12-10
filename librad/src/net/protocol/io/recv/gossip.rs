@@ -65,7 +65,9 @@ pub(in crate::net::protocol) async fn gossip<S, T>(
                     advertised_info: peer_advertisement(&state.endpoint)(),
                     seen_addrs: iter::empty().into(),
                 };
-                match broadcast::apply(&state.membership, &state.storage, peer_info, remote_id, msg)
+                match state
+                    .gossip
+                    .apply(&state.membership, peer_info, remote_id, msg)
                     .await
                 {
                     // Partial view states diverge apparently, and the stream is

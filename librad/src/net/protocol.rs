@@ -173,7 +173,7 @@ where
         Pcg64Mcg::new(rand::random()),
         config.membership,
     );
-    let storage = Storage::new(storage, config.rate_limits.storage);
+    let gossip = broadcast::State::new(Storage::new(storage, config.rate_limits.storage), ());
     let limits = RateLimits {
         membership: Arc::new(RateLimiter::keyed(
             config.rate_limits.membership,
@@ -185,8 +185,8 @@ where
         local_id,
         endpoint,
         membership,
-        storage,
         replication,
+        gossip,
         phone: phone.clone(),
         config: StateConfig {
             paths: Arc::new(config.paths),

@@ -26,14 +26,8 @@ pub(super) async fn gossip<S>(
     };
     // TODO: answer `Want`s from a provider cache
     let rpc = match evt {
-        Gossip::Announce(payload) => broadcast::Message::Have {
-            origin,
-            val: payload,
-        },
-        Gossip::Query(payload) => broadcast::Message::Want {
-            origin,
-            val: payload,
-        },
+        Gossip::Announce(payload) => broadcast::Message::have(origin, payload),
+        Gossip::Query(payload) => broadcast::Message::want(origin, payload),
     };
     stream::iter(
         state
