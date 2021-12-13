@@ -39,7 +39,7 @@ fn can_replicate_with_updated_delegate() {
 
         let person = {
             let person = peer1
-                .using_storage(move |storage| TestPerson::create(storage))
+                .using_storage(TestPerson::create)
                 .await
                 .unwrap()
                 .unwrap();

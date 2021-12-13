@@ -137,7 +137,7 @@ where
             else {
                 Ok(Ok(Left(newer)))
             }
-        }
+        },
         // Otherwise, theirs:
         //
         // * `rad/id` does not exist, so no other choice

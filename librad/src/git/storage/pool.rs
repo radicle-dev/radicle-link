@@ -11,6 +11,7 @@ use std::{
 
 use deadpool::managed::{self, Manager, Object, RecycleResult};
 use parking_lot::RwLock;
+use std_ext::Void;
 use thiserror::Error;
 
 use super::{error, read, ReadOnly, Storage};
@@ -105,7 +106,7 @@ pub struct Config<W> {
     write: W,
 }
 
-pub type ReadConfig = Config<PhantomData<!>>;
+pub type ReadConfig = Config<PhantomData<Void>>;
 pub type ReadWriteConfig<S> = Config<Write<S>>;
 
 impl ReadConfig {

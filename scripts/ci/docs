@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-set -eou pipefail
+set -eoux pipefail
 
-echo "--- Docs"
-RUSTDOCFLAGS="-D broken-intra-doc-links -D warnings" \
-cargo doc --no-deps --workspace --document-private-items --all-features
+RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links -D warnings" \
+cargo doc --no-deps --workspace --document-private-items

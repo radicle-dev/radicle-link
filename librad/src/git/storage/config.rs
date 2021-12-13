@@ -9,7 +9,7 @@ use std::{convert::TryFrom, io, marker::PhantomData, path::PathBuf};
 
 use crypto::BoxedSigner;
 use git_ext::{self as ext, is_not_found_err};
-use std_ext::result::ResultExt as _;
+use std_ext::prelude::*;
 use thiserror::Error;
 
 use super::{super::identities::local::LocalIdentity, Storage};
@@ -73,7 +73,7 @@ impl<'a> TryFrom<&'a Storage> for Config<'a, BoxedSigner> {
     }
 }
 
-impl TryFrom<&git2::Repository> for Config<'_, PhantomData<!>> {
+impl TryFrom<&git2::Repository> for Config<'_, PhantomData<Void>> {
     type Error = git2::Error;
 
     fn try_from(repo: &git2::Repository) -> Result<Self, Self::Error> {
@@ -210,7 +210,7 @@ impl<S> Config<'_, S> {
     }
 }
 
-impl Config<'_, PhantomData<!>> {
+impl Config<'_, PhantomData<Void>> {
     pub fn readonly(repo: &git2::Repository) -> Result<Self, git2::Error> {
         Self::try_from(repo)
     }

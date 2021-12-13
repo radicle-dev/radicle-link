@@ -234,7 +234,7 @@ where
                                 Err(error) => {
                                     tracing::error!(?error, "accept error");
                                 },
-                                Ok(never) => never,
+                                Ok(never) => unreachable!("absurd: {}", never),
                             };
                         },
                         Err(e) => {

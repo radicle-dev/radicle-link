@@ -14,6 +14,7 @@ use librad::{
 use crate::git::include;
 
 #[derive(Debug, Error)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[error(transparent)]
     Include(#[from] include::Error),

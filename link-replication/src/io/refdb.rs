@@ -43,6 +43,7 @@ pub mod error {
     use thiserror::Error;
 
     #[derive(Debug, Error)]
+    #[allow(clippy::enum_variant_names)]
     pub enum Find {
         #[error(transparent)]
         Refname(#[from] refs::name::Error),
@@ -415,24 +416,12 @@ impl<D: Odb> Refdb<D> {
     }
 }
 
-impl<D: Odb> refdb::Refdb for Refdb<D> {
+impl<'a, D> refdb::RefScan for &'a Refdb<D> {
     type Oid = ObjectId;
+    type Scan = Scan<'a>;
+    type Error = error::Scan;
 
-    type Scan<'a> = Scan<'a>;
-
-    type FindError = error::Find;
-    type ScanError = error::Scan;
-    type TxError = error::Tx;
-    type ReloadError = error::Reload;
-
-    fn refname_to_id(
-        &self,
-        refname: impl AsRef<BStr>,
-    ) -> Result<Option<Self::Oid>, Self::FindError> {
-        self.find_namespaced(&self.namespaced(&mut Cow::from(refname.as_ref()))?)
-    }
-
-    fn scan<O, P>(&self, prefix: O) -> Result<Self::Scan<'_>, Self::ScanError>
+    fn scan<O, P>(self, prefix: O) -> Result<Self::Scan, Self::Error>
     where
         O: Into<Option<P>>,
         P: AsRef<str>,
@@ -450,6 +439,21 @@ impl<D: Odb> refdb::Refdb for Refdb<D> {
             namespace: &self.namespace,
             inner,
         })
+    }
+}
+
+impl<D: Odb> refdb::Refdb for Refdb<D> {
+    type Oid = ObjectId;
+
+    type FindError = error::Find;
+    type TxError = error::Tx;
+    type ReloadError = error::Reload;
+
+    fn refname_to_id(
+        &self,
+        refname: impl AsRef<BStr>,
+    ) -> Result<Option<Self::Oid>, Self::FindError> {
+        self.find_namespaced(&self.namespaced(&mut Cow::from(refname.as_ref()))?)
     }
 
     fn update<'a, I>(&mut self, updates: I) -> Result<Applied<'a>, Self::TxError>

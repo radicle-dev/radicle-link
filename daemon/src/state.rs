@@ -80,9 +80,7 @@ pub async fn default_owner<S>(peer: &Peer<S>) -> Result<Option<LocalIdentity>, E
 where
     S: Clone + Signer,
 {
-    Ok(peer
-        .using_storage(move |store| local::default(store))
-        .await??)
+    Ok(peer.using_storage(local::default).await??)
 }
 
 /// Set the default owner for this `PeerApi`.

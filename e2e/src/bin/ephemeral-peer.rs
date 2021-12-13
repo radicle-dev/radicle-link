@@ -3,8 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#![feature(never_type)]
-
 use std::{
     net::{SocketAddr, ToSocketAddrs},
     panic,
@@ -33,6 +31,7 @@ use librad::{
     SecretKey,
 };
 use radicle_link_e2e::logging;
+use radicle_std_ext::Void;
 use tempfile::tempdir;
 use tokio::task::JoinError;
 
@@ -201,7 +200,7 @@ where
     }
 }
 
-async fn stdout_stats(peer: Peer<SecretKey>) -> anyhow::Result<!> {
+async fn stdout_stats(peer: Peer<SecretKey>) -> anyhow::Result<Void> {
     loop {
         tokio::time::sleep(Duration::from_secs(10)).await;
         let stats = peer.stats().await;
@@ -209,7 +208,7 @@ async fn stdout_stats(peer: Peer<SecretKey>) -> anyhow::Result<!> {
     }
 }
 
-async fn graphite_stats(peer: Peer<SecretKey>, graphite_addr: SocketAddr) -> anyhow::Result<!> {
+async fn graphite_stats(peer: Peer<SecretKey>, graphite_addr: SocketAddr) -> anyhow::Result<Void> {
     tracing::debug!("stats collector");
 
     let peer_id_str = peer.peer_id().to_string();

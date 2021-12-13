@@ -266,7 +266,7 @@ where
             .ok_or(Self::Err::Missing("namespace"))
             .and_then(|nid| {
                 (nid == "rad")
-                    .then_some(())
+                    .then(|| ())
                     .ok_or_else(|| Self::Err::InvalidNID(nid.to_string()))
             })?;
 
@@ -275,7 +275,7 @@ where
             .ok_or(Self::Err::Missing("protocol"))
             .and_then(|proto| {
                 (R::PROTOCOL == proto)
-                    .then_some(())
+                    .then(|| ())
                     .ok_or_else(|| Self::Err::InvalidProto(proto.to_string()))
             })?;
 

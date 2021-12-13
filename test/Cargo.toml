@@ -14,7 +14,7 @@ replication-v3 = ["librad/replication-v3"]
 
 [dependencies]
 assert_cmd = "2"
-assert_matches = "1"
+assert_matches = "1.5.0"
 anyhow = "1"
 async-stream = "0.3"
 async-trait = "0"
@@ -111,6 +111,9 @@ path = "../git-ext"
 
 [dependencies.radicle-git-helpers]
 path = "../git-helpers"
+
+[dependencies.radicle-std-ext]
+path = "../std-ext"
 
 [dependencies.rand]
 version = "0.8"

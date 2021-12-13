@@ -3,16 +3,14 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#![feature(never_type)]
-
 #[macro_use]
 extern crate lazy_static;
+extern crate radicle_std_ext as std_ext;
 
 use std::fmt;
 
-use thiserror::Error;
-
 use librad::{git::Urn, PeerId};
+use thiserror::Error;
 
 pub mod cli;
 

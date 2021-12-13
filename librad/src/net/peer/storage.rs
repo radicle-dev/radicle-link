@@ -14,6 +14,8 @@ use link_async::Spawner;
 use nonzero_ext::nonzero;
 use parking_lot::RwLock;
 
+#[cfg(feature = "replication-v3")]
+use crate::net::protocol::TinCans;
 use crate::{
     git::{
         storage::{self, Pool, PoolError, PooledRef, ReadOnlyStorage as _},
@@ -22,7 +24,7 @@ use crate::{
     },
     identities::urn,
     net::{
-        protocol::{broadcast, cache, gossip, TinCans},
+        protocol::{broadcast, cache, gossip},
         replication::{self, Replication},
     },
     rate_limit::{Keyed, RateLimiter},
@@ -41,13 +43,13 @@ type SeenFilter = StableBloomFilter<DefaultBuildHashKernels<RandomState>>;
 
 #[derive(Clone)]
 pub struct Storage {
-    conf: Config,
     pool: Pool<storage::Storage>,
     urns: cache::urns::Filter,
     seen: Arc<RwLock<SeenFilter>>,
     rate: Arc<RateLimiter<Keyed<(PeerId, Urn)>>>,
     exec: Arc<Spawner>,
     repl: Replication,
+    #[cfg(feature = "replication-v3")]
     tins: TinCans,
 }
 
@@ -58,10 +60,9 @@ impl Storage {
         pool: Pool<storage::Storage>,
         urns: cache::urns::Filter,
         repl: Replication,
-        tins: TinCans,
+        #[cfg(feature = "replication-v3")] tins: TinCans,
     ) -> Self {
         Self {
-            conf,
             pool,
             urns,
             // TODO: parameters pulled out of thin air
@@ -77,6 +78,7 @@ impl Storage {
             )),
             exec,
             repl,
+            #[cfg(feature = "replication-v3")]
             tins,
         }
     }

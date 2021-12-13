@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -eou pipefail
+set -eoux pipefail
 
-echo '--- Build'
 cd bins && cargo build --workspace --all-features

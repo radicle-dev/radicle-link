@@ -9,6 +9,7 @@ use thiserror::Error;
 
 use crypto::PublicKey;
 use data::{nonempty::Set as _, NonEmptyOrderedSet};
+use std_ext::Void;
 
 use super::Delegations;
 use crate::{payload, sealed};
@@ -59,7 +60,7 @@ impl Direct {
 }
 
 impl Delegations for Direct {
-    type Error = !;
+    type Error = Void;
 
     fn eligible(&self, votes: BTreeSet<&PublicKey>) -> Result<BTreeSet<&PublicKey>, Self::Error> {
         Ok(self.eligible(votes))

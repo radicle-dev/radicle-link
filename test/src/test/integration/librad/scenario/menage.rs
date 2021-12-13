@@ -84,7 +84,7 @@ fn a_trois() {
         let peer3 = net.peers().index(2);
 
         let proj = peer1
-            .using_storage(move |storage| TestProject::create(storage))
+            .using_storage(TestProject::create)
             .await
             .unwrap()
             .unwrap();
@@ -234,7 +234,7 @@ fn threes_a_crowd() {
         }
 
         let proj = peer1
-            .using_storage(move |storage| TestProject::create(storage))
+            .using_storage(TestProject::create)
             .await
             .unwrap()
             .unwrap();

@@ -47,9 +47,7 @@ impl Negotiation for ForClone {
 
         let (name, tip) = refs::into_unpacked(r);
         match refs::parse::<Identity>(name.as_bstr())? {
-            parsed
-            @
-            refs::Parsed {
+            parsed @ refs::Parsed {
                 remote: None,
                 inner: Left(_),
             } => Some(FilteredRef::new(name, tip, &self.remote_id, parsed)),

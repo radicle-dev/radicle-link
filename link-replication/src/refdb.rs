@@ -16,10 +16,7 @@ pub use mem::Mem;
 pub trait Refdb {
     type Oid: AsRef<oid> + Into<ObjectId>;
 
-    type Scan<'a>: IntoIterator<Item = Result<(BString, Self::Oid), Self::ScanError>> + 'a;
-
     type FindError: std::error::Error + Send + Sync + 'static;
-    type ScanError: std::error::Error + Send + Sync + 'static;
     type TxError: std::error::Error + Send + Sync + 'static;
     type ReloadError: std::error::Error + Send + Sync + 'static;
 
@@ -31,12 +28,6 @@ pub trait Refdb {
         &self,
         refname: impl AsRef<BStr>,
     ) -> Result<Option<Self::Oid>, Self::FindError>;
-
-    /// Traverse all refs in the current namespace matching `predicate`.
-    fn scan<O, P>(&self, prefix: O) -> Result<Self::Scan<'_>, Self::ScanError>
-    where
-        O: Into<Option<P>>,
-        P: AsRef<str>;
 
     /// Apply the provided ref updates.
     ///
@@ -55,6 +46,18 @@ pub trait Refdb {
 
     /// Ensure on-disk state is considered.
     fn reload(&mut self) -> Result<(), Self::ReloadError>;
+}
+
+pub trait RefScan {
+    type Oid: AsRef<oid> + Into<ObjectId>;
+    type Scan: Iterator<Item = Result<(BString, Self::Oid), Self::Error>>;
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// Traverse all refs in the current namespace matching `prefix`.
+    fn scan<O, P>(self, prefix: O) -> Result<Self::Scan, Self::Error>
+    where
+        O: Into<Option<P>>,
+        P: AsRef<str>;
 }
 
 #[derive(Clone, Debug)]

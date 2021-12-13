@@ -7,8 +7,8 @@ use std::collections::{hash_map, HashMap};
 
 use bstr::{BStr, BString};
 
-use super::{Applied, Refdb, Update, Updated};
-use crate::ObjectId;
+use super::{Applied, RefScan, Refdb, Update, Updated};
+use crate::{ObjectId, Void};
 
 /// A very simple in-memory [`Refdb`].
 ///
@@ -28,30 +28,15 @@ impl From<HashMap<BString, ObjectId>> for Mem {
 impl Refdb for Mem {
     type Oid = ObjectId;
 
-    type Scan<'a> = Scan<'a, ObjectId>;
-
-    type FindError = !;
-    type ScanError = !;
-    type TxError = !;
-    type ReloadError = !;
+    type FindError = Void;
+    type TxError = Void;
+    type ReloadError = Void;
 
     fn refname_to_id(
         &self,
         refname: impl AsRef<BStr>,
     ) -> Result<Option<Self::Oid>, Self::FindError> {
         Ok(self.refs.get(refname.as_ref()).map(Clone::clone))
-    }
-
-    fn scan<O, P>(&self, prefix: O) -> Result<Self::Scan<'_>, Self::ScanError>
-    where
-        O: Into<Option<P>>,
-        P: AsRef<str>,
-    {
-        let prefix = prefix.into();
-        Ok(Scan {
-            pref: prefix.map(|p| p.as_ref().to_owned()),
-            iter: self.refs.iter(),
-        })
     }
 
     fn update<'a, I>(&mut self, updates: I) -> Result<Applied<'a>, Self::TxError>
@@ -93,6 +78,24 @@ impl Refdb for Mem {
     }
 }
 
+impl<'a> RefScan for &'a Mem {
+    type Oid = ObjectId;
+    type Scan = Scan<'a, Self::Oid>;
+    type Error = Void;
+
+    fn scan<O, P>(self, prefix: O) -> Result<Self::Scan, Self::Error>
+    where
+        O: Into<Option<P>>,
+        P: AsRef<str>,
+    {
+        let prefix = prefix.into();
+        Ok(Scan {
+            pref: prefix.map(|p| p.as_ref().to_owned()),
+            iter: self.refs.iter(),
+        })
+    }
+}
+
 pub struct Scan<'a, Oid> {
     pref: Option<String>,
     iter: hash_map::Iter<'a, BString, Oid>,
@@ -102,7 +105,7 @@ impl<'a, Oid> Iterator for Scan<'a, Oid>
 where
     Oid: Clone + 'a,
 {
-    type Item = Result<(BString, Oid), !>;
+    type Item = Result<(BString, Oid), Void>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.iter.next().and_then(|(k, v)| match &self.pref {

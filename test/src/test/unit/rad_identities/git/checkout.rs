@@ -67,7 +67,7 @@ fn remote_checkout() {
         let temp = tempdir().unwrap();
 
         let proj = peer1
-            .using_storage(move |storage| TestProject::create(storage))
+            .using_storage(TestProject::create)
             .await
             .unwrap()
             .unwrap();

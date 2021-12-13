@@ -330,11 +330,8 @@ impl<T, D> WaitingRoom<T, D> {
         T: Clone,
     {
         #[allow(clippy::non_ascii_literal)]
-        let mut reason_str = anyhow::Chain::new(reason.as_ref())
+        let reason_str = anyhow::Chain::new(reason.as_ref())
             .fold("".to_string(), |acc, e| format!("{} ⮩ {}", acc, e));
-        if let Some(bt) = reason.backtrace() {
-            reason_str.push_str(&bt.to_string());
-        }
         self.transition(
             |request| match request {
                 SomeRequest::Cloning(request) => Some(request),

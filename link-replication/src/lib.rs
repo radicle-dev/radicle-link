@@ -3,15 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#![allow(private_intra_doc_links, incomplete_features)]
+#![allow(rustdoc::private_intra_doc_links)]
 #![warn(clippy::extra_unused_lifetimes)]
-#![deny(broken_intra_doc_links)]
-#![feature(
-    bool_to_option,
-    generic_associated_types,
-    never_type,
-    unwrap_infallible
-)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::fmt::Debug;
 
@@ -21,6 +15,7 @@ extern crate async_trait;
 extern crate tracing;
 
 use link_crypto::PeerId;
+use radicle_std_ext::prelude::*;
 
 pub mod error;
 pub use error::Error;
@@ -40,7 +35,7 @@ mod odb;
 pub use odb::Odb;
 
 mod refdb;
-pub use refdb::{Applied, Policy, Refdb, SymrefTarget, Update, Updated};
+pub use refdb::{Applied, Policy, RefScan, Refdb, SymrefTarget, Update, Updated};
 
 mod sigrefs;
 pub use sigrefs::{SignedRefs, Sigrefs};

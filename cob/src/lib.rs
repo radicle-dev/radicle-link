@@ -170,7 +170,7 @@ impl TypeName {
     /// A string representation of the typename which will match the typename in
     /// regular expressions. This primarily escapes periods
     pub fn regex_safe_string(&self) -> String {
-        self.0.replace(".", "\\.")
+        self.0.replace('.', "\\.")
     }
 }
 
@@ -265,6 +265,7 @@ impl From<&git2::Oid> for ObjectId {
 pub struct CollaborativeObject {
     /// The identity (person or project) this collaborative object is authorized
     /// with respect to
+    #[allow(unused)]
     authorizing_identity_urn: Urn,
     /// The typename of this object
     typename: TypeName,
@@ -273,6 +274,7 @@ pub struct CollaborativeObject {
     /// The id of the object
     id: ObjectId,
     /// The schema any changes to this object must respect
+    #[allow(unused)]
     schema: Schema,
 }
 

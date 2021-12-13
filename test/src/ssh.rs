@@ -3,10 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    fs,
-    process::{Command, Stdio},
-};
+use std::process::{Command, Stdio};
 
 use rad_clib::keys::ssh::SshAuthSock;
 
@@ -32,7 +29,6 @@ pub fn with_ssh_agent<F, T>(callback: F) -> anyhow::Result<T>
 where
     F: FnOnce(SshAuthSock) -> anyhow::Result<T>,
 {
-    fs::try_exists("ssh-agent").expect("`ssh-agent` was not found, it is needed to run this test");
     let sock = ssh_auth_sock();
     let path = match &*sock {
         SshAuthSock::Uds(path) => path,

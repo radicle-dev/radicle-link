@@ -147,7 +147,7 @@ struct Host<'a> {
 impl<'a> Host<'a> {
     async fn init(peer: &'a RunningTestPeer) -> Host<'a> {
         let project = peer
-            .using_storage(move |storage| TestProject::create(storage))
+            .using_storage(TestProject::create)
             .await
             .unwrap()
             .unwrap();
@@ -170,7 +170,7 @@ impl Leecher<'_> {
                 (
                     host_peer,
                     supply_addr_hints
-                        .then_some(host_addrs)
+                        .then(|| host_addrs)
                         .into_iter()
                         .flatten()
                         .collect(),

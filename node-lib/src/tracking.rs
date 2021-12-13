@@ -48,49 +48,52 @@ where
     pin_mut!(events);
 
     while let Some(res) = events.next().await {
-        if let Err(err) = res {
-            error!(?err, "event error");
-            continue;
-        }
+        match res {
+            Ok(ProtocolEvent::Gossip(gossip)) => {
+                let Gossip::Put {
+                    payload: Payload { urn, .. },
+                    provider:
+                        PeerInfo {
+                            peer_id,
+                            seen_addrs,
+                            ..
+                        },
+                    result,
+                } = *gossip;
 
-        if let ProtocolEvent::Gossip(box Gossip::Put {
-            payload: Payload { urn, .. },
-            provider:
-                PeerInfo {
-                    peer_id,
-                    seen_addrs,
-                    ..
-                },
-            result: Uninteresting,
-        }) = res.unwrap()
-        {
-            if !tracker.is_tracked(&peer_id, &urn) {
-                continue;
-            }
-
-            let go = async {
-                let updated = peer
-                    .using_storage({
-                        let urn = urn.clone();
-                        move |storage| tracking::track(storage, &urn, peer_id)
-                    })
-                    .await??;
-
-                // Skip explicit replication if the peer is already tracked.
-                if updated {
-                    let addr_hints = seen_addrs.iter().copied().collect::<Vec<_>>();
-                    peer.replicate((peer_id, addr_hints), urn.clone(), None)
-                        .await?;
+                if result != Uninteresting || !tracker.is_tracked(&peer_id, &urn) {
+                    continue;
                 }
 
-                Ok::<_, anyhow::Error>(updated)
-            };
+                let go = async {
+                    let updated = peer
+                        .using_storage({
+                            let urn = urn.clone();
+                            move |storage| tracking::track(storage, &urn, peer_id)
+                        })
+                        .await??;
 
-            match go.await {
-                Ok(true) => info!("tracked project {} from {}", urn, peer_id),
-                Ok(false) => info!("already tracked {} from {}", urn, peer_id),
-                Err(err) => error!(?err, "tracking failed for {} from {}", urn, peer_id),
-            }
+                    // Skip explicit replication if the peer is already tracked.
+                    if updated {
+                        let addr_hints = seen_addrs.iter().copied().collect::<Vec<_>>();
+                        peer.replicate((peer_id, addr_hints), urn.clone(), None)
+                            .await?;
+                    }
+
+                    Ok::<_, anyhow::Error>(updated)
+                };
+
+                match go.await {
+                    Ok(true) => info!("tracked project {} from {}", urn, peer_id),
+                    Ok(false) => info!("already tracked {} from {}", urn, peer_id),
+                    Err(err) => error!(?err, "tracking failed for {} from {}", urn, peer_id),
+                }
+            },
+
+            Ok(_) => {},
+            Err(err) => {
+                error!(?err, "event error");
+            },
         }
     }
 

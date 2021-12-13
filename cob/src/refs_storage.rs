@@ -11,21 +11,13 @@ use git2::Reference;
 use link_identities::git::Urn;
 
 /// References to the tips of a collaborative object
+#[derive(Default)]
 pub struct ObjectRefs<'a> {
     /// The reference (if any) which represents the tip of the changes authored
     /// by the identity which owns the underlying storage
     pub local: Option<Reference<'a>>,
     /// Any references from peers who do not own the underlying storage
     pub remote: Vec<Reference<'a>>,
-}
-
-impl<'a> Default for ObjectRefs<'a> {
-    fn default() -> Self {
-        ObjectRefs {
-            local: None,
-            remote: Vec::new(),
-        }
-    }
 }
 
 impl<'a> std::fmt::Debug for ObjectRefs<'a> {

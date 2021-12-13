@@ -58,7 +58,7 @@ fn can_see_tracked_references() {
         let peer2 = net.peers().index(1);
 
         let proj = peer1
-            .using_storage(move |storage| TestProject::create(storage))
+            .using_storage(TestProject::create)
             .await
             .unwrap()
             .unwrap();

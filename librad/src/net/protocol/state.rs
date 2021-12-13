@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{
     git::storage::{self, PoolError, PooledRef},
-    net::{quic, replication::Replication},
+    net::quic,
     paths::Paths,
     rate_limit::{self, Direct, Keyed, RateLimiter},
     PeerId,
@@ -44,7 +44,6 @@ pub(super) struct State<S> {
     pub endpoint: Endpoint,
     pub membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     pub storage: Storage<S>,
-    pub replication: Replication,
     pub phone: TinCans,
     pub config: StateConfig,
     pub caches: cache::Caches,

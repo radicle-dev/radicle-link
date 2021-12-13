@@ -33,3 +33,6 @@ features = ["git2"]
 
 [dependencies.radicle-data]
 path = "../data"
+
+[dependencies.radicle-std-ext]
+path = "../std-ext"

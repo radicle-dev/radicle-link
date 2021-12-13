@@ -13,6 +13,7 @@ use librad::{
     git_ext::OneLevel,
     identities::payload,
 };
+use std_ext::Void;
 
 use crate::{
     field::{HasBranch, HasName},
@@ -46,10 +47,11 @@ impl<V, P: HasName> New<V, P> {
     }
 }
 
-pub type Invalid = PhantomData<!>;
-pub type Valid = PhantomData<!>;
+pub type Invalid = PhantomData<Void>;
+pub type Valid = PhantomData<Void>;
 
 impl<P> New<Invalid, P> {
+    #[allow(clippy::self_named_constructors)]
     pub fn new(payload: P, path: PathBuf) -> Self {
         Self {
             payload,

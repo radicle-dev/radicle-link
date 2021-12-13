@@ -3,11 +3,13 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#![feature(proc_macro_diagnostic)]
+#[macro_use]
+extern crate proc_macro_error;
 
 use std::convert::TryFrom;
 
 use proc_macro::TokenStream;
+use proc_macro_error::abort;
 use quote::quote;
 use syn::{parse_macro_input, LitStr};
 
@@ -23,6 +25,7 @@ use radicle_git_ext::reference::name::{RefLike, RefspecPattern};
 ///
 /// assert_eq!("lolek/bolek", reflike!("lolek/bolek").as_str())
 /// ```
+#[proc_macro_error]
 #[proc_macro]
 pub fn reflike(input: TokenStream) -> TokenStream {
     let lit = parse_macro_input!(input as LitStr);
@@ -35,12 +38,7 @@ pub fn reflike(input: TokenStream) -> TokenStream {
         },
 
         Err(e) => {
-            lit.span()
-                .unwrap()
-                .error(format!("invalid RefLike literal: {}", e))
-                .emit();
-
-            TokenStream::from(quote! { unimplemented!() })
+            abort!(lit.span(), "invalid RefLike literal: {}", e);
         },
     }
 }
@@ -55,6 +53,7 @@ pub fn reflike(input: TokenStream) -> TokenStream {
 ///
 /// assert_eq!("refs/heads/*", refspec_pattern!("refs/heads/*").as_str())
 /// ```
+#[proc_macro_error]
 #[proc_macro]
 pub fn refspec_pattern(input: TokenStream) -> TokenStream {
     let lit = parse_macro_input!(input as LitStr);
@@ -67,12 +66,7 @@ pub fn refspec_pattern(input: TokenStream) -> TokenStream {
         },
 
         Err(e) => {
-            lit.span()
-                .unwrap()
-                .error(format!("invalid RefspecPattern literal: {}", e))
-                .emit();
-
-            TokenStream::from(quote! { unimplemented!() })
+            abort!(lit.span(), "invalid RefspecPattern literal: {}", e);
         },
     }
 }

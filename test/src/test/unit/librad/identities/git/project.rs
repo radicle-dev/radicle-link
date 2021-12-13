@@ -6,7 +6,6 @@
 use std::collections::BTreeMap;
 
 use either::Either::*;
-
 use librad::{
     git::Urn,
     identities::{
@@ -19,6 +18,7 @@ use librad::{
     },
     SecretKey,
 };
+use std_ext::Void;
 
 use crate::librad::git::{repo, Device, Project};
 
@@ -354,6 +354,6 @@ fn current_heads_from<'a>(
         .collect()
 }
 
-fn lookup(map: &BTreeMap<Urn, git2::Oid>) -> impl Fn(Urn) -> Result<git2::Oid, !> + '_ {
+fn lookup(map: &BTreeMap<Urn, git2::Oid>) -> impl Fn(Urn) -> Result<git2::Oid, Void> + '_ {
     move |urn| Ok(*map.get(&urn).unwrap())
 }

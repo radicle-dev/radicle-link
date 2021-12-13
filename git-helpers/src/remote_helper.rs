@@ -30,15 +30,10 @@ use librad::{
 
 use crate::credential;
 
+#[derive(Default)]
 pub struct Config {
     /// Signer for radicle artifacts created by pushes.
     pub signer: Option<BoxedSigner>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self { signer: None }
-    }
 }
 
 // FIXME: this should be defined elsewhere to be consistent between applications

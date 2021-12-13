@@ -13,6 +13,7 @@ use librad::{
     git_ext,
     std_ext::result::ResultExt as _,
 };
+use std_ext::Void;
 
 use crate::{
     field::{HasBranch, HasName},
@@ -52,7 +53,7 @@ impl<V, P: HasName> Existing<V, P> {
     }
 }
 
-type Invalid = PhantomData<!>;
+type Invalid = PhantomData<Void>;
 
 impl<P: HasName + HasBranch> Existing<Invalid, P> {
     pub fn new(payload: P, path: PathBuf) -> Self {

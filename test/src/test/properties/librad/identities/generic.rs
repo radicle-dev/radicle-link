@@ -5,15 +5,15 @@
 
 use std::collections::BTreeMap;
 
-use nonempty::NonEmpty;
-use proptest::prelude::*;
-
 use librad::identities::{
     delegation::Delegations,
     generic::{error, Doc, Identity},
     sign::Signatures,
     Verifying,
 };
+use nonempty::NonEmpty;
+use proptest::prelude::*;
+use std_ext::Void;
 
 use crate::librad::identities::generic::*;
 
@@ -175,7 +175,7 @@ proptest! {
             tail[tail.len() - 1].clone()
         };
         let folded = root
-            .verify(tail.into_iter().map(|x| Ok::<_, !>(Verifying::from(x))))
+            .verify(tail.into_iter().map(|x| Ok::<_, Void>(Verifying::from(x))))
             .unwrap();
 
         assert_eq!(folded.head.into_inner(), expected)

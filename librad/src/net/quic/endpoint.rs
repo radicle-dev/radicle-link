@@ -63,7 +63,7 @@ pub struct Endpoint<const R: usize> {
     endpoint: quinn::Endpoint,
     listen_addrs: Arc<RwLock<BTreeSet<SocketAddr>>>,
     conntrack: Conntrack,
-    refcount: Arc<()>,
+    _refcount: Arc<()>,
 }
 
 impl<const R: usize> Endpoint<R> {
@@ -101,7 +101,7 @@ impl<const R: usize> Endpoint<R> {
             endpoint,
             listen_addrs: addrs,
             conntrack: conntrack.clone(),
-            refcount: Arc::new(()),
+            _refcount: Arc::new(()),
         };
         let incoming = incoming
             .map(Ok)
