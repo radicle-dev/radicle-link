@@ -163,7 +163,7 @@ impl fmt::Display for HistoryType {
 /// The typename of an object. Valid typenames MUST be sequences of alphanumeric
 /// characters separated by a period. The name must start and end with an
 /// alphanumeric character
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct TypeName(String);
 
 impl TypeName {
