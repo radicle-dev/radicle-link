@@ -3,10 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#![allow(private_intra_doc_links)]
+#![allow(rustdoc::private_intra_doc_links)]
 #![warn(clippy::extra_unused_lifetimes)]
-#![deny(broken_intra_doc_links)]
-#![feature(associated_type_bounds)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 #[macro_use]
 extern crate async_trait;

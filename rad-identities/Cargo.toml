@@ -39,6 +39,9 @@ path = "../librad"
 [dependencies.radicle-git-ext]
 path = "../git-ext"
 
+[dependencies.radicle-std-ext]
+path = "../std-ext"
+
 [dependencies.serde]
 version = "1.0"
 features = [ "derive" ]

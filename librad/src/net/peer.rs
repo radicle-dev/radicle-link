@@ -131,6 +131,7 @@ where
             pool,
             caches.urns.clone(),
             repl.clone(),
+            #[cfg(feature = "replication-v3")]
             phone.clone(),
         );
         let user_store = git::storage::Pool::new(
@@ -192,15 +193,17 @@ where
                     .map_err(|_| "network reconnect")
                     .try_filter_map(move |event| {
                         let provider = match event {
-                            Upstream::Gossip(box Gossip::Put {
-                                provider,
-                                payload:
-                                    gossip::Payload {
-                                        urn: payload_urn, ..
-                                    },
-                                ..
-                            }) if payload_urn == urn => Some(provider),
-
+                            Upstream::Gossip(gossip) => match *gossip {
+                                Gossip::Put {
+                                    provider,
+                                    payload:
+                                        gossip::Payload {
+                                            urn: payload_urn, ..
+                                        },
+                                    ..
+                                } if payload_urn == urn => Some(provider),
+                                _ => None,
+                            },
                             _ => None,
                         };
                         future::ok(provider)
@@ -346,7 +349,6 @@ where
             self.phone.clone(),
             self.config.protocol.clone(),
             self.config.signer.clone(),
-            self.repl.clone(),
             self.peer_store.clone(),
             self.caches.clone(),
         )

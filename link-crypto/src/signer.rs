@@ -14,24 +14,13 @@ use crate::{keys, peer::PeerId};
 
 /// A blanket trait over [`sign::Signer`] that can be shared safely among
 /// threads.
-pub trait Signer:
-    sign::Signer<Error: std::error::Error + Send + Sync + 'static>
-    + Send
-    + Sync
-    + dyn_clone::DynClone
-    + 'static
-{
+pub trait Signer: sign::Signer + Send + Sync + dyn_clone::DynClone + 'static {
     fn sign_blocking(&self, data: &[u8]) -> Result<sign::Signature, <Self as sign::Signer>::Error> {
         block_on(self.sign(data))
     }
 }
 
-impl<T> Signer for T
-where
-    T: sign::Signer + Send + Sync + Clone + 'static,
-    <T as sign::Signer>::Error: std::error::Error + Send + Sync + 'static,
-{
-}
+impl<T> Signer for T where T: sign::Signer + Send + Sync + Clone + 'static {}
 
 // Here be Dragons...
 

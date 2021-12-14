@@ -78,7 +78,7 @@ fn can_fetch() {
         let peer2_events = peer2.subscribe();
 
         let proj = peer1
-            .using_storage(move |store| TestProject::create(store))
+            .using_storage(TestProject::create)
             .await
             .unwrap()
             .unwrap();

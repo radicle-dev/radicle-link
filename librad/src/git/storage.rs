@@ -14,6 +14,7 @@ use std::{
 use crypto::{BoxedSigner, SomeSigner};
 use git2::string_array::StringArray;
 use git_ext::{self as ext, is_not_found_err};
+use std_ext::Void;
 
 use crate::{
     collaborative_objects::CollaborativeObjects,
@@ -178,7 +179,7 @@ impl Storage {
         Config::try_from(self)
     }
 
-    pub fn config_readonly(&self) -> Result<Config<PhantomData<!>>, Error> {
+    pub fn config_readonly(&self) -> Result<Config<PhantomData<Void>>, Error> {
         Ok(Config::try_from(self.as_raw())?)
     }
 

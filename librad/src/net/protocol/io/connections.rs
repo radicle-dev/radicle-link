@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use either::Either;
 use futures::{
@@ -11,6 +11,7 @@ use futures::{
     stream::{Stream, StreamExt as _},
 };
 use indexmap::IndexSet;
+use std_ext::Void;
 
 pub use super::error;
 use super::streams;
@@ -31,7 +32,7 @@ use crate::{
 pub(in crate::net::protocol) async fn incoming<S, I>(
     state: State<S>,
     ingress: I,
-) -> Result<!, error::Accept>
+) -> Result<Void, error::Accept>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
     I: futures::Stream<
@@ -85,7 +86,16 @@ where
 {
     fn routable(addr: &SocketAddr) -> bool {
         let ip = addr.ip();
-        !(ip.is_unspecified() || ip.is_documentation() || ip.is_multicast())
+        !(ip.is_unspecified()
+            || ip.is_multicast()
+            || match ip {
+                IpAddr::V4(ipv4) => ipv4.is_documentation(),
+                IpAddr::V6(ipv6) =>
+                // ipv6.is_documentation() requires !#[feature(ip)]
+                {
+                    (ipv6.segments()[0] == 0x2001) && (ipv6.segments()[1] == 0xdb8)
+                },
+            })
     }
 
     let addrs = addrs.into_iter().filter(routable).collect::<IndexSet<_>>();

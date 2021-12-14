@@ -151,7 +151,7 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
             let want: Option<&oid> = self
                 .signed(&r.remote_id, &refname_no_remote)
                 .map(|s| s.as_ref())
-                .or_else(|| self.is_tracked(&r.remote_id).then_some(&r.tip));
+                .or_else(|| self.is_tracked(&r.remote_id).then(|| r.tip.as_ref()));
 
             match (want, have) {
                 (Some(want), Some(have)) if want == have.as_ref() => {

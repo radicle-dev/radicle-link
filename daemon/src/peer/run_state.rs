@@ -213,7 +213,7 @@ impl RunState {
                 if !self.stats.connected_peers.is_empty() && self.stats.membership_active > 0 =>
             {
                 vec![Command::Announce]
-            }
+            },
             _ => vec![],
         }
     }

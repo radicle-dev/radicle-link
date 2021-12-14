@@ -346,7 +346,7 @@ pub mod refspecs {
                     }
                 };
 
-                targets_match.then_some({
+                targets_match.then(|| {
                     let dst = Reference {
                         remote: Some(tracked_peer.clone()),
                         category,

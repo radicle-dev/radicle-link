@@ -1,17 +1,8 @@
 #!/usr/bin/env bash
-set -eou pipefail
+set -eoux pipefail
 
-echo '--- deny: Version'
 cargo deny --version
-
-echo '--- deny: Advisories'
 cargo deny check advisories
-
-echo '--- deny: Licenses'
 cargo deny check licenses
-
-echo '--- deny: Bans'
 cargo deny check bans
-
-echo '--- deny: Sources'
 cargo deny check sources

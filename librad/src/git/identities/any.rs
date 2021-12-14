@@ -7,6 +7,7 @@ use std::convert::TryFrom;
 
 use git_ext::is_not_found_err;
 use itertools::Itertools as _;
+use std_ext::Void;
 
 use super::{
     super::{
@@ -102,7 +103,7 @@ where
     Xor::try_from_iter(list_urns(storage)?.map_ok(SomeUrn::from))
 }
 
-fn identities<S>(storage: &S) -> Identities<!>
+fn identities<S>(storage: &S) -> Identities<Void>
 where
     S: AsRef<storage::ReadOnly>,
 {

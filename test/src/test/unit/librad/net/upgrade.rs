@@ -4,7 +4,6 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use futures::try_join;
-
 use librad::{
     net::upgrade::{
         upgrade,

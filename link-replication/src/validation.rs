@@ -17,16 +17,17 @@ use crate::{
     refs,
     sigrefs,
     LocalPeer,
-    Refdb,
+    RefScan,
 };
 
 #[tracing::instrument(level = "debug", skip(cx, sigrefs), err)]
-pub fn validate<C, Oid>(
-    cx: &C,
-    sigrefs: &sigrefs::Combined<Oid>,
-) -> Result<Vec<error::Validation>, C::ScanError>
+pub fn validate<'a, C, Oid>(
+    cx: &'a C,
+    sigrefs: &'a sigrefs::Combined<Oid>,
+) -> Result<Vec<error::Validation>, <&'a C as RefScan>::Error>
 where
-    C: LocalPeer + Refdb,
+    C: LocalPeer,
+    &'a C: RefScan,
     Oid: Debug + AsRef<oid>,
 {
     use refs::component::*;
@@ -50,7 +51,7 @@ where
         let prefix = format!("refs/remotes/{}", peer);
         info!("scanning {} for signed refs", prefix);
 
-        for item in Refdb::scan(cx, prefix)? {
+        for item in RefScan::scan(cx, prefix)? {
             let (name, oid) = item?;
 
             trace!("{}", name);
@@ -121,7 +122,7 @@ where
             let prefix = format!("refs/remotes/{}", peer);
             info!(%prefix, "scanning for unsigned trackings");
 
-            for item in Refdb::scan(cx, prefix)? {
+            for item in RefScan::scan(cx, prefix)? {
                 let (name, _oid) = item?;
 
                 trace!("{}", name);
@@ -182,7 +183,7 @@ where
 
         info!(?pids, "scanning for orphans and strange refs");
 
-        for item in Refdb::scan::<_, String>(cx, None)? {
+        for item in RefScan::scan::<_, String>(cx, None)? {
             let (name, _oid) = item?;
 
             trace!("{}", name);

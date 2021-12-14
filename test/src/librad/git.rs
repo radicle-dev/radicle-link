@@ -7,12 +7,12 @@ use std::io;
 
 use anyhow::anyhow;
 use either::Either::*;
-
 use librad::{
     git::{identities, storage::Storage, Urn},
     identities::{payload, *},
     SecretKey,
 };
+use std_ext::Void;
 
 use crate::tempdir::WithTmpDir;
 
@@ -236,7 +236,7 @@ impl<'a> Project<'a> {
 
     pub fn verify<F>(&self, lookup: F) -> Result<VerifiedProject, error::VerifyProject>
     where
-        F: Fn(Urn) -> Result<git2::Oid, !>,
+        F: Fn(Urn) -> Result<git2::Oid, Void>,
     {
         self.dev
             .git
@@ -246,7 +246,7 @@ impl<'a> Project<'a> {
 
     pub fn assert_verifies<F>(&self, lookup: F) -> anyhow::Result<()>
     where
-        F: Fn(Urn) -> Result<git2::Oid, !>,
+        F: Fn(Urn) -> Result<git2::Oid, Void>,
     {
         let verified = self.verify(lookup)?.into_inner();
         anyhow::ensure!(

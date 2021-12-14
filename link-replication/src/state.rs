@@ -23,6 +23,7 @@ use crate::{
     Net,
     ObjectId,
     PeerId,
+    RefScan,
     Refdb,
     SignedRefs,
     Sigrefs,
@@ -165,7 +166,7 @@ where
         let mut ap = Applied::default();
         for up in other {
             self.tips.push(up.clone().into_owned());
-            ap.append(&mut self.refs.update(Some(up)).into_ok());
+            ap.append(&mut self.refs.update(Some(up)).expect("absurd"));
         }
         ap
     }
@@ -187,17 +188,14 @@ pub(crate) struct Shim<'a, T, U> {
     fetch: &'a mut FetchState<U>,
 }
 
-impl<T, U> Refdb for Shim<'_, T, U>
+impl<'s, T, U> Refdb for Shim<'s, T, U>
 where
     T: Refdb,
     U: Ord,
 {
     type Oid = <refdb::Mem as Refdb>::Oid;
 
-    type Scan<'a> = <refdb::Mem as Refdb>::Scan<'a>;
-
     type FindError = <T as Refdb>::FindError;
-    type ScanError = <refdb::Mem as Refdb>::ScanError;
     type TxError = <refdb::Mem as Refdb>::TxError;
     type ReloadError = <refdb::Mem as Refdb>::ReloadError;
 
@@ -205,7 +203,7 @@ where
         &self,
         refname: impl AsRef<BStr>,
     ) -> Result<Option<Self::Oid>, Self::FindError> {
-        let cached = self.fetch.refs.refname_to_id(&refname).into_ok();
+        let cached = self.fetch.refs.refname_to_id(&refname).expect("absurd");
         if cached.is_some() {
             Ok(cached)
         } else {
@@ -213,14 +211,6 @@ where
                 .refname_to_id(refname)
                 .map(|oid| oid.map(|oid| ObjectId::from(oid.as_ref())))
         }
-    }
-
-    fn scan<O, P>(&self, prefix: O) -> Result<Self::Scan<'_>, Self::ScanError>
-    where
-        O: Into<Option<P>>,
-        P: AsRef<str>,
-    {
-        self.fetch.refs.scan(prefix)
     }
 
     fn update<'a, I>(&mut self, updates: I) -> Result<Applied<'a>, Self::TxError>
@@ -232,6 +222,20 @@ where
 
     fn reload(&mut self) -> Result<(), Self::ReloadError> {
         self.fetch.refs.reload()
+    }
+}
+
+impl<'a, T, U> RefScan for &'a Shim<'_, T, U> {
+    type Oid = <&'a refdb::Mem as RefScan>::Oid;
+    type Scan = <&'a refdb::Mem as RefScan>::Scan;
+    type Error = <&'a refdb::Mem as RefScan>::Error;
+
+    fn scan<O, P>(self, prefix: O) -> Result<Self::Scan, Self::Error>
+    where
+        O: Into<Option<P>>,
+        P: AsRef<str>,
+    {
+        RefScan::scan(&self.fetch.refs, prefix)
     }
 }
 

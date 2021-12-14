@@ -9,6 +9,10 @@ license = "GPL-3.0-or-later"
 doctest = false
 test = false
 
+[features]
+default = []
+nightly = []
+
 [dependencies]
 blocking = "1.0"
 futures = "0.3"
@@ -17,10 +21,9 @@ rand = "0.8"
 thiserror = "1.0"
 tracing = "0.1"
 
+[dependencies.radicle-std-ext]
+path = "../std-ext"
+
 [dependencies.tokio]
 version = "1.13.1"
-features = ["time"]
-
-[dependencies.tokio-stream]
-version = "0.1.8"
 features = ["time"]

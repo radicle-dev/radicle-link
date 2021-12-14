@@ -1,6 +1,19 @@
 name: ci
 on: [push, pull_request]
 jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v1
+      - run: ./scripts/ci/fmt
+        shell: bash
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -8,9 +21,22 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          components: rustfmt, clippy
+          toolchain: stable
+          components: clippy
       - uses: Swatinem/rust-cache@v1
-      - run: ./scripts/ci/clippy
+      - run: ./scripts/ci/lint
+        shell: bash
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v1
+      - run: ./scripts/ci/docs
         shell: bash
 
   cargo-deny:
@@ -29,12 +55,18 @@ jobs:
 
   linux:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - nightly
+    continue-on-error: ${{ matrix.toolchain == 'nightly' }}
     steps:
       - uses: actions/checkout@master
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          components: rustfmt, clippy
+          toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v1
       - run: ./scripts/ci/build-test
         shell: bash
@@ -48,7 +80,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          components: rustfmt, clippy
+          toolchain: stable
       - uses: Swatinem/rust-cache@v1
       - run: ./scripts/ci/build-test
         shell: bash
@@ -63,7 +95,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          components: rustfmt, clippy
+          toolchain: stable
       - uses: Swatinem/rust-cache@v1
       - run: ./scripts/ci/test-fast
         shell: bash

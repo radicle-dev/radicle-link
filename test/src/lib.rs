@@ -3,11 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#![feature(bool_to_option)]
-#![feature(never_type)]
-#![feature(assert_matches)]
-#![feature(path_try_exists)]
-
+#[cfg(test)]
+#[macro_use]
+extern crate assert_matches;
 #[macro_use]
 extern crate lazy_static;
 #[cfg(test)]
@@ -19,6 +17,7 @@ extern crate futures_await_test;
 #[cfg(test)]
 #[macro_use]
 extern crate link_canonical;
+extern crate radicle_std_ext as std_ext;
 
 #[macro_use]
 pub mod daemon;

@@ -12,6 +12,7 @@ proc-macro = true
 test = false
 
 [dependencies]
+proc-macro-error = "1.0.4"
 quote = "1"
 syn = "1"
 

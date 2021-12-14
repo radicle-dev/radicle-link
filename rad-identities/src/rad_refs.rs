@@ -21,6 +21,7 @@ use librad::{
 };
 
 #[derive(Debug, Error)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[error(transparent)]
     Identities(#[from] identities::Error),

@@ -25,6 +25,7 @@ use link_replication::{
     Negotiation,
     Net,
     ObjectId,
+    RefScan,
     Refdb,
     SignedRefs,
     Sigrefs,
@@ -34,6 +35,7 @@ use link_replication::{
     VerifiedIdentity,
 };
 use multihash::Multihash;
+use std_ext::Void;
 
 use crate::{
     git::{self, refs, storage::Storage, tracking},
@@ -58,6 +60,7 @@ pub mod error {
     use thiserror::Error;
 
     #[derive(Debug, Error)]
+    #[allow(clippy::large_enum_variant)]
     pub enum Verification {
         #[error("unknown identity kind")]
         UnknownIdentityKind(Box<SomeIdentity>),
@@ -66,16 +69,16 @@ pub mod error {
         MissingDelegate(identities::git::Urn),
 
         #[error(transparent)]
-        Person(#[from] Box<identities::error::VerifyPerson>),
+        Person(#[from] identities::error::VerifyPerson),
 
         #[error(transparent)]
-        Project(#[from] Box<identities::error::VerifyProject>),
+        Project(#[from] identities::error::VerifyProject),
 
         #[error(transparent)]
-        Load(#[from] Box<identities::error::Load>),
+        Load(#[from] identities::error::Load),
 
         #[error(transparent)]
-        Git(#[from] Box<git::identities::Error>),
+        Git(#[from] git::identities::Error),
     }
 
     #[derive(Debug, Error)]
@@ -88,31 +91,13 @@ pub mod error {
     }
 
     #[derive(Debug, Error)]
+    #[allow(clippy::large_enum_variant)]
     pub enum Connection {
         #[error(transparent)]
         Upgrade(#[from] upgrade::Error<quic::BidiStream>),
 
         #[error(transparent)]
         Quic(#[from] quic::Error),
-    }
-
-    macro_rules! from_unboxed {
-        ($($t:path)*) => {
-            $(
-                impl From<$t> for Verification {
-                    fn from(e: $t) -> Self {
-                        Self::from(Box::new(e))
-                    }
-                }
-            )*
-        };
-    }
-
-    from_unboxed! {
-        identities::error::VerifyPerson
-        identities::error::VerifyProject
-        identities::error::Load
-        git::identities::Error
     }
 }
 
@@ -294,7 +279,7 @@ impl Identities for Context<'_> {
         let id = self
             .store
             .read_only()
-            .identities::<!>()
+            .identities::<Void>()
             .some_identity(*git_ext::Oid::from(head.as_ref().to_owned()))?;
         self.verify(id, resolve)
     }
@@ -442,13 +427,10 @@ impl Iterator for Tracked {
     }
 }
 
-impl Refdb for Context<'_> {
+impl<'c> Refdb for Context<'c> {
     type Oid = <io::Refdb<io::Odb> as Refdb>::Oid;
 
-    type Scan<'a> = <io::Refdb<io::Odb> as Refdb>::Scan<'a>;
-
     type FindError = <io::Refdb<io::Odb> as Refdb>::FindError;
-    type ScanError = <io::Refdb<io::Odb> as Refdb>::ScanError;
     type TxError = <io::Refdb<io::Odb> as Refdb>::TxError;
     type ReloadError = <io::Refdb<io::Odb> as Refdb>::ReloadError;
 
@@ -457,14 +439,6 @@ impl Refdb for Context<'_> {
         refname: impl AsRef<BStr>,
     ) -> Result<Option<Self::Oid>, Self::FindError> {
         self.refdb.refname_to_id(refname)
-    }
-
-    fn scan<O, P>(&self, prefix: O) -> Result<Self::Scan<'_>, Self::ScanError>
-    where
-        O: Into<Option<P>>,
-        P: AsRef<str>,
-    {
-        self.refdb.scan(prefix)
     }
 
     fn update<'a, I>(&mut self, updates: I) -> Result<Applied<'a>, Self::TxError>
@@ -476,6 +450,20 @@ impl Refdb for Context<'_> {
 
     fn reload(&mut self) -> Result<(), Self::ReloadError> {
         self.refdb.reload()
+    }
+}
+
+impl<'a> RefScan for &'a Context<'_> {
+    type Oid = <&'a io::Refdb<io::Odb> as RefScan>::Oid;
+    type Scan = <&'a io::Refdb<io::Odb> as RefScan>::Scan;
+    type Error = <&'a io::Refdb<io::Odb> as RefScan>::Error;
+
+    fn scan<O, P>(self, prefix: O) -> Result<Self::Scan, Self::Error>
+    where
+        O: Into<Option<P>>,
+        P: AsRef<str>,
+    {
+        self.refdb.scan(prefix)
     }
 }
 

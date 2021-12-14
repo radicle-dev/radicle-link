@@ -10,7 +10,7 @@ use thiserror::Error;
 
 use git2::string_array::StringArray;
 use git_ext::{self as ext, blob, is_not_found_err, RefLike, RefspecPattern};
-use std_ext::result::ResultExt as _;
+use std_ext::prelude::*;
 
 use crate::{
     git::types::{reference, Many, One, Reference},
@@ -196,7 +196,7 @@ impl ReadOnly {
     /// 3. The SHA of the tag was not the same as the resolved reference
     /// 4. The `oid` was the [`zero`][`git2::Oid::zero`] SHA.
 
-    pub fn config(&self) -> Result<Config<PhantomData<!>>, Error> {
+    pub fn config(&self) -> Result<Config<PhantomData<Void>>, Error> {
         Ok(Config::try_from(&self.backend)?)
     }
 

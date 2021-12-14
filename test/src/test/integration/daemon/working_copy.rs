@@ -3,10 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use radicle_daemon::{project::checkout, state, RunConfig};
-
-use assert_matches::assert_matches;
 use pretty_assertions::assert_eq;
+use radicle_daemon::{project::checkout, state, RunConfig};
 
 use crate::{
     daemon::common::{blocking, shia_le_pathbuf, Harness},

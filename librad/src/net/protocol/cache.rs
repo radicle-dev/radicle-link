@@ -31,6 +31,7 @@ pub mod urns {
 
     #[derive(Debug, Error)]
     #[non_exhaustive]
+    #[allow(clippy::large_enum_variant)]
     pub enum Error {
         #[error(transparent)]
         Build(#[from] xor::BuildError<identities::Error>),
@@ -61,7 +62,7 @@ pub mod urns {
     #[derive(Clone)]
     pub struct Filter {
         inner: Arc<RwLock<FilterInner>>,
-        watch: storage::Watcher,
+        _watch: storage::Watcher,
     }
 
     struct FilterInner {
@@ -85,13 +86,13 @@ pub mod urns {
                 Arc::new(RwLock::new(inner))
             };
 
-            let (watch, events) = storage.watch().namespaces()?;
+            let (_watch, events) = storage.watch().namespaces()?;
             thread::spawn({
                 let filter = Arc::clone(&inner);
                 move || recache_thread(storage, filter, events, observe)
             });
 
-            Ok(Self { inner, watch })
+            Ok(Self { inner, _watch })
         }
 
         pub fn contains(&self, urn: &SomeUrn) -> bool {

@@ -3,20 +3,15 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use core::time::Duration;
+use std::{marker::PhantomData, ops::ControlFlow, panic, pin::Pin, task::Poll, time::Duration};
+
 use futures::{
     stream::{FuturesUnordered, StreamExt},
     Future,
     FutureExt,
     Stream,
 };
-use std::{
-    marker::PhantomData,
-    ops::{ControlFlow, Try},
-    panic,
-    pin::Pin,
-    task::Poll,
-};
+use std_ext::ops::Try;
 
 /// Run tasks from a stream of tasks but terminate if the stream is idle for
 /// `idle_timeout`. The idle timeout starts when there are no tasks running and
@@ -166,7 +161,7 @@ struct ReturnRemainingTasks<T: Try> {
 impl<T: Try> Unpin for ReturnRemainingTasks<T> {}
 
 impl<T: Try> OnErrorPolicy<T> for ReturnRemainingTasks<T> {
-    type Output = Result<(), (T::Residual, impl Stream<Item = Result<T, crate::JoinError>>)>;
+    type Output = Result<(), (T::Residual, FuturesUnordered<crate::Task<T>>)>;
     type Err = T::Residual;
 
     fn extract_err(result: T) -> Option<Self::Err> {

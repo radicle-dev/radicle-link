@@ -26,7 +26,10 @@ pub fn main() -> anyhow::Result<()> {
                     let exe = format!("rad-{}", exe);
                     let status = Command::new(exe.clone()).args(&external[1..]).status();
                     match status {
-                        Ok(status) => Ok(status.exit_ok()?),
+                        Ok(status) => {
+                            anyhow::ensure!(status.success(), status);
+                            Ok(())
+                        },
                         Err(err) => {
                             if let ErrorKind::NotFound = err.kind() {
                                 eprintln!("{} not found", exe);

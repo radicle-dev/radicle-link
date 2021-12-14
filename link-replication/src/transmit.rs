@@ -79,6 +79,7 @@ pub struct FilteredRef<T: ?Sized> {
 }
 
 impl<T> FilteredRef<T> {
+    #[allow(clippy::unnecessary_lazy_evaluations)]
     pub fn new(
         name: BString,
         tip: ObjectId,

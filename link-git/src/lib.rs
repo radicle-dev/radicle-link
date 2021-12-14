@@ -3,8 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#![feature(array_map, never_type)]
-
 #[macro_use]
 extern crate async_trait;
 

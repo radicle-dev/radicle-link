@@ -6,8 +6,7 @@ sources:
   - https://git.sr.ht/~radicle-link/radicle-link
 tasks:
   - setup: |
-      toolchain=$(cat radicle-link/rust-toolchain)
-      rustup toolchain install "$toolchain" \
+      rustup toolchain install stable nightly \
           --profile minimal --component clippy --component rustfmt
 
       deny_version="0.11.0"
@@ -25,9 +24,12 @@ tasks:
 
       cd radicle-link/
       cargo fetch
+  - fmt: |
+      cd radicle-link/
+      ./scripts/ci/fmt
   - lint: |
       cd radicle-link/
-      ./scripts/ci/clippy
+      ./scripts/ci/lint
   - advisories: |
       cd radicle-link/
       cargo deny check advisories ||:

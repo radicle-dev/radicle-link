@@ -11,6 +11,7 @@ use link_async::Spawner;
 use nonempty::NonEmpty;
 use nonzero_ext::nonzero;
 use rand_pcg::Pcg64Mcg;
+use std_ext::Void;
 use tracing::Instrument as _;
 
 use super::{
@@ -21,7 +22,7 @@ use super::{
 };
 use crate::{
     git::storage,
-    net::replication::{self, Replication},
+    net::replication,
     paths::Paths,
     rate_limit::RateLimiter,
     PeerId,
@@ -122,7 +123,7 @@ impl<S> Bound<S> {
         disco: D,
     ) -> (
         impl FnOnce(),
-        impl Future<Output = Result<!, io::error::Accept>>,
+        impl Future<Output = Result<Void, io::error::Accept>>,
     )
     where
         S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
@@ -151,7 +152,6 @@ pub async fn bind<Sign, Store>(
     phone: TinCans,
     config: Config,
     signer: Sign,
-    replication: Replication,
     storage: Store,
     caches: cache::Caches,
 ) -> Result<Bound<Store>, error::Bootstrap>
@@ -185,7 +185,6 @@ where
         local_id,
         endpoint,
         membership,
-        replication,
         gossip,
         phone: phone.clone(),
         config: StateConfig {
@@ -218,7 +217,7 @@ pub fn accept<Store, Disco>(
     disco: Disco,
 ) -> (
     impl FnOnce(),
-    impl Future<Output = Result<!, io::error::Accept>>,
+    impl Future<Output = Result<Void, io::error::Accept>>,
 )
 where
     Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,

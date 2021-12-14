@@ -20,6 +20,7 @@ use librad::{
 use crate::field::HasUrn;
 
 #[derive(Debug, thiserror::Error)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[error(transparent)]
     Identities(#[from] identities::Error),

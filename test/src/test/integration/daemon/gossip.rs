@@ -5,7 +5,6 @@
 
 use std::time::{Duration, SystemTime};
 
-use assert_matches::assert_matches;
 use futures::{future, StreamExt as _};
 use tokio::time::timeout;
 
@@ -188,18 +187,19 @@ fn can_ask_and_clone_project() -> Result<(), anyhow::Error> {
 
         let alice_tracked = state::tracked(&alice_peer.peer, urn.clone()).await?;
 
-        assert_matches!(
-            alice_tracked.first().unwrap(),
+        match alice_tracked.first().unwrap() {
             radicle_daemon::project::peer::Peer::Remote {
                 peer_id,
-                status: radicle_daemon::project::peer::Status::Replicated(
-                    radicle_daemon::project::peer::Replicated { role, .. }
-                ),
+                status:
+                    radicle_daemon::project::peer::Status::Replicated(
+                        radicle_daemon::project::peer::Replicated { role, .. },
+                    ),
             } => {
-                assert_eq!(*peer_id, bob_peer.peer_id);
-                assert_eq!(*role, radicle_daemon::project::peer::Role::Tracker);
-            }
-        );
+                assert_eq!(peer_id, &bob_peer.peer_id);
+                assert_eq!(role, &radicle_daemon::project::peer::Role::Tracker);
+            },
+            _ => unreachable!(),
+        }
 
         Ok(())
     })

@@ -196,7 +196,9 @@ pub mod upstream {
 
         pub fn gossip_from(peer: PeerId) -> impl Fn(&Upstream) -> bool {
             move |event| match event {
-                Upstream::Gossip(box Gossip::Put { provider, .. }) => provider.peer_id == peer,
+                Upstream::Gossip(gossip) => match gossip.as_ref() {
+                    Gossip::Put { provider, .. } => provider.peer_id == peer,
+                },
                 _ => false,
             }
         }

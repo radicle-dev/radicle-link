@@ -24,6 +24,7 @@ pub const GIT_CONFIG_PATH_KEY: &str = "include.path";
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[error(transparent)]
     Io(#[from] io::Error),
