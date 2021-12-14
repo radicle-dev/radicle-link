@@ -511,6 +511,41 @@ where
     }
 }
 
+/// Check that the only tracking entry for the given `urn` is the default entry.
+/// This will return false if there are either:
+///   * No tracking entries for the `urn`
+///   * There is at least one tracked peer for the `urn`
+pub fn default_only<'a, Db>(db: &'a Db, urn: &Urn<Oid>) -> Result<bool, error::DefaultOnly>
+where
+    Db: refdb::Read<'a, Oid = Oid>,
+{
+    let spec = remotes_refspec(Some(urn));
+    let mut seen_default = false;
+    for reference in db
+        .references(&spec)
+        .map_err(|err| error::DefaultOnly::References {
+            spec: spec.clone(),
+            source: err.into(),
+        })?
+    {
+        match reference
+            .map_err(|err| error::DefaultOnly::Iter {
+                spec: spec.clone(),
+                source: err.into(),
+            })?
+            .name
+            .remote
+        {
+            Remote::Default => {
+                seen_default = true;
+            },
+            Remote::Peer(_) => return Ok(false),
+        }
+    }
+
+    Ok(seen_default)
+}
+
 fn from_reference(name: &RefName<'_, Oid>, config: Config) -> Tracked {
     match name.remote {
         Remote::Default => Tracked::Default {
