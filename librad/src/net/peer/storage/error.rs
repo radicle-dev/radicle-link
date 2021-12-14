@@ -33,5 +33,26 @@ pub enum Error {
     Pool(#[from] storage::PoolError),
 
     #[error(transparent)]
+    Tracking(#[from] Tracking),
+}
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum Tracking {
+    #[error(transparent)]
     IsTracked(#[from] tracking::error::IsTracked),
+    #[error(transparent)]
+    DefaultOnly(#[from] tracking::error::DefaultOnly),
+}
+
+impl From<tracking::error::IsTracked> for Error {
+    fn from(err: tracking::error::IsTracked) -> Self {
+        Tracking::from(err).into()
+    }
+}
+
+impl From<tracking::error::DefaultOnly> for Error {
+    fn from(err: tracking::error::DefaultOnly) -> Self {
+        Tracking::from(err).into()
+    }
 }

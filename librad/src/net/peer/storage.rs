@@ -148,12 +148,18 @@ impl Storage {
             .await
     }
 
+    /// If the storage does not yet have the given `urn` *and* the default
+    /// tracking entry exists, then the `urn` is considered tracked -- as we
+    /// want to passively replicate the `urn`. Otherwise, the `urn` is only
+    /// considered tracked if we have a tracked entry for the given `peer`.
     async fn is_tracked(&self, urn: Urn, peer: PeerId) -> Result<bool, Error> {
         let git = self.pool.get().await?;
-        Ok(self
-            .exec
-            .blocking(move || tracking::is_tracked(git.as_ref(), &urn, Some(peer)))
-            .await?)
+        self.exec
+            .blocking(move || -> Result<bool, Error> {
+                Ok(tracking::is_tracked(git.as_ref(), &urn, Some(peer))?
+                    || tracking::default_only(git.as_ref(), &urn)?)
+            })
+            .await
     }
 }
 
