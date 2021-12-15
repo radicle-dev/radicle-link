@@ -5,8 +5,6 @@
 
 use std::convert::TryFrom;
 
-use pretty_assertions::assert_eq;
-
 use librad::{
     git::{
         local::url::LocalUrl,
@@ -14,14 +12,14 @@ use librad::{
     },
     reflike,
 };
-use radicle_git_ext::RefLike;
-
+use pretty_assertions::assert_eq;
 use radicle_daemon::{
     project::{peer, Peer},
     seed::Seed,
     state,
     RunConfig,
 };
+use radicle_git_ext::RefLike;
 
 use crate::{
     daemon::common::{assert_fetched, blocking, shia_le_pathbuf, Harness},
@@ -399,8 +397,11 @@ fn track_peer() -> Result<(), anyhow::Error> {
 }
 
 #[test]
-#[cfg_attr(feature = "replication-v3", ignore)]
+#[cfg(not(feature = "replication-v3"))]
 fn replication_includes_user() -> Result<(), anyhow::Error> {
+    use librad::{git, net};
+    use tracing::{info, warn};
+
     logging::init();
 
     let mut harness = Harness::new();
@@ -430,14 +431,34 @@ fn replication_includes_user() -> Result<(), anyhow::Error> {
         .await?;
 
         state::track(&alice.peer, project.urn(), bob.peer_id).await?;
-        state::fetch(
-            &alice.peer,
-            project.urn(),
-            bob.peer_id,
-            bob.listen_addrs.clone(),
-        )
-        .await?;
+        // `state::track` already triggers a fetch by gossipping a `Have`, but
+        // we don't know when it's done. A manual `state::fetch` is however
+        // likely to be rejected due to the background one being in-flight. So
+        // just try fetching until it succeeds, after which bobby should be on
+        // alice's machine.
+        loop {
+            info!("fetching from bob to alice");
+            let res = state::fetch(
+                &alice.peer,
+                project.urn(),
+                bob.peer_id,
+                bob.listen_addrs.clone(),
+            )
+            .await;
+            match res {
+                Err(state::Error::Replication(net::peer::error::Replicate::Replicate(
+                    net::replication::error::Replicate::Retrying(
+                        git::storage::fetcher::error::Retrying::Concurrent { .. },
+                    ),
+                ))) => {
+                    warn!("unable to acquire fetch slot, trying again");
+                    continue;
+                },
 
+                Ok(_) => break,
+                Err(e) => return Err(e.into()),
+            }
+        }
         let bob_malkovich = state::get_user(&alice.peer, bob.owner.urn()).await?;
 
         assert_eq!(bob_malkovich, Some(bob.owner.into_inner().into_inner()));
