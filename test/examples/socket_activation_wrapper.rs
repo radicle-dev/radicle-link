@@ -8,16 +8,23 @@ use nix::{sys::socket, unistd::Pid};
 use std::{fs::remove_file, os::unix::process::CommandExt as _, process::Command};
 
 fn main() -> Result<()> {
-    remove_file("/tmp/test-linkd-socket-activation.sock").ok();
-
+    let tmp = tempfile::Builder::new()
+        .prefix("test-linkd-socket-activation")
+        .suffix(".sock")
+        .tempfile()?
+        .path()
+        .to_path_buf();
     let sock = socket::socket(
         socket::AddressFamily::Unix,
         socket::SockType::Stream,
         socket::SockFlag::empty(),
         None,
     )?;
-    let addr = socket::SockAddr::new_unix("/tmp/test-linkd-socket-activation.sock")?;
-    socket::bind(sock, &addr)?;
+    let addr = socket::SockAddr::new_unix(&tmp)?;
+    let bound = socket::bind(sock, &addr);
+    // unlink immediately, so the socket can't leak even if destructors don't run
+    remove_file(tmp)?;
+    bound?;
     socket::listen(sock, 1)?;
 
     let mut cmd = Command::new("cargo");
