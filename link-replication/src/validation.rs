@@ -62,7 +62,10 @@ where
                 seen_sigrefs = true;
             }
 
-            let owned = refs::owned(name.as_bstr());
+            let owned = match refs::owned(name.as_bstr()) {
+                Some(owned) => owned,
+                None => continue,
+            };
             // XXX: Should rad/self actually be signed?
             if owned.as_ref() != refs::RadId.as_bytes()
                 && owned.starts_with(refs::Prefix::Rad.as_bytes())
@@ -127,8 +130,13 @@ where
 
                 trace!("{}", name);
 
-                let owned = refs::owned(name.as_bstr());
-                trace!("owned {}", owned.as_ref());
+                let owned = match refs::owned(name.as_bstr()) {
+                    Some(owned) => owned,
+                    None => {
+                        fail.push(Validation::Strange(name));
+                        continue;
+                    },
+                };
                 match refs::parse::<Identity>(owned.as_ref()) {
                     None => fail.push(Validation::Strange(name)),
                     Some(refs::Parsed { inner, .. }) => match inner {

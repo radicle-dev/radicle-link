@@ -16,13 +16,13 @@ use link_crypto::PeerId;
 use super::{is_separator, lit::component::*};
 use crate::ids;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Parsed<Urn> {
     pub remote: Option<PeerId>,
     pub inner: Either<Rad<Urn>, Refs>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Rad<Urn> {
     Id,
     Me, // self
@@ -30,13 +30,13 @@ pub enum Rad<Urn> {
     Ids { urn: Urn },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Refs {
     pub cat: Cat,
     pub name: Vec<BString>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Cat {
     Heads,
     Notes,
@@ -80,7 +80,7 @@ impl AsRef<[u8]> for Cat {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Identity(String);
 
 impl Identity {
@@ -139,15 +139,15 @@ where
         [] => None,
 
         RAD => match iter.next()? {
-            ID => Some(Parsed {
+            ID => iter.next().is_none().then(|| Parsed {
                 remote,
                 inner: Either::Left(Rad::Id),
             }),
-            SELF => Some(Parsed {
+            SELF => iter.next().is_none().then(|| Parsed {
                 remote,
                 inner: Either::Left(Rad::Me),
             }),
-            SIGNED_REFS => Some(Parsed {
+            SIGNED_REFS => iter.next().is_none().then(|| Parsed {
                 remote,
                 inner: Either::Left(Rad::SignedRefs),
             }),
@@ -156,7 +156,7 @@ where
                     .next()
                     .and_then(|s| std::str::from_utf8(s).ok())
                     .and_then(|s| Urn::try_from_id(s).ok())?;
-                Some(Parsed {
+                iter.next().is_none().then(|| Parsed {
                     remote,
                     inner: Either::Left(Rad::Ids { urn }),
                 })
@@ -167,7 +167,7 @@ where
 
         x => {
             let name = iter.map(BString::from).collect::<Vec<_>>();
-            if name.is_empty() {
+            if name.is_empty() || name.iter().any(|x| x.is_empty()) {
                 None
             } else {
                 Some(Parsed {

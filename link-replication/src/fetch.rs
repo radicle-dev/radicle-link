@@ -137,8 +137,10 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
         let mut haves = BTreeSet::new();
 
         for r in refs {
-            let refname = refs::remote_tracking(&r.remote_id, r.name.as_bstr());
-            let refname_no_remote = refs::owned(r.name.as_bstr());
+            let name = r.name.as_bstr();
+            let refname = refs::remote_tracking(&r.remote_id, name);
+            let refname_no_remote =
+                refs::owned(name).expect("succeds because ref_filter parses the ref");
 
             let have = db.refname_to_id(&refname)?;
             if let Some(oid) = have.as_ref() {
