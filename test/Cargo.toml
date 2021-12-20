@@ -81,12 +81,18 @@ path = "../link-async"
 path = "../link-canonical"
 features = [ "derive" ]
 
+[dependencies.link-crypto]
+path = "../link-crypto"
+
 [dependencies.link-identities]
 path = "../link-identities"
 
 [dependencies.link-git]
 path = "../link-git"
 features = ["git2"]
+
+[dependencies.link-replication]
+path = "../link-replication"
 
 [dependencies.node-lib]
 path = "../node-lib"

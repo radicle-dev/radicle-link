@@ -3,6 +3,12 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+//! Ref rewriting utilities.
+//!
+//! Note that this is an internal API, exported mainly for testing. In
+//! particular, ref name parameters are generally expected to be pre-validated
+//! in some way, and should never be empty.
+
 use std::{borrow::Cow, ops::Deref};
 
 use bstr::{BStr, BString, ByteVec as _};
@@ -14,6 +20,10 @@ use link_crypto::PeerId;
 
 use super::{is_separator, Prefix};
 
+/// A ref which optionally is relative to a namespace.
+///
+/// The fully qualified name can be obtained lazily using
+/// [`Namespaced::qualified`].
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Namespaced<'a> {
     pub namespace: Option<Cow<'a, BStr>>,
@@ -44,17 +54,33 @@ impl Namespaced<'_> {
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct RemoteTracking<'a>(Cow<'a, BStr>);
 
+/// Ensure that the ref `name` is a remote tracking branch.
+///
+/// If `name` starts with `refs/remotes/`, this is the identity function.
+/// Otherwise, `refs/remotes/<remote_id>/` is prepended. This will handle `name`
+/// being prefixed by `refs/`; eg. `refs/heads/main` will be rewritten to
+///
+///     refs/remotes/<remote_id>/heads/main
+///
+/// not
+///     refs/remotes/<remote_id>/refs/heads/main
+///
+/// Note that if `name` is not prefixed, it is inserted verbatim. Thus it must
+/// still include the category (ie. `heads/main`, not `main`).
 pub fn remote_tracking<'a>(
     remote_id: &PeerId,
     name: impl Into<Cow<'a, BStr>>,
 ) -> RemoteTracking<'a> {
+    use super::component::REFS;
+
     let mut name = name.into();
     if !name.starts_with(Prefix::Remotes.as_bytes()) {
         let name = name.to_mut();
-        if name.starts_with(b"refs/") {
-            name.drain(0.."refs/".len());
+        if name.starts_with(REFS) {
+            name.insert_str(REFS.len() + 1, format!("remotes/{}/", remote_id));
+        } else {
+            name.insert_str(0, format!("refs/remotes/{}/", remote_id));
         }
-        name.insert_str(0, format!("refs/remotes/{}/", remote_id))
     }
     RemoteTracking(name)
 }
@@ -82,18 +108,23 @@ impl<'a> From<RemoteTracking<'a>> for Cow<'a, BStr> {
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Owned<'a>(Cow<'a, BStr>);
 
-pub fn owned<'a>(name: impl Into<Cow<'a, BStr>>) -> Owned<'a> {
+/// Ensure that `name` is not a remote tracking branch.
+///
+/// Essentially removes `refs/remotes/*/` from `name`. Returns `None` if the
+/// result would be the empty string.
+pub fn owned<'a>(name: impl Into<Cow<'a, BStr>>) -> Option<Owned<'a>> {
     use super::component::*;
 
     let name = name.into();
     match name.splitn(4, is_separator).collect::<Vec<_>>()[..] {
-        [REFS, REMOTES, _, rest] => {
+        [REFS, REMOTES, _, rest] => (!rest.is_empty()).then(|| {
             let mut name = BString::from(REFS);
             name.insert_char(REFS.len(), '/');
             name.insert_str(REFS.len() + 1, rest);
             Owned(name.into())
-        },
-        _ => Owned(name),
+        }),
+        [REFS, REMOTES] | [REFS, REMOTES, _] => None,
+        _ => Some(Owned(name)),
     }
 }
 
@@ -123,12 +154,30 @@ pub struct Scoped<'a, 'b> {
     name: Either<Owned<'b>, RemoteTracking<'b>>,
 }
 
+/// Conditionally ensure `name` is either a remote tracking branch or not.
+///
+/// If the `wanted_id` is equal to the `remote_id`, the result is not a remote
+/// tracking branch, otherwise it is. For example, given the name:
+///
+///     refs/heads/main
+///
+/// If `wanted_id == remote_id`, the result is:
+///
+///     refs/heads/main
+///
+/// Otherwise
+///
+///     refs/remotes/<wanted_id>/heads/main
+///
+/// This is used to determine the right 'scope' of a ref when fetching from
+/// `remote_id`. `name` should generally not be a remote tracking branch itself,
+/// as that information is stripped.
 pub fn scoped<'a, 'b>(
     wanted_id: &'a PeerId,
     remote_id: &PeerId,
     name: impl Into<Cow<'b, BStr>>,
 ) -> Scoped<'a, 'b> {
-    let own = owned(name);
+    let own = owned(name).expect("BUG: `scoped` should receive valid remote tracking branches");
     Scoped {
         scope: wanted_id,
         name: if wanted_id == remote_id {

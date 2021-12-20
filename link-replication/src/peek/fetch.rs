@@ -70,6 +70,14 @@ impl Negotiation for ForFetch {
         use refs::parsed::Identity;
 
         let (name, tip) = refs::into_unpacked(r);
+        // FIXME:: precompute / memoize `Self::ref_prefixes`
+        if !self
+            .ref_prefixes()
+            .iter()
+            .any(|prefix| name.starts_with(prefix.as_ref()))
+        {
+            return None;
+        }
         let parsed = refs::parse::<Identity>(name.as_bstr())?;
 
         match parsed.remote {
