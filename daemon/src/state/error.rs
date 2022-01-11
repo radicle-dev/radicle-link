@@ -7,6 +7,7 @@
 
 use librad::{
     git::{
+        tracking,
         types::{One, Reference},
         Urn,
     },
@@ -98,9 +99,9 @@ pub enum Error {
     #[error(transparent)]
     StorageConfig(#[from] librad::git::storage::config::Error),
 
-    /// An error occurred when attempting to track or untrack a peer.
+    /// Error while performing tracking operation
     #[error(transparent)]
-    Tracking(#[from] librad::git::tracking::Error),
+    Tracking(#[from] Tracking),
 
     /// Attempted to create an identity that already exists.
     #[error("the URN `{0}` already exists")]
@@ -129,6 +130,40 @@ pub enum Error {
     /// A spawned task was cancelled
     #[error("spawned task cancelled")]
     TaskCancelled,
+}
+
+/// Error while performing tracking operation
+#[derive(Debug, thiserror::Error)]
+pub enum Tracking {
+    /// An error occurred when attempting to track a peer.
+    #[error(transparent)]
+    Track(#[from] tracking::error::Track),
+
+    /// An error occurred when attempting to get tracked peers.
+    #[error(transparent)]
+    Tracked(#[from] tracking::error::TrackedPeers),
+
+    /// An error occurred when attempting to untrack a peer.
+    #[error(transparent)]
+    Untrack(#[from] tracking::error::Untrack),
+}
+
+impl From<tracking::error::Track> for Error {
+    fn from(err: tracking::error::Track) -> Self {
+        Self::Tracking(err.into())
+    }
+}
+
+impl From<tracking::error::Untrack> for Error {
+    fn from(err: tracking::error::Untrack) -> Self {
+        Self::Tracking(err.into())
+    }
+}
+
+impl From<tracking::error::TrackedPeers> for Error {
+    fn from(err: tracking::error::TrackedPeers) -> Self {
+        Self::Tracking(err.into())
+    }
 }
 
 impl From<Infallible> for Error {

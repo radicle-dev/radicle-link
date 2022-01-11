@@ -88,9 +88,10 @@ fn can_fetch() {
             let urn = proj.project.urn();
             peer2
                 .using_storage(move |store| {
-                    tracking::tracked(&store, &urn)
+                    tracking::tracked_peers(store, Some(&urn))
                         .unwrap()
                         .map(|peer| {
+                            let peer = peer.unwrap();
                             let self_ref = Reference::rad_self(Namespace::from(&urn), peer);
                             let person = identities::person::get(
                                 &store,

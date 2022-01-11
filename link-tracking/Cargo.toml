@@ -1,0 +1,30 @@
+[package]
+name = "link-tracking"
+version = "0.1.0"
+authors = ["Fintan Halpenny <fintan.halpenny@gmail.com>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+multihash = "0.11"
+thiserror = "1.0"
+tracing = "0.1"
+
+[dependencies.link-canonical]
+path = "../link-canonical"
+features = [ "derive" ]
+
+[dependencies.cob]
+path = "../cob"
+
+[dependencies.link-crypto]
+path = "../link-crypto"
+
+[dependencies.link-identities]
+path = "../link-identities"
+
+[dependencies.radicle-git-ext]
+path = "../git-ext"
+
+[dependencies.radicle-macros]
+path = "../macros"

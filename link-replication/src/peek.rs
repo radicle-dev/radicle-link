@@ -41,7 +41,7 @@ where
     let local_id = *LocalPeer::id(cx);
     let delegates = anchor.delegate_ids();
     let tracked = {
-        let mut tracked = Tracking::tracked(cx).collect::<Result<BTreeSet<_>, _>>()?;
+        let mut tracked = Tracking::tracked(cx)?.collect::<Result<BTreeSet<_>, _>>()?;
         let mut transitive = delegates
             .iter()
             .map(|did| SignedRefs::load(cx, did, 3))

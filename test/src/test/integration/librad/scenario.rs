@@ -6,6 +6,7 @@
 mod collaboration;
 mod collaborative_objects;
 mod menage;
+mod passive_replication;
 mod tracked_references;
 mod updated_delegate;
 mod working_copy;

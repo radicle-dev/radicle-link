@@ -24,9 +24,6 @@ pub enum Error {
     NoConnection { remote_peer: PeerId },
 
     #[error(transparent)]
-    Tracking(#[from] tracking::Error),
-
-    #[error(transparent)]
     Replication(#[from] replication::error::Replicate),
 
     #[error(transparent)]
@@ -34,4 +31,28 @@ pub enum Error {
 
     #[error(transparent)]
     Pool(#[from] storage::PoolError),
+
+    #[error(transparent)]
+    Tracking(#[from] Tracking),
+}
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum Tracking {
+    #[error(transparent)]
+    IsTracked(#[from] tracking::error::IsTracked),
+    #[error(transparent)]
+    DefaultOnly(#[from] tracking::error::DefaultOnly),
+}
+
+impl From<tracking::error::IsTracked> for Error {
+    fn from(err: tracking::error::IsTracked) -> Self {
+        Tracking::from(err).into()
+    }
+}
+
+impl From<tracking::error::DefaultOnly> for Error {
+    fn from(err: tracking::error::DefaultOnly) -> Self {
+        Tracking::from(err).into()
+    }
 }
