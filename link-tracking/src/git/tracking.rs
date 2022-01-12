@@ -422,9 +422,10 @@ where
     type Item = Result<PeerId, error::TrackedPeers>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().and_then(|r| {
+        let spec = &self.spec;
+        self.iter.find_map(|r| {
             r.map_err(|err| error::TrackedPeers::Iter {
-                spec: self.spec.clone(),
+                spec: spec.clone(),
                 source: err.into(),
             })
             .map(|reference| reference.name.remote.into())

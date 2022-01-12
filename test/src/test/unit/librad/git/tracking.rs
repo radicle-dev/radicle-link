@@ -123,6 +123,11 @@ fn track_yields_tracked() {
         let peer2 = PeerId::from(SecretKey::new());
         let urn = Urn::new(git2::Oid::zero().into());
 
+        assert!(
+            track(&storage, &urn, None, Config::default(), policy::Track::Any,)
+                .unwrap()
+                .is_ok()
+        );
         assert!(track(
             &storage,
             &urn,
