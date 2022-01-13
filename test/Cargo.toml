@@ -94,6 +94,9 @@ features = ["git2"]
 [dependencies.link-replication]
 path = "../link-replication"
 
+[dependencies.link-tracking]
+path = "../link-tracking"
+
 [dependencies.node-lib]
 path = "../node-lib"
 
