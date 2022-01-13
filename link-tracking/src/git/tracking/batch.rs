@@ -55,25 +55,25 @@ impl From<refdb::Applied<'_, Oid>> for Applied {
 pub enum Updated {
     /// The `Ref` was either created during an [Action::Track] or modified
     /// during a [Action::Modify].
-    Tracked { name: Ref },
-    /// The `RefName` was removed during an [Action::Untrack].
-    Untracked { name: Option<Ref> },
+    Tracked { reference: Ref },
+    /// The `Ref` was removed during an [Action::Untrack].
+    Untracked { reference: Ref },
 }
 
 impl<'a> From<refdb::Updated<'a, Oid>> for Updated {
     fn from(updated: refdb::Updated<Oid>) -> Updated {
         match updated {
             refdb::Updated::Written { name, target } => Self::Tracked {
-                name: Ref {
+                reference: Ref {
                     name: name.clone().into_owned(),
                     target,
                 },
             },
             refdb::Updated::Deleted { name, previous } => Self::Untracked {
-                name: previous.map(|previous| Ref {
+                reference: Ref {
                     name: name.clone().into_owned(),
                     target: previous,
-                }),
+                },
             },
         }
     }

@@ -98,6 +98,6 @@ pub enum Updated<'a, Oid: ToOwned + Clone> {
     /// returned if it was available.
     Deleted {
         name: RefName<'a, Oid>,
-        previous: Option<Oid>,
+        previous: Oid,
     },
 }

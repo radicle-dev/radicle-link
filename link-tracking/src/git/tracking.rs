@@ -237,14 +237,17 @@ where
          }| {
             match updates.first() {
                 Some(updated) => match updated {
-                    refdb::Updated::Deleted { previous, .. } => Ok(*previous),
+                    refdb::Updated::Deleted { previous, .. } => Ok(Some(*previous)),
                     refdb::Updated::Written { .. } => {
                         panic!("BUG: expected Updated::Deleted, found Updated::Written")
                     },
                 },
                 None => {
-                    debug_assert!(!rejections.is_empty());
-                    Err(*rejections.first().unwrap())
+                    // deletion may be a no-op if the ref did not exist, but the policy was Any
+                    match rejections.first() {
+                        Some(rejection) => Err(*rejection),
+                        None => Ok(None),
+                    }
                 },
             }
         },
