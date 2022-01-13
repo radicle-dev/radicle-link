@@ -45,7 +45,7 @@
 
     > Would fail the entire fetch if tips mentioned in `signed_refs` are missing
 
-  * [ ] Transactional tracking updates
+  * [X] Transactional tracking updates
   * [ ] Honour tracking configuration
   * [ ] Scheduling of subsequent pulls
 

@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
+    borrow::Cow,
     collections::{BTreeSet, HashMap},
     convert::TryFrom,
     ops::Deref,
@@ -12,7 +13,7 @@ use std::{
 
 use bstr::BStr;
 use data::NonEmpty;
-use either::Either::*;
+use either::{Either, Either::*};
 use link_replication::{
     io,
     namespace,
@@ -393,30 +394,87 @@ impl SignedRefs for Context<'_> {
     }
 }
 
+#[allow(clippy::type_complexity)]
 impl<'a> Tracking for Context<'a> {
     type Urn = Urn;
+
     type Tracked = tracking::TrackedPeers<
         'a,
         <Storage as tracking::git::refdb::Read<'a>>::References,
         <Storage as tracking::git::refdb::Read<'a>>::IterError,
     >;
-    type TrackedError = tracking::error::TrackedPeers;
-    type TrackError = tracking::error::Track;
+    type Updated = std::iter::Map<
+        std::vec::IntoIter<tracking::batch::Updated>,
+        fn(tracking::batch::Updated) -> Either<PeerId, Self::Urn>,
+    >;
 
-    fn track(&mut self, id: &PeerId, urn: Option<&Self::Urn>) -> Result<bool, Self::TrackError> {
-        // If tracking entry existed already then the MustNotExist check will error, in
-        // this case it's safe to use `is_ok`
-        tracking::track(
-            self.store,
-            urn.unwrap_or(&self.urn),
-            Some(*id),
-            tracking::Config {
-                data: false,
-                ..tracking::Config::default()
+    type TrackedError = tracking::error::TrackedPeers;
+    type TrackError = tracking::error::Batch;
+
+    fn track<I>(&mut self, iter: I) -> Result<Self::Updated, Self::TrackError>
+    where
+        I: IntoIterator<Item = link_replication::TrackingRel<Self::Urn>>,
+    {
+        use link_replication::TrackingRel;
+        use once_cell::sync::Lazy;
+        use tracking::{
+            batch::{Action, Applied, Updated::*},
+            reference::{RefName, Remote},
+            Ref,
+        };
+
+        static CONFIG_FULL: Lazy<tracking::Config> = Lazy::new(|| tracking::Config {
+            data: true,
+            cobs: tracking::config::Cobs::allow_all(),
+        });
+        static CONFIG_MIN: Lazy<tracking::Config> = Lazy::new(|| tracking::Config {
+            data: false,
+            cobs: tracking::config::Cobs::deny_all(),
+        });
+
+        let iter = iter.into_iter();
+        let mut seen = BTreeSet::<Urn>::new();
+        let act = iter.filter_map(|rel| match rel {
+            TrackingRel::Delegation(Right(urn)) | TrackingRel::SelfRef(urn) => {
+                (!seen.contains(&urn)).then(|| {
+                    seen.insert(urn.clone());
+                    Action::Track {
+                        urn: Cow::from(urn.0),
+                        peer: None,
+                        config: &CONFIG_MIN,
+                        policy: tracking::policy::Track::MustNotExist,
+                    }
+                })
             },
-            tracking::policy::Track::MustNotExist,
-        )
-        .map(|r| r.is_ok())
+
+            TrackingRel::Delegation(Left(id)) => (!seen.contains(&self.urn)).then(|| {
+                seen.insert(self.urn.clone());
+                Action::Track {
+                    urn: Cow::from(self.urn.deref()),
+                    peer: Some(id),
+                    config: &CONFIG_FULL,
+                    policy: tracking::policy::Track::MustNotExist,
+                }
+            }),
+        });
+        let Applied { updates, .. } = tracking::batch(self.store, act)?;
+
+        Ok(updates.into_iter().map(|up| match up {
+            Tracked {
+                reference:
+                    Ref {
+                        name: RefName { remote, urn },
+                        ..
+                    },
+            } => match remote {
+                Remote::Default => Right(urn.into_owned().into()),
+                Remote::Peer(id) => Left(id),
+            },
+
+            Untracked { .. } => {
+                unreachable!("`Action::Track` yielded `Updated::Untracked`")
+            },
+        }))
     }
 
     fn tracked(&self) -> Result<Self::Tracked, Self::TrackedError> {

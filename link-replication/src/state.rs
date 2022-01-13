@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 
 use bstr::BStr;
+use either::Either;
 use futures_lite::future::block_on;
 use tracing::Instrument as _;
 
@@ -16,6 +17,7 @@ use crate::{
     oid,
     refdb,
     refs,
+    track,
     Applied,
     Identities,
     LocalPeer,
@@ -43,7 +45,7 @@ pub(crate) struct FetchState<Urn> {
     dels: DelegationTips<Urn>,
     sigs: SigrefTips,
     tips: Vec<Update<'static>>,
-    trks: Vec<(PeerId, Option<Urn>)>,
+    trks: Vec<track::Rel<Urn>>,
 }
 
 impl<Urn> Default for FetchState<Urn> {
@@ -98,11 +100,9 @@ where
                 }
             }
 
-            self.update_all(
-                UpdateTips::prepare(&step, self, cx, refs)?
-                    .into_iter()
-                    .map(|u| u.into_owned()),
-            );
+            let up = UpdateTips::prepare(&step, self, cx, refs)?;
+            self.track_all(up.track);
+            self.update_all(up.tips.into_iter().map(|u| u.into_owned()));
         }
 
         Ok((step, res.err()))
@@ -144,18 +144,14 @@ where
             .insert(urn, tip);
     }
 
-    pub fn track(&mut self, peer: PeerId, urn: Option<Urn>) {
-        self.trks.push((peer, urn));
-    }
-
     pub fn track_all<I>(&mut self, other: I)
     where
-        I: IntoIterator<Item = (PeerId, Option<Urn>)>,
+        I: IntoIterator<Item = track::Rel<Urn>>,
     {
         self.trks.extend(other);
     }
 
-    pub fn drain_trackings(&mut self) -> impl Iterator<Item = (PeerId, Option<Urn>)> + '_ {
+    pub fn drain_trackings(&mut self) -> impl Iterator<Item = track::Rel<Urn>> + '_ {
         self.trks.drain(..)
     }
 
@@ -280,12 +276,25 @@ where
     type Urn = U;
 
     type Tracked = T::Tracked;
+    #[allow(clippy::type_complexity)]
+    type Updated =
+        std::iter::Map<std::vec::IntoIter<track::Rel<U>>, fn(track::Rel<U>) -> Either<PeerId, U>>;
+
     type TrackError = T::TrackError;
     type TrackedError = T::TrackedError;
 
-    fn track(&mut self, id: &PeerId, urn: Option<&Self::Urn>) -> Result<bool, Self::TrackError> {
-        self.fetch.track(*id, urn.cloned());
-        Ok(true)
+    fn track<I>(&mut self, iter: I) -> Result<Self::Updated, Self::TrackError>
+    where
+        I: IntoIterator<Item = track::Rel<U>>,
+    {
+        use Either::*;
+
+        let t = iter.into_iter().collect::<Vec<_>>();
+        self.fetch.track_all(t.clone());
+        Ok(t.into_iter().map(|rel| match rel {
+            track::Rel::Delegation(x) => x,
+            track::Rel::SelfRef(urn) => Right(urn),
+        }))
     }
 
     fn tracked(&self) -> Result<Self::Tracked, Self::TrackedError> {

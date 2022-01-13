@@ -54,7 +54,7 @@ where
             local_id,
             remote_id,
             delegates,
-            tracked,
+            mut tracked,
             limit: _,
         },
         skip,
@@ -105,6 +105,17 @@ where
         }
     };
 
+    // New trackings can not occur after the fetch phase. We update here so we
+    // don't need to discard already transferred data in case `Tracking::track`
+    // fails.
+    //
+    // XXX: Can we statically prevent new trackings to be added after here?
+    info!("updating trackings");
+    let newly_tracked = Tracking::track(cx, state.drain_trackings())?
+        .into_iter()
+        .collect::<Vec<_>>();
+    tracked.extend(newly_tracked.iter().filter_map(|x| x.as_ref().left()));
+
     info!("loading combined sigrefs");
     let signed_refs = sigrefs::combined(
         &state.as_shim(cx),
@@ -136,13 +147,6 @@ where
     info!("post-validation");
     let warnings = validate(&state.as_shim(cx), &signed_refs)?;
 
-    info!("updating trackings");
-    let mut tracked = Vec::new();
-    for (peer, urn) in state.drain_trackings() {
-        if Tracking::track(cx, &peer, urn.as_ref())? {
-            tracked.push((peer, urn));
-        }
-    }
     info!("updating tips");
     let applied = Refdb::update(cx, state.drain_updates())?;
     for u in &applied.updated {
@@ -154,7 +158,7 @@ where
 
     Ok(Success {
         applied,
-        tracked,
+        tracked: newly_tracked,
         requires_confirmation,
         validation: warnings,
         _marker: PhantomData,

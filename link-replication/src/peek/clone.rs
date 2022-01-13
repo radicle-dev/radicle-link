@@ -13,14 +13,13 @@ use super::{guard_required, mk_ref_update, ref_prefixes, required_refs};
 use crate::{
     error,
     ids,
-    internal::{Layout, UpdateTips},
+    internal::{self, Layout, UpdateTips},
     refs,
     FetchState,
     FilteredRef,
     Identities,
     Negotiation,
     Refdb,
-    Update,
     WantsHaves,
 };
 
@@ -101,7 +100,7 @@ impl UpdateTips for ForClone {
         s: &FetchState<U>,
         cx: &C,
         refs: &'a [FilteredRef<Self>],
-    ) -> Result<Vec<Update<'a>>, error::Prepare<C::VerificationError, C::FindError>>
+    ) -> Result<internal::Updates<'a, U>, error::Prepare<C::VerificationError, C::FindError>>
     where
         U: ids::Urn + Ord,
         C: Identities<Urn = U> + Refdb,
@@ -116,11 +115,16 @@ impl UpdateTips for ForClone {
         )
         .map_err(error::Prepare::Verification)?;
 
-        if verified.delegate_ids().contains(&self.remote_id) {
-            Ok(refs.iter().filter_map(mk_ref_update::<_, C::Urn>).collect())
+        let tips = if verified.delegate_ids().contains(&self.remote_id) {
+            refs.iter().filter_map(mk_ref_update::<_, C::Urn>).collect()
         } else {
-            Ok(vec![])
-        }
+            vec![]
+        };
+
+        Ok(internal::Updates {
+            tips,
+            track: vec![],
+        })
     }
 }
 
