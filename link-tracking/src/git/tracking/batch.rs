@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use link_crypto::PeerId;
 use link_identities::urn::Urn;
@@ -12,20 +12,20 @@ use radicle_git_ext::Oid;
 use super::{config::Config, error, odb, policy, refdb, PreviousError, Ref, RefName};
 
 /// A tracking action that performs a write during a [`batch`] operation.
-pub enum Action<'a, Oid> {
+pub enum Action<'a, Oid: Clone> {
     Track {
-        urn: &'a Urn<Oid>,
+        urn: Cow<'a, Urn<Oid>>,
         peer: Option<PeerId>,
-        config: Config,
+        config: &'a Config,
         policy: policy::Track,
     },
     Untrack {
-        urn: &'a Urn<Oid>,
+        urn: Cow<'a, Urn<Oid>>,
         peer: PeerId,
         policy: policy::Untrack,
     },
     Modify {
-        urn: &'a Urn<Oid>,
+        urn: Cow<'a, Urn<Oid>>,
         peer: Option<PeerId>,
         update: Box<dyn FnOnce(Config) -> Config>,
     },
@@ -120,7 +120,7 @@ where
             config,
             policy,
         } => {
-            let name = RefName::borrowed(urn, peer);
+            let name = RefName::new(urn, peer);
             on_missing(db, &name.clone(), || {
                 target(db, &mut seen, &name, config).map(|target| refdb::Update::Write {
                     name,
@@ -131,14 +131,14 @@ where
             .transpose()
         },
         Action::Untrack { urn, peer, policy } => {
-            let name = RefName::borrowed(urn, peer);
+            let name = RefName::new(urn, peer);
             Some(Ok(refdb::Update::Delete {
                 name,
                 previous: policy.into(),
             }))
         },
         Action::Modify { urn, peer, update } => {
-            let name = RefName::borrowed(urn, peer);
+            let name = RefName::new(urn, peer);
             on_existing(db, &name.clone(), |reference| {
                 let config = db
                     .find_config(&reference.target)
@@ -153,7 +153,7 @@ where
                             target: reference.target,
                         })
                     })?;
-                target(db, &mut seen, &name, update(config)).map(|target| refdb::Update::Write {
+                target(db, &mut seen, &name, &update(config)).map(|target| refdb::Update::Write {
                     name,
                     target,
                     previous: refdb::PreviousValue::MustExistAndMatch(reference.target),
@@ -168,20 +168,20 @@ fn target<'a, Db>(
     db: &Db,
     cache: &mut HashMap<Config, Oid>,
     name: &RefName<'a, Oid>,
-    config: Config,
+    config: &Config,
 ) -> Result<Oid, error::Batch>
 where
     Db: odb::Write<Oid = Oid>,
 {
-    match cache.get(&config) {
+    match cache.get(config) {
         None => {
             let target = db
-                .write_config(&config)
+                .write_config(config)
                 .map_err(|err| error::Batch::WriteObj {
                     name: name.clone().into_owned(),
                     source: err.into(),
                 })?;
-            cache.insert(config, target);
+            cache.insert(config.clone(), target);
             Ok(target)
         },
         Some(target) => Ok(*target),

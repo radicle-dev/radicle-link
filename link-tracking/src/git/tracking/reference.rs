@@ -90,23 +90,14 @@ pub struct RefName<'a, R: ToOwned + Clone> {
 }
 
 impl<'a, R: ToOwned + Clone> RefName<'a, R> {
-    pub fn owned<P>(urn: Urn<R>, peer: P) -> Self
+    pub fn new<U, P>(urn: U, peer: P) -> Self
     where
+        U: Into<Cow<'a, Urn<R>>>,
         P: Into<Option<PeerId>>,
     {
         Self {
             remote: peer.into().map(Remote::Peer).unwrap_or_default(),
-            urn: Cow::Owned(urn),
-        }
-    }
-
-    pub fn borrowed<P>(urn: &'a Urn<R>, peer: P) -> Self
-    where
-        P: Into<Option<PeerId>>,
-    {
-        Self {
-            remote: peer.into().map(Remote::Peer).unwrap_or_default(),
-            urn: Cow::Borrowed(urn),
+            urn: urn.into(),
         }
     }
 
