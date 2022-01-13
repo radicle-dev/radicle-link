@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::convert::TryFrom;
+use std::{convert::TryFrom, str::FromStr};
 
 use thiserror::Error;
 
@@ -15,14 +15,14 @@ use link_canonical::{
 
 pub mod cobs;
 
-pub use cobs::{Cobs, Object};
+pub use cobs::{Cobs, Pattern, TypeName};
 
 const COBS: &str = "cobs";
 const DATA: &str = "data";
 
 /// Configuration to act as a set of filters for non-`rad` references.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Config<Typename, ObjectId> {
+pub struct Config<Typename, ObjectId: Ord> {
     /// The regular git-set of references, ie. `heads`, `tags`, and `notes` are
     /// considered data-refs. `data` dictates the the filtering of these
     /// data-refs.
@@ -53,11 +53,11 @@ impl<Ty: Clone + Ord + Into<Cstring> + Ord, Id: Clone + Ord + ToCjson> Canonical
     }
 }
 
-impl<Ty, Id> Default for Config<Ty, Id> {
+impl<Ty: Ord, Id: Ord> Default for Config<Ty, Id> {
     fn default() -> Self {
         Self {
             data: true,
-            cobs: Cobs::Wildcard,
+            cobs: Cobs::default(),
         }
     }
 }
@@ -87,9 +87,9 @@ pub mod error {
 impl<Ty, Id> TryFrom<&[u8]> for Config<Ty, Id>
 where
     Ty: TryFrom<Cstring> + Ord,
-    Id: TryFrom<Value> + Ord,
+    Id: TryFrom<Cstring> + Ord,
     <Ty as TryFrom<Cstring>>::Error: std::error::Error + Send + Sync + 'static,
-    <Id as TryFrom<Value>>::Error: std::error::Error + Send + Sync + 'static,
+    <Id as TryFrom<Cstring>>::Error: std::error::Error + Send + Sync + 'static,
 {
     type Error = error::Parse;
 
@@ -99,12 +99,40 @@ where
     }
 }
 
+impl<Ty, Id> FromStr for Config<Ty, Id>
+where
+    Ty: TryFrom<Cstring> + Ord,
+    Id: TryFrom<Cstring> + Ord,
+    <Ty as TryFrom<Cstring>>::Error: std::error::Error + Send + Sync + 'static,
+    <Id as TryFrom<Cstring>>::Error: std::error::Error + Send + Sync + 'static,
+{
+    type Err = error::Parse;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s)
+    }
+}
+
+impl<Ty, Id> TryFrom<&str> for Config<Ty, Id>
+where
+    Ty: TryFrom<Cstring> + Ord,
+    Id: TryFrom<Cstring> + Ord,
+    <Ty as TryFrom<Cstring>>::Error: std::error::Error + Send + Sync + 'static,
+    <Id as TryFrom<Cstring>>::Error: std::error::Error + Send + Sync + 'static,
+{
+    type Error = error::Parse;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::try_from(s.as_bytes())
+    }
+}
+
 impl<Ty, Id> TryFrom<Value> for Config<Ty, Id>
 where
     Ty: TryFrom<Cstring> + Ord,
-    Id: TryFrom<Value> + Ord,
+    Id: TryFrom<Cstring> + Ord,
     <Ty as TryFrom<Cstring>>::Error: std::error::Error + Send + Sync + 'static,
-    <Id as TryFrom<Value>>::Error: std::error::Error + Send + Sync + 'static,
+    <Id as TryFrom<Cstring>>::Error: std::error::Error + Send + Sync + 'static,
 {
     type Error = error::Cjson;
 
@@ -112,12 +140,12 @@ where
         use error::Cjson;
 
         match val {
-            Value::Object(map) => {
-                let cobs = map.get(&COBS.into()).ok_or(Cjson::Missing(COBS))?;
-                let data = map.get(&DATA.into()).ok_or(Cjson::Missing(DATA))?;
+            Value::Object(mut map) => {
+                let cobs = map.remove(&COBS.into()).ok_or(Cjson::Missing(COBS))?;
+                let data = map.remove(&DATA.into()).ok_or(Cjson::Missing(DATA))?;
 
                 let data = match data {
-                    Value::Bool(data) => *data,
+                    Value::Bool(data) => data,
                     val => {
                         return Err(Cjson::MismatchedTy {
                             expected: "bool".to_string(),
