@@ -388,6 +388,16 @@ impl Array {
     }
 }
 
+impl IntoIterator for Array {
+    type Item = Value;
+
+    type IntoIter = <Vec<Value> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 pub struct ArrayIter<'a> {
     iter: slice::Iter<'a, Value>,
 }
