@@ -97,7 +97,14 @@ impl<'a, R: ToOwned + Clone> RefName<'a, R> {
     {
         Self {
             remote: peer.into().map(Remote::Peer).unwrap_or_default(),
-            urn: urn.into(),
+            urn: {
+                let urn = urn.into();
+                if urn.path.is_some() {
+                    urn.into_owned().with_path(None).into()
+                } else {
+                    urn
+                }
+            },
         }
     }
 
