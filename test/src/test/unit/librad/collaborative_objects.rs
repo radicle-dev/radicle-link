@@ -46,7 +46,7 @@ proptest! {
                 typename,
                 object_id
             );
-            println!("Reference: {}", reference.to_string());
+            println!("Reference: {}", reference);
             assert_eq!(matcher.match_ref(reference.to_string().as_str()), ObjRefMatch::Local(object_id));
     }
 }

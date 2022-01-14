@@ -262,7 +262,7 @@ impl<'a> RefsStorage for CollaborativeObjects<'a> {
 
         let refs: git2::References<'a> = self.store.as_raw().references()?;
         let mut result = HashMap::new();
-        for reference in refs.into_iter() {
+        for reference in refs {
             let reference = reference?;
             if let Some(name) = reference.name() {
                 match matcher.match_ref(name) {
@@ -332,10 +332,10 @@ fn remote_glob(identity_urn: &Urn, typename: &TypeName, oid: &ObjectId) -> globs
     globset::Glob::new(
         format!(
             "refs/namespaces/{}/refs/remotes/**/{}/{}/{}",
-            namespace.to_string(),
-            RefsCategory::Cobs.to_string(),
-            typename.to_string(),
-            oid.to_string(),
+            namespace,
+            RefsCategory::Cobs,
+            typename,
+            oid,
         )
         .as_str(),
     )
@@ -380,7 +380,7 @@ impl ObjRefMatcher {
         let remote_ref_str = format!(
             r"refs/namespaces/{}/refs/remotes/([0-9a-zA-Z]+)/{}/{}/([0-9a-z]+)",
             project_urn.encode_id(),
-            RefsCategory::Cobs.to_string(),
+            RefsCategory::Cobs,
             typename.regex_safe_string(),
         );
         let remote_regex = regex::Regex::new(remote_ref_str.as_str()).unwrap();
@@ -388,7 +388,7 @@ impl ObjRefMatcher {
         let local_ref_str = format!(
             r"refs/namespaces/{}/refs/{}/{}/([0-9a-z]+)",
             project_urn.encode_id(),
-            RefsCategory::Cobs.to_string(),
+            RefsCategory::Cobs,
             typename.regex_safe_string(),
         );
         let local_regex = regex::Regex::new(local_ref_str.as_str()).unwrap();
