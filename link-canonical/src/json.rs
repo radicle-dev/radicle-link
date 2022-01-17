@@ -280,10 +280,8 @@ impl Map {
         self.0.len()
     }
 
-    pub fn iter(&self) -> MapIter<'_> {
-        MapIter {
-            iter: self.0.iter(),
-        }
+    pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
+        self.into_iter()
     }
 }
 
@@ -316,21 +314,21 @@ impl<'a> Entry<'a> {
     }
 }
 
-pub struct MapIter<'a> {
-    iter: btree_map::Iter<'a, Cstring, Value>,
-}
+impl IntoIterator for Map {
+    type Item = (Cstring, Value);
+    type IntoIter = btree_map::IntoIter<Cstring, Value>;
 
-impl<'a> Iterator for MapIter<'a> {
-    type Item = (&'a Cstring, &'a Value);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
-impl<'a> ExactSizeIterator for MapIter<'a> {
-    fn len(&self) -> usize {
-        self.iter.len()
+impl<'a> IntoIterator for &'a Map {
+    type Item = (&'a Cstring, &'a Value);
+    type IntoIter = btree_map::Iter<'a, Cstring, Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
     }
 }
 
