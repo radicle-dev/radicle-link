@@ -24,11 +24,6 @@ pub enum Action<'a, Oid: Clone> {
         peer: PeerId,
         policy: policy::Untrack,
     },
-    Modify {
-        urn: Cow<'a, Urn<Oid>>,
-        peer: Option<PeerId>,
-        update: Box<dyn FnOnce(Config) -> Config>,
-    },
 }
 
 /// The applied updates for the given set of [`Action`]s in a [`batch`]
@@ -53,8 +48,7 @@ impl From<refdb::Applied<'_, Oid>> for Applied {
 }
 
 pub enum Updated {
-    /// The `Ref` was either created during an [Action::Track] or modified
-    /// during a [Action::Modify].
+    /// The `Ref` was either created/updated during an [Action::Track].
     Tracked { reference: Ref },
     /// The `Ref` was removed during an [Action::Untrack].
     Untracked { reference: Ref },
@@ -113,7 +107,7 @@ where
     I: IntoIterator<Item = Action<'a, Oid>> + 'a,
 {
     let mut seen: HashMap<Config, Oid> = HashMap::new();
-    actions.into_iter().filter_map(move |action| match action {
+    actions.into_iter().map(move |action| match action {
         Action::Track {
             urn,
             peer,
@@ -121,45 +115,62 @@ where
             policy,
         } => {
             let name = RefName::new(urn, peer);
-            on_missing(db, &name.clone(), || {
-                target(db, &mut seen, &name, config).map(|target| refdb::Update::Write {
-                    name,
-                    target,
-                    previous: policy.into(),
-                })
-            })
-            .transpose()
+            match policy {
+                policy::Track::Any => {
+                    target(db, &mut seen, &name, config).map(|target| refdb::Update::Write {
+                        name,
+                        target,
+                        previous: refdb::PreviousValue::Any,
+                    })
+                },
+                policy::Track::MustExist => {
+                    let r = db
+                        .find_reference(&name)
+                        .map_err(|err| error::Batch::FindRef {
+                            name: name.clone().into_owned(),
+                            source: err.into(),
+                        })?
+                        .ok_or(error::Batch::MissingRef {
+                            name: name.clone().into_owned(),
+                        })?;
+                    target(db, &mut seen, &name, config).map(|target| refdb::Update::Write {
+                        name,
+                        target,
+                        previous: refdb::PreviousValue::MustExistAndMatch(r.target),
+                    })
+                },
+                policy::Track::MustNotExist => {
+                    target(db, &mut seen, &name, config).map(|target| refdb::Update::Write {
+                        name,
+                        target,
+                        previous: refdb::PreviousValue::MustNotExist,
+                    })
+                },
+            }
         },
         Action::Untrack { urn, peer, policy } => {
             let name = RefName::new(urn, peer);
-            Some(Ok(refdb::Update::Delete {
-                name,
-                previous: policy.into(),
-            }))
-        },
-        Action::Modify { urn, peer, update } => {
-            let name = RefName::new(urn, peer);
-            on_existing(db, &name.clone(), |reference| {
-                let config = db
-                    .find_config(&reference.target)
-                    .map_err(|err| error::Batch::FindObj {
-                        name: name.clone().into_owned(),
-                        source: err.into(),
-                    })?
-                    .map(Ok)
-                    .unwrap_or_else(|| {
-                        Err(error::Batch::MissingConfig {
-                            name: reference.name.clone().into_owned(),
-                            target: reference.target,
-                        })
-                    })?;
-                target(db, &mut seen, &name, &update(config)).map(|target| refdb::Update::Write {
+            match policy {
+                policy::Untrack::Any => Ok(refdb::Update::Delete {
                     name,
-                    target,
-                    previous: refdb::PreviousValue::MustExistAndMatch(reference.target),
-                })
-            })
-            .transpose()
+                    previous: policy.into(),
+                }),
+                policy::Untrack::MustExist => {
+                    let r = db
+                        .find_reference(&name)
+                        .map_err(|err| error::Batch::FindRef {
+                            name: name.clone().into_owned(),
+                            source: err.into(),
+                        })?
+                        .ok_or(error::Batch::MissingRef {
+                            name: name.clone().into_owned(),
+                        })?;
+                    Ok(refdb::Update::Delete {
+                        name,
+                        previous: refdb::PreviousValue::MustExistAndMatch(r.target),
+                    })
+                },
+            }
         },
     })
 }
@@ -185,41 +196,5 @@ where
             Ok(target)
         },
         Some(target) => Ok(*target),
-    }
-}
-
-fn on_existing<'a, Db>(
-    db: &'a Db,
-    name: &RefName<'a, Oid>,
-    callback: impl FnOnce(&refdb::Ref<'_, Oid>) -> Result<refdb::Update<'a, Oid>, error::Batch>,
-) -> Result<Option<refdb::Update<'a, Oid>>, error::Batch>
-where
-    Db: refdb::Read<'a, Oid = Oid>,
-{
-    db.find_reference(name)
-        .map_err(|err| error::Batch::FindRef {
-            name: name.clone().into_owned(),
-            source: err.into(),
-        })?
-        .map(|reference| callback(&reference))
-        .transpose()
-}
-
-fn on_missing<'a, Db>(
-    db: &Db,
-    name: &RefName<'a, Oid>,
-    callback: impl FnOnce() -> Result<refdb::Update<'a, Oid>, error::Batch>,
-) -> Result<Option<refdb::Update<'a, Oid>>, error::Batch>
-where
-    Db: refdb::Read<'a, Oid = Oid>,
-{
-    match db
-        .find_reference(name)
-        .map_err(|err| error::Batch::FindRef {
-            name: name.clone().into_owned(),
-            source: err.into(),
-        })? {
-        None => callback().map(Some),
-        Some(_) => Ok(None),
     }
 }

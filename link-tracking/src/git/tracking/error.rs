@@ -11,23 +11,14 @@ use super::RefName;
 
 #[derive(Debug, Error)]
 pub enum Batch {
-    #[error("failed to find configuration at `{name}` during batch")]
-    FindObj {
-        name: RefName<'static, Oid>,
-        #[source]
-        source: Box<dyn std::error::Error + Send + Sync + 'static>,
-    },
     #[error("failed to find `{name}` during batch")]
     FindRef {
         name: RefName<'static, Oid>,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
-    #[error("failed to find configuration at `{name}@{target}` during batch")]
-    MissingConfig {
-        name: RefName<'static, Oid>,
-        target: Oid,
-    },
+    #[error("`{name}` did not exist, invalidating the given policy")]
+    MissingRef { name: RefName<'static, Oid> },
     #[error("failed to write new configuration to `{name}` during batch")]
     WriteObj {
         name: RefName<'static, Oid>,
