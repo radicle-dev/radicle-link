@@ -47,7 +47,7 @@ mod success;
 pub use success::Success;
 
 mod track;
-pub use track::Tracking;
+pub use track::{Rel as TrackingRel, Tracking};
 
 mod transmit;
 pub use transmit::{FilteredRef, Negotiation, Net, SkippedFetch, WantsHaves};

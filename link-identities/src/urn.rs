@@ -4,6 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
+    borrow::Cow,
     convert::TryFrom,
     fmt::{self, Debug, Display},
     str::FromStr,
@@ -182,6 +183,18 @@ impl<R> Urn<R> {
 impl<R> From<R> for Urn<R> {
     fn from(r: R) -> Self {
         Self::new(r)
+    }
+}
+
+impl<'a, R: Clone> From<Urn<R>> for Cow<'a, Urn<R>> {
+    fn from(urn: Urn<R>) -> Self {
+        Cow::Owned(urn)
+    }
+}
+
+impl<'a, R: Clone> From<&'a Urn<R>> for Cow<'a, Urn<R>> {
+    fn from(urn: &'a Urn<R>) -> Self {
+        Cow::Borrowed(urn)
     }
 }
 

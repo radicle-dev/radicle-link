@@ -68,7 +68,7 @@ where
         + refdb::Read<'a, Oid = Oid>
         + refdb::Write<Oid = Oid>,
 {
-    let reference = RefName::borrowed(urn, peer);
+    let reference = RefName::new(urn, peer);
     let target = db
         .write_config(&config)
         .map_err(|err| error::Track::WriteObj {
@@ -137,7 +137,7 @@ where
         + refdb::Read<'a, Oid = Oid>
         + refdb::Write<Oid = Oid>,
 {
-    let name = RefName::borrowed(urn, peer);
+    let name = RefName::new(urn, peer);
     let (existing, new) = match db
         .find_reference(&name)
         .map_err(|err| error::Modify::FindRef {
@@ -221,7 +221,7 @@ pub fn untrack<'a, Db>(
 where
     Db: odb::Read<Oid = Oid> + refdb::Read<'a, Oid = Oid> + refdb::Write<Oid = Oid>,
 {
-    let reference = RefName::borrowed(urn, peer);
+    let reference = RefName::new(urn, peer);
     db.update(Some(refdb::Update::Delete {
         name: reference.clone(),
         previous: policy.into(),
@@ -471,7 +471,7 @@ pub fn get<'a, Db>(
 where
     Db: odb::Read<Oid = Oid> + refdb::Read<'a, Oid = Oid>,
 {
-    let name = RefName::borrowed(urn, peer);
+    let name = RefName::new(urn, peer);
     match db
         .find_reference(&name)
         .map_err(|err| error::Get::FindRef {
@@ -503,7 +503,7 @@ pub fn is_tracked<'a, Db>(
 where
     Db: refdb::Read<'a, Oid = Oid>,
 {
-    let name = RefName::borrowed(urn, peer);
+    let name = RefName::new(urn, peer);
     match db
         .find_reference(&name)
         .map_err(|err| error::IsTracked::FindRef {

@@ -16,9 +16,10 @@ use super::{guard_required, mk_ref_update, ref_prefixes, required_refs};
 use crate::{
     error,
     ids,
-    internal::{Layout, UpdateTips},
+    internal::{self, Layout, UpdateTips},
     refdb,
     refs,
+    track,
     FetchState,
     FilteredRef,
     Identities,
@@ -130,7 +131,7 @@ impl UpdateTips for ForFetch {
         s: &FetchState<U>,
         cx: &C,
         refs: &'a [FilteredRef<Self>],
-    ) -> Result<Vec<Update<'a>>, error::Prepare<C::VerificationError, C::FindError>>
+    ) -> Result<internal::Updates<'a, U>, error::Prepare<C::VerificationError, C::FindError>>
     where
         U: ids::Urn + Ord,
         C: Identities<Urn = U> + Refdb,
@@ -138,7 +139,8 @@ impl UpdateTips for ForFetch {
         use ids::VerifiedIdentity as _;
         use refdb::{Policy, SymrefTarget};
 
-        let mut updates = Vec::new();
+        let mut tips = Vec::new();
+        let mut track = Vec::new();
         for r in refs {
             debug_assert!(r.remote_id != self.local_id, "never touch our own");
             let is_delegate = self.delegates.contains(&r.remote_id);
@@ -176,7 +178,8 @@ impl UpdateTips for ForFetch {
                             },
                         };
 
-                        updates.push(up);
+                        tips.push(up);
+                        track.push(track::Rel::SelfRef(id.urn()));
                     },
                 }
             } else {
@@ -187,12 +190,12 @@ impl UpdateTips for ForFetch {
                         .map_err(error::Prepare::Verification)?;
                 }
                 if let Some(u) = mk_ref_update::<_, C::Urn>(r) {
-                    updates.push(u)
+                    tips.push(u)
                 }
             }
         }
 
-        Ok(updates)
+        Ok(internal::Updates { tips, track })
     }
 }
 

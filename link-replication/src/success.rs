@@ -5,12 +5,14 @@
 
 use std::marker::PhantomData;
 
+use either::Either;
+
 use crate::{error, ids, refs, Applied, PeerId, Update, Updated};
 
 #[derive(Debug)]
 pub struct Success<Urn> {
     pub(crate) applied: Applied<'static>,
-    pub(crate) tracked: Vec<(PeerId, Option<Urn>)>,
+    pub(crate) tracked: Vec<Either<PeerId, Urn>>,
     pub(crate) requires_confirmation: bool,
     pub(crate) validation: Vec<error::Validation>,
     pub(crate) _marker: PhantomData<Urn>,
@@ -35,9 +37,9 @@ where
     /// New tracking relationships which have been established as a result of
     /// the replication run.
     ///
-    /// New trackings are established when new delegations or `refs/rad/ids/*`
+    /// New trackings are established when new delegations or `refs/rad/self`
     /// are discovered.
-    pub fn tracked(&self) -> &[(PeerId, Option<Urn>)] {
+    pub fn tracked(&self) -> &[Either<PeerId, Urn>] {
         &self.tracked
     }
 

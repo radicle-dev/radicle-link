@@ -16,7 +16,7 @@ use link_git::protocol::{oid, Ref};
 
 use crate::{
     error,
-    internal::{Layout, UpdateTips},
+    internal::{self, Layout, UpdateTips},
     refs,
     sigrefs,
     FetchState,
@@ -187,22 +187,25 @@ impl<T: AsRef<oid>> UpdateTips for Fetch<T> {
         _: &FetchState<U>,
         _: &C,
         refs: &'a [FilteredRef<Self>],
-    ) -> Result<Vec<Update<'a>>, error::Prepare<C::VerificationError, C::FindError>>
+    ) -> Result<internal::Updates<'a, U>, error::Prepare<C::VerificationError, C::FindError>>
     where
         C: Identities + Refdb,
     {
-        let mut updates = Vec::new();
+        let mut tips = Vec::new();
         for r in refs {
             debug_assert!(r.remote_id != self.local_id, "never touch our own");
             let refname = refs::remote_tracking(&r.remote_id, r.name.as_bstr());
-            updates.push(Update::Direct {
+            tips.push(Update::Direct {
                 name: Cow::from(refname),
                 target: r.tip,
                 no_ff: Policy::Allow,
             });
         }
 
-        Ok(updates)
+        Ok(internal::Updates {
+            tips,
+            track: vec![],
+        })
     }
 }
 

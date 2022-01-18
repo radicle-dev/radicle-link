@@ -12,6 +12,7 @@ use link_crypto::PeerId;
 use crate::{
     error,
     refs,
+    track,
     Identities,
     LocalIdentity,
     LocalPeer,
@@ -24,8 +25,8 @@ use crate::{
     VerifiedIdentity as _,
 };
 
-pub struct Rad<Urn> {
-    pub track: Vec<(PeerId, Option<Urn>)>,
+pub struct Rad<T> {
+    pub track: Vec<track::Rel<T>>,
     pub up: Vec<Update<'static>>,
 }
 
@@ -39,6 +40,8 @@ where
     C: Identities + Refdb,
     <C as Identities>::Urn: Clone + Debug,
 {
+    use Either::*;
+
     fn no_indirects<Urn: Debug>(urn: &Urn) -> Option<ObjectId> {
         debug_assert!(false, "tried to resolve indirect delegation {:?}", urn);
         None
@@ -64,13 +67,8 @@ where
             };
             Identities::verify(cx, head, no_indirects)?
         };
-        // Make sure we got 'em tracked
-        for id in delegate.delegate_ids() {
-            // Track id for the current Urn
-            track.push((id, None));
-            // And also the delegate Urn
-            track.push((id, Some(urn.clone())));
-        }
+        // Make sure we track the delegate's URN
+        track.push(track::Rel::Delegation(Right(urn.clone())));
         // Symref `rad/ids/$urn` -> refs/namespaces/$urn/refs/rad/id, creating
         // the target ref if it doesn't exist.
         up.push(Update::Symbolic {
@@ -84,6 +82,11 @@ where
             },
             type_change: Policy::Allow,
         });
+    }
+
+    // Track all peers in the delegations for the current URN
+    for id in newest.delegate_ids() {
+        track.push(track::Rel::Delegation(Left(id)));
     }
 
     // Update `rad/self` in the same transaction
