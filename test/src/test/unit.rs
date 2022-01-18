@@ -10,6 +10,7 @@ mod librad;
 mod link_async;
 mod link_git;
 mod link_replication;
+mod link_tracking;
 mod node_lib;
 mod rad_clib;
 mod rad_exe;

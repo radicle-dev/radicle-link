@@ -90,12 +90,20 @@ impl TryFrom<Value> for ObjectId {
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::String(id) => Ok(id.as_str().parse().map(ObjectId)?),
+            Value::String(id) => Self::try_from(id),
             val => Err(error::Object::MismatchedTy {
                 expected: "string representing object identifier".into(),
                 found: val.ty_name().into(),
             }),
         }
+    }
+}
+
+impl TryFrom<Cstring> for ObjectId {
+    type Error = error::Object;
+
+    fn try_from(id: Cstring) -> Result<Self, Self::Error> {
+        Ok(id.as_str().parse().map(ObjectId)?)
     }
 }
 

@@ -4,29 +4,52 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{btree_map, BTreeMap, BTreeSet},
     iter::FromIterator,
 };
 
 /// Serialisation and deserialisation of [`Cobs`] et al.
 pub mod cjson;
 
-/// Either a wildcard `*` or a set of filters.
+/// A set of filters of the form:
 ///
-/// The filters are keyed by the Collaborative Object typename where the value
-/// is a set of Collaborative Object Identifiers or a wildcard `*`.
+/// ```ignore
+/// ("*" | <typename>): {
+///   "policy": ("allow" | "deny")
+///   "pattern": ("*" | [<object id>])
+/// }
+/// ```
+///
+/// The `<typename>` is the type identifier for the collaborative object, the
+/// `<object id>` is the identifier for a particular object of the given type,
+/// and `*` signifies a wildcard.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Cobs<Type, ObjectId> {
-    Wildcard,
-    Filters(BTreeMap<Type, BTreeSet<Filter<ObjectId>>>),
+pub struct Cobs<Type, ObjectId: Ord>(BTreeMap<TypeName<Type>, Filter<ObjectId>>);
+
+impl<Ty: Ord, Id: Ord> Default for Cobs<Ty, Id> {
+    fn default() -> Self {
+        Self::allow_all()
+    }
 }
 
-/// The filtering policy of a Collaborative Object.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TypeName<Type> {
+    Wildcard,
+    Type(Type),
+}
+
+/// The filtering policy for a set of collaborative objects.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, ToCjson)]
-pub struct Filter<ObjectId> {
-    /// Allow or deny the specified [`Object`]
+pub struct Filter<ObjectId: Ord> {
+    /// Allow or deny the [`Pattern`]s
     pub policy: Policy,
-    pub pattern: Object<ObjectId>,
+    pub pattern: Pattern<ObjectId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Pattern<ObjectId> {
+    Wildcard,
+    Objects(BTreeSet<ObjectId>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -36,84 +59,141 @@ pub enum Policy {
 }
 
 impl<Ty: Ord, Id: Ord> Cobs<Ty, Id> {
-    /// Insert a [`Filter`] for the given `typename`.
-    ///
-    /// # Note
-    ///
-    /// If `self` is [`Cobs::Wildcard`], it will be turned into a
-    /// [`Cobs::Filters`] using the the `typename` and `Object` as the
-    /// initial entries.
-    pub fn insert(&mut self, typename: Ty, filter: Filter<Id>)
-    where
-        Id: Clone,
-    {
-        match self {
-            Self::Wildcard => {
-                let mut filters = BTreeMap::new();
-                filters.insert(typename, vec![filter].into_iter().collect());
-                *self = Self::Filters(filters);
+    /// Creates the following cobs configuration:
+    /// ```ignore
+    /// { "*": { "policy": "allow", "pattern": "*" } }
+    /// ```
+    pub fn allow_all() -> Self {
+        [(
+            TypeName::Wildcard,
+            Filter {
+                policy: Policy::Allow,
+                pattern: Pattern::Wildcard,
             },
-            Self::Filters(filters) => {
-                filters
-                    .entry(typename)
-                    .and_modify(|objs| {
-                        objs.insert(filter.clone());
-                    })
-                    .or_insert_with(|| vec![filter].into_iter().collect());
-            },
-        }
+        )]
+        .into()
     }
 
-    /// Remove the [`Filter`] for the given `typename`.
-    ///
-    /// # Note
-    ///
-    /// If `self` is [`Cobs::Wildcard`] then this is a no-op.
-    /// If the resulting set of objects is empty we remove the `typename` from
-    /// the filters.
-    pub fn remove(&mut self, typename: &Ty, filter: &Filter<Id>) {
-        match self {
-            Self::Wildcard => { /* no-op */ },
-            Self::Filters(filters) => {
-                if let Some(objs) = filters.get_mut(typename) {
-                    objs.remove(filter);
-                    if objs.is_empty() {
-                        filters.remove(typename);
-                    }
-                }
+    /// Creates the following cobs configuration:
+    /// ```ignore
+    /// { "*": { "policy": "deny", "pattern": "*" } }
+    /// ```
+    pub fn deny_all() -> Self {
+        [(
+            TypeName::Wildcard,
+            Filter {
+                policy: Policy::Deny,
+                pattern: Pattern::Wildcard,
             },
-        }
+        )]
+        .into()
+    }
+
+    /// Create an empty `Cobs` filter.
+    pub fn empty() -> Self {
+        Self(BTreeMap::default())
+    }
+
+    /// Insert the given `typename` and `filter`. If the entry already existed,
+    /// the old [`Filter`] is replaced and returned.
+    pub fn insert(&mut self, typename: TypeName<Ty>, filter: Filter<Id>) -> Option<Filter<Id>> {
+        self.0.insert(typename, filter)
     }
 
     /// Remove the given `typename` from the filters.
-    pub fn remove_type(&mut self, typename: &Ty) {
-        match self {
-            Self::Wildcard => { /* no-op */ },
-            Self::Filters(filters) => {
-                filters.remove(typename);
-            },
-        }
+    pub fn remove(&mut self, typename: &TypeName<Ty>) {
+        self.0.remove(typename);
+    }
+
+    /// Access the [`Entry`] for the given `typename`.
+    pub fn entry(&mut self, typename: TypeName<Ty>) -> Entry<'_, Ty, Id> {
+        Entry(self.0.entry(typename))
     }
 }
 
-impl<Ty: Ord, Id: Ord> FromIterator<(Ty, BTreeSet<Filter<Id>>)> for Cobs<Ty, Id> {
-    fn from_iter<T: IntoIterator<Item = (Ty, BTreeSet<Filter<Id>>)>>(iter: T) -> Self {
-        Self::Filters(iter.into_iter().collect())
+impl<Ty: Ord, Id: Ord> FromIterator<(TypeName<Ty>, Filter<Id>)> for Cobs<Ty, Id> {
+    fn from_iter<T: IntoIterator<Item = (TypeName<Ty>, Filter<Id>)>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
     }
 }
 
-/// Either a wildcard `*` or a Collaborative Object Identifier.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Object<Id> {
-    Wildcard,
-    Identifier(Id),
+impl<Ty: Ord, Id: Ord, const N: usize> From<[(TypeName<Ty>, Filter<Id>); N]> for Cobs<Ty, Id> {
+    fn from(kvs: [(TypeName<Ty>, Filter<Id>); N]) -> Self {
+        Self(kvs.into())
+    }
 }
 
-impl<Id> Object<Id> {
-    pub fn map<O>(self, f: impl FnOnce(Id) -> O) -> Object<O> {
-        match self {
-            Self::Wildcard => Object::Wildcard,
-            Self::Identifier(id) => Object::Identifier(f(id)),
-        }
+pub struct Entry<'a, Ty, Id: Ord>(btree_map::Entry<'a, TypeName<Ty>, Filter<Id>>);
+
+impl<'a, Ty: Ord, Id: Ord> Entry<'a, Ty, Id> {
+    /// Set the [`Policy`] for the given `Entry`.
+    pub fn set_policy(self, policy: Policy) -> Self {
+        self.and_modify(|filter| {
+            filter.policy = policy;
+        })
+    }
+
+    /// Set the [`Pattern`] for the given `Entry`.
+    pub fn set_pattern(self, pattern: Pattern<Id>) -> Self {
+        self.and_modify(|filter| {
+            filter.pattern = pattern;
+        })
+    }
+
+    /// Insert the given `Id`s for the given `Entry`. If the previous
+    /// [`Pattern`] was a `Wildcard` then this operation is a no-op.
+    pub fn insert_objects<I>(self, ids: I) -> Self
+    where
+        I: IntoIterator<Item = Id>,
+    {
+        self.and_modify(|filter| {
+            match &mut filter.pattern {
+                Pattern::Wildcard => { /* no-op */ },
+                Pattern::Objects(objs) => objs.extend(ids),
+            }
+        })
+    }
+
+    /// Remove the given `Id`s for the given `Entry`. If the previous
+    /// [`Pattern`] was a `Wildcard` then this operation is a no-op.
+    pub fn remove_objects<I>(self, ids: I) -> Self
+    where
+        I: IntoIterator<Item = Id>,
+    {
+        self.and_modify(|filter| {
+            match &mut filter.pattern {
+                Pattern::Wildcard => { /* no-op */ },
+                Pattern::Objects(objs) => {
+                    for id in ids {
+                        objs.remove(&id);
+                    }
+                },
+            }
+        })
+    }
+
+    pub fn and_modify<F>(self, f: F) -> Self
+    where
+        F: FnOnce(&mut Filter<Id>),
+    {
+        Self(self.0.and_modify(f))
+    }
+
+    pub fn or_insert(self, default: Filter<Id>) -> &'a mut Filter<Id> {
+        self.0.or_insert(default)
+    }
+
+    pub fn or_insert_with<F>(self, default: F) -> &'a mut Filter<Id>
+    where
+        F: FnOnce() -> Filter<Id>,
+    {
+        self.0.or_insert_with(default)
+    }
+
+    pub fn or_insert_with_key<F>(self, default: F) -> &'a mut Filter<Id>
+    where
+        F: FnOnce(&TypeName<Ty>) -> Filter<Id>,
+    {
+        self.0.or_insert_with_key(default)
     }
 }

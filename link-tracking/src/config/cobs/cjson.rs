@@ -3,17 +3,14 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    collections::BTreeSet,
-    convert::{TryFrom, TryInto},
-};
+use std::convert::{TryFrom, TryInto};
 
 use link_canonical::{
     json::{ToCjson, Value},
     Cstring,
 };
 
-use super::{Cobs, Filter, Object, Policy};
+use super::{Cobs, Filter, Pattern, Policy, TypeName};
 
 const POLICY: &str = "policy";
 const PATTERN: &str = "pattern";
@@ -32,7 +29,9 @@ pub mod error {
     }
 
     #[derive(Debug, Error)]
-    pub enum Object {
+    pub enum Pattern {
+        #[error("expected wildcard `*`")]
+        ExpectedWildcard,
         #[error("expected type {expected}, but found {found}")]
         MismatchedTy { expected: String, found: String },
         #[error("failed to parse the object identifier")]
@@ -46,9 +45,9 @@ pub mod error {
         #[error("expected type {expected}, but found {found}")]
         MismatchedTy { expected: String, found: String },
         #[error(transparent)]
-        Policy(#[from] Policy),
+        Pattern(#[from] Pattern),
         #[error(transparent)]
-        Object(#[from] Object),
+        Policy(#[from] Policy),
     }
 
     #[derive(Debug, Error)]
@@ -73,44 +72,57 @@ impl ToCjson for Policy {
     }
 }
 
-impl<Id: ToCjson> ToCjson for Object<Id> {
+impl<Ty: Into<Cstring>> ToCjson for TypeName<Ty> {
+    fn into_cjson(self) -> Value {
+        Cstring::from(self).into_cjson()
+    }
+}
+
+impl<Ty: Into<Cstring>> From<TypeName<Ty>> for Cstring {
+    fn from(typename: TypeName<Ty>) -> Self {
+        match typename {
+            TypeName::Wildcard => "*".into(),
+            TypeName::Type(ty) => ty.into(),
+        }
+    }
+}
+
+impl<Id: Ord + ToCjson> ToCjson for Pattern<Id> {
     fn into_cjson(self) -> Value {
         match self {
             Self::Wildcard => "*".into_cjson(),
-            Self::Identifier(id) => id.into_cjson(),
+            Self::Objects(objs) => objs.into_cjson(),
         }
     }
 }
 
 impl<Ty: Into<Cstring> + Ord, ObjectId: ToCjson + Ord> ToCjson for Cobs<Ty, ObjectId> {
     fn into_cjson(self) -> Value {
-        match self {
-            Self::Wildcard => Value::String("*".into()),
-            Self::Filters(filters) => filters.into_cjson(),
-        }
+        self.0.into_cjson()
     }
 }
 
 impl<Id> TryFrom<Value> for Filter<Id>
 where
-    Value: TryInto<Id>,
-    <Value as TryInto<Id>>::Error: std::error::Error + Send + Sync + 'static,
+    Id: Ord,
+    Cstring: TryInto<Id>,
+    <Cstring as TryInto<Id>>::Error: std::error::Error + Send + Sync + 'static,
 {
     type Error = error::Filter;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Object(map) => {
+            Value::Object(mut map) => {
                 let policy = map
-                    .get(&POLICY.into())
+                    .remove(&POLICY.into())
                     .ok_or(error::Filter::Missing(POLICY))?;
                 let pattern = map
-                    .get(&PATTERN.into())
+                    .remove(&PATTERN.into())
                     .ok_or(error::Filter::Missing(PATTERN))?;
 
                 Ok(Self {
                     policy: Policy::try_from(policy)?,
-                    pattern: Object::try_from(pattern.clone())?,
+                    pattern: Pattern::try_from(pattern)?,
                 })
             },
             val => Err(error::Filter::MismatchedTy {
@@ -121,15 +133,15 @@ where
     }
 }
 
-impl TryFrom<&Value> for Policy {
+impl TryFrom<Value> for Policy {
     type Error = error::Policy;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
             Value::String(policy) => match policy.as_str() {
                 "allow" => Ok(Self::Allow),
                 "deny" => Ok(Self::Deny),
-                _ => Err(error::Policy::Unexpected(policy.clone())),
+                _ => Err(error::Policy::Unexpected(policy)),
             },
             val => Err(error::Policy::MismatchedTy {
                 expected: "expected string 'allow' or 'deny'".to_string(),
@@ -139,70 +151,68 @@ impl TryFrom<&Value> for Policy {
     }
 }
 
-impl<Id> TryFrom<Value> for Object<Id>
+impl<Id> TryFrom<Value> for Pattern<Id>
 where
-    Value: TryInto<Id>,
-    <Value as TryInto<Id>>::Error: std::error::Error + Send + Sync + 'static,
+    Id: Ord,
+    Cstring: TryInto<Id>,
+    <Cstring as TryInto<Id>>::Error: std::error::Error + Send + Sync + 'static,
 {
-    type Error = error::Object;
+    type Error = error::Pattern;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
-        match &value {
+        match value {
+            Value::Array(objs) => objs
+                .into_iter()
+                .map(|val| match val {
+                    Value::String(s) => s
+                        .try_into()
+                        .map_err(|err| error::Pattern::Identifier(err.into())),
+                    val => Err(error::Pattern::MismatchedTy {
+                        expected: "<object id>".into(),
+                        found: val.ty_name().to_string(),
+                    }),
+                })
+                .collect::<Result<_, _>>()
+                .map(Self::Objects),
             Value::String(s) => match s.as_str() {
                 "*" => Ok(Self::Wildcard),
-                _ => value
-                    .try_into()
-                    .map(Self::Identifier)
-                    .map_err(|err| error::Object::Identifier(err.into())),
+                _ => Err(error::Pattern::ExpectedWildcard),
             },
-            val => Err(error::Object::MismatchedTy {
-                expected: "string of '*' or '<object id>'".into(),
+            val => Err(error::Pattern::MismatchedTy {
+                expected: "string of '*' or '[<object id> ..]'".into(),
                 found: val.ty_name().to_string(),
             }),
         }
     }
 }
 
-impl<Ty, Id> TryFrom<&Value> for Cobs<Ty, Id>
+impl<Ty, Id> TryFrom<Value> for Cobs<Ty, Id>
 where
     Ty: Ord,
     Id: Ord,
-    Value: TryInto<Id>,
-    Cstring: TryInto<Ty>,
+    Cstring: TryInto<Ty> + TryInto<Id>,
     <Cstring as TryInto<Ty>>::Error: std::error::Error + Send + Sync + 'static,
-    <Value as TryInto<Id>>::Error: std::error::Error + Send + Sync + 'static,
+    <Cstring as TryInto<Id>>::Error: std::error::Error + Send + Sync + 'static,
 {
     type Error = error::Cobs;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        let try_typename = |typename: Cstring| match typename.as_str() {
+            "*" => Ok(TypeName::Wildcard),
+            _ => typename
+                .try_into()
+                .map(TypeName::Type)
+                .map_err(|err: <Cstring as TryInto<Ty>>::Error| error::Cobs::TypeName(err.into())),
+        };
         match value {
             Value::Object(cobs) => cobs
-                .iter()
-                .map(|(typename, objects)| match objects {
-                    Value::Array(objs) => {
-                        let typename = typename
-                            .clone()
-                            .try_into()
-                            .map_err(|err| error::Cobs::TypeName(err.into()));
-                        typename.and_then(|ty| {
-                            objs.iter()
-                                .cloned()
-                                .map(Filter::try_from)
-                                .collect::<Result<BTreeSet<_>, _>>()
-                                .map(|objs| (ty, objs))
-                                .map_err(error::Cobs::from)
-                        })
-                    },
-                    val => Err(error::Cobs::MismatchedTy {
-                        expected: "[<object id>...]".to_string(),
-                        found: val.ty_name().to_string(),
-                    }),
+                .into_iter()
+                .map(|(typename, filter)| {
+                    let typename = try_typename(typename);
+                    let filter = Filter::try_from(filter).map_err(error::Cobs::from);
+                    typename.and_then(|ty| filter.map(|f| (ty, f)))
                 })
                 .collect::<Result<Cobs<Ty, Id>, _>>(),
-            Value::String(s) => match s.as_str() {
-                "*" => Ok(Self::Wildcard),
-                _ => Err(error::Cobs::MismatchedStr(s.to_string())),
-            },
             val => Err(error::Cobs::MismatchedTy {
                 expected: r#"{"<typename>": [<object id>...]}"#.to_string(),
                 found: val.ty_name().to_string(),
