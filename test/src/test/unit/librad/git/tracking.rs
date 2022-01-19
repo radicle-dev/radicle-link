@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use librad::{
     git::{
         storage::Storage,
-        tracking::{is_tracked, policy, track, tracked_peers, untrack, Config},
+        tracking::{is_tracked, migration, policy, track, tracked_peers, untrack, v1, Config},
         Urn,
     },
     paths::Paths,
@@ -183,5 +183,30 @@ fn tracked_ignores_urn_path() {
                 .collect::<Result<Vec<_>, _>>()
                 .unwrap()
         )
+    }
+}
+
+#[test]
+fn migration() {
+    let tmp = tempfile::tempdir().unwrap();
+    {
+        let paths = Paths::from_root(&tmp).unwrap();
+        let storage = Storage::open(&paths, SecretKey::new()).unwrap();
+        let peer1 = PeerId::from(SecretKey::new());
+        let peer2 = PeerId::from(SecretKey::new());
+        let urn = Urn::new(git2::Oid::zero().into());
+
+        assert!(v1::track(&storage, &urn, peer1,).unwrap());
+        assert!(v1::track(&storage, &urn, peer2,).unwrap());
+
+        migration::migrate(&storage, [urn.clone()]).unwrap();
+        assert_eq!(
+            BTreeSet::from([peer1, peer2]),
+            tracked_peers(&storage, Some(&urn))
+                .unwrap()
+                .collect::<Result<BTreeSet<_>, _>>()
+                .unwrap()
+        );
+        assert!(v1::tracked(&storage, &urn).unwrap().next().is_none());
     }
 }
