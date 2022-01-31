@@ -5,7 +5,6 @@
 
 use std::{
     convert::TryFrom,
-    ffi::CString,
     fmt::{self, Display},
     iter::FromIterator,
     ops::Deref,
@@ -16,6 +15,8 @@ use std::{
 pub use percent_encoding::PercentEncode;
 use thiserror::Error;
 
+use super::check;
+
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -23,13 +24,13 @@ pub enum Error {
     Utf8,
 
     #[error("not a valid git ref name or pattern")]
-    RefFormat,
+    RefFormat(#[from] check::Error),
+}
 
-    #[error("input contains a nul byte")]
-    Nul,
-
-    #[error(transparent)]
-    Git(#[from] git2::Error),
+impl Error {
+    pub const fn empty() -> Self {
+        Self::RefFormat(check::Error::Empty)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -45,7 +46,7 @@ pub enum StripPrefixError {
 /// An owned path-like value which is a valid git refname.
 ///
 /// See [`git-check-ref-format`] for what the rules for refnames are --
-/// conversion functions behave as if `--normalize --allow-onelevel` was given.
+/// conversion functions behave as if `--allow-onelevel` was given.
 /// Additionally, we impose the rule that the name must consist of valid utf8.
 ///
 /// Note that refspec patterns (eg. "refs/heads/*") are not allowed (see
@@ -136,11 +137,14 @@ impl TryFrom<&str> for RefLike {
     type Error = Error;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        normalize_name(
+        check::ref_format(
+            check::Options {
+                allow_onelevel: true,
+                allow_pattern: false,
+            },
             s,
-            git2::ReferenceFormat::ALLOW_ONELEVEL | git2::ReferenceFormat::REFSPEC_SHORTHAND,
-        )
-        .map(Self)
+        )?;
+        Ok(Self(s.to_owned()))
     }
 }
 
@@ -460,10 +464,9 @@ impl Display for Qualified {
 
 /// An owned, path-like value which is a valid refspec pattern.
 ///
-/// Conversion functions behave as if `--normalize --allow-onelevel
-/// --refspec-pattern` where given to [`git-check-ref-format`]. That is, most of
-/// the rules of [`RefLike`] apply, but the path _may_ contain exactly one `*`
-/// character.
+/// Conversion functions behave as if `--allow-onelevel --refspec-pattern` where
+/// given to [`git-check-ref-format`]. That is, most of the rules of [`RefLike`]
+/// apply, but the path _may_ contain exactly one `*` character.
 ///
 /// [`git-check-ref-format`]: https://git-scm.com/docs/git-check-ref-format
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
@@ -511,13 +514,14 @@ impl TryFrom<&str> for RefspecPattern {
     type Error = Error;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        normalize_name(
+        check::ref_format(
+            check::Options {
+                allow_onelevel: true,
+                allow_pattern: true,
+            },
             s,
-            git2::ReferenceFormat::ALLOW_ONELEVEL
-                | git2::ReferenceFormat::REFSPEC_SHORTHAND
-                | git2::ReferenceFormat::REFSPEC_PATTERN,
-        )
-        .map(Self)
+        )?;
+        Ok(Self(s.to_owned()))
     }
 }
 
@@ -670,25 +674,3 @@ mod minicbor_impls {
         }
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-
-fn normalize_name(s: &str, flags: git2::ReferenceFormat) -> Result<String, Error> {
-    // FIXME(kim): libgit2 disagrees with git-check-ref-format on this one.
-    // Submit patch upstream!
-    if s == "@" {
-        return Err(Error::RefFormat);
-    }
-
-    let nulsafe = CString::new(s)
-        .map_err(|_| Error::Nul)?
-        .into_string()
-        .map_err(|_| Error::Utf8)?;
-
-    git2::Reference::normalize_name(&nulsafe, flags).map_err(|e| match e.code() {
-        git2::ErrorCode::InvalidSpec => Error::RefFormat,
-        _ => Error::Git(e),
-    })
-}
-
-////////////////////////////////////////////////////////////////////////////////

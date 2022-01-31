@@ -75,11 +75,11 @@ impl TryFrom<&str> for Refspec<ext::RefspecPattern, ext::RefspecPattern> {
         let mut iter = specs.split(':');
         let src = iter
             .next()
-            .ok_or(ext::reference::name::Error::RefFormat)
+            .ok_or_else(ext::reference::name::Error::empty)
             .and_then(ext::RefspecPattern::try_from)?;
         let dst = iter
             .next()
-            .ok_or(ext::reference::name::Error::RefFormat)
+            .ok_or_else(ext::reference::name::Error::empty)
             .and_then(ext::RefspecPattern::try_from)?;
 
         Ok(Self { src, dst, force })
@@ -103,11 +103,11 @@ impl TryFrom<&str> for Refspec<ext::RefLike, ext::RefLike> {
         let mut iter = specs.split(':');
         let src = iter
             .next()
-            .ok_or(ext::reference::name::Error::RefFormat)
+            .ok_or_else(ext::reference::name::Error::empty)
             .and_then(ext::RefLike::try_from)?;
         let dst = iter
             .next()
-            .ok_or(ext::reference::name::Error::RefFormat)
+            .ok_or_else(ext::reference::name::Error::empty)
             .and_then(ext::RefLike::try_from)?;
 
         Ok(Self { src, dst, force })
