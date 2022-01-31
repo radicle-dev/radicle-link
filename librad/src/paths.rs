@@ -9,7 +9,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use directories::ProjectDirs;
+use crypto::PeerId;
+
+use directories::{BaseDirs, ProjectDirs};
 
 /// A set of paths to store application data.
 ///
@@ -22,6 +24,7 @@ pub struct Paths {
     git_dir: PathBuf,
     git_includes_dir: PathBuf,
     cob_cache_dir: PathBuf,
+    socket_dir: PathBuf,
 }
 
 impl Paths {
@@ -40,6 +43,7 @@ impl Paths {
             git_dir: data_dir.join("git"),
             git_includes_dir: config_dir.join("git-includes"),
             cob_cache_dir: cache_dir.join("cob-cache"),
+            socket_dir: socket_dir()?,
         }
         .init()
     }
@@ -52,6 +56,7 @@ impl Paths {
             git_dir: root.join("git"),
             git_includes_dir: root.join("git-includes"),
             cob_cache_dir: root.join("cob-cache"),
+            socket_dir: socket_dir()?,
         }
         .init()
     }
@@ -80,6 +85,7 @@ impl Paths {
             git_dir,
             git_includes_dir,
             cob_cache_dir,
+            socket_dir: _,
         } = self;
 
         vec![
@@ -95,6 +101,16 @@ impl Paths {
         self.all_dirs().try_for_each(fs::create_dir_all)?;
         Ok(self)
     }
+
+    pub fn rpc_socket(&self, peer_id: &PeerId) -> PathBuf {
+        self.socket_dir
+            .join(format!("link-peer-{}-rpc.socket", peer_id))
+    }
+
+    pub fn events_socket(&self, peer_id: &PeerId) -> PathBuf {
+        self.socket_dir
+            .join(format!("link-peer-{}-events.socket", peer_id))
+    }
 }
 
 /// Returns [`ProjectDirs`] for this specific project (`radicle`).
@@ -108,4 +124,37 @@ pub(crate) fn project_dirs() -> Result<ProjectDirs, io::Error> {
             "Couldn't determine application directories.",
         )
     })
+}
+
+/// The location this returns is platform dependent:
+///
+/// - On linux: $XDG_RUNTIME_DIR if set, otherwise /var/run
+/// - On Macos: /tmp
+/// - On windows: std::env::temp_dir
+fn socket_dir() -> Result<std::path::PathBuf, io::Error> {
+    socket_dir_imp()
+}
+
+#[cfg(all(target_os = "macos", target_family = "unix"))]
+fn socket_dir_imp() -> Result<std::path::PathBuf, io::Error> {
+    Ok("/tmp".into())
+}
+
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
+fn socket_dir_imp() -> Result<std::path::PathBuf, io::Error> {
+    let base = BaseDirs::new().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "Couldn't determine home directory.",
+        )
+    })?;
+    Ok(base
+        .runtime_dir()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| "/var/run".into()))
+}
+
+#[cfg(target_family = "windows")]
+fn socket_dir_imp() -> Result<std::path::PathBuf, io::Error> {
+    Ok(std::env::temp_dir())
 }
