@@ -138,7 +138,7 @@ git = "https://github.com/FintanH/thrussh"
 branch = "generic-agent"
 
 [dependencies.tracing-subscriber]
-version = "0.3.0"
+version = "0.3.7"
 features = ["std", "env-filter", "fmt", "json"]
 
 [dependencies.zeroize]
