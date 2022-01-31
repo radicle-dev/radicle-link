@@ -13,4 +13,5 @@ pub use spawn::{Cancelled, JoinError, Spawner, Stats, Task};
 mod time;
 pub use time::{interval, sleep, timeout, Elapsed};
 
+pub mod incoming;
 pub mod tasks;
