@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+arg=${1:-""}
+
+[ "$arg" = "-h" -o "$arg" = "--help" -o -z $arg ] && echo "
+  Generate a summary of the changes to master and seen to send to the mailing
+  list.
+
+  Usage: daily-mail <yesterday-head>
+
+  Arguments:
+    
+    yesterday-head: A commit-ish which was the state of master when the last
+                    daily mail was sent
+" && exit
+
+
+yesterday_head=$arg;
+graduated_count=$(git rev-list $yesterday_head..master | wc -l)
+seen_count=$(git rev-list master..seen | wc -l)
+
+echo -e "== Graduated\n";
+
+if [ $graduated_count -eq "0" ]; then
+    echo "nada";
+else
+    git --no-pager log --merges --pretty=format:"%b" $yesterday_head..master;
+fi
+
+echo -e "\n== Seen\n";
+
+if [ $seen_count -eq "0" ]; then
+    echo "nada"
+else
+    git --no-pager log --merges --pretty=format:"%b" master..seen;
+fi
