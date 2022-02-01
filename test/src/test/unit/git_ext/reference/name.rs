@@ -5,7 +5,7 @@
 
 use std::convert::TryFrom;
 
-use radicle_git_ext::reference::name::*;
+use radicle_git_ext::reference::{check, name::*};
 
 use crate::roundtrip::{cbor_roundtrip, json_roundtrip};
 
@@ -17,23 +17,27 @@ mod common {
     where
         T: TryFrom<&'static str, Error = Error> + Debug,
     {
-        const INVALID: &[&str] = &[
-            "foo.lock",
+        const INVALID: [&str; 16] = [
             ".hidden",
-            "here/../../etc/shadow",
             "/etc/shadow",
-            "~ommij",
-            "head^",
-            "wh?t",
-            "x[a-z]",
-            "\\WORKGROUP",
-            "C:",
             "@",
             "@{",
+            "C:",
+            "\\WORKGROUP",
+            "foo.lock",
+            "head^",
+            "here/../../etc/shadow",
+            "refs//heads/main",
+            "refs/heads/",
+            "shawn/ white",
+            "the/dotted./quad",
+            "wh?t",
+            "x[a-z]",
+            "~ommij",
         ];
 
         for v in INVALID {
-            assert_matches!(T::try_from(*v), Err(Error::RefFormat), "input: {}", v)
+            assert_matches!(T::try_from(v), Err(Error::RefFormat(_)), "input: {}", v)
         }
     }
 
@@ -41,16 +45,16 @@ mod common {
     where
         T: TryFrom<&'static str, Error = Error> + AsRef<str> + Debug,
     {
-        const VALID: &[&str] = &[
-            "master",
-            "foo/bar",
-            "cl@wn",
-            "refs/heads/mistress",
+        const VALID: [&str; 5] = [
             "\u{1F32F}",
+            "cl@wn",
+            "foo/bar",
+            "master",
+            "refs/heads/mistress",
         ];
 
         for v in VALID {
-            assert_matches!(T::try_from(*v), Ok(ref x) if x.as_ref() == *v, "input: {}", v)
+            assert_matches!(T::try_from(v), Ok(x) if x.as_ref() == v, "input: {}", v)
         }
     }
 
@@ -58,36 +62,17 @@ mod common {
     where
         T: TryFrom<&'static str, Error = Error> + Debug,
     {
-        assert_matches!(T::try_from(""), Err(Error::RefFormat))
+        assert_matches!(T::try_from(""), Err(Error::RefFormat(check::Error::Empty)))
     }
 
     pub fn nulsafe<T>()
     where
         T: TryFrom<&'static str, Error = Error> + Debug,
     {
-        assert_matches!(T::try_from("jeff\0"), Err(Error::Nul))
-    }
-
-    pub fn normalises<T>()
-    where
-        T: TryFrom<&'static str, Error = Error> + AsRef<str> + Debug,
-    {
-        const SLASHED: &[&str] = &[
-            "foo//bar",
-            "foo//bar//baz",
-            "refs//heads/main",
-            "guns//////n/////roses",
-        ];
-
-        lazy_static! {
-            static ref SLASHY: regex::Regex = regex::Regex::new(r"/{2,}").unwrap();
-        }
-
-        for v in SLASHED {
-            let t = T::try_from(*v).unwrap();
-            let normal = SLASHY.replace_all(v, "/");
-            assert_eq!(t.as_ref(), &normal)
-        }
+        assert_matches!(
+            T::try_from("jeff\0"),
+            Err(Error::RefFormat(check::Error::InvalidChar('\0')))
+        )
     }
 }
 
@@ -115,13 +100,11 @@ mod reflike {
     }
 
     #[test]
-    fn normalises() {
-        common::normalises::<RefLike>()
-    }
-
-    #[test]
     fn globstar_invalid() {
-        assert_matches!(RefLike::try_from("refs/heads/*"), Err(Error::RefFormat))
+        assert_matches!(
+            RefLike::try_from("refs/heads/*"),
+            Err(Error::RefFormat(check::Error::InvalidChar('*')))
+        )
     }
 
     #[test]
@@ -197,25 +180,47 @@ mod pattern {
     }
 
     #[test]
-    fn normalises() {
-        common::normalises::<RefspecPattern>()
-    }
-
-    #[test]
     fn globstar_ok() {
-        const GLOBBED: &[&str] = &[
-            "refs/heads/*",
-            "refs/namespaces/*/refs/rad",
+        const GLOBBED: [&str; 7] = [
             "*",
-            "foo/bar*",
-            "foo*/bar",
+            "fo*",
+            "fo*/bar",
+            "foo/*/bar",
+            "foo/ba*",
+            "foo/bar/*",
+            "foo/b*r",
         ];
 
         for v in GLOBBED {
             assert_matches!(
-                RefspecPattern::try_from(*v),
-                Ok(ref x) if x.as_str() == *v,
+                RefspecPattern::try_from(v),
+                Ok(ref x) if x.as_str() == v,
                 "input: {}", v
+            )
+        }
+    }
+
+    #[test]
+    fn globstar_invalid() {
+        const GLOBBED: [&str; 12] = [
+            "**",
+            "***",
+            "*/*",
+            "*/L/*",
+            "fo*/*/bar",
+            "fo*/ba*",
+            "fo*/ba*/baz",
+            "fo*/ba*/ba*",
+            "fo*/bar/*",
+            "foo/*/bar/*",
+            "foo/*/bar/*/baz*",
+            "foo/*/bar/*/baz/*",
+        ];
+
+        for v in GLOBBED {
+            assert_matches!(
+                RefspecPattern::try_from(v),
+                Err(Error::RefFormat(check::Error::Pattern))
             )
         }
     }

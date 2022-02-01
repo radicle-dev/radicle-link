@@ -5,6 +5,8 @@
 
 use std::convert::TryFrom as _;
 
+pub mod check;
+
 mod iter;
 pub use iter::{ReferenceNames, References};
 
