@@ -63,6 +63,21 @@ pub mod error {
 
         #[error("signer key does not match the key used at initialisation")]
         SignerKeyMismatch,
+
+        #[error(transparent)]
+        TrackingMigration(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
+    }
+
+    impl From<crate::git::identities::error::Error> for Init {
+        fn from(err: crate::git::identities::error::Error) -> Self {
+            Self::TrackingMigration(Box::new(err))
+        }
+    }
+
+    impl From<crate::git::tracking::migration::Error> for Init {
+        fn from(err: crate::git::tracking::migration::Error) -> Self {
+            Self::TrackingMigration(Box::new(err))
+        }
     }
 }
 
@@ -115,10 +130,28 @@ impl Storage {
             return Err(error::Init::SignerKeyMismatch);
         }
 
-        Ok(Self {
+        let storage = Self {
             inner: ReadOnly { backend, peer_id },
             signer: BoxedSigner::from(SomeSigner { signer }),
-        })
+        };
+
+        // NOTE: this is temporary migration code, converting v1 tracking entries into
+        // v2 tracking entries. It should eventually be phased out as upstream
+        // dependencies migrate to the latest version.
+        {
+            let urns = crate::git::identities::any::list(&storage)?
+                .map(|i| i.map(|i| i.urn()))
+                .collect::<Result<std::collections::BTreeSet<_>, _>>()?;
+
+            // The failures will eventually converge as `Storage::open` is called on the
+            // next start up, and we report them via trace in the meantime.
+            let results = crate::git::tracking::migration::migrate(&storage, urns)?;
+            results.failures.into_iter().for_each(|(err, urn, peer)| {
+                tracing::warn!(urn = %urn, peer = %peer, reason = %err, "failed to migrate");
+            });
+        }
+
+        Ok(storage)
     }
 
     /// Initialise a [`Storage`].
