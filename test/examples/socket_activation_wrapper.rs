@@ -8,8 +8,27 @@ use nix::{sys::socket, unistd::Pid};
 use std::{fs::remove_file, os::unix::process::CommandExt as _, process::Command};
 
 fn main() -> Result<()> {
+    make_sock("rpc")?;
+    make_sock("events")?;
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg("run")
+        .arg("-p")
+        .arg("radicle-link-test")
+        .arg("--example")
+        .arg("socket_activation");
+    cmd.env("LISTEN_FDS", "2");
+    cmd.env("LISTEN_FDNAMES", "rpc:events");
+    cmd.env("LISTEN_PID", Pid::this().to_string());
+    cmd.exec();
+
+    Ok(())
+}
+
+fn make_sock(name: &str) -> Result<()> {
+    let sock_name = format!("test-linkd-socket-activation-{}", name);
     let tmp = tempfile::Builder::new()
-        .prefix("test-linkd-socket-activation")
+        .prefix(sock_name.as_str())
         .suffix(".sock")
         .tempfile()?
         .path()
@@ -26,16 +45,5 @@ fn main() -> Result<()> {
     remove_file(tmp)?;
     bound?;
     socket::listen(sock, 1)?;
-
-    let mut cmd = Command::new("cargo");
-    cmd.arg("run")
-        .arg("-p")
-        .arg("radicle-link-test")
-        .arg("--example")
-        .arg("socket_activation");
-    cmd.env("LISTEN_FDS", "1");
-    cmd.env("LISTEN_PID", Pid::this().to_string());
-    cmd.exec();
-
     Ok(())
 }

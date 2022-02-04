@@ -7,9 +7,10 @@ use std::process::exit;
 
 use anyhow::Result;
 
-use node_lib::socket_activation;
+use node_lib::api::sockets::socket_activation;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     if let Some(_listener) = socket_activation::env()? {
         exit(0)
     } else {

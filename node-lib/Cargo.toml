@@ -29,6 +29,9 @@ tracing             = { version = "0.1", default-features = false, features = [ 
 path    = "../librad"
 version = "0.1.0"
 
+[dependencies.link-async]
+path = "../link-async"
+
 [dependencies.rad-clib]
 path    = "../rad-clib"
 version = "0.1.0"
