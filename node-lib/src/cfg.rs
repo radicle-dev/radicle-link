@@ -74,11 +74,24 @@ pub enum Error {
     Timeout(#[from] Elapsed),
 }
 
+pub enum RunMode {
+    Immortal,
+    Mortal(Duration),
+}
+
+impl Default for RunMode {
+    fn default() -> Self {
+        RunMode::Immortal
+    }
+}
+
 pub struct Cfg<Disco, Signer> {
     pub disco: Disco,
     pub metrics: Option<Metrics>,
     pub peer: PeerConfig<Signer>,
     pub tracker: Option<Tracker>,
+    pub run_mode: RunMode,
+    pub profile: Profile,
 }
 
 impl Cfg<discovery::Static, BoxedSigner> {
@@ -108,6 +121,11 @@ impl Cfg<discovery::Static, BoxedSigner> {
             None => None,
         };
 
+        let run_mode = match &args.linger_timeout {
+            Some(t) => RunMode::Mortal(t.into()),
+            None => RunMode::Immortal,
+        };
+
         Ok(Self {
             disco,
             metrics,
@@ -131,6 +149,8 @@ impl Cfg<discovery::Static, BoxedSigner> {
                     urns: args.tracking.urns.clone().into_iter().collect(),
                 },
             }),
+            profile,
+            run_mode,
         })
     }
 }

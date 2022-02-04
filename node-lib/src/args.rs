@@ -7,7 +7,7 @@
 // TODO(xla): Expose storage args.
 // TODO(xla): Expose logging args.
 
-use std::{fmt, net::SocketAddr, path::PathBuf, str::FromStr};
+use std::{fmt, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
 
 use structopt::StructOpt;
 
@@ -33,7 +33,7 @@ pub struct Args {
 
     /// Home of the profile data, if not provided is read from the environment
     /// and falls back to project dirs.
-    #[structopt(long, default_value, parse(from_str = parse_rad_home))]
+    #[structopt(long, default_value, parse(from_str = parse_rad_home), env="RAD_HOME")]
     pub rad_home: RadHome,
 
     /// Which unix domain socket to use for connecting to the ssh-agent. The
@@ -62,6 +62,12 @@ pub struct Args {
 
     #[structopt(flatten)]
     pub tracking: TrackingArgs,
+
+    /// The number of milliseconds to wait after losing all connections before
+    /// shutting down the node. If not specified the node will never
+    /// shutdown.
+    #[structopt(long)]
+    pub linger_timeout: Option<LingerTimeout>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -366,6 +372,27 @@ impl FromStr for TrackingMode {
             "everything" => Ok(Self::Everything),
             "selected" => Ok(Self::Selected),
             _ => Err(format!("unsupported tracking mode `{}`", input)),
+        }
+    }
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
+pub struct LingerTimeout(Duration);
+
+impl From<&LingerTimeout> for Duration {
+    fn from(l: &LingerTimeout) -> Self {
+        l.0
+    }
+}
+
+impl FromStr for LingerTimeout {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let integer: Result<u64, _> = s.parse();
+        match integer {
+            Ok(i) => Ok(LingerTimeout(Duration::from_millis(i))),
+            Err(_) => Err("expected a positive integer"),
         }
     }
 }
