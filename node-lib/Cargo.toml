@@ -13,12 +13,16 @@ test    = false
 
 [dependencies]
 anyhow              = "1.0"
+bytes               = "0.5"
+async-compat        = "0.2.1"
+async-trait         = "0.1"
 base64              = "0.13"
 env_logger          = "0.9"
 futures             = "0.3"
 lazy_static         = "1.4"
 log                 = "0.4"
 nix                 = "0.23"
+rand                = "0.8"
 structopt           = { version = "0.3", default-features = false }
 thiserror           = "1.0"
 tempfile            = "3.2"
@@ -32,9 +36,16 @@ version = "0.1.0"
 [dependencies.link-async]
 path = "../link-async"
 
+[dependencies.minicbor]
+version = "0.9.1"
+features = ["std", "derive"]
+
 [dependencies.rad-clib]
 path    = "../rad-clib"
 version = "0.1.0"
+
+[dependencies.radicle-macros]
+path = "../macros"
 
 [dependencies.thrussh-agent]
 git       = "https://github.com/FintanH/thrussh"
@@ -44,3 +55,12 @@ branch    = "generic-agent"
 [dependencies.tracing-subscriber]
 version = "0.3.0"
 features = ["std", "env-filter", "fmt", "json"]
+
+[dependencies.radicle-git-ext]
+path = "../git-ext"
+
+[dependencies.git2]
+version = ">= 0.13.23"
+default-features = false
+features = []
+

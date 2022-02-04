@@ -15,6 +15,7 @@ replication-v3 = ["librad/replication-v3"]
 [dependencies]
 assert_cmd = "2"
 assert_matches = "1.5.0"
+async-compat = "0.2.1"
 anyhow = "1"
 async-stream = "0.3"
 async-trait = "0"
