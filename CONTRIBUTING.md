@@ -48,7 +48,7 @@ create the patch, e.g.
 
 ```
 $ git remote add me https://github.com/FintanH/radicle-link
-$ cd contributing-tools
+$ cd scripts/contributing
 $ ./patch me update-docs v1 "https://github.com/FintanH/radicle-link"
 ```
 
@@ -87,5 +87,5 @@ updated. To do this, run `scripts/render-docs`.
 [fixing-dco]: https://docs.github.com/en/free-pro-team@latest/github/building-a-strong-community/creating-a-pull-request-template-for-your-repository
 [header-template]: ./.license-header-template
 [maintainers-guide]: https://github.com/radicle-dev/radicle-link/blob/master/docs/maintainers-guide.adoc
-[patch]: ./contributing-tools/patch
+[patch]: ./scripts/contributing/patch
 [submit-patch]: https://github.com/radicle-dev/radicle-link/blob/master/docs/submitting-patches.adoc
