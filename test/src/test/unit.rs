@@ -5,6 +5,7 @@
 
 mod cob;
 mod git_ext;
+mod git_ref_format;
 mod git_trailers;
 mod librad;
 mod link_async;

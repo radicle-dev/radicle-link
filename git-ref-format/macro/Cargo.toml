@@ -1,0 +1,19 @@
+[package]
+name = "git-ref-format-macro"
+version = "0.1.0"
+authors = ["Kim Altintop <kim@eagain.st>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[lib]
+doctest = false
+proc-macro = true
+test = false
+
+[dependencies]
+proc-macro-error = "1.0.4"
+quote = "1"
+syn = "1"
+
+[dependencies.git-ref-format-core]
+path = "../core"

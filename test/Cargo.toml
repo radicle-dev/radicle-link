@@ -69,6 +69,10 @@ version = ">= 0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 
+[dependencies.git-ref-format]
+path = "../git-ref-format"
+features = ["serde", "minicbor", "macro"]
+
 [dependencies.git-trailers]
 path = "../git-trailers"
 

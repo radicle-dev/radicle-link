@@ -1,0 +1,25 @@
+[package]
+name = "git-ref-format"
+version = "0.1.0"
+authors = ["Kim Altintop <kim@eagain.st>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[lib]
+doctest = false
+test = false
+
+[features]
+bstr = ["git-ref-format-core/bstr"]
+link-literals = ["git-ref-format-core/link-literals"]
+macro = ["git-ref-format-macro"]
+minicbor = ["git-ref-format-core/minicbor"]
+percent-encoding = ["git-ref-format-core/percent-encoding"]
+serde = ["git-ref-format-core/serde"]
+
+[dependencies.git-ref-format-core]
+path = "./core"
+
+[dependencies.git-ref-format-macro]
+path = "./macro"
+optional = true

@@ -1,0 +1,13 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ce4a8288dbc71f8fac9d6f04042426fd5e5d15fb09fbf8f577a2dd259cf09b4a # shrinks to input = "abide¡"
+cc f528d534bd67eeb86f40444f9f7935fe8b32aa992211951aed78b55749642259 # shrinks to input = "r"
+cc 62916710a724bb9fbf48ce0a17abb449fa74459534355dcdb2ad0705815cd91c # shrinks to input = "r"
+cc 01536389f9040c09ec076005d7596b89b03e9da378a6050837b1cd30eb2bd73f # shrinks to input = "."
+cc 0a377cbfa709f0533b393295d46f0fc9d7bbaf08b8767113b1437008e470727a # shrinks to input = "."
+cc 1b335dd8c2b536d4d3ddd741c095aa8e91b688b5ba617657769e534ab6aa34ca # shrinks to input = "\u{0}"
+cc 44fcd788cace8476f116c3fbd9616f052f1408dae93c833e8ce80ba44f8178b3 # shrinks to input = "\t"
