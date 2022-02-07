@@ -2,6 +2,7 @@
 :author: @kim
 :revdate: 2021-09-13
 :expires: 2021-10-12
+:mailinglist: ~radicle-link/dev@lists.sr.ht
 
 * Author: {author}
 * Date: {revdate}
@@ -31,8 +32,7 @@ link:https://git-send-email.io[https://git-send-email.io]
   link:https://github.com/radicle-dev/radicle-link[github]
 
 - Send patches to
-mailto:~radicle-link/dev@lists.sr.ht[~radicle-link/dev@lists.sr.ht] using `git
-send-email`
+mailto:{mailinglist}[{mailinglist}] using `git send-email`
 
 - During review, make sure to keep CC lists intact. This allows people to
 participate without subscribing to the mailing list.
