@@ -37,7 +37,7 @@ version = "0.1.0"
 path = "../link-async"
 
 [dependencies.minicbor]
-version = "0.9.1"
+version = ">= 0.9.1, < 0.14"
 features = ["std", "derive"]
 
 [dependencies.rad-clib]

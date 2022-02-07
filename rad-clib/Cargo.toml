@@ -25,7 +25,7 @@ tracing = "0.1"
 path = "../librad"
 
 [dependencies.minicbor]
-version = "0.9.1"
+version = ">= 0.9.1, < 0.14"
 features = ["std"]
 
 [dependencies.thrussh-agent]
