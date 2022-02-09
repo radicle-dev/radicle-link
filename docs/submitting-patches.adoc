@@ -52,6 +52,9 @@ of your patch, e.g. `patches/my-patch/v1`. An example trailer for github would
 then look like:
 +
     Published-As: https://github.com/kim/radicle-link/releases/tag/patches/my-patch/v1
++
+If you choose to publish to link:https://sr.ht/[sr.ht], then make sure that your
+fork is named "`radicle-link`". If you use a different name, then CI won't work.
 
 - Keep in mind that, unlike with PRs, people will look at the individual commits
 of your patch. So make sure the commits are self-contained, not too big not
