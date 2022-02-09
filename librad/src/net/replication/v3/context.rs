@@ -11,13 +11,14 @@ use std::{
     time::Duration,
 };
 
-use bstr::BStr;
 use data::NonEmpty;
 use either::{Either, Either::*};
+use git_ref_format::RefString;
 use link_replication::{
     io,
     namespace,
     oid,
+    refs,
     Applied,
     FilteredRef,
     Identities,
@@ -39,7 +40,7 @@ use multihash::Multihash;
 use std_ext::Void;
 
 use crate::{
-    git::{self, refs, storage::Storage, tracking},
+    git::{self, storage::Storage, tracking},
     identities::{
         self,
         git::{
@@ -88,7 +89,7 @@ pub mod error {
         Contended,
 
         #[error(transparent)]
-        Refs(#[from] refs::stored::Error),
+        Refs(#[from] git::refs::stored::Error),
     }
 
     #[derive(Debug, Error)]
@@ -268,6 +269,13 @@ impl<'a> From<&'a Urn> for Namespace {
     }
 }
 
+impl<'a> From<&'a Urn> for git_ref_format::Component<'_> {
+    fn from(urn: &'a Urn) -> Self {
+        git_ref_format::Component::from_refstring(refs::from_urn(urn))
+            .expect("`Urn` is a valid ref component")
+    }
+}
+
 impl Identities for Context<'_> {
     type Urn = Urn;
     type Oid = git_ext::Oid;
@@ -329,14 +337,19 @@ impl SignedRefs for Context<'_> {
     type Error = error::Sigrefs;
 
     fn load(&self, of: &PeerId, cutoff: usize) -> Result<Option<Sigrefs<Self::Oid>>, Self::Error> {
-        match refs::load(&self.store, &self.urn, Some(of))? {
+        match git::refs::load(&self.store, &self.urn, Some(of))? {
             None => Ok(None),
-            Some(refs::Loaded { at, refs: signed }) => {
+            Some(git::refs::Loaded { at, refs: signed }) => {
                 let refs = signed
                     .iter_categorised()
-                    .map(|((name, oid), cat)| (format!("refs/{}/{}", cat, name).into(), *oid))
+                    .map(|((name, oid), cat)| {
+                        // TODO: make `Refs` use `git_ref_format`
+                        let refname = RefString::try_from(format!("refs/{}/{}", cat, name))
+                            .expect("`Refs::iter_categorised` yields valid refnames");
+                        (refname, *oid)
+                    })
                     .collect::<HashMap<_, _>>();
-                let mut remotes = refs::Refs::from(signed).remotes;
+                let mut remotes = git::refs::Refs::from(signed).remotes;
                 remotes.cutoff_mut(cutoff);
                 let remotes = remotes.flatten().copied().collect();
 
@@ -351,14 +364,19 @@ impl SignedRefs for Context<'_> {
         signed_by: &PeerId,
         cutoff: usize,
     ) -> Result<Option<Sigrefs<Self::Oid>>, Self::Error> {
-        match refs::load_at(&self.store, treeish.into().into(), Some(signed_by))? {
+        match git::refs::load_at(&self.store, treeish.into().into(), Some(signed_by))? {
             None => Ok(None),
-            Some(refs::Loaded { at, refs: signed }) => {
+            Some(git::refs::Loaded { at, refs: signed }) => {
                 let refs = signed
                     .iter_categorised()
-                    .map(|((name, oid), cat)| (format!("refs/{}/{}", cat, name).into(), *oid))
+                    .map(|((name, oid), cat)| {
+                        // TODO: make `Refs` use `git_ref_format`
+                        let refname = RefString::try_from(format!("refs/{}/{}", cat, name))
+                            .expect("`Refs::iter_categorised` yields valid refnames");
+                        (refname, *oid)
+                    })
                     .collect::<HashMap<_, _>>();
-                let mut remotes = refs::Refs::from(signed).remotes;
+                let mut remotes = git::refs::Refs::from(signed).remotes;
                 remotes.cutoff_mut(cutoff);
                 let remotes = remotes.flatten().copied().collect();
 
@@ -369,7 +387,7 @@ impl SignedRefs for Context<'_> {
 
     fn update(&self) -> Result<Option<Self::Oid>, Self::Error> {
         use backoff::ExponentialBackoff;
-        use refs::Updated::*;
+        use git::refs::Updated::*;
 
         // XXX: let this be handled by `git-ref`
         let cfg = ExponentialBackoff {
@@ -379,7 +397,7 @@ impl SignedRefs for Context<'_> {
             ..Default::default()
         };
         backoff::retry(cfg, || {
-            let op = refs::Refs::update(self.store, &self.urn)
+            let op = git::refs::Refs::update(self.store, &self.urn)
                 .map_err(error::Sigrefs::from)
                 .map_err(backoff::Error::Permanent);
             match op? {
@@ -489,10 +507,10 @@ impl<'c> Refdb for Context<'c> {
     type TxError = <io::Refdb<io::Odb> as Refdb>::TxError;
     type ReloadError = <io::Refdb<io::Odb> as Refdb>::ReloadError;
 
-    fn refname_to_id(
-        &self,
-        refname: impl AsRef<BStr>,
-    ) -> Result<Option<Self::Oid>, Self::FindError> {
+    fn refname_to_id<'a, Q>(&self, refname: Q) -> Result<Option<Self::Oid>, Self::FindError>
+    where
+        Q: AsRef<refs::Qualified<'a>>,
+    {
         self.refdb.refname_to_id(refname)
     }
 

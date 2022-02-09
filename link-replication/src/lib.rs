@@ -50,7 +50,7 @@ mod track;
 pub use track::{Rel as TrackingRel, Tracking};
 
 mod transmit;
-pub use transmit::{FilteredRef, Negotiation, Net, SkippedFetch, WantsHaves};
+pub use transmit::{FilteredRef, Negotiation, Net, RefPrefix, SkippedFetch, WantsHaves};
 
 mod validation;
 pub use validation::validate;

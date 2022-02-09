@@ -5,9 +5,9 @@
 
 use std::collections::BTreeMap;
 
-use bstr::BStr;
 use either::Either;
 use futures_lite::future::block_on;
+use git_ref_format::Qualified;
 use tracing::Instrument as _;
 
 use crate::{
@@ -79,20 +79,20 @@ where
         if let Ok(refs) = &res {
             Layout::pre_validate(&step, refs)?;
             for r in refs {
-                if let Some(rad) = r.parsed.as_ref().left() {
+                if let Some(rad) = r.parsed.inner.as_ref().left() {
                     match rad {
                         refs::parsed::Rad::Id => {
-                            self.insert_id_tip(r.remote_id, r.tip);
+                            self.insert_id_tip(*r.remote_id(), r.tip);
                         },
 
                         refs::parsed::Rad::Ids { urn } => {
                             if let Ok(urn) = C::Urn::try_from_id(urn) {
-                                self.insert_delegation_tip(r.remote_id, urn, r.tip);
+                                self.insert_delegation_tip(*r.remote_id(), urn, r.tip);
                             }
                         },
 
                         refs::parsed::Rad::SignedRefs => {
-                            self.insert_sigref_tip(r.remote_id, r.tip);
+                            self.insert_sigref_tip(*r.remote_id(), r.tip);
                         },
 
                         _ => {},
@@ -195,11 +195,15 @@ where
     type TxError = <refdb::Mem as Refdb>::TxError;
     type ReloadError = <refdb::Mem as Refdb>::ReloadError;
 
-    fn refname_to_id(
-        &self,
-        refname: impl AsRef<BStr>,
-    ) -> Result<Option<Self::Oid>, Self::FindError> {
-        let cached = self.fetch.refs.refname_to_id(&refname).expect("absurd");
+    fn refname_to_id<'a, Q>(&self, refname: Q) -> Result<Option<Self::Oid>, Self::FindError>
+    where
+        Q: AsRef<Qualified<'a>>,
+    {
+        let cached = self
+            .fetch
+            .refs
+            .refname_to_id(refname.as_ref())
+            .expect("absurd");
         if cached.is_some() {
             Ok(cached)
         } else {

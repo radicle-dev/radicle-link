@@ -5,20 +5,26 @@
 
 use std::{fmt::Debug, num::ParseIntError};
 
-use either::Either::*;
+use either::{Either, Either::*};
+use git_ref_format::refname;
 use link_replication::{
-    refs::parsed::{parse, Cat, Identity, Parsed, Rad, Refs},
+    refs::{
+        self,
+        parsed::{parse, Identity, Rad},
+        Owned,
+    },
     Urn,
 };
 
 use super::PEER;
 
-fn succeed<T>(expected: Parsed<T>, input: &str)
+fn succeed<T>(expected: Either<Rad<T>, Owned>, input: &str)
 where
     T: Urn + Debug + PartialEq,
 {
     let actual = parse::<T>(input.into()).expect("parse should succeed");
-    assert_eq!(expected, actual);
+    assert!(actual.remote.is_none());
+    assert_eq!(expected, actual.inner);
 
     use bstr::{BString, ByteVec as _};
     let mut input = BString::from(input);
@@ -27,13 +33,8 @@ where
         "remotes/hyn3aar1qghrnjrdi161oks1w3z9s173mxti88ci6qthps8brmp6yo/",
     );
     let actual = parse::<T>(input.as_ref()).expect("parse should succeed");
-    assert_eq!(
-        Parsed {
-            remote: Some(*PEER),
-            ..expected
-        },
-        actual
-    );
+    assert_eq!(Some(*PEER), actual.remote);
+    assert_eq!(expected, actual.inner);
 }
 
 fn fail<T>(input: &str)
@@ -42,7 +43,7 @@ where
 {
     let res = parse::<T>(input.into());
     assert!(
-        res.is_none(),
+        res.is_err(),
         "parse expected to fail with input `{}`: {:?}",
         input,
         res
@@ -108,52 +109,29 @@ fn trailing_slash() {
 }
 
 #[test]
+#[should_panic]
 fn invalid_peer_id() {
-    assert!(parse::<Identity>("refs/remotes/hyperhyper/rad/id".into()).is_none())
+    parse::<Identity>("refs/remotes/hyperhyper/rad/id".into()).unwrap();
 }
 
 #[test]
 fn rad_id() {
-    succeed::<Identity>(
-        Parsed {
-            remote: None,
-            inner: Left(Rad::Id),
-        },
-        "refs/rad/id",
-    );
+    succeed::<Identity>(Left(Rad::Id), "refs/rad/id");
 }
 
 #[test]
 fn rad_self() {
-    succeed::<Identity>(
-        Parsed {
-            remote: None,
-            inner: Left(Rad::Me),
-        },
-        "refs/rad/self",
-    );
+    succeed::<Identity>(Left(Rad::Me), "refs/rad/self");
 }
 
 #[test]
 fn rad_signed_refs() {
-    succeed::<Identity>(
-        Parsed {
-            remote: None,
-            inner: Left(Rad::SignedRefs),
-        },
-        "refs/rad/signed_refs",
-    );
+    succeed::<Identity>(Left(Rad::SignedRefs), "refs/rad/signed_refs");
 }
 
 #[test]
 fn rad_ids() {
-    succeed::<Usize>(
-        Parsed {
-            remote: None,
-            inner: Left(Rad::Ids { urn: Usize(42) }),
-        },
-        "refs/rad/ids/42",
-    );
+    succeed::<Usize>(Left(Rad::Ids { urn: Usize(42) }), "refs/rad/ids/42");
 }
 
 #[test]
@@ -184,13 +162,14 @@ fn rad_extra_input() {
 #[test]
 fn heads() {
     succeed::<Identity>(
-        Parsed {
-            remote: None,
-            inner: Right(Refs {
-                name: vec!["three".into(), "levels".into(), "deep".into()],
-                cat: Cat::Heads,
-            }),
-        },
+        Right(
+            refs::owned(
+                refname!("refs/heads/three/levels/deep")
+                    .qualified()
+                    .unwrap(),
+            )
+            .unwrap(),
+        ),
         "refs/heads/three/levels/deep",
     );
 }
@@ -198,13 +177,7 @@ fn heads() {
 #[test]
 fn notes() {
     succeed::<Identity>(
-        Parsed {
-            remote: None,
-            inner: Right(Refs {
-                name: vec!["topic".into()],
-                cat: Cat::Notes,
-            }),
-        },
+        Right(refs::owned(refname!("refs/notes/topic").qualified().unwrap()).unwrap()),
         "refs/notes/topic",
     );
 }
@@ -212,13 +185,7 @@ fn notes() {
 #[test]
 fn tags() {
     succeed::<Identity>(
-        Parsed {
-            remote: None,
-            inner: Right(Refs {
-                name: vec!["cycle".into(), "20211221".into()],
-                cat: Cat::Tags,
-            }),
-        },
+        Right(refs::owned(refname!("refs/tags/cycle/20211221").qualified().unwrap()).unwrap()),
         "refs/tags/cycle/20211221",
     );
 }
@@ -226,13 +193,7 @@ fn tags() {
 #[test]
 fn cobs() {
     succeed::<Identity>(
-        Parsed {
-            remote: None,
-            inner: Right(Refs {
-                name: vec!["patch".into(), "1".into()],
-                cat: Cat::Cobs,
-            }),
-        },
+        Right(refs::owned(refname!("refs/cobs/patch/1").qualified().unwrap()).unwrap()),
         "refs/cobs/patch/1",
     );
 }
@@ -240,13 +201,7 @@ fn cobs() {
 #[test]
 fn unknown_cat() {
     succeed::<Identity>(
-        Parsed {
-            remote: None,
-            inner: Right(Refs {
-                name: vec!["snoop".into()],
-                cat: Cat::Unknown("dogs".into()),
-            }),
-        },
+        Right(refs::owned(refname!("refs/dogs/snoop").qualified().unwrap()).unwrap()),
         "refs/dogs/snoop",
     );
 }

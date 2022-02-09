@@ -24,6 +24,10 @@ rand = "0.7"
 thiserror = "1.0"
 tracing = "0.1"
 
+[dependencies.git-ref-format]
+path = "../git-ref-format"
+features = ["bstr", "link-literals", "macro"]
+
 [dependencies.link-crypto]
 path = "../link-crypto"
 

@@ -3,9 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{borrow::Cow, collections::BTreeSet};
+use std::collections::BTreeSet;
 
-use bstr::{BString, ByteSlice as _};
 use itertools::Itertools as _;
 
 use crate::{
@@ -17,6 +16,7 @@ use crate::{
     Identities,
     LocalPeer,
     PeerId,
+    RefPrefix,
     SignedRefs,
     Tracking,
     Update,
@@ -67,15 +67,15 @@ where
     })
 }
 
-fn ref_prefixes<'a>(
-    id: &'a PeerId,
-    remote_id: &PeerId,
-) -> impl Iterator<Item = refs::Scoped<'a, 'static>> {
+fn ref_prefixes(id: &PeerId, remote_id: &PeerId) -> impl Iterator<Item = RefPrefix> {
     vec![
-        refs::scoped(id, remote_id, refs::RadId),
-        refs::scoped(id, remote_id, refs::RadSelf),
-        refs::scoped(id, remote_id, refs::Prefix::RadIds),
-        refs::scoped(id, remote_id, refs::Signed),
+        refs::scoped(id, remote_id, refs::Owned::refs_rad_id()).into(),
+        refs::scoped(id, remote_id, refs::Owned::refs_rad_self()).into(),
+        refs::scoped(id, remote_id, refs::Owned::refs_rad_signed_refs()).into(),
+        {
+            let scope = (id != remote_id).then(|| id);
+            RefPrefix::from_prefix(scope, refs::Prefix::RadIds)
+        },
     ]
     .into_iter()
 }
@@ -85,8 +85,8 @@ fn required_refs<'a>(
     remote_id: &PeerId,
 ) -> impl Iterator<Item = refs::Scoped<'a, 'static>> {
     vec![
-        refs::scoped(id, remote_id, refs::RadId),
-        refs::scoped(id, remote_id, refs::Signed),
+        refs::scoped(id, remote_id, refs::Owned::refs_rad_id()),
+        refs::scoped(id, remote_id, refs::Owned::refs_rad_signed_refs()),
     ]
     .into_iter()
 }
@@ -116,25 +116,21 @@ fn mk_ref_update<T, Urn>(fref: &FilteredRef<T>) -> Option<Update<'_>>
 where
     Urn: ids::Urn,
 {
-    use ids::Urn as _;
     use refdb::{Policy, SymrefTarget};
     use refs::parsed::Rad;
 
-    let track_as = Cow::from(refs::remote_tracking(&fref.remote_id, fref.name.as_bstr()));
-    fref.parsed.as_ref().left().and_then(|rad| match rad {
+    let track_as = fref.to_remote_tracking();
+    fref.parsed.inner.as_ref().left().and_then(|rad| match rad {
         Rad::Id | Rad::SignedRefs => Some(Update::Direct {
-            name: track_as,
+            name: track_as.into(),
             target: fref.tip,
             no_ff: Policy::Abort,
         }),
 
         Rad::Ids { urn } => Some(Update::Symbolic {
-            name: track_as,
+            name: track_as.into(),
             target: SymrefTarget {
-                name: refs::Namespaced {
-                    namespace: Some(BString::from(urn.encode_id()).into()),
-                    refname: refs::RadId.into(),
-                },
+                name: refs::namespaced(urn, refs::REFS_RAD_ID),
                 target: fref.tip,
             },
             type_change: Policy::Allow,

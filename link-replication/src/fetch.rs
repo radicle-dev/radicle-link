@@ -3,14 +3,10 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    borrow::Cow,
-    collections::{BTreeSet, HashSet},
-    iter,
-};
+use std::collections::{BTreeSet, HashSet};
 
-use bstr::{BStr, BString, ByteSlice as _};
-use itertools::Itertools;
+use bstr::ByteSlice as _;
+use git_ref_format::{Qualified, RefStr};
 use link_crypto::PeerId;
 use link_git::protocol::{oid, Ref};
 
@@ -24,6 +20,7 @@ use crate::{
     Identities,
     Negotiation,
     Policy,
+    RefPrefix,
     Refdb,
     Update,
     WantsHaves,
@@ -42,22 +39,18 @@ pub struct Fetch<Oid> {
 }
 
 impl<T> Fetch<T> {
-    fn scoped<'a, 'b: 'a>(
-        &self,
-        id: &'a PeerId,
-        name: impl Into<Cow<'b, BStr>>,
-    ) -> refs::Scoped<'a, 'b> {
-        refs::scoped(id, &self.remote_id, name)
+    fn ref_prefix(&self, id: &PeerId, prefix: refs::Prefix) -> RefPrefix {
+        RefPrefix::from_prefix((&self.remote_id != id).then(|| id), prefix)
     }
 
-    fn signed(&self, id: &PeerId, refname: impl AsRef<BStr>) -> Option<&T> {
+    fn signed<N: AsRef<RefStr>>(&self, id: &PeerId, refname: N) -> Option<&T> {
         self.signed_refs
             .refs
             .get(id)
             .and_then(|refs| refs.refs.get(refname.as_ref()))
     }
 
-    fn is_signed(&self, id: &PeerId, refname: impl AsRef<BStr>) -> bool {
+    fn is_signed<N: AsRef<RefStr>>(&self, id: &PeerId, refname: N) -> bool {
         self.signed(id, refname).is_some()
     }
 
@@ -67,7 +60,7 @@ impl<T> Fetch<T> {
 }
 
 impl<T: AsRef<oid>> Negotiation for Fetch<T> {
-    fn ref_prefixes(&self) -> Vec<refs::Scoped<'_, '_>> {
+    fn ref_prefixes(&self) -> Vec<RefPrefix> {
         let remotes = self
             .signed_refs
             .remotes
@@ -75,10 +68,10 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
             .filter(move |id| *id != &self.local_id)
             .flat_map(move |id| {
                 vec![
-                    self.scoped(id, refs::Prefix::Heads),
-                    self.scoped(id, refs::Prefix::Notes),
-                    self.scoped(id, refs::Prefix::Tags),
-                    self.scoped(id, refs::Prefix::Cobs),
+                    self.ref_prefix(id, refs::Prefix::Heads),
+                    self.ref_prefix(id, refs::Prefix::Notes),
+                    self.ref_prefix(id, refs::Prefix::Tags),
+                    self.ref_prefix(id, refs::Prefix::Cobs),
                 ]
             });
         let signed = self
@@ -87,9 +80,11 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
             .iter()
             .filter(move |(id, _)| *id != &self.local_id)
             .flat_map(move |(id, refs)| {
-                refs.refs
-                    .iter()
-                    .map(move |(name, _)| self.scoped(id, name.as_bstr()))
+                refs.refs.keys().filter_map(move |name| {
+                    // TODO: sigrefs should be `Owned` already
+                    let name = Qualified::from_refstr(name).and_then(refs::owned)?;
+                    Some(RefPrefix::from(refs::scoped(id, &self.remote_id, name)))
+                })
             });
 
         remotes.chain(signed).collect()
@@ -97,25 +92,18 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
 
     fn ref_filter(&self, r: Ref) -> Option<FilteredRef<Self>> {
         use either::Either::*;
-        use refs::parsed::{Identity, Refs};
+        use refs::parsed::Identity;
 
         let (refname, tip) = refs::into_unpacked(r);
-        let parsed = refs::parse::<Identity>(refname.as_bstr())?;
+        let parsed = refs::parse::<Identity>(refname.as_bstr()).ok()?;
         match &parsed.inner {
             // Ignore rad/ refs, as we got them already during the peek phase.
             Left(_) => None,
             // TODO: evaluate fetch specs, as per rfc0699
-            Right(Refs { cat, name, .. }) => {
-                let refname_no_remote: BString = Itertools::intersperse(
-                    iter::once(refs::component::REFS)
-                        .chain(Some(cat.as_bytes()))
-                        .chain(name.iter().map(|x| x.as_slice())),
-                    &[refs::SEPARATOR],
-                )
-                .collect();
+            Right(refname_no_remote) => {
                 let remote_id = *parsed.remote.as_ref().unwrap_or(&self.remote_id);
                 if self.is_tracked(&remote_id) || self.is_signed(&remote_id, &refname_no_remote) {
-                    Some(FilteredRef::new(refname, tip, &remote_id, parsed))
+                    Some(FilteredRef::new(tip, &remote_id, parsed))
                 } else {
                     warn!(
                         %refname_no_remote,
@@ -137,12 +125,10 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
         let mut haves = BTreeSet::new();
 
         for r in refs {
-            let name = r.name.as_bstr();
-            let refname = refs::remote_tracking(&r.remote_id, name);
-            let refname_no_remote =
-                refs::owned(name).expect("succeeds because ref_filter parses the ref");
+            let refname = r.to_remote_tracking();
+            let refname_no_remote = r.to_owned();
 
-            let have = db.refname_to_id(&refname)?;
+            let have = db.refname_to_id(refname)?;
             if let Some(oid) = have.as_ref() {
                 haves.insert(oid.as_ref().to_owned());
             }
@@ -151,9 +137,9 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
             // if the remote id is in the tracking graph, we `want` what we got
             // offered.
             let want: Option<&oid> = self
-                .signed(&r.remote_id, &refname_no_remote)
+                .signed(r.remote_id(), refname_no_remote)
                 .map(|s| s.as_ref())
-                .or_else(|| self.is_tracked(&r.remote_id).then(|| r.tip.as_ref()));
+                .or_else(|| self.is_tracked(r.remote_id()).then(|| r.tip.as_ref()));
 
             match (want, have) {
                 (Some(want), Some(have)) if want == have.as_ref() => {
@@ -193,10 +179,10 @@ impl<T: AsRef<oid>> UpdateTips for Fetch<T> {
     {
         let mut tips = Vec::new();
         for r in refs {
-            debug_assert!(r.remote_id != self.local_id, "never touch our own");
-            let refname = refs::remote_tracking(&r.remote_id, r.name.as_bstr());
+            debug_assert!(r.remote_id() != &self.local_id, "never touch our own");
+            let name = refs::Qualified::from(r.to_remote_tracking());
             tips.push(Update::Direct {
-                name: Cow::from(refname),
+                name,
                 target: r.tip,
                 no_ff: Policy::Allow,
             });

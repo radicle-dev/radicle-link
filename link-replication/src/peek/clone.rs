@@ -5,7 +5,6 @@
 
 use std::collections::{BTreeSet, HashSet};
 
-use bstr::ByteSlice as _;
 use link_crypto::PeerId;
 use link_git::protocol::Ref;
 
@@ -19,6 +18,7 @@ use crate::{
     FilteredRef,
     Identities,
     Negotiation,
+    RefPrefix,
     Refdb,
     WantsHaves,
 };
@@ -36,7 +36,7 @@ impl ForClone {
 }
 
 impl Negotiation for ForClone {
-    fn ref_prefixes(&self) -> Vec<refs::Scoped<'_, 'static>> {
+    fn ref_prefixes(&self) -> Vec<RefPrefix> {
         ref_prefixes(&self.remote_id, &self.remote_id).collect()
     }
 
@@ -45,11 +45,12 @@ impl Negotiation for ForClone {
         use refs::parsed::Identity;
 
         let (name, tip) = refs::into_unpacked(r);
-        match refs::parse::<Identity>(name.as_bstr())? {
+        match refs::parse::<Identity>(name.as_ref()).ok()? {
             parsed @ refs::Parsed {
                 remote: None,
                 inner: Left(_),
-            } => Some(FilteredRef::new(name, tip, &self.remote_id, parsed)),
+                ..
+            } => Some(FilteredRef::new(tip, &self.remote_id, parsed)),
             _ => None,
         }
     }
@@ -64,11 +65,11 @@ impl Negotiation for ForClone {
         let mut haves = BTreeSet::new();
 
         for r in refs {
-            if r.remote_id != self.remote_id {
+            if r.remote_id() != &self.remote_id {
                 continue;
             }
-            let refname = refs::remote_tracking(&r.remote_id, r.name.as_bstr());
-            match db.refname_to_id(&refname)? {
+            let refname = refs::Qualified::from(r.to_remote_tracking());
+            match db.refname_to_id(refname)? {
                 Some(oid) => {
                     if oid.as_ref() != r.tip {
                         wants.insert(r.tip);
@@ -133,7 +134,7 @@ impl Layout for ForClone {
         guard_required(
             self.required_refs().collect(),
             refs.iter()
-                .map(|x| refs::scoped(&x.remote_id, &self.remote_id, x.name.as_bstr()))
+                .map(|x| refs::scoped(x.remote_id(), &self.remote_id, x.to_owned()))
                 .collect(),
         )
     }

@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use either::Either;
 
-use crate::{error, ids, refs, Applied, PeerId, Update, Updated};
+use crate::{error, ids, Applied, PeerId, Update, Updated};
 
 #[derive(Debug)]
 pub struct Success<Urn> {
@@ -48,18 +48,17 @@ where
     /// This happens due to new `refs/rad/ids/*` being discovered, which are
     /// tracked automatically.
     pub fn urns_created(&self) -> impl Iterator<Item = Urn> + '_ {
-        use refs::component::*;
+        use git_ref_format::name::str::*;
 
         self.applied
             .updated
             .iter()
             .filter_map(|update| match update {
                 Updated::Symbolic { target, .. } => {
-                    let id = match target.splitn(7, refs::is_separator).collect::<Vec<_>>()[..] {
+                    let id = match target.iter().take(7).collect::<Vec<_>>()[..] {
                         [REFS, NAMESPACES, id, REFS, RAD, ID] => Some(id),
                         _ => None,
                     }?;
-                    let id = std::str::from_utf8(id).ok()?;
                     Urn::try_from_id(id).ok()
                 },
 
