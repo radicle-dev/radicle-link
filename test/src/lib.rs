@@ -26,6 +26,7 @@ pub mod git;
 pub mod librad;
 pub mod link_async;
 pub mod logging;
+pub mod node_lib;
 pub mod rad;
 pub mod roundtrip;
 pub mod ssh;

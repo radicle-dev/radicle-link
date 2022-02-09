@@ -3,15 +3,12 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-pub mod args;
+use std::os::unix::net::UnixListener;
 
-mod cfg;
-pub use cfg::{Seed, Seeds};
+use anyhow::Result;
 
-pub mod api;
-mod logging;
-mod metrics;
-pub mod node;
-mod protocol;
-mod signals;
-mod tracking;
+use super::Sockets;
+
+pub fn env() -> Result<Option<Sockets>> {
+    todo!()
+}
