@@ -84,8 +84,8 @@ the docs need to be re-rendered and the files in `docs/spec/out` need to be
 updated. To do this, run `scripts/render-docs`.
 
 [dco]: ./DCO
-[fixing-dco]: https://docs.github.com/en/free-pro-team@latest/github/building-a-strong-community/creating-a-pull-request-template-for-your-repository
-[header-template]: ./.license-header-template
+[fixing-dco]: https://github.com/src-d/guide/blob/master/developer-community/fix-DCO.md
+[header-template]: ./.license-header
 [maintainers-guide]: https://github.com/radicle-dev/radicle-link/blob/master/docs/maintainers-guide.adoc
 [patch]: ./scripts/contributing/patch
 [submit-patch]: https://github.com/radicle-dev/radicle-link/blob/master/docs/submitting-patches.adoc
