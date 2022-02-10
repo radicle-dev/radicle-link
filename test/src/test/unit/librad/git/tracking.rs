@@ -17,6 +17,8 @@ use librad::{
     SecretKey,
 };
 
+use crate::git::create_commit;
+
 #[test]
 fn track_is_tracked() {
     let tmp = tempfile::tempdir().unwrap();
@@ -196,6 +198,18 @@ fn migration() {
         let peer2 = PeerId::from(SecretKey::new());
         let urn = Urn::new(git2::Oid::zero().into());
 
+        let branch = reflike!("refs/namespaces")
+            .join(&urn)
+            .join(reflike!("refs/remotes"))
+            .join(peer1)
+            .join(reflike!("heads/main"));
+
+        // write a reference to the repository
+        {
+            let repo = git2::Repository::open(paths.git_dir()).unwrap();
+            create_commit(&repo, branch.clone()).unwrap();
+        }
+
         assert!(v1::track(&storage, &urn, peer1,).unwrap());
         assert!(v1::track(&storage, &urn, peer2,).unwrap());
 
@@ -208,5 +222,6 @@ fn migration() {
                 .unwrap()
         );
         assert!(v1::tracked(&storage, &urn).unwrap().next().is_none());
+        assert!(storage.reference(&branch).unwrap().is_some())
     }
 }
