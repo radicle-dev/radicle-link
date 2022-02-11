@@ -31,8 +31,17 @@ link:https://git-send-email.io[https://git-send-email.io]
 - For now, base your work off of the `master` branch published to
   link:https://github.com/radicle-dev/radicle-link[github]
 
-- Send patches to
-mailto:{mailinglist}[{mailinglist}] using `git send-email`
+- Send patches to mailto:{mailinglist}[{mailinglist}] using `git send-email`.
+You can make Git default to doing this by running:
++
+[subs=attributes+]
+    git config sendemail.to {mailinglist}
+
+- Make sure that your patches's subject lines start with
+"`[PATCH radicle-link`". This will cause the patch to trigger a Sourcehut CI
+build. You can make Git default to doing this by running:
++
+    git config format.subjectprefix "PATCH radicle-link"
 
 - During review, make sure to keep CC lists intact. This allows people to
 participate without subscribing to the mailing list.
