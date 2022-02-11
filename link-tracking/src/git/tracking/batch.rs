@@ -3,15 +3,22 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+};
 
+use either::Either::{self, Left, Right};
 use link_crypto::PeerId;
 use link_identities::urn::Urn;
 use radicle_git_ext::Oid;
 
 use super::{config::Config, error, odb, policy, refdb, PreviousError, Ref, RefName};
 
+use crate::git::tracking::policy::compose::{Compose as _, Reduction, WithConfig};
+
 /// A tracking action that performs a write during a [`batch`] operation.
+#[derive(Clone, Debug)]
 pub enum Action<'a, Oid: Clone> {
     Track {
         urn: Cow<'a, Urn<Oid>>,
@@ -24,6 +31,22 @@ pub enum Action<'a, Oid: Clone> {
         peer: PeerId,
         policy: policy::Untrack,
     },
+}
+
+impl<'a, Oid: Clone + PartialEq> Action<'a, Oid> {
+    pub fn urn(&self) -> &Cow<'a, Urn<Oid>> {
+        match self {
+            Self::Track { urn, .. } => urn,
+            Self::Untrack { urn, .. } => urn,
+        }
+    }
+
+    pub fn peer(&self) -> Option<PeerId> {
+        match self {
+            Self::Track { peer, .. } => *peer,
+            Self::Untrack { peer, .. } => Some(*peer),
+        }
+    }
 }
 
 /// The applied updates for the given set of [`Action`]s in a [`batch`]
@@ -82,6 +105,14 @@ impl<'a> From<refdb::Updated<'a, Oid>> for Updated {
 ///
 /// Any [`Config`]s that require writing to the `Odb` are not part of the
 /// transaction and happen before the references are updated.
+///
+/// # Fusion
+///
+/// For any actions that have the same `Urn` and `PeerId`, they are subject to
+/// fusion. This may simplify a series of these actions to a single action.
+///
+/// For an explanation and list of fusion rules see:
+/// `./docs/rfc/0699-tracking-storage.adoc#_batch_tracking`
 pub fn batch<'a, Db, I>(db: &'a Db, actions: I) -> Result<Applied, error::Batch>
 where
     Db: odb::Read<Oid = Oid>
@@ -90,14 +121,13 @@ where
         + refdb::Write<Oid = Oid>,
     I: IntoIterator<Item = Action<'a, Oid>> + 'a,
 {
-    let updates = into_updates(db, actions).collect::<Result<Vec<_>, _>>()?;
+    let updates = into_updates(db, fuse(actions)).collect::<Result<Vec<_>, _>>()?;
     let applied = db
         .update(updates)
         .map_err(|err| error::Batch::Txn { source: err.into() })?;
     Ok(applied.into())
 }
 
-// XXX(finto): we could fuse actions that occur on the same urn and peer
 fn into_updates<'a, Db, I>(
     db: &'a Db,
     actions: I,
@@ -197,4 +227,83 @@ where
         },
         Some(target) => Ok(*target),
     }
+}
+
+fn fuse<'a, I>(actions: I) -> impl Iterator<Item = Action<'a, Oid>>
+where
+    I: IntoIterator<Item = Action<'a, Oid>> + 'a,
+{
+    type Pair<'a> = (Cow<'a, Urn<Oid>>, PeerId);
+    let mut pairs: BTreeMap<Pair<'a>, Reduction<Either<WithConfig<'a, Config>, policy::Untrack>>> =
+        BTreeMap::new();
+    let mut defaults: BTreeMap<Cow<'a, Urn<Oid>>, Reduction<WithConfig<'a, Config>>> =
+        BTreeMap::new();
+    for action in actions {
+        match action {
+            Action::Track {
+                urn,
+                peer: None,
+                config,
+                policy,
+            } => {
+                defaults
+                    .entry(urn)
+                    .and_modify(|r| *r = r.compose(&WithConfig { policy, config }))
+                    .or_insert_with(|| WithConfig { policy, config }.into());
+            },
+            Action::Track {
+                urn,
+                peer: Some(peer),
+                config,
+                policy,
+            } => {
+                let key = (urn, peer);
+                let track = Left(WithConfig { policy, config });
+                pairs
+                    .entry(key)
+                    .and_modify(|r| {
+                        *r = r.compose(&track);
+                    })
+                    .or_insert_with(|| track.into());
+            },
+            Action::Untrack { urn, peer, policy } => {
+                let key = (urn, peer);
+                let untrack = Right(policy);
+                pairs
+                    .entry(key)
+                    .and_modify(|r| {
+                        *r = r.compose(&untrack);
+                    })
+                    .or_insert_with(|| untrack.into());
+            },
+        }
+    }
+
+    pairs
+        .into_iter()
+        .flat_map(|((urn, peer), simple)| {
+            simple.into_iter().map(move |e| match e {
+                Left(WithConfig { policy, config }) => Action::Track {
+                    urn: urn.clone(),
+                    peer: Some(peer),
+                    config,
+                    policy,
+                },
+                Right(policy) => Action::Untrack {
+                    urn: urn.clone(),
+                    peer,
+                    policy,
+                },
+            })
+        })
+        .chain(defaults.into_iter().flat_map(|(urn, simple)| {
+            simple
+                .into_iter()
+                .map(move |WithConfig { policy, config }| Action::Track {
+                    urn: urn.clone(),
+                    peer: None,
+                    config,
+                    policy,
+                })
+        }))
 }

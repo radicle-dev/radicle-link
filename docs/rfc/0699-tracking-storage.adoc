@@ -2,11 +2,13 @@
 Fintan Halpenny <fintan.halpenny@gmail.com>; Kim Altintop <kim@eagain.st>; xla <self@xla.is>
 
 :revdate: 2021-10-12
-:revremark: draft
+:revremark: amended
 :toc: preamble
+:ammend_1: 2022-02-01
 
 * Author: {author_1}, {author_2}, {author_3}
 * Date: {revdate}
+* Amended: {ammend_1}
 * Status: {revremark}
 * Discussion: https://lists.sr.ht/~radicle-link/dev/%3Cc2aae5c561e6c1d3b75394de8d570209%40xla.is%3E
 
@@ -265,6 +267,310 @@ are modified as follows. If the running peer is *only* tracking the
 running peer is tracking the URN and Peer ID contained in the gossip
 message _and_ does not already store the object corresponding to the
 git SHA inside the message.
+
+== Batch Tracking
+
+It is possible for the tracking API to provide a way to batch tracking
+operations together. These operations are equivalent to `track` or
+`untrack`, along with their parameters.
+
+One such parameter is the given "policy" for tracking or
+untracking. The policy describes the expected state of the reference
+when performing the `track`/`untrack`. Since the state of the
+reference could change due to concurrent modifications, the policy is
+used to reject a modification if the expectation is not met.
+
+For `track` we have the following policies:
+
+. `Any` -- perform the `track` regardless of a reference existing or not.
+. `MustNotExist` -- perform the `track` iff a reference for that name
+*does not exist* already.
+. `MustExist` -- perform the `track` iff a reference for that name
+*exists* already.
+
+And for `untrack` we have:
+
+. `Any` -- perform the `untrack` regardless of a reference existing or not.
+. `MustExist` -- perform the `untrack` iff a reference for that name
+*exists* already.
+
+Given a set of `track` and `untrack` operations, along with their
+policies, it should be possible to fuse them by simplifying pairs of
+operation into a single operation. Here we describe the rules for this
+simplification by reasoning about the composition of these operations
+with respect to the above policies. The reasoning can be broken down
+by case analysis, where we consider the combination of policies and
+how they succeed or fail if the reference exists or does not exist.
+
+For each composition, we assume that the `Urn` and `PeerId` are the
+same for both operations, and so we omit them.
+
+=== track ∘ track
+
+The parameters `c` and `c'` are the configurations provided for the
+tracking relationship.
+
+==== track Any c' ∘ x === track Any c'
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |`track Any c'` overwrites any other `track policy`
+|No |Same as above
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|`track Any c'` will always succeed
+|===
+
+==== track MustExist c' ∘ track Any c === track Any c'
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |`track Any c` succeeds, followed by `track MustExist c'`
+ overwriting it.
+|No |Same as above.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|`track Any c'` since `track MustExist c'` will overwrite in both
+cases, but is dependent on `track Any c` in the case of the reference
+not existing.
+|===
+
+==== track MustExist c' ∘ track MustExist c === track MustExist c'
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |`track MustExist c` succeeds, followed by `track MustExist c'`
+ overwriting it.
+|No |Both operations are rejected.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|`track MustExist c'` will be the final value if the ref exists and it
+does not matter in the case of the ref not existing.
+|===
+
+==== track MustExist c' ∘ track MustNotExist c === track Any c'
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |`track MustExist c` succeeds, followed by `track MustExist c'`
+overwriting it
+|No |`track MustNotExist c` succeeds, followed by `track MustExist c'`
+overwriting it.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|The final value will be `c'` in both cases and should
+succeed so we simplify to `track Any c'`.
+|===
+
+==== track MustNotExist c' ∘ track Any c === track Any c
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |`track Any c` succeed and `track MustNotExist c'` is rejected.
+|No |The same as above.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|`track Any c` will be the only successful operation.
+|===
+
+==== track MustNotExist c' ∘ track MustExist c === track MustNotExist c' ∘ track MustExist c
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |`track MustExist c` will succeed, while `track MustNotExist c'`
+ will be rejected.
+|No |`track MustExist c` will be rejected, while `track MustNotExist
+ c'` will be succeed.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|There is no simplification for this scenario and the
+result is purely decided at runtime.
+|===
+
+==== track MustNotExist c' ∘ track MustNotExist c === track MustNotExist c
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |Both operations are rejected.
+|No |`track MustNotExist c` succeeds which forces `track MustNotExist
+  c'` to fail.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|`track MustNotExist c` is the winner in the second
+scenario, while it will also be rejected in the first. Thus, we keep
+it and ignore `track MustNotExist c'`.
+|===
+
+=== untrack ∘ untrack
+
+==== untrack Any ∘ x === untrack Any
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |Regardless of the first operation `untrack Any` succeeds.
+|No |Both operations will be, at best, noops.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|`untrack Any` will always succeed.
+|===
+
+==== untrack MustExist ∘ untrack Any === untrack Any
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |`untrack Any` succeeds, then `untrack MustExist`
+gets rejected.
+|No |`untrack Any` succeeds, leaving the ref
+still not existing, and `untrack MustExist` gets rejected.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|`untrack Any` will always succeed.
+|===
+
+==== untrack MustExist ∘ untrack MustExist === untrack MustExist
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |The first `untrack MustExist` succeeds, the second
+is rejected.
+|No |Both are rejected, which is the same as a
+single one getting rejected.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|We can deduplicate to a single `untrack MustExist`.
+|===
+
+=== track ∘ untrack
+
+==== track Any ∘ x === track Any
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |The reference would be untracked by `x` but immediately tracked
+ again by `track Any`.
+|No |`x` will have no effect, while `track Any` will succeed.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|`track Any` will ensure the reference is always tracked.
+|===
+
+==== track MustExist ∘ untrack p === untrack p
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |`untrack p` will succeed, forcing `track MustExist` to be
+ rejected.
+|No |`untrack p` has no effect if `p = Any` or rejected if `p =
+ MustExist`, leaving `track MustExist` to be rejected.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|`untrack p` will succeed or have no effect, while `track MustExist`
+will always be rejected.
+|===
+
+==== track MustNotExist ∘ x === track Any
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |Either forms of `untrack` will remove the reference, allowing
+`track MustNotExist` to succeed.
+|No |Either forms of `untrack` will have no effect, leaving the `track
+MustNotExist` to succeed.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|Since `track MustNotExist` is dependent on the `untrack` in the case
+of the ref existing, we can turn it into `track Any` as this chain of
+actions representing a forced update.
+|===
+
+=== untrack ∘ track
+
+==== untrack Any ∘ x === untrack Any
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |Regardless of any `track` operation, the `untrack` will always
+execute leaving the entry untracked.
+|No |Similar to the above.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|We ignore `x` and keep `untrack Any`.
+|===
+
+==== untrack MustExist ∘ x === untrack Any
+
+[cols="1,3"]
+|===
+|*Ref Exists* |*Reason*
+|Yes |Regardless of any `track` operation, the `untrack` will always
+execute leaving the entry untracked.
+|No |In the cases of the `track` operation being successful, the
+`untrack` will leave the entry untracked. If the `track` is rejected,
+then `untrack MustExist` will also be rejected.
+|===
+
+[cols="1"]
+|===
+|*Conclusion*
+|Since the state will always be left as untracked, we can simplify to
+`untrack Any`.
+|===
 
 == Appendix
 

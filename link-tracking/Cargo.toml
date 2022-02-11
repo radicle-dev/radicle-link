@@ -6,6 +6,7 @@ edition = "2018"
 license = "GPL-3.0-or-later"
 
 [dependencies]
+either = "1.0"
 multihash = "0.11"
 thiserror = "1.0"
 tracing = "0.1"
