@@ -82,6 +82,12 @@ pub enum Untrack {
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
+    #[error("failed to prune branches related to `{name}` during untrack")]
+    Prune {
+        name: RefName<'static, Oid>,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -100,6 +106,12 @@ pub enum UntrackAll {
     },
     #[error("failed to remove configurations for `{spec}` during untrack all")]
     Delete {
+        spec: RefspecPattern,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
+    #[error("failed to prune branches related to `{spec}` during untrack all")]
+    Prune {
         spec: RefspecPattern,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,

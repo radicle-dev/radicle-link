@@ -7,8 +7,18 @@ use std::collections::BTreeSet;
 
 use librad::{
     git::{
-        storage::Storage,
-        tracking::{is_tracked, migration, policy, track, tracked_peers, untrack, v1, Config},
+        storage::{ReadOnlyStorage as _, Storage},
+        tracking::{
+            is_tracked,
+            migration,
+            policy,
+            track,
+            tracked_peers,
+            untrack,
+            v1,
+            Config,
+            UntrackArgs,
+        },
         Urn,
     },
     paths::Paths,
@@ -60,7 +70,7 @@ fn track_untrack_is_not_tracked() {
         .unwrap()
         .is_ok());
         assert!(is_tracked(&storage, &urn, Some(remote_peer)).unwrap());
-        assert!(untrack(&storage, &urn, remote_peer, policy::Untrack::Any)
+        assert!(untrack(&storage, &urn, remote_peer, UntrackArgs::default())
             .unwrap()
             .is_ok());
         assert!(!is_tracked(&storage, &urn, Some(remote_peer)).unwrap())
@@ -108,9 +118,9 @@ fn untrack_nonexistent_is_not_tracked() {
         let remote_peer = PeerId::from(SecretKey::new());
         let urn = Urn::new(git2::Oid::zero().into());
 
-        assert!(untrack(&storage, &urn, remote_peer, policy::Untrack::Any)
+        assert!(untrack(&storage, &urn, remote_peer, UntrackArgs::default())
             .unwrap()
-            .is_ok());
+            .is_err());
         assert!(!is_tracked(&storage, &urn, Some(remote_peer)).unwrap());
     }
 }
@@ -185,6 +195,92 @@ fn tracked_ignores_urn_path() {
                 .collect::<Result<Vec<_>, _>>()
                 .unwrap()
         )
+    }
+}
+
+#[test]
+fn untrack_with_prune() {
+    let tmp = tempfile::tempdir().unwrap();
+    {
+        let paths = Paths::from_root(&tmp).unwrap();
+        let storage = Storage::open(&paths, SecretKey::new()).unwrap();
+        let remote_peer = PeerId::from(SecretKey::new());
+        let urn = Urn::new(git2::Oid::zero().into());
+
+        assert!(track(
+            &storage,
+            &urn,
+            Some(remote_peer),
+            Config::default(),
+            policy::Track::Any,
+        )
+        .unwrap()
+        .is_ok());
+
+        let branch = reflike!("refs/namespaces")
+            .join(&urn)
+            .join(reflike!("refs/remotes"))
+            .join(remote_peer)
+            .join(reflike!("heads/main"));
+
+        {
+            let repo = git2::Repository::open(paths.git_dir()).unwrap();
+            create_commit(&repo, branch.clone()).unwrap();
+        }
+
+        untrack(
+            &storage,
+            &urn,
+            remote_peer,
+            UntrackArgs::prune(policy::Untrack::Any),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(storage.reference(&branch).unwrap().is_none())
+    }
+}
+
+#[test]
+fn untrack_no_prune() {
+    let tmp = tempfile::tempdir().unwrap();
+    {
+        let paths = Paths::from_root(&tmp).unwrap();
+        let storage = Storage::open(&paths, SecretKey::new()).unwrap();
+        let remote_peer = PeerId::from(SecretKey::new());
+        let urn = Urn::new(git2::Oid::zero().into());
+
+        assert!(track(
+            &storage,
+            &urn,
+            Some(remote_peer),
+            Config::default(),
+            policy::Track::Any,
+        )
+        .unwrap()
+        .is_ok());
+
+        let branch = reflike!("refs/namespaces")
+            .join(&urn)
+            .join(reflike!("refs/remotes"))
+            .join(remote_peer)
+            .join(reflike!("heads/main"));
+
+        {
+            let repo = git2::Repository::open(paths.git_dir()).unwrap();
+            create_commit(&repo, branch.clone()).unwrap();
+        }
+
+        untrack(
+            &storage,
+            &urn,
+            remote_peer,
+            UntrackArgs::new(policy::Untrack::Any),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(storage.reference(&branch).unwrap().is_some())
     }
 }
 
