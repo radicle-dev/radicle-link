@@ -36,6 +36,6 @@ If you are considering to contribute to this project, please review the
 [annml]: https://lists.sr.ht/~radicle-link/announce
 [devml]: https://lists.sr.ht/~radicle-link/dev
 [rustup]: https://rustup.rs
-[GPLv3]: https://www.gnu.org/licenses/gpl-3.0.txt
+[GPLv3]: https://www.gnu.org/licenses/gpl-3.0
 [LICENSE]: ./LICENSE
 [contributing]: ./CONTRIBUTING.md
