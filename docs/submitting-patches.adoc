@@ -31,8 +31,17 @@ link:https://git-send-email.io[https://git-send-email.io]
 - For now, base your work off of the `master` branch published to
   link:https://github.com/radicle-dev/radicle-link[github]
 
-- Send patches to
-mailto:{mailinglist}[{mailinglist}] using `git send-email`
+- Send patches to mailto:{mailinglist}[{mailinglist}] using `git send-email`.
+You can make Git default to doing this by running:
++
+[subs=attributes+]
+    git config sendemail.to {mailinglist}
+
+- Make sure that your patches's subject lines start with
+"`[PATCH radicle-link`". This will cause the patch to trigger a Sourcehut CI
+build. You can make Git default to doing this by running:
++
+    git config format.subjectprefix "PATCH radicle-link"
 
 - During review, make sure to keep CC lists intact. This allows people to
 participate without subscribing to the mailing list.
@@ -52,6 +61,9 @@ of your patch, e.g. `patches/my-patch/v1`. An example trailer for github would
 then look like:
 +
     Published-As: https://github.com/kim/radicle-link/releases/tag/patches/my-patch/v1
++
+If you choose to publish to link:https://sr.ht/[sr.ht], then make sure that your
+fork is named "`radicle-link`". If you use a different name, then CI won't work.
 
 - Keep in mind that, unlike with PRs, people will look at the individual commits
 of your patch. So make sure the commits are self-contained, not too big not
