@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -eoux pipefail
+
+RUST_LOG=error ssh-agent cargo test --workspace

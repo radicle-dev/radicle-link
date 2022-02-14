@@ -42,12 +42,15 @@ tasks:
   - sources: |
       cd radicle-link/
       cargo deny check sources
-  - build-test: |
+  - build: |
       cd radicle-link/
-      ./scripts/ci/build-test
-  - bins: |
-      cd radicle-link/
+      ./scripts/ci/build
+      ./scripts/ci/build-repl3
       ./scripts/ci/build-bins
+  - test: |
+      cd radicle-link/
+      ./scripts/ci/test
+      ./scripts/ci/test-repl3
   - docs: |
       cd radicle-link/
       ./scripts/ci/docs
