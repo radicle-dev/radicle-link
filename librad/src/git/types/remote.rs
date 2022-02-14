@@ -310,12 +310,15 @@ impl Remote<LocalUrl> {
                 |url| repo.remote_anonymous(&url.to_string()),
             ),
 
-            Configured => self.with_tmp_copy(repo, |this| {
-                this.push_internal(&[] as &[&str], open_storage, |url| {
-                    repo.remote_set_url(this.name.as_str(), &url.to_string())?;
-                    repo.find_remote(this.name.as_str())
-                })
-            })?,
+            Configured => self.push_internal(
+                &self
+                    .pushspecs
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>(),
+                open_storage,
+                |url| repo.remote_anonymous(&url.to_string()),
+            ),
         };
 
         Ok(res??.into_iter())
@@ -379,23 +382,21 @@ impl Remote<LocalUrl> {
     {
         use LocalFetchspec::*;
 
-        let res = match spec {
-            Specs(specs) => self.fetch_internal(
-                &specs
-                    .iter()
-                    .map(|spec| spec.to_string())
-                    .collect::<Vec<_>>(),
-                open_storage,
-                |url| repo.remote_anonymous(&url.to_string()),
-            ),
-
-            Configured => self.with_tmp_copy(repo, |this| {
-                this.fetch_internal(&[] as &[&str], open_storage, |url| {
-                    repo.remote_set_url(this.name.as_str(), &url.to_string())?;
-                    repo.find_remote(this.name.as_str())
-                })
-            })?,
+        let specs = match spec {
+            Specs(specs) => specs
+                .iter()
+                .map(|spec| spec.to_string())
+                .collect::<Vec<_>>(),
+            Configured => self
+                .fetchspecs
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
         };
+
+        let res = self.fetch_internal(&specs, open_storage, |url| {
+            repo.remote_anonymous(&url.to_string())
+        });
 
         Ok(res??.into_iter())
     }
@@ -437,56 +438,6 @@ impl Remote<LocalUrl> {
 
             Ok(updated_refs)
         })
-    }
-
-    /// When using a persistent remote, we need to rewrite the URL to add the
-    /// lookup index. However, we might have read the remote from an
-    /// included config file, in which case `libgit2` bails out when trying
-    /// to modify it. We work around this by creating a temporary persistent
-    /// remote (in the local config), which we delete after we're done.
-    ///
-    /// # Safety
-    ///
-    /// This is not currently panic safe -- ie. if the closure panics, we might
-    /// leak the temporary remote. Also, no effort is made to ensure a
-    /// remote can safely be used concurrently.
-    ///
-    /// # Note
-    ///
-    /// `remote_delete` will remove all matching references in its refspecs
-    /// for its `fetch` and `push` entries. For example, if the refspec was
-    /// `refs/heads/foo/*`, when we delete the remote, all references under
-    /// `heads/foo` will be removed. This is not desirable here because we are
-    /// creating the temporary remote to persist references fetched. There is no
-    /// API for removing an entire section of a git config so we do the
-    /// removal in piece-meal fashion. First we remove the entries for
-    /// `fetch` and `push`, followed by a call to `remote_delete`. The
-    /// temporary remote is thus removed from the config file, the original
-    /// is left untouched, and the references we fetched are persisted.
-    fn with_tmp_copy<F, A>(&mut self, repo: &git2::Repository, f: F) -> Result<A, git2::Error>
-    where
-        F: FnOnce(&mut Self) -> A,
-    {
-        let orig_name = self.name.clone();
-        let orig_url = self.url.clone();
-        self.name = reflike!("__tmp_").join(&self.name);
-        tracing::debug!("creating temporary remote {}", self.name);
-        self.save(repo).unwrap();
-        let res = f(self);
-        {
-            let mut config = repo.config()?;
-            config
-                .remove_multivar(&format!("remote.{}.fetch", self.name), ".*")
-                .or_matches::<git2::Error, _, _>(is_not_found_err, || Ok(()))?;
-            config
-                .remove_multivar(&format!("remote.{}.push", self.name), ".*")
-                .or_matches::<git2::Error, _, _>(is_not_found_err, || Ok(()))?;
-        }
-        let deleted = repo.remote_delete(self.name.as_str());
-        self.name = orig_name;
-        self.url = orig_url;
-        deleted?;
-        Ok(res)
     }
 }
 
