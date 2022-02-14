@@ -22,7 +22,7 @@ tracing = "0.1"
 webpki = "0.21"
 
 [dependencies.minicbor]
-version = "0.9.1"
+version = ">= 0.9.1, < 0.14"
 features = ["std", "derive"]
 
 [dependencies.radicle-git-ext]

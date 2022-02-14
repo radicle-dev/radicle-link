@@ -23,7 +23,7 @@ lazy_static = "1.4.0"
 tempfile = "3.1"
 
 [dependencies.minicbor]
-version = "0.9.1"
+version = ">= 0.9.1, < 0.14"
 features = ["std", "derive"]
 
 [dependencies.git2]

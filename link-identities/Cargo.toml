@@ -45,7 +45,7 @@ path = "../link-canonical"
 path = "../link-crypto"
 
 [dependencies.minicbor]
-version = "0.9.1"
+version = ">= 0.9.1, < 0.14"
 features = ["std", "derive"]
 
 [dependencies.radicle-data]

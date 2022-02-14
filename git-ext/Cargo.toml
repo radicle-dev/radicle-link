@@ -25,7 +25,7 @@ path = "../link-git"
 optional = true
 
 [dependencies.minicbor]
-version = "0.9.1"
+version = ">= 0.9.1, < 0.14"
 features = ["std"]
 optional = true
 
