@@ -196,11 +196,61 @@ where
     )
 }
 
+/// The result of calling [`untrack`].
+#[derive(Clone, Debug)]
+pub struct Untracked<R> {
+    /// The previous `Oid` of the deleted reference if it existed.
+    pub previous: Option<Oid>,
+    /// If the `prune` flag is set to `true` in [`untrack`], it will prune any
+    /// references related to that remote under the provided `urn`.
+    pub pruned: Option<refdb::Pruned<R, Oid>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct UntrackArgs {
+    pub policy: policy::Untrack,
+    pub prune: bool,
+}
+
+impl Default for UntrackArgs {
+    fn default() -> Self {
+        Self {
+            policy: policy::Untrack::MustExist,
+            prune: false,
+        }
+    }
+}
+
+impl UntrackArgs {
+    /// Constructs an `UntrackArgs` setting [`UntrackArgs::prune`] to
+    /// `false`.
+    pub fn new(policy: policy::Untrack) -> Self {
+        Self {
+            policy,
+            prune: false,
+        }
+    }
+
+    /// Construction an `UntrackArgs` setting [`UntrackArgs::prune`] to `true`.
+    pub fn prune(policy: policy::Untrack) -> Self {
+        Self {
+            policy,
+            prune: true,
+        }
+    }
+}
+
 /// Untrack the `urn` for the given `peer`, removing the reference
 /// `refs/rad/remotes/<urn>/<peer>`.
 ///
 /// If the tracking entry existed for removal, the [`Oid`] of the previous
 /// [`Config`] is returned in the inner result, otherwise `None` is returned.
+///
+/// # Pruning
+///
+/// If `prune` is set to `true`, then references for the given `urn` and `peer`
+/// will be removed. What gets pruned is dependent on the implementation of
+/// [`refdb::Prune`].
 ///
 /// # Concurrency
 ///
@@ -213,13 +263,16 @@ where
 ///   did already exist. This can be seen as a safe way to delete an existing
 ///   tracking entry.
 pub fn untrack<'a, Db>(
-    db: &Db,
+    db: &'a Db,
     urn: &Urn<Oid>,
     peer: PeerId,
-    policy: policy::Untrack,
-) -> Result<Result<Option<Oid>, PreviousError>, error::Untrack>
+    UntrackArgs { policy, prune }: UntrackArgs,
+) -> Result<Result<Untracked<Db::Ref>, PreviousError>, error::Untrack>
 where
-    Db: odb::Read<Oid = Oid> + refdb::Read<'a, Oid = Oid> + refdb::Write<Oid = Oid>,
+    Db: odb::Read<Oid = Oid>
+        + refdb::Read<'a, Oid = Oid>
+        + refdb::Write<Oid = Oid>
+        + refdb::Prune<Oid = Oid>,
 {
     let reference = RefName::new(urn, peer);
     db.update(Some(refdb::Update::Delete {
@@ -252,12 +305,77 @@ where
             }
         },
     )
+    .and_then(|previous| {
+        let pruned = if prune {
+            Some(
+                db.prune(urn, Some(peer))
+                    .map_err(|err| error::Untrack::Prune {
+                        name: reference.into_owned(),
+                        source: err.into(),
+                    })?,
+            )
+        } else {
+            None
+        };
+
+        Ok(previous.map(|previous| Untracked { previous, pruned }))
+    })
+}
+
+/// The result of calling [`untrack_all`].
+pub struct UntrackedAll<'a, R> {
+    /// The result of attempting to delete of each reference -- either the
+    /// reference name or the rejection error.
+    pub untracked: Box<dyn Iterator<Item = Result<RefName<'a, Oid>, PreviousError>> + 'a>,
+    /// If the `prune` flag is set to `true` in [`untrack_all`], it will prune
+    /// any references related to all remotes under the provided `urn`.
+    pub pruned: Option<refdb::Pruned<R, Oid>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct UntrackAllArgs {
+    pub policy: policy::UntrackAll,
+    pub prune: bool,
+}
+
+impl Default for UntrackAllArgs {
+    fn default() -> Self {
+        Self {
+            policy: policy::UntrackAll::MustExistAndMatch,
+            prune: false,
+        }
+    }
+}
+
+impl UntrackAllArgs {
+    /// The default construction of `UntrackArgs` sets [`UntrackArgs::prune`] to
+    /// `false`.
+    pub fn new(policy: policy::UntrackAll) -> Self {
+        Self {
+            policy,
+            prune: false,
+        }
+    }
+
+    /// Construction an `UntrackArgs` setting [`UntrackArgs::prune`] to `true`.
+    pub fn prune(policy: policy::UntrackAll) -> Self {
+        Self {
+            policy,
+            prune: true,
+        }
+    }
 }
 
 /// Untrack all peers under `urn`, removing all references
 /// `refs/rad/remotes/<urn>/*`.
 ///
 /// The [`RefName`] of each deleted reference is returned.
+///
+/// # Pruning
+///
+/// If `prune` is set to `true`, then references for the given `urn` and all
+/// peers will be removed. What gets pruned is dependent on the implementation
+/// of [`refdb::Prune`].
 ///
 /// # Concurrency
 ///
@@ -274,10 +392,10 @@ where
 pub fn untrack_all<'a, Db>(
     db: &'a Db,
     urn: &Urn<Oid>,
-    policy: policy::UntrackAll,
-) -> Result<impl Iterator<Item = Result<RefName<'a, Oid>, PreviousError>>, error::UntrackAll>
+    UntrackAllArgs { policy, prune }: UntrackAllArgs,
+) -> Result<UntrackedAll<'a, Db::Ref>, error::UntrackAll>
 where
-    Db: refdb::Read<'a, Oid = Oid> + refdb::Write<Oid = Oid>,
+    Db: refdb::Read<'a, Oid = Oid> + refdb::Write<Oid = Oid> + refdb::Prune<Oid = Oid>,
 {
     let prefix = reflike!("refs/rad/remotes");
     let namespace =
@@ -322,8 +440,26 @@ where
             },
         )
         .map_err(|err| error::UntrackAll::Delete {
-            spec,
+            spec: spec.clone(),
             source: err.into(),
+        })
+        .and_then(|untracked| {
+            let pruned = if prune {
+                Some(
+                    db.prune(urn, None)
+                        .map_err(|err| error::UntrackAll::Prune {
+                            spec,
+                            source: err.into(),
+                        })?,
+                )
+            } else {
+                None
+            };
+
+            Ok(UntrackedAll {
+                untracked: Box::new(untracked),
+                pruned,
+            })
         })
 }
 

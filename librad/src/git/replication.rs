@@ -520,7 +520,12 @@ fn prune<'a>(
     prune_list: impl Iterator<Item = &'a PeerId>,
 ) -> Result<(), Error> {
     for peer in prune_list {
-        match tracking::untrack(storage, urn, *peer, tracking::policy::Untrack::Any) {
+        match tracking::untrack(
+            storage,
+            urn,
+            *peer,
+            tracking::UntrackArgs::prune(tracking::policy::Untrack::Any),
+        ) {
             Ok(removed) => match removed {
                 Ok(_) => {
                     tracing::info!(peer = %peer, "pruned")

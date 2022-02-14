@@ -4,13 +4,17 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use link_tracking::git::{
-    refdb::{self, Applied, PreviousError, Read, Update, Updated, Write},
+    refdb::{self, Applied, PreviousError, Prune, Pruned, PrunedRef, Read, Update, Updated, Write},
     tracking::reference::RefName,
 };
 
 use crate::{
-    git::storage::{read, ReadOnly, ReadOnlyStorage, Storage},
+    git::{
+        storage::{glob, read, ReadOnly, ReadOnlyStorage, Storage},
+        Urn,
+    },
     git_ext as ext,
+    PeerId,
 };
 
 pub mod error {
@@ -48,6 +52,28 @@ pub mod error {
         Storage(#[from] read::Error),
         #[error(transparent)]
         Conversion(#[from] Conversion),
+    }
+
+    #[derive(Debug, Error)]
+    pub enum Prune {
+        #[error("failed to initialise git transaction")]
+        Acquire(#[source] git2::Error),
+        #[error("failed to commit git transaction")]
+        Commit(#[source] git2::Error),
+        #[error("failed to delete reference `{refname}`")]
+        Delete {
+            refname: String,
+            #[source]
+            source: git2::Error,
+        },
+        #[error("failed while acquiring lock for `{refname}`")]
+        Lock {
+            refname: String,
+            #[source]
+            source: git2::Error,
+        },
+        #[error(transparent)]
+        Read(#[from] read::Error),
     }
 
     #[derive(Debug, Error)]
@@ -256,5 +282,70 @@ impl Write for Storage {
         }
         txn.commit().map_err(error::Txn::Commit)?;
         Ok(applied)
+    }
+}
+
+impl Prune for Storage {
+    type PruneError = error::Prune;
+
+    type Ref = String;
+    type Oid = ext::Oid;
+
+    fn prune(
+        &self,
+        urn: &Urn,
+        peer: Option<PeerId>,
+    ) -> Result<Pruned<Self::Ref, Self::Oid>, Self::PruneError> {
+        let namespace = reflike!("refs/namespaces").join(urn);
+        let glob = match peer {
+            Some(peer) => namespace
+                .join(reflike!("refs/remotes"))
+                .join(peer)
+                .with_pattern_suffix(refspec_pattern!("*")),
+            None => namespace.with_pattern_suffix(refspec_pattern!("*")),
+        };
+        let prune = self.references_glob(glob::RefspecMatcher::from(glob))?;
+
+        let raw = self.as_raw();
+        let mut txn = raw.transaction().map_err(error::Prune::Acquire)?;
+        let mut pruned = Pruned::default();
+
+        for reference in prune {
+            let reference = reference?;
+            let name = match reference.name() {
+                Some(name) => name.to_string(),
+                // If we can't get the name then we can't lock and remove it.
+                None => {
+                    tracing::warn!(name = ?reference.name_bytes(), "reference name was not valid-utf8, skipping pruning");
+                    continue;
+                },
+            };
+            txn.lock_ref(&name).map_err(|err| error::Prune::Lock {
+                refname: name.clone(),
+                source: err,
+            })?;
+            txn.remove(&name).map_err(|err| error::Prune::Delete {
+                refname: name.clone(),
+                source: err,
+            })?;
+            match reference.target().map(ext::Oid::from) {
+                None => {
+                    let name = match reference.symbolic_target() {
+                        Some(name) => name.to_string(),
+                        // If this wasn't a symbolic reference then we should have had a target
+                        // above.
+                        None => {
+                            tracing::warn!(name = %name, "expected symbolic reference, skipping pruning");
+                            continue;
+                        },
+                    };
+                    pruned.push(PrunedRef::Symbolic { name })
+                },
+                Some(target) => pruned.push(PrunedRef::Direct { name, target }),
+            }
+        }
+        txn.commit().map_err(error::Prune::Commit)?;
+
+        Ok(pruned)
     }
 }

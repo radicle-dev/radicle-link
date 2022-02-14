@@ -12,7 +12,7 @@ use thiserror::Error;
 use crate::{
     git::{
         p2p::url::GitUrlRef,
-        storage::{self, glob, ReadOnlyStorage, Storage},
+        storage::{self, ReadOnlyStorage, Storage},
     },
     PeerId,
 };
@@ -80,14 +80,6 @@ pub fn track(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> 
 ///
 /// `true` is returned if the tracking relationship existed and was removed as a
 /// side-effect of the function call. Otherwise, `false` is returned.
-///
-/// # Caveats
-///
-/// Untracking will also attempt to prune any remote branches associated with
-/// `peer` (this mirrors the behaviour of `git`). Since refdb operations are not
-/// (yet) atomic, this may fail, leaving "dangling" refs in the storage. It is
-/// safe to call this function repeatedly, so as to ensure all remote tracking
-/// branches have been pruned.
 #[tracing::instrument(skip(storage))]
 pub fn untrack(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error> {
     let remote_name = tracking_remote_name(urn, &peer);
@@ -96,19 +88,6 @@ pub fn untrack(storage: &Storage, urn: &Urn, peer: PeerId) -> Result<bool, Error
         .remote_delete(&remote_name)
         .map(|()| true)
         .or_matches::<Error, _, _>(is_not_found_err, || Ok(false))?;
-
-    // Prune all remote branches
-    let prune = storage.references_glob(glob::RefspecMatcher::from(
-        reflike!("refs/namespaces")
-            .join(urn)
-            .join(reflike!("refs/remotes"))
-            .join(peer)
-            .with_pattern_suffix(refspec_pattern!("*")),
-    ))?;
-
-    for branch in prune {
-        branch?.delete()?;
-    }
 
     Ok(was_removed)
 }

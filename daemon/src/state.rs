@@ -531,7 +531,12 @@ where
     let res = {
         let urn = urn.clone();
         peer.using_storage(move |store| {
-            tracking::untrack(store, &urn, remote_peer, tracking::policy::Untrack::Any)
+            tracking::untrack(
+                store,
+                &urn,
+                remote_peer,
+                tracking::UntrackArgs::prune(tracking::policy::Untrack::Any),
+            )
         })
         .await??
         .is_ok()

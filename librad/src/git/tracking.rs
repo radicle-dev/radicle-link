@@ -32,6 +32,10 @@ pub use link_tracking::{
             Tracked,
             TrackedEntries,
             TrackedPeers,
+            UntrackAllArgs,
+            UntrackArgs,
+            Untracked,
+            UntrackedAll,
         },
     },
 };

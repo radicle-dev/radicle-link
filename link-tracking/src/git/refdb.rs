@@ -3,6 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use link_crypto::PeerId;
+use link_identities::urn::Urn;
 use radicle_git_ext::RefspecPattern;
 
 use crate::git::tracking::reference::RefName;
@@ -53,6 +55,46 @@ pub trait Write {
     fn update<'a, I>(&self, updates: I) -> Result<Applied<'a, Self::Oid>, Self::TxnError>
     where
         I: IntoIterator<Item = Update<'a, Self::Oid>>;
+}
+
+pub trait Prune {
+    type PruneError: std::error::Error + Send + Sync + 'static;
+
+    /// Since `Prune` is for non-tracking references, we want to be
+    /// generic over what the type is for the name of the
+    /// reference. It could be `String` for `git2`, `BStr` for
+    /// `gitoxide`, or some custom type.
+    type Ref;
+    type Oid;
+
+    /// Scan for and delete all references for the given `urn` and `peer`.
+    fn prune(
+        &self,
+        urn: &Urn<Self::Oid>,
+        peer: Option<PeerId>,
+    ) -> Result<Pruned<Self::Ref, Self::Oid>, Self::PruneError>;
+}
+
+/// The references and their targets that were removed as a result of
+/// [`Prune::prune`].
+#[derive(Clone, Debug)]
+pub struct Pruned<Ref, Oid>(pub Vec<PrunedRef<Ref, Oid>>);
+
+#[derive(Clone, Debug)]
+pub enum PrunedRef<Ref, Oid> {
+    Direct { name: Ref, target: Oid },
+    Symbolic { name: Ref },
+}
+
+impl<R, O> Pruned<R, O> {
+    pub fn push(&mut self, e: PrunedRef<R, O>) {
+        self.0.push(e)
+    }
+}
+impl<Ref, Oid> Default for Pruned<Ref, Oid> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
 }
 
 #[derive(Clone, Debug)]
