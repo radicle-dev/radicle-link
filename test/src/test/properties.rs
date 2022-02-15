@@ -4,4 +4,5 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 pub mod canonical;
+pub mod git_ref_format;
 pub mod librad;
