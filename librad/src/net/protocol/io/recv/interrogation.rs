@@ -95,7 +95,7 @@ fn handle_request(
         Request::EchoAddr => Left(Response::YourAddr(remote_addr)),
         Request::GetUrns => {
             let urns = urns.get();
-            Right(encode(&Response::<SocketAddr>::Urns(Cow::Borrowed(&urns))))
+            Right(encode(&Response::<SocketAddr>::Urns(Cow::Borrowed(&*urns))))
         },
     }
     .right_or_else(|resp| encode(&resp))
