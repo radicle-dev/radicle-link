@@ -3,7 +3,10 @@ set -eou pipefail
 
 ./scripts/ci/fmt
 ./scripts/ci/lint
-./scripts/ci/build-test
-./scripts/ci/docs
 ./scripts/ci/advisory
+./scripts/ci/build
 ./scripts/ci/build-bins
+./scripts/ci/build-repl3
+./scripts/ci/test
+./scripts/ci/test-repl3
+./scripts/ci/docs
