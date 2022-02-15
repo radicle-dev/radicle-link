@@ -34,7 +34,7 @@ git-actor = "^0.6.0"
 git-hash = "^0.8.0"
 git-lock = "^1.0.1"
 git-object = "^0.15.1"
-git-odb = "^0.23.0"
+git-odb = "^0.24.0"
 git-ref = "^0.9.0"
 git-traverse = "^0.10.0"
 
@@ -43,7 +43,7 @@ version = "^0.17.0"
 features = ["progress", "parallel", "zlib-ng-compat"]
 
 [dependencies.git-pack]
-version = "^0.13.0"
+version = "^0.14.0"
 features = ["object-cache-dynamic", "pack-cache-lru-static", "pack-cache-lru-dynamic"]
 
 [dependencies.git-packetline]
