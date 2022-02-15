@@ -1,0 +1,325 @@
+= RFC: Mutual Synchronisation
+Kim Altintop <kim@eagain.st>
++
+:revdate: 2022-02-15
+:revremark: accepted
+:toc: preamble
+:stem:
+
+* Author: {author}
+* Date: {revdate}
+* Status: {revremark}
+
+== Motivation
+
+Within the context of a URN, there may be an intersection of the tracking graphs
+of any two peers, which may or may not include the respective other peer. When
+an intersection exists, its state (the refs it points to) should be the same on
+both sides after the peers met for data exchange.
+
+== Overview
+
+In general, a description of the remote state must be obtained in order to
+determine whether an intersection exists and whether it contains more recent
+data than the local storage. Since it is possible for the respective
+_ahead-sets_ (sets of intersecting refs which are ahead of the local state) to
+be disjoint between the peers, it seems obvious to perform a mutual
+interrogation whenever two peers meet for data exchange. As a previous attempt
+(dubbed "`rere`") showed, however, this is rather challenging to implement, as
+both sides must "`freeze`" their respective ref trees until the mutual
+interrogation is complete.
+
+Furthermore, peers may want to prioritise the propagation of their local updates
+over obtaining updates from the remote end, and provide progress feedback in
+interactive sessions akin to `git push`.
+
+We can observe that replication initiators are able to determine whether an
+intersection exists after the peek phase of the protocol. In principle, it would
+be possible to proceed with a push request at this point, ie. send a list of
+reference updates followed by a packfile to the remote end -- except that the
+git protocol-v2 does not define push semantics, and implementation constraints
+currently prevent us from modifying the git network protocol directly.
+
+A previous proposal (dubbed "`request-pull`") mandated to simply notify a peer
+of _potential_ updates, triggering it to schedule a regular replication
+procedure from the notifying peer at its discretion. This has the problem,
+however, that it is very cheap for the notifying peer to emit the notification,
+while the receiving peer does not have any indication of whether replication
+would be worthwhile or not. The only way to counter denial of service attacks
+would thus be to impose somewhat arbitrary rate limits.
+
+Instead, we propose to shift negotiation and packfile generation burden to the
+initiator via a modified (and simplified) formulation of the git push protocol,
+as described in <<Algorithm>>
+
+== Terminology and Conventions
+
+The key words "`MUST`", "`MUST NOT`", "`REQUIRED`", "`SHALL`", "`SHALL NOT`",
+"`SHOULD`", "`SHOULD NOT`", "`RECOMMENDED`", "`NOT RECOMMENDED`", "`MAY`", and
+"`OPTIONAL`" in this document are to be interpreted as described in <<RFC2119>>
+and <<RFC8174>> when, and only when, they appear in all capitals, as
+shown here.
+
+
+== Algorithm
+
+=== Definitions
+
+[horizontal]
+Initiator:: peer initiating the sync protocol
+Receiver:: remote end from the initiator's point of view
+
+=== Steps
+
+// FIXME: cannot make X.X.X numbering work, need CSS wizard
+// https://stackoverflow.com/a/57244921
+
+. The initiator starts the peek phase of the replication protocol.
++
+[arabic]
+.. In addition to the refs during a regular peek, it also asks the remote to
+advertise refs owned by the initiator, ie.
+
+    refs/remotes/<initiator-id>/rad/*
+
+.. For each advertised ref matching the pattern
++
+--
+
+    refs/remotes/[0-9a-z]+/rad/(id | signed_refs | ids/[0-9a-z]+)
+
+the initiator determines whether the advertised tip is an ancestor of the
+corresponding local ref (if any). If it is, and the remote and local tips are
+not equal, the ref name is added to _ahead-set_ stem:[C], along with its tip
+OID.
+
+After yielding stem:[C], the replication protocol MAY resume concurrently with
+the rest of the algorithm. For this purpose, the initiator refs from step 1.1
+are discarded.
+--
+
+.. For each element in stem:[C], the initiator sends an update request line
+`line` to the receiver:
++
+--
+
+    update  = old-oid SP new-oid SP refname
+    refname = "refs/remotes/" peer-id "/rad/" suf
+
+where
+
+    - `old-oid` is the tip as advertised by the receiver
+    - `new-oid` is the local tip
+    - `peer-id` is the remote name as advertised by the receiver, which MUST be
+      a valid peer id
+    - `suf` is the suffix of the advertised tip after the `rad` namespace
+
+Neither `old-oid` nor `new-oid` can be the zero oid.
+--
+
+.. Following the update request lines, the initiator immediately sends a thin
+packfile containing the deltified objects between the advertised and local
+objects.
+
+. The initiator then waits for a result response from the receiver.
+
+. After having received and validated the pack data, the receiver
++
+[arabic]
+.. inspects each update request line in turn and
++
+--
+    - checks that `old-oid` is an ancestor of `current-tip`, the tip of the ref
+      as stored on disk locally, and that `current-tip` is reachable from
+      `new-oid`. `refname` is added to set stem:[C'], along `new-oid`.
+    - if the line describes a `rad/signed_refs` ref, reads the signed refs at
+      `new-id` from the received packfile, verifies its signature, and stores it
+      in set stem:[S]
+    - if the line describes an identity history, runs identity verification from
+      the tip found in the received packfile
+
+If any of these checks fail, an error is reported to the initiator.
+
+If `current-tip` is equal to `new-oid`, all refs pertaining to the corresponding
+ref's `peer-id` SHALL be ignored and removed from both stem:[C'] and stem:[S].
+
+The receiver MAY choose to continue if one of the checks fails, in which case
+all refs pertaining to the failing ref's `peer-id` MUST be ignored and removed
+from both stem:[C'] and stem:[S]. That is, partial updates within the context of
+a `peer-id` are not permitted. If, however, the `peer-id` is in the set of
+delegations according to the identity document at the revision stored at the
+receiver, the receiver MUST abort the entire request.
+
+If the request includes updates to one or more identity histories (`rad/id`) of
+the set of delegations according to the receiver's on-disk state, the receiver
+MUST verify that applying those updates would not leave the identity in a
+divergent ("`forked`") state, and abort the request otherwise. Identity history
+updates SHOULD be applied immediately, as they are independent of signed ref
+updates. This limits repeating the ancestry check at the end of the transaction
+(see step 3.2.3) to only `rad/signed_refs` refs.
+--
+
+.. using the signed refs in stem:[S], schedules the fetch phase of the
+replication protocol against the initiator.
++
+[arabic]
+... Upon success, the receiver checks that for each stem:[\text{oid} in C'],
+`current-tip` (which could have changed in the meantime) is reachable from
+stem:[\text{oid}].
+
+... If stem:[\text{oid}] is equal to `current-tip`, all elements from both
+stem:[C'] and stem:[S] with the same `peer-id` are removed.
+
+... Otherwise, and if the reachability check fails, a line is sent to the
+initiator still waiting for a response:
++
+--
+    ng refname non-fast-forward
+
+If the failing ref's `peer-id` is in the set of delegations according to the
+receiver's on-disk state, the receiver MUST abort the request. Otherwise, the
+receiver MAY choose to continue by removing all elements of both stem:[C'] and
+stem:[S] with the same `peer-id` as the failing ref.
+--
+
+... All refs now in stem:[C'] and stem:[S] are updated in a single atomic
+operation.  For each update, a line is sent to the initiator:
++
+--
+    ok refname
+
+Any errors leave the receiver's state unchanged.
+--
+
+. If the receiver is a member of the gossip overlay, it SHALL announce all ref
+updates it performed.
+
+
+== Wire Protocol
+
+Due to the experimental nature, and to not further complicate git protocol
+handling, inline push requests are sent on a separate, bidirectional QUIC
+stream, identified by stream type `4`.
+
+Otherwise, the wire protocol follows <<pack-protocol>>, Section "Pushing Data To
+a Server", with some simplifications:
+
+----
+  header           = PKT-LINE("git-receive-pack" SP urn NUL)
+
+  command-list     = 1*PKT-LINE(command)
+                     flush-pkt
+
+  command          = update
+  update           = old-id SP new-id SP name
+  old-id           = obj-id
+  new-id           = obj-id
+
+  packfile         = "PACK" 28*(OCTET)
+----
+
+Since ref negotiation is handled elsewhere, the initiator sends the following
+immediately before waiting for a response:
+
+. stream type identifier
+. header
+. command-list
+. packfile
+
+The receiver responds using the `report-status` protocol (_not_
+`report-status-v2`), repeated here for convenience:
+
+----
+  report-status    = unpack-status
+                     1*(command-status)
+                     flush-pkt
+
+  unpack-status     = PKT-LINE("unpack" SP unpack-result)
+  unpack-result     = "ok" / error-msg
+
+  command-status    = command-ok / command-fail
+  command-ok        = PKT-LINE("ok" SP refname)
+  command-fail      = PKT-LINE("ng" SP refname SP error-msg)
+
+  error-line        = PKT-LINE("ERR" SP error-msg)
+  error-msg         = 1*(OCTET) ; where not "ok"
+----
+
+`command-ok` and `command-fail` are, in practice, mutually exclusive: failures
+occur during the verification phase on the receiver, and abort the request
+before any `command-ok` could be generated.
+
+Any other errors (IO, network, timeouts) occurring during processing by the
+receiver MUST fail the entire request and cannot be attributed to a specific
+ref. They SHALL be reported as an `error-line`, followed by terminating the
+stream.
+
+``error-msg``s SHALL be chosen to be fairly unspecific (eg. "verification
+failed", "server error", "timeout"), and MUST NOT be relied upon by the other
+end.
+
+Note that no capabilities negotiation is supported; the implied capabilities
+list is `report-status quiet atomic ofs-delta`. Push certificates are not
+supported either.
+
+The receiver terminates the request by gracefully closing the underlying QUIC
+stream. It MAY send a `response-end-pkt` (0002) as per <<protocol-v2>> before
+doing so.
+
+== Concurrency Considerations
+
+Under the assumption of atomic ref updates, the algorithm tolerates concurrent
+modifications of both the local and remote storage: in the worst case, already
+transferred data is discarded. The receiver may choose to terminate the
+connection early if it finds that all refs in the `command-list` are already
+up-to-date.
+
+Note that updates to the locally-owned `refs/rad/signed_refs` are not currently
+atomic, but computed after the corresponding refs have been committed to disk.
+When including its own refs in the packfile, the initiator MUST use the
+committed signed refs as a reference thusly, **not** the actual ref pointers.
+
+Most implementations will want to put a tight upper bound on the number of
+concurrent replication tasks anyway, because packfile processing is rather
+CPU-intensive. This would also decrease the odds of transaction rollbacks
+(rather: aborts) due to concurrent ref updates. However, increasing the amount
+of work which needs to be performed per replication exchange may starve pending
+replication tasks.
+
+It is thus RECOMMENDED that replication tasks scheduled in response to gossip do
+not initiate pushes. Instead, peers SHOULD attempt to synchronise with a
+predetermined list of "custodial peers" (peers known or assumed to intersect in
+their tracking graphs, specifically those tracking the peer itself) during
+startup and _before_ joining the gossip overlay. This list could be statically
+configured, dynamically populated based on ambient provider discovery, or both.
+The peer SHALL leave synchronisation mode once a preconfigured replication
+factor has been met.
+
+Interactively initiating synchronisation on a peer in steady state SHOULD ensure
+that the namespace under synchronisation is exempt from unattended replication
+in response to gossip.
+
+Seed nodes SHOULD NOT initiate pushes at all. As receivers, they SHOULD schedule
+the fetch phase on the same task pool as other replication tasks, implying that
+timeouts may occur. Consequently, the timeout incurred on pending tasks should
+be chosen to be smaller than the connection timeout.
+
+
+== Security Considerations
+
+The interleaved push step mirrors the pull-based replication logic in that data
+is transferred in phases, so as to limit the amount of data being transferred,
+and abort the process if verification / validation fails.
+
+It is possible that an adversarial peer sends excessively large packfiles, so
+receivers MUST ensure to impose an upper bound on the acceptable size, and abort
+the transfer if it is exceeded (the limits SHALL be the same as for pull-based
+replication).
+
+[bibliography]
+== References
+
+* [[[RFC2119]]]: https://datatracker.ietf.org/doc/html/rfc2119
+* [[[RFC8174]]]: https://datatracker.ietf.org/doc/html/rfc8174
+* [[[pack-protocol]]]: https://git.kernel.org/pub/scm/git/git.git/plain/Documentation/technical/pack-protocol.txt
+* [[[protocol-v2]]]: https://git.kernel.org/pub/scm/git/git.git/plain/Documentation/technical/protocol-v2.txt
