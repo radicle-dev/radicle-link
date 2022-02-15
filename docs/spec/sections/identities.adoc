@@ -1,10 +1,10 @@
-# Identities
+== Identities
 
 In order to collaborate on repositories within a consensus-free network, we must
 be able to refer to them using a stable identifier. Note that this identifier is
-a **statement of intent**: a repository can be described as a collection of
+a *statement of intent*: a repository can be described as a collection of
 ever-moving leaves of a DAG whose root element is the empty object. Therefore,
-the _content_ of a repository is not enough to describe it -- while two views on
+the _content_ of a repository is not enough to describe it – while two views on
 the repository may share objects, they may diverge substantially otherwise. Both
 views may however state their intent to eventually converge to the same state.
 
@@ -13,41 +13,48 @@ the purpose, this would put the burden of deciding which repository views are
 _legit_ (for some definition of legit) entirely on the user. Instead, our
 approach is to establish an ownership proof, tied to the network identity of a
 peer (`PeerId`), or a set of peers, such that repository views can be replicated
-according to the trust relationships between peers ("tracking").
+according to the trust relationships between peers ("`tracking`").
 
-Our model is based on The Update Framework (TUF)[@tuf], conceived as a means of
-securely distributing software packages.
+Our model is based on The Update Framework (TUF) cite:[tuf], conceived as a
+means of securely distributing software packages.
 
-## Data Model
+=== Data Model
 
 The identity of a repository is established using a document of the form:
 
-```rust
+[source,rust]
+----
 struct Doc<T, D> {
     replaces: Option<Revision>,
     payload: T,
     delegations: D,
 }
-```
+----
 
 where:
 
-* `Revision` is a cryptographic hash of a document's contents, such that this
-  document is content-addressable by this hash within the storage system.
-* `replaces` refers to the previous revision of the document, or none if it is
-  the first revision
-* `payload` is an extensible, forwards- and backwards-compatible datatype
-  containing application-defined metadata about the repository. The protocol
-  interprets _some_ of the properties, as described in [Doc Payload].
-* `delegations` contains the public keys of key owners who are authorised to
-  issue and approve new revisions of the document. The delegation format depends
-  on the type of identity being established, as detailed below.
+Revision::
+    is a cryptographic hash of a document’s contents, such that this document is
+    content-addressable by this hash within the storage system.
+replaces::
+    refers to the previous revision of the document, or none if it is the first
+    revision
+payload::
+    is an extensible, forwards- and backwards-compatible datatype containing
+    application-defined metadata about the repository. The protocol interprets
+    _some_ of the properties, as described in link:#doc-payload[Doc Payload].
+delegations::
+    contains the public keys of key owners who are authorised to issue and
+    approve new revisions of the document. The delegation format depends on the
+    type of identity being established, as detailed below.
 
-The `Doc` MUST be serialised in canonical form, e.g. [Canonical JSON].
+The `Doc` MUST be serialised in canonical form,
+e.g. http://wiki.laptop.org/go/Canonical_JSON[Canonical JSON].
 
 The authenticity of the `Doc` is captured by the following type:
 
-```rust
+[source,rust]
+----
 struct Identity<T, D> {
     id: ContentId,
     root: Revision,
@@ -55,84 +62,97 @@ struct Identity<T, D> {
     doc: Doc<T, D>,
     signatures: HashMap<PublicKey, Signature>,
 }
-```
+----
 
 where:
 
-* `id` is the content-addressable hash of the `Identity` itself
-* `root` is the initial revision of the identity `Doc`
-* `revision` is the current revision of the identity `Doc`
-* `doc` is the `Doc` described by `revision`
-* `signatures` contains signatures over the document history, indexed by the public
-  keys used. A signature is made over the cryptographic hash of the concatenation
-  of the `Revisions` chain, from most recent to the `root`.
+id::
+    is the content-addressable hash of the `Identity` itself
+root::
+    is the initial revision of the identity `Doc`
+revision::
+    is the current revision of the identity `Doc`
+doc::
+    is the `Doc` described by `revision`
+signatures::
+    contains signatures over the document history, indexed by the public keys
+    used. A signature is made over the cryptographic hash of the concatenation
+    of the `Revisions` chain, from most recent to the `root`.
 
-An `Identity` describes the attestation of a `Doc`s validity. Attestation chains
-MUST be stored as a hash-linked history (each `Identity` refers to its parent)
--- we omit the parent `id` as a field here, as it is not used in the following
-sections.
+An `Identity` describes the attestation of a ``Doc``'s validity. Attestation
+chains MUST be stored as a hash-linked history (each `Identity` refers to its
+parent) –- we omit the parent `id` as a field here, as it is not used in the
+following sections.
 
 The `root` of a verified `Identity` is the stable identifier of the repository.
 
-### Radicle URNs
+==== Radicle URNs
 
-Identities are addressable within the Radicle Network by their stable identifier,
-encoded as a URN. Radicle URNs are syntactically and functionally equivalent to
-URNs as per [@rfc8141], although we have no intention of registering our
-namespace with the IANA. r-, q-, and f-components are not currently honoured by
-the protocol, and MAY be discarded by recipients.
+Identities are addressable within the Radicle Network by their stable
+identifier, encoded as a URN. Radicle URNs are syntactically and functionally
+equivalent to URNs as per cite:[rfc8141], although we have no intention of
+registering our namespace with the IANA. _r_-, _q_-, and _f_-components are not
+currently honoured by the protocol, and MAY be discarded by recipients.
 
 The syntax of a Radicle URN is defined as follows:
 
-    "rad" ":" protocol ":" root [ "/" path ]
+....
+"rad" ":" protocol ":" root [ "/" path ]
+....
 
 where:
 
-    protocol = "git"
-    root     = MULTIBASE(MULTIHASH(id))
-    path     = pct-encoded
-    id       = BYTES
+....
+protocol = "git"
+root     = MULTIBASE(MULTIHASH(id))
+path     = pct-encoded
+id       = BYTES
+....
 
 The `id` is the `root` field of a verified `Identity`, as specified previously.
-The `MULTIBASE` and `MULTIHASH` encodings are specified in [@multibase] and
-[@multihash], respectively. The preferred alphabet for the multibase encoding is
-[@z-base32]. `pct-encoded` is defined in [@rfc3986], and the equivalence rules
-as per [@rfc8141] apply.
+The `MULTIBASE` and `MULTIHASH` encodings are specified in cite:[multibase] and
+cite:[multihash], respectively. The preferred alphabet for the multibase
+encoding is cite:[z-base32]. `pct-encoded` is defined in cite:[rfc3986], and the
+equivalence rules as per cite:[rfc8141] apply.
 
-Within the "git" `protocol` context, the `path` component is interpreted as a
+Within the "`git`" `protocol` context, the `path` component is interpreted as a
 `git` reference (ref), and MUST thus conform to the refname rules as described
-in [git-check-ref-format], as if no arguments were given. The prefix "refs/" MAY
-be omitted, but not the refs category (i.e. "heads/master" is permitted, but
-"master" is not). Valid ref categories are:
+in https://git-scm.com/docs/git-check-ref-format[git-check-ref-format], as if no
+arguments were given. The prefix `refs/` MAY be omitted, but not the refs
+category (i.e. `heads/master` is permitted, but `master` is not). Valid ref
+categories are:
 
-    * heads
-    * tags
-    * remotes
-    * rad
+* heads
+* tags
+* remotes
+* rad
 
 An invalid ref category is treated as non-existent.
 
-Without a `path`, a URN is to be treated as if the default value "rad/id" was
+Without a `path`, a URN is to be treated as if the default value `rad/id` was
 given.
 
 Before resolving a `path` to a ref in local storage, the percent-encoding SHALL
 be removed.
 
-#### Examples
+===== Examples
 
-    rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try
-    rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/refs/heads/next
-    rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/heads/next
-    rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/tags/v0.0.1
-    rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/remotes/hwd1yreb5ugudg6xewxiwotj97iaj31phjdphdiej44x1acer3i45uqnwxw/heads/pu
-    rad:git:hwd1yreb5ugudg6xewxiwotj97iaj31phjdphdiej44x1acer3i45uqnwxw/rad/id
+....
+rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try
+rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/refs/heads/next
+rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/heads/next
+rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/tags/v0.0.1
+rad:git:hwd1yredksthny1hht3bkhtkxakuzfnjxd8dyk364prfkjxe4xpxsww3try/remotes/hwd1yreb5ugudg6xewxiwotj97iaj31phjdphdiej44x1acer3i45uqnwxw/heads/pu
+rad:git:hwd1yreb5ugudg6xewxiwotj97iaj31phjdphdiej44x1acer3i45uqnwxw/rad/id
+....
 
-### Doc Payload
+==== Doc Payload
 
 The `Doc` payload MUST include one of the following structures (but not both)
 for interpretation by the protocol:
 
-```rust
+[source,rust]
+----
 struct Person {
     /// A short name (nickname, handle), without any prefix such as the `@`
     /// character
@@ -150,15 +170,15 @@ struct Project {
     /// unspecified.
     default_branch: Option<String>,
 }
-```
+----
 
 There are currently no restrictions on the length (in bytes) of the fields.
 
 Applications MAY add additional payload data, but MUST do so in a way which
 unambiguously preserves the shape of the above definitions (see also:
-[Serialisation]).
+link:#serialisation[Serialisation]).
 
-## Verification
+=== Verification
 
 Document revisions, as well as authenticity attestations form a hash-linked
 chain leading to the initial revision of the document. In order to verify the
@@ -167,31 +187,30 @@ must be contiguous and subject to the following verification rules.
 
 We can distinguish four levels of validity:
 
-1. **Untrusted**
-
-    The identity document is well-formed, and points to a root object which is
-    retrievable from local storage.
-
-2. **Signed**
-
-    The identity carrier passes 1., and is signed by at least one key specified
-    in the delegations of the document.
-
-3. **Quorum**
-
-   The identity carrier passes 2., and is signed by a quorum of the keys
-   specified in the [delegations](#delegations) of the document (`Q > D/2`).
-
-4. **Verified**
-
-    The identity carrier passes 3., and:
+[arabic]
+. *Untrusted*
++
+The identity document is well-formed, and points to a root object which is
+retrievable from local storage.
+. *Signed*
++
+The identity carrier passes 1., and is signed by at least one key specified in
+the delegations of the document.
+. *Quorum*
++
+The identity carrier passes 2., and is signed by a quorum of the keys specified
+in the link:#delegations[delegations] of the document (`Q > D/2`).
+. *Verified*
++
+--
+The identity carrier passes 3., and:
 
     * The document does not refer to a previous revision, and no previous
       revision is known
-    * **Or**, the set of signatures forms a quorum of the [delegations](#delegations)
-      of the **previous** revision.
+    * *Or*, the set of signatures forms a quorum of the
+      link:#delegations[delegations] of the *previous* revision.
 
-    It is an error if:
+It is an error if:
 
     * No previous revision is given, but a parent in the identity attestation
       chain is found
@@ -199,11 +218,13 @@ We can distinguish four levels of validity:
       yield a parent
     * A previous revision is given, but it is not the same the parent
       attestation refers to
-    * The current and parent attestations refer to different `root`s
+    * The current and parent attestations refer to different ``root``s
+--
 
 The verification process can now be described recursively:
 
-```rust
+[source,rust]
+----
 /* State transitions, definitions elided for brevity */
 fn signed(i: Untrusted<Identity>) -> Result<Signed<Identity>, Error>;
 fn quorum(i: Signed<Identity>) -> Result<Quorum<Identity>, Error>;
@@ -221,28 +242,31 @@ fn verify(
 
     verified(head, parent)
 }
-```
+----
 
-> **Implementation Notes**:
->
-> * The recursive definition is given for brevity, implementations may prefer to
->   walk the history in reverse order.
-> * As an optimisation, implementations SHOULD store the result of a successful
->   verification in persistent storage, such that verification of updates can
->   start from the last-good state instead of the history root. Observe,
->   however, that two different `Identity` objects (as identified by their
->   `id`) may attest the same `Doc` revision -- the persistent state SHOULD
->   therefore allow retrieving the set of attesting `Identity`s by `Doc`
->   revision.
-> * The `quorum` predicate above SHOULD actually skip over this parent instead
->   of aborting the procedure -- it is possible that a later `Identity` reaches
->   the quorum.
+____
+*Implementation Notes*:
 
-## Delegations
+* The recursive definition is given for brevity, implementations may prefer to
+  walk the history in reverse order.
+
+* As an optimisation, implementations SHOULD store the result of a successful
+  verification in persistent storage, such that verification of updates can
+  start from the last-good state instead of the history root.  Observe, however,
+  that two different `Identity` objects (as identified by their `id`) may attest
+  the same `Doc` revision – the persistent state SHOULD therefore allow
+  retrieving the set of attesting ``Identity``s by `Doc` revision.
+
+* The `quorum` predicate above SHOULD actually skip over this parent instead of
+  aborting the procedure –- it is possible that a later `Identity` reaches the
+  quorum.
+____
+
+=== Delegations
 
 Radicle Link distinguishes two types of identities: personal and project. The
 first describes an actor in the system, while the second describes a (software)
-project on which one or more actors collaborate. Apart from their payload types
+project on which one or more actors collaborate.  Apart from their payload types
 `T`, they differ in their delegations type `D`:
 
 Personal identities can only delegate to anonymous keys, while project
@@ -250,7 +274,8 @@ identities MAY attach a personal identity to a key delegation.
 
 More formally:
 
-```rust
+[source,rust]
+----
 type Person<T> = Identity<T, HashSet<PublicKey>>;
 
 enum ProjectDelegation<U> {
@@ -259,7 +284,7 @@ enum ProjectDelegation<U> {
 }
 
 type Project<T, U> = Identity<T, ProjectDelegation<U>>;
-```
+----
 
 Per identity document, the `PublicKeys` delegated to MUST form a set. It is, for
 example, an error if a `PublicKey` appears in both the document and a `Person`
@@ -270,87 +295,96 @@ revision of the `Person` document. The replication rules ensure that the
 respective `Person` histories are replicated as sibling histories [insert link].
 
 If one of these sibling histories is found to not include the delegated-to
-revision in its ancestry path, it is said to have **forked**, and signatures
-made by one of the `Person`s keys after the point of inclusion in the `Project`
-no longer count towards the quorum rules. Note that this is only recoverable if
-a quorum of valid keys remains on the project, otherwise a [Key
-Recovery](#key-recovery) procedure must be invoked on the `Project`.
+revision in its ancestry path, it is said to have *forked*, and signatures made
+by one of the ``Person``'s keys after the point of inclusion in the `Project` no
+longer count towards the quorum rules.  Note that this is only recoverable if a
+quorum of valid keys remains on the project, otherwise a link:#key-recovery[Key
+Recovery] procedure must be invoked on the `Project`.
 
-If a sibling history is NOT **forked** (i.e. it includes the attested revision
-in its ancestry path), AND it is **verified**, its key delegations are
-considered authoritative for all `Project` attestations between the point the
-`Person` was delegated to, and the currently known-good head.
+If a sibling history is NOT *forked* (i.e. it includes the attested revision in
+its ancestry path), AND it is *verified*, its key delegations are considered
+authoritative for all `Project` attestations between the point the `Person` was
+delegated to, and the currently known-good head.
 
-> **Implementation Note**: If `Person` keys are not reused (i.e. revoked and
-> later re-introduced) since the attestation point (which MUST be verified), it
-> is sufficient to check for key revocations using the latest known heads of the
-> respective histories.
+____
+*Implementation Note*: If `Person` keys are not reused (i.e. revoked and later
+re-introduced) since the attestation point (which MUST be verified), it is
+sufficient to check for key revocations using the latest known heads of the
+respective histories.
+____
 
-When calculating the **Quorum** or **Verifed** threshold, multiple signatures
-made by the set of keys of a `Person` SHALL be counted as only one vote towards
-the quorum. This prevents unilateral decisions made by a single `Person`. We
+When calculating the *Quorum* or *Verifed* threshold, multiple signatures made
+by the set of keys of a `Person` SHALL be counted as only one vote towards the
+quorum. This prevents unilateral decisions made by a single `Person`. We
 consider this simple scheme sufficient for the purpose, but more sophisticated
 delegations may be supported in the future, such as customising the quorum
 threshold, or key roles.
 
 Note that a key revocation event in a sibling `Person` history may render the
-project unusable if the remaining keys cannot form a quorum. Also note that the
+project unusable if the remaining keys cannot form a quorum.  Also note that the
 `Project` SHOULD renew the attestation from time to time.
 
 The `delegations` of a `Project` are also referred to as the project's
-**maintainers**.
+*maintainers*.
 
-## Key Recovery
+=== Key Recovery
 
-> **TODO** Define how to delegate trust to a set of keys `K \ D` for the purpose
-> of recovering from key revocations in case the quorum rules can no longer be
-> met with the remaining keys. (i.e. "Social Recovery")
+____
+*TODO* Define how to delegate trust to a set of keys `K \ D` for the purpose of
+recovering from key revocations in case the quorum rules can no longer be met
+with the remaining keys. (i.e. "`Social Recovery`")
+____
 
-## Effect on Replication
+=== Effect on Replication
 
 Peers MUST NOT replicate repositories whose identities they are unable to
 verify. If an update to the identity cannot be verified, they SHOULD keep the
 data they already have, but refuse to update it. Peers SHOULD keep the identity
 histories regardless of their verification status.
 
-When **cloning** a repository, the attestation history according to the remote
+When *cloning* a repository, the attestation history according to the remote
 peer is fetched before all other repository contents, and the verification
 procedure is run on it. If this does not yield a verified status, the clone is
 aborted. The resulting repository state MUST include the attestation histories
-of at least a quorum of the delegates as per the remote peer's view of the
+of at least a quorum of the delegates as per the remote peer’s view of the
 identity document. In `git`, the claim that this will be the case can be
 determined before fetching the repository contents by examining the advertised
 remote refs. If these preconditions are not met, the clone is aborted, and
 already fetched data is pruned.
 
-When **fetching** (i.e. updating) a repository, a predetermined set of verified
-delegates is already known -- their views of the attestation history SHALL be
+When *fetching* (i.e. updating) a repository, a predetermined set of verified
+delegates is already known – their views of the attestation history SHALL be
 fetched first, along with any advertised histories not yet present in the local
 repository (as those might be owned by future delegates). The fetching end MUST
 now find a valid `Doc` revision near the tips of the available delegate
 histories, and pick the most recent one. If two valid identities are found of
 which neither is in the ancestry path of the other, the attestation chain is
-said to have **forked**. In lieu of a consensus system, it is undecidable which
+said to have *forked*. In lieu of a consensus system, it is undecidable which
 side of the fork to commit to, and so replication of the attested repository
 SHALL refuse any further updates.
 
-> **TODO** Fork detection (i.e. pairwise compare if in same ancestry path,
-> either select most recent or flag as forked)
+____
+*TODO* Fork detection (i.e. pairwise compare if in same ancestry path, either
+select most recent or flag as forked)
+____
 
-## Git Encoding
+=== Git Encoding
 
 In the `git` implementation, a `Doc` corresponds to a `blob` object, stored as
 the single entry of a `tree` object, such that its name (acc. to the `tree`) is
 equal to the `blob` hash of the _initial_ version of the `Doc`, serialised in
 canonical form. That is:
 
-    let name = git hash-object -t blob doc.canonical_form()
+....
+let name = git hash-object -t blob doc.canonical_form()
+....
 
 An `Identity` corresponds to a `commit` object.
 
 We map the fields as follows:
 
-```rust
+[source,rust]
+----
 /* Simplified git object model */
 struct Commit {
     id: Oid,
@@ -383,60 +417,74 @@ let identity = Identity {
     doc: deserialize(first_blob(commit.tree).content),
     signatures: from_trailers(commit.message),
 };
-```
+----
 
 Where:
 
-* `first_blob` finds the first `TreeEntry` which is of type `blob`.
-* `deserialize` is implemented by a standard JSON parser. `Person` delegations
-  from a `Project` are specified in the `Project`'s `Doc` as URNs, which are
-  resolved by parsing a `blob` object of the same name as the URN's `id` field
-  below the `tree` entry of type directory named `delegations`.
-* `from_trailers` interprets the commit message as per [git-interpret-trailers],
-  and extracts the signatures from trailers with the token `x-rad-signature`.
+first_blob::
+    finds the first `TreeEntry` which is of type `blob`
 
-> **TODO** Specify exact format of signature trailer value (BASE64(public key ||
-> signature))
+deserialize::
+    is implemented by a standard JSON parser. `Person` delegations from a
+    `Project` are specified in the `Project`’s `Doc` as URNs, which are resolved
+    by parsing a `blob` object of the same name as the URN’s `id` field below
+    the `tree` entry of type directory named `delegations`.
+
+from_trailers::
+    interprets the commit message as per
+    https://git-scm.com/docs/git-interpret-trailers[git-interpret-trailers], and
+    extracts the signatures from trailers with the token `x-rad-signature`.
+
+____
+*TODO* Specify exact format of signature trailer value (BASE64(public key ||
+signature))
+____
 
 The commit chain is stored in a branch at `refs/rad/id`.
 
-> **TODO** Insert repository layout spec as per
-> [RFC](../rfc/identity_resolution.md) here
+____
+*TODO* Insert repository layout spec as per
+link:../rfc/identity_resolution.md[RFC] here
+____
 
-### Serialisation
+==== Serialisation
 
-The `Doc` is serialised in [Canonical JSON] format. However, all ASCII plane
-control characters (`U+0000 - U+007F`) MUST be escaped according to [@rfc8259,
-Section 7]. Hexadecimal escape sequences MUST be in lower-case. This contradicts
-[Canonical JSON], but permits their claim that "Canonical JSON is parsable with
-any full JSON parser".
+The `Doc` is serialised in
+http://wiki.laptop.org/go/Canonical_JSON[Canonical JSON] format.  However, all
+ASCII plane control characters (`U+0000 - U+007F`) MUST be escaped according to
+cite:[rfc8259(Section 7)]. Hexadecimal escape sequences MUST be in lower-case.
+This contradicts http://wiki.laptop.org/go/Canonical_JSON[Canonical JSON], but
+permits their claim that "`Canonical JSON is parsable with any full JSON
+parser`".
 
 In addition to the shape defined above, a field `version` MUST be included with
 a value of `0` (zero) as of this version of the specification.
 
-`Revision` values are serialised as JSON strings, encoded as a [@multihash]
-value wrapped in a [@multibase] encoding using the [@z-base32] alphabet.
+**`Revision`** values are serialised as JSON strings, encoded as a
+cite:[multihash] value wrapped in a cite:[multibase] encoding using the
+cite:[z-base32] alphabet.
 
-`PublicKey` values are serialised as JSON strings, which are obtained by
+**`PublicKey`** values are serialised as JSON strings, which are obtained by
 concatenating the `0` byte (as a version identifier) with the Ed25519 scalar
-(the public key) encoded as per [@rfc8032], and then wrapping in a [@multibase]
-encoding using the [@z-base32] alphabet.
+(the public key) encoded as per cite:[rfc8032], and then wrapping in a
+cite:[multibase] encoding using the cite:[z-base32] alphabet.
 
-`Person` delegations are serialised as a JSON array of `PublicKey` values.
+**`Person`** delegations are serialised as a JSON array of `PublicKey` values.
 Duplicate elements MUST be a deserialisation error.
 
-`Project` delegations are serialised as a JSON array of either `PublicKey` or
-URN values without tagging. Duplicate elements MUST be a deserialisation error.
+**`Project`** delegations are serialised as a JSON array of either `PublicKey`
+or URN values without tagging. Duplicate elements MUST be a deserialisation
+error.
 
-The `payload` is encoded as a JSON object using [@whatwg-url] URLs as the keys,
-and JSON objects of the `radicle-link`- or user-specified payload objects as the
-values. Implementations MUST validate that a valid `radicle-link` payload is
-present in the object, and SHOULD preserve user extensions typed as the JSON
+The `payload` is encoded as a JSON object using cite:[whatwg-url] URLs as the
+keys, and JSON objects of the `radicle-link`- or user-specified payload objects
+as the values. Implementations MUST validate that a valid `radicle-link` payload
+is present in the object, and SHOULD preserve user extensions typed as the JSON
 object model. The JSON-encoded value of an extension SHOULD NEVER be `null`,
-such entries SHOULD be omitted from the payload. Duplicate URL keys are
-a deserialisation error.
+such entries SHOULD be omitted from the payload. Duplicate URL keys are a
+deserialisation error.
 
-The URL keys serve as namespaces, as well as version identifiers. Versioning
+The URL keys serve as namespaces, as well as version identifiers.  Versioning
 simplifies schema evolution. However, implementations MUST ensure that they can
 interpret both unknown (future) and outdated (past) versions. This specifically
 means that the URL keys for `radicle-link` payloads MUST be considered equal iff
@@ -456,24 +504,21 @@ free to implement both.
 Pending self-hosting, which will allow precise versioning by content-address,
 the URLs for `radicle-link` payloads are:
 
-Person
-
-: https://radicle.xyz/link/identities/person/v1
-
-Project
-
-: https://radicle.xyz/link/identities/project/v1
-
+Person::
+  https://radicle.xyz/link/identities/person/v1
+Project::
+  https://radicle.xyz/link/identities/project/v1
 
 The `radicle.xyz` domain is reserved for application payloads defined by the
 Radicle Core Team.
 
-#### Examples
+===== Examples
 
 A simple example if an initial `Doc`, embedding a Decentralized Identifier (DID)
-document [@did-core] in a `Person` payload:
+document cite:[did-core] in a `Person` payload:
 
-```json
+[source,json]
+----
 {
     "version": 0,
     "replaces": null,
@@ -502,15 +547,15 @@ document [@did-core] in a `Person` payload:
         "hyb8kud543qkfdxkge6ecj6zziuam6w6fqhujgebbfuufmpdxt5uok"
     ]
 }
-```
+----
 
-Note that the example is **not** in canonical form.
+Note that the example is *not* in canonical form.
 
-### Workflow
+==== Workflow
 
-Our construction of the `Identity` from a git commit allows for multiple `id`s
+Our construction of the `Identity` from a git commit allows for multiple ``id``s
 to describe the same revision of the document (and thus be equally valid). This
-means that the respective delegates' histories may diverge in their _commit_
+means that the respective delegates’ histories may diverge in their _commit_
 histories, but still converge to an agreement on the validity of the attested
 document revision.
 
@@ -521,21 +566,21 @@ commit), or settling the vote out-of-band.
 
 As an example, a simple leader-based workflow could proceed as follows:
 
-* Peer `A` proposes a new revision on her view of the `rad/id` branch. The
-  revision is signed by `A`'s public key.
+* Peer `A` proposes a new revision on her view of the `rad/id` branch.  The
+  revision is signed by `A`’s public key.
 * Peers `B` and `C` receive this proposal, and sign it off on their own `rad/id`
-  branches by creating a new commit over the same `tree` as the propsal, but
-  including their own signatures (they may also include `A`'s signature for
+  branches by creating a new commit over the same `tree` as the proposal, but
+  including their own signatures (they may also include ``A``'s signature for
   posterity, but that is not required as the verification procedure will skip
   those commits).
 * Peer `A` is also designated as the leader, so after receiving the updates of
-  `B` and `C`, she creates a new commit on her branch, merging both `B`'s and
-  `C`'s "votes" (an "octopus merge"), and preserving the signature trailers of
-  all three.
-* `B` and `C` receive this "finalisation" commit, and simply merge it into their
-  own branches. This is a fast-forward merge.
+  `B` and `C`, she creates a new commit on her branch, merging both ``B``'s and
+  ``C``'s "`votes`" (an "`octopus merge`"), and preserving the signature
+  trailers of all three.
+* `B` and `C` receive this "`finalisation`" commit, and simply merge it into
+  their own branches. This is a fast-forward merge.
 
-### Implementation Notes
+==== Implementation Notes
 
 Implementations are encouraged to store verification results (including detected
 forks) persistently, both for efficiency reasons, and to preserve this state
@@ -543,10 +588,10 @@ even if the corresponding repositories are removed from local storage (e.g.
 because they reached an irrecoverable state).
 
 This can be implemented without the need for a secondary storage system by
-leveraging [git-notes]:
+leveraging https://git-scm.com/docs/git-notes[git-notes]:
 
-In the private section of the "monorepo" (i.e. outside any namespaces), store a
-note for every verified tree object, with the set of commit OIDs which
+In the private section of the "`monorepo`" (i.e. outside any namespaces), store
+a note for every verified tree object, with the set of commit OIDs which
 contributed to this verified state encoded in the note message (e.g.
 `x-rad-verified-by: <OID>`). Determining whether a given revision has been
 verified before is an `O(1)` operation: only the notes object needs to be
@@ -558,7 +603,7 @@ disk.
 Persisting forks requires to annotate commit objects as well, and to update the
 tree notes to reflect the new state.
 
-## Security Considerations
+=== Security Considerations
 
 * Colluding key owners can force the network into following a _fork_ of an
   already published identity. While peers are _encouraged_ to persist
@@ -566,34 +611,26 @@ tree notes to reflect the new state.
   information forever. After a period of interrupted replication, the fork may
   thus prevail.
 
-* As outlined in [Delegations](#delegations), `Person` and `Project` histories
-  are not causally related. This allows for censorship attacks, unless this
-  relationship is securely established by an external system.
+* As outlined in link:#delegations[Delegations], `Person` and `Project`
+  histories are not causally related. This allows for censorship attacks, unless
+  this relationship is securely established by an external system.
 
 * The security of identity updates rests on the probability of an attacker to
   gain control over a quorum of keys. That is, we can operate on the assumption
-  that the individual keys can be in "online" storage, so as long as the breach
-  of a minority of the key delegations can be mitigated by the remaining ones.
-
-  This poses a usability problem, however, especially for personal identities:
-  users can hardly be expected to have access to `n > 2` devices within an
-  acceptable time window in order to finalise an identity update. In practice,
-  many will have access to a portable hardware token which provides reasonable
-  protection of the keys it stores, and will want to finalise updates
-  immediately by only two signatures: by the current workstation + by the
-  hardware token.
-
-  A future amendment to this document SHALL specify the rules for marking a key
-  delegation as being considered "secure", such that the quorum threshold can be
-  computed differently if such a "secure" signature is present.
+  that the individual keys can be in "`online`" storage, so as long as the
+  breach of a minority of the key delegations can be mitigated by the remaining
+  ones.
++
+This poses a usability problem, however, especially for personal identities:
+users can hardly be expected to have access to `n > 2` devices within an
+acceptable time window in order to finalise an identity update. In practice,
+many will have access to a portable hardware token which provides reasonable
+protection of the keys it stores, and will want to finalise updates immediately
+by only two signatures: by the current workstation + by the hardware token.
++
+A future amendment to this document SHALL specify the rules for marking a key
+delegation as being considered "`secure`", such that the quorum threshold can be
+computed differently if such a "`secure`" signature is present.
 
 * Implementations SHOULD limit the download of untrusted identity histories to a
   reasonable size in bytes.
-
-
-[git-interpret-trailers]: https://git-scm.com/docs/git-interpret-trailers
-[git-notes]: https://git-scm.com/docs/git-notes
-[git-check-ref-format]: https://git-scm.com/docs/git-check-ref-format
-[radicle-registry]: https://github.com/radicle-dev/radicle-registry
-[subtree]: https://git-scm.com/docs/git-merge#Documentation/git-merge.txt-subtree
-[canonical JSON]: http://wiki.laptop.org/go/Canonical_JSON

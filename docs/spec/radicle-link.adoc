@@ -1,0 +1,24 @@
+// requires the `asciidoctor-bibtex` extension
+= Radicle Link
+Kim Altintop <kim@eagain.io>
+:revdate: 2021
+:revremark: rev2-draft
+:toc:
+:doctype: book
+:sectnums:
+:bibtex-file: references.bib
+:bibtex-throw: true
+:bibtex-style: ieee-with-url
+
+== Introduction
+
+include::sections/identities.adoc[]
+
+== Replication
+== Gossip Network
+== Content Discovery
+== Collaboration
+
+[bibliography]
+= References
+bibliography::references.bib[ieee]
