@@ -9,8 +9,8 @@ tasks:
       rustup toolchain install stable nightly \
           --profile minimal --component clippy --component rustfmt
 
-      deny_version="0.11.0"
-      deny_sha256="bdac664b436fd8501b3bea5461bbf8566086ab0cf5555d83178c3209a848f9f8"
+      deny_version="0.11.3"
+      deny_sha256="ffed77d73b5f76b6a7b200a939b6215bde55b0e59ab3294ad8518ddb01c49f09"
       curl -sSfL -o cargo-deny.tar.gz \
         "https://github.com/EmbarkStudios/cargo-deny/releases/download/${deny_version}/cargo-deny-${deny_version}-x86_64-unknown-linux-musl.tar.gz"
       deny_sha256_actual=$(sha256sum cargo-deny.tar.gz|cut -d ' ' -f1)
