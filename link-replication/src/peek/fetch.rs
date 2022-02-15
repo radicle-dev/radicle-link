@@ -4,11 +4,12 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    borrow::Cow,
     collections::{BTreeSet, HashSet},
+    convert::TryFrom,
 };
 
-use bstr::{BString, ByteSlice as _};
+use bstr::ByteVec as _;
+use git_ref_format::RefString;
 use link_crypto::PeerId;
 use link_git::protocol::{ObjectId, Ref};
 
@@ -24,6 +25,7 @@ use crate::{
     FilteredRef,
     Identities,
     Negotiation,
+    RefPrefix,
     Refdb,
     Update,
     WantsHaves,
@@ -61,7 +63,7 @@ impl ForFetch {
 }
 
 impl Negotiation for ForFetch {
-    fn ref_prefixes(&self) -> Vec<refs::Scoped<'_, 'static>> {
+    fn ref_prefixes(&self) -> Vec<RefPrefix> {
         self.peers()
             .flat_map(move |id| ref_prefixes(id, &self.remote_id))
             .collect()
@@ -71,20 +73,24 @@ impl Negotiation for ForFetch {
         use refs::parsed::Identity;
 
         let (name, tip) = refs::into_unpacked(r);
+        let name = {
+            let s = Vec::from(name).into_string().ok()?;
+            RefString::try_from(s).ok()?
+        };
         // FIXME:: precompute / memoize `Self::ref_prefixes`
         if !self
             .ref_prefixes()
             .iter()
-            .any(|prefix| name.starts_with(prefix.as_ref()))
+            .any(|prefix| prefix.matches(&name))
         {
             return None;
         }
-        let parsed = refs::parse::<Identity>(name.as_bstr())?;
+        let parsed = refs::parse::<Identity>(name.as_bstr()).ok()?;
 
         match parsed.remote {
             Some(remote_id) if remote_id == self.local_id => None,
-            Some(remote_id) => Some(FilteredRef::new(name, tip, &remote_id, parsed)),
-            None => Some(FilteredRef::new(name, tip, &self.remote_id, parsed)),
+            Some(remote_id) => Some(FilteredRef::new(tip, &remote_id, parsed)),
+            None => Some(FilteredRef::new(tip, &self.remote_id, parsed)),
         }
     }
 
@@ -98,8 +104,8 @@ impl Negotiation for ForFetch {
         let mut haves = BTreeSet::new();
 
         for r in refs {
-            let refname = refs::remote_tracking(&r.remote_id, r.name.as_bstr());
-            match db.refname_to_id(&refname)? {
+            let refname = refs::Qualified::from(r.to_remote_tracking());
+            match db.refname_to_id(refname)? {
                 Some(oid) => {
                     if oid.as_ref() != r.tip {
                         wants.insert(r.tip);
@@ -142,29 +148,26 @@ impl UpdateTips for ForFetch {
         let mut tips = Vec::new();
         let mut track = Vec::new();
         for r in refs {
-            debug_assert!(r.remote_id != self.local_id, "never touch our own");
-            let is_delegate = self.delegates.contains(&r.remote_id);
+            debug_assert!(r.remote_id() != &self.local_id, "never touch our own");
+            let is_delegate = self.delegates.contains(r.remote_id());
             // symref `rad/self` if we already have the top-level identity
-            if r.name.ends_with(b"rad/self") {
+            if r.is(&refs::parsed::Rad::Me) {
                 match Identities::verify(cx, r.tip, |_| None::<ObjectId>) {
                     Err(e) if is_delegate => return Err(error::Prepare::Verification(e)),
-                    Err(e) => warn!("invalid `rad/self`: {}: {}", r.name, e),
+                    Err(e) => warn!("invalid `rad/self`: {}", e),
                     Ok(id) => {
-                        let top = refs::Namespaced {
-                            namespace: Some(BString::from(id.urn().encode_id()).into()),
-                            refname: refs::RadId.into(),
-                        };
-                        let oid = Refdb::refname_to_id(cx, top.qualified()).map_err(|source| {
+                        let top = refs::namespaced(&id.urn(), refs::REFS_RAD_ID);
+                        let top_qual = top.clone().into_qualified();
+                        let oid = Refdb::refname_to_id(cx, &top_qual).map_err(|source| {
                             error::Prepare::FindRef {
-                                name: top.qualified(),
+                                name: top_qual.into_refstring(),
                                 source,
                             }
                         })?;
-                        let track_as =
-                            Cow::from(refs::remote_tracking(&r.remote_id, r.name.as_bstr()));
+                        let track_as = r.to_remote_tracking();
                         let up = match oid {
                             Some(oid) => Update::Symbolic {
-                                name: track_as,
+                                name: track_as.into(),
                                 target: SymrefTarget {
                                     name: top,
                                     target: oid.as_ref().to_owned(),
@@ -172,7 +175,7 @@ impl UpdateTips for ForFetch {
                                 type_change: Policy::Allow,
                             },
                             None => Update::Direct {
-                                name: track_as,
+                                name: track_as.into(),
                                 target: r.tip,
                                 no_ff: Policy::Abort,
                             },
@@ -185,8 +188,8 @@ impl UpdateTips for ForFetch {
             } else {
                 // XXX: we should verify all ids at some point, but non-delegates
                 // would be a warning only
-                if is_delegate && r.name.ends_with(b"rad/id") {
-                    Identities::verify(cx, r.tip, s.lookup_delegations(&r.remote_id))
+                if is_delegate && r.is(&refs::parsed::Rad::Id) {
+                    Identities::verify(cx, r.tip, s.lookup_delegations(r.remote_id()))
                         .map_err(error::Prepare::Verification)?;
                 }
                 if let Some(u) = mk_ref_update::<_, C::Urn>(r) {
@@ -204,7 +207,7 @@ impl Layout for ForFetch {
         guard_required(
             self.required_refs().collect(),
             refs.iter()
-                .map(|x| refs::scoped(&x.remote_id, &self.remote_id, x.name.as_bstr()))
+                .map(|x| refs::scoped(x.remote_id(), &self.remote_id, x.to_owned()))
                 .collect(),
         )
     }

@@ -5,7 +5,7 @@
 
 use std::fmt::Debug;
 
-use bstr::BString;
+use git_ref_format::RefString;
 use link_crypto::PeerId;
 use link_git::protocol::ObjectId;
 use thiserror::Error;
@@ -16,7 +16,7 @@ pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 #[non_exhaustive]
 pub enum Layout {
     #[error("missing required refs: {0:?}")]
-    MissingRequiredRefs(Vec<BString>),
+    MissingRequiredRefs(Vec<RefString>),
 
     #[error(transparent)]
     Other(#[from] Error),
@@ -42,7 +42,7 @@ where
 
     #[error("failed to look up ref {name}")]
     FindRef {
-        name: BString,
+        name: RefString,
         #[source]
         source: R,
     },
@@ -52,13 +52,13 @@ where
 #[non_exhaustive]
 pub enum Validation {
     #[error("unrecognised format: {0}")]
-    Unrecognised(BString),
+    Unrecognised(RefString),
 
     #[error("unexpected: {0}")]
-    Unexpected(BString),
+    Unexpected(RefString),
 
     #[error("missing expected ref {refname} of {remote}")]
-    Missing { refname: BString, remote: PeerId },
+    Missing { refname: RefString, remote: PeerId },
 
     #[error("`refs/rad/id` is missing for {0}")]
     MissingRadId(PeerId),
@@ -70,14 +70,14 @@ pub enum Validation {
     MismatchedTips {
         signed: ObjectId,
         actual: ObjectId,
-        name: BString,
+        name: RefString,
     },
 
     #[error("strange refname or category: {0}")]
-    Strange(BString),
+    Strange(RefString),
 
     #[error("strange refname or prunable ref: {0}")]
-    StrangeOrPrunable(BString),
+    StrangeOrPrunable(RefString),
 
     #[error("tracking {0}, but no data was pulled yet")]
     NoData(PeerId),

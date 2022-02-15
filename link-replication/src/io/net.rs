@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{borrow::Cow, io, marker::PhantomData, path::PathBuf};
+use std::{io, marker::PhantomData, path::PathBuf};
 
 use bstr::BString;
 use futures_lite::io::{AsyncRead, AsyncWrite};
@@ -74,8 +74,8 @@ where
             let mut ref_prefixes = neg
                 .ref_prefixes()
                 .into_iter()
-                .map(|s| Cow::from(s).into_owned())
-                .collect::<Vec<_>>();
+                .map(Into::into)
+                .collect::<Vec<BString>>();
             ref_prefixes.sort();
             ref_prefixes.dedup();
 

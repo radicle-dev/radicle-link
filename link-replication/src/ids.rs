@@ -3,9 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{borrow::Cow, collections::BTreeSet, fmt::Debug};
+use std::{collections::BTreeSet, fmt::Debug};
 
-use bstr::BString;
 use link_crypto::PeerId;
 use link_git::protocol::{oid, ObjectId};
 use radicle_data::NonEmpty;
@@ -86,11 +85,11 @@ where
     C: Identities + Refdb,
 {
     let resolve = |urn: &<C as Identities>::Urn| -> Option<<C as Refdb>::Oid> {
-        let name = BString::from(format!("refs/rad/ids/{}", urn.encode_id()));
+        let name = refs::rad_ids(urn);
         debug!("resolving {}", name);
         Refdb::refname_to_id(cx, name).ok().flatten()
     };
-    let id = Refdb::refname_to_id(cx, Cow::from(refs::RadId))?
+    let id = Refdb::refname_to_id(cx, refs::Qualified::from(refs::REFS_RAD_ID))?
         .map(|tip| Identities::verify(cx, tip, resolve))
         .transpose()?;
     Ok(id)
@@ -107,15 +106,12 @@ pub fn of<C>(cx: &C, remote: &PeerId) -> Result<Option<C::VerifiedIdentity>, Err
 where
     C: Identities + Refdb,
 {
-    let id_ref = refs::remote_tracking(remote, refs::RadId);
+    let id_ref = refs::remote_tracking(remote, refs::REFS_RAD_ID).expect("const name known valid");
     let resolve = |urn: &<C as Identities>::Urn| -> Option<<C as Refdb>::Oid> {
-        let name = refs::remote_tracking(
-            remote,
-            BString::from(format!("refs/rad/ids/{}", urn.encode_id())),
-        );
+        let name = refs::remote_tracking(remote, refs::rad_ids(urn))?;
         Refdb::refname_to_id(cx, name).ok().flatten()
     };
-    let id = Refdb::refname_to_id(cx, &id_ref)?
+    let id = Refdb::refname_to_id(cx, id_ref)?
         .map(|tip| Identities::verify(cx, tip, resolve))
         .transpose()?;
     Ok(id)

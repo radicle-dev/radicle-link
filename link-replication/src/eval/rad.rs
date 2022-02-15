@@ -5,7 +5,6 @@
 
 use std::fmt::Debug;
 
-use bstr::{BString, ByteVec as _};
 use either::Either;
 use link_crypto::PeerId;
 
@@ -21,7 +20,6 @@ use crate::{
     Refdb,
     SymrefTarget,
     Update,
-    Urn as _,
     VerifiedIdentity as _,
 };
 
@@ -50,20 +48,17 @@ where
     let mut track = Vec::new();
     let mut up = Vec::new();
     for urn in newest.delegate_urns() {
-        let urn_enc = urn.encode_id();
+        let name = refs::rad_ids(&urn).to_owned();
         let delegate = {
-            let mut ids: BString = format!("rad/ids/{}", urn_enc).into();
             let head = match remote {
                 Some(remote) => {
-                    let refname = refs::remote_tracking(remote, ids);
+                    let refname = refs::remote_tracking(remote, name.clone())
+                        .expect("`name` is guaranteed to be valid");
                     Refdb::refname_to_id(cx, &refname)?
-                        .ok_or_else(|| format!("rad::setup: missing {}", refname.as_ref()))?
+                        .ok_or_else(|| format!("rad::setup: missing {}", refname))?
                 },
-                None => {
-                    ids.insert_str(0, "refs/");
-                    Refdb::refname_to_id(cx, &ids)?
-                        .ok_or_else(|| format!("rad::setup: missing {}", ids))?
-                },
+                None => Refdb::refname_to_id(cx, name.clone())?
+                    .ok_or_else(|| format!("rad::setup: missing {}", name))?,
             };
             Identities::verify(cx, head, no_indirects)?
         };
@@ -72,12 +67,9 @@ where
         // Symref `rad/ids/$urn` -> refs/namespaces/$urn/refs/rad/id, creating
         // the target ref if it doesn't exist.
         up.push(Update::Symbolic {
-            name: BString::from(format!("refs/rad/ids/{}", urn_enc)).into(),
+            name,
             target: SymrefTarget {
-                name: refs::Namespaced {
-                    namespace: Some(BString::from(urn_enc).into()),
-                    refname: refs::RadId.into(),
-                },
+                name: refs::namespaced(&urn, refs::REFS_RAD_ID),
                 target: delegate.content_id().as_ref().to_owned(),
             },
             type_change: Policy::Allow,
@@ -92,7 +84,7 @@ where
     // Update `rad/self` in the same transaction
     if let Some(local_id) = whoami {
         up.push(Update::Direct {
-            name: refs::RadSelf.into(),
+            name: refs::REFS_RAD_SELF.into(),
             target: local_id.tip,
             no_ff: Policy::Reject,
         })
@@ -100,7 +92,7 @@ where
 
     // Lastly, point `rad/id` to `newest.content_id`
     up.push(Update::Direct {
-        name: refs::RadId.into(),
+        name: refs::REFS_RAD_ID.into(),
         target: newest.content_id().as_ref().to_owned(),
         no_ff: Policy::Reject,
     });

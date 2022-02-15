@@ -5,10 +5,11 @@
 
 use std::{
     collections::{BTreeSet, HashSet},
+    convert::TryFrom,
     fmt::Debug,
 };
 
-use bstr::ByteSlice as _;
+use git_ref_format::{name, Qualified};
 use link_crypto::PeerId;
 use link_git::protocol::oid;
 
@@ -30,8 +31,6 @@ where
     &'a C: RefScan,
     Oid: Debug + AsRef<oid>,
 {
-    use refs::component::*;
-
     let mut fail = Vec::new();
 
     info!(?sigrefs, "validating");
@@ -56,24 +55,23 @@ where
 
             trace!("{}", name);
 
-            if name.ends_with(b"rad/id") {
+            if name.ends_with("rad/id") {
                 seen_rad_id = true;
-            } else if name.ends_with(b"rad/signed_refs") {
+            } else if name.ends_with("rad/signed_refs") {
                 seen_sigrefs = true;
             }
 
-            let owned = match refs::owned(name.as_bstr()) {
+            let owned = match refs::owned(name.clone()) {
                 Some(owned) => owned,
                 None => continue,
             };
             // XXX: Should rad/self actually be signed?
-            if owned.as_ref() != refs::RadId.as_bytes()
-                && owned.starts_with(refs::Prefix::Rad.as_bytes())
+            if owned.as_ref() != name::REFS_RAD_ID && owned.starts_with(refs::Prefix::Rad.as_str())
             {
                 continue;
             }
             match refs.refs.get(owned.as_ref()) {
-                None => fail.push(Validation::Unexpected(name)),
+                None => fail.push(Validation::Unexpected(name.into())),
                 Some(signed_oid) => {
                     seen_refs.insert(owned.as_ref().to_owned());
 
@@ -81,7 +79,7 @@ where
                         fail.push(Validation::MismatchedTips {
                             signed: signed_oid.as_ref().to_owned(),
                             actual: oid.into(),
-                            name,
+                            name: name.into(),
                         })
                     }
                 },
@@ -91,10 +89,10 @@ where
         for missing in refs
             .refs
             .keys()
-            .filter(|k| !seen_refs.contains(k.as_bstr()))
+            .filter(|k| !seen_refs.contains(k.as_refstr()))
         {
             fail.push(Validation::Missing {
-                refname: (*missing).to_owned(),
+                refname: missing.to_owned(),
                 remote: *peer,
             })
         }
@@ -111,7 +109,7 @@ where
     // unsigned remote tracking
     {
         use either::Either::*;
-        use refs::parsed::{Cat, Identity, Rad, Refs};
+        use refs::parsed::{Identity, Rad};
 
         let mut seen_peers = BTreeSet::new();
         for peer in &sigrefs.remotes {
@@ -130,29 +128,22 @@ where
 
                 trace!("{}", name);
 
-                let owned = match refs::owned(name.as_bstr()) {
+                let owned = match refs::owned(name.clone()) {
                     Some(owned) => owned,
                     None => {
-                        fail.push(Validation::Strange(name));
+                        fail.push(Validation::Strange(name.into_refstring()));
                         continue;
                     },
                 };
-                match refs::parse::<Identity>(owned.as_ref()) {
-                    None => fail.push(Validation::Strange(name)),
-                    Some(refs::Parsed { inner, .. }) => match inner {
+                match refs::Parsed::<Identity>::try_from(Qualified::from(owned)) {
+                    Err(_) => fail.push(Validation::Strange(name.into_refstring())),
+                    Ok(refs::Parsed { inner, .. }) => match inner {
                         Left(Rad::Id) => {
                             seen_rad_id = true;
                         },
 
                         Left(Rad::SignedRefs) => {
                             seen_sigrefs = true;
-                        },
-
-                        Right(Refs {
-                            cat: Cat::Unknown(_),
-                            ..
-                        }) => {
-                            fail.push(Validation::Strange(name));
                         },
 
                         _ => {},
@@ -196,23 +187,24 @@ where
 
             trace!("{}", name);
 
-            let strange = match name.splitn(4, refs::is_separator).collect::<Vec<_>>()[..] {
-                [REFS, REMOTES, id, _] => {
-                    let pid = std::str::from_utf8(id)
-                        .ok()
-                        .and_then(|s| s.parse::<PeerId>().ok());
+            let strange = match name.iter().take(4).collect::<Vec<_>>()[..] {
+                [name::str::REFS, name::str::REMOTES, id, _] => {
+                    let pid = id.parse::<PeerId>().ok();
                     match pid {
                         None => true,
                         Some(pid) => !pids.contains(&pid),
                     }
                 },
 
-                [REFS, RAD, ..] | [REFS, HEADS, ..] | [REFS, NOTES, ..] | [REFS, TAGS, ..] => false,
+                [name::str::REFS, name::str::RAD, ..]
+                | [name::str::REFS, name::str::HEADS, ..]
+                | [name::str::REFS, name::str::NOTES, ..]
+                | [name::str::REFS, name::str::TAGS, ..] => false,
                 _ => true,
             };
 
             if strange {
-                fail.push(Validation::StrangeOrPrunable(name))
+                fail.push(Validation::StrangeOrPrunable(name.into_refstring()))
             }
         }
     }

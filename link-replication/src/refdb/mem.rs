@@ -5,10 +5,8 @@
 
 use std::collections::{hash_map, HashMap};
 
-use bstr::{BStr, BString};
-
 use super::{Applied, RefScan, Refdb, Update, Updated};
-use crate::{ObjectId, Void};
+use crate::{refs::Qualified, ObjectId, Void};
 
 /// A very simple in-memory [`Refdb`].
 ///
@@ -16,11 +14,11 @@ use crate::{ObjectId, Void};
 /// updates can't fail).
 #[derive(Default, Debug)]
 pub struct Mem {
-    refs: HashMap<BString, ObjectId>,
+    refs: HashMap<Qualified<'static>, ObjectId>,
 }
 
-impl From<HashMap<BString, ObjectId>> for Mem {
-    fn from(refs: HashMap<BString, ObjectId>) -> Self {
+impl From<HashMap<Qualified<'static>, ObjectId>> for Mem {
+    fn from(refs: HashMap<Qualified<'static>, ObjectId>) -> Self {
         Self { refs }
     }
 }
@@ -32,10 +30,10 @@ impl Refdb for Mem {
     type TxError = Void;
     type ReloadError = Void;
 
-    fn refname_to_id(
-        &self,
-        refname: impl AsRef<BStr>,
-    ) -> Result<Option<Self::Oid>, Self::FindError> {
+    fn refname_to_id<'a, Q>(&self, refname: Q) -> Result<Option<Self::Oid>, Self::FindError>
+    where
+        Q: AsRef<Qualified<'a>>,
+    {
         Ok(self.refs.get(refname.as_ref()).map(Clone::clone))
     }
 
@@ -53,7 +51,10 @@ impl Refdb for Mem {
                 } => {
                     let name = name.into_owned();
                     self.refs.insert(name.clone(), target);
-                    ap.updated.push(Updated::Direct { name, target });
+                    ap.updated.push(Updated::Direct {
+                        name: name.into_refstring(),
+                        target,
+                    });
                 },
                 Update::Symbolic {
                     name,
@@ -63,8 +64,8 @@ impl Refdb for Mem {
                     let name = name.into_owned();
                     self.refs.insert(name.clone(), target.target);
                     ap.updated.push(Updated::Symbolic {
-                        name,
-                        target: target.name(),
+                        name: name.into_refstring(),
+                        target: target.name().to_owned(),
                     });
                 },
             }
@@ -98,20 +99,20 @@ impl<'a> RefScan for &'a Mem {
 
 pub struct Scan<'a, Oid> {
     pref: Option<String>,
-    iter: hash_map::Iter<'a, BString, Oid>,
+    iter: hash_map::Iter<'a, Qualified<'a>, Oid>,
 }
 
 impl<'a, Oid> Iterator for Scan<'a, Oid>
 where
     Oid: Clone + 'a,
 {
-    type Item = Result<(BString, Oid), Void>;
+    type Item = Result<(Qualified<'static>, Oid), Void>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.iter.next().and_then(|(k, v)| match &self.pref {
             None => Some((k.to_owned(), v.clone())),
             Some(p) => {
-                if k.starts_with(p.as_bytes()) {
+                if k.starts_with(p) {
                     Some((k.to_owned(), v.clone()))
                 } else {
                     None

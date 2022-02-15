@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use bstr::BString;
+use git_ref_format::RefString;
 use itertools::Itertools as _;
 use link_crypto::PeerId;
 use link_git::protocol::{oid, ObjectId};
@@ -52,7 +52,7 @@ pub trait SignedRefs {
 #[derive(Debug)]
 pub struct Sigrefs<Oid> {
     pub at: Oid,
-    pub refs: HashMap<BString, Oid>,
+    pub refs: HashMap<RefString, Oid>,
     pub remotes: BTreeSet<PeerId>,
 }
 
@@ -78,7 +78,7 @@ pub struct Refs<Oid> {
     /// Head of the `rad/signed_refs` the refs were loaded from.
     pub at: Oid,
     /// The signed `(refname, head)` pairs.
-    pub refs: HashMap<BString, Oid>,
+    pub refs: HashMap<RefString, Oid>,
 }
 
 pub struct Select<'a> {

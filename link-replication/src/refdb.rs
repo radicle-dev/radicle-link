@@ -3,9 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::borrow::Cow;
-
-use bstr::{BStr, BString};
+use git_ref_format::{Qualified, RefStr, RefString};
 use link_git::protocol::{oid, ObjectId};
 
 use crate::refs;
@@ -24,10 +22,9 @@ pub trait Refdb {
     /// exist.
     ///
     /// `refname` is to be interpreted as relative to the current namespace.
-    fn refname_to_id(
-        &self,
-        refname: impl AsRef<BStr>,
-    ) -> Result<Option<Self::Oid>, Self::FindError>;
+    fn refname_to_id<'a, Q>(&self, refname: Q) -> Result<Option<Self::Oid>, Self::FindError>
+    where
+        Q: AsRef<Qualified<'a>>;
 
     /// Apply the provided ref updates.
     ///
@@ -50,7 +47,7 @@ pub trait Refdb {
 
 pub trait RefScan {
     type Oid: AsRef<oid> + Into<ObjectId>;
-    type Scan: Iterator<Item = Result<(BString, Self::Oid), Self::Error>>;
+    type Scan: Iterator<Item = Result<(Qualified<'static>, Self::Oid), Self::Error>>;
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Traverse all refs in the current namespace matching `prefix`.
@@ -63,7 +60,7 @@ pub trait RefScan {
 #[derive(Clone, Debug)]
 pub enum Update<'a> {
     Direct {
-        name: Cow<'a, BStr>,
+        name: refs::Qualified<'a>,
         target: ObjectId,
 
         /// Policy to apply when an [`Update`] would not apply as a
@@ -83,7 +80,7 @@ pub enum Update<'a> {
         no_ff: Policy,
     },
     Symbolic {
-        name: Cow<'a, BStr>,
+        name: refs::Qualified<'a>,
         target: SymrefTarget<'a>,
 
         /// Policy to apply when the ref already exists, but is a direct ref
@@ -93,7 +90,7 @@ pub enum Update<'a> {
 }
 
 impl Update<'_> {
-    pub fn refname(&self) -> &BStr {
+    pub fn refname(&self) -> &RefStr {
         match self {
             Self::Direct { name, .. } => name,
             Self::Symbolic { name, .. } => name,
@@ -107,7 +104,7 @@ impl Update<'_> {
                 target,
                 no_ff,
             } => Update::Direct {
-                name: Cow::from(name.into_owned()),
+                name: name.into_owned(),
                 target,
                 no_ff,
             },
@@ -117,7 +114,7 @@ impl Update<'_> {
                 target,
                 type_change,
             } => Update::Symbolic {
-                name: Cow::from(name.into_owned()),
+                name: name.into_owned(),
                 target: target.into_owned(),
                 type_change,
             },
@@ -142,8 +139,8 @@ pub struct SymrefTarget<'a> {
 }
 
 impl SymrefTarget<'_> {
-    pub fn name(&self) -> BString {
-        self.name.qualified()
+    pub fn name(&self) -> &RefStr {
+        self.name.as_ref()
     }
 
     pub fn into_owned<'b>(self) -> SymrefTarget<'b> {
@@ -156,8 +153,8 @@ impl SymrefTarget<'_> {
 
 #[derive(Clone, Debug)]
 pub enum Updated {
-    Direct { name: BString, target: ObjectId },
-    Symbolic { name: BString, target: BString },
+    Direct { name: RefString, target: ObjectId },
+    Symbolic { name: RefString, target: RefString },
 }
 
 #[derive(Debug, Default)]
