@@ -1,0 +1,77 @@
+stages:
+  - lint
+  - build
+  - test
+
+fmt:
+  stage: lint
+  image: "rustlang/rust:nightly"
+  before_script:
+    - rustup component add rustfmt
+  script:
+    - ./scripts/ci/fmt
+
+lint:
+  stage: lint
+  image: "rust:latest"
+  before_script:
+    - rustup component add clippy
+    - apt-get update
+    - apt-get install -y cmake
+  script:
+    - ./scripts/ci/lint
+
+# TODO: cargo deny (need binary install)
+
+build-stable:
+  stage: build
+  image: "rust:latest"
+  before_script:
+    - apt-get update
+    - apt-get install -y cmake
+  script:
+    - ./scripts/ci/build
+    - ./scripts/ci/build-repl3
+    - ./scripts/ci/build-bins
+
+test-stable:
+  stage: test
+  image: "rust:latest"
+  before_script:
+    - apt-get update
+    - apt-get install -y cmake
+  script:
+    - ./scripts/ci/test
+    - ./scripts/ci/test-repl3
+
+build-nightly:
+  stage: build
+  image: "rustlang/rust:nightly"
+  before_script:
+    - apt-get update
+    - apt-get install -y cmake
+  script:
+    - ./scripts/ci/build
+    - ./scripts/ci/build-repl3
+    - ./scripts/ci/build-bins
+  allow_failure: true
+
+test-nightly:
+  stage: test
+  image: "rustlang/rust:nightly"
+  before_script:
+    - apt-get update
+    - apt-get install -y cmake
+  script:
+    - ./scripts/ci/test
+    - ./scripts/ci/test-repl3
+  allow_failure: true
+
+docs:
+  stage: build
+  image: "rust:latest"
+  before_script:
+    - apt-get update
+    - apt-get install -y cmake
+  script:
+    - ./scripts/ci/docs
