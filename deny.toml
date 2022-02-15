@@ -45,7 +45,6 @@ allow = [
     "BlueOak-1.0.0",
     "BSD-2-Clause",
     "CC0-1.0",
-    "GPL-2.0",
     "GPL-3.0",
     "MIT",
     "Unlicense",
@@ -53,57 +52,7 @@ allow = [
 # List of explictly disallowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
 # [possible values: any SPDX 3.7 short identifier (+ optional exception)].
-deny = [
-    # As per https://www.gnu.org/licenses/license-list.html#GPLIncompatibleLicenses
-    "AGPL-1.0",
-# fails to parse:
-#   "AFL-1.0",
-#   "AFL-1.2",
-#   "AFL-2.0",
-#   "AFL-2.1",
-#   "AFL-3.0",
-    "Apache-1.0",
-    "Apache-1.1",
-    "APSL-2.0",
-    "BitTorrent-1.0",
-    "BitTorrent-1.1",
-    "BSD-4-Clause",
-    "CECILL-B",
-    "CECILL-C",
-    "CDDL-1.0",
-    "CDDL-1.1",
-    "CNRI-Python",
-    "CPAL-1.0",
-    "CPL-1.0",
-    "Condor-1.1",
-    "EPL-1.0",
-    "EPL-2.0",
-    "EUPL-1.1",
-    "EUPL-1.2",
-    "gnuplot",
-    "IPL-1.0",
-    "LPPL-1.3a",
-    "LPPL-1.2",
-    "LPL-1.02",
-    "MS-PL",
-    "MS-RL",
-    "MPL-1.1",
-    "NOSL",
-    "NPL-1.0",
-    "NPL-1.1",
-    "Nokia",
-    "OpenSSL",
-    "PHP-3.01",
-    "QPL-1.0",
-    "RPSL-1.0",
-    "SISSL",
-    "SPL-1.0",
-    "xinetd",
-    "YPL-1.1",
-    "Zend-2.0",
-    "Zimbra-1.3",
-    "ZPL-1.1"
-]
+deny = []
 # Lint level for licenses considered copyleft
 copyleft = "allow"
 # Blanket approval or denial for OSI-approved or FSF Free/Libre licenses
