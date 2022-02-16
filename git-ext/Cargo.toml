@@ -20,6 +20,9 @@ version = ">= 0.13.23, 0.13"
 default-features = false
 features = ["vendored-libgit2"]
 
+[dependencies.git-ref-format]
+path = "../git-ref-format"
+
 [dependencies.link-git]
 path = "../link-git"
 optional = true
