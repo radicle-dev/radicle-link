@@ -11,7 +11,7 @@ test = false
 
 [features]
 default = []
-replication-v3 = ["git-ref-format"]
+replication-v3 = []
 
 [dependencies]
 async-lock = "2.4.0"
@@ -125,7 +125,6 @@ features = ["serde", "minicbor", "link-git"]
 
 [dependencies.git-ref-format]
 path = "../git-ref-format"
-optional = true
 
 [dependencies.git-trailers]
 path = "../git-trailers"
