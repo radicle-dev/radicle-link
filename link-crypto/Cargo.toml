@@ -21,6 +21,10 @@ thiserror = "1.0"
 tracing = "0.1"
 webpki = "0.21"
 
+[dependencies.git-ref-format]
+path = "../git-ref-format"
+optional = true
+
 [dependencies.minicbor]
 version = ">= 0.9.1, < 0.14"
 features = ["std", "derive"]

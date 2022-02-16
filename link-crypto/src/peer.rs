@@ -201,6 +201,17 @@ impl From<PeerId> for ext::RefLike {
     }
 }
 
+#[cfg(feature = "git-ref-format")]
+impl From<&PeerId> for git_ref_format::Component<'_> {
+    #[inline]
+    fn from(id: &PeerId) -> Self {
+        use git_ref_format::{Component, RefString};
+
+        let refstr = RefString::try_from(id.to_string()).expect("`PeerId` is a valid ref string");
+        Component::from_refstring(refstr).expect("`PeerId` is a valid refname component")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Originates<T> {
     pub from: PeerId,
