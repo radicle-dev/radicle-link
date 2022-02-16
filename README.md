@@ -25,7 +25,7 @@ installation is currently required as a runtime dependency.
 ## License
 
 Unless otherwise noted, all source code in this repository is licensed under the
-[GPLv3] with the Radicle Linking Exception. See the [LICENSE] file for details.
+[GPLv3]. See the [LICENSE] file for details.
 
 ## Contributing
 
