@@ -19,7 +19,7 @@ use crate::{
 };
 
 mod iter;
-pub use iter::{Component, Components, Iter};
+pub use iter::{component, Component, Components, Iter};
 
 #[cfg(feature = "percent-encoding")]
 pub use percent_encoding::PercentEncode;
