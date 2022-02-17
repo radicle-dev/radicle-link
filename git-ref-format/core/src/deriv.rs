@@ -20,6 +20,35 @@ use crate::{lit, name, Component, RefStr, RefString};
 pub struct Qualified<'a>(pub(crate) Cow<'a, RefStr>);
 
 impl<'a> Qualified<'a> {
+    /// Infallibly create a [`Qualified`] from components.
+    ///
+    /// Note that the "refs/" prefix is implicitly added, so `a` is the second
+    /// [`Component`]. Mirroring [`Self::non_empty_components`], providing
+    /// two [`Component`]s guarantees well-formedness of the [`Qualified`].
+    /// `tail` may be empty.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use git_ref_format::{component, Qualified};
+    ///
+    /// assert_eq!(
+    ///     "refs/heads/main",
+    ///     Qualified::from_components(component::HEADS, component::MAIN, None).as_str()
+    /// )
+    /// ```
+    pub fn from_components<'b, 'c, 'd, A, B, C>(a: A, b: B, tail: C) -> Self
+    where
+        A: Into<Component<'b>>,
+        B: Into<Component<'c>>,
+        C: IntoIterator<Item = Component<'d>>,
+    {
+        let mut inner = name::REFS.join(a.into()).and(b.into());
+        inner.extend(tail);
+
+        Self(inner.into())
+    }
+
     pub fn from_refstr(r: impl Into<Cow<'a, RefStr>>) -> Option<Self> {
         Self::_from_refstr(r.into())
     }

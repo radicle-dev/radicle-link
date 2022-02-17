@@ -5,7 +5,7 @@
 
 use std::convert::TryFrom;
 
-use git_ref_format::{name, refname, refspec, Error, RefStr, RefString};
+use git_ref_format::{component, name, refname, refspec, Error, Qualified, RefStr, RefString};
 
 #[test]
 fn refname_macro_works() {
@@ -96,6 +96,50 @@ fn qualified_remote_tracking() {
 #[test]
 fn not_qualified() {
     assert!(name::MAIN.qualified().is_none())
+}
+
+#[test]
+fn qualified_from_components() {
+    assert_eq!(
+        "refs/heads/main",
+        Qualified::from_components(component::HEADS, component::MAIN, None).as_str()
+    )
+}
+
+#[test]
+fn qualified_from_components_with_iter() {
+    assert_eq!(
+        "refs/heads/foo/bar/baz",
+        Qualified::from_components(
+            component::HEADS,
+            name::component!("foo"),
+            [name::component!("bar"), name::component!("baz")]
+        )
+        .as_str()
+    )
+}
+
+#[test]
+fn qualified_from_components_non_empty_iter() {
+    let q = Qualified::from_components(component::HEADS, component::MAIN, None);
+    let (refs, heads, main, mut empty) = q.non_empty_iter();
+    assert!(empty.next().is_none());
+    assert_eq!(("refs", "heads", "main"), (refs, heads, main))
+}
+
+#[test]
+fn qualified_from_components_non_empty_components() {
+    let q = Qualified::from_components(component::HEADS, component::MAIN, Some(component::MASTER));
+    let (refs, heads, main, mut master) = q.non_empty_components();
+    assert_eq!(
+        (
+            component::REFS,
+            component::HEADS,
+            component::MAIN,
+            component::MASTER
+        ),
+        (refs, heads, main, master.next().unwrap())
+    )
 }
 
 #[test]
