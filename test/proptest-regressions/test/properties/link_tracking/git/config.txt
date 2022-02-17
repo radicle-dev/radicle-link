@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc b2893eacd65960c6d4b741e1a3ac06e57433a90e03d4b738f393e35cab14a908 # shrinks to ty = TypeName(TypeName("a")), id = ObjectId(ObjectId(8064c7c4f339b78183caa8beb55b1a2d7a9d4a27)), policy = Allow, pattern = Objects({ObjectId(ObjectId(08607ebf1da219393ef97e0827ef0fb5920ba554))})
+cc 277756dc82baecfc1fb42875e31117126519b182108027517f73eae067959900 # shrinks to ty = TypeName(TypeName("0")), id = ObjectId(ObjectId(8064c7c4f339b78183caa8beb55b1a2d7a9d4a27)), policy = Deny
+cc 9a4e50b04047bae9a92be25fdac75da46cc2d3629179e3f27d361e0633f3c399 # shrinks to ty = TypeName(TypeName("a")), id = ObjectId(ObjectId(8064c7c4f339b78183caa8beb55b1a2d7a9d4a27)), policy = Deny

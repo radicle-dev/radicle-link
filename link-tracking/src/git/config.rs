@@ -5,15 +5,73 @@
 
 use std::convert::TryFrom;
 
+use git_ref_format::{self as refs, Qualified, RefStr, RefString};
 use link_canonical::{
     json::{ToCjson, Value},
     Canonical,
     Cstring,
 };
 
-use crate::config;
+use crate::config::{
+    self,
+    cobs::{self, Policy},
+};
+
+pub const DATA_REFS: [refs::Component; 3] = [
+    refs::component::HEADS,
+    refs::component::TAGS,
+    refs::component::NOTES,
+];
 
 pub type Config = config::Config<TypeName, ObjectId>;
+
+impl Config {
+    /// Evaluate a [`Qualified`] refname against this [`Config`], determining
+    /// the [`Policy`] applicable to it.
+    ///
+    /// The evaluation rules are described in [RFC0699].
+    ///
+    /// [RFC0699]: https://github.com/radicle-dev/radicle-link/blob/ca4f1856b29fa5d2b469c4f7db33ac81fdec2458/docs/rfc/0699-tracking-storage.adoc
+    pub fn policy_for(&self, refname: &Qualified) -> Policy {
+        match refname.non_empty_components() {
+            (_refs, cobs, ty, mut tail) if refs::name::COBS == cobs.as_ref() => {
+                let ty = TypeName::try_from(&ty).ok();
+                let id = tail.next().and_then(|id| ObjectId::try_from(&id).ok());
+                if tail.next().is_some() {
+                    return Policy::Deny;
+                }
+
+                match (ty, id) {
+                    (Some(ty), Some(id)) => match self.cobs.get(ty) {
+                        None => match self.cobs.wildcard() {
+                            // Default is allow
+                            None => Policy::Allow,
+                            // Ignore pattern, as that is rather confusing
+                            Some(cobs::Filter { policy, .. }) => *policy,
+                        },
+                        Some(cobs::Filter { policy, pattern }) => {
+                            if pattern.matches(&id) {
+                                *policy
+                            } else {
+                                policy.inverse()
+                            }
+                        },
+                    },
+                    _ => Policy::Deny,
+                }
+            },
+
+            (_refs, cat, _, _) => {
+                let cat: &RefStr = cat.as_ref();
+                if self.data && DATA_REFS.iter().any(|allowed| allowed.as_ref() == cat) {
+                    Policy::Allow
+                } else {
+                    Policy::Deny
+                }
+            },
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeName(pub cob::TypeName);
@@ -28,7 +86,15 @@ impl TryFrom<Cstring> for TypeName {
     type Error = cob::error::TypeNameParse;
 
     fn try_from(ty: Cstring) -> Result<Self, Self::Error> {
-        ty.as_str().parse().map(TypeName)
+        ty.as_str().parse().map(Self)
+    }
+}
+
+impl TryFrom<&refs::Component<'_>> for TypeName {
+    type Error = cob::error::TypeNameParse;
+
+    fn try_from(ty: &refs::Component) -> Result<Self, Self::Error> {
+        ty.as_str().parse().map(Self)
     }
 }
 
@@ -47,6 +113,16 @@ impl From<&TypeName> for Value {
 impl From<TypeName> for Value {
     fn from(ty: TypeName) -> Self {
         Value::String(Cstring::from(ty))
+    }
+}
+
+impl From<&TypeName> for refs::Component<'_> {
+    fn from(ty: &TypeName) -> Self {
+        refs::Component::from_refstring(
+            RefString::try_from(ty.0.to_string())
+                .expect("`cobs::TypeName` should be a valid ref string"),
+        )
+        .expect("`cobs::TypeName` should be a valid ref component")
     }
 }
 
@@ -85,6 +161,16 @@ impl From<ObjectId> for Value {
     }
 }
 
+impl From<&ObjectId> for refs::Component<'_> {
+    fn from(id: &ObjectId) -> Self {
+        refs::Component::from_refstring(
+            RefString::try_from(id.0.to_string())
+                .expect("`cobs::ObjectId` should be a valid ref string"),
+        )
+        .expect("`cobs::ObjectId` should be a valid ref component")
+    }
+}
+
 impl TryFrom<Value> for ObjectId {
     type Error = error::Object;
 
@@ -103,7 +189,15 @@ impl TryFrom<Cstring> for ObjectId {
     type Error = error::Object;
 
     fn try_from(id: Cstring) -> Result<Self, Self::Error> {
-        Ok(id.as_str().parse().map(ObjectId)?)
+        Ok(id.as_str().parse().map(Self)?)
+    }
+}
+
+impl TryFrom<&refs::Component<'_>> for ObjectId {
+    type Error = error::Object;
+
+    fn try_from(c: &refs::Component) -> Result<Self, Self::Error> {
+        Ok(c.as_str().parse().map(Self)?)
     }
 }
 
