@@ -5,13 +5,15 @@
 
 use std::convert::TryFrom as _;
 
-pub mod check;
-
 mod iter;
 pub use iter::{ReferenceNames, References};
 
 pub mod name;
 pub use name::{OneLevel, Qualified, RefLike, RefspecPattern};
+
+pub mod check {
+    pub use git_ref_format::{check_ref_format as ref_format, Error, Options};
+}
 
 pub fn peeled(head: git2::Reference) -> Option<(String, git2::Oid)> {
     head.name()

@@ -3,8 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use radicle_git_ext::{Oid, RefspecPattern};
-
+use git_ref_format::refspec;
+use radicle_git_ext::Oid;
 use thiserror::Error;
 
 use super::RefName;
@@ -94,25 +94,25 @@ pub enum Untrack {
 pub enum UntrackAll {
     #[error("failed to get entries for `{spec}` during untrack all")]
     References {
-        spec: RefspecPattern,
+        spec: refspec::PatternString,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
     #[error("failed to unpack a reference for `{spec}` during untrack all")]
     Iter {
-        spec: RefspecPattern,
+        spec: refspec::PatternString,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
     #[error("failed to remove configurations for `{spec}` during untrack all")]
     Delete {
-        spec: RefspecPattern,
+        spec: refspec::PatternString,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
     #[error("failed to prune branches related to `{spec}` during untrack all")]
     Prune {
-        spec: RefspecPattern,
+        spec: refspec::PatternString,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
@@ -129,13 +129,13 @@ pub enum Tracked {
     },
     #[error("failed to unpack a reference entry while getting tracked entries for `{spec}`")]
     Iter {
-        spec: RefspecPattern,
+        spec: refspec::PatternString,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
     #[error("failed getting tracked entries for `{spec}`")]
     References {
-        spec: RefspecPattern,
+        spec: refspec::PatternString,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
@@ -145,13 +145,13 @@ pub enum Tracked {
 pub enum TrackedPeers {
     #[error("failed to unpack a reference entry while getting tracked entries for `{spec}`")]
     Iter {
-        spec: RefspecPattern,
+        spec: refspec::PatternString,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
     #[error("failed getting tracked entries for `{spec}`")]
     References {
-        spec: RefspecPattern,
+        spec: refspec::PatternString,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
@@ -188,13 +188,13 @@ pub enum IsTracked {
 pub enum DefaultOnly {
     #[error("failed to unpack a reference entry while getting tracked entries for `{spec}`")]
     Iter {
-        spec: RefspecPattern,
+        spec: refspec::PatternString,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
     #[error("failed getting tracked entries for `{spec}`")]
     References {
-        spec: RefspecPattern,
+        spec: refspec::PatternString,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },

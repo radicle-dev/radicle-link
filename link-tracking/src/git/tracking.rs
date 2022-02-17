@@ -3,13 +3,14 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeMap, convert::TryFrom, marker::PhantomData};
+use std::{collections::BTreeMap, marker::PhantomData};
 
 use tracing::warn;
 
+use git_ref_format::{refspec, Component};
 use link_crypto::PeerId;
 use link_identities::urn::Urn;
-use radicle_git_ext::{Oid, RefLike, RefspecPattern};
+use radicle_git_ext::Oid;
 
 use crate::tracking;
 
@@ -397,12 +398,9 @@ pub fn untrack_all<'a, Db>(
 where
     Db: refdb::Read<'a, Oid = Oid> + refdb::Write<Oid = Oid> + refdb::Prune<Oid = Oid>,
 {
-    let prefix = reflike!("refs/rad/remotes");
-    let namespace =
-        RefLike::try_from(urn.encode_id()).expect("namespace should be valid ref component");
-    let spec = prefix
-        .join(namespace)
-        .with_pattern_suffix(refspec_pattern!("*"));
+    let spec = reference::base()
+        .and(Component::from(urn))
+        .with_pattern(refspec::STAR);
     let updates = {
         let refs = db
             .references(&spec)
@@ -467,7 +465,7 @@ where
 pub struct TrackedEntries<'a, Db, R> {
     db: &'a Db,
     // for error reporting
-    spec: RefspecPattern,
+    spec: refspec::PatternString,
     seen: BTreeMap<Oid, Config>,
     iter: R,
 }
@@ -548,7 +546,7 @@ where
 /// Iterator of tracked [`PeerId`]s.
 pub struct TrackedPeers<'a, R, E> {
     // for error reporting
-    spec: RefspecPattern,
+    spec: refspec::PatternString,
     iter: R,
     _marker: PhantomData<&'a E>,
 }
@@ -700,15 +698,13 @@ fn from_reference(name: &RefName<'_, Oid>, config: Config) -> Tracked {
     }
 }
 
-fn remotes_refspec(filter_by: Option<&Urn<Oid>>) -> RefspecPattern {
+fn remotes_refspec(filter_by: Option<&Urn<Oid>>) -> refspec::PatternString {
     let base = reference::base();
     match filter_by {
         Some(urn) => {
-            let namespace = RefLike::try_from(urn.encode_id())
-                .expect("namespace should be valid ref component");
-            base.join(namespace)
-                .with_pattern_suffix(refspec_pattern!("*"))
+            let namespace = Component::from(urn);
+            base.and(namespace).with_pattern(refspec::STAR)
         },
-        None => base.with_pattern_suffix(refspec_pattern!("*")),
+        None => base.with_pattern(refspec::STAR),
     }
 }

@@ -5,14 +5,13 @@
 
 use std::{borrow::Cow, convert::TryFrom, fmt, str::FromStr};
 
-use multihash::Multihash;
-
+use git_ref_format::{refname, Component, RefStr, RefString};
 use link_crypto::{peer, PeerId};
 use link_identities::urn::{HasProtocol, Urn};
-use radicle_git_ext::RefLike;
+use multihash::Multihash;
 
-pub fn base() -> RefLike {
-    reflike!("refs/rad/remotes")
+pub fn base() -> RefString {
+    refname!("refs/rad/remotes")
 }
 
 /// The remote component of a tracking reference.
@@ -68,11 +67,11 @@ impl Default for Remote {
     }
 }
 
-impl From<&Remote> for RefLike {
+impl From<&Remote> for RefString {
     fn from(remote: &Remote) -> Self {
         match remote {
-            Remote::Default => reflike!("default"),
-            Remote::Peer(peer) => RefLike::from(peer),
+            Remote::Default => refname!("default"),
+            Remote::Peer(peer) => Component::from(peer).into_inner().into_owned(),
         }
     }
 }
@@ -108,7 +107,7 @@ impl<'a, R: ToOwned + Clone> RefName<'a, R> {
         }
     }
 
-    pub fn into_owned(self) -> RefName<'static, R> {
+    pub fn into_owned<'b>(self) -> RefName<'b, R> {
         let urn = self.urn.into_owned();
         RefName {
             remote: self.remote,
@@ -117,16 +116,15 @@ impl<'a, R: ToOwned + Clone> RefName<'a, R> {
     }
 }
 
-impl<'a, R> From<&'a RefName<'a, R>> for RefLike
+impl<'a, R> From<&'a RefName<'a, R>> for RefString
 where
     R: HasProtocol + ToOwned + Clone,
     &'a R: Into<Multihash>,
 {
     fn from(r: &'a RefName<'a, R>) -> Self {
-        let namespace: String = r.urn.encode_id();
-        let namespace =
-            RefLike::try_from(namespace).expect("namespace should be valid ref component");
-        base().join(namespace).join(&r.remote)
+        let namespace = Component::from(r.urn.as_ref());
+        let remote = RefString::from(&r.remote);
+        base().and(namespace).and(remote)
     }
 }
 
@@ -139,16 +137,20 @@ pub mod error {
     pub enum Parse {
         #[error("expected prefix `refs/rad/remotes`")]
         WrongPrefix,
+        #[error("unexpected suffix")]
+        Extra,
         #[error("missing path component `{0}`")]
         MissingComponent(&'static str),
         #[error(transparent)]
         Peer(#[from] peer::conversion::Error),
         #[error(transparent)]
         Urn(Box<dyn std::error::Error + Send + Sync + 'static>),
+        #[error("invalid ref string")]
+        NotARef(#[from] git_ref_format::Error),
     }
 }
 
-impl<'a, R> FromStr for RefName<'a, R>
+impl<R> FromStr for RefName<'_, R>
 where
     R: TryFrom<Multihash> + ToOwned + Clone,
     R::Error: std::error::Error + Send + Sync + 'static,
@@ -156,27 +158,34 @@ where
     type Err = error::Parse;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let suffix = s
-            .strip_prefix("refs/rad/remotes/")
-            .ok_or(error::Parse::WrongPrefix)?;
+        use git_ref_format::name;
 
-        let mut components = suffix.split('/');
+        let rs = RefStr::try_from_str(s)?;
+        let q = rs.qualified().ok_or(error::Parse::WrongPrefix)?;
 
-        let urn = if let Some(urn) = components.next() {
-            Urn::try_from_id(urn).map_err(|e| error::Parse::Urn(e.into()))?
-        } else {
-            return Err(error::Parse::MissingComponent("<urn>"));
-        };
+        let (_refs, rad, remotes, mut tail) = q.non_empty_components();
+        if name::RAD != rad.as_ref() || name::REMOTES != remotes.as_ref() {
+            return Err(error::Parse::WrongPrefix);
+        }
 
-        let remote = if let Some(remote) = components.next() {
-            remote.parse()?
-        } else {
-            return Err(error::Parse::MissingComponent("(default | <peer>)"));
-        };
+        let urn: Urn<R> = tail
+            .next()
+            .ok_or(error::Parse::MissingComponent("<urn>"))
+            .and_then(|id| {
+                Urn::try_from_id(id.as_str()).map_err(|e| error::Parse::Urn(e.into()))
+            })?;
+        let remote: Remote = tail
+            .next()
+            .ok_or(error::Parse::MissingComponent("(default | <peer>)"))
+            .and_then(|x| x.as_str().parse().map_err(error::Parse::from))?;
+
+        if tail.next().is_some() {
+            return Err(error::Parse::Extra);
+        }
 
         Ok(Self {
             remote,
-            urn: Cow::Owned(urn),
+            urn: Cow::from(urn),
         })
     }
 }
@@ -187,11 +196,6 @@ where
     for<'b> &'b R: Into<Multihash>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "refs/rad/remotes/{}/{}",
-            self.urn.encode_id(),
-            self.remote
-        )
+        f.write_str(RefString::from(self).as_str())
     }
 }

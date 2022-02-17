@@ -3,9 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use git_ref_format::refspec;
 use link_crypto::PeerId;
 use link_identities::urn::Urn;
-use radicle_git_ext::RefspecPattern;
 
 use crate::git::tracking::reference::RefName;
 
@@ -40,7 +40,7 @@ pub trait Read<'a> {
     #[allow(clippy::type_complexity)]
     fn references(
         &'a self,
-        refspec: &RefspecPattern,
+        refspec: impl AsRef<refspec::PatternStr>,
     ) -> Result<Self::References, Self::ReferencesError>;
 }
 

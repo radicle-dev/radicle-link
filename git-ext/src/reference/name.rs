@@ -204,6 +204,27 @@ impl From<&RefLike> for RefLike {
     }
 }
 
+impl From<git_ref_format::RefString> for RefLike {
+    #[inline]
+    fn from(r: git_ref_format::RefString) -> Self {
+        Self(r.into())
+    }
+}
+
+impl From<&git_ref_format::RefString> for RefLike {
+    #[inline]
+    fn from(r: &git_ref_format::RefString) -> Self {
+        Self::from(r.as_refstr())
+    }
+}
+
+impl From<&git_ref_format::RefStr> for RefLike {
+    #[inline]
+    fn from(r: &git_ref_format::RefStr) -> Self {
+        Self(r.to_owned().into())
+    }
+}
+
 impl From<RefLike> for String {
     fn from(RefLike(path): RefLike) -> Self {
         path
@@ -598,6 +619,20 @@ impl From<Qualified> for RefspecPattern {
 impl From<&Qualified> for RefspecPattern {
     fn from(Qualified(path): &Qualified) -> Self {
         Self(path.to_owned())
+    }
+}
+
+impl From<git_ref_format::refspec::PatternString> for RefspecPattern {
+    #[inline]
+    fn from(r: git_ref_format::refspec::PatternString) -> Self {
+        Self(r.into())
+    }
+}
+
+impl From<&git_ref_format::refspec::PatternStr> for RefspecPattern {
+    #[inline]
+    fn from(r: &git_ref_format::refspec::PatternStr) -> Self {
+        Self(r.to_owned().into())
     }
 }
 

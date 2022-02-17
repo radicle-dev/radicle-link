@@ -248,6 +248,21 @@ where
     }
 }
 
+#[cfg(feature = "git-ref-format")]
+impl<'a, R> From<&'a Urn<R>> for git_ref_format::Component<'_>
+where
+    R: HasProtocol,
+    &'a R: Into<Multihash>,
+{
+    #[inline]
+    fn from(urn: &'a Urn<R>) -> Self {
+        use git_ref_format::RefString;
+
+        let rs = RefString::try_from(urn.encode_id()).expect("urn id is a valid ref string");
+        Self::from_refstring(rs).expect("urn id is a valid ref component")
+    }
+}
+
 impl<R> Display for Urn<R>
 where
     R: HasProtocol,

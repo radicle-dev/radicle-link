@@ -11,6 +11,10 @@ multihash = "0.11"
 thiserror = "1.0"
 tracing = "0.1"
 
+[dependencies.git-ref-format]
+path = "../git-ref-format"
+features = ["macro"]
+
 [dependencies.link-canonical]
 path = "../link-canonical"
 features = [ "derive" ]
@@ -20,12 +24,11 @@ path = "../cob"
 
 [dependencies.link-crypto]
 path = "../link-crypto"
+features = ["git-ref-format"]
 
 [dependencies.link-identities]
 path = "../link-identities"
+features = ["git-ref-format"]
 
 [dependencies.radicle-git-ext]
 path = "../git-ext"
-
-[dependencies.radicle-macros]
-path = "../macros"

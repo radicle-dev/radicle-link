@@ -3,6 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use git_ext::reference::name::RefspecPattern;
+use git_ref_format::{refspec, RefString};
 use link_tracking::git::{
     refdb::{self, Applied, PreviousError, Prune, Pruned, PrunedRef, Read, Update, Updated, Write},
     tracking::reference::RefName,
@@ -146,7 +148,7 @@ impl<'a> Read<'a> for ReadOnly {
         &self,
         reference: &RefName<'_, Self::Oid>,
     ) -> Result<Option<Ref>, Self::FindError> {
-        let gref = self.reference(&ext::RefLike::from(reference))?;
+        let gref = self.reference(&RefString::from(reference))?;
         Ok(gref
             .map(|gref| {
                 let target = gref.target().map(ext::Oid::from).ok_or(error::SymbolicRef);
@@ -160,9 +162,9 @@ impl<'a> Read<'a> for ReadOnly {
 
     fn references(
         &'a self,
-        spec: &ext::RefspecPattern,
+        spec: impl AsRef<refspec::PatternStr>,
     ) -> Result<Self::References, Self::ReferencesError> {
-        let references = ReadOnlyStorage::references(self, spec)?;
+        let references = ReadOnlyStorage::references(self, &RefspecPattern::from(spec.as_ref()))?;
         Ok(References { inner: references })
     }
 }
@@ -184,7 +186,7 @@ impl<'a> Read<'a> for Storage {
 
     fn references(
         &'a self,
-        spec: &ext::RefspecPattern,
+        spec: impl AsRef<refspec::PatternStr>,
     ) -> Result<Self::References, Self::ReferencesError> {
         Read::references(self.read_only(), spec)
     }
@@ -229,7 +231,7 @@ impl Write for Storage {
                                 source: err,
                             })
                     };
-                    match self.reference(&name)? {
+                    match self.reference(&RefString::from(&name))? {
                         Some(r) => reject_or_update(
                             previous
                                 .guard(r.target().map(ext::Oid::from).as_ref(), set)?
@@ -254,7 +256,7 @@ impl Write for Storage {
                             source: err,
                         })
                     };
-                    match self.reference(&name)? {
+                    match self.reference(&RefString::from(&name))? {
                         Some(r) => reject_or_update(
                             previous
                                 .guard(r.target().map(ext::Oid::from).as_ref(), delete)?
