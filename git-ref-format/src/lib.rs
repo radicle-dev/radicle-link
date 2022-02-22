@@ -126,6 +126,7 @@ pub use git_ref_format_core::PercentEncode;
 pub use git_ref_format_core::{
     check_ref_format,
     lit,
+    name::component,
     Component,
     DuplicateGlob,
     Error,

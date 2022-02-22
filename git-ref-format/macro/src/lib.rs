@@ -66,7 +66,7 @@ pub fn component(input: TokenStream) -> TokenStream {
                     let expand = quote! {
                         unsafe {
                             use ::std::{borrow::Cow, mem::transmute};
-                            use ::git_ref_format::{Component, RefString};
+                            use ::git_ref_format::{Component, RefStr, RefString};
 
                             let inner: RefString = transmute(#safe.to_owned());
                             let cow: Cow<'static, RefStr> = Cow::Owned(inner);

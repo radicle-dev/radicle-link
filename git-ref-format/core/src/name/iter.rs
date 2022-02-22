@@ -130,3 +130,33 @@ impl Display for Component<'_> {
         f.write_str(self.0.as_str())
     }
 }
+
+pub mod component {
+    use super::Component;
+    use crate::name;
+    use std::borrow::Cow;
+
+    pub const HEADS: Component = Component(Cow::Borrowed(name::HEADS));
+    pub const MAIN: Component = Component(Cow::Borrowed(name::MAIN));
+    pub const MASTER: Component = Component(Cow::Borrowed(name::MASTER));
+    pub const NAMESPACES: Component = Component(Cow::Borrowed(name::NAMESPACES));
+    pub const NOTES: Component = Component(Cow::Borrowed(name::NOTES));
+    pub const ORIGIN: Component = Component(Cow::Borrowed(name::ORIGIN));
+    pub const REFS: Component = Component(Cow::Borrowed(name::REFS));
+    pub const REMOTES: Component = Component(Cow::Borrowed(name::REMOTES));
+    pub const TAGS: Component = Component(Cow::Borrowed(name::TAGS));
+
+    #[cfg(feature = "link-literals")]
+    mod link {
+        use super::*;
+
+        pub const RAD: Component = Component(Cow::Borrowed(name::RAD));
+        pub const ID: Component = Component(Cow::Borrowed(name::ID));
+        pub const IDS: Component = Component(Cow::Borrowed(name::IDS));
+        pub const SELF: Component = Component(Cow::Borrowed(name::SELF));
+        pub const SIGNED_REFS: Component = Component(Cow::Borrowed(name::SIGNED_REFS));
+        pub const COBS: Component = Component(Cow::Borrowed(name::COBS));
+    }
+    #[cfg(feature = "link-literals")]
+    pub use link::*;
+}

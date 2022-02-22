@@ -7,7 +7,7 @@ use std::{
     borrow::{Borrow, Cow},
     convert::TryFrom,
     fmt::{self, Display},
-    iter::FromIterator,
+    iter::{Extend, FromIterator},
     ops::Deref,
 };
 
@@ -19,7 +19,7 @@ use crate::{
 };
 
 mod iter;
-pub use iter::{Component, Components, Iter};
+pub use iter::{component, Component, Components, Iter};
 
 #[cfg(feature = "percent-encoding")]
 pub use percent_encoding::PercentEncode;
@@ -487,36 +487,36 @@ impl Display for RefString {
     }
 }
 
-impl<'a> FromIterator<&'a RefStr> for RefString {
+impl<A> FromIterator<A> for RefString
+where
+    A: AsRef<RefStr>,
+{
     fn from_iter<T>(iter: T) -> Self
     where
-        T: IntoIterator<Item = &'a RefStr>,
+        T: IntoIterator<Item = A>,
     {
         let mut buf = String::new();
-        for x in iter {
-            buf.push_str(x);
+        for c in iter {
+            buf.push_str(c.as_ref().as_str());
             buf.push('/');
         }
-        buf.truncate(buf.len() - 1);
         assert!(!buf.is_empty(), "empty iterator");
+        buf.truncate(buf.len() - 1);
 
         Self(buf)
     }
 }
 
-impl<'a> FromIterator<Component<'a>> for RefString {
-    fn from_iter<T>(iter: T) -> Self
+impl<A> Extend<A> for RefString
+where
+    A: AsRef<RefStr>,
+{
+    fn extend<T>(&mut self, iter: T)
     where
-        T: IntoIterator<Item = Component<'a>>,
+        T: IntoIterator<Item = A>,
     {
-        let mut buf = String::new();
-        for c in iter {
-            buf.push_str(c.as_str());
-            buf.push('/');
+        for x in iter {
+            self.push(x)
         }
-        assert!(!buf.is_empty(), "empty iterator");
-        buf.truncate(buf.len() - 1);
-
-        Self(buf)
     }
 }
