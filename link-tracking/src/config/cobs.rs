@@ -52,10 +52,28 @@ pub enum Pattern<ObjectId> {
     Objects(BTreeSet<ObjectId>),
 }
 
+impl<ObjectId: Ord> Pattern<ObjectId> {
+    pub fn matches(&self, oid: &ObjectId) -> bool {
+        match self {
+            Self::Wildcard => true,
+            Self::Objects(objs) => objs.contains(oid),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Policy {
     Allow,
     Deny,
+}
+
+impl Policy {
+    pub fn inverse(&self) -> Self {
+        match self {
+            Self::Allow => Self::Deny,
+            Self::Deny => Self::Allow,
+        }
+    }
 }
 
 impl<Ty: Ord, Id: Ord> Cobs<Ty, Id> {
@@ -92,6 +110,18 @@ impl<Ty: Ord, Id: Ord> Cobs<Ty, Id> {
     /// Create an empty `Cobs` filter.
     pub fn empty() -> Self {
         Self(BTreeMap::default())
+    }
+
+    /// Retrieve the [`Filter`] which applies to the given type name, or `None`
+    /// if no filter is registered for this type name.
+    pub fn get(&self, ty: Ty) -> Option<&Filter<Id>> {
+        self.0.get(&TypeName::Type(ty))
+    }
+
+    /// Retrieve the [`Filter`] matching the default (wildcard) entry, or `None`
+    /// if no wildcard entry is registered.
+    pub fn wildcard(&self) -> Option<&Filter<Id>> {
+        self.0.get(&TypeName::Wildcard)
     }
 
     /// Insert the given `typename` and `filter`. If the entry already existed,
