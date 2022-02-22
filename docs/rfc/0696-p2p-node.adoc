@@ -56,20 +56,30 @@ A subroutine acts as a reactor driving a protocol by feeding inputs - usually
 results of effects (i/o, timers, etc.) - to it and capturing the outputs to
 schedule new effects (i/o, timers, etc.).
 
-==== Public API
+==== Public RPC API
 
 For other processes to be able to talk to the node, it SHALL keep an API
 subroutine running, which offers introspection into its state. See the dedicated
 section for the surface the node will expose.
 
+==== Event API
+
+Other processes may be interested in events that occur as the node is running
+(for example, that new changes for a tracked identity have been discovered). The
+p2p node exposes a read only feed of such events on a local socket.
+
 ==== Announcements
 
 Until superseded by <<pr-653, graftier ways>>, currently the main means of
-dissemination is through gossiping new interesting `Have`s. This is achieved by
-maintainig a persisted view on the list of identities and their current refs.
-During periodic runs a delta is created which serves as the basis of the
-announcements. In turn that list is made known to actively connected peers via
-the core protocols gossip.
+dissemination is through gossiping new interesting `Have`s. When exactly these
+announcements should occur is still subject to experimentation. To avoid
+coupling these experiments to the p2p node implementation the p2p node exposes
+an RPC method which causes the node to announce new changes.
+
+Additionally the node SHALL maintain a persisted view on the list of identities
+and their current refs. During periodic runs a delta is created which serves as
+the basis of the announcements. In turn, that list is made known to actively
+connected peers via the core protocol's gossip.
 
 The delta mechanism works by recording a snapshot of the state of the monorepo,
 specifically the refs, and on the next iteration diffing against the current
@@ -79,15 +89,11 @@ periodic tasks.
 ==== Replication Requests
 
 The core protocol implicitly tracks projects after replication, and explicitly
-with the `track` operation for remotes in the context of a `Urn`. To enable the
-same approach as for announcements where offline changes to the storage can be
-picked up at any point the node is running and online, this subroutine will
-maintain a persisted view and periodically (potentially provoked by a request
-over the <<API>>) build the delta for new tracked `Urn`s and remotes in their
-context.
-
-Note: A blocking issue for that is
-https://github.com/radicle-dev/radicle-link/issues/141[#141]
+with the `track` operation for remotes in the context of a `Urn`. To enable
+changes to the storage to be picked up at any point the node is running and
+online, this subroutine will maintain a persisted view and periodically
+(potentially provoked by a request over the <<API>>) build the delta for new
+tracked `Urn`s and remotes in their context.
 
 ==== Tracking
 
@@ -99,13 +105,29 @@ strategy is currently in use in the seed node and SHALL be preserved.
 
 === IPC
 
-All communication with daemon processes SHALL occur over UNIX domain sockets in
-`SOCK_STREAM` mode. The socket files MUST be stored in a directory only
-accessible by the logged-in user (typically `$XDG_RUNTIME_DIR`), and have
-permissions `0700` by default. Per-service socket paths are considered "well
-known".
+[#socket-locations]
+==== Socket Locations
 
-RPC calls over those sockets use <<cbor, CBOR>> for their payload encoding. As
+All communication with daemon processes SHALL occur over UNIX domain sockets in
+`SOCK_STREAM` mode. Peer to peer nodes MAY provide configuration options to
+specify where the RPC sockets should be created. If started without
+configuration peer to peer nodes MUST create sockets in the following
+directory:
+
+* macos:: `/tmp`
+* linux:: `$XDG_RUNTIME_DIR` or `/tmp` if `$XDG_RUNTIME_DIR` is not defined
+* windows:: Wherever https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-gettemppatha[`GetTempPathA`] returns
+
+In this directory a peer to peer node MUST create the following sockets
+
+* `link-peer-<peer id>-rpc.socket`:: The RPC socket
+* `link-peer-<peer id>-events.socket`:: The event API socket
+
+Where `peer id` is the default base32-z encoding of the peer ID.
+
+==== Wire format
+
+RPC calls over these sockets use <<cbor, CBOR>> for their payload encoding. As
 incremental decoders are not available on all platforms, CBOR-encoded messages
 shall be prepended by their length in bytes, encoded as a 32-bit unsigned
 integer in network byte order.
@@ -113,99 +135,120 @@ integer in network byte order.
 RPC messages are wrapped in either a `request` or `response` envelope structure
 as defined below:
 
-_Verbatim copy from <<rfc-0682, RFC 0682>> to contextualise the payloads below_
-
 [source,cddl]
 ----
 request = [
     request-headers,
     ? payload: bstr,
 ]
-response = ok / error
-ok = [
+response = [
     response-headers,
     ? payload: bstr,
 ]
-error = [
-    response-headers,
-    code: uint,
-    ? message: tstr,
-]
-request-headers = {
+request-headers = [
     ua: client-id,
-    rq: request-id,
+    kind: request-kind,
+    request-mode: request-mode,
     ? token: token,
-}
-response-headers = {
+]
+response-headers = [
     rq: request-id,
-}
+    kind: response-kind
+]
+request-kind = &(
+    announce: 1, 
+    get-connected-peers: 2,
+    get-membership-info: 3,
+    get-stats: 4,
+)
+request-mode = &(
+    fire-and-forget: 1,
+    report-progress: 2,
+)
+response-kind = &(
+    ack: 1,
+    success: 2,
+    error: 3,
+    progress: 4,
+)
 ; Unambiguous, human-readable string identifying the client application. Mainly
 ; for diagnostic purposes. Example: "radicle-link-cli/v1.2+deaf"
 client-id: tstr .size (4..16)
-; Request identifier, choosen by the client. The responder includes the
-; client-supplied value in the response, enabling request pipelining.
-;
-; Note that streaming / multi-valued responses may include the same id in
-; several response messages.
+; Request identifier, chosen by the server.  Note that streaming /
+; multi-valued responses may include the same id in several response messages.
 request-id: bstr .size (4..16)
-
 ; Placeholder for future one-time-token support.
 token: bstr
-----
 
-
-=== Request/Response payloads
-
-There is a supported set of requests a daemon will answer to which are as follows:
-
-[source,cddl]
-----
-request = get-connected-peers / get-membership-info / get-stats
-get-connected-peers = [0]
-get-membership-info = [1]
-get-stats = [2]
-
-response = connected-peers / membership-info / stats
-connected-peers = [* peer-id]
-membership-info = {
-  active: [* peer-id],
-  passive: [* peer-id],
-}
-stats = {
-  "connections-total": uint,
-  "membership-active": uint,
-  "membership-passive": uint,
-  * tstr => any
-}
-
-connect-info = [
-  peer_id,
-  [address],
-]
-
-address = address-ipv4 / address-ipv6
-address-ipv4 = [
-  ip4,
-  port,
-]
-address-ipv6 = [
-  ip6,
-  port,
-]
-
-ip4 = bstr .size 4
-ip6 = bstr .size 16
-
-; Canonical representation of a peer.
+; Canonical representation of a peer. Not used here but referenced in the
+; payload specifications for different response kinds
 peer-id: bstr
-
-; Network port.
-port: uint
 ----
 
 All types representing requests and responses and their serialisation logic MUST
 be exposed as linkable libraries. It is RECOMMENDED to also expose the
 functionality to communicate with the node via IPC as a library.
+
+
+==== Interaction
+
+Clients MUST wait for a message with an `ack` response kind after sending each
+message and before sending the next message. The `request-id` in the headers of
+the `ack` response will be used by the server to send any further responses to
+the same request.
+
+If the `request-mode` header is set to `fire-and-forget` then the server will
+only return an `ack` response. If the header is set to `report-progress` then
+the server MAY send response messages with response-kind `progress` during the
+processing of the request and MUST send a message with either a `success` or
+`error` response kind when the request is finished processing. Once a `success`
+or `error` response has been sent the server MUST NOT send any further messages
+with the same `request-id` header. The payload of the response messages will
+vary depending on the `request-kind`. 
+
+Response messages for concurrent requests may be sent in any order.
+
+For messages with request kind `progress` or `error` the message payload is
+always a `tstr` containing a human readable description of the respective
+progress or error.
+
+
+=== Request/Response payloads
+
+Each `request-kind` header implies a different possible `success` payload.
+
+==== `announce`
+
+The success payload is empty
+
+==== `get-connected-peers`
+
+[source,cddl]
+----
+payload = [* peer-id]
+----
+
+==== `get-membership-info`
+
+[source,cddl]
+----
+payload = -info = {
+  active: [* peer-id],
+  passive: [* peer-id],
+}
+----
+
+==== `get-stats`
+
+[source,cddl]
+----
+payload = {
+  "connections-total": uint,
+  "membership-active": uint,
+  "membership-passive": uint,
+  * tstr => any
+}
+----
 
 == Operations
 
@@ -218,14 +261,7 @@ SHALL be equipped with the ability to detect and read the information from its
 environment necessary to determine if it has been activated via socket. When
 binding to a socket it SHALL use the file descriptors provided by the init
 process. If none are provided it SHALL assume long-running operation and SHALL
-bind to the well-known path on a UNIX domain socket in mode `SOCK_STREAM` under
-Linux:
-
-  $XDG_RUNTIME_DIR/radicle/<srv>-<peer-id>.sock
-
-macOS:
-
-  $TMPDIR/radicle/<srv>-<peer-id>.sock
+bind to the well-known path defined in <<socket-locations>>
 
 Both service managers offer support to fullfil the legacy `inetd` interface.
 Which is deemed insufficient for concerns over security, lack of support for
