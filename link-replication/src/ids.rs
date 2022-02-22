@@ -11,6 +11,12 @@ use radicle_data::NonEmpty;
 
 use crate::{error, refs, Error, LocalPeer, Refdb};
 
+pub trait AnyIdentity {
+    type Oid: AsRef<oid>;
+
+    fn content_id(&self) -> Self::Oid;
+}
+
 pub trait VerifiedIdentity: Sized {
     type Rev: Eq;
     type Oid: AsRef<oid>;
@@ -40,12 +46,18 @@ pub trait Identities {
     type Urn: Urn;
     type Oid: AsRef<oid>;
 
+    type UnverifiedIdentity: AnyIdentity<Oid = Self::Oid>;
     type VerifiedIdentity: VerifiedIdentity<Oid = Self::Oid, Urn = Self::Urn>
         + Debug
         + Send
         + Sync
         + 'static;
+
+    type LookupError: std::error::Error + Send + Sync + 'static;
     type VerificationError: std::error::Error + Send + Sync + 'static;
+
+    /// Get a verified identity by URN.
+    fn get(&self, urn: &Self::Urn) -> Result<Option<Self::UnverifiedIdentity>, Self::LookupError>;
 
     /// Verify the identity history with tip `head`.
     fn verify<H, F, T>(

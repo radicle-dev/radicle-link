@@ -19,6 +19,7 @@ use link_replication::{
     namespace,
     oid,
     refs,
+    AnyIdentity,
     Applied,
     FilteredRef,
     Identities,
@@ -161,6 +162,16 @@ impl<'a> Context<'a> {
     }
 }
 
+pub struct SomeUnverifiedIdentity(SomeIdentity);
+
+impl AnyIdentity for SomeUnverifiedIdentity {
+    type Oid = ContentId;
+
+    fn content_id(&self) -> Self::Oid {
+        self.0.content_id()
+    }
+}
+
 #[derive(Debug)]
 pub enum SomeVerifiedIdentity {
     Person(VerifiedPerson),
@@ -280,8 +291,16 @@ impl Identities for Context<'_> {
     type Urn = Urn;
     type Oid = git_ext::Oid;
 
+    type UnverifiedIdentity = SomeUnverifiedIdentity;
     type VerifiedIdentity = SomeVerifiedIdentity;
+
+    type LookupError = git::identities::Error;
     type VerificationError = error::Verification;
+
+    fn get(&self, urn: &Self::Urn) -> Result<Option<Self::UnverifiedIdentity>, Self::LookupError> {
+        let id = git::identities::any::get(&self.store, urn)?;
+        Ok(id.map(SomeUnverifiedIdentity))
+    }
 
     fn verify<H, F, T>(
         &self,

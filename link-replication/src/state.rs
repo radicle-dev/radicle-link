@@ -314,8 +314,15 @@ where
     type Urn = U;
     type Oid = T::Oid;
 
+    type UnverifiedIdentity = T::UnverifiedIdentity;
     type VerifiedIdentity = T::VerifiedIdentity;
+
+    type LookupError = T::LookupError;
     type VerificationError = T::VerificationError;
+
+    fn get(&self, urn: &Self::Urn) -> Result<Option<Self::UnverifiedIdentity>, Self::LookupError> {
+        self.inner.get(urn)
+    }
 
     fn verify<H, F, V>(
         &self,

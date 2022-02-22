@@ -443,7 +443,9 @@ impl<D: Odb> Refdb<D> {
                                     force_create_reflog,
                                     message: "replicate: symbolic ref".into(),
                                 },
-                                expected: PreviousValue::MustNotExist,
+                                expected: src
+                                    .map(PreviousValue::MustExistAndMatch)
+                                    .unwrap_or(PreviousValue::MustNotExist),
                                 new: Target::Symbolic(dst_name),
                             },
                             name: src_name,
