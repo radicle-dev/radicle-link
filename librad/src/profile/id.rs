@@ -15,7 +15,7 @@ use std::{
 use thiserror::Error;
 use uuid::Uuid;
 
-use super::{RadHome, RAD_PROFILE};
+use super::{LnkHome, LNK_PROFILE};
 
 const ACTIVE: &str = "active_profile";
 
@@ -23,7 +23,7 @@ const ACTIVE: &str = "active_profile";
 pub enum Error {
     #[error("invalid profile ID while parsing: {id}")]
     FromStr { id: String },
-    #[error("invalid profile ID in RAD_PROFILE environment variable: {id}")]
+    #[error("invalid profile ID in LNK_PROFILE environment variable: {id}")]
     FromEnv { id: String },
     #[error("invalid profile ID loaded from {path}: {id}")]
     FromFile { id: String, path: PathBuf },
@@ -111,7 +111,7 @@ impl ProfileId {
     /// Read a `ProfileId` from the `PROFILE_ID` environment variable. The value
     /// must pass validation, as documented in [`ProfileId`].
     pub fn from_env() -> Result<Option<Self>, Error> {
-        env::var(RAD_PROFILE)
+        env::var(LNK_PROFILE)
             .ok()
             .map(|id| Self::valid(Validate::Env { id }))
             .transpose()
@@ -119,7 +119,7 @@ impl ProfileId {
 
     /// Read the `ProfileId` from a file or create the file and write a newly
     /// generated `ProfileId` to it.
-    pub fn load(home: &RadHome) -> Result<Self, Error> {
+    pub fn load(home: &LnkHome) -> Result<Self, Error> {
         match Self::active(home)? {
             Some(id) => Ok(id),
             None => {
@@ -138,7 +138,7 @@ impl ProfileId {
     ///
     /// The `ProfileId` is the first line of the file. If the file does not
     /// exist a new ID is generated and written to the file.
-    pub fn active(home: &RadHome) -> Result<Option<Self>, Error> {
+    pub fn active(home: &LnkHome) -> Result<Option<Self>, Error> {
         let active_path = home.config()?.join(ACTIVE);
 
         match fs::read_to_string(&active_path) {
@@ -160,7 +160,7 @@ impl ProfileId {
         }
     }
 
-    pub fn set_active(&self, home: &RadHome) -> Result<(), Error> {
+    pub fn set_active(&self, home: &LnkHome) -> Result<(), Error> {
         let path = home.config()?.join(ACTIVE);
         fs::write(path, &self.0)?;
         Ok(())

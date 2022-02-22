@@ -132,7 +132,7 @@
 
 ## Miscellanea
 
-* [ ] Integrate new tracking in `rad-identities`
+* [ ] Integrate new tracking in `lnk-identities`
 * [ ] Extract networking into crate
 * [ ] Extract storage into crate
 * [ ] Implement storage in terms of `link-git`

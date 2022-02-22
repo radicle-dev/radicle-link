@@ -1,0 +1,16 @@
+[package]
+name = "lnk-identities-dev"
+version = "0.1.0"
+authors = [ "Fintan Halpenny <fintan.halpenny@gmail.com>" ]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+anyhow = "1"
+structopt = "0.3"
+
+[dependencies.lnk-exe]
+path = "../../cli/lnk-exe"
+
+[dependencies.lnk-identities]
+path = "../../cli/lnk-identities"

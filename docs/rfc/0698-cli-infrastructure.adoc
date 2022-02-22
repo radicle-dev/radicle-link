@@ -43,7 +43,7 @@ The key words "`MUST`", "`MUST NOT`", "`REQUIRED`", "`SHALL`", "`SHALL NOT`",
 and <<RFC8174>> when, and only when, they appear in all capitals, as shown here.
 
 
-== One `rad` to Rule Them All
+== One `lnk` to Rule Them All
 
 [quote]
 -------
@@ -58,7 +58,7 @@ define the global parameters and how to extend it.
 
 We will discuss these in the following two sections.
 
-== The Fellowship of the `rad`
+== The Fellowship of the `lnk`
 
 [quote]
 --------
@@ -67,15 +67,15 @@ We will discuss these in the following two sections.
 -- J.R.R. Tolkien, The Return of the King
 
 To allow the ecosystem of commands to be extended by ourselves and
-others in the community it will be necessary to extend the `rad`
+others in the community it will be necessary to extend the `lnk`
 command with further subcommands. The details of this are outlined in
 <<arch-cli, RFC-682#CLI>>, however, we will give a quick overview here for the sake
 of the reader.
 
 Taking inspiration from tools such as `git` and `cargo`, we propose
-that the `rad` binary can be extended by placing another
+that the `lnk` binary can be extended by placing another
 binary on the users `$PATH` (or `%PATH%` on Windows). This
-binary MUST follow the naming convention of `rad-*`. To reiterate
+binary MUST follow the naming convention of `lnk-*`. To reiterate
 here, these new commands MUST NOT override the core set outlined here
 (nor in further RFCs).
 
@@ -83,32 +83,32 @@ here, these new commands MUST NOT override the core set outlined here
 
 Many subcommands will likely want to share a set of options. These
 options, dubbed as "global parameters" here, will be a defined set --
-exported from `radicle-link` for re-use -- that the base `rad` command
+exported from `radicle-link` for re-use -- that the base `lnk` command
 will always receive and pass onto the subcommand being called.
 
-These parameters will be prefixed by `rad-`, signfiying that they are
+These parameters will be prefixed by `lnk-`, signfiying that they are
 from the `radicle-link` namespace and are reserved names.
 
 Subcommands, including the <<Core>> subcommands, SHOULD accept these
 parameters as well. Exceptions can be made for commands that truly
-don't need these values, e.g. `rad-profile` will not need the
-`--rad-profile` option.
+don't need these values, e.g. `lnk-profile` will not need the
+`--lnk-profile` option.
 
 To illustrate the passing of the value to the subcommand, we will
-suppose a subcommand called `rad-issues`. The `--rad-profile`
+suppose a subcommand called `lnk-issues`. The `--lnk-profile`
 parameter can be used like the following:
 ```
-$ rad --rad-profile abc issues create ...
+$ lnk --lnk-profile abc issues create ...
 ```
 
 or:
 ```
-$ rad issues --rad-profile abc create
+$ lnk issues --lnk-profile abc create
 ```
 
 If the parameter is specified in both positions, i.e.
 ```
-$ rad --rad-profile abc issues --rad-profile def create
+$ lnk --lnk-profile abc issues --lnk-profile def create
 ```
 then the first will take precedence. The result of the above will be
 the profile `abc`.
@@ -116,10 +116,10 @@ the profile `abc`.
 Some parameters can also be specified by environment variables. The
 arguments passed to subcommands will be given by the environment
 variable, if and only if, the command line argument is not specified.
-For example, `$RAD_PROFILE` is used within `radicle-link`. If this is
-set without the use of `--rad-profile`, then the value is taken from
-`$RAD_PROFILE`. However, if `--rad-profile` is specified as well as
-`$RAD_PROFILE`, then the value of `--rad-profile` takes precedence.
+For example, `$LNK_PROFILE` is used within `radicle-link`. If this is
+set without the use of `--lnk-profile`, then the value is taken from
+`$LNK_PROFILE`. However, if `--lnk-profile` is specified as well as
+`$LNK_PROFILE`, then the value of `--lnk-profile` takes precedence.
 
 Other subcommands that are written in the target language (currently
 Rust) will be able to import a `struct` for reuse. If the subcommand
@@ -128,9 +128,9 @@ parameter list.
 
 We list these parameters here, but it is NOT an exhaustive list:
 
-* `rad-verbose`
-* `rad-quiet`
-* `rad-profile := active (default) | <profile-id>`
+* `lnk-verbose`
+* `lnk-quiet`
+* `lnk-profile := active (default) | <profile-id>`
 
 == CLI Events
 
@@ -168,7 +168,7 @@ implemented:
 
 . `ssh-agent` compatibility with `<<radicle-keystore>>`, which has been
 started in `<<rk-17, radicle-keystore#17>>`.
-. A subcommand `rad-profile-ssh-add` for adding one's secret key to the
+. A subcommand `lnk-profile-ssh-add` for adding one's secret key to the
 `ssh-agent` using the supplied constraints, e.g. ask for password.
 
 == Library/Command Organisation
@@ -230,9 +230,9 @@ core commands that we wish to include for the first iteration. More
 components MAY be added as the result of future RFCs. We SHALL keep a
 list of the core commands as part of the `radicle-link` documentation.
 
-=== `rad-identities`
+=== `lnk-identities`
 
-The `rad identities` subcommand provides the management of identity
+The `lnk identities` subcommand provides the management of identity
 documents and their metadata. It is further split into subcommands
 which we sketch out below:
 
@@ -246,12 +246,12 @@ which we sketch out below:
 * `local [ set | get | default ]` -- modify or retrieve a local identity
 * `tracking [ track | untrack | list ]` -- modify and list the tracking
   graph for a given identity.
-* `rad-refs [ self | signed | delegates | delegate ]` -- retrieve the
+* `lnk-refs [ self | signed | delegates | delegate ]` -- retrieve the
   blobs that live under `rad/<refname>`
 * `refs [ heads | notes | tags | category ]` -- list the reference names.
   under the respective category, where `category` is a user supplied category.
 
-=== `rad-replicate`
+=== `lnk-replicate`
 
 * `ask` -- tell the `daemon` that you wish to replicate the
   given URN. Pending <<rl-141, radicle-link#141>>.
@@ -261,7 +261,7 @@ which we sketch out below:
   attempt to replicate the identity. This requires the activation of
   the peer-to-peer daemon.
 
-=== `rad-profile`
+=== `lnk-profile`
 
 This command will provide the management of keys and the `Profile`
 construct in `librad`. The following actions will be defined:
@@ -274,7 +274,7 @@ construct in `librad`. The following actions will be defined:
 * `list`— list the available `Profile` identifiers.
 * `ssh-add`— add the current `Profile`'s key to the `ssh-agent`.
 
-=== `rad-daemon`
+=== `lnk-daemon`
 
 This command provides introspection into the peer-to-peer daemon.
 

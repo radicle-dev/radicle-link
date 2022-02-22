@@ -28,13 +28,13 @@ const PASSPHRASE: &str = "123";
 fn smoke() {
     logging::init();
 
-    let rad_dir = tempdir().unwrap();
-    let profile = Profile::from_root(rad_dir.path(), None).unwrap();
-    let rad_paths = profile.paths();
+    let lnk_dir = tempdir().unwrap();
+    let profile = Profile::from_root(lnk_dir.path(), None).unwrap();
+    let lnk_paths = profile.paths();
     let key = SecretKey::new();
 
-    let urn = setup_project(rad_paths, key.clone()).unwrap();
-    setup_keystore(rad_paths.keys_dir(), key).unwrap();
+    let urn = setup_project(lnk_paths, key.clone()).unwrap();
+    setup_keystore(lnk_paths.keys_dir(), key).unwrap();
     let path = setup_path().unwrap();
 
     // Push something to `urn`
@@ -46,7 +46,7 @@ fn smoke() {
             .args(&["push", "origin", "master"])
             .current_dir(repo_dir.path())
             .env("PATH", &path)
-            .env("RAD_HOME", rad_dir.path())
+            .env("LNK_HOME", lnk_dir.path())
             .env("GIT_DIR", repo_dir.path().join(".git"))
             .envs(env::vars().filter(|(key, _)| key.starts_with("GIT_TRACE")))
             .spawn()
@@ -66,7 +66,7 @@ fn smoke() {
             .arg(LocalUrl::from(urn).to_string())
             .arg(repo_dir.path())
             .env("PATH", &path)
-            .env("RAD_HOME", rad_dir.path())
+            .env("LNK_HOME", lnk_dir.path())
             .envs(env::vars().filter(|(key, _)| key.starts_with("GIT_TRACE")))
             .spawn()
             .unwrap();

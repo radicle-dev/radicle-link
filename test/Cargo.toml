@@ -105,17 +105,17 @@ path = "../link-tracking"
 [dependencies.node-lib]
 path = "../node-lib"
 
-[dependencies.rad-clib]
-path = "../rad-clib"
+[dependencies.lnk-clib]
+path = "../cli/lnk-clib"
 
-[dependencies.rad-exe]
-path = "../rad-exe"
+[dependencies.lnk-exe]
+path = "../cli/lnk-exe"
 
-[dependencies.rad-identities]
-path = "../rad-identities"
+[dependencies.lnk-identities]
+path = "../cli/lnk-identities"
 
-[dependencies.rad-profile]
-path = "../rad-profile"
+[dependencies.lnk-profile]
+path = "../cli/lnk-profile"
 
 [dependencies.radicle-daemon]
 path = "../daemon"

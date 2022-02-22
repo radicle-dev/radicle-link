@@ -7,6 +7,6 @@ mod daemon;
 mod git_helpers;
 mod librad;
 mod link_git;
-mod node_lib;
 #[cfg(unix)]
-mod rad_cli;
+mod lnk_cli;
+mod node_lib;
