@@ -113,6 +113,16 @@ impl Paths {
     }
 }
 
+/// Returns the path to the seed configuration file.
+///
+/// # Error
+///
+/// Returns [`io::Error`] if the configuration directory could not be
+/// determined, most likely due to the `$HOME` environment variable missing.
+pub fn seeds() -> Result<PathBuf, io::Error> {
+    Ok(project_dirs()?.config_dir().join("seeds"))
+}
+
 /// Returns [`ProjectDirs`] for this specific project (`radicle`).
 ///
 /// Returns [`io::Error`] if the project directories could not be determined,
