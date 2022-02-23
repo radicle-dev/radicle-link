@@ -7,6 +7,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use link_crypto::PeerId;
 use link_git::protocol::Ref;
+use radicle_data::NonEmptyVec;
 
 use super::{guard_required, mk_ref_update, ref_prefixes, required_refs};
 use crate::{
@@ -14,11 +15,11 @@ use crate::{
     ids,
     internal::{self, Layout, UpdateTips},
     refs,
+    transmit::{self, ExpectLs, LsRefs},
     FetchState,
     FilteredRef,
     Identities,
     Negotiation,
-    RefPrefix,
     Refdb,
     WantsHaves,
 };
@@ -36,8 +37,12 @@ impl ForClone {
 }
 
 impl Negotiation for ForClone {
-    fn ref_prefixes(&self) -> Vec<RefPrefix> {
-        ref_prefixes(&self.remote_id, &self.remote_id).collect()
+    fn ls_refs(&self) -> Option<LsRefs> {
+        let prefixes = ref_prefixes(&self.remote_id, &self.remote_id);
+        NonEmptyVec::from_vec(prefixes.collect()).map(|prefixes| LsRefs::Prefix {
+            prefixes,
+            response: ExpectLs::NonEmpty,
+        })
     }
 
     fn ref_filter(&self, r: Ref) -> Option<FilteredRef<Self>> {
@@ -59,7 +64,7 @@ impl Negotiation for ForClone {
         &self,
         db: &R,
         refs: impl IntoIterator<Item = FilteredRef<Self>>,
-    ) -> Result<WantsHaves<Self>, R::FindError> {
+    ) -> Result<WantsHaves<Self>, transmit::error::WantsHaves<R::FindError>> {
         let mut wanted = HashSet::new();
         let mut wants = BTreeSet::new();
         let mut haves = BTreeSet::new();
@@ -110,7 +115,8 @@ impl UpdateTips for ForClone {
 
         let verified = Identities::verify(
             cx,
-            s.id_tip(&self.remote_id)
+            s.id_tips()
+                .get(&self.remote_id)
                 .expect("BUG: `pre_validate` must ensure we got a rad/id ref"),
             s.lookup_delegations(&self.remote_id),
         )

@@ -81,6 +81,15 @@ pub struct Refs<Oid> {
     pub refs: HashMap<RefString, Oid>,
 }
 
+impl<'a, Oid> IntoIterator for &'a Refs<Oid> {
+    type Item = <&'a HashMap<RefString, Oid> as IntoIterator>::Item;
+    type IntoIter = <&'a HashMap<RefString, Oid> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.refs.iter()
+    }
+}
+
 pub struct Select<'a> {
     pub must: &'a BTreeSet<PeerId>,
     pub may: &'a BTreeSet<PeerId>,

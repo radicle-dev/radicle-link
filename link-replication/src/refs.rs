@@ -12,7 +12,7 @@ use link_git::protocol::{ObjectId, Ref};
 
 use crate::ids::Urn;
 
-pub use git_ref_format::Qualified;
+pub use git_ref_format::{name, Qualified};
 
 mod lit;
 pub use lit::*;

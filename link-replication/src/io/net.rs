@@ -9,7 +9,17 @@ use bstr::BString;
 use futures_lite::io::{AsyncRead, AsyncWrite};
 use link_git::protocol as git;
 
-use crate::{FilteredRef, Negotiation, Net, Odb, Refdb, SkippedFetch, Urn, WantsHaves};
+use crate::{
+    transmit::{ExpectLs, LsRefs},
+    FilteredRef,
+    Negotiation,
+    Net,
+    Odb,
+    Refdb,
+    SkippedFetch,
+    Urn,
+    WantsHaves,
+};
 
 #[async_trait]
 pub trait Connection {
@@ -70,32 +80,44 @@ where
         let git_dir = self.git_dir.clone();
         let repo = BString::from(self.urn.encode_id());
 
-        let refs = {
-            let mut ref_prefixes = neg
-                .ref_prefixes()
-                .into_iter()
-                .map(Into::into)
-                .collect::<Vec<BString>>();
-            ref_prefixes.sort();
-            ref_prefixes.dedup();
+        let refs = match neg.ls_refs() {
+            None => Vec::default(),
+            Some(ls) => {
+                let (ref_prefixes, expect) = match ls {
+                    LsRefs::Full { response } => (Vec::default(), response),
+                    LsRefs::Prefix { prefixes, response } => {
+                        let mut ref_prefixes = prefixes
+                            .into_iter()
+                            .map(Into::into)
+                            .collect::<Vec<BString>>();
+                        ref_prefixes.sort();
+                        ref_prefixes.dedup();
 
-            let (recv, send) = self.conn.open_stream().await.map_err(io_other)?;
-            git::ls_refs(
-                git::ls::Options {
-                    repo: repo.clone(),
-                    extra_params: vec![],
-                    ref_prefixes,
-                },
-                recv,
-                send,
-            )
-            .await?
+                        (ref_prefixes, response)
+                    },
+                };
+
+                let (recv, send) = self.conn.open_stream().await.map_err(io_other)?;
+                let refs = git::ls_refs(
+                    git::ls::Options {
+                        repo: repo.clone(),
+                        extra_params: Vec::default(),
+                        ref_prefixes,
+                    },
+                    recv,
+                    send,
+                )
+                .await?;
+
+                match expect {
+                    ExpectLs::NonEmpty if refs.is_empty() => {
+                        return Ok((neg, Err(SkippedFetch::NoMatchingRefs)));
+                    },
+
+                    _ => refs,
+                }
+            },
         };
-
-        if refs.is_empty() {
-            info!("no matching refs");
-            return Ok((neg, Err(SkippedFetch::NoMatchingRefs)));
-        }
 
         let WantsHaves {
             wanted,

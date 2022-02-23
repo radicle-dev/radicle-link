@@ -82,17 +82,20 @@ where
                 if let Some(rad) = r.parsed.inner.as_ref().left() {
                     match rad {
                         refs::parsed::Rad::Id => {
-                            self.insert_id_tip(*r.remote_id(), r.tip);
+                            self.id_tips_mut().insert(*r.remote_id(), r.tip);
                         },
 
                         refs::parsed::Rad::Ids { urn } => {
                             if let Ok(urn) = C::Urn::try_from_id(urn) {
-                                self.insert_delegation_tip(*r.remote_id(), urn, r.tip);
+                                self.delegation_tips_mut()
+                                    .entry(*r.remote_id())
+                                    .or_insert_with(BTreeMap::new)
+                                    .insert(urn, r.tip);
                             }
                         },
 
                         refs::parsed::Rad::SignedRefs => {
-                            self.insert_sigref_tip(*r.remote_id(), r.tip);
+                            self.sigref_tips_mut().insert(*r.remote_id(), r.tip);
                         },
 
                         _ => {},
@@ -100,8 +103,8 @@ where
                 }
             }
 
-            let up = UpdateTips::prepare(&step, self, cx, refs)?;
-            self.track_all(up.track);
+            let mut up = UpdateTips::prepare(&step, self, cx, refs)?;
+            self.trackings_mut().append(&mut up.track);
             self.update_all(up.tips.into_iter().map(|u| u.into_owned()));
         }
 
@@ -121,38 +124,28 @@ where
         move |urn| ids.and_then(|x| x.get(urn))
     }
 
-    pub fn id_tip(&self, of: &PeerId) -> Option<&ObjectId> {
-        self.idts.get(of)
+    pub fn id_tips(&self) -> &IdentityTips {
+        &self.idts
     }
 
-    fn insert_id_tip(&mut self, of: PeerId, tip: ObjectId) {
-        self.idts.insert(of, tip);
+    fn id_tips_mut(&mut self) -> &mut IdentityTips {
+        &mut self.idts
     }
 
-    pub fn sigref_tip(&self, of: &PeerId) -> Option<&ObjectId> {
-        self.sigs.get(of)
+    pub fn sigref_tips(&self) -> &SigrefTips {
+        &self.sigs
     }
 
-    fn insert_sigref_tip(&mut self, of: PeerId, tip: ObjectId) {
-        self.sigs.insert(of, tip);
+    pub fn sigref_tips_mut(&mut self) -> &mut SigrefTips {
+        &mut self.sigs
     }
 
-    fn insert_delegation_tip(&mut self, remote_id: PeerId, urn: Urn, tip: ObjectId) {
-        self.dels
-            .entry(remote_id)
-            .or_insert_with(BTreeMap::new)
-            .insert(urn, tip);
+    fn delegation_tips_mut(&mut self) -> &mut DelegationTips<Urn> {
+        &mut self.dels
     }
 
-    pub fn track_all<I>(&mut self, other: I)
-    where
-        I: IntoIterator<Item = track::Rel<Urn>>,
-    {
-        self.trks.extend(other);
-    }
-
-    pub fn drain_trackings(&mut self) -> impl Iterator<Item = track::Rel<Urn>> + '_ {
-        self.trks.drain(..)
+    pub fn trackings_mut(&mut self) -> &mut Vec<track::Rel<Urn>> {
+        &mut self.trks
     }
 
     pub fn update_all<'a, I>(&mut self, other: I) -> Applied<'a>
@@ -167,8 +160,8 @@ where
         ap
     }
 
-    pub fn drain_updates(&mut self) -> impl Iterator<Item = Update<'static>> + '_ {
-        self.tips.drain(..)
+    pub fn updates_mut(&mut self) -> &mut Vec<Update<'static>> {
+        &mut self.tips
     }
 
     pub fn as_shim<'a, T>(&'a mut self, of: &'a mut T) -> Shim<'a, T, Urn> {
@@ -251,7 +244,7 @@ where
         if self.fetch.sigs.is_empty() {
             SignedRefs::load(self.inner, of, cutoff)
         } else {
-            match self.fetch.sigref_tip(of) {
+            match self.fetch.sigref_tips().get(of) {
                 None => Ok(None),
                 Some(tip) => SignedRefs::load_at(self.inner, *tip, of, cutoff),
             }
@@ -294,7 +287,7 @@ where
         use Either::*;
 
         let t = iter.into_iter().collect::<Vec<_>>();
-        self.fetch.track_all(t.clone());
+        self.fetch.trackings_mut().append(&mut t.clone());
         Ok(t.into_iter().map(|rel| match rel {
             track::Rel::Delegation(x) => x,
             track::Rel::SelfRef(urn) => Right(urn),
