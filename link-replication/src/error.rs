@@ -32,19 +32,15 @@ impl Layout {
 }
 
 #[derive(Debug, Error)]
-pub enum Prepare<V, R>
-where
-    V: std::error::Error + Send + Sync + 'static,
-    R: std::error::Error + Send + Sync + 'static,
-{
-    #[error("identify verification failed")]
-    Verification(#[source] V),
+pub enum Prepare {
+    #[error("identity verification failed")]
+    Verification(#[source] Error),
 
     #[error("failed to look up ref {name}")]
     FindRef {
         name: RefString,
         #[source]
-        source: R,
+        source: Error,
     },
 }
 

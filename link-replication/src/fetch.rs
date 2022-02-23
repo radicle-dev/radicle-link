@@ -173,9 +173,9 @@ impl<T: AsRef<oid>> UpdateTips for Fetch<T> {
         _: &FetchState<U>,
         _: &C,
         refs: &'a [FilteredRef<Self>],
-    ) -> Result<internal::Updates<'a, U>, error::Prepare<C::VerificationError, C::FindError>>
+    ) -> Result<internal::Updates<'a, U>, error::Prepare>
     where
-        C: Identities + Refdb,
+        C: Identities,
     {
         let mut tips = Vec::new();
         for r in refs {

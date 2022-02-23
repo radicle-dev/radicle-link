@@ -29,7 +29,7 @@ pub mod refs;
 mod eval;
 
 mod ids;
-pub use ids::{Identities, LocalIdentity, Urn, VerifiedIdentity};
+pub use ids::{AnyIdentity, Identities, LocalIdentity, Urn, VerifiedIdentity};
 
 mod odb;
 pub use odb::Odb;

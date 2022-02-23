@@ -4,12 +4,12 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     convert::TryFrom,
 };
 
 use bstr::ByteVec as _;
-use git_ref_format::RefString;
+use git_ref_format::{Qualified, RefString};
 use link_crypto::PeerId;
 use link_git::protocol::{ObjectId, Ref};
 
@@ -137,69 +137,141 @@ impl UpdateTips for ForFetch {
         s: &FetchState<U>,
         cx: &C,
         refs: &'a [FilteredRef<Self>],
-    ) -> Result<internal::Updates<'a, U>, error::Prepare<C::VerificationError, C::FindError>>
+    ) -> Result<internal::Updates<'a, U>, error::Prepare>
     where
         U: ids::Urn + Ord,
-        C: Identities<Urn = U> + Refdb,
+        C: Identities<Urn = U>,
     {
+        use either::Either::*;
         use ids::VerifiedIdentity as _;
-        use refdb::{Policy, SymrefTarget};
 
-        let mut tips = Vec::new();
-        let mut track = Vec::new();
-        for r in refs {
-            debug_assert!(r.remote_id() != &self.local_id, "never touch our own");
-            let is_delegate = self.delegates.contains(r.remote_id());
-            // symref `rad/self` if we already have the top-level identity
-            if r.is(&refs::parsed::Rad::Me) {
-                match Identities::verify(cx, r.tip, |_| None::<ObjectId>) {
-                    Err(e) if is_delegate => return Err(error::Prepare::Verification(e)),
-                    Err(e) => warn!("invalid `rad/self`: {}", e),
-                    Ok(id) => {
-                        let top = refs::namespaced(&id.urn(), refs::REFS_RAD_ID);
-                        let top_qual = top.clone().into_qualified();
-                        let oid = Refdb::refname_to_id(cx, &top_qual).map_err(|source| {
-                            error::Prepare::FindRef {
-                                name: top_qual.into_refstring(),
-                                source,
-                            }
-                        })?;
-                        let track_as = r.to_remote_tracking();
-                        let up = match oid {
-                            Some(oid) => Update::Symbolic {
-                                name: track_as.into(),
-                                target: SymrefTarget {
-                                    name: top,
-                                    target: oid.as_ref().to_owned(),
-                                },
-                                type_change: Policy::Allow,
-                            },
-                            None => Update::Direct {
-                                name: track_as.into(),
-                                target: r.tip,
-                                no_ff: Policy::Abort,
-                            },
-                        };
+        let grouped = refs
+            .iter()
+            .filter_map(|r| {
+                let remote_id = r.remote_id();
+                (remote_id != &self.local_id).then(|| (remote_id, r))
+            })
+            .fold(BTreeMap::new(), |mut acc, (remote_id, r)| {
+                acc.entry(remote_id).or_insert_with(Vec::new).push(r);
+                acc
+            });
 
-                        tips.push(up);
-                        track.push(track::Rel::SelfRef(id.urn()));
+        let mut updates = internal::Updates {
+            tips: Vec::with_capacity(refs.len()),
+            track: Vec::new(),
+        };
+
+        for (remote_id, refs) in grouped {
+            let is_delegate = self.delegates.contains(remote_id);
+
+            let mut tips_inner = Vec::with_capacity(refs.len());
+            let mut track_inner = Vec::new();
+            for r in refs {
+                match &r.parsed.inner {
+                    Left(refs::parsed::Rad::Me) => {
+                        match Identities::verify(cx, r.tip, |_| None::<ObjectId>) {
+                            Err(e) if is_delegate => {
+                                return Err(error::Prepare::Verification(e.into()))
+                            },
+                            Err(e) => {
+                                warn!(
+                                    err = %e,
+                                    remote_id = %remote_id,
+                                    "skipping invalid `rad/self`"
+                                );
+                                continue;
+                            },
+                            Ok(id) => {
+                                tips_inner.push(prepare_rad_self(cx, &id, r)?);
+                                track_inner.push(track::Rel::SelfRef(id.urn()));
+                            },
+                        }
                     },
-                }
-            } else {
-                // XXX: we should verify all ids at some point, but non-delegates
-                // would be a warning only
-                if is_delegate && r.is(&refs::parsed::Rad::Id) {
-                    Identities::verify(cx, r.tip, s.lookup_delegations(r.remote_id()))
-                        .map_err(error::Prepare::Verification)?;
-                }
-                if let Some(u) = mk_ref_update::<_, C::Urn>(r) {
-                    tips.push(u)
+
+                    Left(refs::parsed::Rad::Id) => {
+                        match Identities::verify(cx, r.tip, s.lookup_delegations(remote_id)) {
+                            Err(e) if is_delegate => {
+                                return Err(error::Prepare::Verification(e.into()))
+                            },
+                            Err(e) => {
+                                warn!(
+                                    err = %e,
+                                    remote_id = %remote_id,
+                                    "error verifying non-delegate id"
+                                );
+                                // Verification error for a non-delegate taints
+                                // all refs for this remote_id
+                                tips_inner.clear();
+                                track_inner.clear();
+                                break;
+                            },
+
+                            Ok(_) => {
+                                if let Some(u) = mk_ref_update::<_, C::Urn>(r) {
+                                    tips_inner.push(u)
+                                }
+                            },
+                        }
+                    },
+
+                    Left(_) => {
+                        if let Some(u) = mk_ref_update::<_, C::Urn>(r) {
+                            tips_inner.push(u)
+                        }
+                    },
+
+                    Right(_) => continue,
                 }
             }
+
+            updates.tips.append(&mut tips_inner);
+            updates.track.append(&mut track_inner);
         }
 
-        Ok(internal::Updates { tips, track })
+        Ok(updates)
     }
+}
+
+/// If a top-level namespace exists for `id`, symref to it. Otherwise, create a
+/// direct ref.
+fn prepare_rad_self<'a, C, A>(
+    cx: &C,
+    id: &C::VerifiedIdentity,
+    fr: &'a FilteredRef<A>,
+) -> Result<Update<'a>, error::Prepare>
+where
+    C: Identities,
+{
+    use ids::{AnyIdentity as _, VerifiedIdentity as _};
+    use refdb::{Policy, SymrefTarget};
+
+    let urn = id.urn();
+    let top = refs::namespaced(&id.urn(), refs::REFS_RAD_ID);
+    let oid = Identities::get(cx, &urn)
+        .map_err(|source| error::Prepare::FindRef {
+            name: top.clone().into_qualified().into_refstring(),
+            source: source.into(),
+        })?
+        .map(|id| id.content_id());
+
+    let name = Qualified::from(fr.to_remote_tracking());
+    let up = match oid {
+        Some(oid) => Update::Symbolic {
+            name,
+            target: SymrefTarget {
+                name: top,
+                target: oid.as_ref().to_owned(),
+            },
+            type_change: Policy::Allow,
+        },
+        None => Update::Direct {
+            name,
+            target: fr.tip,
+            no_ff: Policy::Abort,
+        },
+    };
+
+    Ok(up)
 }
 
 impl Layout for ForFetch {

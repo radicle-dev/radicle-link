@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use crate::{error, ids, track, FetchState, FilteredRef, Identities, Refdb, Update};
+use crate::{error, ids, track, FetchState, FilteredRef, Identities, Update};
 
 pub(crate) struct Updates<'a, U> {
     pub tips: Vec<Update<'a>>,
@@ -16,10 +16,10 @@ pub(crate) trait UpdateTips<T = Self> {
         s: &FetchState<U>,
         cx: &C,
         refs: &'a [FilteredRef<T>],
-    ) -> Result<Updates<'a, U>, error::Prepare<C::VerificationError, C::FindError>>
+    ) -> Result<Updates<'a, U>, error::Prepare>
     where
         U: ids::Urn + Ord,
-        C: Identities<Urn = U> + Refdb;
+        C: Identities<Urn = U>;
 }
 
 pub(crate) trait Layout<T = Self> {

@@ -83,6 +83,13 @@ impl SomeIdentity {
             Self::Person(person) => SomePayload::Person(person.payload().clone()),
         }
     }
+
+    pub fn content_id(&self) -> ContentId {
+        match self {
+            Self::Project(project) => project.content_id,
+            Self::Person(person) => person.content_id,
+        }
+    }
 }
 
 pub type SignedPerson = SignedIdentity<PersonDoc>;
