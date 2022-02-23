@@ -17,18 +17,20 @@ use librad::{
     profile::{LnkHome, ProfileId},
 };
 
-use node_lib::args::{
-    self,
-    Args,
-    Bootstrap,
-    KeyArgs,
-    MetricsArgs,
-    MetricsProvider,
-    ProtocolArgs,
-    ProtocolListen,
-    Signer,
-    TrackingArgs,
-    TrackingMode,
+use node_lib::{
+    args::{
+        self,
+        Args,
+        KeyArgs,
+        MetricsArgs,
+        MetricsProvider,
+        ProtocolArgs,
+        ProtocolListen,
+        Signer,
+        TrackingArgs,
+        TrackingMode,
+    },
+    Seed,
 };
 
 #[test]
@@ -60,13 +62,15 @@ fn defaults() -> Result<()> {
 #[test]
 fn bootstraps() -> Result<()> {
     let bootstraps = vec![
-        Bootstrap {
-            addr: "sprout.radicle.xyz:12345".to_string(),
-            peer_id: "hynkyndc6w3p8urucakobzna7sxwgcqny7xxtw88dtx3pkf7m3nrzc".parse()?,
+        Seed {
+            addrs: "sprout.radicle.xyz:12345".to_string(),
+            peer: "hynkyndc6w3p8urucakobzna7sxwgcqny7xxtw88dtx3pkf7m3nrzc".parse()?,
+            label: None,
         },
-        Bootstrap {
-            addr: "setzling.radicle.xyz:12345".to_string(),
-            peer_id: "hybz9gfgtd9d4pd14a6r66j5hz6f77fed4jdu7pana4fxaxbt369kg".parse()?,
+        Seed {
+            addrs: "setzling.radicle.xyz:12345".to_string(),
+            peer: "hybz9gfgtd9d4pd14a6r66j5hz6f77fed4jdu7pana4fxaxbt369kg".parse()?,
+            label: None,
         },
     ];
 

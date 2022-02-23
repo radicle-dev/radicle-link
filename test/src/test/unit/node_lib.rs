@@ -5,4 +5,4 @@
 
 mod api;
 mod args;
-mod cfg;
+mod seed;
