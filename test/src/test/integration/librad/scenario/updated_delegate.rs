@@ -5,6 +5,10 @@
 
 use std::{convert::TryFrom as _, ops::Index as _};
 
+use it_helpers::{
+    fixed::{TestPerson, TestProject},
+    testnet,
+};
 use librad::git::{
     identities,
     storage::ReadOnlyStorage as _,
@@ -12,11 +16,6 @@ use librad::git::{
     Urn,
 };
 use test_helpers::logging;
-
-use crate::rad::{
-    identities::{TestPerson, TestProject},
-    testnet,
-};
 
 fn config() -> testnet::Config {
     testnet::Config {

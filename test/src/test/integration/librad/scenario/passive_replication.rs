@@ -6,6 +6,7 @@
 use std::{ops::Index as _, time::Duration};
 
 use futures::StreamExt as _;
+use it_helpers::{fixed::TestProject, testnet};
 use librad::{
     git::{storage::ReadOnlyStorage as _, tracking},
     net::protocol::{
@@ -14,8 +15,6 @@ use librad::{
     },
 };
 use test_helpers::logging;
-
-use crate::rad::{identities::TestProject, testnet};
 
 fn config() -> testnet::Config {
     testnet::Config {

@@ -5,13 +5,12 @@
 
 use std::ops::Index as _;
 
+use it_helpers::{fixed::TestProject, testnet};
 use librad::{
     self,
     git::identities::{self, SomeIdentity},
 };
 use test_helpers::logging;
-
-use crate::rad::{identities::TestProject, testnet};
 
 /// https://github.com/radicle-dev/radicle-link/issues/250
 /// Fixed in: 577e9943fa704895b47fe4e1c862bf0bd51d58a9

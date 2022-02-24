@@ -16,6 +16,7 @@ use futures::{
     future::{self, FutureExt as _},
     stream::{StreamExt as _, TryStreamExt as _},
 };
+use once_cell::sync::Lazy;
 use tempfile::{tempdir, TempDir};
 
 use librad::{
@@ -32,10 +33,8 @@ use librad::{
     SecretKey,
 };
 
-lazy_static! {
-    static ref LOCALHOST_ANY: SocketAddr =
-        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0));
-}
+static LOCALHOST_ANY: Lazy<SocketAddr> =
+    Lazy::new(|| SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0)));
 
 pub struct BoundTestPeer {
     peer: Peer<SecretKey>,

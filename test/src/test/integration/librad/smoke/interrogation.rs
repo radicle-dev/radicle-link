@@ -5,6 +5,7 @@
 
 use std::{ops::Index as _, time::Duration};
 
+use it_helpers::{fixed::TestProject, testnet};
 use librad::{
     data::BoundedVec,
     identities::SomeUrn,
@@ -14,8 +15,6 @@ use librad::{
     },
 };
 use test_helpers::logging;
-
-use crate::rad::{identities::TestProject, testnet};
 
 fn config() -> testnet::Config {
     testnet::Config {

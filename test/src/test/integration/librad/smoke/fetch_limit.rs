@@ -5,10 +5,9 @@
 
 use std::ops::Index as _;
 
+use it_helpers::{fixed::TestProject, testnet};
 use librad::git::tracking;
 use test_helpers::logging;
-
-use crate::rad::{identities::TestProject, testnet};
 
 /// Stress test the limits that are set for fetching when using `replicate`.
 /// The `fetch::Limit` contains a base limit and should be scaled by the number

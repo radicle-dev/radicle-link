@@ -1,8 +1,3 @@
-// Copyright © 2019-2020 The Radicle Foundation <hello@radicle.foundation>
-//
-// This file is part of radicle-link, distributed under the GPLv3 with Radicle
-// Linking Exception. For full terms see the included LICENSE file.
-
 use std::{net::SocketAddr, ops::Deref};
 
 use librad::{
@@ -19,53 +14,7 @@ use librad::{
 };
 use tracing::{info, instrument};
 
-pub struct TestPerson {
-    pub owner: Person,
-}
-
-impl TestPerson {
-    pub fn create(storage: &Storage) -> anyhow::Result<Self> {
-        let peer_id = storage.peer_id();
-        let alice = identities::person::create(
-            storage,
-            payload::Person {
-                name: "alice".into(),
-            },
-            Direct::new(*peer_id.as_public_key()),
-        )?;
-
-        Ok(Self { owner: alice })
-    }
-
-    pub fn update(self, storage: &Storage) -> anyhow::Result<Self> {
-        let payload = payload::Person {
-            name: "alice-laptop".into(),
-        }
-        .into();
-        let owner =
-            identities::person::update(storage, &self.owner.urn(), None, Some(payload), None)?;
-        Ok(Self { owner })
-    }
-
-    /// Pull (fetch or clone) the project from known running peer `A` to peer
-    /// `B`.
-    #[instrument(name = "test_person", skip(self, from, to), err)]
-    pub async fn pull<A, B, S>(&self, from: &A, to: &B) -> anyhow::Result<replication::Success>
-    where
-        A: Deref<Target = Peer<S>> + LocalInfo<Addr = SocketAddr>,
-        B: Deref<Target = Peer<S>>,
-
-        S: Signer + Clone,
-    {
-        let remote_peer = from.local_peer_id();
-        let remote_addrs = from.listen_addrs();
-        let urn = self.owner.urn();
-
-        info!("pull from {} to {}", remote_peer, to.peer_id());
-
-        Ok(to.replicate((remote_peer, remote_addrs), urn, None).await?)
-    }
-}
+use super::TestPerson;
 
 pub struct TestProject {
     pub owner: Person,
@@ -87,7 +36,7 @@ impl TestProject {
         let proj = identities::project::create(
             storage,
             local_id,
-            radicle_link(),
+            Self::default_payload(),
             delegation::Indirect::from(alice.clone()),
         )?;
 
@@ -103,7 +52,7 @@ impl TestProject {
         let proj = identities::project::create(
             storage,
             local_id,
-            radicle_link(),
+            Self::default_payload(),
             delegation::Indirect::from(person.owner.clone()),
         )?;
 
@@ -111,6 +60,14 @@ impl TestProject {
             owner: person.owner,
             project: proj,
         })
+    }
+
+    pub fn default_payload() -> payload::Project {
+        payload::Project {
+            name: "radicle-link".into(),
+            description: Some("pea two pea".into()),
+            default_branch: Some("next".into()),
+        }
     }
 
     pub fn from_project_payload(
@@ -150,17 +107,5 @@ impl TestProject {
         info!("pull from {} to {}", remote_peer, to.peer_id());
 
         Ok(to.replicate((remote_peer, remote_addrs), urn, None).await?)
-    }
-}
-
-pub fn create_test_project(storage: &Storage) -> Result<TestProject, anyhow::Error> {
-    TestProject::create(storage)
-}
-
-pub fn radicle_link() -> payload::Project {
-    payload::Project {
-        name: "radicle-link".into(),
-        description: Some("pea two pea".into()),
-        default_branch: Some("next".into()),
     }
 }

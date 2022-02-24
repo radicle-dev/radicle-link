@@ -6,6 +6,7 @@
 use tempfile::tempdir;
 use thrussh_agent::Constraint;
 
+use it_helpers::ssh::with_ssh_agent;
 use librad::{
     crypto::keystore::{
         crypto::{Pwhash, KDF_PARAMS_TEST},
@@ -18,8 +19,6 @@ use lnk_clib::{keys::ssh::SshAuthSock, storage};
 use lnk_identities as identities;
 use lnk_profile as profile;
 use test_helpers::logging;
-
-use crate::ssh::with_ssh_agent;
 
 fn set_local_identity(profile: &Profile, sock: SshAuthSock) -> anyhow::Result<()> {
     use lnk_identities::cli::args::{local, person};

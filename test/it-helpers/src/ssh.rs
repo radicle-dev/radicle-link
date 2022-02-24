@@ -43,13 +43,13 @@ where
 
 /// Kill the ssh-agent running on the given PID.
 fn kill_agent_pid(pid: &str) -> anyhow::Result<()> {
-    tracing::debug!(pid = %pid, "killing ssh-agent");
+    debug!(pid = %pid, "killing ssh-agent");
     let status = Command::new("ssh-agent")
         .env("SSH_AGENT_PID", pid)
         .args(["-k"])
         .stdout(Stdio::null())
         .status()?;
-    tracing::debug!(status = %status, "status of killing agent");
+    debug!(status = %status, "status of killing agent");
     Ok(())
 }
 

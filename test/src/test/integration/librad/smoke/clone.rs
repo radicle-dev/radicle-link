@@ -5,6 +5,10 @@
 
 use std::ops::Index as _;
 
+use it_helpers::{
+    fixed::TestProject,
+    testnet::{self, RunningTestPeer},
+};
 use librad::{
     self,
     git::{
@@ -14,11 +18,6 @@ use librad::{
     },
 };
 use test_helpers::logging;
-
-use crate::rad::{
-    identities::TestProject,
-    testnet::{self, RunningTestPeer},
-};
 
 fn default_config() -> testnet::Config {
     testnet::Config {

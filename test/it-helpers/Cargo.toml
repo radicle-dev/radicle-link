@@ -1,0 +1,29 @@
+[package]
+name = "it-helpers"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+publish = false
+
+description = "Integration test helpers"
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+anyhow = "1"
+futures = "0.3"
+once_cell = "1"
+tempfile = "3"
+tokio = "1.13.1"
+tracing = ">= 0.1"
+
+[dependencies.librad]
+path = "../../librad"
+
+[dependencies.lnk-clib]
+path = "../../cli/lnk-clib"
+
+[dependencies.test-helpers]
+path = "../test-helpers"

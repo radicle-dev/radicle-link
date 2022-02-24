@@ -5,6 +5,7 @@
 
 use std::ops::Index as _;
 
+use it_helpers::{fixed::TestProject, testnet};
 use librad::{
     git::{
         identities,
@@ -17,8 +18,6 @@ use librad::{
     reflike,
 };
 use test_helpers::logging;
-
-use crate::rad::{identities::TestProject, testnet};
 
 fn config() -> testnet::Config {
     testnet::Config {

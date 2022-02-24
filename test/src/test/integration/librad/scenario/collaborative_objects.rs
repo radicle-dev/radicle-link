@@ -6,6 +6,7 @@
 
 use std::{convert::TryFrom, ops::Index as _, str::FromStr};
 
+use it_helpers::{fixed::TestProject, testnet};
 use lazy_static::lazy_static;
 use librad::{
     collaborative_objects::{
@@ -24,8 +25,6 @@ use librad::{
     SecretKey,
 };
 use test_helpers::logging;
-
-use crate::rad::{identities::TestProject, testnet};
 
 macro_rules! assert_state {
     ($object: expr, $expected_state: expr) => {

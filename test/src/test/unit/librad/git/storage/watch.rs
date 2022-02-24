@@ -5,6 +5,7 @@
 
 use std::{collections::BTreeSet, convert::TryFrom as _};
 
+use it_helpers::fixed::TestProject;
 use librad::{
     git::{
         storage::watch::{EventKind, NamespaceEvent},
@@ -15,7 +16,7 @@ use librad::{
 };
 use test_helpers::logging;
 
-use crate::{librad::git::storage::storage, rad::identities::TestProject};
+use crate::librad::git::storage::storage;
 
 #[test]
 fn namespaces() {

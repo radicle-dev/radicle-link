@@ -10,6 +10,7 @@ use std::{
 
 use blocking::unblock;
 use futures::StreamExt as _;
+use it_helpers::{fixed::TestProject, testnet};
 use librad::{
     git::{
         local::url::LocalUrl,
@@ -31,10 +32,7 @@ use librad::{
 use tempfile::tempdir;
 use test_helpers::logging;
 
-use crate::{
-    git::create_commit,
-    rad::{identities::TestProject, testnet},
-};
+use crate::git::create_commit;
 
 fn config() -> testnet::Config {
     testnet::Config {

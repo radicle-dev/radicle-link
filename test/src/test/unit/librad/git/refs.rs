@@ -181,6 +181,7 @@ mod verifying_refs {
 }
 
 mod computing_refs {
+    use it_helpers::fixed::TestProject;
     use librad::{
         git::{refs::Refs, types::Namespace, Storage, Urn},
         paths::Paths,
@@ -190,7 +191,7 @@ mod computing_refs {
     };
     use radicle_git_ext::name as reference;
 
-    use crate::{make_refs, rad::identities::TestProject};
+    use crate::make_refs;
 
     macro_rules! assert_refs {
         ($iter: expr, [$($ref_str:literal => $expected_oid:expr)*]) => {

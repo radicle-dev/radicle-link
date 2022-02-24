@@ -76,7 +76,10 @@ features = ["serde", "minicbor", "macro"]
 [dependencies.git-trailers]
 path = "../git-trailers"
 
-[dependencies.librad]
+[dev-dependencies.it-helpers]
+path = "./it-helpers"
+
+[dev-dependencies.librad]
 path = "../librad"
 
 [dependencies.link-async]

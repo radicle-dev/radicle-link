@@ -5,14 +5,13 @@
 
 use std::{convert::TryFrom as _, ops::Index as _};
 
+use it_helpers::{fixed::TestProject, testnet};
 use librad::git::{
     identities,
     types::{Namespace, Reference},
     Urn,
 };
 use test_helpers::logging;
-
-use crate::rad::{identities::TestProject, testnet};
 
 fn config() -> testnet::Config {
     testnet::Config {

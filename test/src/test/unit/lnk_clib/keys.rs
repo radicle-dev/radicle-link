@@ -5,6 +5,7 @@
 
 use tempfile::tempdir;
 
+use it_helpers::ssh::with_ssh_agent;
 use librad::{
     crypto::{
         keystore::{
@@ -20,8 +21,6 @@ use librad::{
 };
 use lnk_clib::keys::{file_storage, ssh};
 use test_helpers::logging;
-
-use crate::ssh::with_ssh_agent;
 
 #[test]
 fn agent_signature() -> anyhow::Result<()> {

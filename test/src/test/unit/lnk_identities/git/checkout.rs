@@ -8,6 +8,10 @@ use std::ops::Index as _;
 use either::Either;
 use tempfile::tempdir;
 
+use it_helpers::{
+    fixed::{TestPerson, TestProject},
+    testnet,
+};
 use librad::{
     canonical::Cstring,
     crypto::SecretKey,
@@ -23,13 +27,7 @@ use librad::{
 };
 use lnk_identities::git::checkout::*;
 
-use crate::{
-    librad::paths::paths,
-    rad::{
-        identities::{TestPerson, TestProject},
-        testnet,
-    },
-};
+use crate::librad::paths::paths;
 
 #[test]
 fn local_checkout() -> anyhow::Result<()> {

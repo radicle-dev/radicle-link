@@ -7,6 +7,7 @@ use std::fs::{self, File};
 
 use tempfile::tempdir;
 
+use it_helpers::fixed::TestProject;
 use librad::{
     canonical::Cstring,
     crypto::SecretKey,
@@ -18,14 +19,11 @@ use librad::{
 };
 use lnk_identities::git::new::*;
 
-use crate::{
-    librad::paths::paths,
-    rad::identities::{radicle_link, TestProject},
-};
+use crate::librad::paths::paths;
 
 #[test]
 fn validation_path_is_file() -> anyhow::Result<()> {
-    let payload = radicle_link();
+    let payload = TestProject::default_payload();
     let temp = tempdir()?;
     let file = temp.path().join(payload.name.as_str());
     let _ = File::create(file)?;
@@ -37,7 +35,7 @@ fn validation_path_is_file() -> anyhow::Result<()> {
 
 #[test]
 fn validation_path_is_directory() -> anyhow::Result<()> {
-    let payload = radicle_link();
+    let payload = TestProject::default_payload();
     let temp = tempdir()?;
     let dir = temp.path().join(payload.name.as_str());
     fs::create_dir(dir.clone())?;
@@ -50,7 +48,7 @@ fn validation_path_is_directory() -> anyhow::Result<()> {
 
 #[test]
 fn creation() -> anyhow::Result<()> {
-    let payload = radicle_link();
+    let payload = TestProject::default_payload();
     let temp = tempdir()?;
     let new = New::new(
         ProjectPayload::new(payload.clone()),

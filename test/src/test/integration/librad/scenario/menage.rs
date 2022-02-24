@@ -10,6 +10,7 @@ use std::{
 };
 
 use blocking::unblock;
+use it_helpers::{fixed::TestProject, testnet};
 use librad::{
     self,
     git::{
@@ -28,10 +29,7 @@ use librad::{
 use test_helpers::logging;
 use tracing::info;
 
-use crate::{
-    git::create_commit,
-    rad::{identities::TestProject, testnet},
-};
+use crate::git::create_commit;
 
 fn config() -> testnet::Config {
     testnet::Config {

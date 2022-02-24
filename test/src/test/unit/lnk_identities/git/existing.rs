@@ -7,6 +7,7 @@ use std::{convert::TryFrom as _, fs, path::Path};
 
 use tempfile::tempdir;
 
+use it_helpers::fixed::TestProject;
 use librad::{
     canonical::Cstring,
     crypto::SecretKey,
@@ -22,15 +23,11 @@ use librad::{
 };
 use lnk_identities::git::{self, existing::*, new::New};
 
-use crate::{
-    git::create_commit,
-    librad::paths::paths,
-    rad::identities::{radicle_link, TestProject},
-};
+use crate::{git::create_commit, librad::paths::paths};
 
 #[test]
 fn validation_missing_path() -> anyhow::Result<()> {
-    let payload = radicle_link();
+    let payload = TestProject::default_payload();
     let existing = Existing::new(
         ProjectPayload::new(payload),
         Path::new("missing").to_path_buf(),
@@ -42,7 +39,7 @@ fn validation_missing_path() -> anyhow::Result<()> {
 
 #[test]
 fn validation_path_is_not_a_repo() -> anyhow::Result<()> {
-    let payload = radicle_link();
+    let payload = TestProject::default_payload();
     let temp = tempdir()?;
     let dir = temp.path().join(payload.name.as_str());
     fs::create_dir(dir)?;
@@ -54,7 +51,7 @@ fn validation_path_is_not_a_repo() -> anyhow::Result<()> {
 
 #[test]
 fn validation_default_branch_is_missing() -> anyhow::Result<()> {
-    let payload = radicle_link();
+    let payload = TestProject::default_payload();
     let temp = tempdir()?;
     let dir = temp.path().join(payload.name.as_str());
     let _repo = git2::Repository::init(dir)?;
@@ -71,7 +68,7 @@ fn validation_default_branch_is_missing() -> anyhow::Result<()> {
 
 #[test]
 fn validation_different_remote_exists() -> anyhow::Result<()> {
-    let payload = radicle_link();
+    let payload = TestProject::default_payload();
     let temp = tempdir()?;
     let dir = temp.path().join(payload.name.as_str());
     let _repo = {
@@ -119,7 +116,7 @@ fn validation_different_remote_exists() -> anyhow::Result<()> {
 
 #[test]
 fn validation_remote_exists() -> anyhow::Result<()> {
-    let payload = radicle_link();
+    let payload = TestProject::default_payload();
     let temp = tempdir()?;
     let paths = paths();
     let signer = SecretKey::new();
@@ -156,7 +153,7 @@ fn validation_remote_exists() -> anyhow::Result<()> {
 
 #[test]
 fn creation() -> anyhow::Result<()> {
-    let payload = radicle_link();
+    let payload = TestProject::default_payload();
     let temp = tempdir()?;
     let dir = temp.path().join(payload.name.as_str());
     let _repo = {

@@ -27,8 +27,6 @@ pub mod librad;
 pub mod link_async;
 #[cfg(test)]
 pub mod node_lib;
-pub mod rad;
-pub mod ssh;
 
 #[cfg(test)]
 mod test;

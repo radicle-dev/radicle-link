@@ -9,6 +9,7 @@ use std::{
     process::Command,
 };
 
+use it_helpers::fixed::TestProject;
 use librad::{
     crypto::keystore::{self, crypto, pinentry::SecUtf8, Keystore},
     git::{local::url::LocalUrl, storage::Storage, Urn},
@@ -19,8 +20,6 @@ use librad::{
 };
 use tempfile::tempdir;
 use test_helpers::logging;
-
-use crate::rad::identities::create_test_project;
 
 const PASSPHRASE: &str = "123";
 
@@ -78,7 +77,7 @@ fn smoke() {
 
 fn setup_project(paths: &Paths, key: SecretKey) -> anyhow::Result<Urn> {
     let store = Storage::open(paths, key)?;
-    let proj = create_test_project(&store)?;
+    let proj = TestProject::create(&store)?;
     Ok(proj.project.urn())
 }
 

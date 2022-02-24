@@ -8,6 +8,7 @@ use std::{convert::TryFrom, fmt::Debug, ops::Index as _, path::Path, time::Durat
 use futures::StreamExt as _;
 use tempfile::tempdir;
 
+use it_helpers::{fixed::TestProject, testnet};
 use librad::{
     git::{
         identities::{self, Person, Project},
@@ -41,10 +42,7 @@ use librad::{
 };
 use test_helpers::logging;
 
-use crate::{
-    git::create_commit,
-    rad::{identities::TestProject, testnet},
-};
+use crate::git::create_commit;
 
 fn config() -> testnet::Config {
     testnet::Config {
