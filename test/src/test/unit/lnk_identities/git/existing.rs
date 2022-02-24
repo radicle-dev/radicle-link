@@ -3,11 +3,12 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom as _, fs, path::Path};
+use std::{fs, path::Path};
 
 use tempfile::tempdir;
 
-use it_helpers::{fixed::TestProject, tmp};
+use git_ref_format::{lit, RefStr};
+use it_helpers::{fixed::TestProject, git::create_commit, tmp};
 use librad::{
     canonical::Cstring,
     crypto::SecretKey,
@@ -18,12 +19,9 @@ use librad::{
         types::remote::Remote,
         Urn,
     },
-    git_ext::RefLike,
     reflike,
 };
 use lnk_identities::git::{self, existing::*, new::New};
-
-use crate::git::create_commit;
 
 #[test]
 fn validation_missing_path() -> anyhow::Result<()> {
@@ -79,7 +77,7 @@ fn validation_different_remote_exists() -> anyhow::Result<()> {
 
         create_commit(
             &repo,
-            reflike!("refs/heads").join(RefLike::try_from(branch.as_str())?),
+            lit::refs_heads(RefStr::try_from_str(branch.as_str())?).into(),
         )?;
 
         let urn = Urn::new(git2::Oid::zero().into());
@@ -163,7 +161,7 @@ fn creation() -> anyhow::Result<()> {
         let repo = git2::Repository::init_opts(dir, &opts)?;
         create_commit(
             &repo,
-            reflike!("refs/heads").join(RefLike::try_from(branch.as_str())?),
+            lit::refs_heads(RefStr::try_from_str(branch.as_str())?).into(),
         )?;
         repo
     };

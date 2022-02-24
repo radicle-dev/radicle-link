@@ -10,7 +10,8 @@ use std::{
 
 use blocking::unblock;
 use futures::StreamExt as _;
-use it_helpers::{fixed::TestProject, testnet};
+use git_ref_format::{lit, name, Qualified};
+use it_helpers::{fixed::TestProject, git::create_commit, testnet};
 use librad::{
     git::{
         local::url::LocalUrl,
@@ -31,8 +32,6 @@ use librad::{
 };
 use tempfile::tempdir;
 use test_helpers::logging;
-
-use crate::git::create_commit;
 
 fn config() -> testnet::Config {
     testnet::Config {
@@ -68,7 +67,7 @@ fn fetches_on_gossip_notify() {
         let peer1_events = peer2.subscribe();
         let peer2_events = peer2.subscribe();
 
-        let mastor = reflike!("refs/heads/master");
+        let mastor = Qualified::from(lit::refs_heads(name::MASTER));
         let project_repo_path = tempdir().unwrap();
         let (commit_id, tag_id) = unblock({
             let project_repo_path = project_repo_path.path().to_path_buf();
@@ -120,7 +119,9 @@ fn fetches_on_gossip_notify() {
         peer1
             .announce(gossip::Payload {
                 origin: None,
-                urn: project.urn().with_path(mastor.clone()),
+                urn: project
+                    .urn()
+                    .with_path(Some(mastor.into_refstring().into())),
                 rev: Some(Rev::Git(commit_id)),
             })
             .unwrap();
@@ -152,11 +153,13 @@ fn fetches_on_gossip_notify() {
         .await
         .unwrap();
 
-        let commit_urn = project.urn().with_path(
-            reflike!("refs/remotes")
-                .join(peer1.peer_id())
-                .join(mastor.strip_prefix("refs").unwrap()),
-        );
+        let commit_urn = project.urn().with_path(Some(
+            Qualified::from(lit::refs_remotes(name::Component::from(&peer1.peer_id())))
+                .join(name::HEADS)
+                .join(name::MASTER)
+                .into_refstring()
+                .into(),
+        ));
         peer2
             .using_storage({
                 let peer1_id = peer1.peer_id();

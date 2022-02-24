@@ -28,6 +28,9 @@ features = ["vendored-libgit2"]
 # workspace dependencies
 #
 
+[dependencies.git-ref-format]
+path = "../../git-ref-format"
+
 [dependencies.librad]
 path = "../../librad"
 

@@ -8,7 +8,8 @@ use std::{convert::TryFrom, fmt::Debug, ops::Index as _, path::Path, time::Durat
 use futures::StreamExt as _;
 use tempfile::tempdir;
 
-use it_helpers::{fixed::TestProject, testnet};
+use git_ref_format::{lit, name, Qualified};
+use it_helpers::{fixed::TestProject, git::create_commit, testnet};
 use librad::{
     git::{
         identities::{self, Person, Project},
@@ -35,14 +36,11 @@ use librad::{
             gossip::{self, Rev},
         },
     },
-    reflike,
     refspec_pattern,
     PeerId,
     Signer,
 };
 use test_helpers::logging;
-
-use crate::git::create_commit;
 
 fn config() -> testnet::Config {
     testnet::Config {
@@ -157,7 +155,7 @@ where
     }
     .into_fetchspec();
 
-    let master = reflike!("refs/heads/master");
+    let master = Qualified::from(lit::refs_heads(name::MASTER));
 
     let oid = create_commit(&repo, master.clone())?;
     let mut remote = Remote::rad_remote(url, fetchspec);
@@ -174,7 +172,9 @@ where
 
     peer.announce(gossip::Payload {
         origin: None,
-        urn: project.urn().with_path(master),
+        urn: project
+            .urn()
+            .with_path(Some(master.into_refstring().into())),
         rev: Some(Rev::Git(oid)),
     })
     .unwrap();

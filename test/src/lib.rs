@@ -22,7 +22,7 @@ extern crate radicle_std_ext as std_ext;
 #[macro_use]
 pub mod daemon;
 pub mod canonical;
-pub mod git;
+#[cfg(test)]
 pub mod librad;
 pub mod link_async;
 #[cfg(test)]

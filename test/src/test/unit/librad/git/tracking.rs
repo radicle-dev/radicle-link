@@ -5,6 +5,8 @@
 
 use std::collections::BTreeSet;
 
+use git_ref_format::{lit, name, Namespaced, Qualified};
+use it_helpers::git::create_commit;
 use librad::{
     git::{
         storage::{ReadOnlyStorage as _, Storage},
@@ -26,8 +28,6 @@ use librad::{
     PeerId,
     SecretKey,
 };
-
-use crate::git::create_commit;
 
 #[test]
 fn track_is_tracked() {
@@ -217,15 +217,16 @@ fn untrack_with_prune() {
         .unwrap()
         .is_ok());
 
-        let branch = reflike!("refs/namespaces")
-            .join(&urn)
-            .join(reflike!("refs/remotes"))
-            .join(remote_peer)
-            .join(reflike!("heads/main"));
+        let branch = Namespaced::from(lit::refs_namespaces(
+            &urn,
+            Qualified::from(lit::refs_remotes(name::Component::from(&remote_peer)))
+                .join(name::HEADS)
+                .join(name::MAIN),
+        ));
 
         {
             let repo = git2::Repository::open(paths.git_dir()).unwrap();
-            create_commit(&repo, branch.clone()).unwrap();
+            create_commit(&repo, branch.clone().into_qualified()).unwrap();
         }
 
         untrack(
@@ -237,7 +238,10 @@ fn untrack_with_prune() {
         .unwrap()
         .unwrap();
 
-        assert!(storage.reference(&branch).unwrap().is_none())
+        assert!(storage
+            .reference(&branch.into_qualified().into_refstring())
+            .unwrap()
+            .is_none())
     }
 }
 
@@ -260,15 +264,16 @@ fn untrack_no_prune() {
         .unwrap()
         .is_ok());
 
-        let branch = reflike!("refs/namespaces")
-            .join(&urn)
-            .join(reflike!("refs/remotes"))
-            .join(remote_peer)
-            .join(reflike!("heads/main"));
+        let branch = Namespaced::from(lit::refs_namespaces(
+            &urn,
+            Qualified::from(lit::refs_remotes(name::Component::from(&remote_peer)))
+                .join(name::HEADS)
+                .join(name::MAIN),
+        ));
 
         {
             let repo = git2::Repository::open(paths.git_dir()).unwrap();
-            create_commit(&repo, branch.clone()).unwrap();
+            create_commit(&repo, branch.clone().into_qualified()).unwrap();
         }
 
         untrack(
@@ -280,7 +285,10 @@ fn untrack_no_prune() {
         .unwrap()
         .unwrap();
 
-        assert!(storage.reference(&branch).unwrap().is_some())
+        assert!(storage
+            .reference(&branch.into_qualified().into_refstring())
+            .unwrap()
+            .is_some())
     }
 }
 
@@ -294,16 +302,17 @@ fn migration() {
         let peer2 = PeerId::from(SecretKey::new());
         let urn = Urn::new(git2::Oid::zero().into());
 
-        let branch = reflike!("refs/namespaces")
-            .join(&urn)
-            .join(reflike!("refs/remotes"))
-            .join(peer1)
-            .join(reflike!("heads/main"));
+        let branch = Namespaced::from(lit::refs_namespaces(
+            &urn,
+            Qualified::from(lit::refs_remotes(name::Component::from(&peer1)))
+                .join(name::HEADS)
+                .join(name::MAIN),
+        ));
 
         // write a reference to the repository
         {
             let repo = git2::Repository::open(paths.git_dir()).unwrap();
-            create_commit(&repo, branch.clone()).unwrap();
+            create_commit(&repo, branch.clone().into_qualified()).unwrap();
         }
 
         assert!(v1::track(&storage, &urn, peer1,).unwrap());
@@ -318,6 +327,9 @@ fn migration() {
                 .unwrap()
         );
         assert!(v1::tracked(&storage, &urn).unwrap().next().is_none());
-        assert!(storage.reference(&branch).unwrap().is_some())
+        assert!(storage
+            .reference(&branch.into_qualified().into_refstring())
+            .unwrap()
+            .is_some())
     }
 }

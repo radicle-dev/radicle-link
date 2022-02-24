@@ -101,6 +101,7 @@ path = "../link-canonical"
 
 [dependencies.link-crypto]
 path = "../link-crypto"
+features = ["git-ref-format"]
 
 [dependencies.link-git]
 path = "../link-git"

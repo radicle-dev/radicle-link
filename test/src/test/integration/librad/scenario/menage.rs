@@ -10,7 +10,8 @@ use std::{
 };
 
 use blocking::unblock;
-use it_helpers::{fixed::TestProject, testnet};
+use git_ref_format::{lit, RefString};
+use it_helpers::{fixed::TestProject, git::create_commit, testnet};
 use librad::{
     self,
     git::{
@@ -28,8 +29,6 @@ use librad::{
 };
 use test_helpers::logging;
 use tracing::info;
-
-use crate::git::create_commit;
 
 fn config() -> testnet::Config {
     testnet::Config {
@@ -87,7 +86,7 @@ fn a_trois() {
             .await
             .unwrap()
             .unwrap();
-        let default_branch: ext::RefLike = proj
+        let default_branch: RefString = proj
             .project
             .doc
             .payload
@@ -114,7 +113,7 @@ fn a_trois() {
                     ext::RefLike::try_from(format!("{}@{}", owner_subject.name, peer1.peer_id()))
                         .unwrap(),
                 );
-                let mastor = reflike!("refs/heads").join(&default_branch);
+                let mastor = lit::refs_heads(default_branch).into();
                 let mut remote = Remote::rad_remote(
                     url,
                     Refspec {
