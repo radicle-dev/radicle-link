@@ -10,7 +10,7 @@ use radicle_daemon::{PeerEvent, RunConfig};
 use test_helpers::logging;
 use tokio::time::timeout;
 
-use crate::daemon::common::Harness;
+use crate::common::Harness;
 
 #[test]
 fn can_observe_timers() -> Result<(), anyhow::Error> {

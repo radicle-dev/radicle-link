@@ -1,0 +1,46 @@
+[package]
+name = "radicle-daemon-test"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+description = "Test suite for the deprecated radicle-link-daemon"
+
+[lib]
+doctest = false
+test = true
+
+[features]
+replication-v3 = ["librad/replication-v3"]
+
+[dev-dependencies]
+anyhow = "1"
+assert_matches = "1"
+async-stream = "0.3"
+blocking = "1"
+futures = "0.3"
+kv = "0.22"
+lazy_static = "1"
+pretty_assertions = "1"
+serde = "1"
+tempfile = "3"
+tokio = "1"
+tracing = ">= 0.1"
+url = "2"
+
+[dev-dependencies.git2]
+version = ">= 0.13.24"
+default-features = false
+features = ["vendored-libgit2"]
+
+[dev-dependencies.librad]
+path = "../../librad"
+
+[dev-dependencies.radicle-daemon]
+path = "../../daemon"
+
+[dev-dependencies.radicle-git-ext]
+path = "../../git-ext"
+
+[dev-dependencies.test-helpers]
+path = "../test-helpers"

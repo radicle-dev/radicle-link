@@ -25,6 +25,7 @@ members = [
   "cli/lnk-profile",
   "std-ext",
   "test",
+  "test/daemon",
 ]
 exclude = [
   "bins",

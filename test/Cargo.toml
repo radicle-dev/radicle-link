@@ -14,11 +14,10 @@ test = true
 [features]
 replication-v3 = ["librad/replication-v3"]
 
-[dependencies]
+[dev-dependencies]
 assert_cmd = "2"
 assert_matches = "1.5.0"
 async-compat = "0.2.1"
-anyhow = "1"
 async-stream = "0.3"
 async-trait = "0"
 blocking = "1.0.2"
@@ -57,23 +56,23 @@ unicode-normalization = "0.1"
 url = "2.1"
 webpki = "0.21"
 
-[dependencies.automerge]
+[dev-dependencies.automerge]
 git = "https://github.com/automerge/automerge-rs.git"
 rev = "e72571962b51c2f0726fb534890ef3b4f7c74dfc"
 
-[dependencies.cob]
+[dev-dependencies.cob]
 path = "../cob"
 
-[dependencies.git2]
+[dev-dependencies.git2]
 version = ">= 0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 
-[dependencies.git-ref-format]
+[dev-dependencies.git-ref-format]
 path = "../git-ref-format"
 features = ["serde", "minicbor", "macro"]
 
-[dependencies.git-trailers]
+[dev-dependencies.git-trailers]
 path = "../git-trailers"
 
 [dev-dependencies.it-helpers]
@@ -82,62 +81,59 @@ path = "./it-helpers"
 [dev-dependencies.librad]
 path = "../librad"
 
-[dependencies.link-async]
+[dev-dependencies.link-async]
 path = "../link-async"
 
-[dependencies.link-canonical]
+[dev-dependencies.link-canonical]
 path = "../link-canonical"
 features = [ "derive" ]
 
-[dependencies.link-crypto]
+[dev-dependencies.link-crypto]
 path = "../link-crypto"
 
-[dependencies.link-identities]
+[dev-dependencies.link-identities]
 path = "../link-identities"
 
-[dependencies.link-git]
+[dev-dependencies.link-git]
 path = "../link-git"
 features = ["git2"]
 
-[dependencies.link-replication]
+[dev-dependencies.link-replication]
 path = "../link-replication"
 
-[dependencies.link-tracking]
+[dev-dependencies.link-tracking]
 path = "../link-tracking"
 
-[dependencies.node-lib]
+[dev-dependencies.node-lib]
 path = "../node-lib"
 
-[dependencies.lnk-clib]
+[dev-dependencies.lnk-clib]
 path = "../cli/lnk-clib"
 
-[dependencies.lnk-exe]
+[dev-dependencies.lnk-exe]
 path = "../cli/lnk-exe"
 
-[dependencies.lnk-identities]
+[dev-dependencies.lnk-identities]
 path = "../cli/lnk-identities"
 
-[dependencies.lnk-profile]
+[dev-dependencies.lnk-profile]
 path = "../cli/lnk-profile"
 
-[dependencies.radicle-daemon]
+[dev-dependencies.radicle-daemon]
 path = "../daemon"
 
-[dependencies.radicle-git-ext]
+[dev-dependencies.radicle-git-ext]
 path = "../git-ext"
 
-[dependencies.radicle-git-helpers]
-path = "../git-helpers"
-
-[dependencies.radicle-std-ext]
+[dev-dependencies.radicle-std-ext]
 path = "../std-ext"
 
-[dependencies.rand]
+[dev-dependencies.rand]
 version = "0.8"
 features = [ "small_rng" ]
 
 # Note: this MUST always match the exact patch version `quinn` uses
-[dependencies.rustls]
+[dev-dependencies.rustls]
 version  = "0.19"
 features = ["logging", "dangerous_configuration"]
 
@@ -148,9 +144,15 @@ path = "./test-helpers"
 git = "https://github.com/FintanH/thrussh"
 branch = "generic-agent"
 
-[dependencies.zeroize]
+[dev-dependencies.zeroize]
 version = "1.1"
 features = ["zeroize_derive"]
+
+[dependencies.anyhow]
+version = "1"
+
+[dependencies.radicle-git-helpers]
+path = "../git-helpers"
 
 [[bin]]
 name = "git-remote-rad"

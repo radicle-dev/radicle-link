@@ -6,6 +6,7 @@
 #[cfg(test)]
 #[macro_use]
 extern crate assert_matches;
+#[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
 #[cfg(test)]
@@ -17,13 +18,14 @@ extern crate futures_await_test;
 #[cfg(test)]
 #[macro_use]
 extern crate link_canonical;
+#[cfg(test)]
 extern crate radicle_std_ext as std_ext;
 
-#[macro_use]
-pub mod daemon;
+#[cfg(test)]
 pub mod canonical;
 #[cfg(test)]
 pub mod librad;
+#[cfg(test)]
 pub mod link_async;
 #[cfg(test)]
 pub mod node_lib;

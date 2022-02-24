@@ -5,6 +5,7 @@
 
 use std::convert::TryFrom;
 
+use assert_matches::assert_matches;
 use librad::{
     git::{
         local::url::LocalUrl,
@@ -22,7 +23,7 @@ use radicle_daemon::{
 use radicle_git_ext::RefLike;
 use test_helpers::logging;
 
-use crate::daemon::common::{assert_fetched, blocking, shia_le_pathbuf, Harness};
+use crate::common::{assert_fetched, blocking, shia_le_pathbuf, Harness};
 
 #[test]
 fn can_clone_project() -> Result<(), anyhow::Error> {

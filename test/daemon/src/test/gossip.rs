@@ -11,14 +11,7 @@ use radicle_daemon::{peer::run_config, seed::Seed, state, RunConfig};
 use test_helpers::logging;
 use tokio::time::timeout;
 
-use crate::daemon::common::{
-    assert_cloned,
-    radicle_project,
-    requested,
-    shia_le_pathbuf,
-    Harness,
-    TestExt,
-};
+use crate::common::{assert_cloned, radicle_project, requested, shia_le_pathbuf, Harness, TestExt};
 
 #[test]
 fn can_observe_announcement_from_connected_peer() -> Result<(), anyhow::Error> {
