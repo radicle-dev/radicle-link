@@ -8,7 +8,7 @@ authors = [
 ]
 
 [lib]
-doctest = true
+doctest = false
 test    = false
 
 [dependencies]

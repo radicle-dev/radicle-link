@@ -5,8 +5,10 @@ version = "0.1.0"
 authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
+publish = false
 
 [lib]
+doctest = false
 test = true
 
 [features]

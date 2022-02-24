@@ -5,6 +5,15 @@ authors = ["The Radicle Team <dev@radicle.xyz>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 
+[[bin]]
+name = "ephemeral-peer"
+doctest = false
+test = false
+
+[lib]
+doctest = false
+test = false
+
 [dependencies]
 anyhow = "1"
 argh = "0"
