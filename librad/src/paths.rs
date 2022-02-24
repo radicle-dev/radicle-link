@@ -11,7 +11,7 @@ use std::{
 
 use crypto::PeerId;
 
-use directories::{BaseDirs, ProjectDirs};
+use directories::ProjectDirs;
 
 /// A set of paths to store application data.
 ///
@@ -142,6 +142,8 @@ fn socket_dir_imp() -> Result<std::path::PathBuf, io::Error> {
 
 #[cfg(all(target_family = "unix", not(target_os = "macos")))]
 fn socket_dir_imp() -> Result<std::path::PathBuf, io::Error> {
+    use directories::BaseDirs;
+
     let base = BaseDirs::new().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,

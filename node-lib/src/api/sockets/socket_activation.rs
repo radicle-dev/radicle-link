@@ -44,7 +44,7 @@ pub fn profile(profile: &Profile, peer_id: &PeerId) -> Result<SyncSockets> {
     Ok(SyncSockets {
         rpc,
         events,
-        open_mode: super::OpenMode::InProcess {
+        open_mode: OpenMode::InProcess {
             rpc_socket_path,
             event_socket_path: events_socket_path,
         },
