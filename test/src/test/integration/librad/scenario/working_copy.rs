@@ -39,10 +39,10 @@ use librad::{
     PeerId,
     Signer,
 };
+use test_helpers::logging;
 
 use crate::{
     git::create_commit,
-    logging,
     rad::{identities::TestProject, testnet},
 };
 

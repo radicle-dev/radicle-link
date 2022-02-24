@@ -5,9 +5,6 @@
 
 use std::fmt::Debug;
 
-use pretty_assertions::assert_eq;
-use proptest::prelude::*;
-
 use librad::{
     git_ext::Oid,
     identities::payload::{
@@ -21,8 +18,11 @@ use librad::{
     },
     SecretKey,
 };
+use pretty_assertions::assert_eq;
+use proptest::prelude::*;
+use test_helpers::roundtrip;
 
-use crate::{librad::identities::payload::*, roundtrip::*};
+use crate::librad::identities::payload::*;
 
 #[test]
 fn person_example() {
@@ -114,7 +114,7 @@ nom is a parser combinators library written in Rust.";
         json_pretty.to_owned()
     );
 
-    cjson_roundtrip(payload)
+    roundtrip::cjson(payload)
 }
 
 fn duplicate_delegation<T>()
@@ -221,8 +221,8 @@ fn trippin<A>(a: A)
 where
     A: Clone + Debug + PartialEq + serde::Serialize + serde::de::DeserializeOwned,
 {
-    cjson_roundtrip(a.clone());
-    json_roundtrip(a)
+    roundtrip::cjson(a.clone());
+    roundtrip::json(a)
 }
 
 proptest! {
@@ -243,6 +243,6 @@ proptest! {
 
     #[test]
     fn key_or_urn(key_or_urn in gen_key_or_urn()) {
-        json_roundtrip(key_or_urn)
+        roundtrip::json(key_or_urn)
     }
 }

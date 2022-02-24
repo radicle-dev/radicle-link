@@ -9,8 +9,6 @@ use std::{
     process::Command,
 };
 
-use tempfile::tempdir;
-
 use librad::{
     crypto::keystore::{self, crypto, pinentry::SecUtf8, Keystore},
     git::{local::url::LocalUrl, storage::Storage, Urn},
@@ -19,8 +17,10 @@ use librad::{
     PublicKey,
     SecretKey,
 };
+use tempfile::tempdir;
+use test_helpers::logging;
 
-use crate::{logging, rad::identities::create_test_project};
+use crate::rad::identities::create_test_project;
 
 const PASSPHRASE: &str = "123";
 

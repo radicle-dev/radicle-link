@@ -6,11 +6,11 @@
 use std::time::Duration;
 
 use futures::{future, stream::StreamExt as _};
+use radicle_daemon::{PeerEvent, RunConfig};
+use test_helpers::logging;
 use tokio::time::timeout;
 
-use radicle_daemon::{PeerEvent, RunConfig};
-
-use crate::{daemon::common::Harness, logging};
+use crate::daemon::common::Harness;
 
 #[test]
 fn can_observe_timers() -> Result<(), anyhow::Error> {

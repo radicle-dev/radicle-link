@@ -6,8 +6,7 @@
 use std::process::{Command, Stdio};
 
 use lnk_clib::keys::ssh::SshAuthSock;
-
-use crate::tempdir::WithTmpDir;
+use test_helpers::tempdir::WithTmpDir;
 
 pub type TmpSshSock = WithTmpDir<SshAuthSock>;
 

@@ -6,8 +6,7 @@
 use std::ops::{Deref, DerefMut};
 
 use librad::{git::storage::config::Config, SecretKey};
-
-use crate::tempdir::WithTmpDir;
+use test_helpers::tempdir::WithTmpDir;
 
 pub struct TmpConfig<'a> {
     pub repo: git2::Repository,

@@ -20,7 +20,7 @@ version = "0.2.16"
 optional = true
 
 [dependencies.minicbor]
-version = "0.13.0"
+version = "0.13"
 features = ["std"]
 optional = true
 

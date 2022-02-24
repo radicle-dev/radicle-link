@@ -19,8 +19,9 @@ use librad::{
     PeerId,
     SecretKey,
 };
+use test_helpers::roundtrip;
 
-use crate::{librad::net::connection::MockStream, roundtrip::*};
+use crate::librad::net::connection::MockStream;
 
 lazy_static! {
     static ref INITIATOR: PeerId = PeerId::from(SecretKey::from_seed([
@@ -76,8 +77,8 @@ async fn upgrade_interrogation() {
 
 #[test]
 fn roundtrip_upgrade_request() {
-    cbor_roundtrip(UpgradeRequest::Gossip);
-    cbor_roundtrip(UpgradeRequest::Git);
-    cbor_roundtrip(UpgradeRequest::Membership);
-    cbor_roundtrip(UpgradeRequest::Interrogation);
+    roundtrip::cbor(UpgradeRequest::Gossip);
+    roundtrip::cbor(UpgradeRequest::Git);
+    roundtrip::cbor(UpgradeRequest::Membership);
+    roundtrip::cbor(UpgradeRequest::Interrogation);
 }

@@ -16,11 +16,9 @@ use librad::{
     git_ext::tree,
     reflike,
 };
+use test_helpers::logging;
 
-use crate::{
-    logging,
-    rad::{identities::TestProject, testnet},
-};
+use crate::rad::{identities::TestProject, testnet};
 
 fn config() -> testnet::Config {
     testnet::Config {

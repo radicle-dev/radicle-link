@@ -5,11 +5,9 @@
 
 use std::iter;
 
-use multibase::{self, Base};
-
 use librad::crypto::*;
-
-use crate::roundtrip::*;
+use multibase::{self, Base};
+use test_helpers::roundtrip;
 
 const DATA_TO_SIGN: &[u8] = b"alors monsieur";
 
@@ -29,12 +27,12 @@ fn test_sign_verify_via_pubkey() {
 
 #[test]
 fn test_public_key_json() {
-    json_roundtrip(SecretKey::new().public())
+    roundtrip::json(SecretKey::new().public())
 }
 
 #[test]
 fn test_public_key_cbor() {
-    cbor_roundtrip(SecretKey::new().public())
+    roundtrip::cbor(SecretKey::new().public())
 }
 
 #[test]
@@ -52,12 +50,12 @@ fn test_public_key_deserialize_wrong_version() {
 
 #[test]
 fn test_signature_json() {
-    json_roundtrip(SecretKey::new().sign(DATA_TO_SIGN))
+    roundtrip::json(SecretKey::new().sign(DATA_TO_SIGN))
 }
 
 #[test]
 fn test_signature_cbor() {
-    cbor_roundtrip(SecretKey::new().sign(DATA_TO_SIGN))
+    roundtrip::cbor(SecretKey::new().sign(DATA_TO_SIGN))
 }
 
 #[test]

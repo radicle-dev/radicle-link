@@ -4,8 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use librad::{git::Urn, git_ext, net::protocol::gossip::*, PeerId, SecretKey};
-
-use crate::roundtrip::*;
+use test_helpers::roundtrip;
 
 lazy_static! {
     static ref OID: git2::Oid =
@@ -14,7 +13,7 @@ lazy_static! {
 
 #[test]
 fn roundtrip_rev() {
-    cbor_roundtrip(Rev::Git(*OID));
+    roundtrip::cbor(Rev::Git(*OID));
 }
 
 #[test]
@@ -25,5 +24,5 @@ fn roundtrip_payload() {
         origin: Some(PeerId::from(SecretKey::new())),
     };
 
-    cbor_roundtrip(payload)
+    roundtrip::cbor(payload)
 }

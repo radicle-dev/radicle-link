@@ -15,8 +15,7 @@ use librad::{
     SecretKey,
 };
 use once_cell::sync::Lazy;
-
-use crate::roundtrip::cbor_roundtrip;
+use test_helpers::roundtrip;
 
 #[derive(Clone, Debug, PartialEq, minicbor::Encode, minicbor::Decode)]
 enum MessageV1<Addr, Payload> {
@@ -55,7 +54,7 @@ fn roundtrip_message() {
         ext: Some(broadcast::Ext::default()),
     };
 
-    cbor_roundtrip(have)
+    roundtrip::cbor(have)
 }
 
 #[test]

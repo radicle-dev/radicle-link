@@ -3,11 +3,11 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use librad::identities::{xor::*, SomeUrn, Urn};
 use sha1::{Digest, Sha1};
 use sized_vec::Vec as SVec;
+use test_helpers::roundtrip;
 use typenum::Unsigned;
-
-use librad::identities::{xor::*, SomeUrn, Urn};
 
 struct BuildUrn {
     hasher: Sha1,
@@ -56,13 +56,11 @@ fn false_positives() {
 
 #[test]
 fn cbor() {
-    use crate::roundtrip::cbor_roundtrip;
-
     let mut bob = BuildUrn::new();
     let urns = SVec::<MaxElements, _>::fill(|i| bob.build(&i.to_be_bytes()));
     let filter = Xor::from(&urns);
 
-    cbor_roundtrip(filter)
+    roundtrip::cbor(filter)
 }
 
 #[test]

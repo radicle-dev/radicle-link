@@ -6,8 +6,7 @@
 use std::io;
 
 use librad::paths::Paths;
-
-use crate::tempdir::WithTmpDir;
+use test_helpers::tempdir::WithTmpDir;
 
 pub type TmpPaths = WithTmpDir<Paths>;
 

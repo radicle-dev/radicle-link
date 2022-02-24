@@ -7,7 +7,6 @@
 use std::{convert::TryFrom, ops::Index as _, str::FromStr};
 
 use lazy_static::lazy_static;
-
 use librad::{
     collaborative_objects::{
         CollaborativeObject,
@@ -24,11 +23,9 @@ use librad::{
     identities::{delegation::Direct, git::Urn, payload},
     SecretKey,
 };
+use test_helpers::logging;
 
-use crate::{
-    logging,
-    rad::{identities::TestProject, testnet},
-};
+use crate::rad::{identities::TestProject, testnet};
 
 macro_rules! assert_state {
     ($object: expr, $expected_state: expr) => {
@@ -100,7 +97,15 @@ fn collab_object_crud() {
                         .expect("local ID should have been created by TestProject::create")
                         .unwrap();
                     id.link(storage, &urn).unwrap();
-                    assert!(tracking::track(storage, &urn, Some(peer2_id), tracking::Config::default(), tracking::policy::Track::Any).unwrap().is_ok());
+                    assert!(tracking::track(
+                        storage,
+                        &urn,
+                        Some(peer2_id),
+                        tracking::Config::default(),
+                        tracking::policy::Track::Any
+                    )
+                    .unwrap()
+                    .is_ok());
                     id
                 })
                 .await
@@ -352,50 +357,50 @@ fn collab_object_crud() {
         // able to write this test
         // Make a change which is not valid with respect to the schema
         //peer1
-            //.using_storage({
-                //let urn = proj.project.urn();
-                //let id = *object.id();
-                //let history = peer1_after_pull.history().clone();
-                //move |storage| {
-                    //storage
-                        //.collaborative_objects(None)
-                        //.update_object(
-                            //&local_id_2,
-                            //&urn,
-                            //UpdateObjectSpec {
-                                //typename: TYPENAME.clone(),
-                                //object_id: id,
-                                //changes: add_item(&history, 2),
-                                //message: Some("peer 1 invalid change".to_string()),
-                            //},
-                        //)
-                        //.unwrap();
-                //}
-            //})
-            //.await
-            //.unwrap();
+        //.using_storage({
+        //let urn = proj.project.urn();
+        //let id = *object.id();
+        //let history = peer1_after_pull.history().clone();
+        //move |storage| {
+        //storage
+        //.collaborative_objects(None)
+        //.update_object(
+        //&local_id_2,
+        //&urn,
+        //UpdateObjectSpec {
+        //typename: TYPENAME.clone(),
+        //object_id: id,
+        //changes: add_item(&history, 2),
+        //message: Some("peer 1 invalid change".to_string()),
+        //},
+        //)
+        //.unwrap();
+        //}
+        //})
+        //.await
+        //.unwrap();
 
         //let peer1_after_invalid_change = peer1
-            //.using_storage({
-                //let urn = proj.project.urn();
-                //let id = *object.id();
-                //move |storage| {
-                    //let result = storage
-                        //.collaborative_objects(None)
-                        //.retrieve_object(&urn, &TYPENAME, &id)
-                        //.unwrap()
-                        //.unwrap();
-                    //result
-                //}
-            //})
-            //.await
-            //.unwrap();
+        //.using_storage({
+        //let urn = proj.project.urn();
+        //let id = *object.id();
+        //move |storage| {
+        //let result = storage
+        //.collaborative_objects(None)
+        //.retrieve_object(&urn, &TYPENAME, &id)
+        //.unwrap()
+        //.unwrap();
+        //result
+        //}
+        //})
+        //.await
+        //.unwrap();
 
         //assert_state!(
-            //&peer1_after_invalid_change,
-            //serde_json::json!({
-                //"items": ["peer 1 item", "peer 2 item"],
-            //})
+        //&peer1_after_invalid_change,
+        //serde_json::json!({
+        //"items": ["peer 1 item", "peer 2 item"],
+        //})
         //);
 
         let peer1_all_objects = peer1

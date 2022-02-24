@@ -5,8 +5,6 @@
 
 use std::{convert::TryFrom, io};
 
-use pretty_assertions::assert_eq;
-
 use librad::{
     git::{
         local::url::LocalUrl,
@@ -19,8 +17,8 @@ use librad::{
     PeerId,
     SecretKey,
 };
-
-use crate::tempdir::WithTmpDir;
+use pretty_assertions::assert_eq;
+use test_helpers::tempdir::WithTmpDir;
 
 lazy_static! {
     static ref PEER_ID: PeerId = PeerId::from(SecretKey::from_seed([

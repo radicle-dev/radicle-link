@@ -6,8 +6,7 @@
 use std::io;
 
 use librad::{git::storage::Storage, paths::Paths, SecretKey};
-
-use crate::tempdir::WithTmpDir;
+use test_helpers::tempdir::WithTmpDir;
 
 pub mod config;
 

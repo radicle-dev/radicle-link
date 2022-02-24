@@ -13,8 +13,9 @@ use librad::{
     git_ext::RefLike,
     SecretKey,
 };
+use test_helpers::logging;
 
-use crate::{librad::git::storage::storage, logging, rad::identities::TestProject};
+use crate::{librad::git::storage::storage, rad::identities::TestProject};
 
 #[test]
 fn namespaces() {

@@ -5,11 +5,9 @@
 
 use pretty_assertions::assert_eq;
 use radicle_daemon::{project::checkout, state, RunConfig};
+use test_helpers::logging;
 
-use crate::{
-    daemon::common::{blocking, shia_le_pathbuf, Harness},
-    logging,
-};
+use crate::daemon::common::{blocking, shia_le_pathbuf, Harness};
 
 #[test]
 fn upstream_for_default() -> Result<(), Box<dyn std::error::Error>> {

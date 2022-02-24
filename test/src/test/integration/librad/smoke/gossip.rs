@@ -29,10 +29,10 @@ use librad::{
     Signer,
 };
 use tempfile::tempdir;
+use test_helpers::logging;
 
 use crate::{
     git::create_commit,
-    logging,
     rad::{identities::TestProject, testnet},
 };
 

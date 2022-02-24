@@ -13,8 +13,7 @@ use librad::{
     SecretKey,
 };
 use std_ext::Void;
-
-use crate::tempdir::WithTmpDir;
+use test_helpers::tempdir::WithTmpDir;
 
 pub mod refs;
 pub mod storage;

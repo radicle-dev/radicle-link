@@ -13,13 +13,11 @@ use librad::{
         types::{Namespace, Reference},
     },
 };
+use test_helpers::logging;
 
-use crate::{
-    logging,
-    rad::{
-        identities::TestProject,
-        testnet::{self, RunningTestPeer},
-    },
+use crate::rad::{
+    identities::TestProject,
+    testnet::{self, RunningTestPeer},
 };
 
 fn default_config() -> testnet::Config {

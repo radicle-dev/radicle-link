@@ -23,7 +23,6 @@ async-stream = "0.3"
 async-trait = "0"
 blocking = "1.0.2"
 bstr = "0.2"
-env_logger = "0"
 either = "1"
 futures = ">= 0.3"
 futures_codec = "0.4"
@@ -33,7 +32,6 @@ futures_ringbuf = "0.3.1"
 futures-timer = "3.0"
 kv = "0.22"
 lazy_static = "1"
-log = "0.4"
 minicbor = ">= 0.9.1, < 0.14"
 multibase = "0.9"
 multihash = "0.11"
@@ -140,13 +138,12 @@ features = [ "small_rng" ]
 version  = "0.19"
 features = ["logging", "dangerous_configuration"]
 
-[dependencies.thrussh-agent]
+[dev-dependencies.test-helpers]
+path = "./test-helpers"
+
+[dev-dependencies.thrussh-agent]
 git = "https://github.com/FintanH/thrussh"
 branch = "generic-agent"
-
-[dependencies.tracing-subscriber]
-version = "0.3.7"
-features = ["std", "env-filter", "fmt", "json"]
 
 [dependencies.zeroize]
 version = "1.1"

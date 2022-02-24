@@ -11,7 +11,7 @@ use std::{
 use link_canonical::Cjson;
 use pretty_assertions::assert_eq;
 
-pub fn json_roundtrip<A>(a: A)
+pub fn json<A>(a: A)
 where
     for<'de> A: Debug + PartialEq + serde::Serialize + serde::Deserialize<'de>,
 {
@@ -21,7 +21,7 @@ where
     )
 }
 
-pub fn cjson_roundtrip<A>(a: A)
+pub fn cjson<A>(a: A)
 where
     for<'de> A: Debug + PartialEq + serde::Serialize + serde::Deserialize<'de>,
 {
@@ -31,14 +31,14 @@ where
     )
 }
 
-pub fn cbor_roundtrip<A>(a: A)
+pub fn cbor<A>(a: A)
 where
     for<'de> A: Debug + PartialEq + minicbor::Encode + minicbor::Decode<'de>,
 {
     assert_eq!(a, minicbor::decode(&minicbor::to_vec(&a).unwrap()).unwrap())
 }
 
-pub fn str_roundtrip<A>(a: A)
+pub fn str<A>(a: A)
 where
     A: Debug + PartialEq + Display + FromStr,
     <A as FromStr>::Err: Debug,

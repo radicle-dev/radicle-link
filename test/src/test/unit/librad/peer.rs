@@ -6,8 +6,7 @@
 use std::convert::TryFrom as _;
 
 use librad::{git_ext as ext, PeerId, SecretKey};
-
-use crate::roundtrip::*;
+use test_helpers::roundtrip;
 
 #[test]
 fn test_default_encoding_roundtrip() {
@@ -27,12 +26,12 @@ fn test_default_encoding_empty_input() {
 
 #[test]
 fn test_str_roundtrip() {
-    str_roundtrip(PeerId::from(SecretKey::new().public()));
+    roundtrip::str(PeerId::from(SecretKey::new().public()));
 }
 
 #[test]
 fn test_cbor_roundtrip() {
-    cbor_roundtrip(PeerId::from(SecretKey::new().public()))
+    roundtrip::cbor(PeerId::from(SecretKey::new().public()))
 }
 
 #[test]

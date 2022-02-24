@@ -19,8 +19,9 @@ use librad::{
     Signer as _,
 };
 use lnk_clib::keys::{file_storage, ssh};
+use test_helpers::logging;
 
-use crate::{logging, ssh::with_ssh_agent};
+use crate::ssh::with_ssh_agent;
 
 #[test]
 fn agent_signature() -> anyhow::Result<()> {

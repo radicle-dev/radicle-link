@@ -6,8 +6,7 @@
 use std::convert::TryFrom;
 
 use radicle_git_ext::reference::{check, name::*};
-
-use crate::roundtrip::{cbor_roundtrip, json_roundtrip};
+use test_helpers::roundtrip;
 
 mod common {
     use super::*;
@@ -126,9 +125,9 @@ mod reflike {
     #[test]
     fn serde() {
         let refl = RefLike::try_from("pu").unwrap();
-        json_roundtrip(refl.clone());
-        json_roundtrip(OneLevel::from(refl.clone()));
-        json_roundtrip(Qualified::from(refl))
+        roundtrip::json(refl.clone());
+        roundtrip::json(OneLevel::from(refl.clone()));
+        roundtrip::json(Qualified::from(refl))
     }
 
     #[test]
@@ -142,9 +141,9 @@ mod reflike {
     #[test]
     fn cbor() {
         let refl = RefLike::try_from("pu").unwrap();
-        cbor_roundtrip(refl.clone());
-        cbor_roundtrip(OneLevel::from(refl.clone()));
-        cbor_roundtrip(Qualified::from(refl))
+        roundtrip::cbor(refl.clone());
+        roundtrip::cbor(OneLevel::from(refl.clone()));
+        roundtrip::cbor(Qualified::from(refl))
     }
 
     #[test]
@@ -227,7 +226,7 @@ mod pattern {
 
     #[test]
     fn serde() {
-        json_roundtrip(RefspecPattern::try_from("refs/heads/*").unwrap())
+        roundtrip::json(RefspecPattern::try_from("refs/heads/*").unwrap())
     }
 
     #[test]
@@ -238,7 +237,7 @@ mod pattern {
 
     #[test]
     fn cbor() {
-        cbor_roundtrip(RefspecPattern::try_from("refs/heads/*").unwrap())
+        roundtrip::cbor(RefspecPattern::try_from("refs/heads/*").unwrap())
     }
 
     #[test]

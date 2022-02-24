@@ -4,11 +4,10 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use librad::git::{local::url::LocalUrl, Urn};
-
-use crate::roundtrip::str_roundtrip;
+use test_helpers::roundtrip;
 
 #[test]
 fn trip() {
     let url = LocalUrl::from(Urn::new(git2::Oid::zero().into()));
-    str_roundtrip(url)
+    roundtrip::str(url)
 }

@@ -9,11 +9,6 @@ use std::{
     ops::Index as _,
 };
 
-use crate::{
-    git::create_commit,
-    logging,
-    rad::{identities::TestProject, testnet},
-};
 use blocking::unblock;
 use librad::{
     self,
@@ -30,7 +25,13 @@ use librad::{
     refspec_pattern,
     PeerId,
 };
+use test_helpers::logging;
 use tracing::info;
+
+use crate::{
+    git::create_commit,
+    rad::{identities::TestProject, testnet},
+};
 
 fn config() -> testnet::Config {
     testnet::Config {

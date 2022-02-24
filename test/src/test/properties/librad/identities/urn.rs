@@ -5,12 +5,12 @@
 
 use std::{convert::TryFrom, fmt::Debug};
 
+use librad::identities::urn::{HasProtocol, Urn};
 use multihash::{Multihash, MultihashRef};
 use proptest::prelude::*;
+use test_helpers::roundtrip;
 
-use librad::identities::urn::{HasProtocol, Urn};
-
-use crate::{librad::identities::urn::gen_urn, roundtrip::*};
+use crate::librad::identities::urn::gen_urn;
 
 /// All serialisation roundtrips [`Urn`] must pass
 pub fn trippin<R, E>(urn: Urn<R>)
@@ -20,9 +20,9 @@ where
     for<'a> &'a R: Into<Multihash>,
     E: std::error::Error + Send + Sync + 'static,
 {
-    str_roundtrip(urn.clone());
-    json_roundtrip(urn.clone());
-    cbor_roundtrip(urn);
+    roundtrip::str(urn.clone());
+    roundtrip::json(urn.clone());
+    roundtrip::cbor(urn);
 }
 
 proptest! {

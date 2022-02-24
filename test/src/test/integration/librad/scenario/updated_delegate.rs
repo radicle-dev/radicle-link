@@ -11,13 +11,11 @@ use librad::git::{
     types::{Namespace, Reference},
     Urn,
 };
+use test_helpers::logging;
 
-use crate::{
-    logging,
-    rad::{
-        identities::{TestPerson, TestProject},
-        testnet,
-    },
+use crate::rad::{
+    identities::{TestPerson, TestProject},
+    testnet,
 };
 
 fn config() -> testnet::Config {

@@ -7,8 +7,7 @@ use std::convert::TryFrom;
 
 use git_ref_format::{check_ref_format, refspec, Error, Options, RefStr, RefString};
 use proptest::prelude::*;
-
-use crate::roundtrip;
+use test_helpers::roundtrip;
 
 pub mod gen {
     use super::*;
@@ -180,12 +179,12 @@ pub mod name {
 
         #[test]
         fn json(input in gen::valid()) {
-           roundtrip::json_roundtrip(RefString::try_from(input).unwrap())
+           roundtrip::json(RefString::try_from(input).unwrap())
         }
 
         #[test]
         fn cbor(input in gen::valid()) {
-            roundtrip::cbor_roundtrip(RefString::try_from(input).unwrap())
+            roundtrip::cbor(RefString::try_from(input).unwrap())
         }
     }
 }
@@ -229,12 +228,12 @@ pub mod pattern {
 
         #[test]
         fn json(input in gen::with_glob()) {
-            roundtrip::json_roundtrip(refspec::PatternString::try_from(input).unwrap())
+            roundtrip::json(refspec::PatternString::try_from(input).unwrap())
         }
 
         #[test]
         fn cbor(input in gen::with_glob()) {
-            roundtrip::cbor_roundtrip(refspec::PatternString::try_from(input).unwrap())
+            roundtrip::cbor(refspec::PatternString::try_from(input).unwrap())
         }
     }
 }

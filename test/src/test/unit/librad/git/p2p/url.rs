@@ -6,8 +6,7 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
 use librad::{git::p2p::url::GitUrl, identities::git, PeerId, SecretKey};
-
-use crate::roundtrip::str_roundtrip;
+use test_helpers::roundtrip;
 
 #[test]
 fn test_str_roundtrip() {
@@ -26,5 +25,5 @@ fn test_str_roundtrip() {
         repo: git::Revision::from(git2::Oid::zero()),
     };
 
-    str_roundtrip(url)
+    roundtrip::str(url)
 }

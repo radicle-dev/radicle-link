@@ -6,9 +6,10 @@
 use link_canonical::{string, Cjson};
 use pretty_assertions::assert_eq;
 use proptest::prelude::*;
+use test_helpers::roundtrip;
 use unicode_normalization::UnicodeNormalization as _;
 
-use crate::{canonical::gen_cstring, roundtrip::*};
+use crate::canonical::gen_cstring;
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct T {
@@ -31,17 +32,17 @@ fn gen_t() -> impl Strategy<Value = T> {
 proptest! {
     #[test]
     fn cstring_roundtrip_str(cstring in gen_cstring()) {
-        str_roundtrip(cstring)
+        roundtrip::str(cstring)
     }
 
     #[test]
     fn cstring_roundtrip_json(cstring in gen_cstring()) {
-        json_roundtrip(cstring)
+        roundtrip::json(cstring)
     }
 
     #[test]
     fn cstring_roundtrip_cjson(cstring in gen_cstring()) {
-        cjson_roundtrip(cstring)
+        roundtrip::cjson(cstring)
     }
 
     #[test]

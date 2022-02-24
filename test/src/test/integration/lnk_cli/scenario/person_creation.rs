@@ -16,8 +16,9 @@ use librad::{
 };
 use lnk_identities as identities;
 use lnk_profile as profile;
+use test_helpers::logging;
 
-use crate::{logging, ssh::with_ssh_agent};
+use crate::ssh::with_ssh_agent;
 
 #[test]
 fn create() -> anyhow::Result<()> {

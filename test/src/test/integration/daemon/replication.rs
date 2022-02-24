@@ -20,11 +20,9 @@ use radicle_daemon::{
     RunConfig,
 };
 use radicle_git_ext::RefLike;
+use test_helpers::logging;
 
-use crate::{
-    daemon::common::{assert_fetched, blocking, shia_le_pathbuf, Harness},
-    logging,
-};
+use crate::daemon::common::{assert_fetched, blocking, shia_le_pathbuf, Harness};
 
 #[test]
 fn can_clone_project() -> Result<(), anyhow::Error> {
