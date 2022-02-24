@@ -8,8 +8,7 @@ use librad::{
     PeerId,
     SecretKey,
 };
-
-use crate::librad::git::storage::config::setup;
+use test_helpers::tempdir::WithTmpDir;
 
 lazy_static! {
     static ref ALICE_KEY: SecretKey = SecretKey::from_seed([
@@ -23,21 +22,34 @@ lazy_static! {
     static ref ALICE_PEER_ID: PeerId = PeerId::from(&*ALICE_KEY);
 }
 
+struct TmpState<'a> {
+    repo: git2::Repository,
+    config: Config<'a, SecretKey>,
+}
+
+fn tmp_state(key: &SecretKey) -> WithTmpDir<TmpState> {
+    WithTmpDir::new::<_, anyhow::Error>(|path| {
+        let mut repo = git2::Repository::init_bare(path)?;
+        let config = Config::init(&mut repo, key)?;
+        Ok(TmpState { repo, config })
+    })
+    .unwrap()
+}
+
 #[test]
 fn init_proper() {
-    let config = setup(&*ALICE_KEY);
-
-    assert_eq!(config.peer_id().unwrap(), *ALICE_PEER_ID);
-    assert!(config.user().unwrap().is_none())
+    let s = tmp_state(&*ALICE_KEY);
+    assert_eq!(s.config.peer_id().unwrap(), *ALICE_PEER_ID);
+    assert!(s.config.user().unwrap().is_none())
 }
 
 #[test]
 fn reinit_with_different_key() {
-    let mut alice_config = setup(&*ALICE_KEY);
-    let bob_config = Config::init(&mut alice_config.repo, &*BOB_KEY);
+    let mut alice = tmp_state(&*ALICE_KEY);
+    let bob = Config::init(&mut alice.repo, &*BOB_KEY);
 
     assert_matches!(
-        bob_config.map(|_| ()), // map to avoid `Debug` impl
+        bob.map(|_| ()), // map to avoid `Debug` impl
         Err(Error::AlreadyInitialised(pid)) if pid == *ALICE_PEER_ID
     )
 }

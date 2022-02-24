@@ -11,6 +11,7 @@ use tempfile::tempdir;
 use it_helpers::{
     fixed::{TestPerson, TestProject},
     testnet,
+    tmp,
 };
 use librad::{
     canonical::Cstring,
@@ -27,12 +28,10 @@ use librad::{
 };
 use lnk_identities::git::checkout::*;
 
-use crate::librad::paths::paths;
-
 #[test]
 fn local_checkout() -> anyhow::Result<()> {
     let temp = tempdir()?;
-    let paths = paths();
+    let paths = tmp::paths();
     let signer = SecretKey::new();
     let storage = Storage::open(&*paths, signer.clone())?;
     let proj = TestProject::create(&storage)?;

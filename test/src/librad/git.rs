@@ -3,8 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::io;
-
 use anyhow::anyhow;
 use either::Either::*;
 use librad::{
@@ -13,10 +11,8 @@ use librad::{
     SecretKey,
 };
 use std_ext::Void;
-use test_helpers::tempdir::WithTmpDir;
 
 pub mod refs;
-pub mod storage;
 
 pub fn dylan(
     storage: &Storage,
@@ -31,24 +27,6 @@ pub fn dylan(
     )?;
     identities::local::load(storage, dylan.urn())?
         .ok_or_else(|| anyhow::anyhow!("where did dylan go?"))
-}
-
-type TmpRepo = WithTmpDir<git2::Repository>;
-
-pub fn repo() -> anyhow::Result<TmpRepo> {
-    Ok(WithTmpDir::new(|path| {
-        let setup = || {
-            let repo = git2::Repository::init(path)?;
-
-            // We need to set user info to _something_, but that doesn't have to
-            // be valid, as we're using a shared repo with many keys
-            let mut config = repo.config()?;
-            config.set_str("user.name", "shared")?;
-            config.set_str("user.email", "not.relevant@for.testing")?;
-            Ok(repo)
-        };
-        setup().map_err(|e: git2::Error| io::Error::new(io::ErrorKind::Other, e))
-    })?)
 }
 
 #[derive(Clone)]

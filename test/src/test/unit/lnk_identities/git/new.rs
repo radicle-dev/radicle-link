@@ -7,7 +7,7 @@ use std::fs::{self, File};
 
 use tempfile::tempdir;
 
-use it_helpers::fixed::TestProject;
+use it_helpers::{fixed::TestProject, tmp};
 use librad::{
     canonical::Cstring,
     crypto::SecretKey,
@@ -18,8 +18,6 @@ use librad::{
     },
 };
 use lnk_identities::git::new::*;
-
-use crate::librad::paths::paths;
 
 #[test]
 fn validation_path_is_file() -> anyhow::Result<()> {
@@ -57,7 +55,7 @@ fn creation() -> anyhow::Result<()> {
     let validated = new.validate()?;
 
     let (url, repo) = {
-        let paths = paths();
+        let paths = tmp::paths();
         let signer = SecretKey::new();
         let storage = Storage::open(&*paths, signer.clone())?;
         let proj = TestProject::create(&storage)?;

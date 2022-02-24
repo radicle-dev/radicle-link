@@ -19,6 +19,15 @@ tempfile = "3"
 tokio = "1.13.1"
 tracing = ">= 0.1"
 
+[dependencies.git2]
+version = ">= 0.13.24"
+default-features = false
+features = ["vendored-libgit2"]
+
+#
+# workspace dependencies
+#
+
 [dependencies.librad]
 path = "../../librad"
 

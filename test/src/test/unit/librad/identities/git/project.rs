@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 
 use either::Either::*;
+use it_helpers::tmp;
 use librad::{
     git::Urn,
     identities::{
@@ -20,7 +21,7 @@ use librad::{
 };
 use std_ext::Void;
 
-use crate::librad::git::{repo, Device, Project};
+use crate::librad::git::{Device, Project};
 
 lazy_static! {
     static ref CHEYENNE_DESKTOP: SecretKey = SecretKey::from_seed([
@@ -43,7 +44,7 @@ lazy_static! {
 
 #[test]
 fn create() -> anyhow::Result<()> {
-    let repo = repo()?;
+    let repo = tmp::repo()?;
     {
         let dylan = Device::new(&*DYLAN, Identities::from(&*repo))?;
         Project::new(dylan.clone())?.assert_verifies(|urn| {
@@ -58,7 +59,7 @@ fn create() -> anyhow::Result<()> {
 
 #[test]
 fn update() -> anyhow::Result<()> {
-    let repo = repo()?;
+    let repo = tmp::repo()?;
     {
         let cheyenne = Device::new(&*CHEYENNE_DESKTOP, Identities::from(&*repo))?;
         let dylan = Device::new(&*DYLAN, Identities::from(&*repo))?;
@@ -83,7 +84,7 @@ fn update() -> anyhow::Result<()> {
 
 #[test]
 fn update_payload() -> anyhow::Result<()> {
-    let repo = repo()?;
+    let repo = tmp::repo()?;
     {
         let cheyenne = Device::new(&*CHEYENNE_DESKTOP, Identities::from(&*repo))?;
 
@@ -105,7 +106,7 @@ fn update_payload() -> anyhow::Result<()> {
 /// Revoke by just removing a delegation at the top-level
 #[test]
 fn revoke() -> anyhow::Result<()> {
-    let repo = repo()?;
+    let repo = tmp::repo()?;
     {
         let cheyenne = Device::new_with(
             &*CHEYENNE_DESKTOP,
@@ -159,7 +160,7 @@ fn revoke() -> anyhow::Result<()> {
 /// Revoke a key on a user, while keeping the project unchanged
 #[test]
 fn revoke_indirect() -> anyhow::Result<()> {
-    let repo = repo()?;
+    let repo = tmp::repo()?;
     {
         let cheyenne_desktop = Device::new_with(
             &*CHEYENNE_DESKTOP,
@@ -220,7 +221,7 @@ fn revoke_indirect() -> anyhow::Result<()> {
 
 #[test]
 fn double_vote() -> anyhow::Result<()> {
-    let repo = repo()?;
+    let repo = tmp::repo()?;
     {
         let cheyenne_desktop = Device::new_with(
             &*CHEYENNE_DESKTOP,
@@ -301,7 +302,7 @@ fn double_vote() -> anyhow::Result<()> {
 
 #[test]
 fn fork() -> anyhow::Result<()> {
-    let repo = repo()?;
+    let repo = tmp::repo()?;
     {
         let cheyenne = Device::new(&*CHEYENNE_DESKTOP, Identities::from(&*repo))?;
         let dylan = Device::new(&*DYLAN, Identities::from(&*repo))?;

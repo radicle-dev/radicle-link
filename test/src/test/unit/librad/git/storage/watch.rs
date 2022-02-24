@@ -5,7 +5,7 @@
 
 use std::{collections::BTreeSet, convert::TryFrom as _};
 
-use it_helpers::fixed::TestProject;
+use it_helpers::{fixed::TestProject, tmp};
 use librad::{
     git::{
         storage::watch::{EventKind, NamespaceEvent},
@@ -16,13 +16,11 @@ use librad::{
 };
 use test_helpers::logging;
 
-use crate::librad::git::storage::storage;
-
 #[test]
 fn namespaces() {
     logging::init();
 
-    let store = storage(SecretKey::new());
+    let store = tmp::storage(SecretKey::new());
     let (watcher, events) = store.watch().namespaces().unwrap();
     let TestProject { project, owner } = TestProject::create(&store).unwrap();
 

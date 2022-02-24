@@ -5,13 +5,14 @@
 
 use either::Either::Left;
 
+use it_helpers::tmp;
 use librad::{
     git::identities,
     identities::{delegation, payload, SomeIdentity},
     SecretKey,
 };
 
-use crate::librad::git::{self, storage::storage};
+use crate::librad::git;
 
 lazy_static! {
     static ref DYLAN: SecretKey = SecretKey::from_seed([
@@ -22,7 +23,7 @@ lazy_static! {
 
 #[test]
 fn create_anonymous() -> anyhow::Result<()> {
-    let storage = storage(DYLAN.clone());
+    let storage = tmp::storage(DYLAN.clone());
     let whoami = git::dylan(&storage, &DYLAN)?;
     let proj = identities::project::create(
         &storage,

@@ -7,7 +7,7 @@ use std::{convert::TryFrom as _, fs, path::Path};
 
 use tempfile::tempdir;
 
-use it_helpers::fixed::TestProject;
+use it_helpers::{fixed::TestProject, tmp};
 use librad::{
     canonical::Cstring,
     crypto::SecretKey,
@@ -23,7 +23,7 @@ use librad::{
 };
 use lnk_identities::git::{self, existing::*, new::New};
 
-use crate::{git::create_commit, librad::paths::paths};
+use crate::git::create_commit;
 
 #[test]
 fn validation_missing_path() -> anyhow::Result<()> {
@@ -92,7 +92,7 @@ fn validation_different_remote_exists() -> anyhow::Result<()> {
     let existing = Existing::new(ProjectPayload::new(payload), temp.path().to_path_buf());
     let result = {
         let valid = existing.validate()?;
-        let paths = paths();
+        let paths = tmp::paths();
         let signer = SecretKey::new();
         let storage = Storage::open(&*paths, signer.clone())?;
         let proj = TestProject::create(&storage)?;
@@ -118,7 +118,7 @@ fn validation_different_remote_exists() -> anyhow::Result<()> {
 fn validation_remote_exists() -> anyhow::Result<()> {
     let payload = TestProject::default_payload();
     let temp = tempdir()?;
-    let paths = paths();
+    let paths = tmp::paths();
     let signer = SecretKey::new();
     let storage = Storage::open(&*paths, signer.clone())?;
 
@@ -170,7 +170,7 @@ fn creation() -> anyhow::Result<()> {
     let existing = Existing::new(payload.clone(), temp.path().to_path_buf());
     let (url, repo) = {
         let valid = existing.validate()?;
-        let paths = paths();
+        let paths = tmp::paths();
         let signer = SecretKey::new();
         let storage = Storage::open(&*paths, signer.clone())?;
         let proj = TestProject::create(&storage)?;

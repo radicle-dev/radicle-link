@@ -3,6 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use it_helpers::tmp;
 use librad::{
     identities::{
         delegation::Direct,
@@ -12,7 +13,7 @@ use librad::{
     SecretKey,
 };
 
-use crate::librad::git::{repo, Device};
+use crate::librad::git::Device;
 
 lazy_static! {
     static ref DESKTOP: SecretKey = SecretKey::from_seed([
@@ -31,7 +32,7 @@ lazy_static! {
 
 #[test]
 fn create() -> anyhow::Result<()> {
-    let repo = repo()?;
+    let repo = tmp::repo()?;
     {
         Device::new(&*DESKTOP, Identities::from(&*repo))?.assert_verifies()
     }
@@ -39,7 +40,7 @@ fn create() -> anyhow::Result<()> {
 
 #[test]
 fn update() -> anyhow::Result<()> {
-    let repo = repo()?;
+    let repo = tmp::repo()?;
     {
         let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?
             .update(Direct::new(DESKTOP.public()).insert(LAPTOP.public()))?;
@@ -56,7 +57,7 @@ fn update() -> anyhow::Result<()> {
 
 #[test]
 fn revoke_a_deux() -> anyhow::Result<()> {
-    let repo = repo()?;
+    let repo = tmp::repo()?;
     {
         let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?
             .update(Direct::new(DESKTOP.public()).insert(LAPTOP.public()))?;
@@ -86,7 +87,7 @@ fn revoke_a_deux() -> anyhow::Result<()> {
 
 #[test]
 fn revoke_a_trois() -> anyhow::Result<()> {
-    let repo = repo()?;
+    let repo = tmp::repo()?;
     {
         let desktop = Device::new(&*DESKTOP, Identities::from(&*repo))?.update(
             Direct::new(DESKTOP.public())
