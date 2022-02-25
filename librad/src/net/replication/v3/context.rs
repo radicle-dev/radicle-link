@@ -566,7 +566,7 @@ impl Net for Context<'_> {
     async fn run_fetch<N, T>(
         &self,
         neg: N,
-    ) -> Result<(N, Result<Vec<FilteredRef<T>>, SkippedFetch>), Self::Error>
+    ) -> Result<(N, Result<Vec<FilteredRef<T>>, SkippedFetch<T>>), Self::Error>
     where
         N: Negotiation<T> + Send,
         T: Send + 'static,

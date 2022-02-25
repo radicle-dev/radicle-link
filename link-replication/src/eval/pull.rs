@@ -83,28 +83,24 @@ where
         .collect();
 
     let requires_confirmation = {
-        if skip.is_some() {
-            false
-        } else {
-            info!("setting up local rad/ hierarchy");
-            let shim = state.as_shim(cx);
-            match ids::newest(&shim, &delegates)? {
-                None => false,
-                Some((their_id, theirs)) => match rad::newer(&shim, Some(anchor), theirs)? {
-                    Err(error::ConfirmationRequired) => true,
-                    Ok(newest) => {
-                        let rad::Rad { mut track, up } = match newest {
-                            Left(ours) => rad::setup(&shim, None, &ours, whoami)?,
-                            Right(theirs) => rad::setup(&shim, Some(their_id), &theirs, whoami)?,
-                        };
+        info!("setting up local rad/ hierarchy");
+        let shim = state.as_shim(cx);
+        match ids::newest(&shim, &delegates)? {
+            None => false,
+            Some((their_id, theirs)) => match rad::newer(&shim, Some(anchor), theirs)? {
+                Err(error::ConfirmationRequired) => true,
+                Ok(newest) => {
+                    let rad::Rad { mut track, up } = match newest {
+                        Left(ours) => rad::setup(&shim, None, &ours, whoami)?,
+                        Right(theirs) => rad::setup(&shim, Some(their_id), &theirs, whoami)?,
+                    };
 
-                        state.trackings_mut().append(&mut track);
-                        state.update_all(up);
+                    state.trackings_mut().append(&mut track);
+                    state.update_all(up);
 
-                        false
-                    },
+                    false
                 },
-            }
+            },
         }
     };
 
@@ -192,7 +188,9 @@ where
 
     info!("updating tips");
     applied.append(&mut Refdb::update(cx, state.updates_mut().drain(..))?);
-    debug!("applied {:?}", applied.updated);
+    for u in &applied.updated {
+        debug!("applied {:?}", u);
+    }
 
     info!("updating signed refs");
     SignedRefs::update(cx)?;

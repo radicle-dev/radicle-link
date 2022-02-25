@@ -5,6 +5,7 @@
 
 use std::{
     collections::{BTreeSet, HashSet},
+    fmt::{self, Debug},
     hash::{Hash, Hasher},
     marker::PhantomData,
 };
@@ -17,14 +18,14 @@ use link_git::protocol::{ObjectId, Ref};
 use radicle_data::NonEmptyVec;
 use thiserror::Error;
 
-use crate::{refs, Refdb};
+use crate::{refs, Odb, Refdb};
 
 #[derive(Debug, Error)]
-pub enum SkippedFetch {
+pub enum SkippedFetch<T> {
     #[error("remote did not advertise any matching refs")]
     NoMatchingRefs,
-    #[error("all local refs up-to-date")]
-    WantNothing,
+    #[error("all objects exist in local odb")]
+    WantNothing(Vec<FilteredRef<T>>),
 }
 
 pub mod error {
@@ -49,7 +50,7 @@ pub trait Net {
     async fn run_fetch<N, T>(
         &self,
         neg: N,
-    ) -> Result<(N, Result<Vec<FilteredRef<T>>, SkippedFetch>), Self::Error>
+    ) -> Result<(N, Result<Vec<FilteredRef<T>>, SkippedFetch<T>>), Self::Error>
     where
         N: Negotiation<T> + Send,
         T: Send + 'static;
@@ -71,11 +72,13 @@ pub trait Negotiation<T = Self> {
     ///
     /// The `refs` are the advertised refs from executing `ls-refs`, filtered
     /// through [`Negotiation::ref_filter`].
-    fn wants_haves<R: Refdb>(
+    fn wants_haves<R>(
         &self,
         db: &R,
         refs: impl IntoIterator<Item = FilteredRef<T>>,
-    ) -> Result<WantsHaves<T>, error::WantsHaves<R::FindError>>;
+    ) -> Result<WantsHaves<T>, error::WantsHaves<R::FindError>>
+    where
+        R: Refdb + Odb;
 
     /// Maximum number of bytes the fetched packfile is allowed to have.
     fn fetch_limit(&self) -> u64;
@@ -145,9 +148,49 @@ impl From<RefPrefix> for BString {
 }
 
 pub struct WantsHaves<T: ?Sized> {
-    pub wanted: HashSet<FilteredRef<T>>,
+    /// Thread through the refs expected to be safe to update, either because
+    /// they were fetched or because their tips are already in the object
+    /// database.
+    pub expect: HashSet<FilteredRef<T>>,
+    /// The oids to send as `want` lines.
     pub wants: BTreeSet<ObjectId>,
+    /// The oids to send as `have` lines.
     pub haves: BTreeSet<ObjectId>,
+}
+
+impl<T> WantsHaves<T> {
+    pub fn expect_all<D, I>(self, db: &D, refs: I) -> Result<Self, D::FindError>
+    where
+        D: Refdb + Odb,
+        I: IntoIterator<Item = FilteredRef<T>>,
+    {
+        refs.into_iter().try_fold(self, |mut acc, r| {
+            let want = match db.refname_to_id(r.to_remote_tracking())? {
+                Some(oid) => {
+                    let want = oid.as_ref() != r.tip && !db.contains(&r.tip);
+                    acc.haves.insert(oid.into());
+                    want
+                },
+                None => !db.contains(&r.tip),
+            };
+            if want {
+                acc.wants.insert(r.tip);
+            }
+            acc.expect.insert(r);
+
+            Ok(acc)
+        })
+    }
+}
+
+impl<T> Default for WantsHaves<T> {
+    fn default() -> Self {
+        WantsHaves {
+            expect: Default::default(),
+            wants: Default::default(),
+            haves: Default::default(),
+        }
+    }
 }
 
 pub struct FilteredRef<T: ?Sized> {
@@ -199,6 +242,15 @@ impl<T> Clone for FilteredRef<T> {
             parsed: self.parsed.clone(),
             _marker: PhantomData,
         }
+    }
+}
+
+impl<T> Debug for FilteredRef<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("FilteredRef")
+            .field("tip", &self.tip)
+            .field("parsed", &self.parsed)
+            .finish()
     }
 }
 

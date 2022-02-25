@@ -144,7 +144,7 @@ where
         Some(SkippedFetch::NoMatchingRefs) => {
             return Err("remote did not advertise verification refs".into())
         },
-        Some(SkippedFetch::WantNothing) => {
+        Some(SkippedFetch::WantNothing(_)) => {
             ids::of(cx, &remote_id)?.expect("BUG: wanted nothing, but don't have it either")
         },
         None => Identities::verify(

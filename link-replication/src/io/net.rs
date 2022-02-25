@@ -72,7 +72,7 @@ where
     async fn run_fetch<N, T>(
         &self,
         neg: N,
-    ) -> Result<(N, Result<Vec<FilteredRef<T>>, SkippedFetch>), io::Error>
+    ) -> Result<(N, Result<Vec<FilteredRef<T>>, SkippedFetch<T>>), io::Error>
     where
         N: Negotiation<T> + Send,
         T: Send + 'static,
@@ -120,7 +120,7 @@ where
         };
 
         let WantsHaves {
-            wanted,
+            expect,
             mut wants,
             haves,
         } = neg
@@ -132,7 +132,10 @@ where
         wants.retain(|oid| !haves.contains(oid));
         if wants.is_empty() {
             info!("want nothing");
-            return Ok((neg, Err(SkippedFetch::WantNothing)));
+            return Ok((
+                neg,
+                Err(SkippedFetch::WantNothing(expect.into_iter().collect())),
+            ));
         }
         let wants: Vec<_> = wants.into_iter().collect();
         let haves: Vec<_> = haves.into_iter().collect();
@@ -202,7 +205,7 @@ where
             .wanted_refs
             .into_iter()
             .filter_map(|r| neg.ref_filter(r))
-            .chain(wanted)
+            .chain(expect)
             .collect::<Vec<_>>();
 
         Ok((neg, Ok(refs_in_pack)))

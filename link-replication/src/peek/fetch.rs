@@ -4,7 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet},
     convert::TryFrom,
 };
 
@@ -27,6 +27,7 @@ use crate::{
     FilteredRef,
     Identities,
     Negotiation,
+    Odb,
     RefPrefix,
     Refdb,
     Update,
@@ -99,36 +100,15 @@ impl Negotiation for ForFetch {
         }
     }
 
-    fn wants_haves<R: Refdb>(
+    fn wants_haves<R>(
         &self,
         db: &R,
         refs: impl IntoIterator<Item = FilteredRef<Self>>,
-    ) -> Result<WantsHaves<Self>, transmit::error::WantsHaves<R::FindError>> {
-        let mut wanted = HashSet::new();
-        let mut wants = BTreeSet::new();
-        let mut haves = BTreeSet::new();
-
-        for r in refs {
-            let refname = refs::Qualified::from(r.to_remote_tracking());
-            match db.refname_to_id(refname)? {
-                Some(oid) => {
-                    if oid.as_ref() != r.tip {
-                        wants.insert(r.tip);
-                    }
-                    haves.insert(oid.into());
-                },
-                None => {
-                    wants.insert(r.tip);
-                },
-            }
-            wanted.insert(r);
-        }
-
-        Ok(WantsHaves {
-            wanted,
-            wants,
-            haves,
-        })
+    ) -> Result<WantsHaves<Self>, transmit::error::WantsHaves<R::FindError>>
+    where
+        R: Refdb + Odb,
+    {
+        Ok(WantsHaves::default().expect_all(db, refs)?)
     }
 
     fn fetch_limit(&self) -> u64 {

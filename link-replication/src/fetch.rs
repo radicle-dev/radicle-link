@@ -3,8 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::collections::{BTreeSet, HashSet};
-
 use bstr::ByteSlice as _;
 use git_ref_format::Qualified;
 use link_crypto::PeerId;
@@ -21,6 +19,7 @@ use crate::{
     FilteredRef,
     Identities,
     Negotiation,
+    Odb,
     Policy,
     RefPrefix,
     Refdb,
@@ -75,14 +74,15 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
         }
     }
 
-    fn wants_haves<'a, R: Refdb>(
+    fn wants_haves<'a, R>(
         &self,
         db: &R,
         refs: impl IntoIterator<Item = FilteredRef<Self>>,
-    ) -> Result<WantsHaves<Self>, transmit::error::WantsHaves<R::FindError>> {
-        let mut wanted = HashSet::new();
-        let mut wants = BTreeSet::new();
-        let mut haves = BTreeSet::new();
+    ) -> Result<WantsHaves<Self>, transmit::error::WantsHaves<R::FindError>>
+    where
+        R: Refdb + Odb,
+    {
+        let mut wh = WantsHaves::default();
 
         for (remote_id, refs) in &self.signed_refs.refs {
             for (name, tip) in refs {
@@ -92,39 +92,20 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
                     .and_then(|q| refs::remote_tracking(remote_id, q))
                     .ok_or_else(|| transmit::error::WantsHaves::Malformed(name.to_owned()))?;
 
-                if let Some(oid) = db.refname_to_id(tracking)? {
-                    haves.insert(oid.as_ref().to_owned());
-                    // TODO: do we want to check if `tip` is in the ancestry
-                    // path? This could be a reset to a previous version.
-                    if tip.as_ref() != oid.as_ref() {
-                        wants.insert(tip.as_ref().to_owned());
-                    }
-                } else {
-                    wants.insert(tip.as_ref().to_owned());
+                let want = match db.refname_to_id(tracking)? {
+                    Some(oid) => {
+                        wh.haves.insert(oid.as_ref().to_owned());
+                        tip.as_ref() != oid.as_ref() && !db.contains(tip)
+                    },
+                    None => !db.contains(tip),
+                };
+                if want {
+                    wh.wants.insert(tip.as_ref().to_owned());
                 }
             }
         }
 
-        for r in refs {
-            let have = db.refname_to_id(r.to_remote_tracking())?;
-            if let Some(oid) = have.as_ref() {
-                haves.insert(oid.as_ref().to_owned());
-                // TODO: as above, should perform ancestry check?
-                if r.tip.as_ref() != oid.as_ref() {
-                    wants.insert(r.tip);
-                    wanted.insert(r);
-                }
-            } else {
-                wants.insert(r.tip);
-                wanted.insert(r);
-            }
-        }
-
-        Ok(WantsHaves {
-            wanted,
-            wants,
-            haves,
-        })
+        Ok(wh.expect_all(db, refs)?)
     }
 
     fn fetch_limit(&self) -> u64 {

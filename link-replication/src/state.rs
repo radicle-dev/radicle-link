@@ -69,14 +69,21 @@ where
         &mut self,
         cx: &mut C,
         step: S,
-    ) -> Result<(S, Option<SkippedFetch>), error::Error>
+    ) -> Result<(S, Option<SkippedFetch<S>>), error::Error>
     where
         C: Identities<Urn = U> + Net + Refdb,
         S: Layout + Negotiation + UpdateTips + Send + Sync + 'static,
     {
         Refdb::reload(cx)?;
         let (step, res) = block_on(Net::run_fetch(cx, step).in_current_span())?;
-        if let Ok(refs) = &res {
+
+        let refs = match &res {
+            Ok(refs) | Err(SkippedFetch::WantNothing(refs)) => Some(refs),
+            _ => None,
+        };
+
+        debug!(?refs);
+        if let Some(refs) = refs {
             Layout::pre_validate(&step, refs)?;
             for r in refs {
                 if let Some(rad) = r.parsed.inner.as_ref().left() {
