@@ -60,7 +60,8 @@ pub fn quick_commit(
 
     let author = repo.signature()?;
     let branch = {
-        let path = reference::OneLevel::from(urn.path.clone().unwrap_or(reflike!("master")));
+        let path =
+            reference::OneLevel::from(urn.path.clone().unwrap_or_else(|| reflike!("master")));
         reflike!("refs/namespaces")
             .join(Namespace::from(urn))
             .join(path.into_qualified(reflike!("heads")))

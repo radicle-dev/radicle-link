@@ -432,8 +432,7 @@ fn init_history() -> Vec<u8> {
     backend
         .get_changes(&[])
         .iter()
-        .map(|c| c.raw_bytes().to_vec())
-        .flatten()
+        .flat_map(|c| c.raw_bytes().to_vec())
         .collect()
 }
 

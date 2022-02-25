@@ -67,10 +67,8 @@ fn responds() {
             requester.interrogate((responder.peer_id(), responder.listen_addrs().to_vec()));
         assert_eq!(
             PeerAdvertisement {
-                listen_addrs: BoundedVec::try_from_length(
-                    responder.listen_addrs().iter().copied().collect()
-                )
-                .unwrap(),
+                listen_addrs: BoundedVec::try_from_length(responder.listen_addrs().to_vec())
+                    .unwrap(),
                 capabilities: Default::default(),
             },
             interrogation.peer_advertisement().await.unwrap()

@@ -116,7 +116,7 @@ where
 
         let span = tracing::info_span!("open-git-stream", remote_id = %to);
         match self
-            .connection(*to, addr_hints.iter().copied().collect::<Vec<_>>())
+            .connection(*to, addr_hints.to_vec())
             .instrument(span.clone())
             .await
         {
