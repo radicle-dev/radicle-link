@@ -2,3 +2,4 @@ target
 .vscode
 tags
 Cargo.lock
+!bins/Cargo.lock
