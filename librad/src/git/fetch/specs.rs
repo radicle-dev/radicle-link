@@ -252,7 +252,7 @@ pub mod refspecs {
         // whomever we're tracking for `urn`.
         let mut delegates = delegates
             .iter()
-            .map(|delegate_urn| {
+            .flat_map(|delegate_urn| {
                 let mut peek = peek(
                     delegate_urn,
                     remote_peer,
@@ -266,7 +266,6 @@ pub mod refspecs {
 
                 peek
             })
-            .flatten()
             .collect::<Vec<_>>();
 
         signed.append(&mut peek_remote);
@@ -291,7 +290,7 @@ pub mod refspecs {
         }
 
         let suffix: ext::RefLike = ext::RefLike::from(r.category).join(r.name.to_owned());
-        let remote = r.remote.unwrap_or(refspec_pattern!("*"));
+        let remote = r.remote.unwrap_or_else(|| refspec_pattern!("*"));
         refl.join(reflike!("remotes"))
             .with_pattern_suffix(remote)
             .append(suffix)

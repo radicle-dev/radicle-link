@@ -119,7 +119,7 @@ impl Change {
 
         let schema_trailer = trailers::SchemaCommitTrailer::from(spec.schema_commit).into();
 
-        let mut tips = spec.tips.clone().unwrap_or_else(Vec::new);
+        let mut tips = spec.tips.clone().unwrap_or_default();
         tips.push(spec.schema_commit);
         tips.push(authorizing_identity_commit);
 

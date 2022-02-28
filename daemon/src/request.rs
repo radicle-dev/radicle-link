@@ -123,6 +123,7 @@ impl<S, T> Request<S, T> {
 
     /// If a state keeps track of found peers then it can transition back to
     /// itself by adding a `PeerId` to the existing set of peers.
+    #[must_use]
     pub fn found(mut self, peer: PeerId, timestamp: T) -> Request<S, T>
     where
         S: HasPeers,

@@ -53,7 +53,7 @@ fn not_present() {
         let urn = maintainer.project.project.urn().clone();
         let maintainer_id = maintainer.peer.peer_id();
         let voyeur_id = voyeur.peer_id();
-        let voyeur_addrs = voyeur.listen_addrs().iter().copied().collect::<Vec<_>>();
+        let voyeur_addrs = voyeur.listen_addrs().to_vec();
 
         contributor.clone_from(maintainer, true).await.unwrap();
 
@@ -163,7 +163,7 @@ impl Leecher<'_> {
         let urn = host.project.project.urn();
         let owner = host.project.owner;
         let host_peer = host.peer.peer_id();
-        let host_addrs = host.peer.listen_addrs().iter().copied().collect::<Vec<_>>();
+        let host_addrs = host.peer.listen_addrs().to_vec();
 
         self.0
             .replicate(
