@@ -6,11 +6,11 @@
 use std::{collections::BTreeSet, fs};
 use tempfile::TempDir;
 
-use librad::profile::{id, Error, Profile, ProfileId, RadHome};
+use librad::profile::{id, Error, LnkHome, Profile, ProfileId};
 
 pub struct TempHome {
     tmp: TempDir,
-    home: RadHome,
+    home: LnkHome,
 }
 
 fn temp() -> TempHome {
@@ -18,7 +18,7 @@ fn temp() -> TempHome {
     let root = tmp.path().to_path_buf();
     TempHome {
         tmp,
-        home: RadHome::Root(root),
+        home: LnkHome::Root(root),
     }
 }
 

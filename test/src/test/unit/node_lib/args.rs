@@ -14,7 +14,7 @@ use structopt::StructOpt as _;
 
 use librad::{
     net::Network,
-    profile::{ProfileId, RadHome},
+    profile::{LnkHome, ProfileId},
 };
 
 use node_lib::args::{
@@ -43,7 +43,7 @@ fn defaults() -> Result<()> {
     assert_matches!(
         parsed,
         Args {
-            rad_home: RadHome::ProjectDirs,
+            lnk_home: LnkHome::ProjectDirs,
             ..
         }
     );
@@ -188,19 +188,19 @@ fn protocol_network() -> Result<()> {
 }
 
 #[test]
-fn rad_home() -> Result<()> {
+fn lnk_home() -> Result<()> {
     #[rustfmt::skip]
     let iter = vec![
         "linkd",
             "--protocol-listen", "localhost",
-            "--rad-home", "/tmp/linkd",
+            "--lnk-home", "/tmp/linkd",
     ];
     let parsed = Args::from_iter_safe(iter)?;
 
     assert_eq!(
         parsed,
         Args {
-            rad_home: RadHome::Root(PathBuf::from("/tmp/linkd")),
+            lnk_home: LnkHome::Root(PathBuf::from("/tmp/linkd")),
             ..Default::default()
         }
     );

@@ -5,7 +5,7 @@
 
 use std::process::{Command, Stdio};
 
-use rad_clib::keys::ssh::SshAuthSock;
+use lnk_clib::keys::ssh::SshAuthSock;
 
 use crate::tempdir::WithTmpDir;
 

@@ -1,0 +1,27 @@
+[package]
+name = "lnk-profile"
+version = "0.1.0"
+authors = ["The Radicle Team <dev@radicle.xyz>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+[lib]
+doctest = true
+test = false
+
+[dependencies]
+anyhow = "1"
+futures-lite = "1.12.0"
+thiserror = "1"
+serde = "1"
+structopt = "0.3"
+
+[dependencies.librad]
+path = "../../librad"
+
+[dependencies.lnk-clib]
+path = "../lnk-clib"
+
+[dependencies.thrussh-agent]
+git = "https://github.com/FintanH/thrussh"
+branch = "generic-agent"

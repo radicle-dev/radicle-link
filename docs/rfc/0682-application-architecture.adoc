@@ -327,7 +327,7 @@ thus breaks the desired isolation to the logged-in user. A workaround could be
 to supply the `ProxyCommand` option to ssh, which proxies the connection over a
 UNIX socket. While possible to achieve by modifying the user's git
 configuration, a more robust and flexible solution might be to provide a wrapper
-command (`rad push/pull`).
+command (`lnk push/pull`).
 
 The git daemon emits events to the pub-sub bus after successful pushes. Like the
 <<post-receive>> hook, this is one event per updated ref, for example:
@@ -349,7 +349,7 @@ The peer id the git daemon is assuming shall be encoded in the topic name.
 The canonical `radicle-link` CLI shall follow the "subcommand" pattern familiar
 from git and other complex commandline applications. Like git, it shall be
 possible to extend the set of available subcommands by placing executables
-conforming to a naming convention (eg. `rad-<command>`) in the user's PATH. It
+conforming to a naming convention (eg. `lnk-<command>`) in the user's PATH. It
 SHALL NOT be possible to override builtin commands by this mechanism.
 
 Each subcommand MUST expose its functionality as a linkable library, and provide

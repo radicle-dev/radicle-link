@@ -40,8 +40,8 @@ path = "../link-async"
 version = ">= 0.9.1, < 0.14"
 features = ["std", "derive"]
 
-[dependencies.rad-clib]
-path    = "../rad-clib"
+[dependencies.lnk-clib]
+path    = "../cli/lnk-clib"
 version = "0.1.0"
 
 [dependencies.radicle-macros]

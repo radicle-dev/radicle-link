@@ -15,10 +15,10 @@ use librad::{
     crypto,
     git::Urn,
     net::Network,
-    profile::{ProfileId, RadHome},
+    profile::{LnkHome, ProfileId},
     PeerId,
 };
-use rad_clib::keys::ssh::SshAuthSock;
+use lnk_clib::keys::ssh::SshAuthSock;
 
 #[derive(Debug, Default, Eq, PartialEq, StructOpt)]
 pub struct Args {
@@ -33,8 +33,8 @@ pub struct Args {
 
     /// Home of the profile data, if not provided is read from the environment
     /// and falls back to project dirs.
-    #[structopt(long, default_value, parse(from_str = parse_rad_home), env="RAD_HOME")]
-    pub rad_home: RadHome,
+    #[structopt(long, default_value, parse(from_str = parse_lnk_home), env="LNK_HOME")]
+    pub lnk_home: LnkHome,
 
     /// Which unix domain socket to use for connecting to the ssh-agent. The
     /// default will defer to SSH_AUTH_SOCK, otherwise the value given should be
@@ -238,10 +238,10 @@ impl FromStr for KeySource {
     }
 }
 
-fn parse_rad_home(src: &str) -> RadHome {
+fn parse_lnk_home(src: &str) -> LnkHome {
     match src {
-        dirs if dirs == RadHome::ProjectDirs.to_string() => RadHome::ProjectDirs,
-        _ => RadHome::Root(PathBuf::from(src)),
+        dirs if dirs == LnkHome::ProjectDirs.to_string() => LnkHome::ProjectDirs,
+        _ => LnkHome::Root(PathBuf::from(src)),
     }
 }
 

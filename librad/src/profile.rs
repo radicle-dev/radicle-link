@@ -15,8 +15,8 @@ use crate::paths::{project_dirs, Paths};
 pub mod id;
 pub use id::ProfileId;
 
-pub const RAD_HOME: &str = "RAD_HOME";
-pub const RAD_PROFILE: &str = "RAD_PROFILE";
+pub const LNK_HOME: &str = "LNK_HOME";
+pub const LNK_PROFILE: &str = "LNK_PROFILE";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -39,19 +39,19 @@ pub struct Profile {
 
 /// An enumeration of where the root directory for a `Profile` lives.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RadHome {
+pub enum LnkHome {
     /// The system specific directories given by [`directories::ProjectDirs`].
     ProjectDirs,
-    /// A given path, usually set through `RAD_HOME`.
+    /// A given path, usually set through `LNK_HOME`.
     Root(PathBuf),
 }
 
-impl Default for RadHome {
-    /// If `RAD_HOME` is defined then the path supplied there is used and
-    /// [`RadHome::Root`] is constructed. Otherwise, [`RadHome::ProjectDirs`] is
+impl Default for LnkHome {
+    /// If `LNK_HOME` is defined then the path supplied there is used and
+    /// [`LnkHome::Root`] is constructed. Otherwise, [`LnkHome::ProjectDirs`] is
     /// constructed.
     fn default() -> Self {
-        if let Ok(root) = env::var(RAD_HOME) {
+        if let Ok(root) = env::var(LNK_HOME) {
             Self::Root(Path::new(&root).to_path_buf())
         } else {
             Self::ProjectDirs
@@ -59,13 +59,13 @@ impl Default for RadHome {
     }
 }
 
-impl fmt::Display for RadHome {
+impl fmt::Display for LnkHome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
     }
 }
 
-impl RadHome {
+impl LnkHome {
     fn config(&self) -> Result<PathBuf, io::Error> {
         Ok(match self {
             Self::ProjectDirs => project_dirs()?.config_dir().to_path_buf(),
@@ -76,21 +76,21 @@ impl RadHome {
 
 impl Profile {
     /// Create a new `Profile` by generating a new [`ProfileId`] and creating
-    /// the directory structure under the [`RadHome`] given. Note that this
+    /// the directory structure under the [`LnkHome`] given. Note that this
     /// will not set the active profile, to do that use [`Profile::set`].
-    pub fn new(home: &RadHome) -> Result<Self, Error> {
+    pub fn new(home: &LnkHome) -> Result<Self, Error> {
         let id = ProfileId::new();
         Self::from_home(home, Some(id))
     }
 
-    pub fn active(home: &RadHome) -> Result<Option<Self>, Error> {
+    pub fn active(home: &LnkHome) -> Result<Option<Self>, Error> {
         let id = ProfileId::active(home)?;
         id.map(|id| Self::from_home(home, Some(id))).transpose()
     }
 
     /// Get the `Profile` to be found by `id` under `home`. If it does not exist
     /// then `None` is retured.
-    pub fn get(home: &RadHome, id: ProfileId) -> Result<Option<Self>, Error> {
+    pub fn get(home: &LnkHome, id: ProfileId) -> Result<Option<Self>, Error> {
         if !exists(home, &id)? {
             return Ok(None);
         }
@@ -100,7 +100,7 @@ impl Profile {
     /// Set the `"active_profile"` under `home` to the given `id`. This will
     /// error if the `id` does not exist under `home`. To ensure that the
     /// `ProfileId` exists, use [`Profile::get`].
-    pub fn set(home: &RadHome, id: ProfileId) -> Result<Self, Error> {
+    pub fn set(home: &LnkHome, id: ProfileId) -> Result<Self, Error> {
         if !exists(home, &id)? {
             return Err(Error::DoesNotExist(id));
         }
@@ -111,7 +111,7 @@ impl Profile {
     /// List all the `Profile`s that can be found under `home`.
     ///
     /// Note: It is expected that only [`ProfileId`]s exist under `home`.
-    pub fn list(home: &RadHome) -> Result<Vec<Self>, Error> {
+    pub fn list(home: &LnkHome) -> Result<Vec<Self>, Error> {
         let mut profiles = Vec::new();
         let config = home.config()?;
         for entry in config.read_dir()? {
@@ -137,10 +137,10 @@ impl Profile {
     /// containing the identifier does not exist, it is created and a new
     /// identifier is generated and written to the file.
     ///
-    /// If the `RAD_PROFILE` environment variable is set, its value is used as
+    /// If the `LNK_PROFILE` environment variable is set, its value is used as
     /// the profile identifier. The `active_profile` file is ignored.
     ///
-    /// If the `RAD_HOME` environment variable is set, its value is used instead
+    /// If the `LNK_HOME` environment variable is set, its value is used instead
     /// of system specific project directories. See also
     /// [`Profile::from_root`].
     ///
@@ -155,7 +155,7 @@ impl Profile {
     /// `ProjectDirs_DATA_HOME/radicle-link/<profile-id>`.
     pub fn load() -> Result<Self, Error> {
         let env_profile_id = ProfileId::from_env()?;
-        let home = RadHome::default();
+        let home = LnkHome::default();
         Self::from_home(&home, env_profile_id)
     }
 
@@ -167,22 +167,22 @@ impl Profile {
     /// ID is generated and written to `<root>/active_profile`.
     ///
     /// [`Paths::from_root`] for more information.
-    pub fn from_home(home: &RadHome, profile_id: Option<ProfileId>) -> Result<Self, Error> {
+    pub fn from_home(home: &LnkHome, profile_id: Option<ProfileId>) -> Result<Self, Error> {
         let id = match profile_id {
             Some(id) => id,
             None => ProfileId::load(home)?,
         };
 
         let paths = match home {
-            RadHome::ProjectDirs => Paths::new(&id.0)?,
-            RadHome::Root(root) => Paths::from_root(root.join(&id.0))?,
+            LnkHome::ProjectDirs => Paths::new(&id.0)?,
+            LnkHome::Root(root) => Paths::from_root(root.join(&id.0))?,
         };
 
         Ok(Self { id, paths })
     }
 
     pub fn from_root(root: &Path, profile_id: Option<ProfileId>) -> Result<Self, Error> {
-        Self::from_home(&RadHome::Root(root.to_path_buf()), profile_id)
+        Self::from_home(&LnkHome::Root(root.to_path_buf()), profile_id)
     }
 
     /// Returns the profile identifier
@@ -196,7 +196,7 @@ impl Profile {
     }
 }
 
-fn exists(home: &RadHome, id: &ProfileId) -> Result<bool, Error> {
+fn exists(home: &LnkHome, id: &ProfileId) -> Result<bool, Error> {
     let config = home.config()?;
     let path = config.join(id.as_str());
     Ok(path.is_dir())

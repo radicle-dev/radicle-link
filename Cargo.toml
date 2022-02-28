@@ -19,15 +19,15 @@ members = [
   "link-tracking",
   "macros",
   "node-lib",
-  "rad-clib",
-  "rad-exe",
-  "rad-identities",
-  "rad-profile",
+  "cli/lnk-clib",
+  "cli/lnk-exe",
+  "cli/lnk-identities",
+  "cli/lnk-profile",
   "std-ext",
   "test",
 ]
 exclude = [
-  "bins"
+  "bins",
 ]
 
 [patch.crates-io.thrussh-encoding]

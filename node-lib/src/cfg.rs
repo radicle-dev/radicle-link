@@ -24,10 +24,10 @@ use librad::{
     keystore::SecretKeyExt as _,
     net,
     net::{discovery, peer::Config as PeerConfig},
-    profile::{Profile, RadHome},
+    profile::{LnkHome, Profile},
     SecretKey,
 };
-use rad_clib::keys;
+use lnk_clib::keys;
 
 use crate::{args, tracking::Tracker};
 
@@ -165,9 +165,9 @@ impl TryFrom<&args::Args> for Profile {
     fn try_from(args: &args::Args) -> Result<Self, Self::Error> {
         let home = if args.tmp_root {
             warn!("creating temporary root which is ephemeral and should only be used for debug and testing");
-            RadHome::Root(tempfile::tempdir()?.path().to_path_buf())
+            LnkHome::Root(tempfile::tempdir()?.path().to_path_buf())
         } else {
-            args.rad_home.clone()
+            args.lnk_home.clone()
         };
 
         Profile::from_home(&home, args.profile_id.clone()).map_err(Error::from)
