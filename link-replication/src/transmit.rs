@@ -14,6 +14,7 @@ use either::Either;
 use git_ref_format::{Qualified, RefStr};
 use link_crypto::PeerId;
 use link_git::protocol::{ObjectId, Ref};
+use radicle_data::NonEmptyVec;
 use thiserror::Error;
 
 use crate::{refs, Refdb};
@@ -24,6 +25,21 @@ pub enum SkippedFetch {
     NoMatchingRefs,
     #[error("all local refs up-to-date")]
     WantNothing,
+}
+
+pub mod error {
+    use git_ref_format::RefString;
+    use thiserror::Error;
+
+    #[derive(Debug, Error)]
+    #[non_exhaustive]
+    pub enum WantsHaves<T: std::error::Error + Send + Sync + 'static> {
+        #[error("failed to look up ref")]
+        Find(#[from] T),
+
+        #[error("malformed ref '{0}'")]
+        Malformed(RefString),
+    }
 }
 
 #[async_trait(?Send)]
@@ -40,8 +56,8 @@ pub trait Net {
 }
 
 pub trait Negotiation<T = Self> {
-    /// The `ref-prefix`es to send with `ls-refs`.
-    fn ref_prefixes(&self) -> Vec<RefPrefix>;
+    /// If and how to perform `ls-refs`.
+    fn ls_refs(&self) -> Option<LsRefs>;
 
     /// Filter a remote-advertised [`Ref`].
     ///
@@ -59,10 +75,35 @@ pub trait Negotiation<T = Self> {
         &self,
         db: &R,
         refs: impl IntoIterator<Item = FilteredRef<T>>,
-    ) -> Result<WantsHaves<T>, R::FindError>;
+    ) -> Result<WantsHaves<T>, error::WantsHaves<R::FindError>>;
 
     /// Maximum number of bytes the fetched packfile is allowed to have.
     fn fetch_limit(&self) -> u64;
+}
+
+pub enum LsRefs {
+    /// Do not send ref prefixes, causing the other side to advertise all refs.
+    ///
+    /// Expect the response to be either non-empty or possibly-empty. If
+    /// [`ExpectLs::NonEmpty`] is expected, but the response is empty, the
+    /// fetch should abort with [`SkippedFetch::NoMatchingRefs`].
+    ///
+    /// This is provided mainly for completeness.
+    Full { response: ExpectLs },
+    /// Send ref prefixes, expect the response to be either non-empty or
+    /// possibly-empty.
+    ///
+    /// If [`ExpectLs::NonEmpty`] is expected, but the response is empty, the
+    /// fetch should abort with [`SkippedFetch::NoMatchingRefs`].
+    Prefix {
+        prefixes: NonEmptyVec<RefPrefix>,
+        response: ExpectLs,
+    },
+}
+
+pub enum ExpectLs {
+    NonEmpty,
+    MayEmpty,
 }
 
 pub struct RefPrefix(String);

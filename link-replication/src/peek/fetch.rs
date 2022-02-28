@@ -12,6 +12,7 @@ use bstr::ByteVec as _;
 use git_ref_format::{Qualified, RefString};
 use link_crypto::PeerId;
 use link_git::protocol::{ObjectId, Ref};
+use radicle_data::NonEmptyVec;
 
 use super::{guard_required, mk_ref_update, ref_prefixes, required_refs};
 use crate::{
@@ -21,6 +22,7 @@ use crate::{
     refdb,
     refs,
     track,
+    transmit::{self, ExpectLs, LsRefs},
     FetchState,
     FilteredRef,
     Identities,
@@ -60,13 +62,20 @@ impl ForFetch {
             .filter(move |id| *id != &self.local_id)
             .flat_map(move |id| required_refs(id, &self.remote_id))
     }
+
+    fn ref_prefixes(&self) -> impl Iterator<Item = RefPrefix> + '_ {
+        self.peers()
+            .flat_map(move |id| ref_prefixes(id, &self.remote_id))
+    }
 }
 
 impl Negotiation for ForFetch {
-    fn ref_prefixes(&self) -> Vec<RefPrefix> {
-        self.peers()
-            .flat_map(move |id| ref_prefixes(id, &self.remote_id))
-            .collect()
+    fn ls_refs(&self) -> Option<LsRefs> {
+        let prefixes = self.ref_prefixes();
+        NonEmptyVec::from_vec(prefixes.collect()).map(|prefixes| LsRefs::Prefix {
+            prefixes,
+            response: ExpectLs::NonEmpty,
+        })
     }
 
     fn ref_filter(&self, r: Ref) -> Option<FilteredRef<Self>> {
@@ -78,11 +87,7 @@ impl Negotiation for ForFetch {
             RefString::try_from(s).ok()?
         };
         // FIXME:: precompute / memoize `Self::ref_prefixes`
-        if !self
-            .ref_prefixes()
-            .iter()
-            .any(|prefix| prefix.matches(&name))
-        {
+        if !self.ref_prefixes().any(|prefix| prefix.matches(&name)) {
             return None;
         }
         let parsed = refs::parse::<Identity>(name.as_bstr()).ok()?;
@@ -98,7 +103,7 @@ impl Negotiation for ForFetch {
         &self,
         db: &R,
         refs: impl IntoIterator<Item = FilteredRef<Self>>,
-    ) -> Result<WantsHaves<Self>, R::FindError> {
+    ) -> Result<WantsHaves<Self>, transmit::error::WantsHaves<R::FindError>> {
         let mut wanted = HashSet::new();
         let mut wants = BTreeSet::new();
         let mut haves = BTreeSet::new();

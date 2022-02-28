@@ -41,17 +41,12 @@
 * [ ] Stabilization
 
   * [ ] Prune refs
-  * [ ] Avoid `ls-refs` in fetch step
+  * [X] Avoid `ls-refs` in fetch step
 
     > Would fail the entire fetch if tips mentioned in `signed_refs` are missing
 
   * [X] Transactional tracking updates
   * [ ] Honour tracking configuration
-  * [ ] Scheduling of subsequent pulls
-
-    > Relevant only for newly discovered identities for which a tracking
-    > relationship already exists
-
   * [ ] Single-pass validation
 
 * [ ] Grafting

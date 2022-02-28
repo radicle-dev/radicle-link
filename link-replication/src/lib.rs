@@ -150,7 +150,8 @@ where
         None => Identities::verify(
             cx,
             state
-                .id_tip(&remote_id)
+                .id_tips()
+                .get(&remote_id)
                 .expect("BUG: peek step must ensure we got a rad/id ref"),
             state.lookup_delegations(&remote_id),
         )?,

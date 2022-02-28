@@ -11,6 +11,7 @@ use crate::{
     fetch,
     ids,
     peek,
+    refs,
     sigrefs,
     state::FetchState,
     validate,
@@ -25,7 +26,9 @@ use crate::{
     SignedRefs,
     SkippedFetch,
     Success,
+    SymrefTarget,
     Tracking,
+    Update,
 };
 
 pub(crate) fn pull<U, C>(
@@ -90,12 +93,12 @@ where
                 Some((their_id, theirs)) => match rad::newer(&shim, Some(anchor), theirs)? {
                     Err(error::ConfirmationRequired) => true,
                     Ok(newest) => {
-                        let rad::Rad { track, up } = match newest {
+                        let rad::Rad { mut track, up } = match newest {
                             Left(ours) => rad::setup(&shim, None, &ours, whoami)?,
                             Right(theirs) => rad::setup(&shim, Some(their_id), &theirs, whoami)?,
                         };
 
-                        state.track_all(track);
+                        state.trackings_mut().append(&mut track);
                         state.update_all(up);
 
                         false
@@ -105,16 +108,41 @@ where
         }
     };
 
-    // New trackings can not occur after the fetch phase. We update here so we
-    // don't need to discard already transferred data in case `Tracking::track`
-    // fails.
-    //
-    // XXX: Can we statically prevent new trackings to be added after here?
+    // Apply trackings disovered so far. If this fails, we haven't transferred a
+    // lot of data yet.
     info!("updating trackings");
-    let newly_tracked = Tracking::track(cx, state.drain_trackings())?
+    let newly_tracked = Tracking::track(cx, state.trackings_mut().drain(..))?
         .into_iter()
         .collect::<Vec<_>>();
     tracked.extend(newly_tracked.iter().filter_map(|x| x.as_ref().left()));
+
+    // Update identity tips already, we will only be looking at sigrefs from now
+    // on. Can improve concurrency.
+    info!("updating identity tips");
+    let mut applied = {
+        let pending = state.updates_mut();
+
+        // `Vec::drain_filter` would help here
+        let mut tips = Vec::new();
+        let mut i = 0;
+        while i < pending.len() {
+            match &pending[i] {
+                Update::Direct { name, .. } if name.ends_with(refs::name::str::REFS_RAD_ID) => {
+                    tips.push(pending.swap_remove(i));
+                },
+                Update::Symbolic {
+                    target: SymrefTarget { name, .. },
+                    ..
+                } if name.ends_with(refs::name::str::REFS_RAD_ID) => {
+                    tips.push(pending.swap_remove(i));
+                },
+                _ => {
+                    i += 1;
+                },
+            }
+        }
+        Refdb::update(cx, tips)?
+    };
 
     info!("loading combined sigrefs");
     let signed_refs = sigrefs::combined(
@@ -125,6 +153,12 @@ where
             cutoff: 2,
         },
     )?;
+
+    // Clear sigref tips so far. Fetch will ask the remote to advertise sigrefs
+    // from the transitive trackings, so we can inspect the state afterwards to
+    // see if we got any.
+    state.sigref_tips_mut().clear();
+
     let step = fetch::Fetch {
         local_id,
         remote_id,
@@ -132,26 +166,33 @@ where
         limit: limit.data,
     };
     info!(?step, "fetching data");
-    state.step(cx, step)?;
-    // TODO: is this necessary?
-    info!("reloading combined sigrefs");
-    let signed_refs = sigrefs::combined(
-        &state.as_shim(cx),
-        sigrefs::Select {
-            must: &delegates,
-            may: &tracked,
-            cutoff: 2,
-        },
-    )?;
+    let (fetch::Fetch { signed_refs, .. }, _) = state.step(cx, step)?;
+
+    if !state.sigref_tips().is_empty() {
+        info!("transitively tracked signed refs found");
+        let selector = sigrefs::Select {
+            must: &Default::default(),
+            // Optional, alt folks may have screwed their remotes
+            may: &state.sigref_tips().keys().copied().collect(),
+            cutoff: 0,
+        };
+        let signed_refs = sigrefs::combined(&state.as_shim(cx), selector)?;
+        let step = fetch::Fetch {
+            local_id,
+            remote_id,
+            signed_refs,
+            limit: limit.data,
+        };
+        info!(?step, "fetching transitively tracked data");
+        state.step(cx, step)?;
+    }
 
     info!("post-validation");
     let warnings = validate(&state.as_shim(cx), &signed_refs)?;
 
     info!("updating tips");
-    let applied = Refdb::update(cx, state.drain_updates())?;
-    for u in &applied.updated {
-        debug!("applied {:?}", u);
-    }
+    applied.append(&mut Refdb::update(cx, state.updates_mut().drain(..))?);
+    debug!("applied {:?}", applied.updated);
 
     info!("updating signed refs");
     SignedRefs::update(cx)?;

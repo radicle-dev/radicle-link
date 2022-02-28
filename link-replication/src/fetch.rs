@@ -6,15 +6,17 @@
 use std::collections::{BTreeSet, HashSet};
 
 use bstr::ByteSlice as _;
-use git_ref_format::{Qualified, RefStr};
+use git_ref_format::Qualified;
 use link_crypto::PeerId;
 use link_git::protocol::{oid, Ref};
+use radicle_data::NonEmptyVec;
 
 use crate::{
     error,
     internal::{self, Layout, UpdateTips},
     refs,
     sigrefs,
+    transmit::{self, ExpectLs, LsRefs},
     FetchState,
     FilteredRef,
     Identities,
@@ -38,56 +40,21 @@ pub struct Fetch<Oid> {
     pub limit: u64,
 }
 
-impl<T> Fetch<T> {
-    fn ref_prefix(&self, id: &PeerId, prefix: refs::Prefix) -> RefPrefix {
-        RefPrefix::from_prefix((&self.remote_id != id).then(|| id), prefix)
-    }
-
-    fn signed<N: AsRef<RefStr>>(&self, id: &PeerId, refname: N) -> Option<&T> {
-        self.signed_refs
-            .refs
-            .get(id)
-            .and_then(|refs| refs.refs.get(refname.as_ref()))
-    }
-
-    fn is_signed<N: AsRef<RefStr>>(&self, id: &PeerId, refname: N) -> bool {
-        self.signed(id, refname).is_some()
-    }
-
-    fn is_tracked(&self, id: &PeerId) -> bool {
-        self.signed_refs.remotes.contains(id)
-    }
-}
-
 impl<T: AsRef<oid>> Negotiation for Fetch<T> {
-    fn ref_prefixes(&self) -> Vec<RefPrefix> {
-        let remotes = self
-            .signed_refs
-            .remotes
-            .iter()
-            .filter(move |id| *id != &self.local_id)
-            .flat_map(move |id| {
-                vec![
-                    self.ref_prefix(id, refs::Prefix::Heads),
-                    self.ref_prefix(id, refs::Prefix::Notes),
-                    self.ref_prefix(id, refs::Prefix::Tags),
-                    self.ref_prefix(id, refs::Prefix::Cobs),
-                ]
-            });
-        let signed = self
-            .signed_refs
-            .refs
-            .iter()
-            .filter(move |(id, _)| *id != &self.local_id)
-            .flat_map(move |(id, refs)| {
-                refs.refs.keys().filter_map(move |name| {
-                    // TODO: sigrefs should be `Owned` already
-                    let name = Qualified::from_refstr(name).and_then(refs::owned)?;
-                    Some(RefPrefix::from(refs::scoped(id, &self.remote_id, name)))
-                })
-            });
-
-        remotes.chain(signed).collect()
+    fn ls_refs(&self) -> Option<LsRefs> {
+        let prefixes = self.signed_refs.remotes.iter().filter_map(|id| {
+            (id != &self.remote_id).then(|| {
+                RefPrefix::from(refs::scoped(
+                    id,
+                    &self.remote_id,
+                    refs::Owned::refs_rad_signed_refs(),
+                ))
+            })
+        });
+        NonEmptyVec::from_vec(prefixes.collect()).map(|prefixes| LsRefs::Prefix {
+            prefixes,
+            response: ExpectLs::MayEmpty,
+        })
     }
 
     fn ref_filter(&self, r: Ref) -> Option<FilteredRef<Self>> {
@@ -96,22 +63,15 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
 
         let (refname, tip) = refs::into_unpacked(r);
         let parsed = refs::parse::<Identity>(refname.as_bstr()).ok()?;
-        match &parsed.inner {
-            // Ignore rad/ refs, as we got them already during the peek phase.
-            Left(_) => None,
-            // TODO: evaluate fetch specs, as per rfc0699
-            Right(refname_no_remote) => {
-                let remote_id = *parsed.remote.as_ref().unwrap_or(&self.remote_id);
-                if self.is_tracked(&remote_id) || self.is_signed(&remote_id, &refname_no_remote) {
-                    Some(FilteredRef::new(tip, &remote_id, parsed))
-                } else {
-                    warn!(
-                        %refname_no_remote,
-                        "skipping {} as it is neither signed nor tracked", refname
-                    );
-                    None
-                }
+        match parsed {
+            refs::Parsed {
+                remote: Some(remote_id),
+                inner: Left(refs::parsed::Rad::SignedRefs),
+            } if self.signed_refs.remotes.contains(&remote_id) => {
+                Some(FilteredRef::new(tip, &remote_id, parsed))
             },
+
+            _ => None,
         }
     }
 
@@ -119,39 +79,44 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
         &self,
         db: &R,
         refs: impl IntoIterator<Item = FilteredRef<Self>>,
-    ) -> Result<WantsHaves<Self>, R::FindError> {
+    ) -> Result<WantsHaves<Self>, transmit::error::WantsHaves<R::FindError>> {
         let mut wanted = HashSet::new();
         let mut wants = BTreeSet::new();
         let mut haves = BTreeSet::new();
 
-        for r in refs {
-            let refname = r.to_remote_tracking();
-            let refname_no_remote = r.to_owned();
+        for (remote_id, refs) in &self.signed_refs.refs {
+            for (name, tip) in refs {
+                // TODO: ensure sigrefs are well-formed. Or else, prune `refs`
+                // iff `remote_id` is in delegates.
+                let tracking = Qualified::from_refstr(name)
+                    .and_then(|q| refs::remote_tracking(remote_id, q))
+                    .ok_or_else(|| transmit::error::WantsHaves::Malformed(name.to_owned()))?;
 
-            let have = db.refname_to_id(refname)?;
+                if let Some(oid) = db.refname_to_id(tracking)? {
+                    haves.insert(oid.as_ref().to_owned());
+                    // TODO: do we want to check if `tip` is in the ancestry
+                    // path? This could be a reset to a previous version.
+                    if tip.as_ref() != oid.as_ref() {
+                        wants.insert(tip.as_ref().to_owned());
+                    }
+                } else {
+                    wants.insert(tip.as_ref().to_owned());
+                }
+            }
+        }
+
+        for r in refs {
+            let have = db.refname_to_id(r.to_remote_tracking())?;
             if let Some(oid) = have.as_ref() {
                 haves.insert(oid.as_ref().to_owned());
-            }
-
-            // If we have a signed ref, we `want` the signed oid. Otherwise, and
-            // if the remote id is in the tracking graph, we `want` what we got
-            // offered.
-            let want: Option<&oid> = self
-                .signed(r.remote_id(), refname_no_remote)
-                .map(|s| s.as_ref())
-                .or_else(|| self.is_tracked(r.remote_id()).then(|| r.tip.as_ref()));
-
-            match (want, have) {
-                (Some(want), Some(have)) if want == have.as_ref() => {
-                    // No need to want what we already have
-                },
-                (None, _) => {
-                    // Unsolicited
-                },
-                (Some(_want), _) => {
+                // TODO: as above, should perform ancestry check?
+                if r.tip.as_ref() != oid.as_ref() {
                     wants.insert(r.tip);
                     wanted.insert(r);
-                },
+                }
+            } else {
+                wants.insert(r.tip);
+                wanted.insert(r);
             }
         }
 
@@ -172,20 +137,26 @@ impl<T: AsRef<oid>> UpdateTips for Fetch<T> {
         &self,
         _: &FetchState<U>,
         _: &C,
-        refs: &'a [FilteredRef<Self>],
+        _: &'a [FilteredRef<Self>],
     ) -> Result<internal::Updates<'a, U>, error::Prepare>
     where
         C: Identities,
     {
-        let mut tips = Vec::new();
-        for r in refs {
-            debug_assert!(r.remote_id() != &self.local_id, "never touch our own");
-            let name = refs::Qualified::from(r.to_remote_tracking());
-            tips.push(Update::Direct {
-                name,
-                target: r.tip,
-                no_ff: Policy::Allow,
-            });
+        let mut tips = {
+            let sz = self.signed_refs.refs.values().map(|rs| rs.refs.len()).sum();
+            Vec::with_capacity(sz)
+        };
+        for (remote_id, refs) in &self.signed_refs.refs {
+            for (name, tip) in refs {
+                let tracking = Qualified::from_refstr(name)
+                    .and_then(|q| refs::remote_tracking(remote_id, q.into_owned()))
+                    .expect("we checked sigrefs well-formedness in wants_refs already");
+                tips.push(Update::Direct {
+                    name: tracking.into(),
+                    target: tip.as_ref().to_owned(),
+                    no_ff: Policy::Allow,
+                });
+            }
         }
 
         Ok(internal::Updates {
