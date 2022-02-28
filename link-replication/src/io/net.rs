@@ -7,19 +7,13 @@ use std::{io, marker::PhantomData, path::PathBuf};
 
 use bstr::BString;
 use futures_lite::io::{AsyncRead, AsyncWrite};
-use link_git::protocol as git;
-
-use crate::{
-    transmit::{ExpectLs, LsRefs},
-    FilteredRef,
-    Negotiation,
-    Net,
-    Odb,
-    Refdb,
-    SkippedFetch,
-    Urn,
-    WantsHaves,
+use link_git::{
+    protocol as git,
+    protocol::{ObjectId, Ref},
 };
+use radicle_data::NonEmptyVec;
+
+use crate::{transmit::LsRefs, Net, Odb, Refdb, Urn};
 
 #[async_trait]
 pub trait Connection {
@@ -68,104 +62,69 @@ where
 {
     type Error = io::Error;
 
-    #[tracing::instrument(level = "debug", skip(self, neg), err)]
-    async fn run_fetch<N, T>(
-        &self,
-        neg: N,
-    ) -> Result<(N, Result<Vec<FilteredRef<T>>, SkippedFetch<T>>), io::Error>
-    where
-        N: Negotiation<T> + Send,
-        T: Send + 'static,
-    {
-        let git_dir = self.git_dir.clone();
-        let repo = BString::from(self.urn.encode_id());
+    #[tracing::instrument(level = "debug", skip(self), err)]
+    async fn run_ls_refs(&self, ls: LsRefs) -> Result<Vec<Ref>, Self::Error> {
+        let ref_prefixes = match ls {
+            LsRefs::Full => Vec::default(),
+            LsRefs::Prefix { prefixes } => {
+                let mut ps = prefixes
+                    .into_iter()
+                    .map(Into::into)
+                    .collect::<Vec<BString>>();
+                ps.sort();
+                ps.dedup();
 
-        let refs = match neg.ls_refs() {
-            None => Vec::default(),
-            Some(ls) => {
-                let (ref_prefixes, expect) = match ls {
-                    LsRefs::Full { response } => (Vec::default(), response),
-                    LsRefs::Prefix { prefixes, response } => {
-                        let mut ref_prefixes = prefixes
-                            .into_iter()
-                            .map(Into::into)
-                            .collect::<Vec<BString>>();
-                        ref_prefixes.sort();
-                        ref_prefixes.dedup();
-
-                        (ref_prefixes, response)
-                    },
-                };
-
-                let (recv, send) = self.conn.open_stream().await.map_err(io_other)?;
-                let refs = git::ls_refs(
-                    git::ls::Options {
-                        repo: repo.clone(),
-                        extra_params: Vec::default(),
-                        ref_prefixes,
-                    },
-                    recv,
-                    send,
-                )
-                .await?;
-
-                match expect {
-                    ExpectLs::NonEmpty if refs.is_empty() => {
-                        return Ok((neg, Err(SkippedFetch::NoMatchingRefs)));
-                    },
-
-                    _ => refs,
-                }
+                ps
             },
         };
+        let (recv, send) = self.conn.open_stream().await.map_err(io_other)?;
+        git::ls_refs(
+            git::ls::Options {
+                repo: BString::from(self.urn.encode_id()),
+                extra_params: Vec::default(),
+                ref_prefixes,
+            },
+            recv,
+            send,
+        )
+        .await
+    }
 
-        let WantsHaves {
-            expect,
-            mut wants,
-            haves,
-        } = neg
-            .wants_haves(&self.db, refs.into_iter().filter_map(|r| neg.ref_filter(r)))
-            .map_err(io_other)?;
-
-        debug!(?wants, ?haves);
-
-        wants.retain(|oid| !haves.contains(oid));
-        if wants.is_empty() {
-            info!("want nothing");
-            return Ok((
-                neg,
-                Err(SkippedFetch::WantNothing(expect.into_iter().collect())),
-            ));
-        }
-        let wants: Vec<_> = wants.into_iter().collect();
-        let haves: Vec<_> = haves.into_iter().collect();
-
+    #[tracing::instrument(level = "debug", skip(self), err)]
+    async fn run_fetch(
+        &self,
+        max_pack_bytes: u64,
+        wants: NonEmptyVec<ObjectId>,
+        haves: Vec<ObjectId>,
+    ) -> Result<(), Self::Error> {
+        let wants = {
+            let NonEmptyVec { head, mut tail } = wants;
+            tail.push(head);
+            tail
+        };
         let out = {
+            // FIXME: make options work with slice
             let wants = wants.clone();
             let thick: B::Owned = self.db.as_ref().to_owned();
             let (recv, send) = self.conn.open_stream().await.map_err(io_other)?;
             git::fetch(
                 git::fetch::Options {
-                    repo,
+                    repo: BString::from(self.urn.encode_id()),
                     extra_params: vec![],
                     wants,
                     haves,
                     want_refs: vec![],
                 },
-                {
-                    let git_dir = git_dir.clone();
-                    let max_pack_bytes = neg.fetch_limit();
-                    move |stop| {
-                        git::packwriter::Standard::new(
-                            git_dir,
-                            git::packwriter::Options {
-                                max_pack_bytes,
-                                ..Default::default()
-                            },
-                            thick,
-                            stop,
-                        )
-                    }
+                move |stop| {
+                    git::packwriter::Standard::new(
+                        &self.git_dir,
+                        git::packwriter::Options {
+                            max_pack_bytes,
+                            ..Default::default()
+                        },
+                        thick,
+                        stop,
+                    )
                 },
                 recv,
                 send,
@@ -201,14 +160,7 @@ where
         // type of our odb.
         self.db.add_pack(&pack_path).map_err(io_other)?;
 
-        let refs_in_pack = out
-            .wanted_refs
-            .into_iter()
-            .filter_map(|r| neg.ref_filter(r))
-            .chain(expect)
-            .collect::<Vec<_>>();
-
-        Ok((neg, Ok(refs_in_pack)))
+        Ok(())
     }
 }
 

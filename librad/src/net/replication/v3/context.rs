@@ -8,36 +8,39 @@ use std::{
     collections::{BTreeSet, HashMap},
     convert::TryFrom,
     ops::Deref,
+    path::Path,
     time::Duration,
 };
 
 use data::NonEmpty;
 use either::{Either, Either::*};
 use git_ref_format::RefString;
+use link_git::protocol::Ref;
 use link_replication::{
     io,
     namespace,
+    odb::Object,
     oid,
     refs,
     AnyIdentity,
     Applied,
-    FilteredRef,
     Identities,
     LocalPeer,
+    LsRefs,
     Namespace,
-    Negotiation,
     Net,
     ObjectId,
+    Odb,
     RefScan,
     Refdb,
     SignedRefs,
     Sigrefs,
-    SkippedFetch,
     Tracking,
     Update,
     VerifiedIdentity,
 };
 use multihash::Multihash;
+use radicle_data::NonEmptyVec;
 use std_ext::Void;
 
 use crate::{
@@ -559,19 +562,51 @@ impl<'a> RefScan for &'a Context<'_> {
     }
 }
 
+impl Odb for Context<'_> {
+    type LookupError = <io::Odb as Odb>::LookupError;
+    type RevwalkError = <io::Odb as Odb>::RevwalkError;
+    type AddPackError = <io::Odb as Odb>::AddPackError;
+
+    fn contains(&self, oid: impl AsRef<oid>) -> bool {
+        self.refdb.contains(oid)
+    }
+
+    fn lookup<'a>(
+        &self,
+        oid: impl AsRef<oid>,
+        buf: &'a mut Vec<u8>,
+    ) -> Result<Option<Object<'a>>, Self::LookupError> {
+        self.refdb.lookup(oid, buf)
+    }
+
+    fn is_in_ancestry_path(
+        &self,
+        new: impl Into<ObjectId>,
+        old: impl Into<ObjectId>,
+    ) -> Result<bool, Self::RevwalkError> {
+        self.refdb.is_in_ancestry_path(new, old)
+    }
+
+    fn add_pack(&self, path: impl AsRef<Path>) -> Result<(), Self::AddPackError> {
+        self.refdb.add_pack(path)
+    }
+}
+
 #[async_trait(?Send)]
 impl Net for Context<'_> {
     type Error = <Network as Net>::Error;
 
-    async fn run_fetch<N, T>(
+    async fn run_ls_refs(&self, ls: LsRefs) -> Result<Vec<Ref>, Self::Error> {
+        self.net.run_ls_refs(ls).await
+    }
+
+    async fn run_fetch(
         &self,
-        neg: N,
-    ) -> Result<(N, Result<Vec<FilteredRef<T>>, SkippedFetch<T>>), Self::Error>
-    where
-        N: Negotiation<T> + Send,
-        T: Send + 'static,
-    {
-        self.net.run_fetch(neg).await
+        max_pack_bytes: u64,
+        wants: NonEmptyVec<ObjectId>,
+        haves: Vec<ObjectId>,
+    ) -> Result<(), Self::Error> {
+        self.net.run_fetch(max_pack_bytes, wants, haves).await
     }
 }
 

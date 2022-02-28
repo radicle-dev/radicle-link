@@ -22,7 +22,7 @@ use crate::{
     refdb,
     refs,
     track,
-    transmit::{self, ExpectLs, LsRefs},
+    transmit::{self, BuildWantsHaves, LsRefs},
     FetchState,
     FilteredRef,
     Identities,
@@ -72,11 +72,7 @@ impl ForFetch {
 
 impl Negotiation for ForFetch {
     fn ls_refs(&self) -> Option<LsRefs> {
-        let prefixes = self.ref_prefixes();
-        NonEmptyVec::from_vec(prefixes.collect()).map(|prefixes| LsRefs::Prefix {
-            prefixes,
-            response: ExpectLs::NonEmpty,
-        })
+        NonEmptyVec::from_vec(self.ref_prefixes().collect()).map(LsRefs::from)
     }
 
     fn ref_filter(&self, r: Ref) -> Option<FilteredRef<Self>> {
@@ -103,12 +99,14 @@ impl Negotiation for ForFetch {
     fn wants_haves<R>(
         &self,
         db: &R,
-        refs: impl IntoIterator<Item = FilteredRef<Self>>,
-    ) -> Result<WantsHaves<Self>, transmit::error::WantsHaves<R::FindError>>
+        refs: &[FilteredRef<Self>],
+    ) -> Result<Option<WantsHaves>, transmit::error::WantsHaves<R::FindError>>
     where
         R: Refdb + Odb,
     {
-        Ok(WantsHaves::default().expect_all(db, refs)?)
+        let mut bld = BuildWantsHaves::default();
+        bld.add(db, refs)?;
+        Ok(bld.build())
     }
 
     fn fetch_limit(&self) -> u64 {

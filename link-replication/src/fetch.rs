@@ -14,7 +14,7 @@ use crate::{
     internal::{self, Layout, UpdateTips},
     refs,
     sigrefs,
-    transmit::{self, ExpectLs, LsRefs},
+    transmit::{self, BuildWantsHaves, LsRefs},
     FetchState,
     FilteredRef,
     Identities,
@@ -50,10 +50,7 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
                 ))
             })
         });
-        NonEmptyVec::from_vec(prefixes.collect()).map(|prefixes| LsRefs::Prefix {
-            prefixes,
-            response: ExpectLs::MayEmpty,
-        })
+        NonEmptyVec::from_vec(prefixes.collect()).map(LsRefs::from)
     }
 
     fn ref_filter(&self, r: Ref) -> Option<FilteredRef<Self>> {
@@ -77,12 +74,12 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
     fn wants_haves<'a, R>(
         &self,
         db: &R,
-        refs: impl IntoIterator<Item = FilteredRef<Self>>,
-    ) -> Result<WantsHaves<Self>, transmit::error::WantsHaves<R::FindError>>
+        refs: &[FilteredRef<Self>],
+    ) -> Result<Option<WantsHaves>, transmit::error::WantsHaves<R::FindError>>
     where
         R: Refdb + Odb,
     {
-        let mut wh = WantsHaves::default();
+        let mut bld = BuildWantsHaves::default();
 
         for (remote_id, refs) in &self.signed_refs.refs {
             for (name, tip) in refs {
@@ -94,18 +91,20 @@ impl<T: AsRef<oid>> Negotiation for Fetch<T> {
 
                 let want = match db.refname_to_id(tracking)? {
                     Some(oid) => {
-                        wh.haves.insert(oid.as_ref().to_owned());
-                        tip.as_ref() != oid.as_ref() && !db.contains(tip)
+                        let want = tip.as_ref() != oid.as_ref() && !db.contains(tip);
+                        bld.have(oid.into());
+                        want
                     },
                     None => !db.contains(tip),
                 };
                 if want {
-                    wh.wants.insert(tip.as_ref().to_owned());
+                    bld.want(tip.as_ref().to_owned());
                 }
             }
         }
 
-        Ok(wh.expect_all(db, refs)?)
+        bld.add(db, refs)?;
+        Ok(bld.build())
     }
 
     fn fetch_limit(&self) -> u64 {
