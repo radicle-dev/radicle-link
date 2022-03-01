@@ -3,8 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::collections::{BTreeSet, HashSet};
-
 use link_crypto::PeerId;
 use link_git::protocol::Ref;
 use radicle_data::NonEmptyVec;
@@ -15,11 +13,12 @@ use crate::{
     ids,
     internal::{self, Layout, UpdateTips},
     refs,
-    transmit::{self, ExpectLs, LsRefs},
+    transmit::{self, BuildWantsHaves, LsRefs},
     FetchState,
     FilteredRef,
     Identities,
     Negotiation,
+    Odb,
     Refdb,
     WantsHaves,
 };
@@ -39,10 +38,7 @@ impl ForClone {
 impl Negotiation for ForClone {
     fn ls_refs(&self) -> Option<LsRefs> {
         let prefixes = ref_prefixes(&self.remote_id, &self.remote_id);
-        NonEmptyVec::from_vec(prefixes.collect()).map(|prefixes| LsRefs::Prefix {
-            prefixes,
-            response: ExpectLs::NonEmpty,
-        })
+        NonEmptyVec::from_vec(prefixes.collect()).map(LsRefs::from)
     }
 
     fn ref_filter(&self, r: Ref) -> Option<FilteredRef<Self>> {
@@ -60,39 +56,17 @@ impl Negotiation for ForClone {
         }
     }
 
-    fn wants_haves<R: Refdb>(
+    fn wants_haves<R>(
         &self,
         db: &R,
-        refs: impl IntoIterator<Item = FilteredRef<Self>>,
-    ) -> Result<WantsHaves<Self>, transmit::error::WantsHaves<R::FindError>> {
-        let mut wanted = HashSet::new();
-        let mut wants = BTreeSet::new();
-        let mut haves = BTreeSet::new();
-
-        for r in refs {
-            if r.remote_id() != &self.remote_id {
-                continue;
-            }
-            let refname = refs::Qualified::from(r.to_remote_tracking());
-            match db.refname_to_id(refname)? {
-                Some(oid) => {
-                    if oid.as_ref() != r.tip {
-                        wants.insert(r.tip);
-                    }
-                    haves.insert(oid.into());
-                },
-                None => {
-                    wants.insert(r.tip);
-                },
-            }
-            wanted.insert(r);
-        }
-
-        Ok(WantsHaves {
-            wanted,
-            wants,
-            haves,
-        })
+        refs: &[FilteredRef<Self>],
+    ) -> Result<Option<WantsHaves>, transmit::error::WantsHaves<R::FindError>>
+    where
+        R: Refdb + Odb,
+    {
+        let mut bld = BuildWantsHaves::default();
+        bld.add(db, refs)?;
+        Ok(bld.build())
     }
 
     fn fetch_limit(&self) -> u64 {

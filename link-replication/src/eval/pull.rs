@@ -21,10 +21,10 @@ use crate::{
     LocalIdentity,
     LocalPeer,
     Net,
+    Odb,
     PeerId,
     Refdb,
     SignedRefs,
-    SkippedFetch,
     Success,
     SymrefTarget,
     Tracking,
@@ -45,6 +45,7 @@ where
         + LocalPeer
         + Net
         + Refdb
+        + Odb
         + SignedRefs<Oid = <C as Identities>::Oid>
         + Tracking<Urn = U>,
     <C as Identities>::Oid: Debug + PartialEq + Send + Sync + 'static,
@@ -52,30 +53,16 @@ where
     use either::Either::*;
 
     info!("fetching verification refs");
-    let (
-        peek::ForFetch {
-            local_id,
-            remote_id,
-            delegates,
-            mut tracked,
-            limit: _,
-        },
-        skip,
-    ) = {
-        let spec = peek::for_fetch(&state.as_shim(cx), limit.peek, &anchor, remote_id)?;
-        debug!(?spec);
-        state.step(cx, spec)?
-    };
-
-    if matches!(skip, Some(SkippedFetch::NoMatchingRefs)) {
-        return Ok(Success {
-            applied: Default::default(),
-            tracked: vec![],
-            requires_confirmation: false,
-            validation: vec![],
-            _marker: PhantomData,
-        });
-    }
+    let peek = peek::for_fetch(&state.as_shim(cx), limit.peek, &anchor, remote_id)?;
+    debug!(?peek);
+    state.step(cx, &peek)?;
+    let peek::ForFetch {
+        local_id,
+        remote_id,
+        delegates,
+        mut tracked,
+        limit: _,
+    } = peek;
 
     let delegates: BTreeSet<PeerId> = delegates
         .into_iter()
@@ -83,28 +70,24 @@ where
         .collect();
 
     let requires_confirmation = {
-        if skip.is_some() {
-            false
-        } else {
-            info!("setting up local rad/ hierarchy");
-            let shim = state.as_shim(cx);
-            match ids::newest(&shim, &delegates)? {
-                None => false,
-                Some((their_id, theirs)) => match rad::newer(&shim, Some(anchor), theirs)? {
-                    Err(error::ConfirmationRequired) => true,
-                    Ok(newest) => {
-                        let rad::Rad { mut track, up } = match newest {
-                            Left(ours) => rad::setup(&shim, None, &ours, whoami)?,
-                            Right(theirs) => rad::setup(&shim, Some(their_id), &theirs, whoami)?,
-                        };
+        info!("setting up local rad/ hierarchy");
+        let shim = state.as_shim(cx);
+        match ids::newest(&shim, &delegates)? {
+            None => false,
+            Some((their_id, theirs)) => match rad::newer(&shim, Some(anchor), theirs)? {
+                Err(error::ConfirmationRequired) => true,
+                Ok(newest) => {
+                    let rad::Rad { mut track, up } = match newest {
+                        Left(ours) => rad::setup(&shim, None, &ours, whoami)?,
+                        Right(theirs) => rad::setup(&shim, Some(their_id), &theirs, whoami)?,
+                    };
 
-                        state.trackings_mut().append(&mut track);
-                        state.update_all(up);
+                    state.trackings_mut().append(&mut track);
+                    state.update_all(up);
 
-                        false
-                    },
+                    false
                 },
-            }
+            },
         }
     };
 
@@ -159,14 +142,16 @@ where
     // see if we got any.
     state.sigref_tips_mut().clear();
 
-    let step = fetch::Fetch {
+    let fetch = fetch::Fetch {
         local_id,
         remote_id,
         signed_refs,
         limit: limit.data,
     };
-    info!(?step, "fetching data");
-    let (fetch::Fetch { signed_refs, .. }, _) = state.step(cx, step)?;
+    info!("fetching data");
+    debug!(?fetch);
+    state.step(cx, &fetch)?;
+    let fetch::Fetch { signed_refs, .. } = fetch;
 
     if !state.sigref_tips().is_empty() {
         info!("transitively tracked signed refs found");
@@ -176,15 +161,16 @@ where
             may: &state.sigref_tips().keys().copied().collect(),
             cutoff: 0,
         };
-        let signed_refs = sigrefs::combined(&state.as_shim(cx), selector)?;
-        let step = fetch::Fetch {
+        let trans_sigrefs = sigrefs::combined(&state.as_shim(cx), selector)?;
+        let trans_fetch = fetch::Fetch {
             local_id,
             remote_id,
-            signed_refs,
+            signed_refs: trans_sigrefs,
             limit: limit.data,
         };
-        info!(?step, "fetching transitively tracked data");
-        state.step(cx, step)?;
+        info!("fetching transitively tracked data");
+        debug!(?trans_fetch);
+        state.step(cx, &trans_fetch)?;
     }
 
     info!("post-validation");
@@ -192,7 +178,9 @@ where
 
     info!("updating tips");
     applied.append(&mut Refdb::update(cx, state.updates_mut().drain(..))?);
-    debug!("applied {:?}", applied.updated);
+    for u in &applied.updated {
+        debug!("applied {:?}", u);
+    }
 
     info!("updating signed refs");
     SignedRefs::update(cx)?;

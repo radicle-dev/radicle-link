@@ -24,12 +24,12 @@ use crate::{
     Negotiation,
     Net,
     ObjectId,
+    Odb,
     PeerId,
     RefScan,
     Refdb,
     SignedRefs,
     Sigrefs,
-    SkippedFetch,
     Tracking,
     Update,
     Urn,
@@ -65,50 +65,55 @@ impl<U> FetchState<U>
 where
     U: ids::Urn + Ord,
 {
-    pub fn step<C, S>(
-        &mut self,
-        cx: &mut C,
-        step: S,
-    ) -> Result<(S, Option<SkippedFetch>), error::Error>
+    pub fn step<C, S>(&mut self, cx: &mut C, step: &S) -> Result<(), error::Error>
     where
-        C: Identities<Urn = U> + Net + Refdb,
+        C: Identities<Urn = U> + Net + Refdb + Odb,
         S: Layout + Negotiation + UpdateTips + Send + Sync + 'static,
     {
         Refdb::reload(cx)?;
-        let (step, res) = block_on(Net::run_fetch(cx, step).in_current_span())?;
-        if let Ok(refs) = &res {
-            Layout::pre_validate(&step, refs)?;
-            for r in refs {
-                if let Some(rad) = r.parsed.inner.as_ref().left() {
-                    match rad {
-                        refs::parsed::Rad::Id => {
-                            self.id_tips_mut().insert(*r.remote_id(), r.tip);
-                        },
+        let refs = match step.ls_refs() {
+            None => Vec::default(),
+            Some(ls) => block_on(Net::run_ls_refs(cx, ls).in_current_span())?
+                .into_iter()
+                .filter_map(|r| step.ref_filter(r))
+                .collect::<Vec<_>>(),
+        };
+        Layout::pre_validate(step, &refs)?;
+        match step.wants_haves(cx, &refs)? {
+            Some((want, have)) => block_on(Net::run_fetch(cx, step.fetch_limit(), want, have))?,
+            None => info!("nothing to fetch"),
+        };
 
-                        refs::parsed::Rad::Ids { urn } => {
-                            if let Ok(urn) = C::Urn::try_from_id(urn) {
-                                self.delegation_tips_mut()
-                                    .entry(*r.remote_id())
-                                    .or_insert_with(BTreeMap::new)
-                                    .insert(urn, r.tip);
-                            }
-                        },
+        for r in &refs {
+            if let Some(rad) = r.parsed.inner.as_ref().left() {
+                match rad {
+                    refs::parsed::Rad::Id => {
+                        self.id_tips_mut().insert(*r.remote_id(), r.tip);
+                    },
 
-                        refs::parsed::Rad::SignedRefs => {
-                            self.sigref_tips_mut().insert(*r.remote_id(), r.tip);
-                        },
+                    refs::parsed::Rad::Ids { urn } => {
+                        if let Ok(urn) = C::Urn::try_from_id(urn) {
+                            self.delegation_tips_mut()
+                                .entry(*r.remote_id())
+                                .or_insert_with(BTreeMap::new)
+                                .insert(urn, r.tip);
+                        }
+                    },
 
-                        _ => {},
-                    }
+                    refs::parsed::Rad::SignedRefs => {
+                        self.sigref_tips_mut().insert(*r.remote_id(), r.tip);
+                    },
+
+                    _ => {},
                 }
             }
-
-            let mut up = UpdateTips::prepare(&step, self, cx, refs)?;
-            self.trackings_mut().append(&mut up.track);
-            self.update_all(up.tips.into_iter().map(|u| u.into_owned()));
         }
 
-        Ok((step, res.err()))
+        let mut up = UpdateTips::prepare(step, self, cx, &refs)?;
+        self.trackings_mut().append(&mut up.track);
+        self.update_all(up.tips.into_iter().map(|u| u.into_owned()));
+
+        Ok(())
     }
 }
 

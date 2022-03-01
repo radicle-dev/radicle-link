@@ -31,7 +31,7 @@ mod eval;
 mod ids;
 pub use ids::{AnyIdentity, Identities, LocalIdentity, Urn, VerifiedIdentity};
 
-mod odb;
+pub mod odb;
 pub use odb::Odb;
 
 mod refdb;
@@ -50,7 +50,7 @@ mod track;
 pub use track::{Rel as TrackingRel, Tracking};
 
 mod transmit;
-pub use transmit::{FilteredRef, Negotiation, Net, RefPrefix, SkippedFetch, WantsHaves};
+pub use transmit::{FilteredRef, LsRefs, Negotiation, Net, RefPrefix, WantsHaves};
 
 mod validation;
 pub use validation::validate;
@@ -92,6 +92,7 @@ where
         + LocalPeer
         + Net
         + Refdb
+        + Odb
         + SignedRefs<Oid = <C as Identities>::Oid>
         + Tracking<Urn = <C as Identities>::Urn>,
     <C as Identities>::Oid: Debug + PartialEq + Send + Sync + 'static,
@@ -123,6 +124,7 @@ where
         + LocalPeer
         + Net
         + Refdb
+        + Odb
         + SignedRefs<Oid = <C as Identities>::Oid>
         + Tracking<Urn = <C as Identities>::Urn>,
     <C as Identities>::Oid: Debug + PartialEq + Send + Sync + 'static,
@@ -133,28 +135,20 @@ where
         return Err("cannot replicate from self".into());
     }
     let mut state = FetchState::default();
-    let (_, res) = state.step(
+    state.step(
         cx,
-        peek::ForClone {
+        &peek::ForClone {
             remote_id,
             limit: limit.peek,
         },
     )?;
-    let anchor = match res {
-        Some(SkippedFetch::NoMatchingRefs) => {
-            return Err("remote did not advertise verification refs".into())
-        },
-        Some(SkippedFetch::WantNothing) => {
-            ids::of(cx, &remote_id)?.expect("BUG: wanted nothing, but don't have it either")
-        },
-        None => Identities::verify(
-            cx,
-            state
-                .id_tips()
-                .get(&remote_id)
-                .expect("BUG: peek step must ensure we got a rad/id ref"),
-            state.lookup_delegations(&remote_id),
-        )?,
-    };
+    let anchor = Identities::verify(
+        cx,
+        state
+            .id_tips()
+            .get(&remote_id)
+            .expect("BUG: peek step must ensure we got a rad/id ref"),
+        state.lookup_delegations(&remote_id),
+    )?;
     eval::pull(&mut state, cx, limit, anchor, remote_id, whoami)
 }

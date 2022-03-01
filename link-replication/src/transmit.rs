@@ -4,7 +4,8 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::BTreeSet,
+    fmt::{self, Debug},
     hash::{Hash, Hasher},
     marker::PhantomData,
 };
@@ -15,17 +16,8 @@ use git_ref_format::{Qualified, RefStr};
 use link_crypto::PeerId;
 use link_git::protocol::{ObjectId, Ref};
 use radicle_data::NonEmptyVec;
-use thiserror::Error;
 
-use crate::{refs, Refdb};
-
-#[derive(Debug, Error)]
-pub enum SkippedFetch {
-    #[error("remote did not advertise any matching refs")]
-    NoMatchingRefs,
-    #[error("all local refs up-to-date")]
-    WantNothing,
-}
+use crate::{refs, Odb, Refdb};
 
 pub mod error {
     use git_ref_format::RefString;
@@ -46,13 +38,13 @@ pub mod error {
 pub trait Net {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    async fn run_fetch<N, T>(
+    async fn run_ls_refs(&self, ls: LsRefs) -> Result<Vec<Ref>, Self::Error>;
+    async fn run_fetch(
         &self,
-        neg: N,
-    ) -> Result<(N, Result<Vec<FilteredRef<T>>, SkippedFetch>), Self::Error>
-    where
-        N: Negotiation<T> + Send,
-        T: Send + 'static;
+        max_pack_bytes: u64,
+        wants: NonEmptyVec<ObjectId>,
+        haves: Vec<ObjectId>,
+    ) -> Result<(), Self::Error>;
 }
 
 pub trait Negotiation<T = Self> {
@@ -71,41 +63,35 @@ pub trait Negotiation<T = Self> {
     ///
     /// The `refs` are the advertised refs from executing `ls-refs`, filtered
     /// through [`Negotiation::ref_filter`].
-    fn wants_haves<R: Refdb>(
+    fn wants_haves<R>(
         &self,
         db: &R,
-        refs: impl IntoIterator<Item = FilteredRef<T>>,
-    ) -> Result<WantsHaves<T>, error::WantsHaves<R::FindError>>;
+        refs: &[FilteredRef<T>],
+    ) -> Result<Option<WantsHaves>, error::WantsHaves<R::FindError>>
+    where
+        R: Refdb + Odb;
 
     /// Maximum number of bytes the fetched packfile is allowed to have.
     fn fetch_limit(&self) -> u64;
 }
 
+#[derive(Debug)]
 pub enum LsRefs {
     /// Do not send ref prefixes, causing the other side to advertise all refs.
     ///
-    /// Expect the response to be either non-empty or possibly-empty. If
-    /// [`ExpectLs::NonEmpty`] is expected, but the response is empty, the
-    /// fetch should abort with [`SkippedFetch::NoMatchingRefs`].
-    ///
     /// This is provided mainly for completeness.
-    Full { response: ExpectLs },
-    /// Send ref prefixes, expect the response to be either non-empty or
-    /// possibly-empty.
-    ///
-    /// If [`ExpectLs::NonEmpty`] is expected, but the response is empty, the
-    /// fetch should abort with [`SkippedFetch::NoMatchingRefs`].
-    Prefix {
-        prefixes: NonEmptyVec<RefPrefix>,
-        response: ExpectLs,
-    },
+    Full,
+    /// Send ref prefixes.
+    Prefix { prefixes: NonEmptyVec<RefPrefix> },
 }
 
-pub enum ExpectLs {
-    NonEmpty,
-    MayEmpty,
+impl From<NonEmptyVec<RefPrefix>> for LsRefs {
+    fn from(prefixes: NonEmptyVec<RefPrefix>) -> Self {
+        Self::Prefix { prefixes }
+    }
 }
 
+#[derive(Debug)]
 pub struct RefPrefix(String);
 
 impl RefPrefix {
@@ -144,10 +130,51 @@ impl From<RefPrefix> for BString {
     }
 }
 
-pub struct WantsHaves<T: ?Sized> {
-    pub wanted: HashSet<FilteredRef<T>>,
-    pub wants: BTreeSet<ObjectId>,
-    pub haves: BTreeSet<ObjectId>,
+pub type WantsHaves = (NonEmptyVec<ObjectId>, Vec<ObjectId>);
+
+#[derive(Default)]
+pub struct BuildWantsHaves {
+    wants: BTreeSet<ObjectId>,
+    haves: BTreeSet<ObjectId>,
+}
+
+impl BuildWantsHaves {
+    pub fn want(&mut self, oid: ObjectId) {
+        self.wants.insert(oid);
+    }
+
+    pub fn have(&mut self, oid: ObjectId) {
+        self.haves.insert(oid);
+    }
+
+    pub fn add<'a, D, I, T: 'a>(&mut self, db: &D, refs: I) -> Result<&mut Self, D::FindError>
+    where
+        D: Refdb + Odb,
+        I: IntoIterator<Item = &'a FilteredRef<T>>,
+    {
+        refs.into_iter().try_fold(self, |acc, r| {
+            let want = match db.refname_to_id(r.to_remote_tracking())? {
+                Some(oid) => {
+                    let want = oid.as_ref() != r.tip && !db.contains(&r.tip);
+                    acc.have(oid.into());
+                    want
+                },
+                None => !db.contains(&r.tip),
+            };
+            if want {
+                debug!("want {}", r.tip);
+                acc.want(r.tip);
+            }
+
+            Ok(acc)
+        })
+    }
+
+    pub fn build(self) -> Option<WantsHaves> {
+        let haves = self.haves;
+        let wants = self.wants.into_iter().filter(|want| !haves.contains(want));
+        NonEmptyVec::from_vec(wants.collect()).map(|wants| (wants, haves.into_iter().collect()))
+    }
 }
 
 pub struct FilteredRef<T: ?Sized> {
@@ -199,6 +226,15 @@ impl<T> Clone for FilteredRef<T> {
             parsed: self.parsed.clone(),
             _marker: PhantomData,
         }
+    }
+}
+
+impl<T> Debug for FilteredRef<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("FilteredRef")
+            .field("tip", &self.tip)
+            .field("parsed", &self.parsed)
+            .finish()
     }
 }
 
