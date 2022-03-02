@@ -55,7 +55,4 @@ pub enum Command {
     Identities(lnk_identities::cli::args::Args),
     /// Manage your Radicle profiles
     Profile(lnk_profile::cli::args::Args),
-    #[clap(external_subcommand)]
-    External(Vec<String>),
-}
 }
