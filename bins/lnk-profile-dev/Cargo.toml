@@ -7,7 +7,10 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 anyhow = "1"
-structopt = "0.3"
+
+[dependencies.clap]
+version = "3"
+features = [ "derive" ]
 
 [dependencies.lnk-exe]
 path = "../../cli/lnk-exe"

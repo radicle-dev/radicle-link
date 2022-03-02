@@ -11,7 +11,10 @@ test = false
 
 [dependencies]
 anyhow = "1.0"
-structopt = "0.3"
+
+[dependencies.clap]
+version = "3"
+features = [ "derive", "env" ]
 
 [dependencies.librad]
 path = "../../librad"

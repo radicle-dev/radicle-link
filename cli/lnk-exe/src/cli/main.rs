@@ -8,12 +8,12 @@ use std::{
     process::{exit, Command},
 };
 
-use structopt::StructOpt;
+use clap::Parser;
 
 use super::args::{self, sanitise_globals, Args};
 
 pub fn main() -> anyhow::Result<()> {
-    let Args { global, command } = sanitise_globals(Args::from_args());
+    let Args { global, command } = sanitise_globals(Args::parse());
     match command {
         args::Command::Identities(args) => {
             lnk_identities::cli::main(args, global.lnk_profile, global.lnk_ssh_auth_sock)

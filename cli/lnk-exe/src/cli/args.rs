@@ -5,7 +5,7 @@
 
 use std::env;
 
-use structopt::StructOpt;
+use clap::Parser;
 
 use librad::profile::{ProfileId, LNK_PROFILE};
 use lnk_clib::keys::ssh::SshAuthSock;
@@ -19,44 +19,44 @@ pub const LNK_QUIET_ARG: &str = "--lnk-quiet";
 /// `--lnk-verbose` command line name
 pub const LNK_VERBOSE_ARG: &str = "--lnk-verbose";
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct Args {
-    #[structopt(flatten)]
+    #[clap(flatten)]
     pub global: Global,
 
-    #[structopt(subcommand)]
+    #[clap(subcommand)]
     pub command: Command,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct Global {
     /// The profile identifier, if not given then the currently active profile
     /// is used
-    #[structopt(long)]
+    #[clap(long)]
     pub lnk_profile: Option<ProfileId>,
 
     /// Which unix domain socket to use for connecting to the ssh-agent. The
     /// default will defer to SSH_AUTH_SOCK, otherwise the value given should be
     /// a valid path.
-    #[structopt(long, default_value)]
+    #[clap(long, default_value_t)]
     pub lnk_ssh_auth_sock: SshAuthSock,
 
     /// No output printed to stdout
-    #[structopt(long)]
+    #[clap(long)]
     pub lnk_quiet: bool,
 
     /// Use verbose output
-    #[structopt(long)]
+    #[clap(long)]
     pub lnk_verbose: bool,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub enum Command {
     /// Manage Radicle Identities
     Identities(lnk_identities::cli::args::Args),
     /// Manage your Radicle profiles
     Profile(lnk_profile::cli::args::Args),
-    #[structopt(external_subcommand)]
+    #[clap(external_subcommand)]
     External(Vec<String>),
 }
 
