@@ -4,21 +4,23 @@
   }
 }:
 let
-  rust = pkgs.rust-bin.stable.latest.default;
+  stable = pkgs.rust-bin.stable.latest.default;
+  rust = stable.override {
+    extensions = [ "rust-src" "rust-analysis" ];
+  };
 in
   with pkgs;
   mkShell {
-    name = "build";
+    name = "development";
     buildInputs = [
-        # cargo tooling
         cargo-deny
+        cargo-expand
         cargo-watch
         pkgs.rust-bin.nightly."2021-12-02".rustfmt
-
-        # hard dependencies
         cmake
         openssl
         pkgconfig
+        ripgrep
         rust
     ];
   }
