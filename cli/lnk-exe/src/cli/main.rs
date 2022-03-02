@@ -10,10 +10,11 @@ use std::{
 
 use clap::Parser;
 
-use super::args::{self, sanitise_globals, Args};
+use super::args::{self, Args};
 
 pub fn main() -> anyhow::Result<()> {
-    let Args { global, command } = sanitise_globals(Args::parse());
+    let Args { global, command } = Args::parse();
+
     match command {
         args::Command::Identities(args) => {
             lnk_identities::cli::main(args, global.lnk_profile, global.lnk_ssh_auth_sock)

@@ -13,6 +13,5 @@ mod link_git;
 mod link_replication;
 mod link_tracking;
 mod lnk_clib;
-mod lnk_exe;
 mod lnk_identities;
 mod node_lib;
