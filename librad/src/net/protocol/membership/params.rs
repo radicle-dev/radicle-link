@@ -27,6 +27,7 @@ pub struct Params {
 impl Default for Params {
     fn default() -> Self {
         Self {
+            // Note: this value is mentioned in the `bootstrap` param in `node-lib::args`.
             max_active: 5,
             max_passive: 30,
             active_random_walk_length: 6,

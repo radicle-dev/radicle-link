@@ -6,12 +6,13 @@
 pub mod args;
 
 mod cfg;
-pub use cfg::{Seed, Seeds};
 
 pub mod api;
 mod logging;
 mod metrics;
 pub mod node;
 mod protocol;
+pub mod seed;
+pub use seed::{Seed, Seeds};
 mod signals;
 mod tracking;

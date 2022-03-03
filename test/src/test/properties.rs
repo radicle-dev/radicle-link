@@ -7,3 +7,4 @@ pub mod canonical;
 pub mod git_ref_format;
 pub mod librad;
 pub mod link_tracking;
+pub mod node_lib;

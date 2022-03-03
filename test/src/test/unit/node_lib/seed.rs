@@ -12,13 +12,17 @@ use node_lib::{Seed, Seeds};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_resolve_seeds() -> Result<()> {
-    let seeds = Seeds::resolve(&[
-        "hydsst3z3d5bc6pxq4gz1g4cu6sgbx38czwf3bmmk3ouz4ibjbbtds@localhost:9999"
-            .parse()
-            .unwrap(),
-    ])
-    .await?;
+    let (seeds, failures) = Seeds::resolve(
+        Some(
+            "hydsst3z3d5bc6pxq4gz1g4cu6sgbx38czwf3bmmk3ouz4ibjbbtds@localhost:9999"
+                .parse()
+                .unwrap(),
+        )
+        .iter(),
+    )
+    .await;
 
+    assert!(failures.is_empty(), "seed failed to resolve");
     assert!(!seeds.0.is_empty(), "seeds should not be empty");
 
     if let Some(Seed { addrs, .. }) = seeds.0.first() {

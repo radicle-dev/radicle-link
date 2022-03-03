@@ -12,7 +12,6 @@ use std::{fmt, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
 use structopt::StructOpt;
 
 use librad::{
-    crypto,
     git::Urn,
     net::Network,
     profile::{LnkHome, ProfileId},
@@ -20,11 +19,20 @@ use librad::{
 };
 use lnk_clib::keys::ssh::SshAuthSock;
 
+use crate::seed::Seed;
+
 #[derive(Debug, Default, Eq, PartialEq, StructOpt)]
 pub struct Args {
-    /// List of bootstrap nodes for initial discovery.
+    /// Usage: `--bootstrap <peer1>@<addr1>[,<label1>] --bootstrap
+    /// <peer2>@<addr2>[,<label2>]`
+    ///
+    /// List of bootstrap nodes for initial discovery. If no bootstrap
+    /// nodes were provided, we will fall back to configured
+    /// nodes. The max number of configured nodes used will be the
+    /// maximum allowed peers in the membership parameters (default:
+    /// 5).
     #[structopt(long = "bootstrap", name = "bootstrap")]
-    pub bootstraps: Vec<Bootstrap>,
+    pub bootstraps: Vec<Seed<String>>,
 
     /// Identifier of the profile the daemon will run for. This value determines
     /// which monorepo (if existing) on disk will be the backing storage.
@@ -68,38 +76,6 @@ pub struct Args {
     /// shutdown.
     #[structopt(long)]
     pub linger_timeout: Option<LingerTimeout>,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct Bootstrap {
-    pub addr: String,
-    pub peer_id: PeerId,
-}
-
-impl fmt::Display for Bootstrap {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}@{}", self.peer_id, self.addr)
-    }
-}
-
-impl FromStr for Bootstrap {
-    type Err = String;
-
-    fn from_str(src: &str) -> Result<Self, Self::Err> {
-        match src.split_once('@') {
-            Some((peer_id, addr)) => {
-                let peer_id = peer_id
-                    .parse()
-                    .map_err(|e: crypto::peer::conversion::Error| e.to_string())?;
-
-                Ok(Self {
-                    addr: addr.to_string(),
-                    peer_id,
-                })
-            },
-            None => Err("missing peer id".to_string()),
-        }
-    }
 }
 
 #[derive(Debug, Eq, PartialEq, StructOpt)]

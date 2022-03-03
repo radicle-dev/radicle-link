@@ -23,7 +23,8 @@ use librad::{
     git::storage,
     keystore::SecretKeyExt as _,
     net,
-    net::{discovery, peer::Config as PeerConfig},
+    net::{discovery, peer::Config as PeerConfig, protocol::membership},
+    paths,
     profile::{LnkHome, Profile},
     SecretKey,
 };
@@ -31,8 +32,7 @@ use lnk_clib::keys;
 
 use crate::{args, tracking::Tracker};
 
-mod seed;
-pub use seed::{Seed, Seeds};
+use crate::seed::{self, store::FileStore, Seeds};
 
 lazy_static::lazy_static! {
     /// General binding to any available port, i.e. `0.0.0.0:0`.
@@ -58,6 +58,12 @@ pub enum Error {
     #[error(transparent)]
     Keys(#[from] keys::ssh::Error),
 
+    #[error("no bootstrap nodes could be resolved")]
+    NoBootstrap,
+
+    #[error("no seed nodes could be resolved")]
+    NoSeeds,
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 
@@ -67,8 +73,8 @@ pub enum Error {
     #[error(transparent)]
     SecretKey(#[from] IntoSecretKeyError),
 
-    #[error("resolving seed nodes")]
-    Seed(#[from] seed::Error),
+    #[error(transparent)]
+    Seed(#[from] seed::error::Load),
 
     #[error(transparent)]
     Timeout(#[from] Elapsed),
@@ -96,7 +102,32 @@ pub struct Cfg<Disco, Signer> {
 
 impl Cfg<discovery::Static, BoxedSigner> {
     pub async fn from_args(args: &args::Args) -> Result<Self, Error> {
-        let seeds = Seeds::resolve(&args.bootstraps).await?;
+        let membership = membership::Params::default();
+        let seeds = if !args.bootstraps.is_empty() {
+            let (seeds, failures) = Seeds::resolve(args.bootstraps.iter()).await;
+            for fail in failures {
+                tracing::warn!("failed to load bootstrap seed: {}", fail);
+            }
+
+            if seeds.is_empty() {
+                return Err(Error::NoBootstrap);
+            }
+
+            seeds
+        } else {
+            let store = FileStore::<String>::new(paths::seeds()?);
+            let (seeds, failures) = Seeds::load(&store, membership.max_active).await?;
+
+            for fail in failures {
+                tracing::warn!("failed to load configured seed: {}", fail)
+            }
+
+            if seeds.is_empty() {
+                return Err(Error::NoSeeds);
+            }
+
+            seeds
+        };
         let disco = discovery::Static::try_from(seeds)?;
         let profile = Profile::try_from(args)?;
         let signer = construct_signer(args, &profile).await?;
@@ -135,7 +166,7 @@ impl Cfg<discovery::Static, BoxedSigner> {
                     paths: profile.paths().clone(),
                     listen_addr,
                     advertised_addrs: None,
-                    membership: Default::default(),
+                    membership,
                     network: args.protocol.network.clone(),
                     replication: Default::default(),
                     rate_limits: Default::default(),
