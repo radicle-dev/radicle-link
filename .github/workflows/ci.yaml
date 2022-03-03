@@ -90,6 +90,10 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ matrix.toolchain }}
+      - uses: baptiste0928/cargo-install@v1
+        with:
+          crate: cargo-nextest
+          version: 0.9
       - uses: Swatinem/rust-cache@v1
       - run: ./scripts/ci/test
         shell: bash
@@ -121,6 +125,10 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
+      - uses: baptiste0928/cargo-install@v1
+        with:
+          crate: cargo-nextest
+          version: 0.9
       - uses: Swatinem/rust-cache@v1
       - run: ./scripts/ci/test
         shell: bash

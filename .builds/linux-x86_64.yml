@@ -9,18 +9,34 @@ tasks:
       rustup toolchain install stable nightly \
           --profile minimal --component clippy --component rustfmt
 
+      install() {
+          local url=$1;
+          local sha256=$2;
+          local tar_extra=$3;
+
+          curl -sSsfL -o tmp.tar.gz "$url"
+          local sha256_actual=$(sha256sum tmp.tar.gz|cut -d' ' -f1)
+          if [ "$sha256_actual" != "$sha256" ]; then
+              echo "sha256 mismatch:"
+              echo "expected: $sha256"
+              echo "actual: $sha256_actual"
+          fi
+          sudo tar -xvC /usr/bin "$tar_extra" -f tmp.tar.gz
+          rm tmp.tar.gz
+      }
+
       deny_version="0.11.3"
       deny_sha256="ffed77d73b5f76b6a7b200a939b6215bde55b0e59ab3294ad8518ddb01c49f09"
-      curl -sSfL -o cargo-deny.tar.gz \
-        "https://github.com/EmbarkStudios/cargo-deny/releases/download/${deny_version}/cargo-deny-${deny_version}-x86_64-unknown-linux-musl.tar.gz"
-      deny_sha256_actual=$(sha256sum cargo-deny.tar.gz|cut -d ' ' -f1)
-      if [ "$deny_sha256_actual" != "$deny_sha256" ]; then
-          echo "sha256 mismatch:"
-          echo "expected: $deny_sha256"
-          echo "actual: $deny_sha256_actual"
-          exit 1
-      fi
-      sudo tar -xvC /usr/bin --strip-components=1 -f cargo-deny.tar.gz
+      install \
+        "https://github.com/EmbarkStudios/cargo-deny/releases/download/${deny_version}/cargo-deny-${deny_version}-x86_64-unknown-linux-musl.tar.gz" \
+        "$deny_sha256" \
+        "--strip-components=1"
+
+      nextest_version="0.9"
+      nextest_sha256="9f2bcac8b65bafb12573b0106db48b29d9ceba4acaa351cc5f2504d38245de61"
+      install \
+          "https://get.nexte.st/${nextest_version}/linux" \
+          "$nextest_sha256"
 
       cd radicle-link/
       cargo fetch

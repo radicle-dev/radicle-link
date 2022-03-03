@@ -40,6 +40,7 @@ test-stable:
   before_script:
     - apt-get update
     - apt-get install -y cmake
+    - cargo install cargo-nextest
   script:
     - ./scripts/ci/test
     - ./scripts/ci/test-repl3
@@ -62,6 +63,7 @@ test-nightly:
   before_script:
     - apt-get update
     - apt-get install -y cmake
+    - cargo install cargo-nextest
   script:
     - ./scripts/ci/test
     - ./scripts/ci/test-repl3
