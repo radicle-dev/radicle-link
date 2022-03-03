@@ -1,0 +1,34 @@
+image: nixos/latest
+sources:
+  - https://git.sr.ht/~radicle-link/radicle-link
+tasks:
+  - fmt: |
+      cd radicle-link/
+      nix-shell default.nix --run ./nix/ci/fmt
+  - lint: |
+      cd radicle-link/
+      nix-shell default.nix --run ./scripts/ci/lint
+  - advisories: |
+      cd radicle-link/
+      nix-shell default.nix --run "cargo deny check advisories ||:"
+  - licenses: |
+      cd radicle-link/
+      nix-shell default.nix --run "cargo deny check licenses"
+  - bans: |
+      cd radicle-link/
+      nix-shell default.nix --run "cargo deny check bans"
+  - sources: |
+      cd radicle-link/
+      nix-shell default.nix --run "cargo deny check sources"
+  - build: |
+      cd radicle-link/
+      nix-shell default.nix --run ./scripts/ci/build
+      nix-shell default.nix --run ./scripts/ci/build-repl3
+      nix-shell default.nix --run ./scripts/ci/build-bins
+  - test: |
+      cd radicle-link/
+      nix-shell default.nix --run ./scripts/ci/test
+      nix-shell default.nix --run ./scripts/ci/test-repl3
+  - docs: |
+      cd radicle-link/
+      nix-shell default.nix --run ./scripts/ci/docs

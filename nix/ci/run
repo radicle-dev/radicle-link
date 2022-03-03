@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+./nix/ci/fmt
+./scripts/ci/lint
+./scripts/ci/build
+./scripts/ci/test
+./scripts/ci/build-repl3
+./scripts/ci/test-repl3
+./scripts/ci/build-bins
+./scripts/ci/docs
+./scripts/ci/advisory
