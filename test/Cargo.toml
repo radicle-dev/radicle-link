@@ -1,96 +1,83 @@
 [package]
-name = "radicle-link-test"
-description = "Common testing utilities"
+name = "tests"
 version = "0.1.0"
-authors = ["The Radicle Team <dev@radicle.xyz>"]
-edition = "2018"
+edition = "2021"
 license = "GPL-3.0-or-later"
+
 publish = false
 
 [lib]
 doctest = false
 test = true
+doc = false
 
 [features]
 replication-v3 = ["librad-test/replication-v3"]
 
-#
-# git helpers hacks
-#
-[dependencies.anyhow]
-version = "1"
-
-[dependencies.radicle-git-helpers]
-path = "../git-helpers"
-
-[[bin]]
-name = "git-remote-rad"
-path = "../git-helpers/src/bin/remote/main.rs"
-doc = false
-
-
-# test crates
 [dev-dependencies.cob-test]
-path = "./cob-test"
+path = "../cob/t"
 features = ["test"]
 
+[dev-dependencies.radicle-daemon-test]
+path = "../daemon/t"
+
 [dev-dependencies.git-ext-test]
-path = "./git-ext-test"
+path = "../git-ext/t"
 features = ["test"]
 
 [dev-dependencies.git-helpers-test]
-path = "./git-helpers-test"
+path = "../git-helpers/t"
 features = ["test"]
 
 [dev-dependencies.git-ref-format-test]
-path = "./git-ref-format-test"
+path = "../git-ref-format/t"
 features = ["test"]
 
 [dev-dependencies.git-trailers-test]
-path = "./git-trailers-test"
+path = "../git-trailers/t"
 features = ["test"]
 
 [dev-dependencies.librad-test]
-path = "./librad-test"
+path = "../librad/t"
 features = ["test"]
 
 [dev-dependencies.link-async-test]
-path = "./link-async-test"
+path = "../link-async/t"
 features = ["test"]
 
 [dev-dependencies.link-canonical-test]
-path = "./link-canonical-test"
+path = "../link-canonical/t"
 features = ["test"]
 
 [dev-dependencies.link-crypto-test]
-path = "./link-crypto-test"
+path = "../link-crypto/t"
 features = ["test"]
 
 [dev-dependencies.link-git-test]
-path = "./link-git-test"
+path = "../link-git/t"
 features = ["test"]
 
 [dev-dependencies.link-identities-test]
-path = "./link-identities-test"
+path = "../link-identities/t"
 features = ["test"]
 
 [dev-dependencies.link-replication-test]
-path = "./link-replication-test"
+path = "../link-replication/t"
 features = ["test"]
 
 [dev-dependencies.link-tracking-test]
-path = "./link-tracking-test"
+path = "../link-tracking/t"
 features = ["test"]
 
 [dev-dependencies.lnk-clib-test]
-path = "./cli/lnk-clib-test"
+path = "../cli/lnk-clib/t"
 
 [dev-dependencies.lnk-exe-test]
-path = "./cli/lnk-exe-test"
+path = "../cli/lnk-exe/t"
 
 [dev-dependencies.lnk-identities-test]
-path = "./cli/lnk-identities-test"
+path = "../cli/lnk-identities/t"
 
 [dev-dependencies.node-lib-test]
-path = "./node-lib-test"
+path = "../node-lib/t"
 features = ["test"]

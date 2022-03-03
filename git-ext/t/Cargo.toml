@@ -1,0 +1,28 @@
+[package]
+name = "git-ext-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[features]
+test = []
+
+[dev-dependencies]
+assert_matches = "1.5"
+minicbor = ">= 0.9.1, < 0.14"
+serde = "1"
+serde_json = "1"
+
+[dev-dependencies.radicle-git-ext]
+path = ".."
+features = ["minicbor", "serde"]
+
+[dev-dependencies.test-helpers]
+path = "../../test/test-helpers"
