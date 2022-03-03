@@ -1,0 +1,30 @@
+[package]
+name = "link-replication-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[features]
+test = []
+
+[dev-dependencies]
+bstr = "0"
+either = "1"
+once_cell = "1"
+
+[dev-dependencies.git-ref-format]
+path = "../../git-ref-format"
+features = ["macro"]
+
+[dev-dependencies.link-crypto]
+path = "../../link-crypto"
+
+[dev-dependencies.link-replication]
+path = "../../link-replication"

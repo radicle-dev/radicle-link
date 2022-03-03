@@ -1,0 +1,40 @@
+[package]
+name = "link-crypto-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[features]
+test = []
+
+[dependencies]
+proptest = "1"
+
+[dependencies.rand]
+version = "0.8"
+features = [ "small_rng" ]
+
+[dependencies.zeroize]
+version = "1.1"
+features = ["zeroize_derive"]
+
+[dependencies.link-crypto]
+path = "../../link-crypto"
+
+[dev-dependencies]
+multibase = "0.9"
+serde_json = "1"
+webpki = "0.21"
+
+[dev-dependencies.test-helpers]
+path = "../test-helpers"
+
+[dev-dependencies.radicle-git-ext]
+path = "../../git-ext"

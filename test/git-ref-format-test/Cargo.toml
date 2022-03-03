@@ -1,0 +1,28 @@
+[package]
+name = "git-ref-format-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[features]
+test = []
+
+[dependencies]
+proptest = "1"
+
+[dev-dependencies]
+assert_matches = "1.5"
+
+[dev-dependencies.git-ref-format]
+path = "../../git-ref-format"
+features = ["macro", "minicbor", "serde"]
+
+[dev-dependencies.test-helpers]
+path = "../test-helpers"

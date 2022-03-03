@@ -26,4 +26,4 @@ path = "../std-ext"
 
 [dependencies.tokio]
 version = "1.13.1"
-features = ["time"]
+features = ["net", "rt", "time"]

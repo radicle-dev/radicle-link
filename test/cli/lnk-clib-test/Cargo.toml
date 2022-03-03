@@ -1,0 +1,31 @@
+[package]
+name = "lnk-clib-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[features]
+test = []
+
+[dev-dependencies]
+anyhow = "1"
+tempfile = "3"
+
+[dev-dependencies.it-helpers]
+path = "../../it-helpers"
+
+[dev-dependencies.test-helpers]
+path = "../../test-helpers"
+
+[dev-dependencies.librad]
+path = "../../../librad"
+
+[dev-dependencies.lnk-clib]
+path = "../../../cli/lnk-clib"
