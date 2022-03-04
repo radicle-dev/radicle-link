@@ -10,7 +10,7 @@ use std::{
 };
 
 use anyhow::Result;
-use structopt::StructOpt as _;
+use clap::Parser as _;
 
 use librad::{
     net::Network,
@@ -40,7 +40,7 @@ fn defaults() -> Result<()> {
         "linkd",
             "--protocol-listen", "localhost",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
 
     assert_matches!(
         parsed,
@@ -81,7 +81,7 @@ fn bootstraps() -> Result<()> {
             "--bootstrap", "hynkyndc6w3p8urucakobzna7sxwgcqny7xxtw88dtx3pkf7m3nrzc@sprout.radicle.xyz:12345",
             "--bootstrap", "hybz9gfgtd9d4pd14a6r66j5hz6f77fed4jdu7pana4fxaxbt369kg@setzling.radicle.xyz:12345",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
 
     assert_eq!(
         parsed,
@@ -103,7 +103,7 @@ fn metrics_graphite() -> Result<()> {
             "--metrics-provider", "graphite",
             "--graphite-addr", "graphite:9108",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
 
     assert_eq!(
         parsed,
@@ -129,7 +129,7 @@ fn profile_id() -> Result<()> {
             "--protocol-listen", "localhost",
             "--profile-id", id.as_str()
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
 
     assert_eq!(
         parsed,
@@ -149,7 +149,7 @@ fn protocol_listen() -> Result<()> {
         "linkd",
             "--protocol-listen", "127.0.0.1:12345",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
 
     assert_eq!(
         parsed,
@@ -175,7 +175,7 @@ fn protocol_network() -> Result<()> {
             "--protocol-listen", "localhost",
             "--protocol-network", "testnet",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
 
     assert_eq!(
         parsed,
@@ -199,7 +199,7 @@ fn lnk_home() -> Result<()> {
             "--protocol-listen", "localhost",
             "--lnk-home", "/tmp/linkd",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
 
     assert_eq!(
         parsed,
@@ -222,7 +222,7 @@ fn signer_key_file() -> Result<()> {
             "--key-source", "file",
             "--key-file-path", "~/.config/radicle/secret.key",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
     assert_eq!(
         parsed,
         Args {
@@ -245,7 +245,7 @@ fn signer_key_file() -> Result<()> {
             "--key-source", "file",
             "--key-file-path", "~/.config/radicle/secret.seed",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
     assert_eq!(
         parsed,
         Args {
@@ -271,7 +271,7 @@ fn signer_key_ephemeral() -> Result<()> {
             "--signer", "key",
             "--key-source", "ephemeral",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
     assert_eq!(
         parsed,
         Args {
@@ -293,7 +293,7 @@ fn signer_key_ephemeral() -> Result<()> {
             "--key-source", "file",
             "--key-file-path", "~/.config/radicle/secret.seed",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
     assert_eq!(
         parsed,
         Args {
@@ -319,7 +319,7 @@ fn signer_key_stdin() -> Result<()> {
             "--signer", "key",
             "--key-source", "stdin",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
 
     assert_eq!(
         parsed,
@@ -344,7 +344,7 @@ fn signer_ssh_agent() -> Result<()> {
             "--protocol-listen", "localhost",
             "--signer", "ssh-agent",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
 
     assert_eq!(
         parsed,
@@ -365,7 +365,7 @@ fn tmp_root() -> Result<()> {
             "--protocol-listen", "localhost",
             "--tmp-root",
     ];
-    let parsed = Args::from_iter_safe(iter)?;
+    let parsed = Args::try_parse_from(iter)?;
 
     assert_eq!(
         parsed,
@@ -381,7 +381,7 @@ fn tmp_root() -> Result<()> {
 #[test]
 fn tracking() -> Result<()> {
     #[rustfmt::skip]
-    let parsed = Args::from_iter_safe(vec![
+    let parsed = Args::try_parse_from(vec![
         "linkd",
             "--protocol-listen", "localhost",
             "--track", "everything",
@@ -398,7 +398,7 @@ fn tracking() -> Result<()> {
     );
 
     #[rustfmt::skip]
-    let parsed = Args::from_iter_safe(vec![
+    let parsed = Args::try_parse_from(vec![
         "linkd",
             "--protocol-listen", "localhost",
             "--track", "selected",

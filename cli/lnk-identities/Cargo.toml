@@ -11,14 +11,16 @@ test = false
 
 [dependencies]
 anyhow = "1.0"
-clap = "2.33"
 either = "1.0"
 lazy_static = "1"
 nonempty = "0.6"
 serde_json = "1.0"
-structopt = "0.3"
 thiserror = "1.0"
 tracing = "0.1"
+
+[dependencies.clap]
+version = "3"
+features = [ "derive" ]
 
 [dependencies.lnk-clib]
 path = "../lnk-clib"

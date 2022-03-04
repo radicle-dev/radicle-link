@@ -9,7 +9,7 @@
 
 use std::{fmt, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
 
-use structopt::StructOpt;
+use clap::Parser;
 
 use librad::{
     git::Urn,
@@ -21,7 +21,7 @@ use lnk_clib::keys::ssh::SshAuthSock;
 
 use crate::seed::Seed;
 
-#[derive(Debug, Default, Eq, PartialEq, StructOpt)]
+#[derive(Debug, Default, Eq, PartialEq, Parser)]
 pub struct Args {
     /// Usage: `--bootstrap <peer1>@<addr1>[,<label1>] --bootstrap
     /// <peer2>@<addr2>[,<label2>]`
@@ -31,54 +31,54 @@ pub struct Args {
     /// nodes. The max number of configured nodes used will be the
     /// maximum allowed peers in the membership parameters (default:
     /// 5).
-    #[structopt(long = "bootstrap", name = "bootstrap")]
+    #[clap(long = "bootstrap", name = "bootstrap")]
     pub bootstraps: Vec<Seed<String>>,
 
     /// Identifier of the profile the daemon will run for. This value determines
     /// which monorepo (if existing) on disk will be the backing storage.
-    #[structopt(long)]
+    #[clap(long)]
     pub profile_id: Option<ProfileId>,
 
     /// Home of the profile data, if not provided is read from the environment
     /// and falls back to project dirs.
-    #[structopt(long, default_value, parse(from_str = parse_lnk_home), env="LNK_HOME")]
+    #[clap(long, default_value_t, parse(from_str = parse_lnk_home), env = "LNK_HOME")]
     pub lnk_home: LnkHome,
 
     /// Which unix domain socket to use for connecting to the ssh-agent. The
     /// default will defer to SSH_AUTH_SOCK, otherwise the value given should be
     /// a valid path.
-    #[structopt(long, default_value)]
+    #[clap(long, default_value_t)]
     pub ssh_auth_sock: SshAuthSock,
 
     /// Configures the type of signer used to get access to the storage.
-    #[structopt(long, default_value)]
+    #[clap(long, default_value_t)]
     pub signer: Signer,
 
-    #[structopt(flatten)]
+    #[clap(flatten)]
     pub key: KeyArgs,
 
-    #[structopt(flatten)]
+    #[clap(flatten)]
     pub metrics: MetricsArgs,
 
-    #[structopt(flatten)]
+    #[clap(flatten)]
     pub protocol: ProtocolArgs,
 
     /// Forces the creation of a temporary root for the local state, should be
     /// used for debug and testing only.
-    #[structopt(long)]
+    #[clap(long)]
     pub tmp_root: bool,
 
-    #[structopt(flatten)]
+    #[clap(flatten)]
     pub tracking: TrackingArgs,
 
     /// The number of milliseconds to wait after losing all connections before
     /// shutting down the node. If not specified the node will never
     /// shutdown.
-    #[structopt(long)]
+    #[clap(long)]
     pub linger_timeout: Option<LingerTimeout>,
 }
 
-#[derive(Debug, Eq, PartialEq, StructOpt)]
+#[derive(Debug, Eq, PartialEq, Parser)]
 pub enum Signer {
     /// Construct signer from a secret key.
     Key,
@@ -115,35 +115,35 @@ impl FromStr for Signer {
     }
 }
 
-#[derive(Debug, Default, Eq, PartialEq, StructOpt)]
+#[derive(Debug, Default, Eq, PartialEq, Parser)]
 pub struct KeyArgs {
     /// Location of the key file on disk.
-    #[structopt(
+    #[clap(
         long = "key-file-path",
         name = "key-file-path",
         parse(from_str),
-        required_if("key-source", "file")
+        required_if_eq("key-source", "file")
     )]
     pub file_path: Option<PathBuf>,
     /// Format of the key input data.
-    #[structopt(
+    #[clap(
         long = "key-format",
         name = "key-format",
-        default_value,
-        required_if("signer", "key")
+        default_value_t,
+        required_if_eq("signer", "key")
     )]
     pub format: KeyFormat,
     /// Specifies from which source the secret should be read.
-    #[structopt(
+    #[clap(
         long = "key-source",
         name = "key-source",
-        default_value,
-        required_if("signer", "key")
+        default_value_t,
+        required_if_eq("signer", "key")
     )]
     pub source: KeySource,
 }
 
-#[derive(Debug, Eq, PartialEq, StructOpt)]
+#[derive(Debug, Eq, PartialEq, Parser)]
 pub enum KeyFormat {
     Base64,
     Binary,
@@ -177,7 +177,7 @@ impl FromStr for KeyFormat {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, StructOpt)]
+#[derive(Debug, Eq, PartialEq, Parser)]
 pub enum KeySource {
     Ephemeral,
     File,
@@ -221,17 +221,17 @@ fn parse_lnk_home(src: &str) -> LnkHome {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, StructOpt)]
+#[derive(Debug, Eq, PartialEq, Parser)]
 pub struct MetricsArgs {
     /// Provider for metrics collection.
-    #[structopt(long = "metrics-provider", name = "metrics-provider")]
+    #[clap(long = "metrics-provider", name = "metrics-provider")]
     pub provider: Option<MetricsProvider>,
 
     /// Address of the graphite collector to send stats to.
-    #[structopt(
+    #[clap(
         long,
         default_value = "localhost:2003",
-        required_if("metrics-provider", "graphite")
+        required_if_eq("metrics-provider", "graphite")
     )]
     pub graphite_addr: String,
 }
@@ -245,7 +245,7 @@ impl Default for MetricsArgs {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, StructOpt)]
+#[derive(Debug, Eq, PartialEq, Parser)]
 pub enum MetricsProvider {
     Graphite,
 }
@@ -261,27 +261,27 @@ impl FromStr for MetricsProvider {
     }
 }
 
-#[derive(Debug, Default, Eq, PartialEq, StructOpt)]
+#[derive(Debug, Default, Eq, PartialEq, Parser)]
 pub struct ProtocolArgs {
     /// Address to bind to for the protocol to accept connections. Must be
     /// provided, shortcuts for any (0.0.0.0:0) and localhost (127.0.0.1:0)
     /// are valid values.
-    #[structopt(long = "protocol-listen", name = "protocol-listen", parse(try_from_str = ProtocolListen::parse))]
+    #[clap(long = "protocol-listen", name = "protocol-listen", parse(try_from_str = ProtocolListen::parse))]
     pub listen: ProtocolListen,
 
     /// Network name to be used during handshake, if 'main' is passed the
     /// default main network is used.
-    #[structopt(
+    #[clap(
         long = "protocol-network",
         name = "protocol-network",
-        default_value,
+        default_value_t,
         parse(try_from_str = parse_protocol_network))
     ]
     pub network: Network,
     // TODO(xla): Expose protocol args (membership, replication, etc.).
 }
 
-#[derive(Debug, Eq, PartialEq, StructOpt)]
+#[derive(Debug, Eq, PartialEq, Parser)]
 pub enum ProtocolListen {
     Any,
     Localhost,
@@ -315,26 +315,26 @@ fn parse_protocol_network(src: &str) -> Result<Network, String> {
     }
 }
 
-#[derive(Debug, Default, Eq, PartialEq, StructOpt)]
+#[derive(Debug, Default, Eq, PartialEq, Parser)]
 pub struct TrackingArgs {
     /// Instruct the node to automatically track either everything it observes
     /// or a selected set of peer ids and urns which need to be provided
     /// through extra arguments to take effect.
-    #[structopt(long = "track", name = "track")]
+    #[clap(long = "track", name = "track")]
     pub mode: Option<TrackingMode>,
 
     /// Track all updates from a specific peer. Argument can be repeated. Use in
     /// conjunction with `--track="selected"`.
-    #[structopt(long = "track-peer-id", name = "track-peer-id")]
+    #[clap(long = "track-peer-id", name = "track-peer-id")]
     pub peer_ids: Vec<PeerId>,
 
     /// Track all updates for a specific project urn. Argument can be repeated.
     /// Use in conjunction with `--track="selected"`.
-    #[structopt(long = "track-urn", name = "track-urn")]
+    #[clap(long = "track-urn", name = "track-urn")]
     pub urns: Vec<Urn>,
 }
 
-#[derive(Debug, Eq, PartialEq, StructOpt)]
+#[derive(Debug, Eq, PartialEq, Parser)]
 pub enum TrackingMode {
     Everything,
     Selected,

@@ -5,8 +5,8 @@
 
 use std::{panic, sync::Arc, time::Duration};
 
+use clap::Parser as _;
 use futures::{future::FutureExt as _, stream::FuturesUnordered, StreamExt};
-use structopt::StructOpt as _;
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -34,7 +34,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     let spawner = Arc::new(link_async::Spawner::from_current().unwrap());
 
-    let args = Args::from_args();
+    let args = Args::parse();
     let cfg: Cfg<discovery::Static, BoxedSigner> = cfg(&args).await?;
 
     let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
