@@ -1,0 +1,113 @@
+= RFC: request-pull
+Alex Good <alex@memoryandthought.me>
++
+:revdate: 2022-03-01
+:revremark: accepted
+:toc: preamble
+:stem:
+
+* Author: {author}
+* Date: {revdate}
+* Status: {revremark}
+
+== Motivation
+
+There are situations where a "sending" peer wants to ensure that another
+"receiving" peer in the network has replicated the senders view of an identity.
+Current announcement based workflows have downsides and the mutual
+synchronisation method proposed in RFC 701[1] is some ways off. This RFC
+proposes a simple `request-pull` RPC which should suffice for the most common
+workflows until RFC 701 is implemented.
+
+== Terminology and Conventions
+
+The key words "`MUST`", "`MUST NOT`", "`REQUIRED`", "`SHALL`", "`SHALL NOT`",
+"`SHOULD`", "`SHOULD NOT`", "`RECOMMENDED`", "`NOT RECOMMENDED`", "`MAY`", and
+"`OPTIONAL`" in this document are to be interpreted as described in <<RFC2119>>
+and <<RFC8174>> when, and only when, they appear in all capitals, as
+shown here.
+
+== Protocol
+
+After connecting to the receiver the sender sends a `request-pull` RPC message to
+the receiver over a new stream specifying the URN they wish to replicate. The
+receiver MAY check whether the request is rate limited or otherwise unauthorized
+and if so respond immediately with an error message and close the stream.
+
+If the receiver does not wish to track the URN then the receiver MUST send an
+error message and close the stream.
+
+If the request is authorized the receiver initiates replication of the identity
+over the same QUIC connection which the `request-pull` was received on. If an
+error occurs at any point during replication the receiver MUST send an error
+response and close the stream.
+
+Once replication is complete the receiver MUST send a success response listing
+the refs which were updated as a result of the replication and the targets
+those refs were updated to point to.
+
+The receiver MUST announce any new changes they have received to any connected
+peers.
+
+Throughout the course of the RPC the server MAY send a progress message
+containing a human readable string describing any relevant logs the server
+wishes to communicate to the sender.
+
+== Wire format
+
+`request-pull` requests are sent on a bidirectional QUIC stream identified by
+stream type `200`. Messages begin with a 32 bit integer length in network byte
+order followed by a CBOR object which is a combination of a type code and a
+payload. The type determines what the payload contains. There are four message
+types, an initial `request`, an `error` response, a `success` response, and a
+`progress` message.
+
+[source,cddl]
+----
+message = [
+    type_code: &(
+        request: 1,
+        success: 2,
+        error: 3,
+        progress: 4,
+    ),
+    payload: request / error / success / progress
+]
+request = [
+    urn: urn,
+    * tstr => any
+]
+error = [
+    message: tstr,
+    * tstr => any
+]
+success = [
+    updated_refs: [
+        * [
+            ref,
+            oid
+        ]
+    ],
+    * tstr => any,
+]
+progress = [
+    message: tstr,
+    * tstr => any
+]
+urn = tstr <1>
+ref = tstr
+oid = bytes <2>
+----
+<1> The canonical base32-z string encoding of the identity URN
+<2> The bytes of an OID
+
+
+== Deprecation
+
+This RPC is intended as a stop-gap until RFC 701 is implemented. Once RFC 701 is
+available it is expected that peers will wish to stop offering `request-pull`.
+As with all upgrade requests a peer may indicate that they do not offer
+`request-pull` by immediately closing a stream which attempts to upgrade to
+stream type `200`. Sending peers MUST handle this situation gracefully.
+
+[1] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0701-mutual-synchronisation.adoc
