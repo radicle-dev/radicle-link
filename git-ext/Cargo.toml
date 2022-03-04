@@ -16,7 +16,7 @@ percent-encoding = "2"
 thiserror = "1"
 
 [dependencies.git2]
-version = ">= 0.13.23, 0.13"
+version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 
@@ -28,7 +28,7 @@ path = "../link-git"
 optional = true
 
 [dependencies.minicbor]
-version = ">= 0.9.1, < 0.14"
+version = "0.13"
 features = ["std"]
 optional = true
 

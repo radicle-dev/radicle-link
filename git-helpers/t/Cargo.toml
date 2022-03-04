@@ -26,10 +26,10 @@ anyhow = "1"
 path = ".."
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = "3.3"
 
 [dev-dependencies.git2]
-version = ">= 0.13.24"
+version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 

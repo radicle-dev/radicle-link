@@ -16,21 +16,21 @@ replication-v3 = ["librad/replication-v3"]
 
 [dev-dependencies]
 anyhow = "1"
-assert_matches = "1"
+assert_matches = "1.5"
 async-stream = "0.3"
 blocking = "1"
 futures = "0.3"
 kv = "0.22"
-lazy_static = "1"
-pretty_assertions = "1"
+lazy_static = "1.4"
+pretty_assertions = "1.1"
 serde = "1"
-tempfile = "3"
-tokio = "1"
-tracing = ">= 0.1"
-url = "2"
+tempfile = "3.3"
+tokio = "1.13"
+tracing = "0.1"
+url = "2.2"
 
 [dev-dependencies.git2]
-version = ">= 0.13.24"
+version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 

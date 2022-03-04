@@ -16,7 +16,7 @@ link-literals = []
 thiserror = "1.0"
 
 [dependencies.bstr]
-version = "0.2.16"
+version = "0.2"
 optional = true
 
 [dependencies.minicbor]

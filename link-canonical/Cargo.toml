@@ -15,7 +15,7 @@ test = false
 derive = [ "link-canonical-derive" ]
 
 [dependencies]
-nom = { version = "7.0", features = [ "alloc" ] }
+nom = { version = "7.1", features = [ "alloc" ] }
 serde = { version = "1.0", features = [ "derive" ] }
 serde_json = "1.0"
 serde_bytes = "0.11"

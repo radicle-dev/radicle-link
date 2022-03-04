@@ -16,7 +16,7 @@ test = []
 
 [dev-dependencies]
 assert_matches = "1.5"
-minicbor = ">= 0.9.1, < 0.14"
+minicbor = "0.13"
 serde = "1"
 serde_json = "1"
 

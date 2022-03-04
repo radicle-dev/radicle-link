@@ -16,7 +16,7 @@ test = []
 
 [dev-dependencies]
 anyhow = "1"
-tempfile = "3"
+tempfile = "3.3"
 
 [dev-dependencies.it-helpers]
 path = "../../../test/it-helpers"

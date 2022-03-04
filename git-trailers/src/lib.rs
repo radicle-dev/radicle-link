@@ -8,7 +8,7 @@ use std::{borrow::Cow, convert::TryFrom, fmt, ops::Deref};
 
 use thiserror::Error;
 
-#[derive(Debug, Clone, Eq, PartialEq, Error)]
+#[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
     #[error("the trailers paragraph is missing in the given message")]
@@ -18,7 +18,7 @@ pub enum Error {
     Trailing(String),
 
     #[error(transparent)]
-    Parse(#[from] nom::Err<(String, nom::error::ErrorKind)>),
+    Parse(#[from] nom::Err<nom::error::Error<String>>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -83,7 +83,7 @@ pub enum InvalidToken {
     Trailing(String),
 
     #[error(transparent)]
-    Parse(#[from] nom::Err<(String, nom::error::ErrorKind)>),
+    Parse(#[from] nom::Err<nom::error::Error<String>>),
 }
 
 impl<'a> TryFrom<&'a str> for Token<'a> {
@@ -176,7 +176,12 @@ pub fn parse<'a>(message: &'a str, separators: &'a str) -> Result<Vec<Trailer<'a
     let trailers_paragraph =
         match parser::paragraphs(message.trim_end()).map(|(_, ps)| ps.last().cloned()) {
             Ok(None) | Err(_) => return Err(Error::MissingParagraph),
-            Ok(Some(p)) => p,
+            Ok(Some(p)) => {
+                if p.is_empty() {
+                    return Err(Error::MissingParagraph);
+                }
+                p
+            },
         };
 
     match parser::trailers(trailers_paragraph, separators) {
@@ -211,7 +216,7 @@ pub mod parser {
         bytes::complete::{tag, take_until, take_while1},
         character::complete::{line_ending, not_line_ending, one_of, space0, space1},
         combinator::{map, rest},
-        multi::{many0, separated_list},
+        multi::{many0, separated_list1},
         sequence::{delimited, preceded, separated_pair, terminated},
         IResult,
     };
@@ -219,7 +224,7 @@ pub mod parser {
     const EMPTY_LINE: &str = "\n\n";
 
     pub fn paragraphs(s: &str) -> IResult<&str, Vec<&str>> {
-        separated_list(tag(EMPTY_LINE), paragraph)(s)
+        separated_list1(tag(EMPTY_LINE), paragraph)(s)
     }
 
     pub fn paragraph(s: &str) -> IResult<&str, &str> {
@@ -234,7 +239,7 @@ pub mod parser {
 
     /// Parse a trailer, which can have an inlined or multilined value.
     pub fn trailer<'a>(s: &'a str, separators: &'a str) -> IResult<&'a str, Trailer<'a>> {
-        let parser = separated_pair(token, |s| separator(separators, s), values);
+        let mut parser = separated_pair(token, |s| separator(separators, s), values);
         let (rest, (token, values)) = parser(s)?;
         Ok((rest, Trailer { token, values }))
     }

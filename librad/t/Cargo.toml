@@ -22,7 +22,7 @@ proptest = "1"
 rand = "0.8"
 
 [dependencies.git2]
-version = ">= 0.13.24"
+version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 
@@ -45,21 +45,21 @@ features = ["test"]
 
 [dev-dependencies]
 anyhow = "1"
-assert_matches = "1"
+assert_matches = "1.5"
 blocking = "1"
-either = "1"
+either = "1.6"
 futures = "0.3"
-futures-await-test = "0"
+futures-await-test = "0.3"
 futures_codec = "0.4"
-lazy_static = "1"
-minicbor = ">= 0.9.1, < 0.14"
-nonempty = "0"
-nonzero_ext = "0.2"
-once_cell = "1"
-pretty_assertions = "1"
+lazy_static = "1.4"
+minicbor = "0.13"
+nonempty = "0.7"
+nonzero_ext = "0.3"
+once_cell = "1.10"
+pretty_assertions = "1.1"
 serde_json = "1"
-tempfile = "3"
-tracing = ">= 0.1"
+tempfile = "3.3"
+tracing = "0.1"
 webpki = "0.21"
 
 [dev-dependencies.automerge]
@@ -67,7 +67,7 @@ git = "https://github.com/automerge/automerge-rs.git"
 rev = "e72571962b51c2f0726fb534890ef3b4f7c74dfc"
 
 [dev-dependencies.tokio]
-version = "1"
+version = "1.13"
 features = ["rt-multi-thread", "macros"]
 
 # Note: must always match the exact version quinn is using

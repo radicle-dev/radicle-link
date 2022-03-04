@@ -26,7 +26,7 @@ path = "../git-ref-format"
 optional = true
 
 [dependencies.minicbor]
-version = ">= 0.9.1, < 0.14"
+version = "0.13"
 features = ["std", "derive"]
 
 [dependencies.radicle-git-ext]

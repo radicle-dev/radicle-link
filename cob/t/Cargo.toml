@@ -18,7 +18,7 @@ test = []
 proptest = "1"
 
 [dependencies.git2]
-version = ">= 0.13.24"
+version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 
@@ -30,9 +30,9 @@ path = "../../link-identities/t"
 features = ["test"]
 
 [dev-dependencies]
-lazy_static = "1"
+lazy_static = "1.4"
 rand = "0.8"
-minicbor = ">= 0.9.1, < 0.14"
+minicbor = "0.13"
 serde_json = "1"
 
 [dev-dependencies.automerge]

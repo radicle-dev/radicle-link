@@ -15,9 +15,9 @@ doc = false
 test = []
 
 [dev-dependencies]
-bstr = "0"
-either = "1"
-once_cell = "1"
+bstr = "0.2"
+either = "1.6"
+once_cell = "1.10"
 
 [dev-dependencies.git-ref-format]
 path = "../../git-ref-format"

@@ -24,7 +24,7 @@ test = []
 proptest = "1"
 
 [dependencies.git2]
-version = ">= 0.13.24"
+version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 
@@ -45,15 +45,15 @@ path = "../../test/test-helpers"
 [dev-dependencies]
 anyhow = "1"
 assert_cmd = "2"
-assert_matches = "1"
+assert_matches = "1.5"
 futures = "0.3"
 nix = "0"
-pretty_assertions = "1"
-structopt = "0"
-tempfile = "3"
+pretty_assertions = "1.1"
+structopt = "0.3"
+tempfile = "3.3"
 
 [dev-dependencies.tokio]
-version = "1"
+version = "1.13"
 features = ["rt-multi-thread"]
 
 [dev-dependencies.librad]

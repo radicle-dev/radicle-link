@@ -16,17 +16,17 @@ test = []
 
 [dev-dependencies]
 anyhow = "1"
-assert_matches = "1"
-either = "1"
+assert_matches = "1.5"
+either = "1.6"
 it-helpers = { path = "../../../test/it-helpers" }
 librad = { path = "../../../librad" }
 lnk-identities = { path = ".." }
-nonzero_ext = "0"
+nonzero_ext = "0.3"
 radicle-git-ext = { path = "../../../git-ext" }
-tempfile = "3"
+tempfile = "3.3"
 
 [dev-dependencies.git2]
-version = ">= 0.13.24"
+version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 

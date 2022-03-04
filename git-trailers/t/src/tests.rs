@@ -5,6 +5,7 @@
 
 use std::{borrow::Cow, convert::TryFrom as _, ops::Deref as _};
 
+use assert_matches::assert_matches;
 use git_trailers::{display, parse, Error, Token, Trailer};
 use pretty_assertions::assert_eq;
 
@@ -24,8 +25,8 @@ Just-a-token:
 
 "#;
     assert_eq!(
-        parse(msg, ":"),
-        Ok(vec![
+        parse(msg, ":").unwrap(),
+        vec![
             new_trailer("Co-authored-by", &["John Doe <john.doe@test.com>"]),
             new_trailer("Ticket", &["#42"]),
             new_trailer(
@@ -33,7 +34,7 @@ Just-a-token:
                 &["John <john@test.com>", "Jane <jane@test.com>"]
             ),
             new_trailer("Just-a-token", &[]),
-        ])
+        ]
     )
 }
 
@@ -52,8 +53,8 @@ Tested-by $User <user@test.com>
     Jane <jane@test.com>
 "#;
     assert_eq!(
-        parse(msg, separators),
-        Ok(vec![
+        parse(msg, separators).unwrap(),
+        vec![
             new_trailer("Co-authored-by", &["John Doe <john.doe@test.com>"]),
             new_trailer("Ticket", &["#42"]),
             new_trailer(
@@ -64,7 +65,7 @@ Tested-by $User <user@test.com>
                     "Jane <jane@test.com>"
                 ]
             ),
-        ])
+        ]
     )
 }
 
@@ -74,11 +75,10 @@ fn parse_message_trailers_with_missing_token() {
 
 Good-trailer: true
 John Doe <john.doe@test.com> # Unparsable token due to missing token"#;
-    assert_eq!(
+    assert_matches!(
         parse(msg, ":"),
-        Err(Error::Trailing(
-            "John Doe <john.doe@test.com> # Unparsable token due to missing token".to_owned()
-        ))
+        Err(Error::Trailing(s))
+            if s == "John Doe <john.doe@test.com> # Unparsable token due to missing token"
     )
 }
 
@@ -88,11 +88,10 @@ fn parse_message_trailers_with_invalid_token() {
 
 Good-trailer: true
 &!#: John Doe <john.doe@test.com> # Unparsable token due to invalid token"#;
-    assert_eq!(
+    assert_matches!(
         parse(msg, ":"),
-        Err(Error::Trailing(
-            "&!#: John Doe <john.doe@test.com> # Unparsable token due to invalid token".to_owned()
-        ))
+        Err(Error::Trailing(s))
+            if s == "&!#: John Doe <john.doe@test.com> # Unparsable token due to invalid token"
     )
 }
 
@@ -103,19 +102,19 @@ Ticket: #42
 Tested-by: Tester <tester@test.com>
 "#;
     assert_eq!(
-        parse(msg, ":"),
-        Ok(vec![
+        parse(msg, ":").unwrap(),
+        vec![
             new_trailer("Co-authored-by", &["John Doe <john.doe@test.com>"]),
             new_trailer("Ticket", &["#42"]),
             new_trailer("Tested-by", &["Tester <tester@test.com>"]),
-        ])
+        ]
     )
 }
 
 #[test]
 fn parse_empty_message() {
     let msg = "";
-    assert_eq!(parse(msg, ":"), Err(Error::MissingParagraph))
+    assert_matches!(parse(msg, ":"), Err(Error::MissingParagraph))
 }
 
 #[test]

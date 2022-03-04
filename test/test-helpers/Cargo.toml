@@ -14,17 +14,17 @@ test = false
 [dependencies]
 env_logger = ">= 0.9"
 log = ">= 0.4"
-pretty_assertions = "1"
+pretty_assertions = "1.1"
 serde = "1"
 serde_json = "1"
-tempfile = "3"
-tracing = ">= 0.1"
+tempfile = "3.3"
+tracing = "0.1"
 
 [dependencies.link-canonical]
 path = "../../link-canonical"
 
 [dependencies.minicbor]
-version = ">= 0.9.1, < 0.14"
+version = "0.13"
 features = ["std"]
 
 [dependencies.tracing-subscriber]

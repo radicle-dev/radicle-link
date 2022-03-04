@@ -10,12 +10,12 @@ doctest = false
 test = false
 
 [dependencies]
-nonempty = "0.6"
+nonempty = "0.7"
 thiserror = "1.0"
 typenum = "1.13"
 
 [dependencies.minicbor]
-version = ">= 0.9.1, < 0.14"
+version = "0.13"
 features = ["std"]
 optional = true
 
