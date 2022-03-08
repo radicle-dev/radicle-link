@@ -11,12 +11,6 @@ doctest = false
 test = true
 doc = false
 
-[[example]]
-name = "socket_activation_wrapper"
-
-[[example]]
-name = "socket_activation"
-
 [features]
 test = []
 
@@ -32,6 +26,7 @@ version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 
+
 [dependencies.linkd-lib]
 path = ".."
 
@@ -42,6 +37,9 @@ features = ["test"]
 [dependencies.link-identities-test]
 path = "../../../link-identities/t"
 features = ["test"]
+
+[dependencies.lnk-clib]
+path = "../../lnk-clib"
 
 [dependencies.test-helpers]
 path = "../../../test/test-helpers"

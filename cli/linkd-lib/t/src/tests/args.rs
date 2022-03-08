@@ -17,21 +17,19 @@ use librad::{
     profile::{LnkHome, ProfileId},
 };
 
-use linkd_lib::{
-    args::{
-        self,
-        Args,
-        KeyArgs,
-        MetricsArgs,
-        MetricsProvider,
-        ProtocolArgs,
-        ProtocolListen,
-        Signer,
-        TrackingArgs,
-        TrackingMode,
-    },
-    Seed,
+use linkd_lib::args::{
+    self,
+    Args,
+    KeyArgs,
+    MetricsArgs,
+    MetricsProvider,
+    ProtocolArgs,
+    ProtocolListen,
+    Signer,
+    TrackingArgs,
+    TrackingMode,
 };
+use lnk_clib::seed::Seed;
 
 #[test]
 fn defaults() -> Result<()> {

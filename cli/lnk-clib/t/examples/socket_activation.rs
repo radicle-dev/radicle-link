@@ -7,11 +7,11 @@ use std::process::exit;
 
 use anyhow::Result;
 
-use linkd_lib::api::sockets::socket_activation;
+use lnk_clib::socket_activation;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    if let Some(_listener) = socket_activation::env()? {
+    if let Some(_listener) = socket_activation::env_sockets()? {
         exit(0)
     } else {
         exit(1);

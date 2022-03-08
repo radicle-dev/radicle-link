@@ -9,6 +9,4 @@ extern crate assert_matches;
 pub mod gen;
 
 #[cfg(test)]
-mod integration;
-#[cfg(test)]
 mod tests;

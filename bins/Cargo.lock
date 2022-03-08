@@ -2107,9 +2107,11 @@ name = "lnk-clib"
 version = "0.1.0"
 dependencies = [
  "futures-lite",
+ "itertools 0.10.3",
  "librad",
  "lnk-thrussh-agent",
  "minicbor",
+ "nix",
  "once_cell",
  "serde",
  "serde_json",

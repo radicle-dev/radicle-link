@@ -4,3 +4,4 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 mod scenario;
+mod socket_activation;
