@@ -1,0 +1,53 @@
+[package]
+name = "cob-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[features]
+test = []
+
+[dependencies]
+proptest = "1"
+
+[dependencies.git2]
+version = "0.13.24"
+default-features = false
+features = ["vendored-libgit2"]
+
+[dependencies.cob]
+path = ".."
+
+[dependencies.link-identities-test]
+path = "../../link-identities/t"
+features = ["test"]
+
+[dev-dependencies]
+lazy_static = "1.4"
+rand = "0.8"
+minicbor = "0.13"
+serde_json = "1"
+
+[dev-dependencies.automerge]
+git = "https://github.com/automerge/automerge-rs.git"
+rev = "e72571962b51c2f0726fb534890ef3b4f7c74dfc"
+
+[dev-dependencies.librad]
+path = "../../librad"
+
+[dev-dependencies.link-identities]
+path = "../../link-identities"
+
+[dev-dependencies.radicle-git-ext]
+path = "../../git-ext"
+
+[dev-dependencies.link-crypto-test]
+path = "../../link-crypto/t"
+features = ["test"]

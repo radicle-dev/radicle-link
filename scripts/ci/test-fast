@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -eoux pipefail
 
-cargo test --lib unit
+cargo nextest run --no-fail-fast tests properties

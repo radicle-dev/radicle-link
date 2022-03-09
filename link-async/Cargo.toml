@@ -25,5 +25,5 @@ tracing = "0.1"
 path = "../std-ext"
 
 [dependencies.tokio]
-version = "1.13.1"
-features = ["time"]
+version = "1.13"
+features = ["net", "rt", "time"]

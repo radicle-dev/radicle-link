@@ -1,0 +1,94 @@
+[package]
+name = "librad-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[features]
+test = []
+replication-v3 = ["librad/replication-v3"]
+
+[dependencies]
+futures = "0.3"
+futures_ringbuf = "0.3"
+proptest = "1"
+rand = "0.8"
+
+[dependencies.git2]
+version = "0.13.24"
+default-features = false
+features = ["vendored-libgit2"]
+
+[dependencies.radicle-git-ext]
+path = "../../git-ext"
+
+[dependencies.librad]
+path = "../../librad"
+
+[dependencies.link-crypto]
+path = "../../link-crypto"
+
+[dependencies.link-crypto-test]
+path = "../../link-crypto/t"
+features = ["test"]
+
+[dependencies.link-identities-test]
+path = "../../link-identities/t"
+features = ["test"]
+
+[dev-dependencies]
+anyhow = "1"
+assert_matches = "1.5"
+blocking = "1"
+either = "1.6"
+futures = "0.3"
+futures-await-test = "0.3"
+futures_codec = "0.4"
+lazy_static = "1.4"
+minicbor = "0.13"
+nonempty = "0.7"
+nonzero_ext = "0.3"
+once_cell = "1.10"
+pretty_assertions = "1.1"
+serde_json = "1"
+tempfile = "3.3"
+tracing = "0.1"
+webpki = "0.21"
+
+[dev-dependencies.automerge]
+git = "https://github.com/automerge/automerge-rs.git"
+rev = "e72571962b51c2f0726fb534890ef3b4f7c74dfc"
+
+[dev-dependencies.tokio]
+version = "1.13"
+features = ["rt-multi-thread", "macros"]
+
+# Note: must always match the exact version quinn is using
+[dev-dependencies.rustls]
+version = "0.19"
+features = ["logging", "dangerous_configuration"]
+
+[dev-dependencies.it-helpers]
+path = "../../test/it-helpers"
+
+[dev-dependencies.test-helpers]
+path = "../../test/test-helpers"
+
+[dev-dependencies.git-ref-format]
+path = "../../git-ref-format"
+
+[dev-dependencies.link-identities]
+path = "../../link-identities"
+
+[dev-dependencies.radicle-std-ext]
+path = "../../std-ext"
+
+[dev-dependencies.radicle-macros]
+path = "../../macros"

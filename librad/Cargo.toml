@@ -6,7 +6,7 @@ edition = "2018"
 license = "GPL-3.0-or-later"
 
 [lib]
-doctest = true
+doctest = false
 test = false
 
 [features]
@@ -20,7 +20,7 @@ async-trait = "0.1"
 backoff = "0.3"
 blocking = "1.0.2"
 bloom-filters = "0.1.2"
-bstr = "0.2.16"
+bstr = "0.2"
 bytes = "0.5"
 dashmap = "4.0"
 directories = "3.0"
@@ -31,17 +31,17 @@ governor = "0.3.2"
 if-watch = "0.2"
 indexmap = "1.6"
 itertools = "0.10.0"
-lazy_static = "1"
+lazy_static = "1.4"
 libc = "0.2"
 multibase = "0.9"
 multihash = "0.11"
-nom = "5"
-nonempty = "0.6"
+nom = "7.1"
+nonempty = "0.7"
 notify = "4.0.17"
-nonzero_ext = "0.2"
+nonzero_ext = "0.3"
 num_cpus = "1"
-once_cell = "1.8"
-parking_lot = "0.11"
+once_cell = "1.10"
+parking_lot = "0.12"
 percent-encoding = "2"
 picky-asn1 = "0.3.2"
 picky-asn1-der = "0.2.5"
@@ -54,7 +54,7 @@ serde_bytes = "0.11"
 serde_json = "1.0"
 sized-vec = "0.3"
 socket2 = "0.4"
-tempfile = "3.1"
+tempfile = "3.3"
 thiserror = "1.0"
 time = "0.3"
 toml = "0.5"
@@ -71,11 +71,11 @@ default-features = false
 features = ["managed"]
 
 [dependencies.either]
-version = ">= 1.3, 1"
+version = "1.6"
 features = ["serde"]
 
 [dependencies.git2]
-version = ">= 0.13.23"
+version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 
@@ -85,7 +85,7 @@ default-features = false
 features = ["vendored"]
 
 [dependencies.minicbor]
-version = ">= 0.11.0, < 0.14"
+version = "0.13"
 features = ["std", "derive"]
 
 [dependencies.quinn]
@@ -101,6 +101,7 @@ path = "../link-canonical"
 
 [dependencies.link-crypto]
 path = "../link-crypto"
+features = ["git-ref-format"]
 
 [dependencies.link-git]
 path = "../link-git"
@@ -145,11 +146,11 @@ version = "1.0"
 features = ["derive"]
 
 [dependencies.tokio]
-version = "1.13.1"
+version = "1.13"
 features = ["rt-multi-thread", "net", "time"]
 
 [dependencies.url]
-version = "2.1"
+version = "2.2"
 features = ["serde"]
 
 [dependencies.cob]

@@ -5,8 +5,12 @@ authors = ["Fintan Halpenny <fintan.halpenny@gmail.com>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 
+[lib]
+doctest = false
+test = false
+
 [dependencies]
-either = "1.0"
+either = "1.6"
 multihash = "0.11"
 thiserror = "1.0"
 tracing = "0.1"

@@ -1,0 +1,34 @@
+[package]
+name = "lnk-identities-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[features]
+test = []
+
+[dev-dependencies]
+anyhow = "1"
+assert_matches = "1.5"
+either = "1.6"
+it-helpers = { path = "../../../test/it-helpers" }
+librad = { path = "../../../librad" }
+lnk-identities = { path = ".." }
+nonzero_ext = "0.3"
+radicle-git-ext = { path = "../../../git-ext" }
+tempfile = "3.3"
+
+[dev-dependencies.git2]
+version = "0.13.24"
+default-features = false
+features = ["vendored-libgit2"]
+
+[dev-dependencies.git-ref-format]
+path = "../../../git-ref-format"

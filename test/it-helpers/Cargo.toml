@@ -1,0 +1,41 @@
+[package]
+name = "it-helpers"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+publish = false
+
+description = "Integration test helpers"
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+anyhow = "1"
+futures = "0.3"
+once_cell = "1.10"
+tempfile = "3.3"
+tokio = "1.13"
+tracing = "0.1"
+
+[dependencies.git2]
+version = "0.13.24"
+default-features = false
+features = ["vendored-libgit2"]
+
+#
+# workspace dependencies
+#
+
+[dependencies.git-ref-format]
+path = "../../git-ref-format"
+
+[dependencies.librad]
+path = "../../librad"
+
+[dependencies.lnk-clib]
+path = "../../cli/lnk-clib"
+
+[dependencies.test-helpers]
+path = "../test-helpers"

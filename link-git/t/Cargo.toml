@@ -1,0 +1,30 @@
+[package]
+name = "link-git-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[features]
+test = []
+
+[dev-dependencies]
+anyhow = "1"
+bstr = "0.2"
+futures = "0.3"
+futures_ringbuf = "0.3"
+tempfile = "3.3"
+
+[dev-dependencies.git2]
+version = "0.13.24"
+default-features = false
+features = ["vendored-libgit2"]
+
+[dev-dependencies.link-git]
+path = ".."

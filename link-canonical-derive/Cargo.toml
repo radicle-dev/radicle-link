@@ -6,6 +6,8 @@ edition = "2018"
 license = "GPL-3.0-or-later"
 
 [lib]
+doctest = false
+test = false
 proc-macro = true
 
 [dependencies]

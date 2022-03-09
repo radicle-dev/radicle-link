@@ -7,6 +7,7 @@ edition = "2018"
 license = "GPL-3.0-or-later"
 
 [lib]
+doctest = false
 test = false
 
 [dependencies]
@@ -16,7 +17,7 @@ anyhow = "1"
 path = "../librad"
 
 [dependencies.git2]
-version = ">= 0.13.23"
+version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 

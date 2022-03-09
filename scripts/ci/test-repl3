@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
 set -eoux pipefail
 
-RUST_LOG=error ssh-agent cargo test --workspace --features replication-v3
+RUST_LOG=error ssh-agent cargo nextest run \
+    --features replication-v3 \
+    --status-level all \
+    --failure-output immediate-final \
+    --no-fail-fast

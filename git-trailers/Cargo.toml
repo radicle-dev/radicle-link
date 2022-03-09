@@ -10,5 +10,5 @@ doctest = false
 test = false
 
 [dependencies]
-nom = "5"
+nom = "7.1"
 thiserror = "1.0"
