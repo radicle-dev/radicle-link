@@ -12,6 +12,7 @@ test = false
 [dependencies]
 anyhow = "1"
 futures-lite = "1.12.0"
+lnk-thrussh-agent = "0.1.0"
 thiserror = "1"
 serde = "1"
 
@@ -24,7 +25,3 @@ path = "../../librad"
 
 [dependencies.lnk-clib]
 path = "../lnk-clib"
-
-[dependencies.thrussh-agent]
-git = "https://github.com/FintanH/thrussh"
-branch = "generic-agent"

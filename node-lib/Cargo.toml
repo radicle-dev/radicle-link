@@ -47,13 +47,12 @@ features = ["std", "derive"]
 path    = "../cli/lnk-clib"
 version = "0.1.0"
 
+[dependencies.lnk-thrussh-agent]
+version  = "0.1.0"
+features = [ "tokio-agent" ]
+
 [dependencies.radicle-macros]
 path = "../macros"
-
-[dependencies.thrussh-agent]
-git       = "https://github.com/FintanH/thrussh"
-features  = [ "tokio-agent" ]
-branch    = "generic-agent"
 
 [dependencies.tracing-subscriber]
 version = "0.3.0"

@@ -28,7 +28,6 @@ path = "../lnk-identities"
 [dependencies.lnk-profile]
 path = "../lnk-profile"
 
-[dependencies.thrussh-agent]
-git = "https://github.com/FintanH/thrussh"
-branch = "generic-agent"
+[dependencies.lnk-thrussh-agent]
+version = "0.1.0"
 default-features = false

@@ -5,8 +5,8 @@
 
 use std::{fmt, sync::Arc};
 
+use lnk_thrussh_agent::{client::tokio::UnixStream, Constraint};
 use serde::{de::DeserializeOwned, Serialize};
-use thrussh_agent::{client::tokio::UnixStream, Constraint};
 
 use librad::{
     crypto::{

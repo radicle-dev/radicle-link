@@ -5,9 +5,9 @@
 
 use std::{error, fmt};
 
+use lnk_thrussh_agent::Constraint;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
-use thrussh_agent::Constraint;
 
 use librad::{
     crypto::{

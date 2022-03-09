@@ -5,7 +5,7 @@
 
 use std::convert::TryInto as _;
 
-use thrussh_agent::Constraint;
+use lnk_thrussh_agent::Constraint;
 
 use librad::crypto::keystore::sign;
 use lnk_clib::keys::{self, ssh::SshAuthSock};
