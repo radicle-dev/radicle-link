@@ -15,4 +15,4 @@ mod protocol;
 pub mod seed;
 pub use seed::{Seed, Seeds};
 mod signals;
-mod tracking;
+pub mod tracking;

@@ -175,10 +175,11 @@ impl Cfg<discovery::Static, BoxedSigner> {
             },
             tracker: args.tracking.mode.as_ref().map(|arg| match arg {
                 args::TrackingMode::Everything => Tracker::Everything,
-                args::TrackingMode::Selected => Tracker::Selected {
-                    peer_ids: args.tracking.peer_ids.clone().into_iter().collect(),
-                    urns: args.tracking.urns.clone().into_iter().collect(),
-                },
+                args::TrackingMode::Selected => Tracker::selected(
+                    args.tracking.peer_ids.clone(),
+                    args.tracking.urns.clone(),
+                    args.tracking.pairs.clone(),
+                ),
             }),
             profile,
             run_mode,

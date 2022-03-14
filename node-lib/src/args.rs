@@ -19,7 +19,7 @@ use librad::{
 };
 use lnk_clib::keys::ssh::SshAuthSock;
 
-use crate::seed::Seed;
+use crate::{seed::Seed, tracking};
 
 #[derive(Debug, Default, Eq, PartialEq, Parser)]
 pub struct Args {
@@ -332,6 +332,14 @@ pub struct TrackingArgs {
     /// Use in conjunction with `--track="selected"`.
     #[clap(long = "track-urn", name = "track-urn")]
     pub urns: Vec<Urn>,
+
+    /// Track all updates for a peer and urn pair, ie. '<peer>,<urn>'. Argument
+    /// can be repeated. Use in conjunction with `--track="selected"`.
+    ///
+    /// Note: if a `track-urn` or `track-peer-id` overlaps with a
+    /// `track-pair`, the `track-pair` will take preferrence.
+    #[clap(long = "track-pair", name = "track-pair")]
+    pub pairs: Vec<tracking::Pair>,
 }
 
 #[derive(Debug, Eq, PartialEq, Parser)]
