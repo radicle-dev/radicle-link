@@ -17,7 +17,14 @@ pub use super::error;
 use super::streams;
 use crate::{
     net::{
-        protocol::{event::upstream as event, gossip, Endpoint, ProtocolStorage, State},
+        protocol::{
+            event::upstream as event,
+            gossip,
+            Endpoint,
+            ProtocolStorage,
+            RequestPullGuard,
+            State,
+        },
         quic,
     },
     PeerId,
@@ -29,12 +36,13 @@ use crate::{
 ///
 /// Panics if one of the tasks spawned by this function panics.
 #[tracing::instrument(skip(state, ingress))]
-pub(in crate::net::protocol) async fn incoming<S, I>(
-    state: State<S>,
+pub(in crate::net::protocol) async fn incoming<S, G, I>(
+    state: State<S, G>,
     ingress: I,
 ) -> Result<Void, error::Accept>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    G: RequestPullGuard,
     I: futures::Stream<
         Item = quic::Result<(quic::Connection, quic::BoxedIncomingStreams<'static>)>,
     >,

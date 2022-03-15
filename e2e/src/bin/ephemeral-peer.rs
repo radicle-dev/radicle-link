@@ -20,10 +20,11 @@ use futures::FutureExt as _;
 use librad::{
     crypto,
     git,
+    git::{storage, tracking},
     net::{
         discovery::{self, Discovery as _},
         peer::{self, Peer},
-        protocol::{self, io},
+        protocol::{self, io, request_pull},
         Network,
     },
     paths::Paths,
@@ -59,6 +60,36 @@ struct Options {
 struct BoostrapNode {
     peer_id: PeerId,
     addr: String,
+}
+
+#[derive(Clone)]
+struct AllowAll {
+    storage: storage::Pool<storage::Storage>,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum GuardError {
+    #[error(transparent)]
+    Storage(#[from] storage::pool::PoolError),
+    #[error(transparent)]
+    Track(#[from] tracking::error::Track),
+}
+
+impl request_pull::Guard for AllowAll {
+    type Error = GuardError;
+    type Output = bool;
+
+    fn guard(&self, peer: &PeerId, urn: &git::Urn) -> Result<Self::Output, Self::Error> {
+        let storage = futures::executor::block_on(self.storage.get())?;
+        let _res = tracking::track(
+            storage.as_ref(),
+            urn,
+            Some(*peer),
+            tracking::Config::default(),
+            tracking::policy::Track::MustNotExist,
+        )?;
+        Ok(true)
+    }
 }
 
 fn parse_bootstrap_node(s: &str) -> Result<BoostrapNode, String> {
@@ -101,6 +132,14 @@ async fn main() {
         // eagerly init so we crash immediately on error
         git::storage::Storage::init(&paths, key.clone()).unwrap();
 
+        let storage_lock = storage::pool::Initialised::no();
+        let request_pull = AllowAll {
+            storage: storage::Pool::new(
+                storage::pool::ReadWriteConfig::new(paths.clone(), key.clone(), storage_lock),
+                1,
+            ),
+        };
+
         let peer = Peer::new(peer::Config {
             signer: key,
             protocol: protocol::Config {
@@ -111,6 +150,7 @@ async fn main() {
                 network: opts.network,
                 replication: Default::default(),
                 rate_limits: Default::default(),
+                request_pull,
             },
             storage: Default::default(),
         })
@@ -200,7 +240,7 @@ where
     }
 }
 
-async fn stdout_stats(peer: Peer<SecretKey>) -> anyhow::Result<Void> {
+async fn stdout_stats(peer: Peer<SecretKey, AllowAll>) -> anyhow::Result<Void> {
     loop {
         tokio::time::sleep(Duration::from_secs(10)).await;
         let stats = peer.stats().await;
@@ -208,7 +248,10 @@ async fn stdout_stats(peer: Peer<SecretKey>) -> anyhow::Result<Void> {
     }
 }
 
-async fn graphite_stats(peer: Peer<SecretKey>, graphite_addr: SocketAddr) -> anyhow::Result<Void> {
+async fn graphite_stats(
+    peer: Peer<SecretKey, AllowAll>,
+    graphite_addr: SocketAddr,
+) -> anyhow::Result<Void> {
     tracing::debug!("stats collector");
 
     let peer_id_str = peer.peer_id().to_string();

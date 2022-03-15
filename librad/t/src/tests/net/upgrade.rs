@@ -13,6 +13,7 @@ use librad::{
         Gossip,
         Interrogation,
         Membership,
+        RequestPull,
         SomeUpgraded,
         UpgradeRequest,
     },
@@ -75,10 +76,19 @@ async fn upgrade_interrogation() {
     )
 }
 
+#[tokio::test]
+async fn upgrade_request_pull() {
+    assert_matches!(
+        test_upgrade(RequestPull).await,
+        Ok(SomeUpgraded::RequestPull(_))
+    )
+}
+
 #[test]
 fn roundtrip_upgrade_request() {
     roundtrip::cbor(UpgradeRequest::Gossip);
     roundtrip::cbor(UpgradeRequest::Git);
     roundtrip::cbor(UpgradeRequest::Membership);
     roundtrip::cbor(UpgradeRequest::Interrogation);
+    roundtrip::cbor(UpgradeRequest::RequestPull);
 }

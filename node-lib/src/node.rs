@@ -22,6 +22,7 @@ use crate::{
     logging,
     metrics::graphite,
     protocol,
+    request_pull,
     signals,
     tracking,
 };
@@ -35,7 +36,7 @@ pub async fn run() -> anyhow::Result<()> {
     let spawner = Arc::new(link_async::Spawner::from_current().unwrap());
 
     let args = Args::parse();
-    let cfg: Cfg<discovery::Static, BoxedSigner> = cfg(&args).await?;
+    let cfg: Cfg<discovery::Static, BoxedSigner, request_pull::State> = cfg(&args).await?;
 
     let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
     let mut signals_task = spawner.spawn(signals::routine(shutdown_tx)).fuse();
@@ -99,11 +100,15 @@ pub async fn run() -> anyhow::Result<()> {
 }
 
 #[cfg(unix)]
-async fn cfg(args: &Args) -> anyhow::Result<Cfg<discovery::Static, BoxedSigner>> {
+async fn cfg(
+    args: &Args,
+) -> anyhow::Result<Cfg<discovery::Static, BoxedSigner, request_pull::State>> {
     Ok(Cfg::from_args(args).await?)
 }
 
 #[cfg(windows)]
-async fn cfg(args: &Args) -> anyhow::Result<Cfg<discovery::Static, BoxedSigner>> {
+async fn cfg(
+    args: &Args,
+) -> anyhow::Result<Cfg<discovery::Static, BoxedSigner, request_pull::State>> {
     unimplemented!("Windows is not supported, contributions are welcome :)")
 }

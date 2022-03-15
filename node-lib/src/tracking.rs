@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{collections::BTreeSet, str::FromStr};
+use std::{collections::BTreeSet, convert::Infallible, str::FromStr};
 
 use futures::{pin_mut, StreamExt as _};
 use radicle_git_ext::FromMultihashError;
@@ -14,7 +14,12 @@ use librad::{
     git::{tracking, Urn},
     net::{
         peer::{event::upstream::Gossip, Peer, PeerInfo, ProtocolEvent},
-        protocol::{broadcast::PutResult::Uninteresting, gossip::Payload},
+        protocol::{
+            broadcast::PutResult::Uninteresting,
+            gossip::Payload,
+            request_pull,
+            RequestPullGuard,
+        },
     },
     PeerId,
     Signer,
@@ -31,6 +36,19 @@ pub enum Tracker {
     Selected(Selected),
 }
 
+impl request_pull::Guard for Tracker {
+    type Error = Infallible;
+
+    type Output = bool;
+
+    fn guard(&self, peer: &PeerId, urn: &Urn) -> Result<Self::Output, Self::Error> {
+        match self {
+            Self::Everything => Ok(true),
+            Self::Selected(selected) => selected.guard(peer, urn),
+        }
+    }
+}
+
 /// A set of selected `Urn` and `PeerId`s for tracking.
 ///
 /// Since a `Selection` can be a `Selection::Peer`, `Selection::Urn`,
@@ -39,6 +57,16 @@ pub enum Tracker {
 /// [`Pair`] will take preferrence.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Selected(Vec<Selection>);
+
+impl request_pull::Guard for Selected {
+    type Error = Infallible;
+
+    type Output = bool;
+
+    fn guard(&self, peer: &PeerId, urn: &Urn) -> Result<Self::Output, Self::Error> {
+        Ok(self.0.iter().any(|s| s.guard(peer, urn).unwrap()))
+    }
+}
 
 impl Selected {
     pub fn new(
@@ -90,6 +118,20 @@ pub enum Selection {
     Peer(PeerId),
     Urn(Urn),
     Pair(Pair),
+}
+
+impl request_pull::Guard for Selection {
+    type Error = Infallible;
+
+    type Output = bool;
+
+    fn guard(&self, peer: &PeerId, urn: &Urn) -> Result<Self::Output, Self::Error> {
+        match self {
+            Selection::Peer(s) => Ok(s == peer),
+            Selection::Urn(s) => Ok(s == urn),
+            Selection::Pair(pair) => Ok(&pair.peer == peer && &pair.urn == urn),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -174,9 +216,10 @@ impl Tracker {
 }
 
 #[instrument(name = "tracking subroutine", skip(peer, tracker))]
-pub async fn routine<S>(peer: Peer<S>, tracker: Tracker) -> anyhow::Result<()>
+pub async fn routine<S, G>(peer: Peer<S, G>, tracker: Tracker) -> anyhow::Result<()>
 where
     S: Signer + Clone,
+    G: RequestPullGuard,
 {
     let events = peer.subscribe();
     pin_mut!(events);

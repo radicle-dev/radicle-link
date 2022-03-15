@@ -13,6 +13,7 @@ use super::{
     membership,
     Endpoint,
     ProtocolStorage,
+    RequestPullGuard,
     State,
 };
 use crate::{net::connection::RemoteAddr as _, PeerId};
@@ -31,9 +32,10 @@ pub use send::{rpc::Rpc, send_rpc};
 pub(super) mod streams;
 
 #[tracing::instrument(skip(state, peer, addrs), fields(remote_id = %peer))]
-pub(super) async fn discovered<S>(state: State<S>, peer: PeerId, addrs: Vec<SocketAddr>)
+pub(super) async fn discovered<S, G>(state: State<S, G>, peer: PeerId, addrs: Vec<SocketAddr>)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    G: RequestPullGuard,
 {
     if state.has_connection(peer) {
         return;

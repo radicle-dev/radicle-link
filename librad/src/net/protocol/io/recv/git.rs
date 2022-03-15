@@ -26,8 +26,10 @@ enum Error {
     Io(#[from] io::Error),
 }
 
-pub(in crate::net::protocol) async fn git<S, T>(state: &State<S>, stream: Upgraded<upgrade::Git, T>)
-where
+pub(in crate::net::protocol) async fn git<S, G, T>(
+    state: &State<S, G>,
+    stream: Upgraded<upgrade::Git, T>,
+) where
     T: Duplex,
     T::Read: AsyncRead + Unpin,
     T::Write: AsyncWrite + Unpin,
@@ -37,7 +39,7 @@ where
     }
 }
 
-async fn serve<S, T>(state: &State<S>, stream: Upgraded<upgrade::Git, T>) -> Result<(), Error>
+async fn serve<S, G, T>(state: &State<S, G>, stream: Upgraded<upgrade::Git, T>) -> Result<(), Error>
 where
     T: Duplex,
     T::Read: AsyncRead + Unpin,

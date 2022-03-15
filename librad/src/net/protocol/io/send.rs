@@ -7,4 +7,4 @@ pub mod rpc;
 pub use rpc::send_rpc;
 
 pub mod request_response;
-pub use request_response::request;
+pub use request_response::{multi_response, request, single_response};

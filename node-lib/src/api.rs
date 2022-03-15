@@ -13,7 +13,10 @@ use std::{sync::Arc, time::Duration};
 
 use tracing::instrument;
 
-use librad::{crypto::Signer, net::peer::Peer};
+use librad::{
+    crypto::Signer,
+    net::{peer::Peer, protocol::RequestPullGuard},
+};
 use link_async::Spawner;
 
 pub use sockets::Sockets;
@@ -21,15 +24,16 @@ pub use sockets::Sockets;
 pub mod wire_types;
 
 #[instrument(name = "api subroutine", skip(spawner, peer, sockets))]
-pub async fn routine<'a, S>(
+pub async fn routine<'a, S, G>(
     spawner: Arc<Spawner>,
-    peer: Peer<S>,
+    peer: Peer<S, G>,
     sockets: &'a Sockets,
     linger_timeout: Option<Duration>,
     announce_wait_time: Duration,
 ) -> ()
 where
     S: Signer + Clone,
+    G: RequestPullGuard,
 {
     let tasks = Box::pin(rpc::tasks(spawner, peer, sockets.rpc(), announce_wait_time));
     if let Some(timeout) = linger_timeout {

@@ -27,6 +27,8 @@ pub use crate::net::protocol::{
     Connected,
     Interrogation,
     PeerInfo,
+    RequestPull,
+    RequestPullGuard,
 };
 
 pub mod error;
@@ -34,9 +36,9 @@ pub mod storage;
 pub use storage::Storage as PeerStorage;
 
 #[derive(Clone)]
-pub struct Config<Signer> {
+pub struct Config<Signer, Guard> {
     pub signer: Signer,
-    pub protocol: protocol::Config,
+    pub protocol: protocol::Config<Guard>,
     pub storage: config::Storage,
 }
 
@@ -83,8 +85,8 @@ pub mod config {
 }
 
 #[derive(Clone)]
-pub struct Peer<S> {
-    config: Config<S>,
+pub struct Peer<S, G> {
+    config: Config<S, G>,
     phone: protocol::TinCans,
     peer_store: PeerStorage,
     user_store: git::storage::Pool<git::storage::Storage>,
@@ -93,11 +95,12 @@ pub struct Peer<S> {
     repl: Replication,
 }
 
-impl<S> Peer<S>
+impl<S, G> Peer<S, G>
 where
     S: Signer + Clone,
+    G: RequestPullGuard,
 {
-    pub fn new(config: Config<S>) -> Result<Self, error::Init> {
+    pub fn new(config: Config<S, G>) -> Result<Self, error::Init> {
         let spawner = Spawner::from_current()
             .map(Arc::new)
             .ok_or(error::Init::Runtime)?;
@@ -162,7 +165,7 @@ where
         PeerId::from_signer(self.signer())
     }
 
-    pub fn protocol_config(&self) -> &protocol::Config {
+    pub fn protocol_config(&self) -> &protocol::Config<G> {
         &self.config.protocol
     }
 
@@ -239,6 +242,14 @@ where
         self.phone.interrogate(peer)
     }
 
+    pub async fn request_pull(
+        &self,
+        peer: impl Into<(PeerId, Vec<SocketAddr>)>,
+        urn: Urn,
+    ) -> RequestPull {
+        self.phone.request_pull(peer, urn).await
+    }
+
     /// Initiate replication of `urn` from the given peer.
     ///
     /// If a connection to `from` does not already exist, the supplied addresses
@@ -298,10 +309,10 @@ where
 
     /// Borrow a [`git::storage::Storage`] from the pool, and run a blocking
     /// computation on it.
-    pub async fn using_storage<F, A>(&self, blocking: F) -> Result<A, error::Storage>
+    pub async fn using_storage<F, T>(&self, blocking: F) -> Result<T, error::Storage>
     where
-        F: FnOnce(&git::storage::Storage) -> A + Send + 'static,
-        A: Send + 'static,
+        F: FnOnce(&git::storage::Storage) -> T + Send + 'static,
+        T: Send + 'static,
     {
         let storage = self.user_store.get().await?;
         Ok(self.spawner.blocking(move || blocking(&storage)).await)
@@ -309,10 +320,10 @@ where
 
     /// Borrow a [`git::storage::ReadOnly`] from the pool, and run a blocking
     /// computation on it.
-    pub async fn using_read_only<F, A>(&self, blocking: F) -> Result<A, error::Storage>
+    pub async fn using_read_only<F, T>(&self, blocking: F) -> Result<T, error::Storage>
     where
-        F: FnOnce(&git::storage::ReadOnly) -> A + Send + 'static,
-        A: Send + 'static,
+        F: FnOnce(&git::storage::ReadOnly) -> T + Send + 'static,
+        T: Send + 'static,
     {
         let storage = self.user_store.get().await?;
         Ok(self
@@ -343,7 +354,9 @@ where
             .await
     }
 
-    pub async fn bind(&self) -> Result<protocol::Bound<PeerStorage>, protocol::error::Bootstrap> {
+    pub async fn bind(
+        &self,
+    ) -> Result<protocol::Bound<PeerStorage, G>, protocol::error::Bootstrap> {
         protocol::bind(
             self.spawner.clone(),
             self.phone.clone(),
@@ -356,9 +369,10 @@ where
     }
 }
 
-impl<S> git::local::transport::CanOpenStorage for Peer<S>
+impl<S, G> git::local::transport::CanOpenStorage for Peer<S, G>
 where
     S: Signer + Clone,
+    G: RequestPullGuard,
 {
     fn open_storage(
         &self,

@@ -34,6 +34,7 @@ use librad::{
         protocol::{
             event::{self, upstream::predicate::gossip_from},
             gossip::{self, Rev},
+            RequestPullGuard,
         },
     },
     refspec_pattern,
@@ -132,15 +133,16 @@ fn can_fetch() {
 
 // Perform commit and push to working copy on peer1
 #[tracing::instrument(skip(peer), err)]
-async fn commit_and_push<P, S>(
+async fn commit_and_push<P, S, G>(
     repo_path: P,
-    peer: &Peer<S>,
+    peer: &Peer<S, G>,
     owner: &Person,
     project: &Project,
 ) -> Result<git2::Oid, anyhow::Error>
 where
     P: AsRef<Path> + Debug,
     S: Signer + Clone,
+    G: RequestPullGuard,
 {
     let repo = git2::Repository::init(repo_path)?;
     let url = LocalUrl::from(project.urn());
@@ -184,16 +186,17 @@ where
 
 // Create working copy of project
 #[tracing::instrument(skip(peer), err)]
-fn create_working_copy<P, S, I>(
+fn create_working_copy<P, S, G, I>(
     repo_path: P,
     inc_path: P,
-    peer: &Peer<S>,
+    peer: &Peer<S, G>,
     project: &Project,
     tracked_persons: I,
 ) -> Result<git2::Repository, anyhow::Error>
 where
     P: AsRef<Path> + Debug,
     S: Signer + Clone,
+    G: RequestPullGuard,
     I: IntoIterator<Item = (Person, PeerId)> + Debug,
 {
     let repo = git2::Repository::init(repo_path)?;

@@ -5,13 +5,13 @@
 
 use std::net::SocketAddr;
 
-use futures::{SinkExt as _, TryStreamExt as _};
+use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _};
 use futures_codec::Framed;
 
 use crate::net::{
     codec::CborCodec,
     connection::{RemoteAddr as _, RemotePeer as _},
-    protocol::{error, interrogation, quic, upgrade},
+    protocol::{error, interrogation, quic, request_pull, upgrade},
 };
 
 pub trait Request {
@@ -26,6 +26,53 @@ impl Request for interrogation::Request {
     const UPGRADE: Self::Upgrade = upgrade::Interrogation;
 }
 
+impl Request for request_pull::Request {
+    type Response = request_pull::Response;
+    type Upgrade = upgrade::RequestPull;
+    const UPGRADE: Self::Upgrade = upgrade::RequestPull;
+}
+
+#[tracing::instrument(
+    skip(conn, req),
+    fields(
+        remote_id = %conn.remote_peer_id(),
+        remote_addr = %conn.remote_addr()
+    ),
+    err
+)]
+pub async fn single_response<R>(
+    conn: &quic::Connection,
+    req: R,
+) -> Result<Option<R::Response>, error::Rpc<quic::BidiStream>>
+where
+    R: Request + minicbor::Encode,
+    for<'a> R::Response: minicbor::Decode<'a>,
+{
+    request(conn, req).await?.try_next().await
+}
+
+#[tracing::instrument(
+    skip(conn, req),
+    fields(
+        remote_id = %conn.remote_peer_id(),
+        remote_addr = %conn.remote_addr()
+    ),
+    err
+)]
+pub async fn multi_response<R>(
+    conn: &quic::Connection,
+    req: R,
+) -> Result<
+    impl futures::Stream<Item = Result<R::Response, error::Rpc<quic::BidiStream>>>,
+    error::Rpc<quic::BidiStream>,
+>
+where
+    R: Request + minicbor::Encode,
+    for<'a> R::Response: minicbor::Decode<'a>,
+{
+    request(conn, req).await
+}
+
 #[tracing::instrument(
     skip(conn, req),
     fields(
@@ -37,7 +84,10 @@ impl Request for interrogation::Request {
 pub async fn request<R>(
     conn: &quic::Connection,
     req: R,
-) -> Result<Option<R::Response>, error::Rpc<quic::BidiStream>>
+) -> Result<
+    impl futures::Stream<Item = Result<R::Response, error::Rpc<quic::BidiStream>>>,
+    error::Rpc<quic::BidiStream>,
+>
 where
     R: Request + minicbor::Encode,
     for<'a> R::Response: minicbor::Decode<'a>,
@@ -46,5 +96,5 @@ where
     let upgraded = upgrade::upgrade(stream, R::UPGRADE).await?;
     let mut framing = Framed::new(upgraded.into_stream(), CborCodec::<R, R::Response>::new());
     framing.send(req).await?;
-    Ok(framing.try_next().await?)
+    Ok(framing.map(|item| item.map_err(error::Rpc::from)))
 }

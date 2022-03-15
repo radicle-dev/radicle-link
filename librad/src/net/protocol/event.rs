@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, net::SocketAddr};
 
-use super::{broadcast, cache, error, gossip, interrogation, membership, quic};
+use super::{broadcast, cache, error, gossip, interrogation, membership, quic, request_pull};
 use crate::PeerId;
 
 #[derive(Clone)]
@@ -13,6 +13,7 @@ pub enum Downstream {
     Gossip(downstream::Gossip),
     Info(downstream::Info),
     Interrogation(downstream::Interrogation),
+    RequestPull(downstream::RequestPull),
     Connect(downstream::Connect),
 }
 
@@ -22,9 +23,10 @@ pub mod downstream {
     use std::sync::Arc;
 
     use parking_lot::Mutex;
-    use tokio::sync::oneshot;
+    use tokio::sync::{mpsc, oneshot};
 
     pub type Reply<T> = Arc<Mutex<Option<oneshot::Sender<T>>>>;
+    pub type MultiReply<T> = Arc<Mutex<Option<mpsc::Sender<T>>>>;
 
     #[derive(Clone, Debug)]
     pub enum Gossip {
@@ -74,6 +76,13 @@ pub mod downstream {
         pub request: interrogation::Request,
         pub reply:
             Reply<Result<interrogation::Response<'static, SocketAddr>, error::Interrogation>>,
+    }
+
+    #[derive(Clone)]
+    pub struct RequestPull {
+        pub peer: (PeerId, Vec<SocketAddr>),
+        pub request: request_pull::Request,
+        pub reply: MultiReply<Result<request_pull::Response, error::RequestPull>>,
     }
 
     #[derive(Clone)]

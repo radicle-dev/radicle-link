@@ -11,7 +11,10 @@ use std::{
 use tokio::{net::UdpSocket, time};
 use tracing::{debug, info, instrument};
 
-use librad::{net::peer::Peer, Signer};
+use librad::{
+    net::{peer::Peer, protocol::RequestPullGuard},
+    Signer,
+};
 
 const CONNECTIONS_TOTAL: &str = "connections_total";
 const CONNECTED_PEERS: &str = "connected_peers";
@@ -19,9 +22,10 @@ const MEMBERSHIP_ACTIVE: &str = "membership_active";
 const MEMBERSHIP_PASSIVE: &str = "membership_passive";
 
 #[instrument(name = "graphite subroutine", skip(peer))]
-pub async fn routine<S>(peer: Peer<S>, graphite_addr: SocketAddr) -> anyhow::Result<()>
+pub async fn routine<S, G>(peer: Peer<S, G>, graphite_addr: SocketAddr) -> anyhow::Result<()>
 where
     S: Signer + Clone,
+    G: RequestPullGuard,
 {
     info!("starting graphite stats routine");
 

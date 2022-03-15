@@ -6,7 +6,7 @@ use librad::{
         storage::Storage,
     },
     identities::{delegation::Direct, payload},
-    net::{connection::LocalInfo, peer::Peer, replication},
+    net::{connection::LocalInfo, peer::Peer, protocol::RequestPullGuard, replication},
     Signer,
 };
 use tracing::{info, instrument};
@@ -42,12 +42,17 @@ impl TestPerson {
     /// Pull (fetch or clone) the project from known running peer `A` to peer
     /// `B`.
     #[instrument(name = "test_person", skip(self, from, to), err)]
-    pub async fn pull<A, B, S>(&self, from: &A, to: &B) -> anyhow::Result<replication::Success>
+    pub async fn pull<A, B, S, Auth>(
+        &self,
+        from: &A,
+        to: &B,
+    ) -> anyhow::Result<replication::Success>
     where
-        A: Deref<Target = Peer<S>> + LocalInfo<Addr = SocketAddr>,
-        B: Deref<Target = Peer<S>>,
+        A: Deref<Target = Peer<S, Auth>> + LocalInfo<Addr = SocketAddr>,
+        B: Deref<Target = Peer<S, Auth>>,
 
         S: Signer + Clone,
+        Auth: RequestPullGuard,
     {
         let remote_peer = from.local_peer_id();
         let remote_addrs = from.listen_addrs();

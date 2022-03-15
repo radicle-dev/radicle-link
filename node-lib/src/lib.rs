@@ -12,6 +12,7 @@ mod logging;
 mod metrics;
 pub mod node;
 mod protocol;
+pub mod request_pull;
 pub mod seed;
 pub use seed::{Seed, Seeds};
 mod signals;

@@ -19,20 +19,24 @@ use super::{
 
 use librad::{
     git::Urn,
-    net::{peer::Peer, protocol::gossip},
+    net::{
+        peer::Peer,
+        protocol::{gossip, RequestPullGuard},
+    },
     PeerId,
     Signer,
 };
 use link_async::{incoming::UnixListenerExt, Spawner};
 
-pub fn tasks<S>(
+pub fn tasks<S, G>(
     spawner: Arc<Spawner>,
-    peer: Peer<S>,
+    peer: Peer<S, G>,
     socket: &UnixListener,
     announce_wait_time: Duration,
 ) -> impl futures::stream::Stream<Item = link_async::Task<()>> + Send + '_
 where
     S: Signer + Clone,
+    G: RequestPullGuard,
 {
     socket
         .incoming()
@@ -57,13 +61,14 @@ where
 
 const MAX_IN_FLIGHT_REQUESTS: usize = 20;
 
-async fn rpc<S>(
+async fn rpc<S, G>(
     spawner: Arc<Spawner>,
-    peer: Peer<S>,
+    peer: Peer<S, G>,
     stream: UnixStream,
     announce_wait_time: Duration,
 ) where
     S: Signer + Clone,
+    G: RequestPullGuard,
 {
     let mut running_handlers = FuturesUnordered::new();
     let mut transport: io::SocketTransport = stream.into();
@@ -228,13 +233,14 @@ impl Listener {
     }
 }
 
-async fn dispatch_request<S>(
+async fn dispatch_request<S, G>(
     mut listener: Listener,
-    peer: Peer<S>,
+    peer: Peer<S, G>,
     announce_wait_time: Duration,
     payload: messages::RequestPayload,
 ) where
     S: Signer + Clone,
+    G: RequestPullGuard,
 {
     tracing::info!(?payload, "dispatching request");
     listener.ack().await;
@@ -246,14 +252,15 @@ async fn dispatch_request<S>(
 }
 
 #[tracing::instrument(skip(listener, peer))]
-async fn handle_announce<S>(
+async fn handle_announce<S, G>(
     mut listener: Listener,
-    peer: &Peer<S>,
+    peer: &Peer<S, G>,
     announce_wait_time: Duration,
     urn: Urn,
     rev: git2::Oid,
 ) where
     S: Signer + Clone,
+    G: RequestPullGuard,
 {
     tracing::info!(?rev, ?urn, "received announce request");
     let gossip_announce = mk_gossip(peer.peer_id(), &urn, &rev);

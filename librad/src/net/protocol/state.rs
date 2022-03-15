@@ -15,11 +15,12 @@ use super::{
     cache,
     event,
     gossip,
-    io,
     membership,
+    request_pull,
     tick,
     Endpoint,
     ProtocolStorage,
+    RequestPullGuard,
     TinCans,
 };
 use crate::{
@@ -39,11 +40,12 @@ pub(super) struct StateConfig {
 ///
 /// You know, like `ReaderT (State s) IO`.
 #[derive(Clone)]
-pub(super) struct State<S> {
+pub(super) struct State<S, G> {
     pub local_id: PeerId,
     pub endpoint: Endpoint,
     pub membership: membership::Hpv<Pcg64Mcg, SocketAddr>,
     pub gossip: broadcast::State<Storage<S>, ()>,
+    pub request_pull: request_pull::State<Storage<S>, G>,
     pub phone: TinCans,
     pub config: StateConfig,
     pub caches: cache::Caches,
@@ -51,7 +53,7 @@ pub(super) struct State<S> {
     pub limits: RateLimits,
 }
 
-impl<S> State<S> {
+impl<S, G> State<S, G> {
     pub fn emit<I, E>(&self, evs: I)
     where
         I: IntoIterator<Item = E>,
@@ -63,9 +65,10 @@ impl<S> State<S> {
     }
 }
 
-impl<S> State<S>
+impl<S, G> State<S, G>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    G: RequestPullGuard,
 {
     pub async fn tick<I>(&self, tocks: I)
     where
@@ -77,10 +80,16 @@ where
     }
 
     /// Get or establish a connection
+    ///
+    /// Note: this function cannot be used in any of the
+    /// `net::protocol::recv::*` modules, since `net::protocol::io::streams`
+    /// relies on those modules and cycle will be created.
     pub async fn connection<I>(&self, to: PeerId, addr_hints: I) -> Option<quic::Connection>
     where
         I: IntoIterator<Item = SocketAddr> + 'static,
     {
+        use super::io;
+
         match self.endpoint.get_connection(to) {
             Some(conn) => Some(conn),
             None => io::connect(&self.endpoint, to, addr_hints)
@@ -102,9 +111,10 @@ where
 
 #[cfg(not(feature = "replication-v3"))]
 #[async_trait]
-impl<S> crate::git::p2p::transport::GitStreamFactory for State<S>
+impl<S, G> crate::git::p2p::transport::GitStreamFactory for State<S, G>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    G: RequestPullGuard,
 {
     async fn open_stream(
         &self,

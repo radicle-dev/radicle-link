@@ -10,7 +10,7 @@ use futures::{
     stream::{FuturesOrdered, StreamExt as _},
 };
 
-use super::{error, gossip, io, membership, PeerInfo, ProtocolStorage, State};
+use super::{error, gossip, io, membership, PeerInfo, ProtocolStorage, RequestPullGuard, State};
 use crate::PeerId;
 
 #[derive(Debug)]
@@ -36,9 +36,10 @@ pub(super) enum Tock<A, P> {
 }
 
 #[tracing::instrument(level = "debug", skip(state))]
-pub(super) async fn tock<S>(state: State<S>, tock: Tock<SocketAddr, gossip::Payload>)
+pub(super) async fn tock<S, G>(state: State<S, G>, tock: Tock<SocketAddr, gossip::Payload>)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    G: RequestPullGuard,
 {
     let mut mcfly = FuturesOrdered::new();
     mcfly.push(one_tock(state.clone(), tock));
@@ -70,12 +71,13 @@ where
     }
 }
 
-fn one_tock<S>(
-    state: State<S>,
+fn one_tock<S, G>(
+    state: State<S, G>,
     tock: Tock<SocketAddr, gossip::Payload>,
 ) -> BoxFuture<'static, Result<Vec<membership::Tick<SocketAddr>>, error::Tock<SocketAddr>>>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    G: RequestPullGuard,
 {
     use Tock::*;
 
@@ -136,13 +138,14 @@ where
     .boxed()
 }
 
-async fn try_connect_and_send<S>(
-    state: &State<S>,
+async fn try_connect_and_send<S, G>(
+    state: &State<S, G>,
     to: &PeerInfo<SocketAddr>,
     message: io::Rpc<SocketAddr, gossip::Payload>,
 ) -> Result<(), error::BestEffortSend<SocketAddr>>
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    G: RequestPullGuard,
 {
     let conn = state
         .connection(to.peer_id, to.addrs().copied().collect::<Vec<_>>())
