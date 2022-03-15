@@ -40,6 +40,7 @@ pub mod gossip;
 pub mod interrogation;
 pub mod io;
 pub mod membership;
+pub mod request_pull;
 
 mod info;
 pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
@@ -272,6 +273,9 @@ impl<A, T> ProtocolStorage<A> for T where
     T: broadcast::LocalStorage<A> + storage::Pooled<storage::Storage> + Send + Sync
 {
 }
+
+pub trait RequestPullGuard: request_pull::Guard + Clone + Send + Sync + 'static {}
+impl<T> RequestPullGuard for T where T: request_pull::Guard + Clone + Send + Sync + 'static {}
 
 impl<R, A> broadcast::Membership for membership::Hpv<R, A>
 where
