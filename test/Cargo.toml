@@ -18,9 +18,6 @@ replication-v3 = ["librad-test/replication-v3"]
 path = "../cob/t"
 features = ["test"]
 
-[dev-dependencies.radicle-daemon-test]
-path = "../daemon/t"
-
 [dev-dependencies.git-ext-test]
 path = "../git-ext/t"
 features = ["test"]

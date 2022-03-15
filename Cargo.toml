@@ -1,7 +1,6 @@
 [workspace]
 members = [
   "cob",
-  "daemon",
   "data",
   "e2e",
   "git-ext",
