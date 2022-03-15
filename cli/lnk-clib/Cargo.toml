@@ -24,11 +24,10 @@ tracing = "0.1"
 [dependencies.librad]
 path = "../../librad"
 
+[dependencies.lnk-thrussh-agent]
+version = "0.1.0"
+features = [ "tokio-agent" ]
+
 [dependencies.minicbor]
 version = "0.13"
 features = ["std"]
-
-[dependencies.thrussh-agent]
-git = "https://github.com/FintanH/thrussh"
-branch = "generic-agent"
-features = [ "tokio-agent" ]

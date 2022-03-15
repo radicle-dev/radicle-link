@@ -3,8 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use lnk_thrussh_agent::Constraint;
 use tempfile::tempdir;
-use thrussh_agent::Constraint;
 
 use it_helpers::ssh::with_ssh_agent;
 use librad::{

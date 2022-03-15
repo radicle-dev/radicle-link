@@ -38,6 +38,10 @@ features = ["vendored"]
 [dependencies.librad]
 path = "../../librad"
 
+[dependencies.lnk-thrussh-agent]
+version = "0.1.0"
+default-features = false
+
 [dependencies.radicle-git-ext]
 path = "../../git-ext"
 
@@ -51,11 +55,6 @@ features = [ "derive" ]
 [dependencies.similar]
 version = "2.1"
 features = [ "text" ]
-
-[dependencies.thrussh-agent]
-git = "https://github.com/FintanH/thrussh"
-branch = "generic-agent"
-default-features = false
 
 [dependencies.url]
 version = "2.2"
