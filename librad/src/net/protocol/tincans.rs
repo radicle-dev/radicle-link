@@ -129,23 +129,20 @@ impl TinCans {
         rx.await.unwrap_or_default()
     }
 
-    pub fn interrogate(&self, peer: impl Into<(PeerId, Vec<SocketAddr>)>) -> Interrogation {
+    pub fn interrogate(&self, peer: PeerId, conn: quic::Connection) -> Interrogation {
         Interrogation {
-            peer: peer.into(),
+            peer,
+            conn,
             chan: self.downstream.clone(),
         }
     }
 
-    pub async fn request_pull(
-        &self,
-        peer: impl Into<(PeerId, Vec<SocketAddr>)>,
-        urn: Urn,
-    ) -> RequestPull {
+    pub async fn request_pull(&self, urn: Urn, conn: quic::Connection) -> RequestPull {
         let (tx, rx) = multi_replier();
         if let Err(tincan::error::SendError(e)) =
             self.downstream
                 .send(Downstream::RequestPull(event::downstream::RequestPull {
-                    peer: peer.into(),
+                    conn,
                     request: request_pull::Request { urn },
                     reply: tx,
                 }))
@@ -211,7 +208,8 @@ impl Default for TinCans {
 }
 
 pub struct Interrogation {
-    peer: (PeerId, Vec<SocketAddr>),
+    peer: PeerId,
+    conn: quic::Connection,
     chan: tincan::Sender<event::Downstream>,
 }
 
@@ -269,7 +267,8 @@ impl Interrogation {
 
         let (tx, rx) = replier();
         let msg = Downstream::Interrogation(Interrogation {
-            peer: self.peer.clone(),
+            conn: self.conn.clone(),
+            peer: self.peer,
             request,
             reply: tx,
         });

@@ -240,16 +240,31 @@ where
         self.phone.stats().await
     }
 
-    pub fn interrogate(&self, peer: impl Into<(PeerId, Vec<SocketAddr>)>) -> Interrogation {
-        self.phone.interrogate(peer)
+    pub async fn interrogate(
+        &self,
+        from: impl Into<(PeerId, Vec<SocketAddr>)>,
+    ) -> Result<Interrogation, error::NoConnection> {
+        let from = from.into();
+        let remote_peer = from.0;
+        let Connected(conn) = self
+            .connect(from)
+            .await
+            .ok_or(error::NoConnection(remote_peer))?;
+        Ok(self.phone.interrogate(remote_peer, conn))
     }
 
     pub async fn request_pull(
         &self,
-        peer: impl Into<(PeerId, Vec<SocketAddr>)>,
+        to: impl Into<(PeerId, Vec<SocketAddr>)>,
         urn: Urn,
-    ) -> RequestPull {
-        self.phone.request_pull(peer, urn).await
+    ) -> Result<RequestPull, error::NoConnection> {
+        let to = to.into();
+        let remote_peer = to.0;
+        let Connected(conn) = self
+            .connect(to)
+            .await
+            .ok_or(error::NoConnection(remote_peer))?;
+        Ok(self.phone.request_pull(urn, conn).await)
     }
 
     /// Initiate replication of `urn` from the given peer.

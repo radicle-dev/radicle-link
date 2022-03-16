@@ -101,62 +101,41 @@ where
     }
 }
 
-pub(super) async fn interrogation<S, G>(
-    state: State<S, G>,
+pub(super) async fn interrogation(
     event::downstream::Interrogation {
-        peer: (peer, addr_hints),
+        conn,
+        peer,
         request,
         reply,
     }: event::downstream::Interrogation,
-) where
-    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
-    G: RequestPullGuard,
-{
+) {
     let chan = reply.lock().take();
     if let Some(tx) = chan {
-        let resp = match state.connection(peer, addr_hints).await {
-            None => Err(error::Interrogation::NoConnection(peer)),
-            Some(conn) => {
-                match io::send::single_response(&conn, request, interrogation::FRAMED_BUFSIZ).await
-                {
-                    Err(e) => Err(e.into()),
-                    Ok(resp) => resp.ok_or(error::Interrogation::NoResponse(peer)),
-                }
-            },
-        };
+        let resp =
+            match io::send::single_response(&conn, request, interrogation::FRAMED_BUFSIZ).await {
+                Err(e) => Err(e.into()),
+                Ok(resp) => resp.ok_or(error::Interrogation::NoResponse(peer)),
+            };
         tx.send(resp).ok();
     }
 }
 
-pub(super) async fn request_pull<S, G>(
-    state: State<S, G>,
+pub(super) async fn request_pull(
     event::downstream::RequestPull {
-        peer: (peer, addr_hints),
+        conn,
         request,
         reply,
     }: event::downstream::RequestPull,
-) where
-    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
-    G: RequestPullGuard,
-{
+) {
     let chan = reply.lock().take();
     if let Some(tx) = chan {
-        match state.connection(peer, addr_hints).await {
-            None => {
-                tx.send(Err(error::RequestPull::NoConnection(peer)))
-                    .await
-                    .ok();
+        match io::send::multi_response(&conn, request, request_pull::FRAMED_BUFSIZ).await {
+            Err(e) => {
+                tx.send(Err(e.into())).await.ok();
             },
-            Some(conn) => {
-                match io::send::multi_response(&conn, request, request_pull::FRAMED_BUFSIZ).await {
-                    Err(e) => {
-                        tx.send(Err(e.into())).await.ok();
-                    },
-                    Ok(mut resp) => {
-                        while let Some(r) = resp.next().await {
-                            tx.send(r.map_err(|e| e.into())).await.ok();
-                        }
-                    },
+            Ok(mut resp) => {
+                while let Some(r) = resp.next().await {
+                    tx.send(r.map_err(|e| e.into())).await.ok();
                 }
             },
         };

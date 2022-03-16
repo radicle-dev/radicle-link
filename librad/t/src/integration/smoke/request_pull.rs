@@ -38,7 +38,8 @@ fn responds() {
                 (responder.peer_id(), responder.listen_addrs().to_vec()),
                 project.urn(),
             )
-            .await;
+            .await
+            .unwrap();
 
         while let Some(Ok(resp)) = rp.next().await {
             match resp {
