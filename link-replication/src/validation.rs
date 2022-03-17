@@ -15,6 +15,7 @@ use link_git::protocol::oid;
 
 use crate::{
     error::{self, Validation},
+    refdb,
     refs,
     sigrefs,
     LocalPeer,
@@ -51,7 +52,9 @@ where
         info!("scanning {} for signed refs", prefix);
 
         for item in RefScan::scan(cx, prefix)? {
-            let (name, oid) = item?;
+            let refdb::Ref {
+                name, peeled: oid, ..
+            } = item?;
 
             trace!("{}", name);
 
@@ -124,7 +127,7 @@ where
             info!(%prefix, "scanning for unsigned trackings");
 
             for item in RefScan::scan(cx, prefix)? {
-                let (name, _oid) = item?;
+                let refdb::Ref { name, .. } = item?;
 
                 trace!("{}", name);
 
@@ -183,7 +186,7 @@ where
         info!(?pids, "scanning for orphans and strange refs");
 
         for item in RefScan::scan::<_, String>(cx, None)? {
-            let (name, _oid) = item?;
+            let refdb::Ref { name, .. } = item?;
 
             trace!("{}", name);
 

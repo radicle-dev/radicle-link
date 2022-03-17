@@ -7,7 +7,7 @@ use std::{
     collections::HashMap,
     convert::TryFrom,
     io,
-    path::{Path, PathBuf},
+    path::Path,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
@@ -45,12 +45,6 @@ pub mod error {
     #[derive(Debug, Error)]
     #[allow(clippy::enum_variant_names)]
     pub enum Find {
-        #[error("`gitoxide` yielded an invalid refname")]
-        WtfGitoxide(#[from] git_ref_format::Error),
-
-        #[error(transparent)]
-        Refname(#[from] refs::name::Error),
-
         #[error(transparent)]
         Follow(#[from] refs::db::error::Follow),
 
@@ -190,8 +184,8 @@ impl<D> Refdb<D> {
         Ok(())
     }
 
-    fn namespaced(&self, name: &Qualified) -> Result<FullName, refs::name::Error> {
-        FullName::try_from(name.add_namespace(self.namespace.clone()).as_bstr())
+    fn namespaced(&self, name: &Qualified) -> FullName {
+        qualified_to_fullname(name.add_namespace(self.namespace.clone()).into_qualified())
     }
 }
 
@@ -231,7 +225,7 @@ impl<D: Odb> Refdb<D> {
         use Either::*;
 
         let force_create_reflog = force_reflog(&name);
-        let name_ns = self.namespaced(&name)?;
+        let name_ns = self.namespaced(&name);
         let tip = self.find_namespaced(&name_ns)?;
         match tip {
             None => Ok(Right(vec![RefEdit {
@@ -310,7 +304,7 @@ impl<D: Odb> Refdb<D> {
     ) -> Result<Either<Update<'a>, Vec<RefEdit>>, error::Tx> {
         use Either::*;
 
-        let name_ns = self.namespaced(&name)?;
+        let name_ns = self.namespaced(&name);
         let src = self
             .snap
             .find(name_ns.as_bstr())
@@ -351,13 +345,7 @@ impl<D: Odb> Refdb<D> {
 
                     // Target does not exist
                     None => {
-                        let dst_name = FullName::try_from(
-                            dst_name
-                                .clone()
-                                .into_qualified()
-                                .into_refstring()
-                                .into_bstring(),
-                        )?;
+                        let dst_name = qualified_to_fullname(dst_name.clone().into_qualified());
                         vec![
                             // Create target
                             RefEdit {
@@ -411,9 +399,7 @@ impl<D: Odb> Refdb<D> {
                         if is_ff {
                             let dst_name_qualified = dst_name.to_owned().into_qualified();
                             let force_create_reflog = force_reflog(&dst_name_qualified);
-                            let dst_name = FullName::try_from(
-                                dst_name_qualified.into_refstring().into_bstring(),
-                            )?;
+                            let dst_name = qualified_to_fullname(dst_name_qualified);
                             edits.push(RefEdit {
                                 change: Change::Update {
                                     log: LogChange {
@@ -429,13 +415,7 @@ impl<D: Odb> Refdb<D> {
                             })
                         }
 
-                        let dst_name = FullName::try_from(
-                            dst_name
-                                .clone()
-                                .into_qualified()
-                                .into_refstring()
-                                .into_bstring(),
-                        )?;
+                        let dst_name = qualified_to_fullname(dst_name.clone().into_qualified());
                         edits.push(RefEdit {
                             change: Change::Update {
                                 log: LogChange {
@@ -472,10 +452,10 @@ impl<'a, D> refdb::RefScan for &'a Refdb<D> {
         P: AsRef<str>,
     {
         let prefix = {
-            let ns = PathBuf::from(self.namespace.as_str());
+            let ns = Path::new("refs/namespaces").join(self.namespace.as_str());
             match prefix.into() {
                 None => ns,
-                Some(p) => ns.join(PathBuf::from(p.as_ref())),
+                Some(p) => ns.join(Path::new(p.as_ref())),
             }
         };
         let inner = self.snap.iter(Some(prefix))?;
@@ -497,7 +477,7 @@ impl<D: Odb> refdb::Refdb for Refdb<D> {
     where
         Q: AsRef<Qualified<'a>>,
     {
-        self.find_namespaced(&self.namespaced(refname.as_ref())?)
+        self.find_namespaced(&self.namespaced(refname.as_ref()))
     }
 
     fn update<'a, I>(&mut self, updates: I) -> Result<Applied<'a>, Self::TxError>
@@ -603,35 +583,42 @@ pub struct Scan<'a> {
     inner: refs::file::iter::LooseThenPacked<'a, 'a>,
 }
 
+impl Scan<'_> {
+    fn next_ref(&self, r: Reference) -> Result<refdb::Ref<ObjectId>, error::Scan> {
+        use Either::*;
+
+        let peeled = self
+            .snap
+            .follow(&r)
+            .map(|Reference { target, .. }| target.into_id())?;
+        let name = fullname_to_qualified(r.name)?
+            .namespaced()
+            .expect("BUG: revwalk should return namespaced refs")
+            .strip_namespace();
+        let target = match r.target {
+            Target::Peeled(oid) => Left(oid),
+            Target::Symbolic(sym) => Right(fullname_to_qualified(sym)?),
+        };
+
+        Ok(refdb::Ref {
+            name,
+            target,
+            peeled,
+        })
+    }
+}
+
 impl<'a> Iterator for Scan<'a> {
-    type Item = Result<(Qualified<'static>, ObjectId), error::Scan>;
+    type Item = Result<refdb::Ref<ObjectId>, error::Scan>;
 
     fn next(&mut self) -> Option<Self::Item> {
         use refs::file::iter::loose_then_packed::Error;
 
-        let item = self.inner.next()?;
-        match item {
+        match self.inner.next()? {
             // XXX: https://github.com/Byron/gitoxide/issues/202
             Err(Error::Traversal(e)) if e.kind() == io::ErrorKind::NotFound => None,
             Err(e) => Some(Err(e.into())),
-            Ok(r) => match self.snap.follow(&r) {
-                Err(e) => Some(Err(e.into())),
-                Ok(Reference { name, target, .. }) => match fullname_to_refstring(name) {
-                    Err(e) => Some(Err(e.into())),
-                    Ok(name) => {
-                        let name = name
-                            .qualified()
-                            .expect("BUG: revwalk should always return qualified refs");
-                        let name = name
-                            .namespaced()
-                            .expect("BUG: revwalk should return namespaced refs")
-                            .strip_namespace();
-                        let oid = target.into_id();
-
-                        Some(Ok((name, oid)))
-                    },
-                },
-            },
+            Ok(r) => Some(self.next_ref(r)),
         }
     }
 }
@@ -651,6 +638,18 @@ fn force_reflog(refname: &Qualified) -> bool {
             | [Refs, Namespaces, _, Refs, Rad, ..]
             | [Refs, Namespaces, _, Refs, Remotes, _, Rad, ..]
     )
+}
+
+fn fullname_to_qualified(name: FullName) -> Result<Qualified<'static>, git_ref_format::Error> {
+    fullname_to_refstring(name).map(|name| {
+        name.into_qualified()
+            .expect("BUG: revwalk should always return qualified refs")
+    })
+}
+
+fn qualified_to_fullname(q: Qualified) -> FullName {
+    FullName::try_from(q.into_refstring().into_bstring())
+        .expect("`Qualified` is a valid `FullName`")
 }
 
 fn fullname_to_refstring(name: FullName) -> Result<RefString, git_ref_format::Error> {

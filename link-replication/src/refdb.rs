@@ -3,6 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::fmt::Debug;
+
+use either::Either;
 use git_ref_format::{Qualified, RefStr, RefString};
 use link_git::protocol::{oid, ObjectId};
 
@@ -45,9 +48,16 @@ pub trait Refdb {
     fn reload(&mut self) -> Result<(), Self::ReloadError>;
 }
 
+#[derive(Debug)]
+pub struct Ref<Oid> {
+    pub name: Qualified<'static>,
+    pub target: Either<Oid, Qualified<'static>>,
+    pub peeled: Oid,
+}
+
 pub trait RefScan {
-    type Oid: AsRef<oid> + Into<ObjectId>;
-    type Scan: Iterator<Item = Result<(Qualified<'static>, Self::Oid), Self::Error>>;
+    type Oid: AsRef<oid> + Into<ObjectId> + Debug;
+    type Scan: Iterator<Item = Result<Ref<Self::Oid>, Self::Error>>;
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Traverse all refs in the current namespace matching `prefix`.
