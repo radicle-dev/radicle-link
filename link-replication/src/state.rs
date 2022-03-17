@@ -223,20 +223,6 @@ where
     }
 }
 
-impl<'a, T, U> RefScan for &'a Shim<'_, T, U> {
-    type Oid = <&'a refdb::Mem as RefScan>::Oid;
-    type Scan = <&'a refdb::Mem as RefScan>::Scan;
-    type Error = <&'a refdb::Mem as RefScan>::Error;
-
-    fn scan<O, P>(self, prefix: O) -> Result<Self::Scan, Self::Error>
-    where
-        O: Into<Option<P>>,
-        P: AsRef<str>,
-    {
-        RefScan::scan(&self.fetch.refs, prefix)
-    }
-}
-
 impl<T, U> SignedRefs for Shim<'_, T, U>
 where
     T: SignedRefs,

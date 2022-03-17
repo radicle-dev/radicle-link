@@ -12,9 +12,9 @@ use crate::{
     ids,
     peek,
     refs,
-    sigrefs,
+    sigrefs::{self, Refs},
     state::FetchState,
-    validate,
+    validation,
     Error,
     FetchLimit,
     Identities,
@@ -23,8 +23,10 @@ use crate::{
     Net,
     Odb,
     PeerId,
+    RefScan,
     Refdb,
     SignedRefs,
+    Sigrefs,
     Success,
     SymrefTarget,
     Tracking,
@@ -49,6 +51,7 @@ where
         + SignedRefs<Oid = <C as Identities>::Oid>
         + Tracking<Urn = U>,
     <C as Identities>::Oid: Debug + PartialEq + Send + Sync + 'static,
+    for<'a> &'a C: RefScan,
 {
     use either::Either::*;
 
@@ -128,14 +131,18 @@ where
     };
 
     info!("loading combined sigrefs");
-    let signed_refs = sigrefs::combined(
-        &state.as_shim(cx),
-        sigrefs::Select {
-            must: &delegates,
-            may: &tracked,
-            cutoff: 2,
-        },
-    )?;
+    let signed_refs = {
+        let mut sr = sigrefs::combined(
+            &state.as_shim(cx),
+            sigrefs::Select {
+                must: &delegates,
+                may: &tracked,
+                cutoff: 2,
+            },
+        )?;
+        sr.remotes.retain(|id| id != &local_id);
+        sr
+    };
 
     // Clear sigref tips so far. Fetch will ask the remote to advertise sigrefs
     // from the transitive trackings, so we can inspect the state afterwards to
@@ -151,18 +158,25 @@ where
     info!("fetching data");
     debug!(?fetch);
     state.step(cx, &fetch)?;
-    let fetch::Fetch { signed_refs, .. } = fetch;
+
+    let mut signed_refs = fetch.signed_refs;
 
     if !state.sigref_tips().is_empty() {
         info!("transitively tracked signed refs found");
         let selector = sigrefs::Select {
             must: &Default::default(),
             // Optional, alt folks may have screwed their remotes
-            may: &state.sigref_tips().keys().copied().collect(),
+            may: &state
+                .sigref_tips()
+                .keys()
+                .copied()
+                // should not be possible, but better be sure
+                .filter(|id| id != &local_id)
+                .collect(),
             cutoff: 0,
         };
         let trans_sigrefs = sigrefs::combined(&state.as_shim(cx), selector)?;
-        let trans_fetch = fetch::Fetch {
+        let mut trans_fetch = fetch::Fetch {
             local_id,
             remote_id,
             signed_refs: trans_sigrefs,
@@ -171,10 +185,8 @@ where
         info!("fetching transitively tracked data");
         debug!(?trans_fetch);
         state.step(cx, &trans_fetch)?;
+        signed_refs.refs.append(&mut trans_fetch.signed_refs.refs);
     }
-
-    info!("post-validation");
-    let warnings = validate(&state.as_shim(cx), &signed_refs)?;
 
     info!("updating tips");
     applied.append(&mut Refdb::update(cx, state.updates_mut().drain(..))?);
@@ -185,6 +197,38 @@ where
     info!("updating signed refs");
     SignedRefs::update(cx)?;
 
+    let mut warnings = Vec::new();
+    info!("validating signed trees");
+    for (peer, refs) in &signed_refs.refs {
+        let ws = validation::validate::<U, _, _, _>(&*cx, peer, refs)?;
+        debug_assert!(
+            ws.is_empty(),
+            "expected no warnings for {}, but got {:?}",
+            peer,
+            ws
+        );
+        warnings.extend(ws);
+    }
+
+    info!("validating remote trees");
+    for peer in &signed_refs.remotes {
+        debug!("remote {}", peer);
+        let refs = SignedRefs::load(cx, peer, 0)
+            .map(|s| s.map(|Sigrefs { at, refs, .. }| Refs { at, refs }))?;
+        match refs {
+            None => warnings.push(error::Validation::NoData((*peer).into())),
+            Some(refs) => {
+                let ws = validation::validate::<U, _, _, _>(&*cx, peer, &refs)?;
+                debug_assert!(
+                    ws.is_empty(),
+                    "expected no warnings for remote {}, but got {:?}",
+                    peer,
+                    ws
+                );
+                warnings.extend(ws);
+            },
+        }
+    }
     Ok(Success {
         applied,
         tracked: newly_tracked,

@@ -97,6 +97,7 @@ where
         + Tracking<Urn = <C as Identities>::Urn>,
     <C as Identities>::Oid: Debug + PartialEq + Send + Sync + 'static,
     <C as Identities>::Urn: Clone + Debug + Ord,
+    for<'a> &'a C: RefScan,
 {
     if LocalPeer::id(cx) == &remote_id {
         return Err("cannot replicate from self".into());
@@ -129,6 +130,7 @@ where
         + Tracking<Urn = <C as Identities>::Urn>,
     <C as Identities>::Oid: Debug + PartialEq + Send + Sync + 'static,
     <C as Identities>::Urn: Clone + Debug + Ord,
+    for<'a> &'a C: RefScan,
 {
     info!("fetching initial verification refs");
     if LocalPeer::id(cx) == &remote_id {

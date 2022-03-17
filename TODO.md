@@ -47,7 +47,6 @@
 
   * [X] Transactional tracking updates
   * [ ] Honour tracking configuration
-  * [ ] Single-pass validation
 
 * [ ] Grafting
 
