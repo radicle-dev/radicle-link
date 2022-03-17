@@ -97,6 +97,10 @@ pub enum Update<'a> {
         /// before the update.
         type_change: Policy,
     },
+    Prune {
+        name: refs::Qualified<'a>,
+        prev: Either<ObjectId, refs::Qualified<'a>>,
+    },
 }
 
 impl Update<'_> {
@@ -104,6 +108,7 @@ impl Update<'_> {
         match self {
             Self::Direct { name, .. } => name,
             Self::Symbolic { name, .. } => name,
+            Self::Prune { name, .. } => name,
         }
     }
 
@@ -127,6 +132,11 @@ impl Update<'_> {
                 name: name.into_owned(),
                 target: target.into_owned(),
                 type_change,
+            },
+
+            Self::Prune { name, prev } => Update::Prune {
+                name: name.into_owned(),
+                prev: prev.map_right(|q| q.into_owned()),
             },
         }
     }
@@ -165,6 +175,7 @@ impl SymrefTarget<'_> {
 pub enum Updated {
     Direct { name: RefString, target: ObjectId },
     Symbolic { name: RefString, target: RefString },
+    Prune { name: RefString },
 }
 
 #[derive(Debug, Default)]

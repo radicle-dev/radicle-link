@@ -44,6 +44,12 @@ pub enum Prepare {
         #[source]
         source: Error,
     },
+
+    #[error("failed scanning existing refs")]
+    Scan {
+        #[source]
+        source: Error,
+    },
 }
 
 #[derive(Debug, Error)]

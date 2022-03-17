@@ -68,6 +68,14 @@ impl Refdb for Mem {
                         target: target.name().to_owned(),
                     });
                 },
+                Update::Prune { name, prev: _ } => {
+                    let name = name.into_owned();
+                    if self.refs.remove(&name).is_some() {
+                        ap.updated.push(Updated::Prune {
+                            name: name.into_refstring(),
+                        })
+                    }
+                },
             }
         }
 

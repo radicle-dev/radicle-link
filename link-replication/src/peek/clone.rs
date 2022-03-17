@@ -19,6 +19,7 @@ use crate::{
     Identities,
     Negotiation,
     Odb,
+    RefScan,
     Refdb,
     WantsHaves,
 };
@@ -84,6 +85,7 @@ impl UpdateTips for ForClone {
     where
         U: ids::Urn + Ord,
         C: Identities<Urn = U>,
+        for<'b> &'b C: RefScan,
     {
         use ids::VerifiedIdentity as _;
 

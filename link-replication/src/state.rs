@@ -68,6 +68,7 @@ where
     pub fn step<C, S>(&mut self, cx: &mut C, step: &S) -> Result<(), error::Error>
     where
         C: Identities<Urn = U> + Net + Refdb + Odb,
+        for<'a> &'a C: RefScan,
         S: Layout + Negotiation + UpdateTips + Send + Sync + 'static,
     {
         Refdb::reload(cx)?;

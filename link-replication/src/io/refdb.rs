@@ -213,6 +213,18 @@ impl<D: Odb> Refdb<D> {
                 target,
                 type_change,
             } => self.symbolic_edit(name, target, type_change),
+
+            Update::Prune { name, prev } => Ok(Either::Right(vec![RefEdit {
+                change: Change::Delete {
+                    log: RefLog::AndReference,
+                    expected: PreviousValue::MustExistAndMatch(
+                        prev.map_right(qualified_to_fullname)
+                            .either(Target::Peeled, Target::Symbolic),
+                    ),
+                },
+                name: self.namespaced(&name),
+                deref: false,
+            }])),
         }
     }
 
@@ -514,16 +526,18 @@ impl<D: Odb> refdb::Refdb for Refdb<D> {
             .into_iter()
             .map(|RefEdit { change, name, .. }| {
                 let name = fullname_to_refstring(name)?;
-                match change {
+                let updated = match change {
                     Change::Update { new, .. } => match new {
-                        Target::Peeled(oid) => Ok(Updated::Direct { name, target: oid }),
-                        Target::Symbolic(sym) => Ok(Updated::Symbolic {
+                        Target::Peeled(oid) => Updated::Direct { name, target: oid },
+                        Target::Symbolic(sym) => Updated::Symbolic {
                             name,
                             target: fullname_to_refstring(sym)?,
-                        }),
+                        },
                     },
-                    Change::Delete { .. } => unreachable!("unexpected delete"),
-                }
+                    Change::Delete { .. } => Updated::Prune { name },
+                };
+
+                Ok(updated)
             })
             .collect::<Result<Vec<_>, Self::TxError>>()?;
 

@@ -7,6 +7,8 @@ mod collaboration;
 mod collaborative_objects;
 mod menage;
 mod passive_replication;
+#[cfg(feature = "replication-v3")]
+mod prune;
 mod tracked_references;
 mod updated_delegate;
 mod working_copy;
