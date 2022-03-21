@@ -36,13 +36,15 @@ pub mod storage;
 pub use storage::Storage as PeerStorage;
 
 #[derive(Clone)]
-pub struct Config<Signer, Guard> {
+pub struct Config<Signer, Guard = config::DenyAll> {
     pub signer: Signer,
     pub protocol: protocol::Config<Guard>,
     pub storage: config::Storage,
 }
 
 pub mod config {
+    pub use super::protocol::config::{Denied, DenyAll};
+
     #[derive(Clone, Copy, Default)]
     pub struct Storage {
         pub user: UserStorage,
@@ -85,7 +87,7 @@ pub mod config {
 }
 
 #[derive(Clone)]
-pub struct Peer<S, G> {
+pub struct Peer<S, G = config::DenyAll> {
     config: Config<S, G>,
     phone: protocol::TinCans,
     peer_store: PeerStorage,
