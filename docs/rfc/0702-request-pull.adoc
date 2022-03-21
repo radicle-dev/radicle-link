@@ -1,13 +1,15 @@
 = RFC: request-pull
-Alex Good <alex@memoryandthought.me>
+Alex Good <alex@memoryandthought.me>; Fintan Halpenny <fintan.halpenny@gmail.com>
 +
 :revdate: 2022-03-01
-:revremark: accepted
+:revremark: amended
 :toc: preamble
 :stem:
+:amend_1: 2022-03-21
 
-* Author: {author}
+* Author: {author_1}, {author_2}
 * Date: {revdate}
+* Amended: {ammend_1}
 * Status: {revremark}
 
 == Motivation
@@ -55,28 +57,19 @@ wishes to communicate to the sender.
 
 == Wire format
 
-`request-pull` requests are sent on a bidirectional QUIC stream identified by
-stream type `200`. Messages begin with a 32 bit integer length in network byte
-order followed by a CBOR object which is a combination of a type code and a
-payload. The type determines what the payload contains. There are four message
-types, an initial `request`, an `error` response, a `success` response, and a
-`progress` message.
+`request-pull` requests are sent on a bidirectional QUIC stream
+identified by stream type `200`. Requests are made are a CBOR object
+simply containing the `urn` that is being requested. The response
+consists of a choice between a `success`, `error`, or `progress` CBOR
+object.
 
 [source,cddl]
 ----
-message = [
-    type_code: &(
-        request: 1,
-        success: 2,
-        error: 3,
-        progress: 4,
-    ),
-    payload: request / error / success / progress
-]
 request = [
     urn: urn,
     * tstr => any
 ]
+response = success / error / progress
 error = [
     message: tstr,
     * tstr => any
@@ -88,6 +81,7 @@ success = [
             oid
         ]
     ],
+    pruned_refs: [ *[ref] ]
     * tstr => any,
 ]
 progress = [
