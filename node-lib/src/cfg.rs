@@ -115,7 +115,7 @@ impl Cfg<discovery::Static, BoxedSigner> {
 
             seeds
         } else {
-            let store = FileStore::<String>::new(paths::seeds()?);
+            let store = FileStore::<String>::new(paths::seeds()?)?;
             let (seeds, failures) = Seeds::load(&store, membership.max_active).await?;
 
             for fail in failures {

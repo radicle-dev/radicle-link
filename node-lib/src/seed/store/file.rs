@@ -24,11 +24,15 @@ pub struct FileStore<T> {
 }
 
 impl<T> FileStore<T> {
-    pub fn new(path: impl AsRef<Path>) -> Self {
-        Self {
-            path: path.as_ref().to_path_buf(),
-            _marker: PhantomData,
+    pub fn new(path: impl AsRef<Path>) -> Result<Self, io::Error> {
+        let path = path.as_ref();
+        if !path.exists() {
+            fs::File::create(path.clone())?;
         }
+        Ok(Self {
+            path: path.to_path_buf(),
+            _marker: PhantomData,
+        })
     }
 
     pub fn iter(&self) -> Result<Iter<T>, io::Error>
