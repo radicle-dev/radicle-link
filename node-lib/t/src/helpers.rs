@@ -23,7 +23,7 @@ where
                 .collect::<Vec<_>>()
                 .join("\n"),
         )?;
-        Ok(store::FileStore::new(path))
+        store::FileStore::new(path)
     })
     .unwrap()
 }

@@ -62,7 +62,7 @@ services:
     command: |
       linkd
         --signer key
-        --key-source ephemeral
+        --key-source in-memory
         --protocol-listen 0.0.0.0:12346
         --tmp-root
         --bootstrap hyne66jefcpkobg91qzdy6ysetr8fn3p3d6myce61uwf7s67g3i79e@bootstrap:12345
