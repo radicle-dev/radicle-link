@@ -3,211 +3,147 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    collections::{BTreeSet, HashSet},
-    convert::TryFrom,
-    fmt::Debug,
-};
+use std::{collections::HashSet, convert::TryFrom, fmt::Debug};
 
-use git_ref_format::{name, Qualified};
+use either::Either;
+use itertools::Itertools as _;
 use link_crypto::PeerId;
 use link_git::protocol::oid;
 
-use crate::{
-    error::{self, Validation},
-    refs,
-    sigrefs,
-    LocalPeer,
-    RefScan,
-};
+use crate::{error, ids, refdb, refs, sigrefs::Refs, RefScan};
 
-#[tracing::instrument(level = "debug", skip(cx, sigrefs), err)]
-pub fn validate<'a, C, Oid>(
-    cx: &'a C,
-    sigrefs: &'a sigrefs::Combined<Oid>,
-) -> Result<Vec<error::Validation>, <&'a C as RefScan>::Error>
+pub fn validate<'a, U, S, P, O>(
+    scan: S,
+    id: P,
+    refs: &Refs<O>,
+) -> Result<Vec<error::Validation>, S::Error>
 where
-    C: LocalPeer,
-    &'a C: RefScan,
-    Oid: Debug + AsRef<oid>,
+    U: ids::Urn + Clone + Debug,
+    S: RefScan,
+    P: Into<Option<&'a PeerId>>,
+    O: AsRef<oid> + Debug,
 {
-    let mut fail = Vec::new();
+    let id = id.into();
+    let tree = SigTree { id, refs };
+    match id {
+        None => {
+            let iter = scan
+                .scan::<_, String>(None)?
+                .filter_ok(|x| !x.name.starts_with("refs/remotes"));
+            tree.validate::<U, _, _, _>(iter)
+        },
+        Some(id) => {
+            let iter = scan.scan(format!("refs/remotes/{}", id))?;
+            tree.validate::<U, _, _, _>(iter)
+        },
+    }
+}
 
-    info!(?sigrefs, "validating");
+struct SigTree<'a, Oid> {
+    id: Option<&'a PeerId>,
+    refs: &'a Refs<Oid>,
+}
 
-    let local_id = LocalPeer::id(cx);
+impl<'a, Oid> SigTree<'a, Oid>
+where
+    Oid: AsRef<oid> + Debug,
+{
+    fn validate<U, O, I, E>(&self, iter: I) -> Result<Vec<error::Validation>, E>
+    where
+        U: ids::Urn + Clone + Debug,
+        O: AsRef<oid>,
+        I: Iterator<Item = Result<refdb::Ref<O>, E>>,
+    {
+        use Either::*;
 
-    // signed refs
-    for (peer, refs) in &sigrefs.refs {
-        if peer == local_id {
-            continue;
-        }
+        let id = error::LocalOrRemote::from(self.id.copied());
 
-        let mut seen_refs = HashSet::new();
+        info!("validating sigtree of {}", id);
+        debug!(refs = ?self.refs);
+
+        let mut fail = Vec::new();
+
+        let mut count = 0;
+        let mut seen = HashSet::new();
         let mut seen_rad_id = false;
         let mut seen_sigrefs = false;
 
-        let prefix = format!("refs/remotes/{}", peer);
-        info!("scanning {} for signed refs", prefix);
-
-        for item in RefScan::scan(cx, prefix)? {
-            let (name, oid) = item?;
-
-            trace!("{}", name);
-
-            if name.ends_with("rad/id") {
-                seen_rad_id = true;
-            } else if name.ends_with("rad/signed_refs") {
-                seen_sigrefs = true;
-            }
-
-            let owned = match refs::owned(name.clone()) {
-                Some(owned) => owned,
-                None => continue,
-            };
-            // XXX: Should rad/self actually be signed?
-            if owned.as_ref() != name::REFS_RAD_ID && owned.starts_with(refs::Prefix::Rad.as_str())
-            {
-                continue;
-            }
-            match refs.refs.get(owned.as_ref()) {
-                None => fail.push(Validation::Unexpected(name.into())),
-                Some(signed_oid) => {
-                    seen_refs.insert(owned.as_ref().to_owned());
-
-                    if signed_oid.as_ref() != oid.as_ref() {
-                        fail.push(Validation::MismatchedTips {
-                            signed: signed_oid.as_ref().to_owned(),
-                            actual: oid.into(),
-                            name: name.into(),
-                        })
-                    }
+        for item in iter {
+            count += 1;
+            let refdb::Ref {
+                name, peeled: oid, ..
+            } = item?;
+            match refs::Parsed::<U>::try_from(name.clone()) {
+                Err(e) => {
+                    fail.push(error::Validation::Malformed {
+                        name: name.into_refstring(),
+                        source: e,
+                    });
                 },
-            }
-        }
+                Ok(parsed) if parsed.remote.as_ref() != self.id => {
+                    warn!("skipping remote {:?} not owned by {}", parsed.remote, id)
+                },
 
-        for missing in refs
-            .refs
-            .keys()
-            .filter(|k| !seen_refs.contains(k.as_refstr()))
-        {
-            fail.push(Validation::Missing {
-                refname: missing.to_owned(),
-                remote: *peer,
-            })
-        }
-
-        if !seen_rad_id {
-            fail.push(Validation::MissingRadId(*peer))
-        }
-
-        if !seen_sigrefs {
-            fail.push(Validation::MissingSigRefs(*peer))
-        }
-    }
-
-    // unsigned remote tracking
-    {
-        use either::Either::*;
-        use refs::parsed::{Identity, Rad};
-
-        let mut seen_peers = BTreeSet::new();
-        for peer in &sigrefs.remotes {
-            if peer == local_id {
-                continue;
-            }
-
-            let mut seen_rad_id = false;
-            let mut seen_sigrefs = false;
-
-            let prefix = format!("refs/remotes/{}", peer);
-            info!(%prefix, "scanning for unsigned trackings");
-
-            for item in RefScan::scan(cx, prefix)? {
-                let (name, _oid) = item?;
-
-                trace!("{}", name);
-
-                let owned = match refs::owned(name.clone()) {
-                    Some(owned) => owned,
-                    None => {
-                        fail.push(Validation::Strange(name.into_refstring()));
-                        continue;
-                    },
-                };
-                match refs::Parsed::<Identity>::try_from(Qualified::from(owned)) {
-                    Err(_) => fail.push(Validation::Strange(name.into_refstring())),
-                    Ok(refs::Parsed { inner, .. }) => match inner {
-                        Left(Rad::Id) => {
+                Ok(parsed) => {
+                    seen.insert(parsed.to_owned().as_ref().to_owned());
+                    match parsed.inner {
+                        Left(refs::parsed::Rad::Id) => {
                             seen_rad_id = true;
                         },
-
-                        Left(Rad::SignedRefs) => {
+                        Left(refs::parsed::Rad::SignedRefs) => {
                             seen_sigrefs = true;
+                            if oid.as_ref() != self.refs.at.as_ref() {
+                                fail.push(error::Validation::MismatchedTips {
+                                    expected: self.refs.at.as_ref().to_owned(),
+                                    actual: oid.as_ref().to_owned(),
+                                    name: parsed.to_owned().as_ref().to_owned(),
+                                })
+                            }
                         },
+                        Left(_) => {},
 
-                        _ => {},
-                    },
-                }
-
-                seen_peers.insert(peer);
-            }
-
-            if !seen_rad_id {
-                fail.push(Validation::MissingRadId(*peer))
-            }
-
-            if !seen_sigrefs {
-                fail.push(Validation::MissingSigRefs(*peer))
-            }
-        }
-
-        for missing in sigrefs
-            .remotes
-            .iter()
-            .filter(|p| p != &local_id && !seen_peers.contains(p))
-        {
-            fail.push(Validation::NoData(*missing))
-        }
-    }
-
-    // finally, find orphans and other strange refs
-    {
-        let pids = sigrefs
-            .refs
-            .keys()
-            .chain(sigrefs.remotes.iter())
-            .filter(|id| id != &local_id)
-            .collect::<BTreeSet<_>>();
-
-        info!(?pids, "scanning for orphans and strange refs");
-
-        for item in RefScan::scan::<_, String>(cx, None)? {
-            let (name, _oid) = item?;
-
-            trace!("{}", name);
-
-            let strange = match name.iter().take(4).collect::<Vec<_>>()[..] {
-                [name::str::REFS, name::str::REMOTES, id, _] => {
-                    let pid = id.parse::<PeerId>().ok();
-                    match pid {
-                        None => true,
-                        Some(pid) => !pids.contains(&pid),
+                        Right(name) => match self.refs.refs.get(name.as_ref()) {
+                            Some(tip) => {
+                                if tip.as_ref() != oid.as_ref() {
+                                    fail.push(error::Validation::MismatchedTips {
+                                        expected: tip.as_ref().to_owned(),
+                                        actual: oid.as_ref().to_owned(),
+                                        name: name.as_ref().to_owned(),
+                                    });
+                                }
+                            },
+                            None => {
+                                fail.push(error::Validation::Unexpected(name.as_ref().to_owned()))
+                            },
+                        },
                     }
                 },
-
-                [name::str::REFS, name::str::RAD, ..]
-                | [name::str::REFS, name::str::HEADS, ..]
-                | [name::str::REFS, name::str::NOTES, ..]
-                | [name::str::REFS, name::str::TAGS, ..] => false,
-                _ => true,
-            };
-
-            if strange {
-                fail.push(Validation::StrangeOrPrunable(name.into_refstring()))
             }
         }
-    }
 
-    Ok(fail)
+        if count == 0 {
+            fail.push(error::Validation::NoData(id));
+        } else {
+            if !seen_rad_id {
+                fail.push(error::Validation::MissingRadId(id));
+            }
+            if !seen_sigrefs {
+                fail.push(error::Validation::MissingSigRefs(id));
+            }
+
+            for missing in self
+                .refs
+                .refs
+                .keys()
+                .filter(|k| !seen.contains(k.as_refstr()))
+            {
+                fail.push(error::Validation::Missing {
+                    refname: missing.to_owned(),
+                    remote: id,
+                });
+            }
+        }
+
+        Ok(fail)
+    }
 }

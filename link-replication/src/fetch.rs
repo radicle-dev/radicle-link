@@ -3,8 +3,10 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::collections::HashSet;
+
 use bstr::ByteSlice as _;
-use git_ref_format::Qualified;
+use git_ref_format::{name, refname, Component, Qualified};
 use link_crypto::PeerId;
 use link_git::protocol::{oid, Ref};
 use radicle_data::NonEmptyVec;
@@ -12,16 +14,17 @@ use radicle_data::NonEmptyVec;
 use crate::{
     error,
     internal::{self, Layout, UpdateTips},
+    refdb,
     refs,
     sigrefs,
     transmit::{self, BuildWantsHaves, LsRefs},
     FetchState,
     FilteredRef,
-    Identities,
     Negotiation,
     Odb,
     Policy,
     RefPrefix,
+    RefScan,
     Refdb,
     Update,
     WantsHaves,
@@ -116,26 +119,48 @@ impl<T: AsRef<oid>> UpdateTips for Fetch<T> {
     fn prepare<'a, U, C>(
         &self,
         _: &FetchState<U>,
-        _: &C,
+        cx: &C,
         _: &'a [FilteredRef<Self>],
     ) -> Result<internal::Updates<'a, U>, error::Prepare>
     where
-        C: Identities,
+        for<'b> &'b C: RefScan,
     {
         let mut tips = {
             let sz = self.signed_refs.refs.values().map(|rs| rs.refs.len()).sum();
             Vec::with_capacity(sz)
         };
         for (remote_id, refs) in &self.signed_refs.refs {
+            let mut signed = HashSet::with_capacity(refs.refs.len());
             for (name, tip) in refs {
-                let tracking = Qualified::from_refstr(name)
+                let tracking: Qualified = Qualified::from_refstr(name)
                     .and_then(|q| refs::remote_tracking(remote_id, q.into_owned()))
-                    .expect("we checked sigrefs well-formedness in wants_refs already");
+                    .expect("we checked sigrefs well-formedness in wants_refs already")
+                    .into();
+                signed.insert(tracking.clone());
                 tips.push(Update::Direct {
-                    name: tracking.into(),
+                    name: tracking,
                     target: tip.as_ref().to_owned(),
                     no_ff: Policy::Allow,
                 });
+            }
+
+            // Prune refs not in signed
+            let prefix = refname!("refs/remotes").join(Component::from(remote_id));
+            let prefix_rad = prefix.join(name::RAD);
+            let scan_err = |e: <&C as RefScan>::Error| error::Prepare::Scan { source: e.into() };
+            for known in RefScan::scan(cx, prefix.as_str()).map_err(scan_err)? {
+                let refdb::Ref { name, target, .. } = known.map_err(scan_err)?;
+                // 'rad/' refs are never subject to pruning
+                if name.starts_with(prefix_rad.as_str()) {
+                    continue;
+                }
+
+                if !signed.contains(&name) {
+                    tips.push(Update::Prune {
+                        name,
+                        prev: target.map_left(|oid| oid.into()),
+                    });
+                }
             }
         }
 

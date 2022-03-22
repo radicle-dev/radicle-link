@@ -29,6 +29,7 @@ use crate::{
     Negotiation,
     Odb,
     RefPrefix,
+    RefScan,
     Refdb,
     Update,
     WantsHaves,
@@ -124,6 +125,7 @@ impl UpdateTips for ForFetch {
     where
         U: ids::Urn + Ord,
         C: Identities<Urn = U>,
+        for<'b> &'b C: RefScan,
     {
         use either::Either::*;
         use ids::VerifiedIdentity as _;

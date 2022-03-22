@@ -68,6 +68,7 @@ where
     pub fn step<C, S>(&mut self, cx: &mut C, step: &S) -> Result<(), error::Error>
     where
         C: Identities<Urn = U> + Net + Refdb + Odb,
+        for<'a> &'a C: RefScan,
         S: Layout + Negotiation + UpdateTips + Send + Sync + 'static,
     {
         Refdb::reload(cx)?;
@@ -220,20 +221,6 @@ where
 
     fn reload(&mut self) -> Result<(), Self::ReloadError> {
         self.fetch.refs.reload()
-    }
-}
-
-impl<'a, T, U> RefScan for &'a Shim<'_, T, U> {
-    type Oid = <&'a refdb::Mem as RefScan>::Oid;
-    type Scan = <&'a refdb::Mem as RefScan>::Scan;
-    type Error = <&'a refdb::Mem as RefScan>::Error;
-
-    fn scan<O, P>(self, prefix: O) -> Result<Self::Scan, Self::Error>
-    where
-        O: Into<Option<P>>,
-        P: AsRef<str>,
-    {
-        RefScan::scan(&self.fetch.refs, prefix)
     }
 }
 

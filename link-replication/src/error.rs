@@ -3,12 +3,14 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::fmt::Debug;
+use std::fmt::{self, Debug, Display};
 
 use git_ref_format::RefString;
 use link_crypto::PeerId;
 use link_git::protocol::ObjectId;
 use thiserror::Error;
+
+use crate::refs;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -42,41 +44,75 @@ pub enum Prepare {
         #[source]
         source: Error,
     },
+
+    #[error("failed scanning existing refs")]
+    Scan {
+        #[source]
+        source: Error,
+    },
 }
 
-#[derive(Debug, Error, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Validation {
-    #[error("unrecognised format: {0}")]
-    Unrecognised(RefString),
-
-    #[error("unexpected: {0}")]
+    #[error("unexpected ref `{0}`")]
     Unexpected(RefString),
 
+    #[error("malformed ref `{name}`")]
+    Malformed {
+        name: RefString,
+        #[source]
+        source: refs::parsed::Error,
+    },
+
     #[error("missing expected ref {refname} of {remote}")]
-    Missing { refname: RefString, remote: PeerId },
+    Missing {
+        refname: RefString,
+        remote: LocalOrRemote,
+    },
 
     #[error("`refs/rad/id` is missing for {0}")]
-    MissingRadId(PeerId),
+    MissingRadId(LocalOrRemote),
 
     #[error("`refs/rad/signed_refs` is missing for {0}")]
-    MissingSigRefs(PeerId),
+    MissingSigRefs(LocalOrRemote),
 
-    #[error("{name}: signed tip at {signed}, but actual is {actual}")]
+    #[error("{name}: expected tip {expected}, but found {actual}")]
     MismatchedTips {
-        signed: ObjectId,
+        expected: ObjectId,
         actual: ObjectId,
         name: RefString,
     },
 
-    #[error("strange refname or category: {0}")]
-    Strange(RefString),
+    #[error("no data found for {0}")]
+    NoData(LocalOrRemote),
+}
 
-    #[error("strange refname or prunable ref: {0}")]
-    StrangeOrPrunable(RefString),
+#[derive(Clone, Copy, Debug)]
+pub enum LocalOrRemote {
+    LocalId,
+    Remote(PeerId),
+}
 
-    #[error("tracking {0}, but no data was pulled yet")]
-    NoData(PeerId),
+impl Display for LocalOrRemote {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::LocalId => f.write_str("the local peer id"),
+            Self::Remote(id) => write!(f, "{}", id),
+        }
+    }
+}
+
+impl From<Option<PeerId>> for LocalOrRemote {
+    fn from(opt: Option<PeerId>) -> Self {
+        opt.map(Self::Remote).unwrap_or(Self::LocalId)
+    }
+}
+
+impl From<PeerId> for LocalOrRemote {
+    fn from(id: PeerId) -> Self {
+        Self::Remote(id)
+    }
 }
 
 #[derive(Debug, Error)]

@@ -40,14 +40,13 @@
 
 * [ ] Stabilization
 
-  * [ ] Prune refs
+  * [X] Prune refs
   * [X] Avoid `ls-refs` in fetch step
 
     > Would fail the entire fetch if tips mentioned in `signed_refs` are missing
 
   * [X] Transactional tracking updates
   * [ ] Honour tracking configuration
-  * [ ] Single-pass validation
 
 * [ ] Grafting
 

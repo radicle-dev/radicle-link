@@ -6,7 +6,7 @@
 use std::collections::{hash_map, HashMap};
 
 use super::{Applied, RefScan, Refdb, Update, Updated};
-use crate::{refs::Qualified, ObjectId, Void};
+use crate::{refdb, refs::Qualified, ObjectId, Void};
 
 /// A very simple in-memory [`Refdb`].
 ///
@@ -68,6 +68,14 @@ impl Refdb for Mem {
                         target: target.name().to_owned(),
                     });
                 },
+                Update::Prune { name, prev: _ } => {
+                    let name = name.into_owned();
+                    if self.refs.remove(&name).is_some() {
+                        ap.updated.push(Updated::Prune {
+                            name: name.into_refstring(),
+                        })
+                    }
+                },
             }
         }
 
@@ -106,14 +114,24 @@ impl<'a, Oid> Iterator for Scan<'a, Oid>
 where
     Oid: Clone + 'a,
 {
-    type Item = Result<(Qualified<'static>, Oid), Void>;
+    type Item = Result<refdb::Ref<Oid>, Void>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        use either::Either::*;
+
         let next = self.iter.next().and_then(|(k, v)| match &self.pref {
-            None => Some((k.to_owned(), v.clone())),
+            None => Some(refdb::Ref {
+                name: k.to_owned(),
+                target: Left(v.clone()),
+                peeled: v.clone(),
+            }),
             Some(p) => {
                 if k.starts_with(p) {
-                    Some((k.to_owned(), v.clone()))
+                    Some(refdb::Ref {
+                        name: k.to_owned(),
+                        target: Left(v.clone()),
+                        peeled: v.clone(),
+                    })
                 } else {
                     None
                 }
