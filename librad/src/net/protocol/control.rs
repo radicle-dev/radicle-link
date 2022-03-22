@@ -12,7 +12,9 @@ use super::{
     error,
     event,
     gossip,
+    interrogation,
     io,
+    request_pull,
     tick,
     PeerInfo,
     ProtocolStorage,
@@ -114,9 +116,12 @@ pub(super) async fn interrogation<S, G>(
     if let Some(tx) = chan {
         let resp = match state.connection(peer, addr_hints).await {
             None => Err(error::Interrogation::NoConnection(peer)),
-            Some(conn) => match io::send::single_response(&conn, request).await {
-                Err(e) => Err(e.into()),
-                Ok(resp) => resp.ok_or(error::Interrogation::NoResponse(peer)),
+            Some(conn) => {
+                match io::send::single_response(&conn, request, interrogation::FRAMED_BUFSIZ).await
+                {
+                    Err(e) => Err(e.into()),
+                    Ok(resp) => resp.ok_or(error::Interrogation::NoResponse(peer)),
+                }
             },
         };
         tx.send(resp).ok();
@@ -142,15 +147,17 @@ pub(super) async fn request_pull<S, G>(
                     .await
                     .ok();
             },
-            Some(conn) => match io::send::multi_response(&conn, request).await {
-                Err(e) => {
-                    tx.send(Err(e.into())).await.ok();
-                },
-                Ok(mut resp) => {
-                    while let Some(r) = resp.next().await {
-                        tx.send(r.map_err(|e| e.into())).await.ok();
-                    }
-                },
+            Some(conn) => {
+                match io::send::multi_response(&conn, request, request_pull::FRAMED_BUFSIZ).await {
+                    Err(e) => {
+                        tx.send(Err(e.into())).await.ok();
+                    },
+                    Ok(mut resp) => {
+                        while let Some(r) = resp.next().await {
+                            tx.send(r.map_err(|e| e.into())).await.ok();
+                        }
+                    },
+                }
             },
         };
     }

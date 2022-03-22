@@ -14,6 +14,14 @@ use crate::{
 mod rpc;
 pub use rpc::{Error, Progress, Ref, Request, Response, Success};
 
+/// Buffer size for writing and reading request-pull RPC messages.
+/// It is based on the [`Success`] response which would be considered the
+/// largest variant.
+///
+/// Size = #successful updates * size(avg reference name) * size(SHA1-digest)
+/// 2000 = 100 * 10 * 20
+pub const FRAMED_BUFSIZ: usize = 100 * 10 * 20;
+
 pub trait Guard {
     type Error: std::error::Error + Send + Sync + 'static;
     /// The `Output` must implement [`std::fmt::Display`] for reporting back to

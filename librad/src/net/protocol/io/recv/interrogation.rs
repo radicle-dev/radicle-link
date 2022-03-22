@@ -12,11 +12,9 @@ use futures::{
 };
 use futures_codec::FramedRead;
 use thiserror::Error;
-use typenum::Unsigned as _;
 
 use crate::{
     git::storage,
-    identities::xor,
     net::{
         connection::Duplex,
         protocol::{
@@ -50,13 +48,11 @@ pub(in crate::net::protocol) async fn interrogation<S, G, T>(
     T::Read: AsyncRead + Unpin,
     T::Write: AsyncWrite + Unpin,
 {
-    const BUFSIZ: usize = xor::MaxFingerprints::USIZE * 3;
-
     let remote_addr = stream.remote_addr();
 
     let (recv, send) = stream.into_stream().split();
-    let recv = BufReader::with_capacity(BUFSIZ, recv);
-    let send = BufWriter::with_capacity(BUFSIZ, send);
+    let recv = BufReader::with_capacity(interrogation::FRAMED_BUFSIZ, recv);
+    let send = BufWriter::with_capacity(interrogation::FRAMED_BUFSIZ, send);
 
     let mut recv = FramedRead::new(recv, codec::Codec::<interrogation::Request>::new());
     if let Some(x) = recv.next().await {

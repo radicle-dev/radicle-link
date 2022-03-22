@@ -5,7 +5,7 @@
 
 use std::net::SocketAddr;
 
-use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _};
+use futures::{io::BufReader, SinkExt as _, StreamExt as _, TryStreamExt as _};
 use futures_codec::Framed;
 
 use crate::net::{
@@ -43,12 +43,13 @@ impl Request for request_pull::Request {
 pub async fn single_response<R>(
     conn: &quic::Connection,
     req: R,
+    buf_size: usize,
 ) -> Result<Option<R::Response>, error::Rpc<quic::BidiStream>>
 where
     R: Request + minicbor::Encode,
     for<'a> R::Response: minicbor::Decode<'a>,
 {
-    request(conn, req).await?.try_next().await
+    request(conn, req, buf_size).await?.try_next().await
 }
 
 #[tracing::instrument(
@@ -62,6 +63,7 @@ where
 pub async fn multi_response<R>(
     conn: &quic::Connection,
     req: R,
+    buf_size: usize,
 ) -> Result<
     impl futures::Stream<Item = Result<R::Response, error::Rpc<quic::BidiStream>>>,
     error::Rpc<quic::BidiStream>,
@@ -70,7 +72,7 @@ where
     R: Request + minicbor::Encode,
     for<'a> R::Response: minicbor::Decode<'a>,
 {
-    request(conn, req).await
+    request(conn, req, buf_size).await
 }
 
 #[tracing::instrument(
@@ -84,6 +86,7 @@ where
 pub async fn request<R>(
     conn: &quic::Connection,
     req: R,
+    buf_size: usize,
 ) -> Result<
     impl futures::Stream<Item = Result<R::Response, error::Rpc<quic::BidiStream>>>,
     error::Rpc<quic::BidiStream>,
@@ -94,7 +97,8 @@ where
 {
     let stream = conn.open_bidi().await?;
     let upgraded = upgrade::upgrade(stream, R::UPGRADE).await?;
-    let mut framing = Framed::new(upgraded.into_stream(), CborCodec::<R, R::Response>::new());
+    let buf = BufReader::with_capacity(buf_size, upgraded.into_stream());
+    let mut framing = Framed::new(buf, CborCodec::<R, R::Response>::new());
     framing.send(req).await?;
     Ok(framing.map(|item| item.map_err(error::Rpc::from)))
 }
