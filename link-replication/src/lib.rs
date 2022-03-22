@@ -80,7 +80,7 @@ impl Default for FetchLimit {
     }
 }
 
-#[tracing::instrument(skip(cx, whoami), fields(local_id = %LocalPeer::id(cx)))]
+#[tracing::instrument(skip(cx, limit, whoami), fields(local_id = %LocalPeer::id(cx)))]
 pub fn pull<C>(
     cx: &mut C,
     limit: FetchLimit,
@@ -113,7 +113,7 @@ where
     )
 }
 
-#[tracing::instrument(skip(cx, whoami), fields(local_id = %LocalPeer::id(cx)))]
+#[tracing::instrument(skip(cx, limit, whoami), fields(local_id = %LocalPeer::id(cx)))]
 pub fn clone<C>(
     cx: &mut C,
     limit: FetchLimit,
