@@ -60,3 +60,7 @@ pub enum Replicate {
     #[error(transparent)]
     Replicate(#[from] replication::error::Replicate),
 }
+
+#[derive(Debug, Error)]
+#[error("unable to obtain connection to {0}")]
+pub struct NoConnection(pub PeerId);

@@ -26,9 +26,6 @@ pub enum Bootstrap {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Interrogation {
-    #[error("unable to obtain a connection to {0}")]
-    NoConnection(PeerId),
-
     #[error("no response from {0}")]
     NoResponse(PeerId),
 
@@ -48,9 +45,6 @@ pub enum Interrogation {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum RequestPull {
-    #[error("unable to obtain a connection to {0}")]
-    NoConnection(PeerId),
-
     #[error("no response from {0}")]
     NoResponse(PeerId),
 

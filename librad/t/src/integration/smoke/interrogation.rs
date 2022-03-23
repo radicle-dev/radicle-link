@@ -60,8 +60,10 @@ fn responds() {
             proj
         };
 
-        let interrogation =
-            requester.interrogate((responder.peer_id(), responder.listen_addrs().to_vec()));
+        let interrogation = requester
+            .interrogate((responder.peer_id(), responder.listen_addrs().to_vec()))
+            .await
+            .unwrap();
         assert_eq!(
             PeerAdvertisement {
                 listen_addrs: BoundedVec::try_from_length(responder.listen_addrs().to_vec())

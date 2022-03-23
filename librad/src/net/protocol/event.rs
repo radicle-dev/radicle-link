@@ -72,7 +72,8 @@ pub mod downstream {
 
     #[derive(Clone)]
     pub struct Interrogation {
-        pub peer: (PeerId, Vec<SocketAddr>),
+        pub conn: quic::Connection,
+        pub peer: PeerId,
         pub request: interrogation::Request,
         pub reply:
             Reply<Result<interrogation::Response<'static, SocketAddr>, error::Interrogation>>,
@@ -80,7 +81,7 @@ pub mod downstream {
 
     #[derive(Clone)]
     pub struct RequestPull {
-        pub peer: (PeerId, Vec<SocketAddr>),
+        pub conn: quic::Connection,
         pub request: request_pull::Request,
         pub reply: MultiReply<Result<request_pull::Response, error::RequestPull>>,
     }
