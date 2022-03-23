@@ -24,6 +24,7 @@ use librad::{
         protocol::{
             event::{self, upstream::predicate},
             gossip::{self, Rev},
+            RequestPullGuard,
         },
     },
     reflike,
@@ -239,10 +240,11 @@ fn ask_and_clone() {
             "Expected to have obtained peer1 as provider, but got nothing instead"
         );
 
-        async fn has_urn<P, S>(peer: &P, urn: Urn) -> bool
+        async fn has_urn<P, S, G>(peer: &P, urn: Urn) -> bool
         where
-            P: Deref<Target = Peer<S>>,
+            P: Deref<Target = Peer<S, G>>,
             S: Signer + Clone,
+            G: RequestPullGuard,
         {
             peer.using_storage(move |storage| storage.has_urn(&urn))
                 .await

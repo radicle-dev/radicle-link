@@ -17,14 +17,16 @@ use super::{
     PeerInfo,
     ProtocolStorage,
     RecvError,
+    RequestPullGuard,
     State,
 };
 use crate::PeerId;
 
 #[tracing::instrument(skip(state, disco))]
-pub(super) async fn disco<S, D>(state: State<S>, disco: D)
+pub(super) async fn disco<S, G, D>(state: State<S, G>, disco: D)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    G: RequestPullGuard,
     D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)>,
 {
     disco
@@ -36,9 +38,10 @@ where
 }
 
 #[tracing::instrument(skip(state, tasks))]
-pub(super) async fn periodic<S, P>(state: State<S>, tasks: P)
+pub(super) async fn periodic<S, G, P>(state: State<S, G>, tasks: P)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    G: RequestPullGuard,
     P: futures::Stream<Item = membership::Periodic<SocketAddr>>,
 {
     tasks
@@ -110,9 +113,10 @@ where
 }
 
 #[tracing::instrument(skip(state, rx))]
-pub(super) async fn ground_control<S, E>(state: State<S>, rx: E)
+pub(super) async fn ground_control<S, G, E>(state: State<S, G>, rx: E)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    G: RequestPullGuard,
     E: futures::Stream<Item = Result<event::Downstream, RecvError>>,
 {
     use event::Downstream;
@@ -133,6 +137,7 @@ where
                 Downstream::Gossip(x) => control::gossip(&state, x, None).await,
                 Downstream::Info(x) => control::info(&state, x),
                 Downstream::Interrogation(x) => control::interrogation(state.clone(), x).await,
+                Downstream::RequestPull(x) => control::request_pull(state.clone(), x).await,
                 Downstream::Connect(x) => control::connect(&state, x).await,
             },
         }

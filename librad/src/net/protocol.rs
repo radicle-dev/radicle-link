@@ -40,6 +40,7 @@ pub mod gossip;
 pub mod interrogation;
 pub mod io;
 pub mod membership;
+pub mod request_pull;
 
 mod info;
 pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
@@ -51,7 +52,7 @@ mod tick;
 
 mod tincans;
 pub(super) use tincans::TinCans;
-pub use tincans::{Connected, Interrogation, RecvError};
+pub use tincans::{Connected, Interrogation, RecvError, RequestPull};
 
 mod state;
 pub use state::Quota;
@@ -60,7 +61,7 @@ use state::{RateLimits, State, StateConfig, Storage};
 pub type Endpoint = quic::Endpoint<2>;
 
 #[derive(Clone, Debug)]
-pub struct Config {
+pub struct Config<Guard = config::DenyAll> {
     pub paths: Paths,
     pub listen_addr: SocketAddr,
     pub advertised_addrs: Option<NonEmpty<SocketAddr>>,
@@ -68,11 +69,14 @@ pub struct Config {
     pub network: Network,
     pub replication: replication::Config,
     pub rate_limits: Quota,
+    pub request_pull: Guard,
     // TODO: transport, ...
 }
 
 pub mod config {
     use std::time::Duration;
+
+    use crate::{git::Urn, net::protocol::request_pull::Guard, PeerId};
 
     #[derive(Clone, Copy, Debug)]
     pub struct Fetch {
@@ -86,20 +90,38 @@ pub mod config {
             }
         }
     }
+
+    /// A request-pull [`Guard`] that will always return the [`Denied`] error.
+    #[derive(Clone, Copy, Debug)]
+    pub struct DenyAll;
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("request-pull denied for `{0}`")]
+    pub struct Denied(Urn);
+
+    impl Guard for DenyAll {
+        type Error = Denied;
+
+        type Output = std::convert::Infallible;
+
+        fn guard(&self, _: &PeerId, urn: &Urn) -> Result<Self::Output, Self::Error> {
+            Err(Denied(urn.clone()))
+        }
+    }
 }
 
 /// Binding of a peer to a network socket.
 ///
 /// Created by [`crate::net::peer::Peer::bind`]. Call [`Bound::accept`] to start
 /// accepting connections from peers.
-pub struct Bound<S> {
+pub struct Bound<S, G = config::DenyAll> {
     phone: TinCans,
-    state: State<S>,
+    state: State<S, G>,
     incoming: quic::IncomingConnections<'static>,
     periodic: BoxStream<'static, membership::Periodic<SocketAddr>>,
 }
 
-impl<S> Bound<S> {
+impl<S, G> Bound<S, G> {
     pub fn peer_id(&self) -> PeerId {
         self.state.local_id
     }
@@ -127,19 +149,20 @@ impl<S> Bound<S> {
     )
     where
         S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+        G: RequestPullGuard,
         D: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
     {
         accept(self, disco)
     }
 }
 
-impl<S> LocalPeer for Bound<S> {
+impl<S, A> LocalPeer for Bound<S, A> {
     fn local_peer_id(&self) -> PeerId {
         self.peer_id()
     }
 }
 
-impl<S> LocalAddr for Bound<S> {
+impl<S, A> LocalAddr for Bound<S, A> {
     type Addr = SocketAddr;
 
     fn listen_addrs(&self) -> Vec<Self::Addr> {
@@ -147,17 +170,18 @@ impl<S> LocalAddr for Bound<S> {
     }
 }
 
-pub async fn bind<Sign, Store>(
+pub async fn bind<Sign, Store, Guard>(
     spawner: Arc<Spawner>,
     phone: TinCans,
-    config: Config,
+    config: Config<Guard>,
     signer: Sign,
     storage: Store,
     caches: cache::Caches,
-) -> Result<Bound<Store>, error::Bootstrap>
+) -> Result<Bound<Store, Guard>, error::Bootstrap>
 where
     Sign: Signer + Clone + Send + Sync + 'static,
     Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    Guard: RequestPullGuard,
 {
     let local_id = PeerId::from_signer(&signer);
     let quic::BoundEndpoint { endpoint, incoming } = quic::Endpoint::bind(
@@ -173,7 +197,15 @@ where
         Pcg64Mcg::new(rand::random()),
         config.membership,
     );
-    let gossip = broadcast::State::new(Storage::new(storage, config.rate_limits.storage), ());
+    let gossip = broadcast::State::new(
+        Storage::new(storage.clone(), config.rate_limits.storage.clone()),
+        (),
+    );
+    let request_pull = request_pull::State::new(
+        Storage::new(storage, config.rate_limits.storage),
+        config.paths.clone(),
+        config.request_pull,
+    );
     let limits = RateLimits {
         membership: Arc::new(RateLimiter::keyed(
             config.rate_limits.membership,
@@ -186,6 +218,7 @@ where
         endpoint,
         membership,
         gossip,
+        request_pull,
         phone: phone.clone(),
         config: StateConfig {
             paths: Arc::new(config.paths),
@@ -207,13 +240,13 @@ where
     skip(phone, state, incoming, periodic, disco),
     fields(peer_id = %state.local_id),
 )]
-pub fn accept<Store, Disco>(
+pub fn accept<Store, Guard, Disco>(
     Bound {
         phone,
         state,
         incoming,
         periodic,
-    }: Bound<Store>,
+    }: Bound<Store, Guard>,
     disco: Disco,
 ) -> (
     impl FnOnce(),
@@ -221,6 +254,7 @@ pub fn accept<Store, Disco>(
 )
 where
     Store: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    Guard: RequestPullGuard,
     Disco: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
 {
     #[cfg(not(feature = "replication-v3"))]
@@ -272,6 +306,9 @@ impl<A, T> ProtocolStorage<A> for T where
     T: broadcast::LocalStorage<A> + storage::Pooled<storage::Storage> + Send + Sync
 {
 }
+
+pub trait RequestPullGuard: request_pull::Guard + Clone + Send + Sync + 'static {}
+impl<T> RequestPullGuard for T where T: request_pull::Guard + Clone + Send + Sync + 'static {}
 
 impl<R, A> broadcast::Membership for membership::Hpv<R, A>
 where

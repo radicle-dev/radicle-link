@@ -48,6 +48,9 @@ pub struct Membership;
 #[derive(Debug)]
 pub struct Interrogation;
 
+#[derive(Debug)]
+pub struct RequestPull;
+
 /// Signal the (sub-) protocol about to be sent over a given QUIC stream.
 ///
 /// This is only valid as the first message sent by the initiator of a fresh
@@ -63,6 +66,24 @@ pub struct Interrogation;
 /// discriminator of the enum. This allows _compatible_ changes to
 /// [`UpgradeRequest`] (ie. both ends can handle the absence of a variant), as
 /// well as _incompatible_ evolution by incrementing the version tag.
+/// If the `u8` discriminator of the enum is 23 or less, the wire encoding is
+/// terminated with the CBOR break character, ie. 0xFF.
+///
+/// ## Adendum
+///
+/// The strange inclusion of the CBOR break character is due to a previous
+/// implementation that always included the break character, but assumed that
+/// the encoding would always be of 4-byte length. This meant that an encoding
+/// for `Gossip`, for example, would be of the form `82 00 00 FF`, or using
+/// `minicbor::display` it would look like `[0, 0]]`. This worked fine for
+/// stream numbers less than 24, and the 4 byte encoding length would consume
+/// `FF`, and disregard it. For any `u8` larger or equal to 24, the stream
+/// number is encoded as 2 bytes. This means that implementations that assume a
+/// 4-byte length would leave the CBOR break character in the stream.
+///
+/// The current implementation will check in the range of 0..23 and encode the
+/// break character for backwards-compatibility. In the range of 24..255, we do
+/// not encode the break character.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum UpgradeRequest {
@@ -70,6 +91,11 @@ pub enum UpgradeRequest {
     Git = 1,
     Membership = 2,
     Interrogation = 3,
+    /// `RequestPull` is a temporary stream and shall be deprecated in the
+    /// future, see [RFC 702][rfc].
+    ///
+    /// [rfc]: https://github.com/radicle-dev/radicle-link/blob/master/docs%2Frfc%2F0702-request-pull.adoc
+    RequestPull = 200,
 }
 
 impl From<Gossip> for UpgradeRequest {
@@ -96,12 +122,22 @@ impl From<Interrogation> for UpgradeRequest {
     }
 }
 
+impl From<RequestPull> for UpgradeRequest {
+    fn from(_interrogation: RequestPull) -> Self {
+        UpgradeRequest::RequestPull
+    }
+}
+
 impl minicbor::Encode for UpgradeRequest {
     fn encode<W: minicbor::encode::Write>(
         &self,
         e: &mut minicbor::Encoder<W>,
     ) -> Result<(), minicbor::encode::Error<W::Error>> {
-        e.array(2)?.u8(0)?.u8(*self as u8)?.end()?;
+        let e = e.array(2)?.u8(0)?;
+        match *self as u8 {
+            up @ 0..=23 => e.u8(up)?.end()?,
+            up => e.u8(up)?,
+        };
         Ok(())
     }
 }
@@ -118,6 +154,7 @@ impl<'de> minicbor::Decode<'de> for UpgradeRequest {
                 1 => Ok(Self::Git),
                 2 => Ok(Self::Membership),
                 3 => Ok(Self::Interrogation),
+                200 => Ok(Self::RequestPull),
                 n => Err(minicbor::decode::Error::UnknownVariant(n as u32)),
             },
             n => Err(minicbor::decode::Error::UnknownVariant(n as u32)),
@@ -235,6 +272,7 @@ pub enum SomeUpgraded<S> {
     Git(Upgraded<Git, S>),
     Membership(Upgraded<Membership, S>),
     Interrogation(Upgraded<Interrogation, S>),
+    RequestPull(Upgraded<RequestPull, S>),
 }
 
 impl<S> SomeUpgraded<S> {
@@ -247,6 +285,7 @@ impl<S> SomeUpgraded<S> {
             Self::Git(up) => SomeUpgraded::Git(up.map(f)),
             Self::Membership(up) => SomeUpgraded::Membership(up.map(f)),
             Self::Interrogation(up) => SomeUpgraded::Interrogation(up.map(f)),
+            Self::RequestPull(up) => SomeUpgraded::RequestPull(up.map(f)),
         }
     }
 }
@@ -295,6 +334,7 @@ where
                 UpgradeRequest::Interrogation => {
                     SomeUpgraded::Interrogation(Upgraded::new(incoming))
                 },
+                UpgradeRequest::RequestPull => SomeUpgraded::RequestPull(Upgraded::new(incoming)),
             };
 
             Ok(upgrade)

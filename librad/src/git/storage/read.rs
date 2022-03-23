@@ -13,7 +13,7 @@ use git_ext::{self as ext, blob, is_not_found_err, RefLike, RefspecPattern};
 use std_ext::prelude::*;
 
 use crate::{
-    git::types::{reference, Many, One, Reference},
+    git::types::{reference, Reference},
     identities::git::{Identities, Urn},
     paths::Paths,
     PeerId,
@@ -56,7 +56,10 @@ pub mod error {
 pub trait ReadOnlyStorage {
     fn has_urn(&self, urn: &Urn) -> Result<bool, Error>;
 
-    fn has_ref(&self, reference: &Reference<One>) -> Result<bool, Error>;
+    fn has_ref<'a, 'b, Ref: 'b>(&'a self, reference: &'b Ref) -> Result<bool, Error>
+    where
+        RefLike: From<&'b Ref>,
+        Ref: Debug;
 
     /// Check the existence of `oid` as a **commit**.
     ///
@@ -107,10 +110,13 @@ pub trait ReadOnlyStorage {
         RefspecPattern: From<&'b Refs>,
         Refs: Debug;
 
-    fn reference_names<'a>(
+    fn reference_names<'a, 'b, Refs: 'b>(
         &'a self,
-        reference: &Reference<Many>,
-    ) -> Result<ReferenceNames<'a>, Error>;
+        reference: &'b Refs,
+    ) -> Result<ReferenceNames<'a>, Error>
+    where
+        RefspecPattern: From<&'b Refs>,
+        Refs: Debug;
 
     fn references_glob<'a, G: 'a>(&'a self, glob: G) -> Result<ReferencesGlob<'a, G>, Error>
     where
@@ -123,13 +129,18 @@ pub trait ReadOnlyStorage {
     where
         G: Pattern + Debug;
 
-    fn reference_oid(&self, reference: &Reference<One>) -> Result<ext::Oid, Error>;
+    fn reference_oid<'a, 'b, Ref: 'b>(&'a self, reference: &'b Ref) -> Result<ext::Oid, Error>
+    where
+        RefLike: From<&'b Ref>;
 
-    fn blob<'a>(
+    fn blob<'a, Ref>(
         &'a self,
-        reference: &'a Reference<One>,
+        reference: &'a Ref,
         path: &'a Path,
-    ) -> Result<Option<git2::Blob<'a>>, Error>;
+    ) -> Result<Option<git2::Blob<'a>>, Error>
+    where
+        ext::blob::Branch<'a>: From<&'a Ref>,
+        Ref: Debug;
 
     fn blob_at<'a>(
         &'a self,
@@ -212,7 +223,11 @@ impl ReadOnlyStorage for ReadOnly {
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
-    fn has_ref<'a>(&self, reference: &'a Reference<One>) -> Result<bool, Error> {
+    fn has_ref<'a, 'b, Ref>(&'a self, reference: &'b Ref) -> Result<bool, Error>
+    where
+        RefLike: From<&'b Ref>,
+        Ref: Debug,
+    {
         self.backend
             .find_reference(RefLike::from(reference).as_str())
             .and(Ok(true))
@@ -331,10 +346,14 @@ impl ReadOnlyStorage for ReadOnly {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    fn reference_names<'a>(
+    fn reference_names<'a, 'b, Refs: 'b>(
         &'a self,
-        reference: &Reference<Many>,
-    ) -> Result<ReferenceNames<'a>, Error> {
+        reference: &'b Refs,
+    ) -> Result<ReferenceNames<'a>, Error>
+    where
+        RefspecPattern: From<&'b Refs>,
+        Refs: Debug,
+    {
         self.reference_names_glob(glob::RefspecMatcher::from(RefspecPattern::from(reference)))
             .map(|inner| ReferenceNames { inner })
     }
@@ -364,19 +383,26 @@ impl ReadOnlyStorage for ReadOnly {
         })
     }
 
-    fn reference_oid(&self, reference: &Reference<One>) -> Result<ext::Oid, Error> {
+    fn reference_oid<'a, 'b, Ref: 'b>(&'a self, reference: &'b Ref) -> Result<ext::Oid, Error>
+    where
+        RefLike: From<&'b Ref>,
+    {
         self.backend
-            .refname_to_id(&reference.to_string())
+            .refname_to_id(&RefLike::from(reference).to_string())
             .map(ext::Oid::from)
             .map_err(Error::from)
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    fn blob<'a>(
+    fn blob<'a, Ref>(
         &'a self,
-        reference: &'a Reference<One>,
+        reference: &'a Ref,
         path: &'a Path,
-    ) -> Result<Option<git2::Blob<'a>>, Error> {
+    ) -> Result<Option<git2::Blob<'a>>, Error>
+    where
+        ext::blob::Branch<'a>: From<&'a Ref>,
+        Ref: Debug,
+    {
         ext::Blob::Tip {
             branch: reference.into(),
             path,

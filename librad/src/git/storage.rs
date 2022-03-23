@@ -18,7 +18,6 @@ use std_ext::Void;
 
 use crate::{
     collaborative_objects::CollaborativeObjects,
-    git::types::{Many, One, Reference},
     identities::git::Urn,
     paths::Paths,
     PeerId,
@@ -260,7 +259,11 @@ impl ReadOnlyStorage for Storage {
         self.inner.has_urn(urn)
     }
 
-    fn has_ref(&self, reference: &Reference<One>) -> Result<bool, Error> {
+    fn has_ref<'a, 'b, Ref: 'b>(&'a self, reference: &'b Ref) -> Result<bool, Error>
+    where
+        ext::RefLike: From<&'b Ref>,
+        Ref: Debug,
+    {
         self.inner.has_ref(reference)
     }
 
@@ -315,10 +318,14 @@ impl ReadOnlyStorage for Storage {
         self.inner.references(reference)
     }
 
-    fn reference_names<'a>(
+    fn reference_names<'a, 'b, Refs: 'b>(
         &'a self,
-        reference: &Reference<Many>,
-    ) -> Result<ReferenceNames<'a>, Error> {
+        reference: &'b Refs,
+    ) -> Result<ReferenceNames<'a>, Error>
+    where
+        ext::RefspecPattern: From<&'b Refs>,
+        Refs: Debug,
+    {
         self.inner.reference_names(reference)
     }
 
@@ -339,15 +346,22 @@ impl ReadOnlyStorage for Storage {
         self.inner.reference_names_glob(glob)
     }
 
-    fn reference_oid(&self, reference: &Reference<One>) -> Result<ext::Oid, Error> {
+    fn reference_oid<'a, 'b, Ref: 'b>(&'a self, reference: &'b Ref) -> Result<ext::Oid, Error>
+    where
+        ext::RefLike: From<&'b Ref>,
+    {
         self.inner.reference_oid(reference)
     }
 
-    fn blob<'a>(
+    fn blob<'a, Ref>(
         &'a self,
-        reference: &'a Reference<One>,
+        reference: &'a Ref,
         path: &'a Path,
-    ) -> Result<Option<git2::Blob<'a>>, Error> {
+    ) -> Result<Option<git2::Blob<'a>>, Error>
+    where
+        ext::blob::Branch<'a>: From<&'a Ref>,
+        Ref: Debug,
+    {
         self.inner.blob(reference, path)
     }
 

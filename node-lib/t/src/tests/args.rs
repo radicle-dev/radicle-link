@@ -404,6 +404,7 @@ fn tracking() -> Result<()> {
             "--track", "selected",
             "--track-peer-id", "hynkyndc6w3p8urucakobzna7sxwgcqny7xxtw88dtx3pkf7m3nrzc",
             "--track-urn", "rad:git:hnrkb39fr6f4jj59nfiq7tfd9aznirdu7b59o",
+            "--track-pair", "hyy9umf1p11g8o8b6qcs1risghw8yoau79oi88hg7fneotchry6r5w,rad:git:hnrkqdpm9ub19oc8dccx44echy76hzfsezyio",
     ])?;
     assert_eq!(
         parsed,
@@ -412,9 +413,11 @@ fn tracking() -> Result<()> {
                 mode: Some(TrackingMode::Selected),
                 peer_ids: vec!["hynkyndc6w3p8urucakobzna7sxwgcqny7xxtw88dtx3pkf7m3nrzc".parse()?,],
                 urns: vec!["rad:git:hnrkb39fr6f4jj59nfiq7tfd9aznirdu7b59o".parse()?],
+                pairs: vec!["hyy9umf1p11g8o8b6qcs1risghw8yoau79oi88hg7fneotchry6r5w,rad:git:hnrkqdpm9ub19oc8dccx44echy76hzfsezyio".parse()?],
             },
             ..Default::default()
         }
     );
+
     Ok(())
 }

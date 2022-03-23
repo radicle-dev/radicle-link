@@ -45,7 +45,29 @@ pub enum Interrogation {
     Rpc(#[from] Box<internal::Rpc<quic::BidiStream>>),
 }
 
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum RequestPull {
+    #[error("unable to obtain a connection to {0}")]
+    NoConnection(PeerId),
+
+    #[error("no response from {0}")]
+    NoResponse(PeerId),
+
+    #[error("network stack not available")]
+    Unavailable,
+
+    #[error(transparent)]
+    Rpc(#[from] Box<internal::Rpc<quic::BidiStream>>),
+}
+
 impl From<internal::Rpc<quic::BidiStream>> for Interrogation {
+    fn from(e: internal::Rpc<quic::BidiStream>) -> Self {
+        Self::Rpc(Box::new(e))
+    }
+}
+
+impl From<internal::Rpc<quic::BidiStream>> for RequestPull {
     fn from(e: internal::Rpc<quic::BidiStream>) -> Self {
         Self::Rpc(Box::new(e))
     }

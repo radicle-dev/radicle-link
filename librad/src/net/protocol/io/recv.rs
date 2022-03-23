@@ -14,3 +14,6 @@ pub(in crate::net::protocol) use interrogation::interrogation;
 
 mod membership;
 pub(in crate::net::protocol) use membership::{connection_lost, membership};
+
+pub(in crate::net::protocol) mod request_pull;
+pub(in crate::net::protocol) use request_pull::request_pull;

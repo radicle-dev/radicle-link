@@ -10,19 +10,20 @@ use tokio::{sync::mpsc, time::sleep};
 use tracing::{error, info, instrument};
 
 use librad::{
-    net::{self, discovery::Discovery, peer::Peer},
+    net::{self, discovery::Discovery, peer::Peer, protocol::RequestPullGuard},
     Signer,
 };
 
 #[instrument(name = "protocol subroutine", skip(disco, peer, shutdown_rx))]
-pub async fn routine<D, S>(
-    peer: Peer<S>,
+pub async fn routine<D, S, G>(
+    peer: Peer<S, G>,
     disco: D,
     mut shutdown_rx: mpsc::Receiver<()>,
 ) -> anyhow::Result<()>
 where
     D: Discovery<Addr = SocketAddr> + Clone + 'static,
     S: Signer + Clone,
+    G: RequestPullGuard,
 {
     let shutdown = shutdown_rx.recv().fuse();
     futures::pin_mut!(shutdown);

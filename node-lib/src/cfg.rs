@@ -30,7 +30,7 @@ use librad::{
 };
 use lnk_clib::keys;
 
-use crate::{args, tracking::Tracker};
+use crate::{args, request_pull, tracking::Tracker};
 
 use crate::seed::{self, store::FileStore, Seeds};
 
@@ -91,16 +91,16 @@ impl Default for RunMode {
     }
 }
 
-pub struct Cfg<Disco, Signer> {
+pub struct Cfg<Disco, Signer, Auth> {
     pub disco: Disco,
     pub metrics: Option<Metrics>,
-    pub peer: PeerConfig<Signer>,
+    pub peer: PeerConfig<Signer, Auth>,
     pub tracker: Option<Tracker>,
     pub run_mode: RunMode,
     pub profile: Profile,
 }
 
-impl Cfg<discovery::Static, BoxedSigner> {
+impl Cfg<discovery::Static, BoxedSigner, request_pull::State> {
     pub async fn from_args(args: &args::Args) -> Result<Self, Error> {
         let membership = membership::Params::default();
         let seeds = if !args.bootstraps.is_empty() {
@@ -157,6 +157,28 @@ impl Cfg<discovery::Static, BoxedSigner> {
             None => RunMode::Immortal,
         };
 
+        let tracker = args.tracking.mode.as_ref().map(|arg| match arg {
+            args::TrackingMode::Everything => Tracker::Everything,
+            args::TrackingMode::Selected => Tracker::selected(
+                args.tracking.peer_ids.clone(),
+                args.tracking.urns.clone(),
+                args.tracking.pairs.clone(),
+            ),
+        });
+
+        let storage_lock = storage::pool::Initialised::no();
+        let request_pull = request_pull::State::new(
+            storage::Pool::new(
+                storage::pool::ReadWriteConfig::new(
+                    profile.paths().clone(),
+                    signer.clone(),
+                    storage_lock,
+                ),
+                args.request_pull.pool_size,
+            ),
+            tracker.clone(),
+        );
+
         Ok(Self {
             disco,
             metrics,
@@ -170,16 +192,11 @@ impl Cfg<discovery::Static, BoxedSigner> {
                     network: args.protocol.network.clone(),
                     replication: Default::default(),
                     rate_limits: Default::default(),
+                    request_pull,
                 },
                 storage: Default::default(),
             },
-            tracker: args.tracking.mode.as_ref().map(|arg| match arg {
-                args::TrackingMode::Everything => Tracker::Everything,
-                args::TrackingMode::Selected => Tracker::Selected {
-                    peer_ids: args.tracking.peer_ids.clone().into_iter().collect(),
-                    urns: args.tracking.urns.clone().into_iter().collect(),
-                },
-            }),
+            tracker,
             profile,
             run_mode,
         })

@@ -11,7 +11,7 @@ use futures::stream::{Stream, StreamExt as _};
 use super::recv;
 use crate::net::{
     connection::{CloseReason, RemoteAddr as _, RemotePeer},
-    protocol::{gossip, ProtocolStorage, State},
+    protocol::{gossip, ProtocolStorage, RequestPullGuard, State},
     quic,
     upgrade,
 };
@@ -28,11 +28,12 @@ use crate::net::{
         remote_addr = %streams.remote_addr()
     )
 )]
-pub(in crate::net::protocol) async fn incoming<S, I>(
-    state: State<S>,
+pub(in crate::net::protocol) async fn incoming<S, G, I>(
+    state: State<S, G>,
     streams: quic::IncomingStreams<I>,
 ) where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    G: RequestPullGuard,
     I: Stream<Item = quic::Result<Either<quic::BidiStream, quic::RecvStream>>> + Unpin,
 {
     use Either::{Left, Right};
@@ -76,9 +77,10 @@ mod incoming {
 
     use crate::net::protocol::io::recv;
 
-    pub(super) async fn bidi<S>(state: State<S>, stream: quic::BidiStream)
+    pub(super) async fn bidi<S, G>(state: State<S, G>, stream: quic::BidiStream)
     where
         S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+        G: RequestPullGuard,
     {
         use upgrade::SomeUpgraded::*;
 
@@ -92,12 +94,14 @@ mod incoming {
             Ok(Gossip(up)) => recv::gossip(state, up).await,
             Ok(Membership(up)) => recv::membership(state, up).await,
             Ok(Interrogation(up)) => recv::interrogation(state, up).await,
+            Ok(RequestPull(up)) => recv::request_pull(state, up).await,
         }
     }
 
-    pub(super) async fn uni<S>(state: State<S>, stream: quic::RecvStream)
+    pub(super) async fn uni<S, G>(state: State<S, G>, stream: quic::RecvStream)
     where
         S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+        G: RequestPullGuard,
     {
         use upgrade::SomeUpgraded::*;
 
@@ -109,6 +113,7 @@ mod incoming {
 
             Ok(Git(up)) => deny_uni(up.into_stream(), "git"),
             Ok(Interrogation(up)) => deny_uni(up.into_stream(), "interrogation"),
+            Ok(RequestPull(up)) => deny_uni(up.into_stream(), "request-pull"),
 
             Ok(Gossip(up)) => recv::gossip(state, up).await,
             Ok(Membership(up)) => recv::membership(state, up).await,

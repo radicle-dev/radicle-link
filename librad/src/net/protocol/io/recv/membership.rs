@@ -14,6 +14,7 @@ use futures_codec::FramedRead;
 use crate::{
     net::{
         connection::RemoteInfo,
+        peer::RequestPullGuard,
         protocol::{
             gossip,
             io::{codec, peer_advertisement},
@@ -27,11 +28,12 @@ use crate::{
     PeerId,
 };
 
-pub(in crate::net::protocol) async fn membership<S, T>(
-    state: State<S>,
+pub(in crate::net::protocol) async fn membership<S, G, T>(
+    state: State<S, G>,
     stream: Upgraded<upgrade::Membership, T>,
 ) where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    G: RequestPullGuard,
     T: RemoteInfo<Addr = SocketAddr> + AsyncRead + Unpin,
 {
     // A `PeerInfo` may contain ~516 bytes worth of `SocketAddr`s (well, ipv6).
@@ -99,9 +101,10 @@ pub(in crate::net::protocol) async fn membership<S, T>(
     }
 }
 
-pub(in crate::net::protocol) async fn connection_lost<S>(state: State<S>, remote_id: PeerId)
+pub(in crate::net::protocol) async fn connection_lost<S, G>(state: State<S, G>, remote_id: PeerId)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    G: RequestPullGuard,
 {
     let membership::TnT { trans, ticks } = state.membership.connection_lost(remote_id);
     state.emit(trans);

@@ -19,7 +19,7 @@ use librad::{
 };
 use lnk_clib::keys::ssh::SshAuthSock;
 
-use crate::seed::Seed;
+use crate::{seed::Seed, tracking};
 
 #[derive(Debug, Default, Eq, PartialEq, Parser)]
 pub struct Args {
@@ -70,6 +70,9 @@ pub struct Args {
 
     #[clap(flatten)]
     pub tracking: TrackingArgs,
+
+    #[clap(flatten)]
+    pub request_pull: RequestPullStorage,
 
     /// The number of milliseconds to wait after losing all connections before
     /// shutting down the node. If not specified the node will never
@@ -332,6 +335,14 @@ pub struct TrackingArgs {
     /// Use in conjunction with `--track="selected"`.
     #[clap(long = "track-urn", name = "track-urn")]
     pub urns: Vec<Urn>,
+
+    /// Track all updates for a peer and urn pair, ie. '<peer>,<urn>'. Argument
+    /// can be repeated. Use in conjunction with `--track="selected"`.
+    ///
+    /// Note: if a `track-urn` or `track-peer-id` overlaps with a
+    /// `track-pair`, the `track-pair` will take preferrence.
+    #[clap(long = "track-pair", name = "track-pair")]
+    pub pairs: Vec<tracking::Pair>,
 }
 
 #[derive(Debug, Eq, PartialEq, Parser)]
@@ -369,6 +380,22 @@ impl FromStr for LingerTimeout {
         match integer {
             Ok(i) => Ok(LingerTimeout(Duration::from_millis(i))),
             Err(_) => Err("expected a positive integer"),
+        }
+    }
+}
+
+/// Settings for the request-pull storage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Parser)]
+pub struct RequestPullStorage {
+    /// Number of [`librad::git::storage::Storage`] instances to reserve.
+    #[clap(long = "request-pull-pool-size", default_value_t = num_cpus::get_physical())]
+    pub pool_size: usize,
+}
+
+impl Default for RequestPullStorage {
+    fn default() -> Self {
+        Self {
+            pool_size: num_cpus::get_physical(),
         }
     }
 }

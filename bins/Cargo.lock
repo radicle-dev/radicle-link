@@ -2464,6 +2464,7 @@ dependencies = [
  "log",
  "minicbor",
  "nix",
+ "num_cpus",
  "radicle-git-ext",
  "radicle-macros",
  "rand",

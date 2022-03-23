@@ -7,15 +7,29 @@ use std::{iter, net::SocketAddr};
 
 use futures::stream::{self, StreamExt as _};
 
-use super::{broadcast, error, event, gossip, io, tick, PeerInfo, ProtocolStorage, State};
+use super::{
+    broadcast,
+    error,
+    event,
+    gossip,
+    interrogation,
+    io,
+    request_pull,
+    tick,
+    PeerInfo,
+    ProtocolStorage,
+    RequestPullGuard,
+    State,
+};
 use crate::PeerId;
 
-pub(super) async fn gossip<S>(
-    state: &State<S>,
+pub(super) async fn gossip<S, G>(
+    state: &State<S, G>,
     evt: event::downstream::Gossip,
     exclude: Option<PeerId>,
 ) where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
+    G: RequestPullGuard,
 {
     use event::downstream::Gossip;
 
@@ -43,7 +57,7 @@ pub(super) async fn gossip<S>(
     .await
 }
 
-pub(super) fn info<S>(state: &State<S>, evt: event::downstream::Info)
+pub(super) fn info<S, G>(state: &State<S, G>, evt: event::downstream::Info)
 where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + 'static,
 {
@@ -87,8 +101,8 @@ where
     }
 }
 
-pub(super) async fn interrogation<S>(
-    state: State<S>,
+pub(super) async fn interrogation<S, G>(
+    state: State<S, G>,
     event::downstream::Interrogation {
         peer: (peer, addr_hints),
         request,
@@ -96,28 +110,68 @@ pub(super) async fn interrogation<S>(
     }: event::downstream::Interrogation,
 ) where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    G: RequestPullGuard,
 {
     let chan = reply.lock().take();
     if let Some(tx) = chan {
         let resp = match state.connection(peer, addr_hints).await {
             None => Err(error::Interrogation::NoConnection(peer)),
-            Some(conn) => match io::send::request(&conn, request).await {
-                Err(e) => Err(e.into()),
-                Ok(resp) => resp.ok_or(error::Interrogation::NoResponse(peer)),
+            Some(conn) => {
+                match io::send::single_response(&conn, request, interrogation::FRAMED_BUFSIZ).await
+                {
+                    Err(e) => Err(e.into()),
+                    Ok(resp) => resp.ok_or(error::Interrogation::NoResponse(peer)),
+                }
             },
         };
         tx.send(resp).ok();
     }
 }
 
-pub(super) async fn connect<S>(
-    state: &State<S>,
+pub(super) async fn request_pull<S, G>(
+    state: State<S, G>,
+    event::downstream::RequestPull {
+        peer: (peer, addr_hints),
+        request,
+        reply,
+    }: event::downstream::RequestPull,
+) where
+    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    G: RequestPullGuard,
+{
+    let chan = reply.lock().take();
+    if let Some(tx) = chan {
+        match state.connection(peer, addr_hints).await {
+            None => {
+                tx.send(Err(error::RequestPull::NoConnection(peer)))
+                    .await
+                    .ok();
+            },
+            Some(conn) => {
+                match io::send::multi_response(&conn, request, request_pull::FRAMED_BUFSIZ).await {
+                    Err(e) => {
+                        tx.send(Err(e.into())).await.ok();
+                    },
+                    Ok(mut resp) => {
+                        while let Some(r) = resp.next().await {
+                            tx.send(r.map_err(|e| e.into())).await.ok();
+                        }
+                    },
+                }
+            },
+        };
+    }
+}
+
+pub(super) async fn connect<S, G>(
+    state: &State<S, G>,
     event::downstream::Connect {
         peer: (peer, addr_hints),
         reply,
     }: event::downstream::Connect,
 ) where
     S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
+    G: RequestPullGuard,
 {
     let chan = reply.lock().take();
     if let Some(tx) = chan {

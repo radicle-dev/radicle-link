@@ -25,7 +25,7 @@ use librad::{
         connection::{LocalAddr, LocalPeer},
         discovery::{self, Discovery as _},
         peer::{self, Peer},
-        protocol,
+        protocol::{self, request_pull::Guard},
         Network,
     },
     paths::Paths,
@@ -36,9 +36,21 @@ use librad::{
 static LOCALHOST_ANY: Lazy<SocketAddr> =
     Lazy::new(|| SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0)));
 
+#[derive(Clone, Debug, Default)]
+pub struct AllowAll {}
+
+impl Guard for AllowAll {
+    type Error = std::convert::Infallible;
+    type Output = bool;
+
+    fn guard(&self, _: &PeerId, _: &git::Urn) -> Result<Self::Output, Self::Error> {
+        Ok(true)
+    }
+}
+
 pub struct BoundTestPeer {
-    peer: Peer<SecretKey>,
-    bound: protocol::Bound<peer::PeerStorage>,
+    peer: Peer<SecretKey, AllowAll>,
+    bound: protocol::Bound<peer::PeerStorage, AllowAll>,
     disco: discovery::Static,
     tmp: TempDir,
 }
@@ -64,14 +76,14 @@ impl LocalAddr for BoundTestPeer {
 }
 
 pub struct RunningTestPeer {
-    peer: Peer<SecretKey>,
+    peer: Peer<SecretKey, AllowAll>,
     listen_addrs: Vec<SocketAddr>,
 }
 
 // No, this is not sound, but conveniently allows to write tests as if this was
 // just a plain `Peer`
 impl Deref for RunningTestPeer {
-    type Target = Peer<SecretKey>;
+    type Target = Peer<SecretKey, AllowAll>;
 
     fn deref(&self) -> &Self::Target {
         &self.peer
@@ -119,6 +131,7 @@ where
         network: Network::Custom(b"localtestnet".as_ref().into()),
         replication: Default::default(),
         rate_limits: Default::default(),
+        request_pull: Default::default(),
     };
     let disco = seeds.into_iter().collect::<discovery::Static>();
     let peer = Peer::new(peer::Config {
