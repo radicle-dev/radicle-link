@@ -18,7 +18,7 @@ use tokio::net::UnixStream;
 
 use librad::git::Urn;
 
-use super::{io, messages};
+use super::{announce::Announce, io, messages};
 
 pub struct Connection<T> {
     socket: T,
@@ -221,7 +221,7 @@ impl Command {
 
     /// Create a command which announces the given urn at a particular revision
     pub fn announce(urn: Urn, revision: Oid) -> Command {
-        Command(commands::Command::Announce { rev: revision, urn })
+        Command(commands::Command::Announce(Announce { rev: revision, urn }))
     }
 }
 
@@ -229,7 +229,7 @@ mod commands {
     use super::*;
 
     pub(super) enum Command {
-        Announce { urn: Urn, rev: Oid },
+        Announce(Announce),
     }
 
     impl Command {
@@ -239,13 +239,10 @@ mod commands {
             mode: messages::RequestMode,
         ) -> messages::Request {
             match self {
-                Self::Announce { rev, urn } => messages::Request {
+                Self::Announce(announce) => messages::Request {
                     user_agent: user_agent.clone(),
                     mode,
-                    payload: messages::RequestPayload::Announce {
-                        rev: rev.into(),
-                        urn,
-                    },
+                    payload: announce.into(),
                 },
             }
         }
