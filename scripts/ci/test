@@ -4,4 +4,5 @@ set -eoux pipefail
 RUST_LOG=error ssh-agent cargo nextest run \
     --status-level all \
     --failure-output immediate-final \
-    --no-fail-fast
+    --no-fail-fast \
+    --retries 2
