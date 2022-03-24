@@ -1,7 +1,5 @@
 // Copyright © 2022 The Radicle Link Contributors
-//
-// This file is part of radicle-link, distributed under the GPLv3 with Radicle
-// Linking Exception. For full terms see the included LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::{
     fs,
@@ -86,13 +84,13 @@ pub mod error {
 
     use thiserror::Error;
 
-    use crate::seed;
+    use crate::seed::error;
 
     #[derive(Debug, Error)]
     pub enum Iter {
         #[error(transparent)]
         Io(#[from] io::Error),
         #[error(transparent)]
-        Parse(#[from] seed::error::Parse),
+        Parse(#[from] error::Parse),
     }
 }

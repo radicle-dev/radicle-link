@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-use node_lib::seed::store::Store as _;
+use lnk_clib::seed::store::Store as _;
 use proptest::{collection, prelude::*};
 
 use crate::{gen, helpers::kv_store};

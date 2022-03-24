@@ -5,5 +5,6 @@
 
 pub mod keys;
 pub mod runtime;
+pub mod seed;
 pub mod ser;
 pub mod storage;

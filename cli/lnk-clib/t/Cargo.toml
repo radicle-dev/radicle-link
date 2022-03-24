@@ -17,6 +17,8 @@ test = []
 [dev-dependencies]
 anyhow = "1"
 tempfile = "3.3"
+proptest = "1"
+pretty_assertions = "1.1"
 
 [dev-dependencies.it-helpers]
 path = "../../../test/it-helpers"
@@ -29,3 +31,11 @@ path = "../../../librad"
 
 [dev-dependencies.lnk-clib]
 path = ".."
+
+[dev-dependencies.link-crypto-test]
+path = "../../../link-crypto/t"
+features = ["test"]
+
+[dev-dependencies.tokio]
+version = "1.13"
+features = ["rt-multi-thread"]

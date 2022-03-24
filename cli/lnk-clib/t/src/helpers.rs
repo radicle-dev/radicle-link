@@ -5,7 +5,7 @@
 
 use std::{fmt, fs, io};
 
-use node_lib::seed::{store, Seed};
+use lnk_clib::seed::{store, Seed};
 use test_helpers::tempdir::WithTmpDir;
 
 pub type TmpKVStore<T> = WithTmpDir<store::FileStore<T>>;

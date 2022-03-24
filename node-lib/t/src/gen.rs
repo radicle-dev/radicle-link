@@ -3,9 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use link_crypto_test::gen::gen_peer_id;
 use link_identities_test::gen::urn::{gen_oid, gen_urn};
-use node_lib::{api::messages, Seed};
+use node_lib::api::messages;
 use proptest::prelude::*;
 
 pub fn user_agent() -> impl Strategy<Value = messages::UserAgent> {
@@ -68,12 +67,4 @@ prop_compose! {
             request_id: id,
         }
     }
-}
-
-pub fn seed() -> impl Strategy<Value = Seed<String>> {
-    gen_peer_id().prop_map(move |peer| Seed {
-        peer,
-        addrs: "localhost".to_string(),
-        label: None,
-    })
 }

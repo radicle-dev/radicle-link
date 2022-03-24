@@ -8,7 +8,7 @@ use std::net;
 use anyhow::Result;
 use pretty_assertions::assert_eq;
 
-use node_lib::{Seed, Seeds};
+use lnk_clib::seed::{Seed, Seeds};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_resolve_seeds() -> Result<()> {

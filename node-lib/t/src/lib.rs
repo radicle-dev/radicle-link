@@ -8,12 +8,7 @@ extern crate assert_matches;
 #[cfg(any(test, feature = "test"))]
 pub mod gen;
 
-#[cfg(any(test, feature = "test"))]
-pub mod helpers;
-
 #[cfg(test)]
 mod integration;
-#[cfg(test)]
-mod properties;
 #[cfg(test)]
 mod tests;

@@ -17,9 +17,9 @@ use librad::{
     profile::{LnkHome, ProfileId},
     PeerId,
 };
-use lnk_clib::keys::ssh::SshAuthSock;
+use lnk_clib::{keys::ssh::SshAuthSock, seed::Seed};
 
-use crate::{seed::Seed, tracking};
+use crate::tracking;
 
 #[derive(Debug, Default, Eq, PartialEq, Parser)]
 pub struct Args {

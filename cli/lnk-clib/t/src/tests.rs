@@ -5,3 +5,4 @@
 
 #[cfg(unix)]
 mod keys;
+mod seed;

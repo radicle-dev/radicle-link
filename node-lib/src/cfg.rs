@@ -32,7 +32,7 @@ use lnk_clib::keys;
 
 use crate::{args, request_pull, tracking::Tracker};
 
-use crate::seed::{self, store::FileStore, Seeds};
+use lnk_clib::seed::{self, store::FileStore, Seeds};
 
 lazy_static::lazy_static! {
     /// General binding to any available port, i.e. `0.0.0.0:0`.
