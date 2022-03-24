@@ -12,21 +12,17 @@ use tokio::{
     sync::mpsc::{channel, Sender},
 };
 
-use super::{
-    io::{self, SocketTransportError, Transport},
-    messages,
-};
-
 use librad::{
-    git::Urn,
-    net::{
-        peer::Peer,
-        protocol::{gossip, RequestPullGuard},
-    },
-    PeerId,
+    net::{peer::Peer, protocol::RequestPullGuard},
     Signer,
 };
 use link_async::{incoming::UnixListenerExt, Spawner};
+
+use super::{
+    announce::Announce,
+    io::{self, SocketTransportError, Transport},
+    messages,
+};
 
 pub fn tasks<S, G>(
     spawner: Arc<Spawner>,
@@ -245,8 +241,8 @@ async fn dispatch_request<S, G>(
     tracing::info!(?payload, "dispatching request");
     listener.ack().await;
     match payload {
-        messages::RequestPayload::Announce { urn, rev } => {
-            handle_announce(listener, &peer, announce_wait_time, urn, rev).await
+        messages::RequestPayload::Announce(announce) => {
+            handle_announce(listener, &peer, announce_wait_time, announce).await
         },
     }
 }
@@ -256,14 +252,13 @@ async fn handle_announce<S, G>(
     mut listener: Listener,
     peer: &Peer<S, G>,
     announce_wait_time: Duration,
-    urn: Urn,
-    rev: git2::Oid,
+    announce: Announce,
 ) where
     S: Signer + Clone,
     G: RequestPullGuard,
 {
-    tracing::info!(?rev, ?urn, "received announce request");
-    let gossip_announce = mk_gossip(peer.peer_id(), &urn, &rev);
+    tracing::info!(rev = ?announce.rev, urn = %announce.urn, "received announce request");
+    let gossip_announce = announce.into_gossip(peer.peer_id());
     if peer.connected_peers().await.is_empty() {
         tracing::debug!(wait_time=?announce_wait_time, "No connected peers, waiting a bit");
         listener
@@ -288,10 +283,3 @@ async fn handle_announce<S, G>(
     }
 }
 
-fn mk_gossip(peer_id: PeerId, urn: &Urn, revision: &git2::Oid) -> gossip::Payload {
-    gossip::Payload {
-        urn: urn.clone(),
-        rev: Some((*revision).into()),
-        origin: Some(peer_id),
-    }
-}

@@ -5,7 +5,7 @@
 
 use rand::Rng;
 
-use librad::git::Urn;
+use super::{announce::Announce};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RequestId(Vec<u8>);
@@ -28,7 +28,13 @@ pub struct Request {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RequestPayload {
-    Announce { urn: Urn, rev: git2::Oid },
+    Announce(Announce),
+}
+
+impl From<Announce> for RequestPayload {
+    fn from(a: Announce) -> Self {
+        Self::Announce(a)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

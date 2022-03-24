@@ -5,7 +5,10 @@
 
 use link_crypto_test::gen::gen_peer_id;
 use link_identities_test::gen::urn::{gen_oid, gen_urn};
-use node_lib::{api::messages, Seed};
+use node_lib::{
+    api::{announce, messages},
+    Seed,
+};
 use proptest::prelude::*;
 
 pub fn user_agent() -> impl Strategy<Value = messages::UserAgent> {
@@ -23,15 +26,20 @@ pub fn request_mode() -> impl Strategy<Value = messages::RequestMode> {
     }
 }
 
+pub fn announce() -> impl Strategy<Value = announce::Announce> {
+    gen_oid(git2::ObjectType::Commit).prop_flat_map(move |rev| {
+        gen_urn().prop_map(move |urn| announce::Announce {
+            urn,
+            rev: rev.into(),
+        })
+    })
+}
+
 prop_compose! {
     pub fn request_payload()
-        (rev in gen_oid(git2::ObjectType::Commit),
-         urn in gen_urn())
+        (announce in announce())
         -> messages::RequestPayload {
-        messages::RequestPayload::Announce{
-            rev: rev.into(),
-            urn,
-        }
+        announce.into()
     }
 }
 
