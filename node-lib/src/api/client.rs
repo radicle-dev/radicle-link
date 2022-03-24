@@ -90,7 +90,7 @@ impl<T> Replies<T> {
                         conn: self.conn,
                         msg: s,
                     }),
-                    messages::ResponsePayload::Success => Ok(Reply::Success { conn: self.conn }),
+                    messages::ResponsePayload::Success(p) => Ok(Reply::Success { conn: self.conn }),
                 }
             },
         }
@@ -119,7 +119,7 @@ pub enum Reply<T> {
     Error { conn: Connection<T>, msg: String },
     /// The server indiciated that the call was successful, no further messages
     /// will be sent
-    Success { conn: Connection<T> },
+    Success { conn: Connection<T>, payload: Option<messages::SuccessPayload> },
 }
 
 pub struct Command(commands::Command);

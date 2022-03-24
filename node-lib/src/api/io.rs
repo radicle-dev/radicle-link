@@ -187,7 +187,7 @@ pub trait Transport {
     /// # Cancellation
     ///
     /// This method must be cancel safe
-    async fn recv_response(&mut self) -> Result<Option<messages::Response>, Self::Error>;
+    async fn recv_response(&mut self, awaiting: wire_types::request::Kind) -> Result<Option<messages::Response>, Self::Error>;
 }
 
 pub struct SocketTransport {
@@ -217,6 +217,7 @@ impl SocketTransport {
     fn process_recv_response(
         &mut self,
         msg_result: Result<Option<wire_types::Response>, Error>,
+        awaiting: wire_types::request::Kind,
     ) -> Result<Option<messages::Response>, SocketTransportError> {
         let wire_message: Option<wire_types::Response> = msg_result.map_err(|e| {
             tracing::error!(err=?e, "failed to decode wire type");
@@ -274,8 +275,8 @@ impl Transport for SocketTransport {
         Ok(())
     }
 
-    async fn recv_response(&mut self) -> Result<Option<messages::Response>, Self::Error> {
+    async fn recv_response(&mut self, awaiting: wire_types::request::Kind) -> Result<Option<messages::Response>, Self::Error> {
         let wire_message = self.reader.read_message().await;
-        self.process_recv_response(wire_message)
+        self.process_recv_response(wire_message, awaiting)
     }
 }

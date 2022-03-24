@@ -7,12 +7,54 @@ use super::{messages, Error, Message, Progress};
 
 pub(crate) type Response = Message<Headers>;
 
+impl Response {
+    fn into_message(
+        &self,
+        awaiting: super::request::Kind,
+    ) -> Result<messages::Response, DecodeError> {
+        let id = self.headers.request_id;
+        let payload = match self.headers.kind {
+            Kind::Ack => messages::ResponsePayload::Ack,
+            Kind::Error => {
+                let payload_bytes = self.payload.ok_or(DecodeError::MissingPayload)?;
+                let Error(s) = minicbor::decode(&payload_bytes)?;
+                messages::ResponsePayload::Error(s)
+            },
+            Kind::Progress => {
+                let payload_bytes = self.payload.ok_or(DecodeError::MissingPayload)?;
+                let Progress(s) = minicbor::decode(&payload_bytes)?;
+                messages::ResponsePayload::Progress(s)
+            },
+            Kind::Success => {
+                use super::request::Kind::*;
+                let payload = match awaiting {
+                    RequestPull => {
+                        let payload_bytes = self.payload.ok_or(DecodeError::MissingPayload)?;
+                        Some(messages::SuccessPayload::RequestPull(minicbor::decode(
+                            &payload_bytes,
+                        )?))
+                    },
+                    _ => None,
+                };
+                messages::ResponsePayload::Success(payload)
+            },
+            Kind::Unknown(other) => return Err(DecodeError::UnknownResponseKind(other)),
+        };
+        Ok(messages::Response {
+            request_id: id,
+            payload,
+        })
+    }
+}
+
 impl From<messages::Response> for Response {
     fn from(r: messages::Response) -> Self {
         let id = r.request_id;
         let (kind, payload) = match r.payload {
             messages::ResponsePayload::Ack => (Kind::Ack, None),
-            messages::ResponsePayload::Success => (Kind::Success, None),
+            messages::ResponsePayload::Success(payload) => {
+                (Kind::Success, payload.map(|p| minicbor::to_vec(p).unwrap()))
+            },
             messages::ResponsePayload::Progress(s) => {
                 (Kind::Progress, Some(minicbor::to_vec(Progress(s)).unwrap()))
             },
@@ -38,33 +80,6 @@ pub(crate) enum DecodeError {
     MissingPayload,
     #[error("unknown response kind {0}")]
     UnknownResponseKind(u8),
-}
-
-impl TryFrom<Response> for messages::Response {
-    type Error = DecodeError;
-
-    fn try_from(value: Response) -> Result<Self, Self::Error> {
-        let id = value.headers.request_id;
-        let payload = match value.headers.kind {
-            Kind::Ack => messages::ResponsePayload::Ack,
-            Kind::Error => {
-                let payload_bytes = value.payload.ok_or(DecodeError::MissingPayload)?;
-                let Error(s) = minicbor::decode(&payload_bytes)?;
-                messages::ResponsePayload::Error(s)
-            },
-            Kind::Progress => {
-                let payload_bytes = value.payload.ok_or(DecodeError::MissingPayload)?;
-                let Progress(s) = minicbor::decode(&payload_bytes)?;
-                messages::ResponsePayload::Progress(s)
-            },
-            Kind::Success => messages::ResponsePayload::Success,
-            Kind::Unknown(other) => return Err(DecodeError::UnknownResponseKind(other)),
-        };
-        Ok(messages::Response {
-            request_id: id,
-            payload,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

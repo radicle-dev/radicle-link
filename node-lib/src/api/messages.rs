@@ -3,9 +3,10 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use librad::net::protocol::request_pull;
 use rand::Rng;
 
-use super::{announce::Announce, request_pull::RequestPull};
+use super::{announce::Announce, request_pull::RequestPull, wire_types};
 
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, minicbor::Decode, minicbor::Encode,
@@ -102,5 +103,18 @@ pub enum ResponsePayload {
     Ack,
     Progress(String),
     Error(String),
-    Success,
+    Success(Option<SuccessPayload>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SuccessPayload {
+    RequestPull(request_pull::Success),
+}
+
+impl minicbor::Encode for SuccessPayload {
+    fn encode<W: minicbor::encode::Write>(&self, e: &mut minicbor::Encoder<W>) -> Result<(), minicbor::encode::Error<W::Error>> {
+        match self {
+            Self::RequestPull(p) => p.encode(e),
+        }
+    }
 }
