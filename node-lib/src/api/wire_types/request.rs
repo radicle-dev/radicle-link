@@ -5,7 +5,7 @@ use std::convert::{TryFrom, TryInto as _};
 
 use super::{messages, Message};
 
-pub(crate) type Request = Message<Headers>;
+pub type Request = Message<Headers>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Mode {
@@ -57,7 +57,7 @@ impl From<messages::Request> for Request {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum DecodeError {
+pub enum DecodeError {
     #[error("no payload for message kind which should have one")]
     MissingPayload,
     #[error(transparent)]

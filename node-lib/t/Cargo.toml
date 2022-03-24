@@ -22,6 +22,7 @@ test = []
 
 [dependencies]
 proptest = "1"
+minicbor = "0.13"
 
 [dependencies.clap]
 version = "3"
@@ -34,6 +35,12 @@ features = ["vendored-libgit2"]
 
 [dependencies.node-lib]
 path = ".."
+
+[dependencies.librad]
+path = "../../librad"
+
+[dependencies.librad-test]
+path = "../../librad/t"
 
 [dependencies.link-crypto-test]
 path = "../../link-crypto/t"

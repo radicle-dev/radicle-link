@@ -26,6 +26,12 @@ version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 
+[dependencies.git-ref-format]
+path = "../../git-ref-format"
+
+[dependencies.git-ref-format-test]
+path = "../../git-ref-format/t"
+
 [dependencies.radicle-git-ext]
 path = "../../git-ext"
 
@@ -80,9 +86,6 @@ path = "../../test/it-helpers"
 
 [dev-dependencies.test-helpers]
 path = "../../test/test-helpers"
-
-[dev-dependencies.git-ref-format]
-path = "../../git-ref-format"
 
 [dev-dependencies.link-identities]
 path = "../../link-identities"

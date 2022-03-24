@@ -4,7 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use futures::{future::FutureExt, stream::FuturesUnordered};
-use std::{panic, sync::Arc, time::Duration};
+use std::{marker::PhantomData, panic, sync::Arc, time::Duration};
 
 use futures::stream::StreamExt;
 use tokio::{
@@ -19,10 +19,10 @@ use librad::{
 use link_async::{incoming::UnixListenerExt, Spawner};
 
 use super::{
-    announce::Announce,
+    announce,
     io::{self, SocketTransportError, Transport},
     messages,
-    request_pull::RequestPull,
+    request_pull,
 };
 
 pub fn tasks<S, G>(
@@ -70,7 +70,8 @@ async fn rpc<S, G>(
     let mut running_handlers = FuturesUnordered::new();
     let mut transport: io::SocketTransport = stream.into();
     // TODO: What should the buffer size be here?
-    let (resp_sx, mut resp_rx) = channel(10);
+    let (sx, mut rx) = channel(10);
+
     loop {
         let next = if running_handlers.len() < MAX_IN_FLIGHT_REQUESTS {
             transport.recv_request()
@@ -82,18 +83,24 @@ async fn rpc<S, G>(
             next = next.fuse() => {
                 match next {
                     Ok(Some(next)) => {
-                        let listener = match next.mode {
-                            messages::RequestMode::ReportProgress => Listener::progress_and_result(resp_sx.clone()),
-                            messages::RequestMode::FireAndForget => Listener::ackonly(resp_sx.clone()),
+                        let handler = {
+                            let peer = peer.clone();
+                            spawner.spawn(match next.payload {
+                                messages::RequestPayload::Announce(p) => {
+                                    let mut listener =
+                                        Listener::announce(next.mode, sx.clone());
+                                    tracing::info!(?p, "dispatching request");
+                                    listener.ack().await;
+                                    listener.handle(peer, announce_wait_time, p).boxed()
+                                },
+                                messages::RequestPayload::RequestPull(p) => {
+                                    let mut listener = Listener::request_pull(next.mode, sx.clone());
+                                    tracing::info!(?p, "dispatching request");
+                                    listener.ack().await;
+                                    listener.handle(peer, p).boxed()
+                                }
+                            })
                         };
-                        let handler = spawner.spawn(
-                            dispatch_request(
-                                listener,
-                                peer.clone(),
-                                announce_wait_time,
-                                next.payload,
-                            )
-                        );
                         running_handlers.push(handler);
                     },
                     Ok(None) => {
@@ -118,8 +125,8 @@ async fn rpc<S, G>(
                     handle_task_complete(task);
                 }
             },
-            response = resp_rx.recv().fuse() => {
-                match response {
+            resp = rx.recv().fuse() => {
+                match resp {
                     Some(response) => {
                         match transport.send_response(response).await {
                             Ok(()) => {},
@@ -154,28 +161,11 @@ fn handle_task_complete(task_result: Result<(), link_async::JoinError>) {
     }
 }
 
-struct Listener {
+struct Listener<P> {
     request_id: messages::RequestId,
-    send: Sender<messages::Response>,
+    send: Sender<messages::Response<messages::SomeSuccess>>,
     interest: ListenerInterest,
-}
-
-impl Listener {
-    fn ackonly(send: Sender<messages::Response>) -> Self {
-        Listener {
-            request_id: Default::default(),
-            interest: ListenerInterest::AckOnly,
-            send,
-        }
-    }
-
-    fn progress_and_result(send: Sender<messages::Response>) -> Self {
-        Listener {
-            request_id: Default::default(),
-            interest: ListenerInterest::ProgressAndResult,
-            send,
-        }
-    }
+    _marker: PhantomData<P>,
 }
 
 enum ListenerInterest {
@@ -183,7 +173,16 @@ enum ListenerInterest {
     ProgressAndResult,
 }
 
-impl Listener {
+impl From<messages::RequestMode> for ListenerInterest {
+    fn from(mode: messages::RequestMode) -> Self {
+        match mode {
+            messages::RequestMode::FireAndForget => Self::AckOnly,
+            messages::RequestMode::ReportProgress => Self::ProgressAndResult,
+        }
+    }
+}
+
+impl<P> Listener<P> {
     async fn ack(&mut self) {
         self.send(messages::ResponsePayload::Ack).await
     }
@@ -207,16 +206,16 @@ impl Listener {
         }
     }
 
-    async fn success(&mut self) {
+    async fn success(&mut self, payload: messages::SomeSuccess) {
         match self.interest {
             ListenerInterest::AckOnly => {},
             ListenerInterest::ProgressAndResult => {
-                self.send(messages::ResponsePayload::Success).await
+                self.send(messages::ResponsePayload::Success(payload)).await
             },
         }
     }
 
-    async fn send(&mut self, msg: messages::ResponsePayload) {
+    async fn send(&mut self, msg: messages::ResponsePayload<messages::SomeSuccess>) {
         let resp = messages::Response {
             request_id: self.request_id.clone(),
             payload: msg,
@@ -230,116 +229,111 @@ impl Listener {
     }
 }
 
-async fn dispatch_request<S, G>(
-    mut listener: Listener,
-    peer: Peer<S, G>,
-    announce_wait_time: Duration,
-    payload: messages::RequestPayload,
-) where
-    S: Signer + Clone,
-    G: RequestPullGuard,
-{
-    tracing::info!(?payload, "dispatching request");
-    listener.ack().await;
-    match payload {
-        messages::RequestPayload::Announce(announce) => {
-            handle_announce(listener, &peer, announce_wait_time, announce).await
-        },
-        messages::RequestPayload::RequestPull(request_pull) => {
-            handle_request_pull(listener, &peer, request_pull).await
-        },
+impl Listener<announce::Response> {
+    fn announce(
+        mode: messages::RequestMode,
+        send: Sender<messages::Response<messages::SomeSuccess>>,
+    ) -> Self {
+        Self {
+            request_id: Default::default(),
+            send,
+            interest: mode.into(),
+            _marker: PhantomData,
+        }
     }
-}
 
-#[tracing::instrument(skip(listener, peer))]
-async fn handle_announce<S, G>(
-    mut listener: Listener,
-    peer: &Peer<S, G>,
-    announce_wait_time: Duration,
-    announce: Announce,
-) where
-    S: Signer + Clone,
-    G: RequestPullGuard,
-{
-    tracing::info!(rev = ?announce.rev, urn = %announce.urn, "received announce request");
-    let gossip_announce = announce.into_gossip(peer.peer_id());
-    if peer.connected_peers().await.is_empty() {
-        tracing::debug!(wait_time=?announce_wait_time, "No connected peers, waiting a bit");
-        listener
-            .progress(format!(
+    #[tracing::instrument(skip(self, peer))]
+    async fn handle<S, G>(
+        mut self,
+        peer: Peer<S, G>,
+        announce_wait_time: Duration,
+        announce: announce::Request,
+    ) where
+        S: Signer + Clone,
+        G: RequestPullGuard,
+    {
+        tracing::info!(rev = ?announce.rev, urn = %announce.urn, "received announce request");
+        let gossip_announce = announce.into_gossip(peer.peer_id());
+        if peer.connected_peers().await.is_empty() {
+            tracing::debug!(wait_time=?announce_wait_time, "No connected peers, waiting a bit");
+            self.progress(format!(
                 "no connected peers, waiting {} seconds",
                 announce_wait_time.as_secs()
             ))
             .await;
-        link_async::sleep(announce_wait_time).await;
-    }
-    let num_connected = peer.connected_peers().await.len();
-    listener
-        .progress(format!("found {} peers", num_connected))
-        .await;
-    if peer.announce(gossip_announce).is_err() {
-        // This error can occur if there are no recievers in the running peer to handle
-        // the announcement message.
-        tracing::error!("failed to send message to announcement subroutine");
-        listener.error("unable to announce".to_string()).await;
-    } else {
-        listener.success().await;
+            link_async::sleep(announce_wait_time).await;
+        }
+        let num_connected = peer.connected_peers().await.len();
+        self.progress(format!("found {} peers", num_connected))
+            .await;
+        if peer.announce(gossip_announce).is_err() {
+            // This error can occur if there are no recievers in the running peer to handle
+            // the announcement message.
+            tracing::error!("failed to send message to announcement subroutine");
+            self.error("unable to announce".to_string()).await;
+        } else {
+            self.success(announce::Response.into()).await;
+        }
     }
 }
 
-#[tracing::instrument(skip(listener, peer))]
-async fn handle_request_pull<S, G>(
-    mut listener: Listener,
-    peer: &Peer<S, G>,
-    RequestPull {
-        urn,
-        peer: remote,
-        addrs,
-    }: RequestPull,
-) where
-    S: Signer + Clone,
-    G: RequestPullGuard,
-{
-    use librad::net::protocol::request_pull::{Error, Progress, Ref, Response, Success};
+impl Listener<request_pull::Response> {
+    fn request_pull(
+        mode: messages::RequestMode,
+        send: Sender<messages::Response<messages::SomeSuccess>>,
+    ) -> Self {
+        Self {
+            request_id: Default::default(),
+            send,
+            interest: mode.into(),
+            _marker: PhantomData,
+        }
+    }
 
-    tracing::info!(peer = %remote, urn = %urn, "received request-pull");
-    match peer.request_pull((remote, addrs), urn.clone()).await {
-        Ok(mut rp) => {
-            while let Some(resp) = rp.next().await {
-                match resp {
-                    Ok(Response::Progress(Progress { message })) => {
-                        listener.progress(message).await
-                    },
-                    Ok(Response::Success(Success { refs, pruned })) => {
-                        let mut message =
-                            format!("updated {} refs\nremoved {} refs", refs.len(), pruned.len());
-                        for Ref { name, oid } in refs {
-                            message.push_str(&format!("updated: {name}->{oid}"));
-                        }
-                        for name in pruned {
-                            message.push_str(&format!("removed: {name}"))
-                        }
-                        listener.progress(message).await;
-                        listener.success().await;
-                    },
-                    Ok(Response::Error(Error { message })) => {
-                        listener
-                            .error(format!("request-pull failed: {message}"))
-                            .await;
-                        break;
-                    },
-                    Err(err) => {
-                        listener.error(format!("request-pull failed: {err}")).await;
-                        break;
-                    },
+    #[tracing::instrument(skip(self, peer))]
+    async fn handle<S, G>(
+        mut self,
+        peer: Peer<S, G>,
+        request_pull::Request {
+            urn,
+            peer: remote,
+            addrs,
+        }: request_pull::Request,
+    ) where
+        S: Signer + Clone,
+        G: RequestPullGuard,
+    {
+        use librad::net::protocol::request_pull::{Error, Progress, Response};
+
+        tracing::info!(peer = %remote, urn = %urn, "received request-pull");
+        match peer.request_pull((remote, addrs), urn.clone()).await {
+            Ok(mut rp) => {
+                while let Some(resp) = rp.next().await {
+                    match resp {
+                        Ok(Response::Progress(Progress { message })) => {
+                            self.progress(message).await
+                        },
+                        Ok(Response::Success(success)) => {
+                            self.success(request_pull::Response::from(success).into())
+                                .await;
+                            break;
+                        },
+                        Ok(Response::Error(Error { message })) => {
+                            self.error(format!("request-pull failed: {message}")).await;
+                            break;
+                        },
+                        Err(err) => {
+                            self.error(format!("request-pull failed: {err}")).await;
+                            break;
+                        },
+                    }
                 }
-            }
-        },
-        Err(err) => {
-            tracing::error!(err = %err, "failed to request-pull");
-            listener
-                .error(format!("unable to request-pull to `{remote}` for `{urn}`",))
-                .await;
-        },
+            },
+            Err(err) => {
+                tracing::error!(err = %err, "failed to request-pull");
+                self.error(format!("unable to request-pull to `{remote}` for `{urn}`",))
+                    .await;
+            },
+        }
     }
 }

@@ -31,13 +31,13 @@
 
 use super::messages;
 
-pub(crate) mod request;
-pub(crate) use request::Request;
-pub(crate) mod response;
-pub(crate) use response::Response;
+pub mod request;
+pub use request::Request;
+pub mod response;
+pub use response::Response;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Message<Headers> {
+pub struct Message<Headers> {
     pub headers: Headers,
     pub payload: Option<Vec<u8>>,
 }

@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::convert::TryInto;
+use std::convert::TryInto as _;
 
 use async_compat::{Compat, CompatExt};
 use async_trait::async_trait;
@@ -179,7 +179,12 @@ pub trait Transport {
     /// # Cancellation
     ///
     /// This method may not be cancel safe
-    async fn send_response(&mut self, response: messages::Response) -> Result<(), Self::Error>;
+    async fn send_response<P>(
+        &mut self,
+        response: messages::Response<P>,
+    ) -> Result<(), Self::Error>
+    where
+        P: messages::SendPayload;
 
     /// Receive a message from the remote. A return value of `None` indicates
     /// that the connection has closed
@@ -187,7 +192,9 @@ pub trait Transport {
     /// # Cancellation
     ///
     /// This method must be cancel safe
-    async fn recv_response(&mut self) -> Result<Option<messages::Response>, Self::Error>;
+    async fn recv_response<P>(&mut self) -> Result<Option<messages::Response<P>>, Self::Error>
+    where
+        P: messages::RecvPayload;
 }
 
 pub struct SocketTransport {
@@ -214,16 +221,19 @@ pub enum SocketTransportError {
 }
 
 impl SocketTransport {
-    fn process_recv_response(
+    fn process_recv_response<R>(
         &mut self,
         msg_result: Result<Option<wire_types::Response>, Error>,
-    ) -> Result<Option<messages::Response>, SocketTransportError> {
+    ) -> Result<Option<messages::Response<R>>, SocketTransportError>
+    where
+        R: messages::RecvPayload,
+    {
         let wire_message: Option<wire_types::Response> = msg_result.map_err(|e| {
             tracing::error!(err=?e, "failed to decode wire type");
             SocketTransportError::DecodeFailed
         })?;
         if let Some(wire_message) = wire_message {
-            let message: messages::Response = wire_message.try_into().map_err(|e| {
+            let message = wire_message.try_into().map_err(|e| {
                 tracing::error!(err=?e, "failed to decode response from wire type");
                 SocketTransportError::DecodeFailed
             })?;
@@ -268,13 +278,19 @@ impl Transport for SocketTransport {
         self.process_recv_request(wire_message)
     }
 
-    async fn send_response(&mut self, response: messages::Response) -> Result<(), Self::Error> {
+    async fn send_response<P>(&mut self, response: messages::Response<P>) -> Result<(), Self::Error>
+    where
+        P: messages::SendPayload,
+    {
         let wire_message: wire_types::Response = response.into();
         self.writer.write_message(&wire_message).await?;
         Ok(())
     }
 
-    async fn recv_response(&mut self) -> Result<Option<messages::Response>, Self::Error> {
+    async fn recv_response<P>(&mut self) -> Result<Option<messages::Response<P>>, Self::Error>
+    where
+        P: messages::RecvPayload,
+    {
         let wire_message = self.reader.read_message().await;
         self.process_recv_response(wire_message)
     }

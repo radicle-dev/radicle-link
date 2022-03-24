@@ -5,14 +5,52 @@ use std::convert::TryFrom;
 
 use super::{messages, Error, Message, Progress};
 
-pub(crate) type Response = Message<Headers>;
+pub type Response = Message<Headers>;
 
-impl From<messages::Response> for Response {
-    fn from(r: messages::Response) -> Self {
+impl<P> TryFrom<Response> for messages::Response<P>
+where
+    P: messages::RecvPayload,
+{
+    type Error = DecodeError;
+
+    fn try_from(resp: Response) -> Result<Self, Self::Error> {
+        let payload = match resp.headers.kind {
+            Kind::Ack => messages::ResponsePayload::Ack,
+            Kind::Error => {
+                let payload_bytes = resp.payload.as_ref().ok_or(DecodeError::MissingPayload)?;
+                let Error(s) = minicbor::decode(payload_bytes)?;
+                messages::ResponsePayload::Error(s)
+            },
+            Kind::Progress => {
+                let payload_bytes = resp.payload.as_ref().ok_or(DecodeError::MissingPayload)?;
+                let Progress(s) = minicbor::decode(payload_bytes)?;
+                messages::ResponsePayload::Progress(s)
+            },
+            Kind::Success => {
+                let payload_bytes = resp.payload.as_ref().ok_or(DecodeError::MissingPayload)?;
+                let payload = minicbor::decode::<P>(payload_bytes)?;
+                messages::ResponsePayload::Success(payload)
+            },
+            Kind::Unknown(other) => return Err(DecodeError::UnknownResponseKind(other)),
+        };
+        Ok(messages::Response {
+            request_id: resp.headers.request_id,
+            payload,
+        })
+    }
+}
+
+impl<P> From<messages::Response<P>> for Response
+where
+    P: minicbor::Encode,
+{
+    fn from(r: messages::Response<P>) -> Self {
         let id = r.request_id;
         let (kind, payload) = match r.payload {
             messages::ResponsePayload::Ack => (Kind::Ack, None),
-            messages::ResponsePayload::Success => (Kind::Success, None),
+            messages::ResponsePayload::Success(payload) => {
+                (Kind::Success, Some(minicbor::to_vec(payload).unwrap()))
+            },
             messages::ResponsePayload::Progress(s) => {
                 (Kind::Progress, Some(minicbor::to_vec(Progress(s)).unwrap()))
             },
@@ -31,40 +69,13 @@ impl From<messages::Response> for Response {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum DecodeError {
+pub enum DecodeError {
     #[error(transparent)]
     BadPayloadEncoding(#[from] minicbor::decode::Error),
     #[error("missing payload")]
     MissingPayload,
     #[error("unknown response kind {0}")]
     UnknownResponseKind(u8),
-}
-
-impl TryFrom<Response> for messages::Response {
-    type Error = DecodeError;
-
-    fn try_from(value: Response) -> Result<Self, Self::Error> {
-        let id = value.headers.request_id;
-        let payload = match value.headers.kind {
-            Kind::Ack => messages::ResponsePayload::Ack,
-            Kind::Error => {
-                let payload_bytes = value.payload.ok_or(DecodeError::MissingPayload)?;
-                let Error(s) = minicbor::decode(&payload_bytes)?;
-                messages::ResponsePayload::Error(s)
-            },
-            Kind::Progress => {
-                let payload_bytes = value.payload.ok_or(DecodeError::MissingPayload)?;
-                let Progress(s) = minicbor::decode(&payload_bytes)?;
-                messages::ResponsePayload::Progress(s)
-            },
-            Kind::Success => messages::ResponsePayload::Success,
-            Kind::Unknown(other) => return Err(DecodeError::UnknownResponseKind(other)),
-        };
-        Ok(messages::Response {
-            request_id: id,
-            payload,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

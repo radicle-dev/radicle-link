@@ -12,13 +12,15 @@
 //!
 //! See the documentation of [`Command`] for more information.
 
+use std::{marker::PhantomData, net::SocketAddr};
+
 use git_ext::Oid;
 use radicle_git_ext as git_ext;
 use tokio::net::UnixStream;
 
-use librad::git::Urn;
+use librad::{git::Urn, PeerId};
 
-use super::{announce::Announce, io, messages};
+use super::{announce, io, messages, request_pull};
 
 pub struct Connection<T> {
     socket: T,
@@ -66,16 +68,17 @@ pub enum ExecuteError<T> {
     MissingAck,
 }
 
-pub struct Replies<T> {
+pub struct Replies<T, Response> {
     request_id: messages::RequestId,
     conn: Connection<T>,
+    _marker: PhantomData<Response>,
 }
 
-impl<T> Replies<T> {
+impl<T, R> Replies<T, R> {
     fn process_recv<E>(
         self,
-        msg: Option<messages::Response>,
-    ) -> Result<Reply<T>, (Connection<T>, ReplyError<E>)> {
+        msg: Option<messages::Response<R>>,
+    ) -> Result<Reply<T, R>, (Connection<T>, ReplyError<E>)> {
         match msg {
             None => Err((self.conn, ReplyError::MissingReply)),
             Some(msg) => {
@@ -90,20 +93,27 @@ impl<T> Replies<T> {
                         conn: self.conn,
                         msg: s,
                     }),
-                    messages::ResponsePayload::Success => Ok(Reply::Success { conn: self.conn }),
+                    messages::ResponsePayload::Success(payload) => Ok(Reply::Success {
+                        conn: self.conn,
+                        payload,
+                    }),
                 }
             },
         }
     }
 }
 
-impl<T: io::Transport> Replies<T> {
+impl<T, R> Replies<T, R>
+where
+    T: io::Transport,
+    R: messages::RecvPayload,
+{
     /// Asynchronously wait for a message from the server which we expect in
     /// response to a message. A value of `Ok(Reply<T>)` indicates that we
     /// received a message and you should match on the `Reply` to decide
     /// what to do next. A return value of `(Connection, ReplyError)` indicates
     /// that there was some kind of transport error.
-    pub async fn next(mut self) -> Result<Reply<T>, (Connection<T>, ReplyError<T::Error>)> {
+    pub async fn next(mut self) -> Result<Reply<T, R>, (Connection<T>, ReplyError<T::Error>)> {
         match self.conn.socket.recv_response().await {
             Err(e) => Err((self.conn, ReplyError::Transport(e))),
             Ok(msg) => self.process_recv(msg),
@@ -112,19 +122,32 @@ impl<T: io::Transport> Replies<T> {
 }
 
 /// State of an in progress request which we expect to return a response
-pub enum Reply<T> {
+pub enum Reply<T, Response> {
     /// The server returned a "progress" message
-    Progress { replies: Replies<T>, msg: String },
+    Progress {
+        replies: Replies<T, Response>,
+        msg: String,
+    },
     /// The server indicated an error, no further messages will be sent
     Error { conn: Connection<T>, msg: String },
     /// The server indiciated that the call was successful, no further messages
     /// will be sent
-    Success { conn: Connection<T> },
+    Success {
+        conn: Connection<T>,
+        payload: Response,
+    },
 }
 
-pub struct Command(commands::Command);
+pub struct Command<Request, Response> {
+    payload: Request,
+    _marker: PhantomData<Response>,
+}
 
-impl Command {
+impl<Rq, Rs> Command<Rq, Rs>
+where
+    Rq: Into<messages::RequestPayload>,
+    Rs: messages::RecvPayload,
+{
     /// Asynchronously execute this command and set the request mode to "fire
     /// and forget". This means that the server will not send a response so
     /// you do not need to block and read the response.
@@ -137,16 +160,14 @@ impl Command {
     where
         T: io::Transport,
     {
-        let req = self
-            .0
-            .request(&conn.user_agent, messages::RequestMode::FireAndForget);
+        let req = self.request(&conn.user_agent, messages::RequestMode::FireAndForget);
         conn.socket
             .send_request(req)
             .await
             .map_err(ExecuteError::Transport)?;
         match conn
             .socket
-            .recv_response()
+            .recv_response::<Rs>()
             .await
             .map_err(ExecuteError::Transport)?
         {
@@ -194,57 +215,61 @@ impl Command {
     pub async fn execute_with_reply<T>(
         self,
         mut conn: Connection<T>,
-    ) -> Result<Replies<T>, ReplyError<T::Error>>
+    ) -> Result<Replies<T, Rs>, ReplyError<T::Error>>
     where
         T: io::Transport,
     {
-        let req = self
-            .0
-            .request(&conn.user_agent, messages::RequestMode::ReportProgress);
+        let req = Self::request(
+            self,
+            &conn.user_agent,
+            messages::RequestMode::ReportProgress,
+        );
         conn.socket
             .send_request(req)
             .await
             .map_err(ReplyError::Transport)?;
         match conn
             .socket
-            .recv_response()
+            .recv_response::<Rs>()
             .await
             .map_err(ReplyError::Transport)?
         {
             Some(resp) if matches!(resp.payload, messages::ResponsePayload::Ack) => Ok(Replies {
                 conn,
                 request_id: resp.request_id,
+                _marker: PhantomData,
             }),
             _ => Err(ReplyError::MissingAck),
         }
     }
 
-    /// Create a command which announces the given urn at a particular revision
-    pub fn announce(urn: Urn, revision: Oid) -> Command {
-        Command(commands::Command::Announce(Announce { rev: revision, urn }))
+    fn request(
+        self,
+        user_agent: &messages::UserAgent,
+        mode: messages::RequestMode,
+    ) -> messages::Request {
+        messages::Request {
+            user_agent: user_agent.clone(),
+            mode,
+            payload: self.payload.into(),
+        }
     }
 }
 
-mod commands {
-    use super::*;
-
-    pub(super) enum Command {
-        Announce(Announce),
+impl Command<announce::Request, announce::Response> {
+    pub fn announce(urn: Urn, rev: Oid) -> Self {
+        Self {
+            payload: announce::Request { urn, rev },
+            _marker: PhantomData,
+        }
     }
+}
 
-    impl Command {
-        pub(super) fn request(
-            self,
-            user_agent: &messages::UserAgent,
-            mode: messages::RequestMode,
-        ) -> messages::Request {
-            match self {
-                Self::Announce(announce) => messages::Request {
-                    user_agent: user_agent.clone(),
-                    mode,
-                    payload: announce.into(),
-                },
-            }
+impl Command<request_pull::Request, request_pull::Response> {
+    pub fn request_pull(urn: Urn, peer: PeerId, addrs: Vec<SocketAddr>) -> Self {
+        Self {
+            payload: request_pull::Request { urn, peer, addrs },
+            _marker: PhantomData,
         }
     }
 }
