@@ -19,6 +19,7 @@ pub mod announce;
 pub mod client;
 pub mod io;
 pub mod messages;
+pub mod request_pull;
 mod rpc;
 pub mod sockets;
 pub mod wire_types;

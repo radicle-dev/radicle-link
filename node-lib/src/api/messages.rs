@@ -5,7 +5,7 @@
 
 use rand::Rng;
 
-use super::{announce::Announce};
+use super::{announce::Announce, request_pull::RequestPull};
 
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, minicbor::Decode, minicbor::Encode,
@@ -77,11 +77,18 @@ pub struct Request {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RequestPayload {
     Announce(Announce),
+    RequestPull(RequestPull),
 }
 
 impl From<Announce> for RequestPayload {
     fn from(a: Announce) -> Self {
         Self::Announce(a)
+    }
+}
+
+impl From<RequestPull> for RequestPayload {
+    fn from(rp: RequestPull) -> Self {
+        Self::RequestPull(rp)
     }
 }
 

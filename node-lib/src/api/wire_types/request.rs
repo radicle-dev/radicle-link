@@ -88,9 +88,13 @@ impl TryFrom<Request> for messages::Request {
     }
 }
 
+// TODO: Introduce get-connected-peers, get-membership-info, and get-stats -- 2,
+// 3, and 4 respectively.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
+    // CBOR encode and decode maps to 1
     Announce,
+    // CBOR encode and decode maps to 5
     RequestPull,
     Unknown(u8),
 }
@@ -113,7 +117,7 @@ impl minicbor::Encode for Kind {
     ) -> Result<(), minicbor::encode::Error<W::Error>> {
         let val = match self {
             Self::Announce => 1,
-            Self::RequestPull => 2,
+            Self::RequestPull => 5,
             Self::Unknown(other) => *other,
         };
         e.u8(val)?;
@@ -125,7 +129,7 @@ impl<'b> minicbor::Decode<'b> for Kind {
     fn decode(d: &mut minicbor::Decoder<'b>) -> Result<Self, minicbor::decode::Error> {
         Ok(match d.u8()? {
             1 => Self::Announce,
-            2 => Self::RequestPull,
+            5 => Self::RequestPull,
             other => Self::Unknown(other),
         })
     }
