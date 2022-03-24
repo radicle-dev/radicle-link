@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use node_lib::node::run;
+use linkd_lib::node::run;
 
 #[tokio::main]
 async fn main() {

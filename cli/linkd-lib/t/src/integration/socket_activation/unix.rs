@@ -12,7 +12,7 @@ fn construct_listener_from_env() -> Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.arg("run")
         .arg("-p")
-        .arg("node-lib-test")
+        .arg("linkd-lib-test")
         .arg("--example")
         .arg("socket_activation_wrapper");
     let mut cmd = assert_cmd::cmd::Command::from_std(cmd);

@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use node_lib::api::{io, io::Transport as _};
+use linkd_lib::api::{io, io::Transport as _};
 use proptest::{array::uniform3, prelude::*};
 
 use crate::gen::{request, response};

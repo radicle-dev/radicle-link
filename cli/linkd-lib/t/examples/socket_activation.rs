@@ -7,7 +7,7 @@ use std::process::exit;
 
 use anyhow::Result;
 
-use node_lib::api::sockets::socket_activation;
+use linkd_lib::api::sockets::socket_activation;
 
 #[tokio::main]
 async fn main() -> Result<()> {

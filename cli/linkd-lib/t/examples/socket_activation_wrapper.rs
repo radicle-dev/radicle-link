@@ -14,7 +14,7 @@ fn main() -> Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.arg("run")
         .arg("-p")
-        .arg("node-lib-test")
+        .arg("linkd-lib-test")
         .arg("--example")
         .arg("socket_activation");
     cmd.env("LISTEN_FDS", "2");

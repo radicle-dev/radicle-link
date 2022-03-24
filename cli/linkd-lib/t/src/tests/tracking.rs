@@ -1,7 +1,7 @@
 // Copyright © 2022 The Radicle Link Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use node_lib::tracking::{Pair, Selected};
+use linkd_lib::tracking::{Pair, Selected};
 
 #[test]
 pub fn selected_dedups() {

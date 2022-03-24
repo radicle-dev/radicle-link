@@ -1,5 +1,5 @@
 [package]
-name    = "node-lib"
+name    = "linkd-lib"
 version = "0.1.0"
 edition = "2018"
 license = "GPL-3.0-or-later"
@@ -34,18 +34,18 @@ version = "3"
 features = [ "derive", "env" ]
 
 [dependencies.librad]
-path    = "../librad"
+path    = "../../librad"
 version = "0.1.0"
 
 [dependencies.link-async]
-path = "../link-async"
+path = "../../link-async"
 
 [dependencies.minicbor]
 version = "0.13"
 features = ["std", "derive"]
 
 [dependencies.lnk-clib]
-path    = "../cli/lnk-clib"
+path    = "../lnk-clib"
 version = "0.1.0"
 
 [dependencies.lnk-thrussh-agent]
@@ -53,14 +53,14 @@ version  = "0.1.0"
 features = [ "tokio-agent" ]
 
 [dependencies.radicle-macros]
-path = "../macros"
+path = "../../macros"
 
 [dependencies.tracing-subscriber]
 version = "0.3.0"
 features = ["std", "env-filter", "fmt", "json"]
 
 [dependencies.radicle-git-ext]
-path = "../git-ext"
+path = "../../git-ext"
 
 [dependencies.git2]
 version = "0.13.24"

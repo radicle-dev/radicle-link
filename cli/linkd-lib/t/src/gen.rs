@@ -4,7 +4,7 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use link_identities_test::gen::urn::{gen_oid, gen_urn};
-use node_lib::api::messages;
+use linkd_lib::api::messages;
 use proptest::prelude::*;
 
 pub fn user_agent() -> impl Strategy<Value = messages::UserAgent> {

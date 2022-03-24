@@ -162,7 +162,7 @@ impl Command {
     ///
     /// ```no_run
     /// # async fn dothings() {
-    /// use node_lib::api::{io::SocketTransport, client::{Connection, Command, Reply}};
+    /// use linkd_lib::api::{io::SocketTransport, client::{Connection, Command, Reply}};
     ///
     /// let conn: Connection<SocketTransport> = Connection::connect("some user agent".to_string(), "<somepath>").await.unwrap();
     /// let command: Command = panic!("somehow create a command");

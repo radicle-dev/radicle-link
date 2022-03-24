@@ -17,7 +17,7 @@ members = [
   "link-replication",
   "link-tracking",
   "macros",
-  "node-lib",
+  "cli/linkd-lib",
   "cli/lnk-clib",
   "cli/lnk-exe",
   "cli/lnk-identities",

@@ -17,7 +17,7 @@ use librad::{
     profile::{LnkHome, ProfileId},
 };
 
-use node_lib::{
+use linkd_lib::{
     args::{
         self,
         Args,

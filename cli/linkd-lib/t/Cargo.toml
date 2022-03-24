@@ -1,5 +1,5 @@
 [package]
-name = "node-lib-test"
+name = "linkd-lib-test"
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
@@ -32,19 +32,19 @@ version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 
-[dependencies.node-lib]
+[dependencies.linkd-lib]
 path = ".."
 
 [dependencies.link-crypto-test]
-path = "../../link-crypto/t"
+path = "../../../link-crypto/t"
 features = ["test"]
 
 [dependencies.link-identities-test]
-path = "../../link-identities/t"
+path = "../../../link-identities/t"
 features = ["test"]
 
 [dependencies.test-helpers]
-path = "../../test/test-helpers"
+path = "../../../test/test-helpers"
 
 [dev-dependencies]
 anyhow = "1"
@@ -61,4 +61,4 @@ version = "1.13"
 features = ["rt-multi-thread"]
 
 [dev-dependencies.librad]
-path = "../../librad"
+path = "../../../librad"
