@@ -3,13 +3,16 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
+use std::net::SocketAddr;
+
 use link_crypto_test::gen::gen_peer_id;
 use link_identities_test::gen::urn::{gen_oid, gen_urn};
 use node_lib::{
-    api::{announce, messages},
+    api::{announce, messages, request_pull},
     Seed,
 };
-use proptest::prelude::*;
+use proptest::{collection, prelude::*};
+use test_helpers::std_net::gen_socket_addr;
 
 pub fn user_agent() -> impl Strategy<Value = messages::UserAgent> {
     any::<String>().prop_map(|s| s.into())
@@ -27,20 +30,27 @@ pub fn request_mode() -> impl Strategy<Value = messages::RequestMode> {
 }
 
 pub fn announce() -> impl Strategy<Value = announce::Announce> {
-    gen_oid(git2::ObjectType::Commit).prop_flat_map(move |rev| {
-        gen_urn().prop_map(move |urn| announce::Announce {
+    gen_oid(git2::ObjectType::Commit)
+        .prop_flat_map(move |rev| gen_urn().prop_map(move |urn| announce::Announce { urn, rev }))
+}
+
+pub fn request_pull(addrs: Vec<SocketAddr>) -> impl Strategy<Value = request_pull::RequestPull> {
+    gen_peer_id().prop_flat_map(move |peer| {
+        (gen_urn(), Just(addrs.clone())).prop_map(move |(urn, addrs)| request_pull::RequestPull {
             urn,
-            rev: rev.into(),
+            peer,
+            addrs,
         })
     })
 }
 
-prop_compose! {
-    pub fn request_payload()
-        (announce in announce())
-        -> messages::RequestPayload {
-        announce.into()
-    }
+pub fn request_payload() -> impl Strategy<Value = messages::RequestPayload> {
+    prop_oneof![
+        announce().prop_map(messages::RequestPayload::from),
+        collection::vec(gen_socket_addr(), 1..3)
+            .prop_flat_map(move |addrs| request_pull(addrs))
+            .prop_map(messages::RequestPayload::from)
+    ]
 }
 
 prop_compose! {
