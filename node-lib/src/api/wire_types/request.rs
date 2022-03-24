@@ -3,7 +3,7 @@
 
 use std::convert::{TryFrom, TryInto as _};
 
-use super::{messages, Message, UserAgent};
+use super::{messages, Message};
 
 pub(crate) type Request = Message<Headers>;
 
@@ -47,7 +47,7 @@ impl From<messages::Request> for Request {
         };
         Request {
             headers: Headers {
-                user_agent: r.user_agent.into(),
+                user_agent: r.user_agent,
                 kind,
                 mode: r.mode.into(),
             },
@@ -82,7 +82,7 @@ impl TryFrom<Request> for messages::Request {
         };
         Ok(messages::Request {
             mode: value.headers.mode.try_into()?,
-            user_agent: value.headers.user_agent.into(),
+            user_agent: value.headers.user_agent,
             payload,
         })
     }
@@ -99,7 +99,7 @@ pub enum Kind {
 #[cbor(map)]
 pub struct Headers {
     #[n(0)]
-    pub(crate) user_agent: UserAgent,
+    pub(crate) user_agent: messages::UserAgent,
     #[n(1)]
     pub(crate) kind: Kind,
     #[n(2)]

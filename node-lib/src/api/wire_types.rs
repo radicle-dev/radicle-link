@@ -42,60 +42,6 @@ pub(crate) struct Message<Headers> {
     pub payload: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Debug, minicbor::Decode, minicbor::Encode, PartialEq)]
-#[cbor(transparent)]
-pub struct UserAgent(#[n(0)] String);
-
-impl From<messages::UserAgent> for UserAgent {
-    fn from(ua: messages::UserAgent) -> Self {
-        let s: &str = (&ua).into();
-        UserAgent(s.to_string())
-    }
-}
-
-impl From<UserAgent> for messages::UserAgent {
-    fn from(s: UserAgent) -> Self {
-        s.0.into()
-    }
-}
-
-impl From<&str> for UserAgent {
-    fn from(s: &str) -> Self {
-        Self(s.to_string())
-    }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, minicbor::Decode, minicbor::Encode,
-)]
-#[cbor(transparent)]
-pub struct RequestId(#[n(0)] minicbor::bytes::ByteVec);
-
-impl From<messages::RequestId> for RequestId {
-    fn from(r: messages::RequestId) -> Self {
-        Self(Vec::<u8>::from(r).into())
-    }
-}
-
-impl From<RequestId> for messages::RequestId {
-    fn from(r: RequestId) -> Self {
-        let raw: Vec<u8> = r.0.into();
-        raw.into()
-    }
-}
-
-impl AsRef<[u8]> for RequestId {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl From<Vec<u8>> for RequestId {
-    fn from(bytes: Vec<u8>) -> Self {
-        Self(bytes.into())
-    }
-}
-
 #[derive(Debug, Clone, minicbor::Encode, minicbor::Decode, PartialEq)]
 #[cbor(transparent)]
 pub struct Progress(#[n(0)] String);

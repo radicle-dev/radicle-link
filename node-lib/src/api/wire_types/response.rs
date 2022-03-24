@@ -3,13 +3,13 @@
 
 use std::convert::TryFrom;
 
-use super::{messages, Error, Message, Progress, RequestId};
+use super::{messages, Error, Message, Progress};
 
 pub(crate) type Response = Message<Headers>;
 
 impl From<messages::Response> for Response {
     fn from(r: messages::Response) -> Self {
-        let id = r.request_id.into();
+        let id = r.request_id;
         let (kind, payload) = match r.payload {
             messages::ResponsePayload::Ack => (Kind::Ack, None),
             messages::ResponsePayload::Success => (Kind::Success, None),
@@ -44,7 +44,7 @@ impl TryFrom<Response> for messages::Response {
     type Error = DecodeError;
 
     fn try_from(value: Response) -> Result<Self, Self::Error> {
-        let id = value.headers.request_id.into();
+        let id = value.headers.request_id;
         let payload = match value.headers.kind {
             Kind::Ack => messages::ResponsePayload::Ack,
             Kind::Error => {
@@ -80,7 +80,7 @@ pub enum Kind {
 #[cbor(map)]
 pub struct Headers {
     #[n(0)]
-    pub request_id: RequestId,
+    pub request_id: messages::RequestId,
     #[n(1)]
     pub kind: Kind,
 }

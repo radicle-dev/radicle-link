@@ -7,11 +7,58 @@ use rand::Rng;
 
 use super::{announce::Announce, request_pull::RequestPull};
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct RequestId(Vec<u8>);
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, minicbor::Decode, minicbor::Encode,
+)]
+pub struct RequestId(#[cbor(n(0), with = "minicbor::bytes")] Vec<u8>);
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct UserAgent(String);
+impl From<RequestId> for Vec<u8> {
+    fn from(r: RequestId) -> Self {
+        r.0
+    }
+}
+
+impl From<Vec<u8>> for RequestId {
+    fn from(raw: Vec<u8>) -> Self {
+        Self(raw)
+    }
+}
+
+impl AsRef<[u8]> for RequestId {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl Default for RequestId {
+    fn default() -> Self {
+        let mut rng = rand::thread_rng();
+        let bytes: [u8; 16] = rng.gen();
+        RequestId(bytes.to_vec())
+    }
+}
+
+#[derive(Clone, Debug, minicbor::Decode, minicbor::Encode, PartialEq)]
+#[cbor(transparent)]
+pub struct UserAgent(#[n(0)] String);
+
+impl From<String> for UserAgent {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for UserAgent {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl<'a> From<&'a UserAgent> for &'a str {
+    fn from(ua: &'a UserAgent) -> &'a str {
+        &ua.0
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RequestMode {
@@ -56,36 +103,4 @@ pub enum ResponsePayload {
     Progress(String),
     Error(String),
     Success,
-}
-
-impl From<RequestId> for Vec<u8> {
-    fn from(r: RequestId) -> Self {
-        r.0
-    }
-}
-
-impl From<Vec<u8>> for RequestId {
-    fn from(raw: Vec<u8>) -> Self {
-        Self(raw)
-    }
-}
-
-impl From<String> for UserAgent {
-    fn from(s: String) -> Self {
-        Self(s)
-    }
-}
-
-impl<'a> From<&'a UserAgent> for &'a str {
-    fn from(ua: &'a UserAgent) -> &'a str {
-        &ua.0
-    }
-}
-
-impl Default for RequestId {
-    fn default() -> Self {
-        let mut rng = rand::thread_rng();
-        let bytes: [u8; 16] = rng.gen();
-        RequestId(bytes.to_vec())
-    }
 }
