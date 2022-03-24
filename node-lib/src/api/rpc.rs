@@ -22,6 +22,7 @@ use super::{
     announce::Announce,
     io::{self, SocketTransportError, Transport},
     messages,
+    request_pull::RequestPull,
 };
 
 pub fn tasks<S, G>(
@@ -244,6 +245,9 @@ async fn dispatch_request<S, G>(
         messages::RequestPayload::Announce(announce) => {
             handle_announce(listener, &peer, announce_wait_time, announce).await
         },
+        messages::RequestPayload::RequestPull(request_pull) => {
+            handle_request_pull(listener, &peer, request_pull).await
+        },
     }
 }
 
@@ -283,3 +287,59 @@ async fn handle_announce<S, G>(
     }
 }
 
+#[tracing::instrument(skip(listener, peer))]
+async fn handle_request_pull<S, G>(
+    mut listener: Listener,
+    peer: &Peer<S, G>,
+    RequestPull {
+        urn,
+        peer: remote,
+        addrs,
+    }: RequestPull,
+) where
+    S: Signer + Clone,
+    G: RequestPullGuard,
+{
+    use librad::net::protocol::request_pull::{Error, Progress, Ref, Response, Success};
+
+    tracing::info!(peer = %remote, urn = %urn, "received request-pull");
+    match peer.request_pull((remote, addrs), urn.clone()).await {
+        Ok(mut rp) => {
+            while let Some(resp) = rp.next().await {
+                match resp {
+                    Ok(Response::Progress(Progress { message })) => {
+                        listener.progress(message).await
+                    },
+                    Ok(Response::Success(Success { refs, pruned })) => {
+                        let mut message =
+                            format!("updated {} refs\nremoved {} refs", refs.len(), pruned.len());
+                        for Ref { name, oid } in refs {
+                            message.push_str(&format!("updated: {name}->{oid}"));
+                        }
+                        for name in pruned {
+                            message.push_str(&format!("removed: {name}"))
+                        }
+                        listener.progress(message).await;
+                        listener.success().await;
+                    },
+                    Ok(Response::Error(Error { message })) => {
+                        listener
+                            .error(format!("request-pull failed: {message}"))
+                            .await;
+                        break;
+                    },
+                    Err(err) => {
+                        listener.error(format!("request-pull failed: {err}")).await;
+                        break;
+                    },
+                }
+            }
+        },
+        Err(err) => {
+            tracing::error!(err = %err, "failed to request-pull");
+            listener
+                .error(format!("unable to request-pull to `{remote}` for `{urn}`",))
+                .await;
+        },
+    }
+}
