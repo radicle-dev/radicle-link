@@ -3,4 +3,5 @@
 
 pub mod logging;
 pub mod roundtrip;
+pub mod std_net;
 pub mod tempdir;
