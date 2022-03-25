@@ -3,10 +3,9 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use librad::net::protocol::request_pull;
 use rand::Rng;
 
-use super::{announce::Announce, request_pull::RequestPull, wire_types};
+use super::{announce, request_pull};
 
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, minicbor::Decode, minicbor::Encode,
@@ -76,45 +75,68 @@ pub struct Request {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RequestPayload {
-    Announce(Announce),
-    RequestPull(RequestPull),
+    Announce(announce::Request),
+    RequestPull(request_pull::Request),
 }
 
-impl From<Announce> for RequestPayload {
-    fn from(a: Announce) -> Self {
-        Self::Announce(a)
+impl From<announce::Request> for RequestPayload {
+    fn from(x: announce::Request) -> Self {
+        Self::Announce(x)
     }
 }
 
-impl From<RequestPull> for RequestPayload {
-    fn from(rp: RequestPull) -> Self {
-        Self::RequestPull(rp)
+impl From<request_pull::Request> for RequestPayload {
+    fn from(x: request_pull::Request) -> Self {
+        Self::RequestPull(x)
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Response {
+pub struct Response<P> {
     pub request_id: RequestId,
-    pub payload: ResponsePayload,
+    pub payload: ResponsePayload<P>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ResponsePayload {
+pub enum ResponsePayload<P> {
     Ack,
     Progress(String),
     Error(String),
-    Success(Option<SuccessPayload>),
+    Success(P),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum SuccessPayload {
-    RequestPull(request_pull::Success),
+pub enum SomeSuccess {
+    Announce(announce::Response),
+    RequestPull(request_pull::Response),
 }
 
-impl minicbor::Encode for SuccessPayload {
-    fn encode<W: minicbor::encode::Write>(&self, e: &mut minicbor::Encoder<W>) -> Result<(), minicbor::encode::Error<W::Error>> {
+impl From<announce::Response> for SomeSuccess {
+    fn from(x: announce::Response) -> Self {
+        Self::Announce(x)
+    }
+}
+
+impl From<request_pull::Response> for SomeSuccess {
+    fn from(x: request_pull::Response) -> Self {
+        Self::RequestPull(x)
+    }
+}
+
+impl minicbor::Encode for SomeSuccess {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut minicbor::Encoder<W>,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
         match self {
-            Self::RequestPull(p) => p.encode(e),
+            SomeSuccess::Announce(x) => e.encode(x)?.ok(),
+            SomeSuccess::RequestPull(x) => e.encode(x)?.ok(),
         }
     }
 }
+
+pub trait RecvPayload: for<'b> minicbor::Decode<'b> + Send + Sync + 'static {}
+impl<T> RecvPayload for T where for<'b> T: minicbor::Decode<'b> + Send + Sync + 'static {}
+
+pub trait SendPayload: minicbor::Encode + Send + Sync + 'static {}
+impl<T> SendPayload for T where T: minicbor::Encode + Send + Sync + 'static {}
