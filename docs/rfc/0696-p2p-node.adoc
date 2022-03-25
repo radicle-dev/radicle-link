@@ -1,5 +1,5 @@
 = RFC: Peer-to-peer Node
-:author: @xla
+:author: @xla, // TODO add Alex and Fintan
 :revdate: 2021-09-02
 :revremark: accepted
 :toc:
@@ -95,6 +95,10 @@ online, this subroutine will maintain a persisted view and periodically
 (potentially provoked by a request over the <<API>>) build the delta for new
 tracked `Urn`s and remotes in their context.
 
+==== Request-Pull
+
+TODO
+
 ==== Tracking
 
 Given the ability to configure a set of urn, peers, both or anything observed
@@ -156,10 +160,8 @@ response-headers = [
     kind: response-kind
 ]
 request-kind = &(
-    announce: 1, 
-    get-connected-peers: 2,
-    get-membership-info: 3,
-    get-stats: 4,
+    announce: 1,
+    request-pull: 2,
 )
 request-mode = &(
     fire-and-forget: 1,
@@ -173,10 +175,10 @@ response-kind = &(
 )
 ; Unambiguous, human-readable string identifying the client application. Mainly
 ; for diagnostic purposes. Example: "radicle-link-cli/v1.2+deaf"
-client-id: tstr .size (4..16)
+client-id: tstr
 ; Request identifier, chosen by the server.  Note that streaming /
 ; multi-valued responses may include the same id in several response messages.
-request-id: bstr .size (4..16)
+request-id: [0, bstr]
 ; Placeholder for future one-time-token support.
 token: bstr
 
