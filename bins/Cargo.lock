@@ -2059,8 +2059,40 @@ dependencies = [
 name = "linkd"
 version = "0.1.0"
 dependencies = [
- "node-lib",
+ "linkd-lib",
  "tokio",
+]
+
+[[package]]
+name = "linkd-lib"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-compat",
+ "async-trait",
+ "base64",
+ "bytes 0.5.6",
+ "clap",
+ "env_logger",
+ "futures",
+ "git2",
+ "lazy_static",
+ "librad",
+ "link-async",
+ "lnk-clib",
+ "lnk-thrussh-agent",
+ "log",
+ "minicbor",
+ "nix",
+ "num_cpus",
+ "radicle-git-ext",
+ "radicle-macros",
+ "rand",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2076,9 +2108,11 @@ name = "lnk-clib"
 version = "0.1.0"
 dependencies = [
  "futures-lite",
+ "itertools 0.10.3",
  "librad",
  "lnk-thrussh-agent",
  "minicbor",
+ "nix",
  "once_cell",
  "serde",
  "serde_json",
@@ -2442,38 +2476,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b93853da6d84c2e3c7d730d6473e8817692dd89be387eb01b94d7f108ecb5b8c"
 dependencies = [
  "hashbrown 0.8.2",
-]
-
-[[package]]
-name = "node-lib"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-compat",
- "async-trait",
- "base64",
- "bytes 0.5.6",
- "clap",
- "env_logger",
- "futures",
- "git2",
- "lazy_static",
- "librad",
- "link-async",
- "lnk-clib",
- "lnk-thrussh-agent",
- "log",
- "minicbor",
- "nix",
- "num_cpus",
- "radicle-git-ext",
- "radicle-macros",
- "rand",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

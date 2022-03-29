@@ -19,6 +19,6 @@ version = "1.13.1"
 default-features = false
 features = [ "macros", "process", "rt-multi-thread" ]
 
-[dependencies.node-lib]
-path    = "../../node-lib"
+[dependencies.linkd-lib]
+path    = "../../cli/linkd-lib"
 version = "0.1.0"

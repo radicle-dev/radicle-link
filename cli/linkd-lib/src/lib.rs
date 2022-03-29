@@ -3,6 +3,15 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-#[cfg(unix)]
-mod keys;
-mod seed;
+pub mod args;
+
+mod cfg;
+
+pub mod api;
+mod logging;
+mod metrics;
+pub mod node;
+mod protocol;
+pub mod request_pull;
+mod signals;
+pub mod tracking;

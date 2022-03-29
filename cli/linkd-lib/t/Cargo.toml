@@ -1,0 +1,67 @@
+[package]
+name = "linkd-lib-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[features]
+test = []
+
+[dependencies]
+proptest = "1"
+minicbor = "0.13"
+
+[dependencies.clap]
+version = "3"
+features = [ "derive" ]
+
+[dependencies.git2]
+version = "0.13.24"
+default-features = false
+features = ["vendored-libgit2"]
+
+[dependencies.linkd-lib]
+path = ".."
+
+[dependencies.librad-test]
+path = "../../../librad/t"
+features = ["test"]
+
+[dependencies.link-crypto-test]
+path = "../../../link-crypto/t"
+features = ["test"]
+
+[dependencies.link-identities-test]
+path = "../../../link-identities/t"
+features = ["test"]
+
+[dependencies.lnk-clib]
+path = "../../lnk-clib"
+
+[dependencies.test-helpers]
+path = "../../../test/test-helpers"
+
+[dev-dependencies]
+anyhow = "1"
+assert_cmd = "2"
+assert_matches = "1.5"
+futures = "0.3"
+nix = "0"
+pretty_assertions = "1.1"
+structopt = "0.3"
+tempfile = "3.3"
+
+[dev-dependencies.tokio]
+version = "1.13"
+features = ["rt-multi-thread"]
+
+[dev-dependencies.librad]
+path = "../../../librad"
+

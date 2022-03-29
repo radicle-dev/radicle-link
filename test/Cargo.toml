@@ -72,6 +72,6 @@ path = "../cli/lnk-clib/t"
 [dev-dependencies.lnk-identities-test]
 path = "../cli/lnk-identities/t"
 
-[dev-dependencies.node-lib-test]
-path = "../node-lib/t"
+[dev-dependencies.linkd-lib-test]
+path = "../cli/linkd-lib/t"
 features = ["test"]

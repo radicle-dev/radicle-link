@@ -3,11 +3,17 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use linkd_lib::node::run;
+use std::process::exit;
+
+use anyhow::Result;
+
+use lnk_clib::socket_activation;
 
 #[tokio::main]
-async fn main() {
-    if let Err(e) = run().await {
-        eprintln!("linkd failed: {:?}", e);
+async fn main() -> Result<()> {
+    if let Some(_listener) = socket_activation::env_sockets()? {
+        exit(0)
+    } else {
+        exit(1);
     }
 }
