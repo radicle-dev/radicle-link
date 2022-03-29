@@ -1,11 +1,11 @@
 = RFC: Peer-to-peer Node
-:author: @xla
+@xla; Alex Good <alex@memoryandthought.me>; Fintan Halpenny <fintan.halpenny@gmail.com>
 :revdate: 2021-09-02
 :revremark: accepted
 :toc:
 :toc-placement: preamble
 
-* Author: {author}
+* Author: {author_1, author_2, author_3}
 * Date: {revdate}
 * Status: {revremark}
 * Community discussion: n/a
@@ -95,6 +95,14 @@ online, this subroutine will maintain a persisted view and periodically
 (potentially provoked by a request over the <<API>>) build the delta for new
 tracked `Urn`s and remotes in their context.
 
+==== Request-Pull
+
+The protocol provides a mechanism for asking a fellow node to
+replicate from the requesting node, as per <<rfc-0702, RFC 702>>. The
+peer-to-peer node SHALL provide an RPC method for making such a
+request-pull request. Note that this SHALL only be implemented for as
+long as <<rfc-0702, RFC 702>> is **not deprecated**.
+
 ==== Tracking
 
 Given the ability to configure a set of urn, peers, both or anything observed
@@ -156,10 +164,11 @@ response-headers = [
     kind: response-kind
 ]
 request-kind = &(
-    announce: 1, 
+    announce: 1,
     get-connected-peers: 2,
     get-membership-info: 3,
     get-stats: 4,
+    request-pull: 5,
 )
 request-mode = &(
     fire-and-forget: 1,
@@ -173,10 +182,10 @@ response-kind = &(
 )
 ; Unambiguous, human-readable string identifying the client application. Mainly
 ; for diagnostic purposes. Example: "radicle-link-cli/v1.2+deaf"
-client-id: tstr .size (4..16)
-; Request identifier, chosen by the server.  Note that streaming /
+client-id: tstr
+; Request identifier, chosen by the server. Note that streaming /
 ; multi-valued responses may include the same id in several response messages.
-request-id: bstr .size (4..16)
+request-id: bstr
 ; Placeholder for future one-time-token support.
 token: bstr
 
@@ -204,7 +213,7 @@ processing of the request and MUST send a message with either a `success` or
 `error` response kind when the request is finished processing. Once a `success`
 or `error` response has been sent the server MUST NOT send any further messages
 with the same `request-id` header. The payload of the response messages will
-vary depending on the `request-kind`. 
+vary depending on the `request-kind`.
 
 Response messages for concurrent requests may be sent in any order.
 
@@ -250,6 +259,25 @@ payload = {
 }
 ----
 
+==== `request-pull`
+
+[source,cddl]
+----
+payload = [
+    updated_refs: [
+        * [
+            ref,
+            oid
+        ]
+    ],
+    pruned_refs: [ *[ref] ]
+    * tstr => any,
+]
+ref = tstr
+oid = bytes <1>
+----
+<1> The bytes of an OID
+
 == Operations
 
 === Supervision
@@ -269,7 +297,7 @@ UNIX domain sockets and the design focusing on a process per connection.
 
 ==== systemd
 
-Socket activation under systemd is passed on via: 
+Socket activation under systemd is passed on via:
 
 * `LISTEN_PID` - MUST be equal to the PID of the daemon.
 * `LISTEN_FDS` - Number of received file descriptors, starting at 3.
@@ -330,6 +358,7 @@ a native solution could look like.
 * [[[pr-653]]] https://github.com/radicle-dev/radicle-link/pull/653
 * [[[rk-17]]] https://github.com/radicle-dev/radicle-keystore/pull/17
 * [[[rfc-0682]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0682-application-architecture.adoc
+* [[[rfc-0702]]] https://github.com/radicle-dev/radicle-link/blob/master/docs/rfc/0702-request-pull.adoc
 * [[[RFC2219]]] https://datatracker.ietf.org/doc/html/rfc2119
 * [[[RFC8174]]] https://datatracker.ietf.org/doc/html/rfc8174
 * [[[RFC8610]]] https://datatracker.ietf.org/doc/html/rfc8610

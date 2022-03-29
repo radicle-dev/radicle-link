@@ -149,13 +149,11 @@ impl TinCans {
         {
             match e {
                 Downstream::RequestPull(event::downstream::RequestPull { reply, .. }) => {
-                    reply
+                    let reply = reply
                         .lock()
                         .take()
-                        .expect("if chan send failed, there can't be another contender")
-                        .send(Err(error::RequestPull::Unavailable))
-                        .await
-                        .ok();
+                        .expect("if chan send failed, there can't be another contender");
+                    reply.send(Err(error::RequestPull::Unavailable)).await.ok();
                 },
                 _ => unreachable!(),
             }

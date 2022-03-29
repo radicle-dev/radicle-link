@@ -131,7 +131,7 @@ where
             .try_fold(Success::default(), |mut success, up| match up {
                 Updated::Direct { name, target } => {
                     success.refs.push(Ref {
-                        name: name.into(),
+                        name: name.clone(),
                         oid: (*target).into(),
                     });
                     Ok(success)
@@ -139,13 +139,13 @@ where
                 Updated::Symbolic { name, target } => {
                     let oid = (*storage).reference_oid(target)?;
                     success.refs.push(Ref {
-                        name: name.into(),
+                        name: name.clone(),
                         oid,
                     });
                     Ok(success)
                 },
                 Updated::Prune { name } => {
-                    success.pruned.push(name.into());
+                    success.pruned.push(name.clone());
                     Ok(success)
                 },
             })

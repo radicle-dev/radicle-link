@@ -3,12 +3,6 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-pub mod client;
-pub mod io;
-pub mod messages;
-mod rpc;
-pub mod sockets;
-
 use std::{sync::Arc, time::Duration};
 
 use tracing::instrument;
@@ -21,6 +15,13 @@ use link_async::Spawner;
 
 pub use sockets::Sockets;
 
+pub mod announce;
+pub mod client;
+pub mod io;
+pub mod messages;
+pub mod request_pull;
+mod rpc;
+pub mod sockets;
 pub mod wire_types;
 
 #[instrument(name = "api subroutine", skip(spawner, peer, sockets))]

@@ -1,6 +1,7 @@
 // Copyright © 2022 The Radicle Link Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use git_ref_format::RefString;
 use minicbor::{Decode, Encode};
 
 use crate::identities::git::Urn;
@@ -56,14 +57,14 @@ pub struct Success {
     #[n(0)]
     pub refs: Vec<Ref>,
     #[n(1)]
-    pub pruned: Vec<git_ext::RefLike>,
+    pub pruned: Vec<RefString>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Encode, Decode)]
 #[cbor(array)]
 pub struct Ref {
     #[n(0)]
-    pub name: git_ext::RefLike,
+    pub name: RefString,
     #[n(1)]
     pub oid: git_ext::Oid,
 }
