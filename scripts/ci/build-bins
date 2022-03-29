@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -eoux pipefail
 
-cd bins && cargo build --workspace --all-features
+cargo build --all-features --manifest-path=bins/Cargo.toml --target-dir=target
