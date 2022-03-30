@@ -25,6 +25,7 @@ pub struct Paths {
     git_includes_dir: PathBuf,
     cob_cache_dir: PathBuf,
     socket_dir: PathBuf,
+    seeds_file: PathBuf,
 }
 
 impl Paths {
@@ -44,6 +45,7 @@ impl Paths {
             git_includes_dir: config_dir.join("git-includes"),
             cob_cache_dir: cache_dir.join("cob-cache"),
             socket_dir: socket_dir()?,
+            seeds_file: config_dir.join("seeds"),
         }
         .init()
     }
@@ -57,6 +59,7 @@ impl Paths {
             git_includes_dir: root.join("git-includes"),
             cob_cache_dir: root.join("cob-cache"),
             socket_dir: socket_dir()?,
+            seeds_file: root.join("seeds"),
         }
         .init()
     }
@@ -86,6 +89,7 @@ impl Paths {
             git_includes_dir,
             cob_cache_dir,
             socket_dir: _,
+            seeds_file: _,
         } = self;
 
         vec![
@@ -111,16 +115,10 @@ impl Paths {
         self.socket_dir
             .join(format!("link-peer-{}-events.socket", peer_id))
     }
-}
 
-/// Returns the path to the seed configuration file.
-///
-/// # Error
-///
-/// Returns [`io::Error`] if the configuration directory could not be
-/// determined, most likely due to the `$HOME` environment variable missing.
-pub fn seeds() -> Result<PathBuf, io::Error> {
-    Ok(project_dirs()?.config_dir().join("seeds"))
+    pub fn seeds_file(&self) -> &Path {
+        &self.seeds_file
+    }
 }
 
 /// Returns [`ProjectDirs`] for this specific project (`radicle`).
