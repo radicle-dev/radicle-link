@@ -17,6 +17,7 @@ members = [
   "link-replication",
   "link-tracking",
   "macros",
+  "cli/gitd-lib",
   "cli/linkd-lib",
   "cli/lnk-clib",
   "cli/lnk-exe",

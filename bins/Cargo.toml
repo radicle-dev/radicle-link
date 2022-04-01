@@ -2,6 +2,7 @@
 members = [
   "linkd",
   "lnk",
+  "lnk-gitd",
   "lnk-identities-dev",
   "lnk-profile-dev",
 ]
