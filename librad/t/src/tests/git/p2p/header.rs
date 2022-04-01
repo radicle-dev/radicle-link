@@ -14,7 +14,7 @@ use librad::{
 #[test]
 fn roundtrip() {
     let hdr = Header::new(
-        GitService::UploadPackLs,
+        GitService::UploadPackLs.into(),
         Urn::new(ext::Oid::from(git2::Oid::zero())),
         PeerId::from(SecretKey::new()),
     );

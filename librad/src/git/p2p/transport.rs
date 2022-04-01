@@ -169,7 +169,7 @@ impl SmartSubtransport for RadTransport {
                     remote_peer
                 ))
             })?;
-        let header = Header::new(service, Urn::new(repo), remote_peer);
+        let header = Header::new(service.into(), Urn::new(repo), remote_peer);
 
         Ok(Box::new(RadSubTransport {
             header: Some(header),
