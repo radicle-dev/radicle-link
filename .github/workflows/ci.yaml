@@ -134,6 +134,8 @@ jobs:
         shell: bash
       - run: ./scripts/ci/test-repl3
         shell: bash
+      - run: brew install coreutils gettext socat
+      - run: ./cli/lnk-clib/t/test-ld-socket-activation.sh
 
   build-windows:
     runs-on: windows-latest

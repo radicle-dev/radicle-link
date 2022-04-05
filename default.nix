@@ -23,5 +23,9 @@ in
         openssl
         pkgconfig
         rust-overlay
+
+        # testing utilities
+        gettext # for `envsubst`
+        socat
     ];
   }
