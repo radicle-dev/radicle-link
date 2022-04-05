@@ -5,26 +5,27 @@
 
 use std::{
     fmt::{self, Debug, Display},
-    ops::Deref,
     str::FromStr,
 };
 
 use git2::transport::Service as GitService;
 use thiserror::Error;
 
+use link_git::service;
+
 use crate::PeerId;
 
 #[derive(Debug, PartialEq)]
 pub struct Header<Urn> {
-    pub service: Service,
+    pub service: service::Service,
     pub repo: Urn,
     pub peer: PeerId,
 }
 
 impl<Urn> Header<Urn> {
-    pub fn new(service: GitService, repo: Urn, peer: PeerId) -> Self {
+    pub fn new(service: service::Service, repo: Urn, peer: PeerId) -> Self {
         Self {
-            service: Service(service),
+            service,
             repo,
             peer,
         }
@@ -128,42 +129,6 @@ where
             unknown => Err(ParseError::InvalidService(unknown.to_owned())),
         }?;
 
-        Ok(Self::new(service, repo, peer))
-    }
-}
-
-pub struct Service(pub GitService);
-
-impl Debug for Service {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Service")
-            .field(match self.0 {
-                GitService::UploadPackLs => &"UploadPackLs",
-                GitService::UploadPack => &"UploadPack",
-                GitService::ReceivePackLs => &"ReceivePackLs",
-                GitService::ReceivePack => &"ReceivePack",
-            })
-            .finish()
-    }
-}
-
-impl PartialEq for Service {
-    #[allow(clippy::match_like_matches_macro)]
-    fn eq(&self, other: &Self) -> bool {
-        match (self.0, other.0) {
-            (GitService::UploadPackLs, GitService::UploadPackLs) => true,
-            (GitService::UploadPack, GitService::UploadPack) => true,
-            (GitService::ReceivePackLs, GitService::ReceivePackLs) => true,
-            (GitService::ReceivePack, GitService::ReceivePack) => true,
-            _ => false,
-        }
-    }
-}
-
-impl Deref for Service {
-    type Target = GitService;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+        Ok(Self::new(service.into(), repo, peer))
     }
 }

@@ -1,0 +1,68 @@
+[package]
+name = "gitd-lib"
+version = "0.1.0"
+edition = "2021"
+authors = [
+    "Alex Good <alex@memoryandthought.me>",
+    "Kim Altintop <kim@eagain.st>",
+]
+license = "GPL-3.0-or-later"
+
+[lib]
+
+[dependencies]
+async-trait = "0.1"
+thiserror = "1.0"
+futures = "0.3"
+globset = "0.4"
+rand = "0.8.5"
+tracing = "0.1"
+regex = "1.5.4"
+multibase = "0.9"
+multihash = "0.11"
+xdg = "2.4.1"
+lazy_static = "1.4.0"
+nix = "0.23"
+
+[dependencies.clap]
+version = "3"
+features = [ "derive", "env" ]
+
+[dependencies.git2]
+version = ">= 0.13.23"
+default-features = false
+features = ["vendored-libgit2"]
+
+[dependencies.librad]
+path = "../../librad"
+
+[dependencies.link-async]
+path = "../../link-async"
+
+[dependencies.link-git]
+path = "../../link-git"
+features = ["git2"]
+
+[dependencies.linkd-lib]
+path = "../linkd-lib"
+
+[dependencies.lnk-clib]
+path    = "../lnk-clib"
+
+[dependencies.radicle-git-ext]
+path = "../../git-ext"
+
+[dependencies.tokio]
+version = "1.10"
+default-features = false
+features = [ "fs", "io-std", "macros", "process", "rt-multi-thread", "signal" ]
+
+[dependencies.lnk-thrussh]
+version = "0.33.5"
+
+[dependencies.lnk-thrussh-keys]
+version = "0.21.0"
+
+[dependencies.tracing-subscriber]
+version = "0.3.0"
+features = ["std", "env-filter", "fmt", "json"]

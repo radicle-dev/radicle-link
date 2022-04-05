@@ -1,0 +1,16 @@
+[package]
+name = "lnk-gitd"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+authors = ["Alex Good <alex@memoryandthought.me>"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+gitd-lib = { path = "../../cli/gitd-lib" }
+
+[dependencies.tokio]
+version = "1.10"
+default-features = false
+features = [ "fs", "io-std", "macros", "process", "rt-multi-thread", "signal" ]

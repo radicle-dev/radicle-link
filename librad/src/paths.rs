@@ -163,7 +163,7 @@ fn socket_dir_imp() -> Result<std::path::PathBuf, io::Error> {
     Ok(base
         .runtime_dir()
         .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| "/var/run".into()))
+        .unwrap_or_else(|| "/tmp".into()))
 }
 
 #[cfg(target_family = "windows")]

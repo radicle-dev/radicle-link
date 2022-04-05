@@ -10,6 +10,8 @@ pub mod odb;
 pub mod protocol;
 pub mod refs;
 pub use refs::db as refdb;
+#[cfg(feature = "git2")]
+pub mod service;
 
 pub use git_actor as actor;
 pub use git_hash as hash;
