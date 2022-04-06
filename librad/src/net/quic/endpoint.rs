@@ -6,12 +6,16 @@
 use std::{
     collections::{BTreeSet, HashMap},
     io,
-    net::{SocketAddr, UdpSocket},
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
     pin::Pin,
     sync::{Arc, Weak},
 };
 
-use futures::stream::{BoxStream, StreamExt as _, TryStreamExt as _};
+use async_trait::async_trait;
+use futures::{
+    future,
+    stream::{BoxStream, StreamExt as _, TryStreamExt as _},
+};
 use if_watch::IfWatcher;
 use link_async::Spawner;
 use nonempty::NonEmpty;
@@ -51,6 +55,45 @@ impl<'a, const R: usize> LocalAddr for BoundEndpoint<'a, R> {
     fn listen_addrs(&self) -> Vec<SocketAddr> {
         self.endpoint.listen_addrs()
     }
+}
+
+pub enum Ingress<'a> {
+    /// The [`Connection`] obtained from calling
+    /// [`ConnectPeer::connect`]. It is implied that the
+    /// [`BoxedIncomingStreams`] for this connection are dispatched
+    /// elsewhere for handling.
+    Remote(Connection),
+    /// The [`Connection`] and [`BoxedIncomingStreams`] obtained from
+    /// calling [`ConnectPeer::connect`]. This is intended to be
+    /// handed back directly from an endpoint and the streams are
+    /// handled locally.
+    Local {
+        conn: Connection,
+        streams: BoxedIncomingStreams<'a>,
+    },
+}
+
+impl<'a> Ingress<'a> {
+    pub fn connection(&self) -> &Connection {
+        match &self {
+            Ingress::Remote(conn) => conn,
+            Ingress::Local { conn, .. } => conn,
+        }
+    }
+}
+
+/// Attempt to connect to a remote peer's address, giving back an
+/// [`Ingress`], which is guaranteed to have a [`Connection`], but may
+/// also contain [`BoxedIncomingStreams`].
+#[async_trait]
+pub trait ConnectPeer
+where
+    Self: Clone,
+{
+    async fn connect<'a, Addrs>(&self, peer: PeerId, addrs: Addrs) -> Option<Ingress<'a>>
+    where
+        Addrs: IntoIterator<Item = SocketAddr> + Send,
+        Addrs::IntoIter: Send;
 }
 
 /// A QUIC endpoint.
@@ -199,6 +242,78 @@ impl<const R: usize> LocalAddr for Endpoint<R> {
     }
 }
 
+/// An endpoint that can only establish outbound connections that
+/// result in two-way communication.
+#[derive(Clone)]
+pub struct SendOnly {
+    peer_id: PeerId,
+    endpoint: quinn::Endpoint,
+}
+
+impl SendOnly {
+    pub async fn new<S>(signer: S, network: Network) -> Result<Self>
+    where
+        S: Signer + Clone + Send + Sync + 'static,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let peer_id = PeerId::from_signer(&signer);
+
+        let listen_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0));
+        let sock = bind_socket(listen_addr)?;
+        let endpoint = make_send_only(signer, sock, alpn(network)).await?;
+        Ok(Self { peer_id, endpoint })
+    }
+
+    pub async fn connect<'a>(
+        &self,
+        peer: PeerId,
+        addr: &SocketAddr,
+    ) -> Result<(Connection, BoxedIncomingStreams<'a>)> {
+        if peer == self.peer_id {
+            return Err(Error::SelfConnect);
+        }
+
+        let conn = self
+            .endpoint
+            .connect(addr, peer.as_dns_name().as_ref().into())?
+            .await?;
+
+        let (conn, streams) = Connection::new(None, 2, peer, conn);
+        Ok((conn, streams.boxed()))
+    }
+}
+
+#[async_trait]
+impl ConnectPeer for SendOnly {
+    #[tracing::instrument(skip(self, addrs))]
+    async fn connect<'a, Addrs>(&self, peer: PeerId, addrs: Addrs) -> Option<Ingress<'a>>
+    where
+        Addrs: IntoIterator<Item = SocketAddr> + Send,
+        Addrs::IntoIter: Send,
+    {
+        if peer == self.peer_id {
+            return None;
+        }
+
+        future::select_ok(addrs.into_iter().map(|addr| {
+            let endpoint = self.clone();
+            tracing::info!(remote_addr = %addr, "establishing connection");
+            Box::pin(async move {
+                Self::connect(&endpoint, peer, &addr)
+                    .await
+                    .map_err(|e| {
+                        tracing::warn!(err = ?e, remote_addr = %addr, "could not connect");
+                        e
+                    })
+                    .map(|(conn, streams)| Ingress::Local { conn, streams })
+            })
+        }))
+        .await
+        .ok()
+        .map(|(success, _pending)| success)
+    }
+}
+
 // TODO: tune buffer sizes
 fn bind_socket(listen_addr: SocketAddr) -> Result<UdpSocket> {
     let sock = Socket::new(
@@ -308,6 +423,17 @@ fn alpn(network: Network) -> Alpn {
             alpn
         },
     }
+}
+
+async fn make_send_only<S>(signer: S, sock: UdpSocket, alpn: Alpn) -> Result<quinn::Endpoint>
+where
+    S: Signer + Clone + Send + Sync + 'static,
+    S::Error: std::error::Error + Send + Sync + 'static,
+{
+    let mut builder = quinn::Endpoint::builder();
+    builder.default_client_config(make_client_config(signer, alpn)?);
+
+    Ok(builder.with_socket(sock)?.0)
 }
 
 async fn make_endpoint<S>(
