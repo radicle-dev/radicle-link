@@ -41,6 +41,7 @@ pub mod interrogation;
 pub mod io;
 pub mod membership;
 pub mod request_pull;
+pub mod rpc;
 
 mod info;
 pub use info::{Capability, PartialPeerInfo, PeerAdvertisement, PeerInfo};
