@@ -10,6 +10,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs as _},
     num::NonZeroUsize,
     ops::Deref,
+    sync::Arc,
 };
 
 use futures::{
@@ -25,13 +26,19 @@ use librad::{
         connection::{LocalAddr, LocalPeer},
         discovery::{self, Discovery as _},
         peer::{self, Peer},
-        protocol::{self, request_pull::Guard},
+        protocol::{
+            self,
+            request_pull::Guard,
+            rpc::client::{self, Client},
+        },
+        quic,
         Network,
     },
     paths::Paths,
     PeerId,
     SecretKey,
 };
+use link_async::Spawner;
 
 static LOCALHOST_ANY: Lazy<SocketAddr> =
     Lazy::new(|| SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0)));
@@ -45,6 +52,43 @@ impl Guard for AllowAll {
 
     fn guard(&self, _: &PeerId, _: &git::Urn) -> Result<Self::Output, Self::Error> {
         Ok(true)
+    }
+}
+
+pub struct TestClient {
+    client: Client<SecretKey, protocol::SendOnly>,
+    _tmp: TempDir,
+}
+
+impl Deref for TestClient {
+    type Target = Client<SecretKey, protocol::SendOnly>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.client
+    }
+}
+
+impl TestClient {
+    pub async fn init() -> anyhow::Result<TestClient> {
+        let spawner = Spawner::from_current()
+            .map(Arc::new)
+            .ok_or_else(|| anyhow::anyhow!("failed to get Spawner for TestClient"))?;
+        let tmp = tempdir()?;
+        let paths = Paths::from_root(tmp.path())?;
+        let key = SecretKey::new();
+        let network = Network::Custom(b"localtestnet".as_ref().into());
+        let endpoint = quic::SendOnly::new(key.clone(), network.clone()).await?;
+        let config = client::Config {
+            signer: key,
+            paths,
+            replication: Default::default(),
+            user_storage: Default::default(),
+            network,
+        };
+        Ok(TestClient {
+            client: Client::new(config, spawner, endpoint)?,
+            _tmp: tmp,
+        })
     }
 }
 
