@@ -2,11 +2,11 @@
 , pkgs ? import sources.nixpkgs {
     overlays = [ (import sources.rust-overlay) ];
   }
+, rust-overlay ? pkgs.rust-bin.stable.latest.default
 }:
 let
   # TODO: remove once cargo-nextest is available in nixpkgs stable
   cargo-nextest = (pkgs.callPackage ./nix/cargo-nextest/default.nix { });
-  rust = pkgs.rust-bin.stable.latest.default;
 in
   with pkgs;
   mkShell {
@@ -22,6 +22,6 @@ in
         cmake
         openssl
         pkgconfig
-        rust
+        rust-overlay
     ];
   }
