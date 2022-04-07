@@ -14,6 +14,9 @@ in
   mkShell {
     name = "development";
     buildInputs = devault.buildInputs ++ [
+        clang
+        lld
+
         ripgrep
     ];
   }
