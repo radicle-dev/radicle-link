@@ -1,0 +1,75 @@
+= RFC: Storage Hooks
+Alex Good <alex@memoryandthought.me>;
++
+:revdate: 2022-04-07
+:revremark: draft
+:toc: preamble
+:stem:
+
+* Author: {author_1}
+* Date: {revdate}
+* Amended: {ammend_1}
+* Status: {revremark}
+
+== Motivation
+
+There may be many processes which are interested in changes made to a link
+monorepo. We would like to define a standard way for applications to notify each
+other about changes to the monorepo.
+
+== Terminology and Conventions
+
+The key words "`MUST`", "`MUST NOT`", "`REQUIRED`", "`SHALL`", "`SHALL NOT`",
+"`SHOULD`", "`SHOULD NOT`", "`RECOMMENDED`", "`NOT RECOMMENDED`", "`MAY`", and
+"`OPTIONAL`" in this document are to be interpreted as described in <<RFC2119,
+https://www.rfc-editor.org/rfc/rfc2119>> and <<RFC8174,
+https://www.rfc-editor.org/rfc/rfc8174>> when, and only when, they appear in all
+capitals, as shown here.
+
+== Hooks
+
+Notifications of changes in the storage are delivered via "hooks", which are
+similar in spirit to git hooks. A hook is an executable placed in
+`<MONOREPO_DIR>/hooks/<hook type>`, where `hook type` is one of:
+
+* `urn_changed`
+* `tracking_changed`
+
+=== Calling a hook
+
+For each hook type the notifying process MUST iterate over each executable in
+the hook directory and call the executable with the arguments specified in this
+document. The arguments for a hook are base53-z encoded URNs separated by
+newline characters.
+
+Note that we specifically do not include information about the new state of the
+URN in the hook payload, this is because that state would not be reliable anyway
+and so applications should go to disk themselves if they need the new state.
+
+Hook processes MUST continue to process events until they receive an end of
+transmission character encoded as `0x04`. This allows calling processes to
+start a hook process once and then keep the process running until they need to
+notify it again.
+
+== Event Types
+
+There are two event types
+
+* Notifications that the data under a URN has changed in some way
+* Notifications that the tracking config for a URN has changed
+
+In both cases notifications are sent as a best effort and applications MUST NOT
+assume that the current on-disk state matches the notification.
+
+=== URN changed hook
+
+Whenever a process makes a change that updates a ref under
+`refs/namespaces/<URN>/refs` the process MUST invoke the `urn_changed` hooks. The
+hook argument is the base32-z encoded URN of the identity which has changed.
+
+=== Tracking changed hook
+
+Whenever a process updates a ref under `refs/namespaces/<URN>/(default | <peer
+id>)` the process MUST invoke the `tracking_changed` hooks. The hook argument is
+the base32-z encoded URN of the identity for which tracking has changed.
+
