@@ -114,7 +114,8 @@ impl<const R: usize> Endpoint<R> {
                         remote_peer != peer_id,
                         "self-connections are prevented in the TLS handshake"
                     );
-                    let (conn, streams) = Connection::new(conntrack.clone(), R, remote_peer, conn);
+                    let (conn, streams) =
+                        Connection::new(Some(conntrack.clone()), R, remote_peer, conn);
                     conntrack.connected(&conn);
 
                     Ok((conn, streams.boxed()))
@@ -154,7 +155,7 @@ impl<const R: usize> Endpoint<R> {
             .endpoint
             .connect(addr, peer.as_dns_name().as_ref().into())?
             .await?;
-        let (conn, streams) = Connection::new(self.conntrack.clone(), R, peer, conn);
+        let (conn, streams) = Connection::new(Some(self.conntrack.clone()), R, peer, conn);
         self.conntrack.connected(&conn);
 
         Ok((conn, streams.boxed()))
