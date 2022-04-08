@@ -3,6 +3,8 @@
 
 use std::ops::Index as _;
 
+use futures::StreamExt as _;
+
 use it_helpers::{fixed::TestProject, testnet};
 use librad::{git::storage::ReadOnlyStorage as _, net::protocol::request_pull::Response};
 use test_helpers::logging;
@@ -34,6 +36,8 @@ fn responds() {
         };
 
         let mut rp = requester
+            .client()
+            .unwrap()
             .request_pull(
                 (responder.peer_id(), responder.listen_addrs().to_vec()),
                 project.urn(),

@@ -306,7 +306,16 @@ impl Listener<request_pull::Response> {
         use librad::net::protocol::request_pull::{Error, Progress, Response};
 
         tracing::info!(peer = %remote, urn = %urn, "received request-pull");
-        match peer.request_pull((remote, addrs), urn.clone()).await {
+        let client = match peer.client() {
+            Err(err) => {
+                tracing::error!(err = %err, "failed to initialise client");
+                self.error("request-pull failed due to internal client error".to_string())
+                    .await;
+                return;
+            },
+            Ok(client) => client,
+        };
+        match client.request_pull((remote, addrs), urn.clone()).await {
             Ok(mut rp) => {
                 while let Some(resp) = rp.next().await {
                     match resp {
