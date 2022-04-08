@@ -12,10 +12,7 @@ test = true
 doc = false
 
 [[example]]
-name = "socket_activation_wrapper"
-
-[[example]]
-name = "socket_activation"
+name = "echo"
 
 [features]
 test = []
@@ -25,6 +22,7 @@ anyhow = "1"
 tempfile = "3.3"
 proptest = "1"
 pretty_assertions = "1.1"
+socket2 = "0.4.4"
 nix = "0"
 
 [dev-dependencies.it-helpers]

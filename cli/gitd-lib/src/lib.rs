@@ -8,6 +8,7 @@ use std::{sync::Arc, time::Duration};
 use clap::Parser;
 use futures::{FutureExt, StreamExt};
 use librad::PeerId;
+use lnk_clib::socket_activation;
 use lnk_thrussh as thrussh;
 use lnk_thrussh_keys as thrussh_keys;
 use tokio::net::TcpListener;
@@ -31,7 +32,7 @@ pub enum RunError {
     #[error("unable to load server key: {0}")]
     UnableToLoadKey(Box<dyn std::error::Error>),
     #[error("error loading socket activation environment variables: {0}")]
-    SocketActivation(#[from] lnk_clib::socket_activation::Error),
+    SocketActivation(std::io::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -139,15 +140,19 @@ async fn bind_sockets<S: librad::Signer + Clone>(
             .await
             .map_err(RunError::CouldNotBind),
         None => {
-            let socket_activated = lnk_clib::socket_activation::env_sockets()?;
-            match socket_activated {
+            use socket_activation::Sockets as _;
+
+            let mut socks = socket_activation::default().map_err(RunError::SocketActivation)?;
+            match socks
+                .activate("ssh")
+                .map_err(RunError::SocketActivation)?
+                .into_iter()
+                .next()
+            {
                 None => Err(RunError::NoBindAddr),
-                Some(mut socks) => match socks.remove("ssh") {
-                    Some(lnk_clib::socket_activation::Socket::Tcp(s)) => {
-                        s.set_nonblocking(true)?;
-                        TcpListener::from_std(s).map_err(RunError::from)
-                    },
-                    _ => Err(RunError::NoBindAddr),
+                Some(sock) => {
+                    sock.set_nonblocking(true)?;
+                    TcpListener::from_std(sock.into()).map_err(RunError::from)
                 },
             }
         },

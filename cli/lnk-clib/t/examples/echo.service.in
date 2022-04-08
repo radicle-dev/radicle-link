@@ -1,0 +1,7 @@
+[Unit]
+Description=Echo Server
+
+[Service]
+Type=simple
+WorkingDirectory=$CWD
+ExecStart=$CWD/bin/echo

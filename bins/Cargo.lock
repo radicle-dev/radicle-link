@@ -2240,6 +2240,7 @@ dependencies = [
  "once_cell",
  "serde",
  "serde_json",
+ "socket2 0.4.4",
  "thiserror",
  "tokio",
  "tracing",

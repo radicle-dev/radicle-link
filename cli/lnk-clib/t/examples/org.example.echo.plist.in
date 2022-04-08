@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC
+    "-//Apple Computer//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>org.example.echo</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>$CWD/bin/echo</string>
+        </array>
+        <key>Sockets</key>
+        <dict>
+            <key>echo</key>
+            <dict>
+                <key>SockFamily</key>
+                <string>Unix</string>
+                <key>SockType</key>
+                <string>Stream</string>
+                <key>SockPathName</key>
+                <string>/tmp/echo.sock</string>
+                <key>SockPathMode</key>
+                <integer>448</integer>
+            </dict>
+        </dict>
+        <key>StandardOutPath</key>
+        <string>/Users/$USER/Library/Logs/org.example.echo.log</string>
+        <key>StandardErrorPath</key>
+        <string>/Users/$USER/Library/Logs/org.example.echo.log</string>
+    </dict>
+</plist>

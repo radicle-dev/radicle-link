@@ -129,7 +129,7 @@ deny = [
     # See radicle-keystore @ 00f8fb6135f8e4cd097a48e6f0700e08ce4abb04
     { name = "chacha20poly1305", version = "> 0.9.0" },
     { name = "ed25519-zebra", version = "> 3.0.0" },
-    { name = "curve25519-dalek", version = "> 3.2.0" },
+    { name = "curve25519-dalek", version = "> 3.2.1" },
     { name = "scrypt", version = "> 0.8.0" },
 ]
 # Certain crates/versions that will be skipped when doing duplicate detection.

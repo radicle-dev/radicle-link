@@ -3,17 +3,11 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    collections::HashMap,
-    os::unix::net::UnixListener as StdUnixListener,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{os::unix::net::UnixListener as StdUnixListener, path::PathBuf, sync::Arc};
 
 use librad::{profile::Profile, PeerId};
+use lnk_clib::socket_activation::{self, Sockets as _};
 use tokio::net::UnixListener;
-
-use lnk_clib::socket_activation::Socket as ActivatedSocket;
 
 enum OpenMode {
     /// File descriptors were provided by socket activation
@@ -75,14 +69,10 @@ impl Sockets {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error(transparent)]
-    Env(#[from] lnk_clib::socket_activation::Error),
     #[error(
         "the sockets provided by the socket activation env vars did not contain an '{0}' socket"
     )]
     MissingSocket(&'static str),
-    #[error("{0} socket was not a unix domain sock")]
-    NotUnixSock(&'static str),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -94,46 +84,47 @@ impl Sockets {
         peer_id: PeerId,
     ) -> Result<Sockets, Error> {
         let profile = profile.clone();
-        spawner
+        let SyncSockets {
+            rpc,
+            events,
+            open_mode,
+        } = spawner
             .blocking(move || {
-                let SyncSockets {
-                    rpc,
-                    events,
-                    open_mode,
-                } = match lnk_clib::socket_activation::env_sockets()? {
-                    Some(mut socket_map) => SyncSockets {
-                        rpc: env_socket(&mut socket_map, "rpc")?,
-                        events: env_socket(&mut socket_map, "events")?,
-                        open_mode: OpenMode::SocketActivated,
-                    },
-                    None => {
-                        tracing::info!("using sockets in default path locations");
-                        profile_sockets(&profile, &peer_id)?
-                    },
-                };
-                rpc.set_nonblocking(true)?;
-                events.set_nonblocking(true)?;
-                Ok(Sockets {
-                    rpc: UnixListener::from_std(rpc)?,
-                    events: UnixListener::from_std(events)?,
-                    open_mode,
-                })
+                let socks = env_sockets().or_else(|_| {
+                    tracing::info!("using sockets in default path locations");
+                    profile_sockets(&profile, &peer_id)
+                })?;
+                socks.rpc.set_nonblocking(true)?;
+                socks.events.set_nonblocking(true)?;
+
+                Ok::<_, Error>(socks)
             })
-            .await
+            .await?;
+
+        Ok(Sockets {
+            rpc: UnixListener::from_std(rpc)?,
+            events: UnixListener::from_std(events)?,
+            open_mode,
+        })
     }
 }
 
-fn env_socket(
-    sock_map: &mut HashMap<String, ActivatedSocket>,
-    sock_name: &'static str,
-) -> Result<StdUnixListener, Error> {
-    sock_map
-        .remove(sock_name)
-        .ok_or(Error::MissingSocket(sock_name))
-        .and_then(|s| match s {
-            ActivatedSocket::Unix(s) => Ok(s),
-            _ => Err(Error::NotUnixSock(sock_name)),
-        })
+fn env_sockets() -> Result<SyncSockets, Error> {
+    let mut socks = socket_activation::default()?;
+    let mut get = |name| {
+        socks
+            .activate(name)?
+            .into_iter()
+            .next()
+            .ok_or(Error::MissingSocket(name))
+            .map(StdUnixListener::from)
+    };
+
+    Ok(SyncSockets {
+        rpc: get("rpc")?,
+        events: get("events")?,
+        open_mode: OpenMode::SocketActivated,
+    })
 }
 
 /// Constructs a `Sockets` from the file descriptors at default locations with

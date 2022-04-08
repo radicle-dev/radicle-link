@@ -1,0 +1,6 @@
+[Unit]
+Description=Socket Activated Echo Server
+
+[Socket]
+ListenStream=/tmp/echo.sock
+FileDescriptorName=echo
