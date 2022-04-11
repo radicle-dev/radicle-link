@@ -4,8 +4,8 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 mod cache;
+mod cached_change_graph;
 mod schema;
-mod thin_change_graph;
 
 use cob::TypeName;
 use std::str::FromStr;

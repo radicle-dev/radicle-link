@@ -5,7 +5,6 @@
 
 use super::{
     schema_change,
-    validated_automerge::ValidatedAutomerge,
     AuthorizingIdentity,
     Change,
     CollaborativeObject,
@@ -107,10 +106,7 @@ impl<'a> ChangeGraph<'a> {
     /// filter out branches of the graph which do not have valid signatures,
     /// or which do not have permission to make a change, or which make a
     /// change which invalidates the schema of the object
-    pub(super) fn evaluate<I: IdentityStorage>(
-        &self,
-        identities: &I,
-    ) -> (CollaborativeObject, ValidatedAutomerge) {
+    pub(super) fn evaluate<I: IdentityStorage>(&self, identities: &I) -> CollaborativeObject {
         let mut roots: Vec<petgraph::graph::NodeIndex<u32>> = self
             .graph
             .externals(petgraph::Direction::Incoming)
@@ -134,21 +130,21 @@ impl<'a> ChangeGraph<'a> {
             let node = &self.graph[idx];
             let outgoing_edges = self.graph.edges_directed(idx, EdgeDirection::Outgoing);
             let child_commits: Vec<git2::Oid> = outgoing_edges
-                .map(|e| self.graph[e.target()].commit())
+                .map(|e| *self.graph[e.target()].commit())
                 .collect();
             (node, child_commits)
         });
-        let history = evaluating.evaluate(items);
-        (
-            CollaborativeObject {
-                authorizing_identity_urn: self.authorizing_identity.urn(),
-                typename,
-                history: history.valid_history(),
-                id: self.object_id,
-                schema: self.schema_change.schema().clone(),
-            },
+        let history = {
+            let root_change = &self.graph[*root];
+            evaluating.evaluate(*root_change.commit(), items)
+        };
+        CollaborativeObject {
+            authorizing_identity_urn: self.authorizing_identity.urn(),
+            typename,
             history,
-        )
+            id: self.object_id,
+            schema: self.schema_change.schema().clone(),
+        }
     }
 
     /// Get the tips of the collaborative object
@@ -157,7 +153,7 @@ impl<'a> ChangeGraph<'a> {
             .externals(petgraph::Direction::Outgoing)
             .map(|n| {
                 let change = &self.graph[n];
-                change.commit()
+                *change.commit()
             })
             .collect()
     }

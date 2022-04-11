@@ -11,6 +11,7 @@ use lazy_static::lazy_static;
 use librad::{
     collaborative_objects::{
         CollaborativeObject,
+        EntryContents,
         History,
         NewObjectSpec,
         TypeName,
@@ -195,7 +196,7 @@ fn collab_object_crud() {
                             &local_id_1,
                             &urn,
                             NewObjectSpec {
-                                history: History::Automerge(init_history()),
+                                history: init_history(),
                                 message: Some("first change".to_string()),
                                 typename: TYPENAME.clone(),
                                 schema_json: SCHEMA.clone(),
@@ -352,56 +353,6 @@ fn collab_object_crud() {
             })
         );
 
-        // TODO: Right a module which deliberately allows applying invalid changes in order to be
-        // able to write this test
-        // Make a change which is not valid with respect to the schema
-        //peer1
-        //.using_storage({
-        //let urn = proj.project.urn();
-        //let id = *object.id();
-        //let history = peer1_after_pull.history().clone();
-        //move |storage| {
-        //storage
-        //.collaborative_objects(None)
-        //.update_object(
-        //&local_id_2,
-        //&urn,
-        //UpdateObjectSpec {
-        //typename: TYPENAME.clone(),
-        //object_id: id,
-        //changes: add_item(&history, 2),
-        //message: Some("peer 1 invalid change".to_string()),
-        //},
-        //)
-        //.unwrap();
-        //}
-        //})
-        //.await
-        //.unwrap();
-
-        //let peer1_after_invalid_change = peer1
-        //.using_storage({
-        //let urn = proj.project.urn();
-        //let id = *object.id();
-        //move |storage| {
-        //let result = storage
-        //.collaborative_objects(None)
-        //.retrieve_object(&urn, &TYPENAME, &id)
-        //.unwrap()
-        //.unwrap();
-        //result
-        //}
-        //})
-        //.await
-        //.unwrap();
-
-        //assert_state!(
-        //&peer1_after_invalid_change,
-        //serde_json::json!({
-        //"items": ["peer 1 item", "peer 2 item"],
-        //})
-        //);
-
         let peer1_all_objects = peer1
             .using_storage({
                 let urn = proj.project.urn();
@@ -420,7 +371,7 @@ fn collab_object_crud() {
     })
 }
 
-fn init_history() -> Vec<u8> {
+fn init_history() -> EntryContents {
     let mut backend = automerge::Backend::new();
     let mut frontend = automerge::Frontend::new();
     let (_, change) = frontend
@@ -433,38 +384,32 @@ fn init_history() -> Vec<u8> {
         })
         .unwrap();
     backend.apply_local_change(change.unwrap()).unwrap();
-    backend
+    let bytes = backend
         .get_changes(&[])
         .iter()
         .flat_map(|c| c.raw_bytes().to_vec())
-        .collect()
+        .collect();
+    EntryContents::Automerge(bytes)
 }
 
-fn add_item<I: Into<automerge::Value>>(history: &History, item: I) -> History {
-    match history {
-        History::Automerge(changes) => {
-            let mut backend = automerge::Backend::load(changes.to_vec()).unwrap();
-            let patch = backend.get_patch().unwrap();
-            let mut frontend = automerge::Frontend::new();
-            frontend.apply_patch(patch).unwrap();
-            let (_, change) = frontend
-                .change::<_, _, automerge::InvalidChangeRequest>(None, |d| {
-                    let num_items = match d.value_at_path(&automerge::Path::root().key("items")) {
-                        Some(automerge::Value::List(items)) => items.len() as u32,
-                        _ => panic!("no items in doc"),
-                    };
-                    d.add_change(automerge::LocalChange::insert(
-                        automerge::Path::root().key("items").index(num_items),
-                        item.into(),
-                    ))
-                    .unwrap();
-                    Ok(())
-                })
-                .unwrap();
-            let (_, change) = backend.apply_local_change(change.unwrap()).unwrap();
-            History::Automerge(change.raw_bytes().to_vec())
-        },
-    }
+fn add_item<I: Into<automerge::Value>>(history: &History, item: I) -> EntryContents {
+    let (mut frontend, mut backend) = evaluate_history(history);
+    let (_, change) = frontend
+        .change::<_, _, automerge::InvalidChangeRequest>(None, |d| {
+            let num_items = match d.value_at_path(&automerge::Path::root().key("items")) {
+                Some(automerge::Value::List(items)) => items.len() as u32,
+                _ => panic!("no items in doc"),
+            };
+            d.add_change(automerge::LocalChange::insert(
+                automerge::Path::root().key("items").index(num_items),
+                item.into(),
+            ))
+            .unwrap();
+            Ok(())
+        })
+        .unwrap();
+    let (_, change) = backend.apply_local_change(change.unwrap()).unwrap();
+    EntryContents::Automerge(change.raw_bytes().to_vec())
 }
 
 //fn assert_state(object: &CollaborativeObject, expected_state:
@@ -472,13 +417,23 @@ fn add_item<I: Into<automerge::Value>>(history: &History, item: I) -> History {
 //assert_eq!(&state, &expected_state);
 //}
 fn realize_state(object: &CollaborativeObject) -> serde_json::Value {
-    match object.history() {
-        History::Automerge(bytes) => {
-            let backend = automerge::Backend::load(bytes.to_vec()).unwrap();
-            let mut frontend = automerge::Frontend::new();
-            let patch = backend.get_patch().unwrap();
-            frontend.apply_patch(patch).unwrap();
-            frontend.state().to_json()
+    let (mut frontend, _) = evaluate_history(object.history());
+    frontend.state().to_json()
+}
+
+fn evaluate_history(history: &History) -> (automerge::Frontend, automerge::Backend) {
+    let backend = history.traverse(
+        automerge::Backend::new(),
+        |mut backend, change| match change.contents() {
+            librad::collaborative_objects::EntryContents::Automerge(bytes) => {
+                let change = automerge::Change::from_bytes(bytes.clone()).unwrap();
+                backend.apply_changes(vec![change]).unwrap();
+                std::ops::ControlFlow::Continue(backend)
+            },
         },
-    }
+    );
+    let mut frontend = automerge::Frontend::new();
+    let patch = backend.get_patch().unwrap();
+    frontend.apply_patch(patch).unwrap();
+    (frontend, backend)
 }
