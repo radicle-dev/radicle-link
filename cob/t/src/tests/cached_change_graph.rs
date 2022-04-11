@@ -3,15 +3,15 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use cob::{
-    internals::{forward_compatible_decode, ThinChangeGraph},
-    History,
-    Schema,
-};
+use cob::{internals::CachedChangeGraph, Schema};
 use std::{collections::BTreeSet, convert::TryFrom};
 
+use minicbor::Decode;
+
+use crate::helpers::random_history;
+
 #[test]
-fn test_thin_change_graph_encode_decode() {
+fn test_cached_change_graph_encode_decode() {
     let commit = git2::Oid::from_str("f41a052ad0a6b8a17ddae486cf2322cc48215222").unwrap();
     let some_urn = radicle_git_ext::Oid::from(commit).into();
     let schema = Schema::try_from(&serde_json::json!({
@@ -24,22 +24,18 @@ fn test_thin_change_graph_encode_decode() {
         }
     }))
     .unwrap();
-    let g = ThinChangeGraph {
-        validated_history: None,
-        history: History::Automerge(vec![1, 2, 3, 4, 5]),
+    let g = CachedChangeGraph {
+        history: random_history("somename"),
         refs: BTreeSet::new(),
         schema_commit: commit,
         schema,
-        state: serde_json::json!({"some": "state"}),
         object_id: commit.into(),
         typename: "some.type.name".parse().unwrap(),
         authorizing_identity_urn: some_urn,
     };
     let mut output: Vec<u8> = Vec::new();
     minicbor::encode(&g, &mut output).unwrap();
-    let decoded: ThinChangeGraph = forward_compatible_decode(&mut minicbor::Decoder::new(&output))
-        .unwrap()
-        .unwrap();
+    let decoded = CachedChangeGraph::decode(&mut minicbor::Decoder::new(&output)).unwrap();
     assert_eq!(g, decoded);
 }
 

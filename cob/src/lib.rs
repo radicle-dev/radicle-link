@@ -94,7 +94,7 @@ mod refs_storage;
 pub use refs_storage::{ObjectRefs, RefsStorage};
 
 mod cache;
-use cache::{Cache, ThinChangeGraph};
+use cache::{Cache, CachedChangeGraph};
 
 mod validated_automerge;
 use validated_automerge::ValidatedAutomerge;
@@ -102,62 +102,19 @@ use validated_automerge::ValidatedAutomerge;
 mod identity_storage;
 pub use identity_storage::IdentityStorage;
 
+mod history;
+pub use history::{EntryContents, History, HistoryEntry, HistoryType};
+
+mod pruning_fold;
+
 pub mod internals {
     //! This module exposes implementation details of the collaborative object
     //! crate for use in testing
 
     pub use super::{
-        cache::{
-            thin_change_graph::forward_compatible_decode,
-            Cache,
-            FileSystemCache,
-            ThinChangeGraph,
-        },
+        cache::{Cache, CachedChangeGraph, FileSystemCache},
         validated_automerge::ValidatedAutomerge,
     };
-}
-
-/// The CRDT history for a collaborative object. Currently the only
-/// implementation uses automerge
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub enum History {
-    Automerge(Vec<u8>),
-}
-
-impl History {
-    pub fn as_bytes(&self) -> &[u8] {
-        match self {
-            History::Automerge(h) => h,
-        }
-    }
-}
-
-impl AsRef<[u8]> for History {
-    fn as_ref(&self) -> &[u8] {
-        self.as_bytes()
-    }
-}
-
-#[derive(Serialize, Deserialize, minicbor::Encode, minicbor::Decode)]
-pub enum HistoryType {
-    #[n(1)]
-    Automerge,
-}
-
-impl From<&History> for HistoryType {
-    fn from(h: &History) -> Self {
-        match h {
-            History::Automerge(_) => HistoryType::Automerge,
-        }
-    }
-}
-
-impl fmt::Display for HistoryType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            HistoryType::Automerge => f.write_str("automerge"),
-        }
-    }
 }
 
 /// The typename of an object. Valid typenames MUST be sequences of alphanumeric
@@ -278,13 +235,13 @@ pub struct CollaborativeObject {
     schema: Schema,
 }
 
-impl From<Rc<RefCell<ThinChangeGraph>>> for CollaborativeObject {
-    fn from(tg: Rc<RefCell<ThinChangeGraph>>) -> Self {
+impl From<Rc<RefCell<CachedChangeGraph>>> for CollaborativeObject {
+    fn from(tg: Rc<RefCell<CachedChangeGraph>>) -> Self {
         let tg = tg.borrow();
         CollaborativeObject {
             authorizing_identity_urn: tg.authorizing_identity_urn().clone(),
             typename: tg.typename().clone(),
-            history: tg.history(),
+            history: tg.history().clone(),
             id: tg.object_id(),
             schema: tg.schema().clone(),
         }
@@ -408,7 +365,7 @@ pub struct CreateObjectArgs<'a, R: RefsStorage, P: AsRef<std::path::Path>> {
     /// A valid JSON schema which uses the vocabulary at <https://alexjg.github.io/automerge-jsonschema/spec>
     pub schema: Schema,
     /// The CRDT history to initialize this object with
-    pub history: History,
+    pub contents: EntryContents,
     /// The typename for this object
     pub typename: TypeName,
     /// An optional message to add to the commit message for the commit which
@@ -436,7 +393,7 @@ impl<'a, R: RefsStorage, P: AsRef<std::path::Path>> CreateObjectArgs<'a, R, P> {
             typename: self.typename.clone(),
             tips: None,
             message: self.message.clone(),
-            history: self.history.clone(),
+            contents: self.contents.clone(),
         }
     }
 }
@@ -450,7 +407,7 @@ pub fn create_object<R: RefsStorage, P: AsRef<std::path::Path>>(
         signer,
         author,
         authorizing_identity,
-        ref history,
+        ref contents,
         ref typename,
         ref schema,
         ..
@@ -467,7 +424,7 @@ pub fn create_object<R: RefsStorage, P: AsRef<std::path::Path>>(
     )?;
 
     let mut valid_history = ValidatedAutomerge::new(schema.clone());
-    valid_history.propose_change(history.as_ref())?;
+    valid_history.propose_change(contents.as_ref())?;
 
     let init_change = change::Change::create(
         authorizing_identity.content_id(),
@@ -478,30 +435,33 @@ pub fn create_object<R: RefsStorage, P: AsRef<std::path::Path>>(
     )
     .map_err(error::Create::from)?;
 
+    let history = History::new_from_root(*init_change.commit(), author.urn(), contents.clone());
+
     let object_id = init_change.commit().into();
     refs_storage
         .update_ref(
             &authorizing_identity.urn(),
             typename,
             object_id,
-            init_change.commit(),
+            *init_change.commit(),
         )
         .map_err(error::Create::Refs)?;
     let mut cache = open_cache(args.cache_dir)?;
-    let thin_graph = ThinChangeGraph::new_from_single_change(
-        init_change.author_commit(),
+    let cached_graph = CachedChangeGraph::new(
+        std::iter::once(init_change.author_commit()),
         schema.clone(),
         init_change.schema_commit(),
-        valid_history,
+        history,
         typename.clone(),
         object_id,
         authorizing_identity.urn(),
     );
-    cache.put(init_change.commit().into(), thin_graph)?;
+    let history = cached_graph.borrow().history().clone();
+    cache.put(init_change.commit().into(), cached_graph)?;
     Ok(CollaborativeObject {
         authorizing_identity_urn: authorizing_identity.urn(),
         typename: args.typename,
-        history: args.history,
+        history,
         schema: args.schema,
         id: init_change.commit().into(),
     })
@@ -600,7 +560,7 @@ pub struct UpdateObjectArgs<'a, R: RefsStorage, I: IdentityStorage, P: AsRef<std
     /// An optional message to add to the commit message of the change
     pub message: Option<String>,
     /// The CRDT changes to add to the object
-    pub changes: History,
+    pub changes: EntryContents,
 }
 
 pub fn update<R: RefsStorage, I: IdentityStorage, P: AsRef<std::path::Path>>(
@@ -643,7 +603,7 @@ pub fn update<R: RefsStorage, I: IdentityStorage, P: AsRef<std::path::Path>>(
     .load_or_materialize::<error::Update<R::Error>, _>(identity_storage, cache.as_mut(), repo)?
     .ok_or(error::Update::NoSuchObject)?;
 
-    cached.borrow_mut().propose_change(changes.as_ref())?;
+    cached.borrow_mut().propose_change(&changes)?;
 
     let change = change::Change::create(
         authorizing_identity.content_id(),
@@ -653,7 +613,7 @@ pub fn update<R: RefsStorage, I: IdentityStorage, P: AsRef<std::path::Path>>(
         change::NewChangeSpec {
             tips: Some(cached.borrow().tips().iter().cloned().collect()),
             schema_commit: cached.borrow().schema_commit(),
-            history: changes,
+            contents: changes.clone(),
             typename: typename.clone(),
             message,
         },
@@ -661,7 +621,7 @@ pub fn update<R: RefsStorage, I: IdentityStorage, P: AsRef<std::path::Path>>(
 
     cached
         .borrow_mut()
-        .update_ref(previous_ref, change.commit());
+        .update_ref(previous_ref, *change.commit(), author.urn(), changes);
     cache.put(object_id, cached.clone())?;
 
     //let new_commit = *change.commit();
@@ -670,7 +630,7 @@ pub fn update<R: RefsStorage, I: IdentityStorage, P: AsRef<std::path::Path>>(
             &authorizing_identity.urn(),
             typename,
             object_id,
-            change.commit(),
+            *change.commit(),
         )
         .map_err(error::Update::Refs)?;
 
@@ -734,7 +694,7 @@ impl<'a> CobRefs<'a> {
         identity_storage: &I,
         cache: &mut dyn Cache,
         repo: &git2::Repository,
-    ) -> Result<Option<Rc<RefCell<ThinChangeGraph>>>, E>
+    ) -> Result<Option<Rc<RefCell<CachedChangeGraph>>>, E>
     where
         E: From<cache::Error>,
         E: From<change_graph::Error>,
@@ -747,11 +707,11 @@ impl<'a> CobRefs<'a> {
             .collect::<Result<BTreeSet<git2::Oid>, git2::Error>>()?;
         match cache.load(self.oid, &tip_oids)? {
             Some(obj) => {
-                tracing::trace!(object_id=?self.oid, "object found in cache");
+                tracing::trace!(object_id=?self.oid, ?tip_oids, "object found in cache");
                 Ok(Some(obj))
             },
             None => {
-                tracing::trace!(object_id=?self.oid, "object not found in cache");
+                tracing::trace!(object_id=?self.oid, ?tip_oids, "object not found in cache");
                 if let Some(graph) = ChangeGraph::load(
                     self.tip_refs.iter(),
                     repo,
@@ -759,12 +719,12 @@ impl<'a> CobRefs<'a> {
                     self.typename,
                     &self.oid,
                 )? {
-                    let (object, valid_history) = graph.evaluate(identity_storage);
-                    let cached = cache::ThinChangeGraph::new(
+                    let object = graph.evaluate(identity_storage);
+                    let cached = cache::CachedChangeGraph::new(
                         tip_oids,
                         graph.schema().clone(),
                         graph.schema_commit(),
-                        valid_history,
+                        object.history.clone(),
                         self.typename.clone(),
                         self.oid,
                         self.authorizing_identity.urn(),

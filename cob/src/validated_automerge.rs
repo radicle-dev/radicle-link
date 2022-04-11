@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use super::{History, Schema};
+use super::Schema;
 
 use std::convert::TryFrom;
 
@@ -78,24 +78,6 @@ impl ValidatedAutomerge {
         }
     }
 
-    pub fn new_with_history(
-        schema: Schema,
-        history: History,
-    ) -> Result<ValidatedAutomerge, error::LoadError> {
-        let hist_bytes = history.as_bytes().to_vec();
-        let backend = automerge::Backend::load(hist_bytes.clone())?;
-        let mut frontend = automerge::Frontend::new();
-        // Unwraps are fine as fallibility is due to errors which can occur in
-        // serialization or due to out of order delivery of patches
-        frontend.apply_patch(backend.get_patch().unwrap()).unwrap();
-        Ok(ValidatedAutomerge {
-            backend,
-            frontend,
-            valid_history: hist_bytes,
-            schema,
-        })
-    }
-
     pub(crate) fn propose_change(
         &mut self,
         change_bytes: &[u8],
@@ -142,22 +124,5 @@ impl ValidatedAutomerge {
         let patch = self.backend.get_patch().unwrap();
         old_frontend.apply_patch(patch).unwrap();
         self.frontend = old_frontend;
-    }
-
-    pub(crate) fn state(&self) -> serde_json::Value {
-        self.frontend
-            .get_value(&automerge::Path::root())
-            // this can only fail if the path does not exist, but the root always exists
-            .unwrap()
-            .to_json()
-    }
-
-    pub(crate) fn valid_history(&self) -> History {
-        History::Automerge(self.valid_history.clone())
-    }
-
-    pub(crate) fn compressed_valid_history(&self) -> History {
-        // This error is a red herring, it can only occur in an OOM situation.
-        History::Automerge(self.backend.save().unwrap())
     }
 }
