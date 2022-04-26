@@ -67,18 +67,21 @@ impl librad::Signer for SshSigner {
 /// `SshAuthSock::default` to connect via `SSH_AUTH_SOCK`.
 pub fn signer(profile: &Profile, sock: SshAuthSock) -> Result<BoxedSigner, super::Error> {
     let storage = ReadOnly::open(profile.paths())?;
-    let peer_id = storage.peer_id();
+    let peer_id = *storage.peer_id();
     let pk = (*peer_id.as_public_key()).into();
     let agent = with_socket(SshAgent::new(pk), sock);
-    let keys = runtime::block_on(ssh::list_keys::<UnixStream>(&agent))?;
-    if keys.contains(&pk) {
-        let signer = runtime::block_on(agent.connect::<UnixStream>())?;
-        Ok(BoxedSigner::new(SshSigner {
-            signer: Arc::new(signer),
-        }))
-    } else {
-        Err(super::Error::NoSuchKey(*peer_id))
-    }
+    runtime::block_on(async move {
+        let keys = ssh::list_keys::<UnixStream>(&agent).await?;
+        if keys.contains(&pk) {
+            let signer = agent.connect::<UnixStream>().await?;
+            let signer = SshSigner {
+                signer: Arc::new(signer),
+            };
+            Ok(BoxedSigner::new(signer))
+        } else {
+            Err(super::Error::NoSuchKey(peer_id))
+        }
+    })
 }
 
 /// Add the signing key associated with this `profile` to the `ssh-agent`.
@@ -91,7 +94,7 @@ pub fn add_signer<C>(
     profile: &Profile,
     sock: SshAuthSock,
     crypto: C,
-    constraints: &[Constraint],
+    constraints: Vec<Constraint>,
 ) -> Result<(), super::Error>
 where
     C: Crypto,
@@ -103,11 +106,9 @@ where
         .get_key()
         .map_err(|err| super::Error::GetKey(err.into()))?;
     let agent = with_socket(SshAgent::new(key.public_key.into()), sock);
-    runtime::block_on(ssh::add_key::<UnixStream>(
-        &agent,
-        key.secret_key.into(),
-        constraints,
-    ))?;
+    runtime::block_on(async move {
+        ssh::add_key::<UnixStream>(&agent, key.secret_key.into(), &constraints).await
+    })?;
     Ok(())
 }
 
@@ -128,10 +129,9 @@ where
         .get_key()
         .map_err(|err| super::Error::GetKey(err.into()))?;
     let agent = with_socket(SshAgent::new(key.public_key.into()), sock);
-    Ok(runtime::block_on(ssh::remove_key::<UnixStream>(
-        &agent,
-        &key.public_key.into(),
-    ))?)
+    Ok(runtime::block_on(async move {
+        ssh::remove_key::<UnixStream>(&agent, &key.public_key.into()).await
+    })?)
 }
 
 /// Test whether the signing key associated with this `profile` is present on
@@ -144,7 +144,7 @@ pub fn is_signer_present(profile: &Profile, sock: SshAuthSock) -> Result<bool, s
     let peer_id = storage.peer_id();
     let pk = (*peer_id.as_public_key()).into();
     let agent = with_socket(SshAgent::new(pk), sock);
-    let keys = runtime::block_on(ssh::list_keys::<UnixStream>(&agent))?;
+    let keys = runtime::block_on(async move { ssh::list_keys::<UnixStream>(&agent).await })?;
     Ok(keys.contains(&pk))
 }
 

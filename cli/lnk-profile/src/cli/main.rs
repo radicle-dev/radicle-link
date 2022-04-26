@@ -70,7 +70,7 @@ fn eval(sock: SshAuthSock, command: Command) -> anyhow::Result<()> {
             ssh::Options::Add(ssh::Add { id, time }) => {
                 let constraints =
                     time.map_or(vec![], |seconds| vec![Constraint::KeyLifetime { seconds }]);
-                let id = ssh_add(None, id, sock, keys::prompt::new(), &constraints)?;
+                let id = ssh_add(None, id, sock, keys::prompt::new(), constraints)?;
                 println!("added key for profile id `{}`", id);
             },
             ssh::Options::Rm(ssh::Rm { id }) => {
