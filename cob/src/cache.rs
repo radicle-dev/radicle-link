@@ -5,12 +5,13 @@
 
 use super::ObjectId;
 
+use minicbor::Decode;
 use thiserror::Error;
 use tracing::instrument;
 
 use std::{cell::RefCell, collections::BTreeSet, path::PathBuf, rc::Rc};
-pub mod thin_change_graph;
-pub use thin_change_graph::ThinChangeGraph;
+pub mod cached_change_graph;
+pub use cached_change_graph::CachedChangeGraph;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -36,22 +37,17 @@ pub trait Cache {
     /// in the RFC that any peer updating a change must update their ref to
     /// the object, so this should not be a problem.
     ///
-    /// We return an `Rc<RefCell<ThinChangeGraph>>`. This is so that changes can
-    /// be made by calling `ThinChangeGraph::propose_change`, which mutates
-    /// the `ThinChangeGraph`. This allows the `ThinChangeGraph` (via it's
-    /// `validated_automerge`) to cache the `automerge::Backend` and
-    /// `automerge::Frontend` used to validate changes. This in turn means that
-    /// we avoid rebuilding the automerge document from scratch for every
-    /// change - instead we just have to rebuild in the case of schema
-    /// invalidating changes, which are hopefully rare.
+    /// We return an `Rc<RefCell<CachedChangeGraph>>`. This is so that changes
+    /// can be made by calling `CachedChangeGraph::propose_change`, which
+    /// mutates the `CachedChangeGraph`.
     fn load(
         &mut self,
         oid: ObjectId,
         known_refs: &BTreeSet<git2::Oid>,
-    ) -> Result<Option<Rc<RefCell<ThinChangeGraph>>>, Error>;
+    ) -> Result<Option<Rc<RefCell<CachedChangeGraph>>>, Error>;
 
     /// Insert or update an object in the cache
-    fn put(&mut self, oid: ObjectId, graph: Rc<RefCell<ThinChangeGraph>>) -> Result<(), Error>;
+    fn put(&mut self, oid: ObjectId, graph: Rc<RefCell<CachedChangeGraph>>) -> Result<(), Error>;
 }
 
 /// A cache which stores it's objects on the file system. A sort of poor mans
@@ -66,10 +62,10 @@ pub trait Cache {
 /// |  ...
 /// ```
 ///
-/// Each file contains a CBOR encoding of a `CacheFile`. This file contains the
-/// OIDs of the tips of the graph that were used to generate the object, the
-/// validated automerge history that was generated using those tips, the schema
-/// and the schema commit OID.
+/// Each file contains a CBOR encoding of a `CachedChangeGraph`. This file
+/// contains the OIDs of the tips of the graph that were used to generate the
+/// object, the validated automerge history that was generated using those tips,
+/// the schema and the schema commit OID.
 ///
 /// The `v1` directory means we can easily add a `v2` if we need to change the
 /// cache layout in backwards incompatible ways.
@@ -78,11 +74,6 @@ pub trait Cache {
 /// creating a temporary file and then renaming it.
 pub struct FileSystemCache {
     dir: PathBuf,
-    /// An in memory cache of the last 100 objects that were loaded. This is
-    /// useful for situations where you're iteratively applying updates -
-    /// one after another - to the same object because it avoids hitting the
-    /// disk for every update.
-    hot_cache: lru::LruCache<ObjectId, Rc<RefCell<ThinChangeGraph>>>,
 }
 
 impl FileSystemCache {
@@ -94,10 +85,7 @@ impl FileSystemCache {
             std::fs::create_dir_all(&dir)?;
         }
         tracing::debug!(dir=?dir, "opening cache");
-        Ok(FileSystemCache {
-            dir,
-            hot_cache: lru::LruCache::new(100),
-        })
+        Ok(FileSystemCache { dir })
     }
 
     fn object_path(&self, oid: ObjectId) -> std::path::PathBuf {
@@ -111,18 +99,7 @@ impl Cache for FileSystemCache {
         &mut self,
         oid: ObjectId,
         known_refs: &BTreeSet<git2::Oid>,
-    ) -> Result<Option<Rc<RefCell<ThinChangeGraph>>>, Error> {
-        if self.hot_cache.contains(&oid) {
-            let obj = self.hot_cache.get(&oid).unwrap().clone();
-            if known_refs == obj.borrow().refs() {
-                tracing::trace!(object_id=?oid, "fresh object found in memory cache");
-                return Ok(Some(obj));
-            } else {
-                tracing::trace!(fresh_refs=?known_refs, cached_refs=?obj.borrow().refs(), "stale object found in memory cache");
-                self.hot_cache.pop(&oid);
-                return Ok(None);
-            }
-        }
+    ) -> Result<Option<Rc<RefCell<CachedChangeGraph>>>, Error> {
         let object_path = self.object_path(oid);
         let bytes = match std::fs::read(&object_path) {
             Ok(b) => b,
@@ -133,39 +110,35 @@ impl Cache for FileSystemCache {
             Err(e) => return Err(e.into()),
         };
 
-        let raw_graph: ThinChangeGraph = match thin_change_graph::forward_compatible_decode(
-            &mut minicbor::Decoder::new(&bytes),
-        )? {
-            None => {
-                tracing::warn!("cached object found with unknown fields");
+        let raw_graph = match CachedChangeGraph::decode(&mut minicbor::Decoder::new(&bytes)) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!(err=?e, "error decoding cached change graph");
                 return Ok(None);
             },
-            Some(g) => g,
         };
-        let thin_graph = Rc::new(RefCell::new(raw_graph));
+        let cached_graph = Rc::new(RefCell::new(raw_graph));
 
-        if known_refs == thin_graph.borrow().refs() {
+        if known_refs == cached_graph.borrow().refs() {
             tracing::trace!(object_id=?oid, "fresh object found in filesystem cache");
-            self.hot_cache.put(oid, thin_graph.clone());
-            Ok(Some(thin_graph))
+            Ok(Some(cached_graph))
         } else {
-            tracing::trace!(fresh_refs=?known_refs, cached_refs=?thin_graph.borrow().refs(), "stale object found in filesystem cache");
+            tracing::trace!(fresh_refs=?known_refs, cached_refs=?cached_graph.borrow().refs(), "stale object found in filesystem cache");
             Ok(None)
         }
     }
 
     #[instrument(level = "trace", skip(self, graph))]
-    fn put(&mut self, oid: ObjectId, graph: Rc<RefCell<ThinChangeGraph>>) -> Result<(), Error> {
+    fn put(&mut self, oid: ObjectId, graph: Rc<RefCell<CachedChangeGraph>>) -> Result<(), Error> {
         let tmp = tempfile::NamedTempFile::new_in(&self.dir)?;
         {
             let out = std::fs::File::create(&tmp)?;
             let g = graph.borrow();
-            let gref: &ThinChangeGraph = &g;
+            let gref: &CachedChangeGraph = &g;
             minicbor::encode(gref, &out)?;
             out.sync_all()?;
         }
         std::fs::rename(tmp, self.object_path(oid))?;
-        self.hot_cache.put(oid, graph);
         Ok(())
     }
 }
@@ -179,7 +152,7 @@ impl NoOpCache {
 }
 
 impl Cache for NoOpCache {
-    fn put(&mut self, _oid: ObjectId, _graph: Rc<RefCell<ThinChangeGraph>>) -> Result<(), Error> {
+    fn put(&mut self, _oid: ObjectId, _graph: Rc<RefCell<CachedChangeGraph>>) -> Result<(), Error> {
         Ok(())
     }
 
@@ -187,7 +160,7 @@ impl Cache for NoOpCache {
         &mut self,
         _oid: ObjectId,
         _known_tips: &BTreeSet<git2::Oid>,
-    ) -> Result<Option<Rc<RefCell<ThinChangeGraph>>>, Error> {
+    ) -> Result<Option<Rc<RefCell<CachedChangeGraph>>>, Error> {
         Ok(None)
     }
 }

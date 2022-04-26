@@ -1825,20 +1825,18 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.15.0"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4be404426c47c9b868fc9b6ddda07f84e2885d12b17066036717db2cd4e5d77"
+checksum = "877e398ffb23c1c311c417ef5e72e8699c3822dbf835468f009c6ce91b6c206b"
 dependencies = [
  "ahash 0.7.6",
- "anyhow",
  "base64",
  "bytecount",
  "fancy-regex",
  "fraction",
  "iso8601",
- "itoa 1.0.1",
+ "itoa 0.4.8",
  "lazy_static",
- "memchr",
  "num-cmp",
  "parking_lot 0.12.0",
  "percent-encoding",

@@ -17,6 +17,7 @@ pub use cob::{
     ChangeGraphInfo,
     CollaborativeObject,
     CreateObjectArgs,
+    EntryContents,
     History,
     IdentityStorage,
     ObjectId,
@@ -83,7 +84,7 @@ pub struct NewObjectSpec {
     /// A valid JSON schema which uses the vocabulary at <https://alexjg.github.io/automerge-jsonschema/spec>
     pub schema_json: serde_json::Value,
     /// The CRDT history to initialize this object with
-    pub history: History,
+    pub history: EntryContents,
     /// The typename for this object
     pub typename: TypeName,
     /// An optional message to add to the commit message for the commit which
@@ -100,7 +101,7 @@ pub struct UpdateObjectSpec {
     /// An optional message to add to the commit message of the change
     pub message: Option<String>,
     /// The CRDT changes to add to the object
-    pub changes: History,
+    pub changes: EntryContents,
 }
 
 pub struct CollaborativeObjects<'a> {
@@ -137,7 +138,7 @@ impl<'a> CollaborativeObjects<'a> {
             authorizing_identity: resolve_authorizing_identity(self.store, within_identity)?
                 .as_ref(),
             schema,
-            history: spec.history,
+            contents: spec.history,
             typename: spec.typename,
             message: spec.message,
             cache_dir: self.cache_dir.clone(),

@@ -6,7 +6,7 @@
 use super::{
     change_metadata::{self, ChangeMetadata, CreateMetadataArgs},
     trailers,
-    History,
+    EntryContents,
     HistoryType,
     TypeName,
 };
@@ -26,7 +26,7 @@ pub struct Change {
     /// The manifest
     manifest: Manifest,
     /// The actual changes this change carries
-    history: History,
+    contents: EntryContents,
     /// The metadata for this change
     metadata: change_metadata::ChangeMetadata,
 }
@@ -81,7 +81,7 @@ pub struct NewChangeSpec {
     pub(crate) typename: TypeName,
     pub(crate) tips: Option<Vec<git2::Oid>>,
     pub(crate) message: Option<String>,
-    pub(crate) history: History,
+    pub(crate) contents: EntryContents,
 }
 
 const MANIFEST_BLOB_NAME: &str = "manifest.toml";
@@ -98,7 +98,7 @@ impl Change {
     ) -> Result<Change, error::Create> {
         let manifest = Manifest {
             typename: spec.typename,
-            history_type: (&spec.history).into(),
+            history_type: (&spec.contents).into(),
         };
 
         let mut tb = repo.treebuilder(None)?;
@@ -112,7 +112,7 @@ impl Change {
             git2::FileMode::Blob.into(),
         )?;
 
-        let change_blob = repo.blob(spec.history.as_bytes())?;
+        let change_blob = repo.blob(spec.contents.as_ref())?;
         tb.insert(CHANGE_BLOB_NAME, change_blob, git2::FileMode::Blob.into())?;
 
         let revision = tb.write()?;
@@ -137,7 +137,7 @@ impl Change {
         Ok(Change {
             schema_commit: spec.schema_commit,
             manifest,
-            history: spec.history,
+            contents: spec.contents,
             metadata,
         })
     }
@@ -157,14 +157,16 @@ impl Change {
         let manifest: Manifest =
             toml::de::from_slice(manifest_blob.content()).map_err(error::Load::InvalidManifest)?;
 
-        let history = match manifest.history_type {
+        let contents = match manifest.history_type {
             HistoryType::Automerge => {
-                let history_tree_entry = tree
+                let contents_tree_entry = tree
                     .get_name(CHANGE_BLOB_NAME)
                     .ok_or(error::Load::NoChange)?;
-                let history_object = history_tree_entry.to_object(repo)?;
-                let history_blob = history_object.as_blob().ok_or(error::Load::ChangeNotBlob)?;
-                History::Automerge(history_blob.content().into())
+                let contents_object = contents_tree_entry.to_object(repo)?;
+                let contents_blob = contents_object
+                    .as_blob()
+                    .ok_or(error::Load::ChangeNotBlob)?;
+                EntryContents::Automerge(contents_blob.content().into())
             },
         };
 
@@ -174,13 +176,13 @@ impl Change {
         Ok(Change {
             schema_commit: schema_commit_trailer.oid(),
             manifest,
-            history,
+            contents,
             metadata,
         })
     }
 
-    pub fn commit(&self) -> git2::Oid {
-        self.metadata.commit
+    pub fn commit(&self) -> &git2::Oid {
+        &self.metadata.commit
     }
 
     pub fn author_commit(&self) -> git2::Oid {
@@ -191,8 +193,8 @@ impl Change {
         &self.manifest.typename
     }
 
-    pub fn history(&self) -> &History {
-        &self.history
+    pub fn contents(&self) -> &EntryContents {
+        &self.contents
     }
 
     pub fn schema_commit(&self) -> git2::Oid {
