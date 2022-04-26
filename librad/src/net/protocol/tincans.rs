@@ -17,7 +17,12 @@ use super::{
     interrogation,
     request_pull,
 };
-use crate::{git::Urn, identities::xor::Xor, net::quic, PeerId};
+use crate::{
+    git::Urn,
+    identities::xor::Xor,
+    net::quic::{self, ConnectPeer},
+    PeerId,
+};
 
 pub struct Connected(pub(crate) quic::Connection);
 
@@ -205,6 +210,20 @@ impl Default for TinCans {
     }
 }
 
+#[async_trait]
+impl ConnectPeer for TinCans {
+    async fn connect<'a, Addrs>(&self, peer: PeerId, addrs: Addrs) -> Option<quic::Ingress<'a>>
+    where
+        Addrs: IntoIterator<Item = SocketAddr> + Send,
+        Addrs::IntoIter: Send,
+    {
+        let addrs = addrs.into_iter().collect();
+        Self::connect(self, (peer, addrs))
+            .await
+            .map(|Connected(c)| quic::Ingress::Remote(c))
+    }
+}
+
 pub struct Interrogation {
     peer: PeerId,
     conn: quic::Connection,
@@ -284,7 +303,6 @@ impl Interrogation {
                 _ => unreachable!(),
             }
         }
-
         rx.await.unwrap_or(Err(error::Interrogation::Unavailable))
     }
 }

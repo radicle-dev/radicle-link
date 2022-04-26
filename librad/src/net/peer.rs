@@ -11,7 +11,7 @@ use link_async::Spawner;
 use crate::{
     git::{self, identities::local::LocalIdentity, Urn},
     net::{
-        protocol::{self, gossip},
+        protocol::{self, gossip, TinCans},
         replication::{self, Replication},
     },
     PeerId,
@@ -24,6 +24,7 @@ pub use crate::net::protocol::{
         downstream::{MembershipInfo, Stats},
         Upstream as ProtocolEvent,
     },
+    rpc::client::{self, Client},
     Connected,
     Interrogation,
     PeerInfo,
@@ -171,6 +172,14 @@ where
         &self.config.protocol
     }
 
+    pub fn client(&self) -> Result<Client<S, TinCans>, client::error::Init> {
+        let config = client::Config {
+            user_storage: self.user_store.clone().into(),
+            ..self.config.clone().into()
+        };
+        Client::new(config, self.spawner.clone(), self.phone.clone())
+    }
+
     pub fn announce(&self, have: gossip::Payload) -> Result<(), gossip::Payload> {
         self.phone.announce(have)
     }
@@ -240,6 +249,9 @@ where
         self.phone.stats().await
     }
 
+    #[deprecated(
+        note = "use of `self.interrogate(..)` is deprecated in favour of going through `self.client(..)?.interrogate(..)`"
+    )]
     pub async fn interrogate(
         &self,
         from: impl Into<(PeerId, Vec<SocketAddr>)>,
@@ -253,7 +265,10 @@ where
         Ok(self.phone.interrogate(remote_peer, conn))
     }
 
-    pub async fn request_pull(
+    #[deprecated(
+        note = "use of `self.request_pull(..)` is deprecated in favour of going through `self.client(..)?.request_pull(..)`"
+    )]
+    pub async fn request_pull<'a>(
         &self,
         to: impl Into<(PeerId, Vec<SocketAddr>)>,
         urn: Urn,
@@ -281,6 +296,9 @@ where
     /// Note that this method is subject to the experimental `replication-v3`
     /// feature. Do not enable `replication-v3` unless you know what you're
     /// doing.
+    #[deprecated(
+        note = "use of `self.replicate(..)` is deprecated in favour of going through `self.client(..)?.replicate(..)`"
+    )]
     pub async fn replicate(
         &self,
         from: impl Into<(PeerId, Vec<SocketAddr>)>,

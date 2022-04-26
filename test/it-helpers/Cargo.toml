@@ -34,6 +34,9 @@ path = "../../git-ref-format"
 [dependencies.librad]
 path = "../../librad"
 
+[dependencies.link-async]
+path = "../../link-async"
+
 [dependencies.lnk-clib]
 path = "../../cli/lnk-clib"
 

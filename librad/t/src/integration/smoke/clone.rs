@@ -72,6 +72,8 @@ fn not_present() {
 
         contributor
             .0
+            .client()
+            .unwrap()
             .replicate((voyeur_id, voyeur_addrs), urn, None)
             .await
             .expect("error replicating voyeur->contributor");
@@ -128,7 +130,7 @@ fn when_disconnected_and_no_addr_hints() {
         Leecher(&net.peers()[1]).clone_from(host, false).await
     });
     #[cfg(feature = "replication-v3")]
-    assert!(matches!(res, Err(e) if e.to_string().starts_with("no connection to")));
+    assert!(matches!(res, Err(e) if e.to_string().starts_with("unable to obtain connection to")));
     #[cfg(not(feature = "replication-v3"))]
     assert!(matches!(
         res,
@@ -163,6 +165,7 @@ impl Leecher<'_> {
         let host_addrs = host.peer.listen_addrs().to_vec();
 
         self.0
+            .client()?
             .replicate(
                 (
                     host_peer,
