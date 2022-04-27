@@ -139,7 +139,7 @@ pub fn ssh_add<H, P, C>(
     id: P,
     sock: SshAuthSock,
     crypto: C,
-    constraints: &[Constraint],
+    constraints: Vec<Constraint>,
 ) -> Result<ProfileId, Error>
 where
     H: Into<Option<LnkHome>>,

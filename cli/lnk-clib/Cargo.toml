@@ -13,7 +13,8 @@ test = false
 unsafe = []
 
 [dependencies]
-futures-lite = "1.12.0"
+async-trait = "0.1"
+futures = "0.3"
 itertools = "0.10.0"
 nix = "0.23.1"
 once_cell = "1.10"
@@ -35,6 +36,6 @@ version = "0.13"
 features = ["std"]
 
 [dependencies.tokio]
-version = "1.13"
+version = "1.17"
 default-features = false
 features = [ "fs", "io-std", "macros", "process", "rt-multi-thread", "signal" ]

@@ -2231,7 +2231,8 @@ dependencies = [
 name = "lnk-clib"
 version = "0.1.0"
 dependencies = [
- "futures-lite",
+ "async-trait",
+ "futures",
  "itertools 0.10.3",
  "librad",
  "lnk-thrussh-agent",

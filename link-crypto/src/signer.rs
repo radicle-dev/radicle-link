@@ -20,8 +20,6 @@ pub trait Signer: sign::Signer + Send + Sync + dyn_clone::DynClone + 'static {
     }
 }
 
-impl<T> Signer for T where T: sign::Signer + Send + Sync + Clone + 'static {}
-
 // Here be Dragons...
 
 /// A boxed [`Error`] that is used as the associated `Error` type for
@@ -95,6 +93,12 @@ impl Clone for BoxedSigner {
     }
 }
 
+impl Signer for BoxedSigner {
+    fn sign_blocking(&self, data: &[u8]) -> Result<sign::Signature, <Self as sign::Signer>::Error> {
+        self.signer.sign_blocking(data)
+    }
+}
+
 #[async_trait]
 impl sign::Signer for BoxedSigner {
     type Error = BoxedSignError;
@@ -105,6 +109,13 @@ impl sign::Signer for BoxedSigner {
 
     async fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
         self.signer.sign(data).await
+    }
+}
+
+impl Signer for keys::SecretKey {
+    fn sign_blocking(&self, data: &[u8]) -> Result<sign::Signature, <Self as sign::Signer>::Error> {
+        let sig = crate::SecretKey::sign(self, data);
+        Ok(sign::Signature(sig.into()))
     }
 }
 
@@ -157,9 +168,17 @@ pub struct SomeSigner<S> {
     pub signer: S,
 }
 
+impl<S: Signer + Clone> Signer for SomeSigner<S> {
+    fn sign_blocking(&self, data: &[u8]) -> Result<sign::Signature, <Self as sign::Signer>::Error> {
+        self.signer
+            .sign_blocking(data)
+            .map_err(BoxedSignError::from_std_error)
+    }
+}
+
 impl<S> From<SomeSigner<S>> for BoxedSigner
 where
-    S: sign::Signer + Clone + Send + Sync + 'static,
+    S: Signer + Clone + Send + Sync + 'static,
     S::Error: Error + Send + Sync + 'static,
 {
     fn from(other: SomeSigner<S>) -> Self {
