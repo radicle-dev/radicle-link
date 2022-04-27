@@ -115,6 +115,9 @@ impl TestProject {
 
         info!("pull from {} to {}", remote_peer, to.peer_id());
 
-        Ok(to.replicate((remote_peer, remote_addrs), urn, None).await?)
+        Ok(to
+            .client()?
+            .replicate((remote_peer, remote_addrs), urn, None)
+            .await?)
     }
 }

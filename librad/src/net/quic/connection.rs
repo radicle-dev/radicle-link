@@ -35,6 +35,7 @@ pub use tracking::Conntrack;
 pub type BoxedIncomingStreams<'a> =
     IncomingStreams<BoxStream<'a, Result<Either<BidiStream, RecvStream>>>>;
 
+#[derive(Clone)]
 pub struct IncomingStreams<S> {
     conn: Connection,
     inner: S,
@@ -89,7 +90,10 @@ fn incoming_streams(
         })
     };
     let inner = stream::select(bidi, uni).map_err(move |e| {
-        track.disconnect(&conn_id, CloseReason::ConnectionError);
+        if let Some(track) = track.as_ref() {
+            track.disconnect(&conn_id, CloseReason::ConnectionError)
+        }
+
         Error::from(e)
     });
 
@@ -138,13 +142,13 @@ pub enum BorrowUniError<E: std::error::Error + 'static> {
 pub struct Connection {
     peer: PeerId,
     conn: quinn::Connection,
-    track: Conntrack,
+    track: Option<Conntrack>,
     send_streams: Arc<Vec<Mutex<Option<SendStream>>>>,
 }
 
 impl Connection {
     pub(super) fn new(
-        track: Conntrack,
+        track: Option<Conntrack>,
         reserve_send_streams: usize,
         remote_peer: PeerId,
         NewConnection {
@@ -178,8 +182,7 @@ impl Connection {
 
     pub async fn open_bidi(&self) -> Result<BidiStream> {
         let (send, recv) = self.conn.open_bi().await.map_err(|e| {
-            self.track
-                .disconnect(&self.id(), CloseReason::ConnectionError);
+            self.close(CloseReason::ConnectionError);
             e
         })?;
         self.tickle();
@@ -199,8 +202,7 @@ impl Connection {
 
     pub async fn open_uni(&self) -> Result<SendStream> {
         let send = self.conn.open_uni().await.map_err(|e| {
-            self.track
-                .disconnect(&self.id(), CloseReason::ConnectionError);
+            self.close(CloseReason::ConnectionError);
             e
         })?;
         self.tickle();
@@ -246,18 +248,21 @@ impl Connection {
     }
 
     pub fn close(&self, reason: CloseReason) {
-        self.track.disconnect(&self.id(), reason);
+        if let Some(track) = self.track.as_ref() {
+            track.disconnect(&self.id(), reason)
+        }
     }
 
     #[tracing::instrument(skip(self, e))]
     pub(super) fn on_stream_error(&self, e: &io::Error) {
         tracing::warn!(err = ?e, "stream error");
-        self.track
-            .disconnect(&self.id(), CloseReason::ConnectionError);
+        self.close(CloseReason::ConnectionError);
     }
 
     pub fn tickle(&self) {
-        self.track.tickle(&self.id())
+        if let Some(track) = self.track.as_ref() {
+            track.tickle(&self.id())
+        }
     }
 
     pub fn stable_id(&self) -> usize {

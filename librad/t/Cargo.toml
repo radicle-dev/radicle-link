@@ -31,6 +31,7 @@ path = "../../git-ref-format"
 
 [dependencies.git-ref-format-test]
 path = "../../git-ref-format/t"
+features = ["test"]
 
 [dependencies.radicle-git-ext]
 path = "../../git-ext"

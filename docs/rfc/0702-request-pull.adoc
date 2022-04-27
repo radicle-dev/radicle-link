@@ -48,8 +48,8 @@ Once replication is complete the receiver MUST send a success response listing
 the refs which were updated as a result of the replication and the targets
 those refs were updated to point to.
 
-The receiver MUST announce any new changes they have received to any connected
-peers.
+The receiver SHOULD announce any new changes they have received to any connected
+peers, provided that it is connected to the gossip network.
 
 Throughout the course of the RPC the server MAY send a progress message
 containing a human readable string describing any relevant logs the server

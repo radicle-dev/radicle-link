@@ -270,7 +270,8 @@ where
                     // Skip explicit replication if the peer is already tracked.
                     if updated {
                         let addr_hints = seen_addrs.iter().copied().collect::<Vec<_>>();
-                        peer.replicate((peer_id, addr_hints), urn.clone(), None)
+                        peer.client()?
+                            .replicate((peer_id, addr_hints), urn.clone(), None)
                             .await?;
                     }
 

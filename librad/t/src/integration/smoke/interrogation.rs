@@ -61,6 +61,8 @@ fn responds() {
         };
 
         let interrogation = requester
+            .client()
+            .unwrap()
             .interrogate((responder.peer_id(), responder.listen_addrs().to_vec()))
             .await
             .unwrap();
