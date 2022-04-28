@@ -23,11 +23,7 @@ pub(crate) trait GraphNode {
 /// ancestors have already been evaluated. Returning `ControlFlow::Break(..)`
 /// from `fold` will omit evaluation of the current node and consequently omit
 /// processing of any nodes who have the current node as an ancestor.
-pub(crate) fn pruning_fold<'a, BN, Node, It, F, O>(
-    init: O,
-    items: It,
-    mut f: F,
-) -> O
+pub(crate) fn pruning_fold<'a, BN, Node, It, F, O>(init: O, items: It, mut f: F) -> O
 where
     BN: Borrow<Node> + 'a,
     Node: 'a + GraphNode,
