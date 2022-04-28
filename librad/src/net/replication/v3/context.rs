@@ -440,22 +440,41 @@ impl SignedRefs for Context<'_> {
     }
 }
 
+pub struct Tracked<'a>(
+    tracking::TrackedEntries<'a, Storage, <Storage as tracking::git::refdb::Read<'a>>::References>,
+);
+
+impl<'a> Iterator for Tracked<'a> {
+    type Item = Result<(PeerId, link_replication::DataPolicy), tracking::error::Tracked>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use link_replication::DataPolicy::*;
+
+        loop {
+            match self.0.next()? {
+                Ok(tracking::Tracked::Default { .. }) => continue,
+                Ok(tracking::Tracked::Peer { peer, config, .. }) => {
+                    break Some(Ok((peer, if config.data { Allow } else { Deny })))
+                },
+                Err(e) => break Some(Err(e)),
+            }
+        }
+    }
+}
+
 #[allow(clippy::type_complexity)]
 impl<'a> Tracking for Context<'a> {
     type Urn = Urn;
 
-    type Tracked = tracking::TrackedPeers<
-        'a,
-        <Storage as tracking::git::refdb::Read<'a>>::References,
-        <Storage as tracking::git::refdb::Read<'a>>::IterError,
-    >;
+    type Tracked = Tracked<'a>;
     type Updated = std::iter::Map<
         std::vec::IntoIter<tracking::batch::Updated>,
         fn(tracking::batch::Updated) -> Either<PeerId, Self::Urn>,
     >;
 
-    type TrackedError = tracking::error::TrackedPeers;
     type TrackError = tracking::error::Batch;
+    type TrackedError = tracking::error::Tracked;
+    type PolicyError = tracking::error::Get;
 
     fn track<I>(&mut self, iter: I) -> Result<Self::Updated, Self::TrackError>
     where
@@ -524,7 +543,7 @@ impl<'a> Tracking for Context<'a> {
     }
 
     fn tracked(&self) -> Result<Self::Tracked, Self::TrackedError> {
-        tracking::tracked_peers(self.store, Some(&self.urn))
+        tracking::tracked(self.store, Some(&self.urn)).map(Tracked)
     }
 }
 

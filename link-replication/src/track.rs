@@ -19,14 +19,27 @@ pub enum Rel<Urn> {
     SelfRef(Urn),
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum DataPolicy {
+    Deny = 0,
+    Allow = 1,
+}
+
+impl Default for DataPolicy {
+    fn default() -> Self {
+        Self::Allow
+    }
+}
+
 pub trait Tracking {
     type Urn: Urn;
 
     type Updated: Iterator<Item = Either<PeerId, Self::Urn>>;
-    type Tracked: Iterator<Item = Result<PeerId, Self::TrackedError>>;
+    type Tracked: Iterator<Item = Result<(PeerId, DataPolicy), Self::TrackedError>>;
 
     type TrackError: std::error::Error + Send + Sync + 'static;
     type TrackedError: std::error::Error + Send + Sync + 'static;
+    type PolicyError: std::error::Error + Send + Sync + 'static;
 
     /// Atomically create tracking relationships.
     fn track<I>(&mut self, iter: I) -> Result<Self::Updated, Self::TrackError>

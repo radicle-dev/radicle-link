@@ -134,7 +134,7 @@ where
         &self.idts
     }
 
-    fn id_tips_mut(&mut self) -> &mut IdentityTips {
+    pub fn id_tips_mut(&mut self) -> &mut IdentityTips {
         &mut self.idts
     }
 
@@ -146,7 +146,7 @@ where
         &mut self.sigs
     }
 
-    fn delegation_tips_mut(&mut self) -> &mut DelegationTips<Urn> {
+    pub fn delegation_tips_mut(&mut self) -> &mut DelegationTips<Urn> {
         &mut self.dels
     }
 
@@ -168,6 +168,12 @@ where
 
     pub fn updates_mut(&mut self) -> &mut Vec<Update<'static>> {
         &mut self.tips
+    }
+
+    pub fn clear_rad_refs(&mut self) {
+        self.id_tips_mut().clear();
+        self.delegation_tips_mut().clear();
+        self.sigref_tips_mut().clear();
     }
 
     pub fn as_shim<'a, T>(&'a mut self, of: &'a mut T) -> Shim<'a, T, Urn> {
@@ -271,6 +277,7 @@ where
 
     type TrackError = T::TrackError;
     type TrackedError = T::TrackedError;
+    type PolicyError = T::PolicyError;
 
     fn track<I>(&mut self, iter: I) -> Result<Self::Updated, Self::TrackError>
     where

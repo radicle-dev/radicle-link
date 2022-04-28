@@ -279,7 +279,9 @@ fn threes_a_crowd() {
         assert!(peer3_expected.has_rad_self, "peer 3 missing `rad/self``");
         assert!(
             peer3_expected.has_rad_ids,
-            "peer 3 missing `rad/ids/<delegate>`"
+            "peer 3 missing `refs/remotes/{}/rad/ids/{}`",
+            peer1.peer_id(),
+            proj.owner.urn().encode_id(),
         );
 
         // Has peer2 refs?
@@ -300,7 +302,9 @@ fn threes_a_crowd() {
         assert!(peer3_expected.has_rad_id, "peer 3 missing `rad/id`");
         assert!(
             peer3_expected.has_rad_ids,
-            "peer 3 missing `rad/ids/<delegate>`"
+            "peer 3 missing `refs/remotes/{}/rad/ids/{}`",
+            peer2.peer_id(),
+            proj.owner.urn().encode_id(),
         );
     })
 }

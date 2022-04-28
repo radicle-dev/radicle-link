@@ -3,23 +3,19 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    convert::TryFrom,
-};
+use std::collections::BTreeMap;
 
-use bstr::ByteVec as _;
-use git_ref_format::{Qualified, RefString};
+use bstr::ByteSlice;
 use link_crypto::PeerId;
-use link_git::protocol::{ObjectId, Ref};
+use link_git::protocol::Ref;
 use radicle_data::NonEmptyVec;
 
-use super::{guard_required, mk_ref_update, ref_prefixes, required_refs};
+use super::{guard_required, ref_prefixes, required_refs};
 use crate::{
     error,
     ids,
     internal::{self, Layout, UpdateTips},
-    refdb,
+    prepare,
     refs,
     track,
     transmit::{self, BuildWantsHaves, LsRefs},
@@ -31,9 +27,14 @@ use crate::{
     RefPrefix,
     RefScan,
     Refdb,
-    Update,
     WantsHaves,
 };
+
+#[derive(Clone, Copy, Debug)]
+pub struct Spec {
+    pub is_delegate: bool,
+    pub policy: track::DataPolicy,
+}
 
 #[derive(Debug)]
 pub struct ForFetch {
@@ -41,28 +42,22 @@ pub struct ForFetch {
     pub local_id: PeerId,
     /// The remote peer being fetched from.
     pub remote_id: PeerId,
-    /// The set of keys the latest known identity revision delegates to.
-    /// Indirect delegations are resolved.
-    pub delegates: BTreeSet<PeerId>,
-    /// Additional peers being tracked (ie. excluding `delegates`).
-    pub tracked: BTreeSet<PeerId>,
+    /// The set of tracked peers, including delegates.
+    pub tracked: BTreeMap<PeerId, Spec>,
     /// Maximum number of bytes the fetched packfile is allowed to have.
     pub limit: u64,
 }
 
 impl ForFetch {
     pub fn peers(&self) -> impl Iterator<Item = &PeerId> {
-        self.delegates
-            .iter()
-            .chain(self.tracked.iter())
-            .filter(move |id| *id != &self.local_id)
+        self.tracked.keys().filter(move |id| *id != &self.local_id)
     }
 
     pub fn required_refs(&self) -> impl Iterator<Item = refs::Scoped<'_, 'static>> {
-        self.delegates
+        self.tracked
             .iter()
-            .filter(move |id| *id != &self.local_id)
-            .flat_map(move |id| required_refs(id, &self.remote_id))
+            .filter(move |(id, spec)| *id != &self.local_id && spec.is_delegate)
+            .flat_map(move |(id, _)| required_refs(id, &self.remote_id))
     }
 
     fn ref_prefixes(&self) -> impl Iterator<Item = RefPrefix> + '_ {
@@ -80,20 +75,20 @@ impl Negotiation for ForFetch {
         use refs::parsed::Identity;
 
         let (name, tip) = refs::into_unpacked(r);
-        let name = {
-            let s = Vec::from(name).into_string().ok()?;
-            RefString::try_from(s).ok()?
-        };
-        // FIXME:: precompute / memoize `Self::ref_prefixes`
-        if !self.ref_prefixes().any(|prefix| prefix.matches(&name)) {
-            return None;
-        }
         let parsed = refs::parse::<Identity>(name.as_bstr()).ok()?;
+        let remote_id = match &parsed.remote {
+            Some(remote_id) if remote_id == &self.local_id => None,
+            Some(remote_id) => Some(*remote_id),
+            None => Some(self.remote_id),
+        }?;
+        let policy = self.tracked.get(&remote_id).map(|spec| spec.policy)?;
+        match parsed.inner.as_ref().left()? {
+            refs::parsed::Rad::SignedRefs => match policy {
+                track::DataPolicy::Deny => None,
+                track::DataPolicy::Allow => Some(FilteredRef::new(tip, &remote_id, parsed)),
+            },
 
-        match parsed.remote {
-            Some(remote_id) if remote_id == self.local_id => None,
-            Some(remote_id) => Some(FilteredRef::new(tip, &remote_id, parsed)),
-            None => Some(FilteredRef::new(tip, &self.remote_id, parsed)),
+            _ => Some(FilteredRef::new(tip, &remote_id, parsed)),
         }
     }
 
@@ -127,136 +122,13 @@ impl UpdateTips for ForFetch {
         C: Identities<Urn = U>,
         for<'b> &'b C: RefScan,
     {
-        use either::Either::*;
-        use ids::VerifiedIdentity as _;
-
-        let grouped = refs
-            .iter()
-            .filter_map(|r| {
-                let remote_id = r.remote_id();
-                (remote_id != &self.local_id).then(|| (remote_id, r))
-            })
-            .fold(BTreeMap::new(), |mut acc, (remote_id, r)| {
-                acc.entry(remote_id).or_insert_with(Vec::new).push(r);
-                acc
-            });
-
-        let mut updates = internal::Updates {
-            tips: Vec::with_capacity(refs.len()),
-            track: Vec::new(),
-        };
-
-        for (remote_id, refs) in grouped {
-            let is_delegate = self.delegates.contains(remote_id);
-
-            let mut tips_inner = Vec::with_capacity(refs.len());
-            let mut track_inner = Vec::new();
-            for r in refs {
-                match &r.parsed.inner {
-                    Left(refs::parsed::Rad::Me) => {
-                        match Identities::verify(cx, r.tip, |_| None::<ObjectId>) {
-                            Err(e) if is_delegate => {
-                                return Err(error::Prepare::Verification(e.into()))
-                            },
-                            Err(e) => {
-                                warn!(
-                                    err = %e,
-                                    remote_id = %remote_id,
-                                    "skipping invalid `rad/self`"
-                                );
-                                continue;
-                            },
-                            Ok(id) => {
-                                tips_inner.push(prepare_rad_self(cx, &id, r)?);
-                                track_inner.push(track::Rel::SelfRef(id.urn()));
-                            },
-                        }
-                    },
-
-                    Left(refs::parsed::Rad::Id) => {
-                        match Identities::verify(cx, r.tip, s.lookup_delegations(remote_id)) {
-                            Err(e) if is_delegate => {
-                                return Err(error::Prepare::Verification(e.into()))
-                            },
-                            Err(e) => {
-                                warn!(
-                                    err = %e,
-                                    remote_id = %remote_id,
-                                    "error verifying non-delegate id"
-                                );
-                                // Verification error for a non-delegate taints
-                                // all refs for this remote_id
-                                tips_inner.clear();
-                                track_inner.clear();
-                                break;
-                            },
-
-                            Ok(_) => {
-                                if let Some(u) = mk_ref_update::<_, C::Urn>(r) {
-                                    tips_inner.push(u)
-                                }
-                            },
-                        }
-                    },
-
-                    Left(_) => {
-                        if let Some(u) = mk_ref_update::<_, C::Urn>(r) {
-                            tips_inner.push(u)
-                        }
-                    },
-
-                    Right(_) => continue,
-                }
-            }
-
-            updates.tips.append(&mut tips_inner);
-            updates.track.append(&mut track_inner);
-        }
-
-        Ok(updates)
+        prepare::verification_refs(&self.local_id, s, cx, refs, |remote_id| {
+            self.tracked
+                .get(remote_id)
+                .expect("`ref_filter` yields only tracked refs")
+                .is_delegate
+        })
     }
-}
-
-/// If a top-level namespace exists for `id`, symref to it. Otherwise, create a
-/// direct ref.
-fn prepare_rad_self<'a, C, A>(
-    cx: &C,
-    id: &C::VerifiedIdentity,
-    fr: &'a FilteredRef<A>,
-) -> Result<Update<'a>, error::Prepare>
-where
-    C: Identities,
-{
-    use ids::{AnyIdentity as _, VerifiedIdentity as _};
-    use refdb::{Policy, SymrefTarget};
-
-    let urn = id.urn();
-    let top = refs::namespaced(&id.urn(), refs::REFS_RAD_ID);
-    let oid = Identities::get(cx, &urn)
-        .map_err(|source| error::Prepare::FindRef {
-            name: top.clone().into_qualified().into_refstring(),
-            source: source.into(),
-        })?
-        .map(|id| id.content_id());
-
-    let name = Qualified::from(fr.to_remote_tracking());
-    let up = match oid {
-        Some(oid) => Update::Symbolic {
-            name,
-            target: SymrefTarget {
-                name: top,
-                target: oid.as_ref().to_owned(),
-            },
-            type_change: Policy::Allow,
-        },
-        None => Update::Direct {
-            name,
-            target: fr.tip,
-            no_ff: Policy::Abort,
-        },
-    };
-
-    Ok(up)
 }
 
 impl Layout for ForFetch {

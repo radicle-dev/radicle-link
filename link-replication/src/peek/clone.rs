@@ -7,7 +7,7 @@ use link_crypto::PeerId;
 use link_git::protocol::Ref;
 use radicle_data::NonEmptyVec;
 
-use super::{guard_required, mk_ref_update, ref_prefixes, required_refs};
+use super::{guard_required, ref_prefixes, required_refs};
 use crate::{
     error,
     ids,
@@ -99,7 +99,9 @@ impl UpdateTips for ForClone {
         .map_err(|e| error::Prepare::Verification(e.into()))?;
 
         let tips = if verified.delegate_ids().contains(&self.remote_id) {
-            refs.iter().filter_map(mk_ref_update::<_, C::Urn>).collect()
+            refs.iter()
+                .filter_map(FilteredRef::as_verification_ref_update)
+                .collect()
         } else {
             vec![]
         };
