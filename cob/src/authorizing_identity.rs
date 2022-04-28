@@ -3,10 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use link_crypto::PublicKey;
 use link_identities::{git::Urn, Person, Project, VerifiedPerson, VerifiedProject};
-
-use std::collections::BTreeSet;
 
 pub enum AuthDecision {
     Authorized,
@@ -51,28 +48,11 @@ impl AuthorizingIdentity for VerifiedProject {
         p.urn()
     }
 
-    fn check_authorization(&self, principal: &VerifiedPerson) -> AuthDecision {
-        if is_maintainer(self, principal) {
-            AuthDecision::Authorized
-        } else {
-            AuthDecision::NotAuthorized {
-                reason: "attempted to modify a cob in a project identity with \
-                    a principal which is not a maintainer",
-            }
-        }
+    fn check_authorization(&self, _principal: &VerifiedPerson) -> AuthDecision {
+        AuthDecision::Authorized
     }
 
     fn content_id(&self) -> git2::Oid {
         self.content_id.into()
     }
-}
-
-fn is_maintainer(project: &VerifiedProject, person: &VerifiedPerson) -> bool {
-    let keys: BTreeSet<&PublicKey> = person.delegations().iter().collect();
-    project
-        .delegations()
-        .eligible(keys)
-        .ok()
-        .map(|k| !k.is_empty())
-        .unwrap_or(false)
 }
