@@ -30,6 +30,19 @@ pub struct SshService<Path> {
     pub path: Path,
 }
 
+impl<Path> SshService<Path> {
+    pub fn is_upload(&self) -> bool {
+        match self.service.0 {
+            GitService::UploadPackLs | GitService::UploadPack => true,
+            GitService::ReceivePackLs | GitService::ReceivePack => false,
+        }
+    }
+
+    pub fn is_receive(&self) -> bool {
+        !self.is_upload()
+    }
+}
+
 impl From<GitService> for Service {
     fn from(g: GitService) -> Self {
         Service(g)
