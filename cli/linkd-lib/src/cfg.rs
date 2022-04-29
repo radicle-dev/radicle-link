@@ -140,6 +140,7 @@ impl Cfg<discovery::Static, BoxedSigner, request_pull::State> {
             args::ProtocolListen::Localhost => *LOCALHOST,
             args::ProtocolListen::Provided { addr } => addr,
         };
+        tracing::info!(adrr = % listen_addr, "listening on address");
 
         let metrics = match args.metrics.provider {
             Some(args::MetricsProvider::Graphite) => Some(Metrics::Graphite(
