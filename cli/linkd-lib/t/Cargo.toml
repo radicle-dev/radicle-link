@@ -32,7 +32,7 @@ path = ".."
 
 [dependencies.librad-test]
 path = "../../../librad/t"
-features = ["test"]
+features = ["test", "replication-v3"]
 
 [dependencies.link-crypto-test]
 path = "../../../link-crypto/t"
@@ -64,4 +64,4 @@ features = ["rt-multi-thread"]
 
 [dev-dependencies.librad]
 path = "../../../librad"
-
+features = ["replication-v3"]
