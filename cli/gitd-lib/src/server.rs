@@ -23,23 +23,26 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub(crate) struct Server {
+pub(crate) struct Server<Signer> {
     spawner: Arc<Spawner>,
     peer: PeerId,
-    processes_handle: ProcessesHandle<ChannelAndSessionId, ChannelHandle>,
-    hooks: Hooks,
+    processes_handle: ProcessesHandle<ChannelAndSessionId, ChannelHandle, Signer>,
+    hooks: Hooks<Signer>,
 }
 
 /// The ID of the "extended data" channel in the SSH protocol which corresponds
 /// to stderr
 const STDERR_ID: u32 = 1;
 
-impl Server {
+impl<S> Server<S>
+where
+    S: librad::Signer + Clone,
+{
     pub(crate) fn new(
         spawner: Arc<Spawner>,
         peer: PeerId,
-        processes_handle: ProcessesHandle<ChannelAndSessionId, ChannelHandle>,
-        hooks: Hooks,
+        processes_handle: ProcessesHandle<ChannelAndSessionId, ChannelHandle, S>,
+        hooks: Hooks<S>,
     ) -> Self {
         Self {
             spawner,
@@ -77,14 +80,17 @@ impl Server {
 }
 
 #[instrument(skip(conf, spawner, handle, stream, hooks))]
-fn run_stream(
+fn run_stream<S>(
     conf: Arc<thrussh::server::Config>,
     spawner: Arc<link_async::Spawner>,
     peer: librad::PeerId,
-    hooks: Hooks,
-    handle: ProcessesHandle<ChannelAndSessionId, ChannelHandle>,
+    hooks: Hooks<S>,
+    handle: ProcessesHandle<ChannelAndSessionId, ChannelHandle, S>,
     stream: TcpStream,
-) -> link_async::Task<()> {
+) -> link_async::Task<()>
+where
+    S: librad::Signer + Clone,
+{
     spawner.spawn(async move {
         let handler_stream = thrussh::server::run_stream(
             conf.clone(),
@@ -110,14 +116,14 @@ fn run_stream(
     })
 }
 
-struct SshHandler {
+struct SshHandler<Signer> {
     peer: librad::PeerId,
     id: SessionId,
-    handle: crate::processes::ProcessesHandle<ChannelAndSessionId, ChannelHandle>,
-    hooks: Hooks,
+    handle: crate::processes::ProcessesHandle<ChannelAndSessionId, ChannelHandle, Signer>,
+    hooks: Hooks<Signer>,
 }
 
-impl SshHandler {
+impl<S> SshHandler<S> {
     fn channel_id(&self, channel: thrussh::ChannelId) -> ChannelAndSessionId {
         ChannelAndSessionId::new(channel, self.id)
     }
@@ -139,7 +145,10 @@ impl HandleError {
     }
 }
 
-impl thrussh::server::Handler for SshHandler {
+impl<S> thrussh::server::Handler for SshHandler<S>
+where
+    S: librad::Signer + Clone,
+{
     type Error = HandleError;
     type FutureAuth = futures::future::Ready<Result<(Self, thrussh::server::Auth), HandleError>>;
     type FutureUnit = std::pin::Pin<
@@ -266,9 +275,9 @@ impl thrussh::server::Handler for SshHandler {
                 session.extended_data(
                     channel,
                     STDERR_ID,
-                    "invalid exec request str".to_string().into(),
+                    format!("ERROR: invalid remote URL: {}\n", e).into(),
                 );
-                session.channel_failure(channel);
+                session.close(channel);
                 return self.finished(session);
             },
         };

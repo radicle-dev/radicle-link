@@ -46,14 +46,18 @@ pub enum Error<ReplyError> {
 }
 
 #[tracing::instrument(level = "trace", skip(spawner, pool, incoming, out, hooks))]
-pub(crate) async fn run_git_subprocess<Replier: ProcessReply + Clone>(
+pub(crate) async fn run_git_subprocess<Replier, S>(
     spawner: Arc<Spawner>,
     pool: Arc<storage::Pool<storage::Storage>>,
     incoming: tokio::sync::mpsc::Receiver<Message>,
     mut out: Replier,
     service: SshService<Urn>,
-    hooks: Hooks,
-) -> Result<(), Error<Replier::Error>> {
+    hooks: Hooks<S>,
+) -> Result<(), Error<Replier::Error>>
+where
+    Replier: ProcessReply + Clone,
+    S: librad::Signer + Clone,
+{
     let result = run_git_subprocess_inner(spawner, pool, incoming, &mut out, service, hooks).await;
     match out.close().await {
         Ok(()) => {},
@@ -65,14 +69,35 @@ pub(crate) async fn run_git_subprocess<Replier: ProcessReply + Clone>(
 }
 
 #[tracing::instrument(level = "trace", skip(spawner, pool, incoming, out, hooks))]
-async fn run_git_subprocess_inner<Replier: ProcessReply + Clone>(
+async fn run_git_subprocess_inner<Replier, S>(
     spawner: Arc<Spawner>,
     pool: Arc<storage::Pool<storage::Storage>>,
     mut incoming: tokio::sync::mpsc::Receiver<Message>,
     out: &mut Replier,
     service: SshService<Urn>,
-    hooks: Hooks,
-) -> Result<(), Error<Replier::Error>> {
+    hooks: Hooks<S>,
+) -> Result<(), Error<Replier::Error>>
+where
+    Replier: ProcessReply + Clone,
+    S: librad::Signer + Clone,
+{
+    let mut progress_reporter = Reporter {
+        replier: out.clone(),
+    };
+
+    if service.is_upload() {
+        match hooks
+            .pre_upload(&mut progress_reporter, service.path.clone())
+            .await
+        {
+            Ok(()) => {},
+            Err(hooks::error::Progress(err)) => {
+                tracing::error!(err=%err, "failed pre-receive hook");
+                return Ok(());
+            },
+        }
+    }
+
     let mut git = {
         let storage = pool.get().await.map_err(|e| {
             tracing::error!(err=?e, "error opening storage pool");
@@ -234,12 +259,16 @@ async fn run_git_subprocess_inner<Replier: ProcessReply + Clone>(
 
     // Run hooks
     if service.service == GitService::ReceivePack.into() {
-        let progress_reporter = Reporter {
-            replier: out.clone(),
-        };
-        if let Err(e) = hooks.post_receive(progress_reporter, service.path).await {
+        if let Err(e) = hooks
+            .post_receive(&mut progress_reporter, service.path.clone())
+            .await
+        {
             match e {
-                hooks::Error::Progress(_) => {
+                hooks::error::PostReceive::Progress(_)
+                | hooks::error::PostReceive::Announce(hooks::error::Announce::Progress(_))
+                | hooks::error::PostReceive::Update(hooks::error::UpdateSignedRefs::Progress(_))
+                | hooks::error::PostReceive::RequestPull(hooks::error::RequestPull::Progress(_)) =>
+                {
                     tracing::error!("client went away whilst executing post receive hook");
                 },
                 other => {

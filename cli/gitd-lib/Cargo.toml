@@ -12,6 +12,7 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 async-trait = "0.1"
+either = "1.0"
 thiserror = "1.0"
 futures = "0.3"
 globset = "0.4"
@@ -33,6 +34,9 @@ version = ">= 0.13.23"
 default-features = false
 features = ["vendored-libgit2"]
 
+[dependencies.git-ref-format]
+path = "../../git-ref-format"
+
 [dependencies.librad]
 path = "../../librad"
 
@@ -42,6 +46,9 @@ path = "../../link-async"
 [dependencies.link-git]
 path = "../../link-git"
 features = ["git2"]
+
+[dependencies.link-replication]
+path    = "../../link-replication"
 
 [dependencies.linkd-lib]
 path = "../linkd-lib"

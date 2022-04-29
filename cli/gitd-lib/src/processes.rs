@@ -68,11 +68,11 @@ enum Message<Id> {
 /// new git subprocess. This is separate to the `Incoming` type because it is
 /// sent on a separate channel, which allows us to exert backpressure on
 /// incoming exec requests.
-struct ExecGit<Id, Reply> {
+struct ExecGit<Id, Reply, Signer> {
     service: SshService<Urn>,
     channel: Id,
     handle: Reply,
-    hooks: Hooks,
+    hooks: Hooks<Signer>,
 }
 
 /// The control interface for the `Processes` loop
@@ -83,16 +83,19 @@ struct ExecGit<Id, Reply> {
 /// `ProcessesHandle` wraps has been dropped or closed. This most likely
 /// indicates that there has been an error in the `Processes::run` loop.
 #[derive(Clone)]
-pub(crate) struct ProcessesHandle<Id, Reply> {
+pub(crate) struct ProcessesHandle<Id, Reply, Signer> {
     sender: tokio::sync::mpsc::Sender<Message<Id>>,
-    exec_git_send: tokio::sync::mpsc::Sender<ExecGit<Id, Reply>>,
+    exec_git_send: tokio::sync::mpsc::Sender<ExecGit<Id, Reply, Signer>>,
 }
 
 #[derive(thiserror::Error, Debug)]
 #[error("unable to send message to processes loop, the receiver has gone")]
 pub(crate) struct ProcessesLoopGone;
 
-impl<Id: Debug, Reply> ProcessesHandle<Id, Reply> {
+impl<Id: Debug, Reply, Signer> ProcessesHandle<Id, Reply, Signer>
+where
+    Signer: librad::Signer + Clone,
+{
     /// Begin a new git subprocess. Any data delivered via
     /// `ProcessesHandle::data` for the `channel` passed here will be
     /// delivered to the subprocess which is started as a result of
@@ -110,7 +113,7 @@ impl<Id: Debug, Reply> ProcessesHandle<Id, Reply> {
         channel: Id,
         handle: Reply,
         service: SshService<Urn>,
-        hooks: Hooks,
+        hooks: Hooks<Signer>,
     ) -> Result<(), ProcessesLoopGone> {
         self.exec_git_send
             .send(ExecGit {
@@ -160,13 +163,13 @@ impl<Id: Debug, Reply> ProcessesHandle<Id, Reply> {
 
 type GitProcessResult<Id, E> = (Id, Result<(), git_subprocess::Error<E>>);
 
-pub(crate) struct Processes<Id, Reply: ProcessReply> {
+pub(crate) struct Processes<Id, Reply: ProcessReply, Signer> {
     spawner: Arc<Spawner>,
     pool: Arc<Pool<Storage>>,
     /// Incoming control messages
     incoming: tokio::sync::mpsc::Receiver<Message<Id>>,
     /// Incoming exec git requests
-    exec_git_incoming: tokio::sync::mpsc::Receiver<ExecGit<Id, Reply>>,
+    exec_git_incoming: tokio::sync::mpsc::Receiver<ExecGit<Id, Reply, Signer>>,
     /// Hashmap from process ID (as passed in ExecGit) to the sender which
     /// connects to the std input of the running subprocess.
     process_sends: HashMap<Id, tokio::sync::mpsc::Sender<git_subprocess::Message>>,
@@ -182,16 +185,17 @@ pub(crate) enum ProcessRunError<Id> {
     SubprocessDisappeared(Id),
 }
 
-impl<Id, Reply> Processes<Id, Reply>
+impl<Id, Reply, S> Processes<Id, Reply, S>
 where
     Id: Debug + Clone + Send + Eq + Hash + 'static,
     Reply: ProcessReply + Send + Sync + 'static + Clone,
     Reply::Error: Send + 'static,
+    S: librad::Signer + Clone,
 {
     pub(crate) fn new(
         spawner: Arc<Spawner>,
         pool: Arc<Pool<Storage>>,
-    ) -> (Processes<Id, Reply>, ProcessesHandle<Id, Reply>) {
+    ) -> (Processes<Id, Reply, S>, ProcessesHandle<Id, Reply, S>) {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         let (exec_git_tx, exec_git_rx) = tokio::sync::mpsc::channel(1);
         let processes = Processes {
@@ -211,7 +215,7 @@ where
     }
 
     #[instrument(skip(self, handle, hooks))]
-    fn exec_git(&mut self, id: Id, handle: Reply, service: SshService<Urn>, hooks: Hooks) {
+    fn exec_git(&mut self, id: Id, handle: Reply, service: SshService<Urn>, hooks: Hooks<S>) {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         let task = self.spawner.spawn({
             let spawner = self.spawner.clone();
