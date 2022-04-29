@@ -16,7 +16,7 @@ use tracing::instrument;
 
 mod args;
 mod config;
-mod git_subprocess;
+pub mod git_subprocess;
 mod hooks;
 mod processes;
 mod server;

@@ -10,7 +10,7 @@ use git2::transport::Service as GitService;
 
 use librad::{
     git::{
-        storage::{self, glob, ReadOnlyStorage as _},
+        storage::{self, Pattern, ReadOnlyStorage as _},
         types::Namespace,
         Urn,
     },
@@ -20,7 +20,7 @@ use link_git::service::SshService;
 use radicle_git_ext as ext;
 
 #[derive(thiserror::Error, Debug)]
-pub(super) enum Error {
+pub enum Error {
     #[error("no such URN {0}")]
     NoSuchUrn(Urn),
     #[error("error fetching references glob {glob} for {urn}: {error}")]
@@ -98,27 +98,33 @@ where
     }
 }
 
-fn visible_remotes<S>(storage: S, urn: &Urn) -> Result<impl Iterator<Item = ext::RefLike>, Error>
+pub fn visible_remotes<S>(
+    storage: S,
+    urn: &Urn,
+) -> Result<impl Iterator<Item = ext::RefLike>, Error>
 where
     S: AsRef<librad::git::storage::ReadOnly>,
 {
-    let glob = visible_remotes_glob(urn);
+    let include = all_remote_refs(urn);
+    let exclude = excluding(urn);
     let remotes = storage
         .as_ref()
-        .references_glob(visible_remotes_glob(urn))
+        .reference_names_glob(all_remote_refs(urn))
         .map_err(|e| {
-            tracing::error!(err=?e, ?urn, ?glob, "error fetching references glob for urn");
+            tracing::error!(err=?e, ?urn, ?include, "error fetching references glob for urn");
             Error::FetchRefsGlob {
                 error: Box::new(e),
                 urn: urn.clone(),
-                glob: format!("{:?}", glob),
+                glob: format!("{:?}", include),
             }
         })?
         .filter_map(move |res| {
-            res.map(|reference| {
-                reference
-                    .name()
-                    .and_then(|name| ext::RefLike::try_from(name).ok())
+            res.map(|name| {
+                if exclude.matches(name.as_str()) {
+                    None
+                } else {
+                    Some(name)
+                }
             })
             .map_err(|e| {
                 tracing::error!(err=?e, "error resolving reference names");
@@ -134,13 +140,20 @@ where
     Ok(remotes.into_iter())
 }
 
-pub fn visible_remotes_glob(urn: &Urn) -> impl glob::Pattern + Debug {
-    globset::Glob::new(&format!(
-        "{}/*/{{[!cobs],[!rad]}}/*",
-        reflike!("refs/namespaces")
-            .join(Namespace::from(urn))
-            .join(reflike!("refs/remotes"))
-    ))
-    .unwrap()
-    .compile_matcher()
+pub fn excluding(urn: &Urn) -> impl Pattern + Debug {
+    let remotes = reflike!("refs/namespaces")
+        .join(Namespace::from(urn))
+        .join(reflike!("refs/remotes"));
+    globset::Glob::new(&format!("{}/*/{{rad,cobs}}/*", remotes,))
+        .unwrap()
+        .compile_matcher()
+}
+
+pub fn all_remote_refs(urn: &Urn) -> impl Pattern + Debug {
+    let remotes = reflike!("refs/namespaces")
+        .join(Namespace::from(urn))
+        .join(reflike!("refs/remotes"));
+    globset::Glob::new(&format!("{}/**/*", remotes,))
+        .unwrap()
+        .compile_matcher()
 }

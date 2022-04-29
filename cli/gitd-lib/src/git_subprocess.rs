@@ -29,7 +29,7 @@ use crate::{
     processes::ProcessReply,
 };
 
-mod command;
+pub mod command;
 
 pub(crate) enum Message {
     Signal(nix::sys::signal::Signal),
