@@ -25,6 +25,12 @@ pub struct Seed<Addrs> {
     pub label: Option<String>,
 }
 
+impl From<Seed<Vec<SocketAddr>>> for (PeerId, Vec<SocketAddr>) {
+    fn from(seed: Seed<Vec<SocketAddr>>) -> Self {
+        (seed.peer, seed.addrs)
+    }
+}
+
 impl<Addrs: fmt::Display> fmt::Display for Seed<Addrs> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.label {
