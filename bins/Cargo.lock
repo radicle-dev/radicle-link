@@ -1405,6 +1405,7 @@ version = "0.1.0"
 dependencies = [
  "bstr",
  "minicbor",
+ "serde",
  "thiserror",
 ]
 
@@ -2268,7 +2269,9 @@ dependencies = [
  "lnk-clib",
  "lnk-identities",
  "lnk-profile",
+ "lnk-sync",
  "lnk-thrussh-agent",
+ "tokio",
 ]
 
 [[package]]
@@ -2335,6 +2338,26 @@ dependencies = [
  "clap",
  "lnk-exe",
  "lnk-profile",
+]
+
+[[package]]
+name = "lnk-sync"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "either",
+ "futures",
+ "git-ref-format",
+ "librad",
+ "link-async",
+ "link-replication",
+ "lnk-clib",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
