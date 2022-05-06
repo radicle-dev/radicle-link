@@ -5,13 +5,15 @@
 
 use std::{convert::TryFrom, fmt, io, net::SocketAddr, str::FromStr};
 
+use serde::Serialize;
+
 use librad::{net::discovery, PeerId};
 use tokio::net::{lookup_host, ToSocketAddrs};
 
 pub mod store;
 pub use store::Store;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct Seed<Addrs> {
     /// The identifier for the `Seed`.
     pub peer: PeerId,
