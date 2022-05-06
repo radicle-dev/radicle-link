@@ -257,6 +257,12 @@ impl From<identities::git::Urn> for Urn {
     }
 }
 
+impl From<Urn> for identities::git::Urn {
+    fn from(urn: Urn) -> Self {
+        urn.0
+    }
+}
+
 impl Deref for Urn {
     type Target = identities::git::Urn;
 
