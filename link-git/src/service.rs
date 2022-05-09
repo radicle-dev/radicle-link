@@ -30,6 +30,19 @@ pub struct SshService<Path> {
     pub path: Path,
 }
 
+impl<Path> SshService<Path> {
+    pub fn is_upload(&self) -> bool {
+        match self.service.0 {
+            GitService::UploadPackLs | GitService::UploadPack => true,
+            GitService::ReceivePackLs | GitService::ReceivePack => false,
+        }
+    }
+
+    pub fn is_receive(&self) -> bool {
+        !self.is_upload()
+    }
+}
+
 impl From<GitService> for Service {
     fn from(g: GitService) -> Self {
         Service(g)
@@ -43,11 +56,11 @@ impl From<Service> for GitService {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum ParseService<E> {
+pub enum ParseService {
     #[error("the exec str must be in the form <service> <urn>")]
     Format,
-    #[error("unable to parse namespace")]
-    Namespace(#[source] E),
+    #[error(transparent)]
+    Namespace(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("unknown service {0}")]
     UnknownService(String),
 }
@@ -87,8 +100,9 @@ impl Deref for Service {
 impl<Path> FromStr for SshService<Path>
 where
     Path: FromStr,
+    Path::Err: std::error::Error + Send + Sync + 'static,
 {
-    type Err = ParseService<Path::Err>;
+    type Err = ParseService;
 
     fn from_str(exec_str: &str) -> Result<Self, Self::Err> {
         let cap = SERVICE_REGEX
@@ -99,7 +113,9 @@ where
         let service_str: &str = &cap[1];
         let urn_str = &cap[2];
 
-        let path = urn_str.parse().map_err(ParseService::Namespace)?;
+        let path = urn_str
+            .parse()
+            .map_err(|err| ParseService::Namespace(Box::new(err)))?;
         let service = match service_str {
             "git-upload-pack" => Ok(Service(GitService::UploadPack)),
             "git-receive-pack" => Ok(Service(GitService::ReceivePack)),

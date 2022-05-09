@@ -34,6 +34,9 @@ features = ["test"]
 path = "../git-trailers/t"
 features = ["test"]
 
+[dev-dependencies.gitd-lib-test]
+path = "../cli/gitd-lib/t"
+
 [dev-dependencies.librad-test]
 path = "../librad/t"
 features = ["test"]

@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::convert::TryInto as _;
+use std::{convert::TryInto as _, process::exit};
 
 use lnk_thrussh_agent::Constraint;
 
@@ -87,6 +87,7 @@ fn eval(sock: SshAuthSock, command: Command) -> anyhow::Result<()> {
                     println!("key is on ssh-agent for profile id `{}`", id);
                 } else {
                     println!("key is *not* on ssh-agent for profile id `{}`", id);
+                    exit(1);
                 }
             },
             ssh::Options::Verify(ssh::Verify {

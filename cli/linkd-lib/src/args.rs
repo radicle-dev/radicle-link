@@ -269,7 +269,7 @@ pub struct ProtocolArgs {
     /// Address to bind to for the protocol to accept connections. Must be
     /// provided, shortcuts for any (0.0.0.0:0) and localhost (127.0.0.1:0)
     /// are valid values.
-    #[clap(long = "protocol-listen", name = "protocol-listen", parse(try_from_str = ProtocolListen::parse))]
+    #[clap(long = "protocol-listen", name = "protocol-listen")]
     pub listen: ProtocolListen,
 
     /// Network name to be used during handshake, if 'main' is passed the
@@ -297,8 +297,10 @@ impl Default for ProtocolListen {
     }
 }
 
-impl ProtocolListen {
-    fn parse(src: &str) -> Result<Self, String> {
+impl FromStr for ProtocolListen {
+    type Err = String;
+
+    fn from_str(src: &str) -> Result<Self, Self::Err> {
         match src {
             "any" => Ok(Self::Any),
             "localhost" => Ok(Self::Localhost),

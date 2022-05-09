@@ -91,6 +91,7 @@ impl<T> Seed<T> {
 }
 
 /// A list of [`Seed`]s that have been resolved.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Seeds(pub Vec<Seed<Vec<SocketAddr>>>);
 
 impl Seeds {
@@ -159,6 +160,16 @@ impl Seeds {
         }
 
         (Self(resolved), failures)
+    }
+}
+
+impl<'a> IntoIterator for &'a Seeds {
+    type Item = &'a Seed<Vec<SocketAddr>>;
+
+    type IntoIter = std::slice::Iter<'a, Seed<Vec<SocketAddr>>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.as_slice().iter()
     }
 }
 

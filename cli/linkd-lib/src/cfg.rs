@@ -24,7 +24,6 @@ use librad::{
     keystore::SecretKeyExt as _,
     net,
     net::{discovery, peer::Config as PeerConfig, protocol::membership},
-    paths,
     profile::{LnkHome, Profile},
     SecretKey,
 };
@@ -103,6 +102,8 @@ pub struct Cfg<Disco, Signer, Auth> {
 impl Cfg<discovery::Static, BoxedSigner, request_pull::State> {
     pub async fn from_args(args: &args::Args) -> Result<Self, Error> {
         let membership = membership::Params::default();
+        let profile = Profile::try_from(args)?;
+
         let seeds = if !args.bootstraps.is_empty() {
             let (seeds, failures) = Seeds::resolve(args.bootstraps.iter()).await;
             for fail in failures {
@@ -115,7 +116,7 @@ impl Cfg<discovery::Static, BoxedSigner, request_pull::State> {
 
             seeds
         } else {
-            let store = FileStore::<String>::new(paths::seeds()?)?;
+            let store = FileStore::<String>::new(profile.paths().seeds_file())?;
             let (seeds, failures) = Seeds::load(&store, membership.max_active).await?;
 
             for fail in &failures {
@@ -129,7 +130,6 @@ impl Cfg<discovery::Static, BoxedSigner, request_pull::State> {
             seeds
         };
         let disco = discovery::Static::try_from(seeds)?;
-        let profile = Profile::try_from(args)?;
         let signer = construct_signer(args, &profile).await?;
 
         // Ensure the storage is accessible for the created profile and signer.
@@ -140,6 +140,7 @@ impl Cfg<discovery::Static, BoxedSigner, request_pull::State> {
             args::ProtocolListen::Localhost => *LOCALHOST,
             args::ProtocolListen::Provided { addr } => addr,
         };
+        tracing::info!(adrr = % listen_addr, "listening on address");
 
         let metrics = match args.metrics.provider {
             Some(args::MetricsProvider::Graphite) => Some(Metrics::Graphite(

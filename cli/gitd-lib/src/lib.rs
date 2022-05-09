@@ -7,22 +7,37 @@ use std::{sync::Arc, time::Duration};
 
 use clap::Parser;
 use futures::{FutureExt, StreamExt};
-use librad::PeerId;
-use lnk_clib::socket_activation;
+use librad::{
+    net::{
+        peer::{client, Client},
+        quic,
+        replication,
+        Network,
+    },
+    PeerId,
+};
+use lnk_clib::{
+    seed::{self, Seeds},
+    socket_activation,
+};
 use lnk_thrussh as thrussh;
 use lnk_thrussh_keys as thrussh_keys;
 use tokio::net::TcpListener;
 use tracing::instrument;
 
 mod args;
-mod config;
-mod git_subprocess;
-mod hooks;
+pub mod config;
+pub mod git_subprocess;
+pub mod hooks;
 mod processes;
 mod server;
 
 #[derive(thiserror::Error, Debug)]
 pub enum RunError {
+    #[error(transparent)]
+    Client(#[from] client::error::Init),
+    #[error("failed to set up client socket: {0}")]
+    Quic(#[from] quic::Error),
     #[error("could not open storage")]
     CouldNotOpenStorage,
     #[error("no listen address was specified")]
@@ -80,11 +95,39 @@ pub async fn run<S: librad::Signer + Clone>(
 
     let socket = bind_sockets(&config).await?;
     let processes_task = spawner.spawn(processes.run());
-    let hooks = if let Some(config::Announce { rpc_socket_path }) = config.announce {
-        hooks::Hooks::announce(spawner.clone(), storage_pool.clone(), rpc_socket_path)
-    } else {
-        hooks::Hooks::new(spawner.clone(), storage_pool.clone())
+    let client = {
+        let network = Network::default();
+        let config = client::Config {
+            signer: config.signer.clone(),
+            paths: config.paths.clone(),
+            replication: replication::Config::default(),
+            user_storage: client::config::Storage::default(),
+            network: network.clone(),
+        };
+        let endpoint = quic::SendOnly::new(config.signer.clone(), network).await?;
+        Client::new(config, spawner.clone(), endpoint)?
     };
+
+    let seeds = {
+        let path = config.paths.seeds_file();
+        tracing::info!(seed_file=%path.display(), "loading seeds");
+        let store = seed::store::FileStore::<String>::new(path)?;
+        let (seeds, failures) = Seeds::load(&store, None).await?;
+        for fail in &failures {
+            tracing::warn!("failed to load configured seed: {}", fail);
+        }
+        seeds
+    };
+
+    let hooks = hooks::Hooks::new(
+        spawner.clone(),
+        client,
+        seeds,
+        storage_pool.clone(),
+        (&config.network).into(),
+        (&config.network).into(),
+    );
+
     let sh = server::Server::new(spawner.clone(), peer_id, handle.clone(), hooks);
     let ssh_tasks = sh.serve(&socket, thrussh_config).await;
     let server_complete = match config.linger_timeout {
@@ -101,7 +144,7 @@ pub async fn run<S: librad::Signer + Clone>(
     futures::select! {
         _ = server_complete => {
             tracing::info!("SSH server shutdown, shutting down subprocesses");
-            handle_shutdown(handle, server_complete, processes_fused).await;
+            handle_shutdown::<_, _, S, _>(handle, server_complete, processes_fused).await;
         },
         _ = sigterm.recv().fuse() => {
             tracing::info!("received SIGTERM, attmempting graceful shutdown");
@@ -196,13 +239,14 @@ fn create_or_load_key(peer_id: PeerId) -> Result<thrussh_keys::key::KeyPair, Run
     }
 }
 
-async fn handle_shutdown<I, R, F>(
-    handle: processes::ProcessesHandle<I, R>,
+async fn handle_shutdown<I, R, S, F>(
+    handle: processes::ProcessesHandle<I, R, S>,
     server_complete: F,
     processes_fused: futures::future::Fuse<
         link_async::Task<Result<(), processes::ProcessRunError<server::ChannelAndSessionId>>>,
     >,
 ) where
+    S: librad::Signer + Clone,
     F: futures::Future<Output = ()>,
     I: std::fmt::Debug,
 {

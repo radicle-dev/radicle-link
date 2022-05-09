@@ -12,17 +12,38 @@ use librad::{
     profile::{LnkHome, Profile},
 };
 
+use crate::{
+    config::{self, Config},
+    hooks,
+};
+
 #[derive(Debug, Parser)]
 pub struct Args {
+    /// The path to use `LNK_HOME`.
     pub lnk_home: PathBuf,
     #[clap(short)]
+    /// The socket address to start the gitd server on.
     pub addr: Option<SocketAddr>,
     #[clap(long)]
+    /// The time (in milliseconds) that the gitd server should stay
+    /// alive for. If it is not set, the server will live
+    /// indefinitely.
     pub linger_timeout: Option<LingerTimeout>,
     #[clap(long)]
+    /// The linkd RPC socket address to use for any RPC calls.
     pub linkd_rpc_socket: Option<PathBuf>,
     #[clap(long)]
+    /// Announce any changes when the gitd server is processing a
+    /// `receive-pack`.
     pub announce_on_push: bool,
+    #[clap(long)]
+    /// Push any changes to configured seeds when the gitd server is processing
+    /// a `receive-pack`.
+    pub push_seeds: bool,
+    #[clap(long)]
+    /// Fetch any changes from configured seeds when the gitd server is
+    /// processing a `upload-pack`.
+    pub fetch_seeds: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -39,7 +60,7 @@ impl Args {
     pub async fn into_config(
         self,
         spawner: Arc<link_async::Spawner>,
-    ) -> Result<super::config::Config<BoxedSigner>, Error> {
+    ) -> Result<Config<BoxedSigner>, Error> {
         let home = LnkHome::Root(self.lnk_home);
         let profile = Profile::from_home(&home, None)?;
         let signer = spawner
@@ -49,18 +70,23 @@ impl Args {
             })
             .await?;
         let announce = match (self.announce_on_push, self.linkd_rpc_socket) {
-            (true, Some(path)) => Ok(Some(super::config::Announce {
+            (true, Some(path)) => Ok(Some(hooks::Announce {
                 rpc_socket_path: path,
             })),
             (false, _) => Ok(None),
             (true, None) => Err(Error::AnnounceWithoutRpc),
         }?;
-        Ok(super::config::Config {
+        let network = config::Network {
+            announce,
+            request_pull: self.push_seeds,
+            replicate: self.fetch_seeds,
+        };
+        Ok(Config {
             paths: profile.paths().clone(),
             signer,
             addr: self.addr,
             linger_timeout: self.linger_timeout.map(|l| l.into()),
-            announce,
+            network,
         })
     }
 }

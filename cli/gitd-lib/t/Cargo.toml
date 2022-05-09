@@ -1,0 +1,29 @@
+[package]
+name = "gitd-lib-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[dependencies.git2]
+version = "0.13.24"
+default-features = false
+features = ["vendored-libgit2"]
+
+[dependencies.gitd-lib]
+path = "../"
+
+[dependencies.librad]
+path = "../../../librad"
+
+[dependencies.it-helpers]
+path = "../../../test/it-helpers"
+
+[dependencies.radicle-git-ext]
+path = "../../../git-ext"

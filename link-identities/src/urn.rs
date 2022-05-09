@@ -59,14 +59,18 @@ pub mod error {
         #[error("missing {0}")]
         Missing(&'static str),
 
-        #[error("invalid namespace identifier: {0}")]
+        #[error("invalid namespace identifier: {0}, expected `rad:<protocol>:<id>`")]
         InvalidNID(String),
 
-        #[error("invalid protocol: {0}")]
+        #[error("invalid protocol: {0}, expected `rad:<protocol>:<id>`")]
         InvalidProto(String),
 
-        #[error("invalid id")]
-        InvalidId(#[source] DecodeId<E>),
+        #[error("invalid id: {id}, expected `rad:<protocol>:<id>`")]
+        InvalidId {
+            id: String,
+            #[source]
+            source: DecodeId<E>,
+        },
 
         #[error(transparent)]
         Path(#[from] ext::reference::name::Error),
@@ -315,7 +319,10 @@ where
                 let mut iter = decoded.splitn(2, '/');
 
                 let id = iter.next().ok_or(Self::Err::Missing("id"))?;
-                let urn = Self::try_from_id(id).map_err(Self::Err::InvalidId)?;
+                let urn = Self::try_from_id(id).map_err(|err| Self::Err::InvalidId {
+                    id: id.to_string(),
+                    source: err,
+                })?;
                 let path = iter.next().map(ext::RefLike::try_from).transpose()?;
                 Ok(urn.with_path(path))
             })

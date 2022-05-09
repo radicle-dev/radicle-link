@@ -36,6 +36,7 @@ features = [ "derive", "env" ]
 [dependencies.librad]
 path    = "../../librad"
 version = "0.1.0"
+features = ["replication-v3"]
 
 [dependencies.link-async]
 path = "../../link-async"
