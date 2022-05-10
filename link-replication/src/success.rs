@@ -11,10 +11,10 @@ use crate::{error, ids, Applied, PeerId, Update, Updated};
 
 #[derive(Debug)]
 pub struct Success<Urn> {
-    pub(crate) applied: Applied<'static>,
-    pub(crate) tracked: Vec<Either<PeerId, Urn>>,
-    pub(crate) requires_confirmation: bool,
-    pub(crate) validation: Vec<error::Validation>,
+    pub applied: Applied<'static>,
+    pub tracked: Vec<Either<PeerId, Urn>>,
+    pub requires_confirmation: bool,
+    pub validation: Vec<error::Validation>,
     pub(crate) _marker: PhantomData<Urn>,
 }
 
