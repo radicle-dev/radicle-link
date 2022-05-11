@@ -1,6 +1,8 @@
 // Copyright © 2022 The Radicle Link Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::fmt;
+
 use git_ref_format::RefString;
 use minicbor::{Decode, Encode};
 
@@ -51,6 +53,14 @@ pub struct Error {
     pub message: String,
 }
 
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Error {}
+
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq, Encode, Decode)]
 #[cbor(array)]
 pub struct Success {
@@ -74,4 +84,10 @@ pub struct Ref {
 pub struct Progress {
     #[n(0)]
     pub message: String,
+}
+
+impl fmt::Display for Progress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
 }

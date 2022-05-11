@@ -24,6 +24,12 @@ pub struct FileStore<T> {
 impl<T> FileStore<T> {
     pub fn new(path: impl AsRef<Path>) -> Result<Self, io::Error> {
         let path = path.as_ref();
+        if path.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "seed storage expected to be a file but found a directory",
+            ));
+        }
         if !path.exists() {
             fs::File::create(path)?;
         }
@@ -41,6 +47,7 @@ impl<T> FileStore<T> {
         let buf = fs::File::open(self.path.clone())?;
         Ok(Iter {
             inner: io::BufReader::new(buf).lines(),
+            found_io_error: false,
             _marker: self._marker,
         })
     }
@@ -48,6 +55,7 @@ impl<T> FileStore<T> {
 
 pub struct Iter<T> {
     inner: io::Lines<io::BufReader<fs::File>>,
+    found_io_error: bool,
     _marker: PhantomData<T>,
 }
 
@@ -58,9 +66,15 @@ where
     type Item = Result<Seed<T>, error::Iter>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(|seed| {
-            seed.map_err(error::Iter::from)
-                .and_then(|seed| seed.parse().map_err(error::Iter::from))
+        if self.found_io_error {
+            return None;
+        }
+        self.inner.next().map(|seed| match seed {
+            Err(err) => {
+                self.found_io_error = true;
+                Err(error::Iter::from(err))
+            },
+            Ok(seed) => seed.parse().map_err(error::Iter::from),
         })
     }
 }

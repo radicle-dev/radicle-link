@@ -1,0 +1,47 @@
+[package]
+name = "lnk-sync"
+version = "0.1.0"
+authors = ["Fintan Halpenny <fintan.halpenny@gmail.com>"]
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+anyhow = "1"
+either = "1"
+futures = "0.3"
+serde_json = "1.0"
+thiserror = "1"
+tracing = "0.1"
+
+[dependencies.clap]
+version = "3.1"
+features = ["derive"]
+
+[dependencies.git-ref-format]
+path = "../../git-ref-format"
+features = ["serde"]
+
+[dependencies.librad]
+path = "../../librad"
+features = ["replication-v3"]
+
+[dependencies.link-replication]
+path = "../../link-replication"
+
+[dependencies.link-async]
+path = "../../link-async"
+
+[dependencies.lnk-clib]
+path = "../lnk-clib"
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+
+[dependencies.tokio]
+version = "1.17"
+features = ["rt"]

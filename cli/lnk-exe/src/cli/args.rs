@@ -55,4 +55,6 @@ pub enum Command {
     Identities(lnk_identities::cli::args::Args),
     /// Manage your Radicle profiles
     Profile(lnk_profile::cli::args::Args),
+    /// Sync with your configured seeds
+    Sync(lnk_sync::cli::args::Args),
 }
