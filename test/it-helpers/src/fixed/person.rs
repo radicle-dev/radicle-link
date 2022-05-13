@@ -2,7 +2,7 @@ use std::{net::SocketAddr, ops::Deref};
 
 use librad::{
     git::{
-        identities::{self, Person},
+        identities::{self, local::LocalIdentity, Person},
         storage::Storage,
     },
     identities::{delegation::Direct, payload},
@@ -37,6 +37,10 @@ impl TestPerson {
         let owner =
             identities::person::update(storage, &self.owner.urn(), None, Some(payload), None)?;
         Ok(Self { owner })
+    }
+
+    pub fn local(&self, storage: &Storage) -> anyhow::Result<Option<LocalIdentity>> {
+        Ok(identities::local::load(storage, self.owner.urn())?)
     }
 
     /// Pull (fetch or clone) the project from known running peer `A` to peer
