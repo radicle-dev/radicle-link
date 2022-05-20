@@ -1,0 +1,40 @@
+[package]
+name = "link-hooks"
+version = "0.1.0"
+authors = ["Fintan Halpenny <fintan.halpenny@gmail.com>"]
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+doctest = false
+test = false
+
+[features]
+git = ["git2", "radicle-git-ext"]
+
+[dependencies]
+async-trait = "0.1"
+futures = "0.3"
+multihash = "0.11"
+thiserror = "1"
+tracing = "0.1"
+
+[dependencies.git2]
+version = "0.13.24"
+default-features = false
+features = ["vendored-libgit2"]
+optional = true
+
+[dependencies.radicle-git-ext]
+path = "../git-ext"
+optional = true
+
+[dependencies.link-crypto]
+path = "../link-crypto"
+
+[dependencies.link-identities]
+path = "../link-identities"
+
+[dependencies.tokio]
+version = "1.18"
+features = ["io-util", "process", "sync", "time"]

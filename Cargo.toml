@@ -13,6 +13,7 @@ members = [
   "link-canonical-derive",
   "link-crypto",
   "link-git",
+  "link-hooks",
   "link-identities",
   "link-replication",
   "link-tracking",
