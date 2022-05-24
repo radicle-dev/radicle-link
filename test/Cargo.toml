@@ -57,6 +57,10 @@ features = ["test"]
 path = "../link-git/t"
 features = ["test"]
 
+[dev-dependencies.link-hooks-test]
+path = "../link-hooks/t"
+features = ["test"]
+
 [dev-dependencies.link-identities-test]
 path = "../link-identities/t"
 features = ["test"]

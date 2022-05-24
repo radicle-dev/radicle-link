@@ -1,0 +1,44 @@
+[package]
+name = "link-hooks-test"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+publish = false
+
+[lib]
+doctest = false
+test = true
+doc = false
+
+[features]
+test = []
+
+[dependencies]
+proptest = "1"
+
+[dependencies.git2]
+version = "0.13.24"
+default-features = false
+features = ["vendored-libgit2"]
+
+[dependencies.link-crypto]
+path = "../../link-crypto"
+
+[dependencies.link-crypto-test]
+path = "../../link-crypto/t"
+features = ["test"]
+
+[dependencies.link-hooks]
+path = "../../link-hooks"
+features = ["git"]
+
+[dependencies.link-identities-test]
+path = "../../link-identities/t"
+features = ["test"]
+
+[dependencies.radicle-git-ext]
+path = "../../git-ext"
+
+[dev-dependencies.test-helpers]
+path = "../../test/test-helpers"
