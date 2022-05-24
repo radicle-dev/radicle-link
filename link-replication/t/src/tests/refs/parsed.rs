@@ -121,7 +121,7 @@ fn rad_id() {
 
 #[test]
 fn rad_self() {
-    succeed::<Identity>(Left(Rad::Me), "refs/rad/self");
+    succeed::<Identity>(Left(Rad::Selv), "refs/rad/self");
 }
 
 #[test]

@@ -106,7 +106,7 @@ where
             match iter.next()? {
                 x if RAD == x.as_str() => match (iter.next()?.as_str(), iter.next()) {
                     (ID, None) => Some(Left(Rad::Id)),
-                    (SELF, None) => Some(Left(Rad::Me)),
+                    (SELF, None) => Some(Left(Rad::Selv)),
                     (SIGNED_REFS, None) => Some(Left(Rad::SignedRefs)),
                     (IDS, Some(id)) => {
                         let urn = Urn::try_from_id(id.as_str()).ok()?;
@@ -158,7 +158,7 @@ where
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Rad<Urn> {
     Id,
-    Me, // self
+    Selv, // self
     SignedRefs,
     Ids { urn: Urn },
 }
@@ -170,7 +170,7 @@ where
     fn from(r: Rad<Urn>) -> Self {
         match r {
             Rad::Id => lit::REFS_RAD_ID.into(),
-            Rad::Me => lit::REFS_RAD_SELF.into(),
+            Rad::Selv => lit::REFS_RAD_SELF.into(),
             Rad::SignedRefs => lit::REFS_RAD_SIGNED_REFS.into(),
             Rad::Ids { urn } => (
                 lit::Refs,

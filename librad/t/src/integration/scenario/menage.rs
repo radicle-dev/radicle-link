@@ -3,29 +3,20 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{
-    convert::{TryFrom, TryInto},
-    fmt::Debug,
-    ops::Index as _,
-};
+use std::{convert::TryInto, ops::Index as _};
 
 use blocking::unblock;
-use git_ref_format::{lit, RefString};
-use it_helpers::{fixed::TestProject, git::create_commit, testnet};
+use git_ref_format::RefString;
+use it_helpers::{
+    fixed::{self, TestProject},
+    layout,
+    testnet,
+};
 use librad::{
     self,
-    git::{
-        local::url::LocalUrl,
-        refs::Refs,
-        storage::{ReadOnlyStorage as _, Storage},
-        tracking,
-        types::{remote, Flat, Force, GenericRef, Namespace, Reference, Refspec, Remote},
-        Urn,
-    },
+    git::{refs::Refs, tracking},
     git_ext as ext,
     reflike,
-    refspec_pattern,
-    PeerId,
 };
 use test_helpers::logging;
 
@@ -34,38 +25,6 @@ fn config() -> testnet::Config {
         num_peers: nonzero!(3usize),
         min_connected: 3,
         bootstrap: testnet::Bootstrap::from_env(),
-    }
-}
-
-struct ExpectedReferences {
-    has_commit: bool,
-    has_rad_id: bool,
-    has_rad_self: bool,
-    has_rad_ids: bool,
-}
-
-impl ExpectedReferences {
-    fn new<Oid>(
-        storage: &Storage,
-        urn: &Urn,
-        remote: PeerId,
-        delegate: Urn,
-        commit: Option<Oid>,
-    ) -> Result<Self, anyhow::Error>
-    where
-        Oid: AsRef<git2::Oid> + Debug,
-    {
-        let rad_self = Reference::rad_self(Namespace::from(urn.clone()), remote);
-        let rad_id = Reference::rad_id(Namespace::from(urn.clone())).with_remote(remote);
-        let rad_ids =
-            Reference::rad_delegate(Namespace::from(urn.clone()), &delegate).with_remote(remote);
-
-        Ok(ExpectedReferences {
-            has_commit: commit.map_or(Ok(true), |commit| storage.has_commit(urn, commit))?,
-            has_rad_id: storage.has_ref(&rad_id)?,
-            has_rad_self: storage.has_ref(&rad_self)?,
-            has_rad_ids: storage.has_ref(&rad_ids)?,
-        })
     }
 }
 
@@ -96,48 +55,14 @@ fn a_trois() {
             .unwrap_or_else(|| "mistress".to_owned())
             .try_into()
             .unwrap();
-        let tmp = tempfile::tempdir().unwrap();
-        let commit_id = unblock({
-            let urn = proj.project.urn();
-            let owner_subject = proj.owner.subject().clone();
-            let default_branch = default_branch.clone();
-            let peer1 = (*peer1).clone();
-            move || {
-                // Perform commit and push to working copy on peer1
-                let repo = git2::Repository::init(tmp.path().join("peer1")).unwrap();
-                let url = LocalUrl::from(urn.clone());
-                let heads = Reference::heads(Namespace::from(urn), Some(peer1.peer_id()));
-                let remotes = GenericRef::heads(
-                    Flat,
-                    ext::RefLike::try_from(format!("{}@{}", owner_subject.name, peer1.peer_id()))
-                        .unwrap(),
-                );
-                let mastor = lit::refs_heads(default_branch).into();
-                let mut remote = Remote::rad_remote(
-                    url,
-                    Refspec {
-                        src: &remotes,
-                        dst: &heads,
-                        force: Force::True,
-                    },
-                );
-                let oid = create_commit(&repo, mastor).unwrap();
-                let updated = remote
-                    .push(
-                        peer1,
-                        &repo,
-                        remote::LocalPushspec::Matching {
-                            pattern: refspec_pattern!("refs/heads/*"),
-                            force: Force::True,
-                        },
-                    )
-                    .unwrap()
-                    .collect::<Vec<_>>();
-                debug!("push updated refs: {:?}", updated);
-
-                oid
-            }
-        })
+        let repo = fixed::repository(peer1.peer_id());
+        let commit_id = unblock(fixed::commit(
+            (*peer1).clone(),
+            repo,
+            &proj.project,
+            &proj.owner,
+            default_branch.clone(),
+        ))
         .await;
 
         let expected_urn = proj.project.urn().with_path(
@@ -152,16 +77,17 @@ fn a_trois() {
 
         let peer2_expected = peer2
             .using_storage({
-                let urn = expected_urn.clone();
+                let urn = proj.project.urn();
+                let expected_urn = expected_urn.clone();
                 let remote = peer1.peer_id();
                 let delegate = proj.owner.urn();
                 move |storage| {
-                    ExpectedReferences::new(
+                    layout::References::new(
                         storage,
                         &urn,
                         remote,
-                        delegate,
-                        Some(Box::new(commit_id)),
+                        Some(delegate),
+                        Some((expected_urn, commit_id)),
                     )
                 }
             })
@@ -170,45 +96,52 @@ fn a_trois() {
             .unwrap();
         let peer3_expected = peer3
             .using_storage({
-                let urn = expected_urn.clone();
+                let urn = proj.project.urn();
                 let remote = peer1.peer_id();
                 let delegate = proj.owner.urn();
                 move |storage| {
-                    ExpectedReferences::new(
+                    layout::References::new(
                         storage,
                         &urn,
                         remote,
-                        delegate,
-                        Some(Box::new(commit_id)),
+                        Some(delegate),
+                        Some((expected_urn, commit_id)),
                     )
                 }
             })
             .await
             .unwrap()
             .unwrap();
-        assert!(
-            peer2_expected.has_commit,
-            "peer 2 missing commit `{}@{}`",
-            expected_urn, commit_id
-        );
-        assert!(peer2_expected.has_rad_id, "peer 2 missing `rad/id`");
-        assert!(peer2_expected.has_rad_self, "peer 2 missing `rad/self``");
-        assert!(
-            peer2_expected.has_rad_ids,
-            "peer 2 missing `rad/ids/<delegate>`"
-        );
 
-        assert!(
-            peer3_expected.has_commit,
-            "peer 3 missing commit `{}@{}`",
-            expected_urn, commit_id
-        );
-        assert!(peer3_expected.has_rad_id, "peer 3 missing `rad/id`");
-        assert!(peer3_expected.has_rad_self, "peer 3 missing `rad/self``");
-        assert!(
-            peer3_expected.has_rad_ids,
-            "peer 3 missing `rad/ids/<delegate>`"
-        );
+        let commits = peer2_expected
+            .missing_commits()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>();
+        assert!(commits.is_empty(), "peer 2 missing commits `{:?}`", commits);
+        let rad_id = peer2_expected.rad_id();
+        assert!(rad_id.exists, "peer 2 missing `{}`", rad_id);
+        let rad_self = peer2_expected.rad_self();
+        assert!(rad_self.exists, "peer 2 missing `{}`", rad_self);
+        let ids = peer2_expected
+            .missing_rad_ids()
+            .map(|del| del.to_string())
+            .collect::<Vec<_>>();
+        assert!(ids.is_empty(), "peer 2 missing `{:?}`", ids);
+
+        let commits = peer3_expected
+            .missing_commits()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>();
+        assert!(commits.is_empty(), "peer 3 missing commits `{:?}`", commits);
+        let rad_id = peer3_expected.rad_id();
+        assert!(rad_id.exists, "peer 3 missing `{}`", rad_id);
+        let rad_self = peer3_expected.rad_self();
+        assert!(rad_self.exists, "peer 3 missing `{}`", rad_self);
+        let ids = peer3_expected
+            .missing_rad_ids()
+            .map(|del| del.to_string())
+            .collect::<Vec<_>>();
+        assert!(ids.is_empty(), "peer 3 missing `{:?}`", ids);
     })
 }
 
@@ -268,19 +201,28 @@ fn threes_a_crowd() {
                 let delegate = proj.owner.urn();
                 let remote = peer1.peer_id();
                 move |storage| {
-                    ExpectedReferences::new::<ext::Oid>(storage, &urn, remote, delegate, None)
+                    layout::References::new::<ext::Oid, _, _>(
+                        storage,
+                        &urn,
+                        remote,
+                        Some(delegate),
+                        None,
+                    )
                 }
             })
             .await
             .unwrap()
             .unwrap();
 
-        assert!(peer3_expected.has_rad_id, "peer 3 missing `rad/id`");
-        assert!(peer3_expected.has_rad_self, "peer 3 missing `rad/self``");
-        assert!(
-            peer3_expected.has_rad_ids,
-            "peer 3 missing `rad/ids/<delegate>`"
-        );
+        let rad_id = peer3_expected.rad_id();
+        assert!(rad_id.exists, "peer 3 missing `{}`", rad_id);
+        let rad_self = peer3_expected.rad_self();
+        assert!(rad_self.exists, "peer 3 missing `{}`", rad_self);
+        let ids = peer3_expected
+            .missing_rad_ids()
+            .map(|del| del.to_string())
+            .collect::<Vec<_>>();
+        assert!(ids.is_empty(), "peer 3 missing {:?}", ids);
 
         // Has peer2 refs?
         // Skipping rad/self since peer2 never creates a Person
@@ -290,17 +232,25 @@ fn threes_a_crowd() {
                 let delegate = proj.owner.urn();
                 let remote = peer2.peer_id();
                 move |storage| {
-                    ExpectedReferences::new::<ext::Oid>(storage, &urn, remote, delegate, None)
+                    layout::References::new::<ext::Oid, _, _>(
+                        storage,
+                        &urn,
+                        remote,
+                        Some(delegate),
+                        None,
+                    )
                 }
             })
             .await
             .unwrap()
             .unwrap();
 
-        assert!(peer3_expected.has_rad_id, "peer 3 missing `rad/id`");
-        assert!(
-            peer3_expected.has_rad_ids,
-            "peer 3 missing `rad/ids/<delegate>`"
-        );
+        let rad_id = peer3_expected.rad_id();
+        assert!(rad_id.exists, "peer 3 missing `{}`", rad_id);
+        let ids = peer3_expected
+            .missing_rad_ids()
+            .map(|del| del.to_string())
+            .collect::<Vec<_>>();
+        assert!(ids.is_empty(), "peer 3 missing {:?}", ids);
     })
 }

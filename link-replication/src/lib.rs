@@ -34,6 +34,8 @@ pub use ids::{AnyIdentity, Identities, LocalIdentity, Urn, VerifiedIdentity};
 pub mod odb;
 pub use odb::Odb;
 
+mod prepare;
+
 mod refdb;
 pub use refdb::{Applied, Policy, RefScan, Refdb, SymrefTarget, Update, Updated};
 
@@ -47,7 +49,7 @@ mod success;
 pub use success::Success;
 
 mod track;
-pub use track::{Rel as TrackingRel, Tracking};
+pub use track::{DataPolicy, Rel as TrackingRel, Tracking};
 
 mod transmit;
 pub use transmit::{FilteredRef, LsRefs, Negotiation, Net, RefPrefix, WantsHaves};
@@ -80,7 +82,7 @@ impl Default for FetchLimit {
     }
 }
 
-#[tracing::instrument(skip(cx, whoami), fields(local_id = %LocalPeer::id(cx)))]
+#[tracing::instrument(skip(cx, limit, whoami), fields(local_id = %LocalPeer::id(cx)))]
 pub fn pull<C>(
     cx: &mut C,
     limit: FetchLimit,
@@ -113,7 +115,7 @@ where
     )
 }
 
-#[tracing::instrument(skip(cx, whoami), fields(local_id = %LocalPeer::id(cx)))]
+#[tracing::instrument(skip(cx, limit, whoami), fields(local_id = %LocalPeer::id(cx)))]
 pub fn clone<C>(
     cx: &mut C,
     limit: FetchLimit,

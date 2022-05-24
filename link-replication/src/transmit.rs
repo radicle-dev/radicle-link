@@ -17,7 +17,7 @@ use link_crypto::PeerId;
 use link_git::protocol::{ObjectId, Ref};
 use radicle_data::NonEmptyVec;
 
-use crate::{refs, Odb, Refdb};
+use crate::{refdb, refs, Odb, Refdb, Update};
 
 pub mod error {
     use git_ref_format::RefString;
@@ -198,6 +198,37 @@ impl<T> FilteredRef<T> {
             },
             _marker: PhantomData,
         }
+    }
+
+    /// If [`Self`] is a ref needed for verification, convert to an appropriate
+    /// [`Update`].
+    ///
+    /// A verification ref is a [`refs::parsed::Rad`] ref, except for the
+    /// [`refs::parsed::Rad::Selv`] variant which needs to be handled
+    /// separately.
+    pub fn as_verification_ref_update(&self) -> Option<Update> {
+        use refdb::{Policy, SymrefTarget};
+        use refs::parsed::Rad;
+
+        let track_as = self.to_remote_tracking();
+        self.parsed.inner.as_ref().left().and_then(|rad| match rad {
+            Rad::Id | Rad::SignedRefs => Some(Update::Direct {
+                name: track_as.into(),
+                target: self.tip,
+                no_ff: Policy::Abort,
+            }),
+
+            Rad::Ids { urn } => Some(Update::Symbolic {
+                name: track_as.into(),
+                target: SymrefTarget {
+                    name: refs::namespaced(urn, refs::REFS_RAD_ID),
+                    target: self.tip,
+                },
+                type_change: Policy::Allow,
+            }),
+
+            Rad::Selv => None,
+        })
     }
 
     pub fn to_owned<'b>(&self) -> refs::Owned<'b> {

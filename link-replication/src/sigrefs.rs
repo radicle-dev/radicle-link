@@ -3,7 +3,10 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    ops::Deref,
+};
 
 use git_ref_format::RefString;
 use itertools::Itertools as _;
@@ -57,19 +60,70 @@ pub struct Sigrefs<Oid> {
 }
 
 #[derive(Debug)]
-pub struct Combined<Oid> {
+pub struct Flattened<Oid> {
     /// Signed refs per tracked peer
     pub refs: BTreeMap<PeerId, Refs<Oid>>,
     /// Flattened remotes, with cutoff as per replication factor.
     pub remotes: BTreeSet<PeerId>,
 }
 
-impl<T> Default for Combined<T> {
+impl<T> Default for Flattened<T> {
     fn default() -> Self {
         Self {
             refs: BTreeMap::new(),
             remotes: BTreeSet::new(),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct Combined<Oid>(BTreeMap<PeerId, Sigrefs<Oid>>);
+
+impl<Oid> Combined<Oid> {
+    pub fn flattened(self) -> Flattened<Oid> {
+        let mut refs = BTreeMap::new();
+        let mut remotes = BTreeSet::new();
+        for (id, sigrefs) in self.0 {
+            refs.insert(
+                id,
+                Refs {
+                    at: sigrefs.at,
+                    refs: sigrefs.refs,
+                },
+            );
+            remotes.extend(sigrefs.remotes);
+        }
+
+        Flattened { refs, remotes }
+    }
+}
+
+impl<Oid> Deref for Combined<Oid> {
+    type Target = BTreeMap<PeerId, Sigrefs<Oid>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<Oid> Default for Combined<Oid> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<Oid> From<Combined<Oid>> for Flattened<Oid> {
+    fn from(a: Combined<Oid>) -> Self {
+        a.flattened()
+    }
+}
+
+impl<'a, Oid> IntoIterator for &'a Combined<Oid> {
+    type Item = <&'a BTreeMap<PeerId, Sigrefs<Oid>> as IntoIterator>::Item;
+    type IntoIter = <&'a BTreeMap<PeerId, Sigrefs<Oid>> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
     }
 }
 
@@ -119,20 +173,9 @@ where
             Err(e) => Some(Err(e.into())),
         });
 
-    must.chain(may).fold_ok(
-        Combined::default(),
-        |mut comb,
-         (
-            id,
-            Sigrefs {
-                at,
-                refs,
-                mut remotes,
-            },
-        )| {
-            comb.refs.insert(*id, Refs { at, refs });
-            comb.remotes.append(&mut remotes);
-            comb
-        },
-    )
+    must.chain(may)
+        .fold_ok(Combined::default(), |mut acc, (id, sigrefs)| {
+            acc.0.insert(*id, sigrefs);
+            acc
+        })
 }
