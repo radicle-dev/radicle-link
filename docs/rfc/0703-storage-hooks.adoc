@@ -1,0 +1,113 @@
+= RFC: Storage Hooks
+Alex Good <alex@memoryandthought.me>;
++
+:revdate: 2022-04-07
+:revremark: draft
+:toc: preamble
+:stem:
+
+* Author: {author_1}
+* Date: {revdate}
+* Amended: {ammend_1}
+* Status: {revremark}
+
+== Motivation
+
+There may be many processes which are interested in changes made to a link
+monorepo. We would like to define a standard way for applications to notify each
+other about changes to the monorepo.
+
+== Terminology and Conventions
+
+The key words "`MUST`", "`MUST NOT`", "`REQUIRED`", "`SHALL`", "`SHALL NOT`",
+"`SHOULD`", "`SHOULD NOT`", "`RECOMMENDED`", "`NOT RECOMMENDED`", "`MAY`", and
+"`OPTIONAL`" in this document are to be interpreted as described in <<RFC2119,
+https://www.rfc-editor.org/rfc/rfc2119>> and <<RFC8174,
+https://www.rfc-editor.org/rfc/rfc8174>> when, and only when, they appear in all
+capitals, as shown here.
+
+== Hooks
+
+Notifications of changes in the storage are delivered via "hooks", which are
+similar in spirit to git hooks. A hook is an executable placed in
+`<MONOREPO_DIR>/hooks/<hook type>`, where `hook type` is a directory named one
+of:
+
+* `urn_changed`
+* `tracking_changed`
+
+=== Calling a hook
+
+For each hook type the notifying process MUST iterate over each executable in
+the hook directory and call the executable passing the data specified in this
+document to the hook process standard input
+
+Hook processes MUST continue to process events until they receive an end of
+transmission character encoded as `0x04`. This allows calling processes to
+start a hook process once and then keep the process running until they need to
+notify it again.
+
+== Encodings
+
+In the event specifications that follow these definitions are used:
+
+* `SP` - a single space character
+* `LF` - `\n`
+* `OID` - A hex encoded git OID. Note that this means that the zero OID is
+  encoded as forty `0`s
+* `<urn>` - A base32-z encoded link URN
+* `<peer-id>` - The base32-z encoded bytes of a peer ID
+
+== Event Types
+
+There are two event types
+
+* Notifications that the data under a URN has changed in some way
+* Notifications that the tracking config for a URN has changed
+
+In both cases notifications are sent as a best effort and applications MUST NOT
+assume that the current on-disk state matches the notification.
+
+=== URN changed hook
+
+Whenever a process makes a change that updates a ref under
+`refs/namespaces/<URN>/` the process MUST invoke the `urn_changed` hooks. The
+following MUST be passed to the hook process standard input for each ref
+
+[source]
+----
+'rad:git' <urn> [<ref path>] SP <old-oid> SP <new-oid> LF
+----
+
+Where 
+* `<urn>` is the URN of the namespace containing the ref
+* `<ref path>` is the ref in the scope of the URN namespace. I.e. everything
+  after `refs/namespaces/<URN>/`. 
+* `<old-oid>` is the OID the ref previously pointed at, this will be the zero OID
+  if the ref is being created
+* `<new-oid>` is the OID the ref previously pointed at, this will be the zero OID
+  if the ref is being deleted
+
+Note that the `ref-path` is optional and if it is empty then the notification
+refers to the entire namespace. Thus detecting newly created URNs is a question
+of waiting for notifications with an empty ref path and a non-zero `new-oid`.
+
+=== Tracking changed hook
+
+Whenever a process updates a ref under `refs/namespaces/<URN>/(default | <peer
+id>)` the process MUST invoke the `tracking_changed` hooks. The following MUST
+be passed to the hook process standard input for each ref
+
+
+[source]
+----
+'rad:git' <urn> SP <peer-id> SP <old-oid> SP <new-oid> LF
+----
+
+Where
+* `<urn>` is the URN of the namespace containing the updated tracking ref
+* `<peer-id>` is either a peer ID or the string `default`.
+* `<old-oid>` is the OID of the previous tracking entry blob, this will be the zero
+  OID if the tracking entry is being created
+* `<new-oid>` is the OID of the new tracking entry blob, this will be the zero
+  OID if the tracking entry is being deleted
