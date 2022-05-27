@@ -5,6 +5,7 @@
 
 mod collaboration;
 mod collaborative_objects;
+mod default_branch_head;
 mod menage;
 mod passive_replication;
 #[cfg(feature = "replication-v3")]

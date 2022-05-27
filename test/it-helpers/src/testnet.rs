@@ -21,7 +21,7 @@ use once_cell::sync::Lazy;
 use tempfile::{tempdir, TempDir};
 
 use librad::{
-    git,
+    git::{self, tracking, Urn},
     net::{
         connection::{LocalAddr, LocalPeer},
         discovery::{self, Discovery as _},
@@ -137,6 +137,20 @@ impl Deref for RunningTestPeer {
 impl RunningTestPeer {
     pub fn listen_addrs(&self) -> &[SocketAddr] {
         &self.listen_addrs
+    }
+
+    pub async fn track(&self, urn: Urn, peer: Option<PeerId>) -> anyhow::Result<()> {
+        self.using_storage(move |s| {
+            tracking::track(
+                s,
+                &urn,
+                peer,
+                tracking::Config::default(),
+                tracking::policy::Track::Any,
+            )??;
+            Ok(())
+        })
+        .await?
     }
 }
 
