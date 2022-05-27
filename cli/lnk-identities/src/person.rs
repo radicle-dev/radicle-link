@@ -27,6 +27,7 @@ use librad::{
 use crate::{
     display,
     git::{self, checkout, include},
+    working_copy_dir::WorkingCopyDir,
 };
 
 pub type Display = display::Display<PersonPayload>;
@@ -172,7 +173,7 @@ pub fn checkout<S>(
     signer: BoxedSigner,
     urn: &Urn,
     peer: Option<PeerId>,
-    path: PathBuf,
+    path: WorkingCopyDir,
 ) -> Result<git2::Repository, Error>
 where
     S: AsRef<ReadOnly>,
@@ -199,7 +200,7 @@ where
         paths: paths.clone(),
         signer,
     };
-    let repo = git::checkout::checkout(settings, &person, from)?;
+    let repo = git::checkout::checkout(&paths, settings, storage, &person, from)?;
     include::update(&storage, &paths, &person)?;
     Ok(repo)
 }

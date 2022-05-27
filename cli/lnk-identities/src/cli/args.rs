@@ -255,9 +255,10 @@ pub mod project {
         #[clap(long)]
         pub urn: Urn,
 
-        /// the location for creating the working copy in
+        /// the location for creating the working copy in. If not specified will
+        /// clone into <working directory>/<identity name>
         #[clap(long)]
-        pub path: PathBuf,
+        pub path: Option<PathBuf>,
 
         /// the peer for which the initial working copy is based off. Note that
         /// if this value is not provided, or the value that is provided is the
@@ -360,7 +361,8 @@ pub mod person {
         #[clap(long, parse(try_from_str = direct_delegation))]
         pub delegations: Vec<PublicKey>,
 
-        /// the path where the working copy should be created
+        /// the path where the working copy should be created If not specified
+        /// will clone into <working directory>/<identity name>
         #[clap(long)]
         pub path: Option<PathBuf>,
     }
@@ -444,7 +446,7 @@ pub mod person {
 
         /// the location for creating the working copy in
         #[clap(long)]
-        pub path: PathBuf,
+        pub path: Option<PathBuf>,
 
         /// the peer for which the initial working copy is based off. Note that
         /// if this value is not provided, or the value that is provided is the

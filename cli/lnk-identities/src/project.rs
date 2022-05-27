@@ -30,6 +30,7 @@ use librad::{
 use crate::{
     display,
     git::{self, checkout, include},
+    working_copy_dir::WorkingCopyDir,
     MissingDefaultIdentity,
 };
 
@@ -71,12 +72,6 @@ impl From<relations::Error> for Error {
 impl From<identities::Error> for Error {
     fn from(err: identities::Error) -> Self {
         Self::Identities(Box::new(err))
-    }
-}
-
-impl From<include::Error> for Error {
-    fn from(err: include::Error) -> Self {
-        Self::Include(Box::new(err))
     }
 }
 
@@ -136,26 +131,32 @@ where
         signer,
     };
 
-    let project = match creation {
+    let (project, maybe_repo) = match creation {
         Creation::New { path } => {
             if let Some(path) = path {
                 let valid = git::new::New::new(payload.clone(), path).validate()?;
                 let project = project::create(storage, whoami, payload, delegations)?;
-                valid.init(url, settings)?;
-                project
+                let repo = valid.init(url, settings)?;
+                (project, Some(repo))
             } else {
-                project::create(storage, whoami, payload, delegations)?
+                (
+                    project::create(storage, whoami, payload, delegations)?,
+                    None,
+                )
             }
         },
         Creation::Existing { path } => {
             let valid = git::existing::Existing::new(payload.clone(), path).validate()?;
             let project = project::create(storage, whoami, payload, delegations)?;
-            valid.init(url, settings)?;
-            project
+            let repo = valid.init(url, settings)?;
+            (project, Some(repo))
         },
     };
 
-    include::update(storage, &paths, &project)?;
+    let include_path = include::update(storage, &paths, &project)?;
+    if let Some(repo) = maybe_repo {
+        librad::git::include::set_include_path(&repo, include_path)?;
+    }
 
     Ok(project)
 }
@@ -242,7 +243,7 @@ pub fn checkout<S>(
     signer: BoxedSigner,
     urn: &Urn,
     peer: Option<PeerId>,
-    path: PathBuf,
+    path: WorkingCopyDir,
 ) -> Result<git2::Repository, Error>
 where
     S: AsRef<ReadOnly>,
@@ -269,8 +270,7 @@ where
         paths: paths.clone(),
         signer,
     };
-    let repo = git::checkout::checkout(settings, &project, from)?;
-    include::update(&storage, &paths, &project)?;
+    let repo = git::checkout::checkout(&paths, settings, storage, &project, from)?;
     Ok(repo)
 }
 

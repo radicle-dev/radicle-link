@@ -51,7 +51,7 @@ fn validation_path_is_not_a_repo() -> anyhow::Result<()> {
 fn validation_default_branch_is_missing() -> anyhow::Result<()> {
     let payload = TestProject::default_payload();
     let temp = tempdir()?;
-    let dir = temp.path().join(payload.name.as_str());
+    let dir = temp.path();
     let _repo = git2::Repository::init(dir)?;
     let existing = Existing::new(ProjectPayload::new(payload), temp.path().to_path_buf());
     let result = existing.validate();
@@ -68,7 +68,7 @@ fn validation_default_branch_is_missing() -> anyhow::Result<()> {
 fn validation_different_remote_exists() -> anyhow::Result<()> {
     let payload = TestProject::default_payload();
     let temp = tempdir()?;
-    let dir = temp.path().join(payload.name.as_str());
+    let dir = temp.path();
     let _repo = {
         let branch = payload.default_branch.as_ref().unwrap();
         let mut opts = git2::RepositoryInitOptions::new();
@@ -153,7 +153,7 @@ fn validation_remote_exists() -> anyhow::Result<()> {
 fn creation() -> anyhow::Result<()> {
     let payload = TestProject::default_payload();
     let temp = tempdir()?;
-    let dir = temp.path().join(payload.name.as_str());
+    let dir = temp.path();
     let _repo = {
         let branch = payload.default_branch.as_ref().unwrap();
         let mut opts = git2::RepositoryInitOptions::new();

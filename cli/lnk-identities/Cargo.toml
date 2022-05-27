@@ -45,6 +45,9 @@ default-features = false
 [dependencies.radicle-git-ext]
 path = "../../git-ext"
 
+[dependencies.git-ref-format]
+path = "../../git-ref-format"
+
 [dependencies.radicle-std-ext]
 path = "../../std-ext"
 

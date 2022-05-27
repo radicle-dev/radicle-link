@@ -21,6 +21,7 @@ pub mod project;
 pub mod rad_refs;
 pub mod refs;
 pub mod tracking;
+pub mod working_copy_dir;
 
 pub mod display;
 mod field;

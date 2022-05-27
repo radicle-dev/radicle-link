@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom, ffi, path::PathBuf};
+use std::{convert::TryFrom, path::PathBuf};
 
 use either::Either;
 
@@ -11,6 +11,7 @@ use librad::{
     git::{
         identities::{self, Person},
         local::{transport::CanOpenStorage, url::LocalUrl},
+        storage::ReadOnly,
         types::{
             remote::{LocalFetchspec, LocalPushspec, Remote},
             Flat,
@@ -21,13 +22,18 @@ use librad::{
         },
     },
     git_ext::{self, OneLevel, Qualified, RefLike},
+    paths::Paths,
     refspec_pattern,
     PeerId,
 };
 
+use git_ref_format as ref_format;
+
 use crate::{
     field::{HasBranch, HasName, HasUrn, MissingDefaultBranch},
     git,
+    git::include,
+    working_copy_dir::WorkingCopyDir,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -46,6 +52,15 @@ pub enum Error {
 
     #[error(transparent)]
     Transport(#[from] librad::git::local::transport::Error),
+
+    #[error(transparent)]
+    Include(Box<include::Error>),
+
+    #[error(transparent)]
+    SetInclude(#[from] librad::git::include::Error),
+
+    #[error(transparent)]
+    OpenStorage(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl From<identities::Error> for Error {
@@ -89,14 +104,18 @@ impl From<identities::Error> for Error {
 ///     merge = refs/heads/master
 /// [include]
 ///     path = /home/user/.config/radicle-link/git-includes/hwd1yrerzpjbmtshsqw6ajokqtqrwaswty6p7kfeer3yt1n76t46iqggzcr.inc
-pub fn checkout<F, I>(
+/// ```
+pub fn checkout<F, I, S>(
+    paths: &Paths,
     open_storage: F,
+    storage: &S,
     identity: &I,
     from: Either<Local, Peer>,
 ) -> Result<git2::Repository, Error>
 where
     F: CanOpenStorage + Clone + 'static,
     I: HasBranch + HasUrn,
+    S: AsRef<ReadOnly>,
 {
     let default_branch = identity.branch_or_die(identity.urn())?;
 
@@ -104,6 +123,10 @@ where
         Either::Left(local) => local.checkout(open_storage)?,
         Either::Right(peer) => peer.checkout(open_storage)?,
     };
+
+    let include_path =
+        include::update(storage, paths, identity).map_err(|e| Error::Include(Box::new(e)))?;
+    librad::git::include::set_include_path(&repo, include_path)?;
 
     // Set configurations
     git::set_upstream(&repo, &rad, default_branch.clone())?;
@@ -123,7 +146,6 @@ impl Local {
     where
         I: HasName + HasUrn,
     {
-        let path = resolve_path(identity, path);
         Self {
             url: LocalUrl::from(identity.urn()),
             path,
@@ -160,7 +182,6 @@ impl Peer {
     {
         let urn = identity.urn();
         let default_branch = identity.branch_or_die(urn.clone())?;
-        let path = resolve_path(identity, path);
         Ok(Self {
             url: LocalUrl::from(urn),
             remote,
@@ -175,12 +196,16 @@ impl Peer {
     {
         let (person, peer) = self.remote;
         let handle = &person.subject().name;
-        let name =
-            RefLike::try_from(format!("{}@{}", handle, peer)).expect("failed to parse remote name");
 
-        let remote = Remote::new(self.url.clone(), name.clone()).with_fetchspecs(vec![Refspec {
+        let name = ref_format::RefString::try_from(format!("{}@{}", handle, peer))
+            .expect("handle and peer are reflike");
+        let dst = ref_format::RefString::from(ref_format::Qualified::from(
+            ref_format::lit::refs_remotes(name.clone()),
+        ))
+        .with_pattern(ref_format::refspec::STAR);
+        let remote = Remote::new(self.url.clone(), name).with_fetchspecs(vec![Refspec {
             src: Reference::heads(Flat, peer),
-            dst: GenericRef::heads(Flat, name),
+            dst,
             force: Force::True,
         }]);
 
@@ -216,34 +241,14 @@ impl Peer {
 pub fn from_whom<I>(
     identity: &I,
     remote: Option<(Person, PeerId)>,
-    path: PathBuf,
+    path: WorkingCopyDir,
 ) -> Result<Either<Local, Peer>, Error>
 where
     I: HasBranch + HasName + HasUrn,
 {
+    let path = path.resolve(identity.name());
     Ok(match remote {
         None => Either::Left(Local::new(identity, path)),
         Some(remote) => Either::Right(Peer::new(identity, remote, path)?),
     })
-}
-
-fn resolve_path<I>(identity: &I, path: PathBuf) -> PathBuf
-where
-    I: HasName,
-{
-    let name = identity.name();
-
-    // Check if the path provided ends in the 'directory_name' provided. If not we
-    // create the full path to that name.
-    path.components()
-        .next_back()
-        .map_or(path.join(&**name), |destination| {
-            let destination: &ffi::OsStr = destination.as_ref();
-            let name: &ffi::OsStr = name.as_ref();
-            if destination == name {
-                path.to_path_buf()
-            } else {
-                path.join(name)
-            }
-        })
 }

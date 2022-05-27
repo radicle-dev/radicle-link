@@ -41,12 +41,6 @@ pub struct New<V, P> {
     valid: V,
 }
 
-impl<V, P: HasName> New<V, P> {
-    pub fn path(&self) -> PathBuf {
-        self.path.join(self.payload.name().as_str())
-    }
-}
-
 pub type Invalid = PhantomData<Void>;
 pub type Valid = PhantomData<Void>;
 
@@ -64,14 +58,12 @@ impl<P> New<Invalid, P> {
     where
         P: HasName,
     {
-        let repo_path = self.path();
-
-        if repo_path.is_file() {
-            return Err(Error::AlreadyExists(repo_path));
+        if self.path.is_file() {
+            return Err(Error::AlreadyExists(self.path));
         }
 
-        if repo_path.exists() && repo_path.is_dir() && repo_path.read_dir()?.next().is_some() {
-            return Err(Error::AlreadyExists(repo_path));
+        if self.path.exists() && self.path.is_dir() && self.path.read_dir()?.next().is_some() {
+            return Err(Error::AlreadyExists(self.path));
         }
 
         Ok(Self {
@@ -87,7 +79,7 @@ impl New<Valid, payload::ProjectPayload> {
     where
         F: CanOpenStorage + Clone + 'static,
     {
-        let path = self.path();
+        let path = self.path;
         let default = self.payload.branch_or_default();
         init(
             path,
@@ -104,7 +96,7 @@ impl New<Valid, payload::PersonPayload> {
     where
         F: CanOpenStorage + Clone + 'static,
     {
-        let path = self.path();
+        let path = self.path;
         let default = self.payload.branch_or_default();
         init(path, default, &None, url, open_storage)
     }
