@@ -16,8 +16,9 @@ use librad::{
     },
     reflike,
 };
-use link_git::service::SshService;
 use radicle_git_ext as ext;
+
+use crate::ssh_service;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -44,13 +45,14 @@ pub enum Error {
 // crate.
 pub(super) fn create_command(
     storage: &storage::Storage,
-    service: SshService<Urn>,
+    service: ssh_service::SshService,
 ) -> Result<tokio::process::Command, Error> {
-    guard_has_urn(storage, &service.path)?;
+    let urn = service.path.into();
+    guard_has_urn(storage, &urn)?;
 
     let mut git = tokio::process::Command::new("git");
     git.current_dir(&storage.path()).args(&[
-        &format!("--namespace={}", Namespace::from(&service.path)),
+        &format!("--namespace={}", Namespace::from(&urn)),
         "-c",
         "transfer.hiderefs=refs/remotes",
         "-c",
@@ -62,7 +64,7 @@ pub(super) fn create_command(
     match service.service.0 {
         GitService::UploadPack | GitService::UploadPackLs => {
             // Fetching remotes is ok, pushing is not
-            visible_remotes(storage, &service.path)?.for_each(|remote_ref| {
+            visible_remotes(storage, &urn)?.for_each(|remote_ref| {
                 git.arg("-c")
                     .arg(format!("uploadpack.hiderefs=!^{}", remote_ref));
             });

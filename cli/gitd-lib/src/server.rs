@@ -13,9 +13,8 @@ use rand::Rng;
 use tokio::net::{TcpListener, TcpStream};
 use tracing::instrument;
 
-use librad::{git::Urn, PeerId};
+use librad::PeerId;
 use link_async::{incoming::TcpListenerExt, Spawner};
-use link_git::service;
 
 use crate::{
     hooks::Hooks,
@@ -268,7 +267,7 @@ where
     ) -> Self::FutureUnit {
         let exec_str = String::from_utf8_lossy(data);
         tracing::debug!(?exec_str, "received exec_request");
-        let ssh_service: service::SshService<Urn> = match exec_str.parse() {
+        let ssh_service: crate::ssh_service::SshService = match exec_str.parse() {
             Ok(s) => s,
             Err(e) => {
                 tracing::error!(err=?e, ?exec_str, "unable to parse exec str for exec_request");

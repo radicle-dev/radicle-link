@@ -20,13 +20,13 @@ use tokio::{
     process::Child,
 };
 
-use librad::git::{storage, Urn};
+use librad::git::storage;
 use link_async::Spawner;
-use link_git::service::SshService;
 
 use crate::{
     hooks::{self, Hooks},
     processes::ProcessReply,
+    ssh_service,
 };
 
 pub mod command;
@@ -51,7 +51,7 @@ pub(crate) async fn run_git_subprocess<Replier, S>(
     pool: Arc<storage::Pool<storage::Storage>>,
     incoming: tokio::sync::mpsc::Receiver<Message>,
     mut out: Replier,
-    service: SshService<Urn>,
+    service: ssh_service::SshService,
     hooks: Hooks<S>,
 ) -> Result<(), Error<Replier::Error>>
 where
@@ -74,7 +74,7 @@ async fn run_git_subprocess_inner<Replier, S>(
     pool: Arc<storage::Pool<storage::Storage>>,
     mut incoming: tokio::sync::mpsc::Receiver<Message>,
     out: &mut Replier,
-    service: SshService<Urn>,
+    service: ssh_service::SshService,
     hooks: Hooks<S>,
 ) -> Result<(), Error<Replier::Error>>
 where
@@ -87,7 +87,7 @@ where
 
     if service.is_upload() {
         match hooks
-            .pre_upload(&mut progress_reporter, service.path.clone())
+            .pre_upload(&mut progress_reporter, service.path.clone().into())
             .await
         {
             Ok(()) => {},
@@ -260,7 +260,7 @@ where
     // Run hooks
     if service.service == GitService::ReceivePack.into() {
         if let Err(e) = hooks
-            .post_receive(&mut progress_reporter, service.path.clone())
+            .post_receive(&mut progress_reporter, service.path.into())
             .await
         {
             match e {
