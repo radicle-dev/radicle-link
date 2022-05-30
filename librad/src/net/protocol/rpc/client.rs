@@ -49,10 +49,7 @@ where
         let paths = config.paths.clone();
         let local_id = PeerId::from_signer(&config.signer);
         let user_store = config.storage();
-        #[cfg(feature = "replication-v3")]
         let repl = Replication::new(&paths, config.replication)?;
-        #[cfg(not(feature = "replication-v3"))]
-        let repl = Replication::new(config.replication);
 
         Ok(Self {
             config,
@@ -85,30 +82,20 @@ where
         urn: Urn,
         whoami: Option<LocalIdentity>,
     ) -> Result<replication::Success, error::Replicate> {
-        #[cfg(feature = "replication-v3")]
-        {
-            // TODO: errors
-            let (remote_peer, addrs) = from.into();
-            let conn = self
-                .endpoint
-                .connect(remote_peer, addrs)
-                .await
-                .ok_or(error::NoConnection(remote_peer))?
-                .connection()
-                .clone();
-            let store = self.user_store.get().await?;
-            self.repl
-                .replicate(&self.spawner, store, conn, urn, whoami)
-                .err_into()
-                .await
-        }
-        #[cfg(not(feature = "replication-v3"))]
-        {
-            self.repl
-                .replicate(&self.spawner, &self.user_store, from, urn, whoami)
-                .err_into()
-                .await
-        }
+        // TODO: errors
+        let (remote_peer, addrs) = from.into();
+        let conn = self
+            .endpoint
+            .connect(remote_peer, addrs)
+            .await
+            .ok_or(error::NoConnection(remote_peer))?
+            .connection()
+            .clone();
+        let store = self.user_store.get().await?;
+        self.repl
+            .replicate(&self.spawner, store, conn, urn, whoami)
+            .err_into()
+            .await
     }
 
     pub async fn request_pull(

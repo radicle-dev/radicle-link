@@ -8,5 +8,4 @@ mod fetch_limit;
 mod gossip;
 mod interrogation;
 mod regression;
-#[cfg(feature = "replication-v3")]
 mod request_pull;

@@ -70,8 +70,6 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - run: ./scripts/ci/build
         shell: bash
-      - run: ./scripts/ci/build-repl3
-        shell: bash
       - run: ./scripts/ci/build-bins
         shell: bash
 
@@ -97,8 +95,6 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - run: ./scripts/ci/test
         shell: bash
-      - run: ./scripts/ci/test-repl3
-        shell: bash
 
   build-macos:
     runs-on: macos-latest
@@ -110,8 +106,6 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v1
       - run: ./scripts/ci/build
-        shell: bash
-      - run: ./scripts/ci/build-repl3
         shell: bash
       - run: ./scripts/ci/build-bins
         shell: bash
@@ -131,8 +125,6 @@ jobs:
           version: 0.9
       - uses: Swatinem/rust-cache@v1
       - run: ./scripts/ci/test
-        shell: bash
-      - run: ./scripts/ci/test-repl3
         shell: bash
       - run: brew install coreutils gettext socat
       - run: ./cli/lnk-clib/t/test-ld-socket-activation.sh

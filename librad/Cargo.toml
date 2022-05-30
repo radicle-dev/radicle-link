@@ -11,7 +11,6 @@ test = false
 
 [features]
 default = []
-replication-v3 = []
 
 [dependencies]
 async-lock = "2.4.0"

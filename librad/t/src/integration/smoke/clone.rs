@@ -129,13 +129,7 @@ fn when_disconnected_and_no_addr_hints() {
         let host = Host::init(&net.peers()[0]).await;
         Leecher(&net.peers()[1]).clone_from(host, false).await
     });
-    #[cfg(feature = "replication-v3")]
     assert!(matches!(res, Err(e) if e.to_string().starts_with("unable to obtain connection to")));
-    #[cfg(not(feature = "replication-v3"))]
-    assert!(matches!(
-        res,
-        Err(e) if e.root_cause().to_string().starts_with("git p2p transport: no connection to")
-    ))
 }
 
 struct Host<'a> {

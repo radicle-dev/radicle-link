@@ -11,9 +11,6 @@ doctest = false
 test = true
 doc = false
 
-[features]
-replication-v3 = ["librad-test/replication-v3"]
-
 [dev-dependencies.cob-test]
 path = "../cob/t"
 features = ["test"]

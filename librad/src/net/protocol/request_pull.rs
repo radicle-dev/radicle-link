@@ -36,9 +36,6 @@ pub trait Guard {
     fn guard(&self, peer: &PeerId, urn: &Urn) -> Result<Self::Output, Self::Error>;
 }
 
-// storage and paths considered unused under
-// #[cfg(not(feature = "replication-v3"))]
-#[allow(dead_code)]
 /// State for serving request-pull calls.
 #[derive(Clone)]
 pub struct State<S, G> {
@@ -70,15 +67,10 @@ pub(in crate::net::protocol) mod error {
         Replication(#[from] replication::error::Replicate),
         #[error("internal error: could not get handle to storage")]
         Pool(#[from] PoolError),
-        #[cfg(feature = "replication-v3")]
         #[error("internal error: could not intialise storage")]
         Init(#[from] replication::error::Init),
         #[error("internal error: failed to look up symbolic-ref target")]
         Read(#[from] storage::read::Error),
-
-        #[cfg(not(feature = "replication-v3"))]
-        #[error("request-pull is not implemented without `replication-v3` enabled")]
-        Unimplemented,
     }
 
     pub fn decode_failed() -> Error {
@@ -111,7 +103,6 @@ where
     S: storage::Pooled<storage::Storage> + Send + Sync + 'static,
 {
     /// Run replication and convert the updated tips into [`Ref`]s.
-    #[cfg(feature = "replication-v3")]
     pub(in crate::net::protocol) async fn replicate(
         &self,
         spawner: &Spawner,
@@ -149,20 +140,6 @@ where
                     Ok(success)
                 },
             })
-    }
-
-    /// # Errors
-    ///
-    /// request-pull is only implemented for `replication-v3` and will
-    /// immediately return [`error::Replicate::Unimplemented`].
-    #[cfg(not(feature = "replication-v3"))]
-    pub(in crate::net::protocol) async fn replicate(
-        &self,
-        _: &Spawner,
-        _: Urn,
-        _: quic::Connection,
-    ) -> Result<Success, error::Replicate> {
-        Err(error::Replicate::Unimplemented)
     }
 }
 

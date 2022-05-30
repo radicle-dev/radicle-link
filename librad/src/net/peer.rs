@@ -124,10 +124,7 @@ where
             protocol::Caches { urns }
         };
 
-        #[cfg(feature = "replication-v3")]
         let repl = Replication::new(&config.protocol.paths, config.protocol.replication)?;
-        #[cfg(not(feature = "replication-v3"))]
-        let repl = Replication::new(config.protocol.replication);
 
         let peer_store = PeerStorage::new(
             storage::Config {
@@ -137,7 +134,6 @@ where
             pool,
             caches.urns.clone(),
             repl.clone(),
-            #[cfg(feature = "replication-v3")]
             phone.clone(),
         );
         let user_store = git::storage::Pool::new(
@@ -292,10 +288,6 @@ where
     ///
     /// The optional `whoami` parameter is used to advertise the identity the
     /// caller whishes to identify as, ie. the `rad/self` branch.
-    ///
-    /// Note that this method is subject to the experimental `replication-v3`
-    /// feature. Do not enable `replication-v3` unless you know what you're
-    /// doing.
     #[deprecated(
         note = "use of `self.replicate(..)` is deprecated in favour of going through `self.client(..)?.replicate(..)`"
     )]
@@ -305,33 +297,22 @@ where
         urn: Urn,
         whoami: Option<LocalIdentity>,
     ) -> Result<replication::Success, error::Replicate> {
-        #[cfg(feature = "replication-v3")]
-        {
-            // TODO: errors
-            let from = from.into();
-            let remote_peer = from.0;
-            let Connected(conn) = self
-                .connect(from)
-                .await
-                .ok_or(error::Replicate::NoConnection(remote_peer))?;
-            let store = self.user_store.get().await?;
-            self.repl
-                .replicate(&self.spawner, store, conn, urn, whoami)
-                .err_into()
-                .await
-        }
-        #[cfg(not(feature = "replication-v3"))]
-        {
-            self.repl
-                .replicate(&self.spawner, &self.user_store, from, urn, whoami)
-                .err_into()
-                .await
-        }
+        // TODO: errors
+        let from = from.into();
+        let remote_peer = from.0;
+        let Connected(conn) = self
+            .connect(from)
+            .await
+            .ok_or(error::Replicate::NoConnection(remote_peer))?;
+        let store = self.user_store.get().await?;
+        self.repl
+            .replicate(&self.spawner, store, conn, urn, whoami)
+            .err_into()
+            .await
     }
 
     // TODO: Augment `Connected` such that we can provide an alternative API,
     // a la `peer.connect((peer_id, addrs)).await.unwrap().replicate()`
-    #[allow(unused)] // unused without replication-v3
     async fn connect(&self, to: impl Into<(PeerId, Vec<SocketAddr>)>) -> Option<Connected> {
         self.phone.connect(to).await
     }

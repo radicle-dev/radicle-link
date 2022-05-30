@@ -109,51 +109,6 @@ where
     }
 }
 
-#[cfg(not(feature = "replication-v3"))]
-#[async_trait]
-impl<S, G> crate::git::p2p::transport::GitStreamFactory for State<S, G>
-where
-    S: ProtocolStorage<SocketAddr, Update = gossip::Payload> + Clone + 'static,
-    G: RequestPullGuard,
-{
-    async fn open_stream(
-        &self,
-        to: &PeerId,
-        addr_hints: &[SocketAddr],
-    ) -> Option<Box<dyn crate::git::p2p::transport::GitStream>> {
-        use crate::net::upgrade;
-        use futures::TryFutureExt as _;
-
-        let span = tracing::info_span!("open-git-stream", remote_id = %to);
-        match self
-            .connection(*to, addr_hints.to_vec())
-            .instrument(span.clone())
-            .await
-        {
-            None => {
-                span.in_scope(|| tracing::error!("unable to obtain connection"));
-                None
-            },
-
-            Some(conn) => {
-                let stream = conn
-                    .open_bidi()
-                    .inspect_err(|e| tracing::error!(err = ?e, "unable to open stream"))
-                    .instrument(span.clone())
-                    .await
-                    .ok()?;
-                let upgraded = upgrade::upgrade(stream, upgrade::Git)
-                    .inspect_err(|e| tracing::error!(err = ?e, "unable to upgrade stream"))
-                    .instrument(span)
-                    .await
-                    .ok()?;
-
-                Some(Box::new(upgraded))
-            },
-        }
-    }
-}
-
 //
 // Rate Limiting
 //

@@ -260,12 +260,6 @@ where
     }
 }
 
-#[cfg(not(feature = "replication-v3"))]
-impl<S> crate::git::p2p::transport::GitStream for Upgraded<Git, S> where
-    S: AsyncRead + AsyncWrite + Unpin + Send + Sync
-{
-}
-
 #[derive(Debug)]
 pub enum SomeUpgraded<S> {
     Gossip(Upgraded<Gossip, S>),

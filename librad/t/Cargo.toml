@@ -13,7 +13,6 @@ doc = false
 
 [features]
 test = []
-replication-v3 = ["librad/replication-v3"]
 
 [dependencies]
 futures = "0.3"
