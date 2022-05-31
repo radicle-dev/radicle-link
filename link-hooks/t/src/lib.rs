@@ -5,4 +5,6 @@
 pub mod gen;
 
 #[cfg(test)]
+mod integration;
+#[cfg(test)]
 mod properties;

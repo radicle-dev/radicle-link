@@ -40,5 +40,18 @@ features = ["test"]
 [dependencies.radicle-git-ext]
 path = "../../git-ext"
 
+[dev-dependencies.link-async]
+path = "../../link-async"
+
+[dev-dependencies.futures]
+version = "0.3"
+
+[dev-dependencies.tempfile]
+version = "3.3"
+
 [dev-dependencies.test-helpers]
 path = "../../test/test-helpers"
+
+[dev-dependencies.tokio]
+version = "1.18"
+features = ["macros", "rt", "sync"]

@@ -1,0 +1,10 @@
+[package]
+name = "echo-forever"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies.link-hooks]
+path = "../../../link-hooks"
+
+[dependencies.radicle-git-ext]
+path = "../../../git-ext"
