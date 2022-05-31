@@ -5,6 +5,7 @@
 
 #[cfg(not(feature = "replication-v3"))]
 pub mod fetch;
+pub mod hooks;
 pub mod identities;
 pub mod include;
 pub mod local;
