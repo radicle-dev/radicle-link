@@ -5,8 +5,6 @@
 
 use std::{convert::TryFrom, ops::Index as _};
 
-use tempfile::tempdir;
-
 use git_ref_format::{lit, name, Namespaced, Qualified, RefString};
 use it_helpers::{
     fixed::{TestPerson, TestProject},
@@ -95,12 +93,9 @@ fn default_branch_head() {
         //     peer1 commit
         //           ↓
         //     peer2 commit
-        let tmp = tempdir().unwrap();
         let tip = {
-            let mut working_copy1 =
-                WorkingCopy::new(&proj, tmp.path().join("peer1"), peer1).unwrap();
-            let mut working_copy2 =
-                WorkingCopy::new(&proj, tmp.path().join("peer2"), peer2).unwrap();
+            let mut working_copy1 = WorkingCopy::new(&proj, peer1).unwrap();
+            let mut working_copy2 = WorkingCopy::new(&proj, peer2).unwrap();
 
             let mastor = Qualified::from(lit::refs_heads(name::MASTER));
             working_copy1
@@ -139,10 +134,8 @@ fn default_branch_head() {
 
         // now update peer1 and push to peer 1s monorepo, we should still get the old
         // tip because peer2 is behind
-        let tmp = tempdir().unwrap();
         let new_tip = {
-            let mut working_copy1 =
-                WorkingCopy::new(&proj, tmp.path().join("peer1"), peer1).unwrap();
+            let mut working_copy1 = WorkingCopy::new(&proj, peer1).unwrap();
             working_copy1
                 .create_remote_tracking_branch(Remote::Rad, name::MASTER)
                 .unwrap();
@@ -166,11 +159,9 @@ fn default_branch_head() {
         );
 
         // fast forward peer2 and pull the update back into peer1
-        let tmp = tempdir().unwrap();
         proj.pull(peer1, peer2).await.unwrap();
         {
-            let mut working_copy2 =
-                WorkingCopy::new(&proj, tmp.path().join("peer2"), peer2).unwrap();
+            let mut working_copy2 = WorkingCopy::new(&proj, peer2).unwrap();
             working_copy2
                 .create_remote_tracking_branch(Remote::Rad, name::MASTER)
                 .unwrap();
@@ -196,10 +187,8 @@ fn default_branch_head() {
 
         // now create an alternate commit on peer2 and sync with peer1, on peer1 we
         // should get a fork
-        let tmp = tempdir().unwrap();
         let forked_tip = {
-            let mut working_copy2 =
-                WorkingCopy::new(&proj, tmp.path().join("peer2"), peer2).unwrap();
+            let mut working_copy2 = WorkingCopy::new(&proj, peer2).unwrap();
 
             let mastor = Qualified::from(lit::refs_heads(name::MASTER));
             let forked_tip = working_copy2.commit("peer 2 fork", mastor.clone()).unwrap();
@@ -229,10 +218,8 @@ fn default_branch_head() {
         );
 
         // now merge the fork into peer1
-        let tmp = tempdir().unwrap();
         let fixed_tip = {
-            let mut working_copy1 =
-                WorkingCopy::new(&proj, tmp.path().join("peer1"), peer1).unwrap();
+            let mut working_copy1 = WorkingCopy::new(&proj, peer1).unwrap();
             working_copy1.fetch(Remote::Peer(peer2.peer_id())).unwrap();
             working_copy1
                 .create_remote_tracking_branch(Remote::Peer(peer2.peer_id()), name::MASTER)
@@ -249,8 +236,7 @@ fn default_branch_head() {
         // pull the merge into peer2
         proj.pull(peer1, peer2).await.unwrap();
         {
-            let mut working_copy2 =
-                WorkingCopy::new(&proj, tmp.path().join("peer2"), peer2).unwrap();
+            let mut working_copy2 = WorkingCopy::new(&proj, peer2).unwrap();
             working_copy2
                 .create_remote_tracking_branch(Remote::Rad, name::MASTER)
                 .unwrap();

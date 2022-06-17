@@ -5,17 +5,11 @@
 
 use std::{convert::TryInto, ops::Index as _};
 
-use blocking::unblock;
-use git_ref_format::RefString;
-use it_helpers::{
-    fixed::{self, TestProject},
-    layout,
-    testnet,
-};
+use git_ref_format::{lit, Qualified, RefString};
+use it_helpers::{fixed::TestProject, layout, testnet, working_copy::WorkingCopy};
 use librad::{
     self,
     git::{refs::Refs, tracking},
-    git_ext as ext,
     reflike,
 };
 use test_helpers::logging;
@@ -55,15 +49,12 @@ fn a_trois() {
             .unwrap_or_else(|| "mistress".to_owned())
             .try_into()
             .unwrap();
-        let repo = fixed::repository(peer1.peer_id());
-        let commit_id = unblock(fixed::commit(
-            (*peer1).clone(),
-            repo,
-            &proj.project,
-            &proj.owner,
-            default_branch.clone(),
-        ))
-        .await;
+
+        let commit_id = {
+            let head = Qualified::from(lit::refs_heads(default_branch.clone()));
+            let mut working_copy = WorkingCopy::new(&proj, peer1).unwrap();
+            working_copy.commit_and_push("peer 1 commit", head).unwrap()
+        };
 
         let expected_urn = proj.project.urn().with_path(
             reflike!("refs/remotes")
@@ -201,7 +192,7 @@ fn threes_a_crowd() {
                 let delegate = proj.owner.urn();
                 let remote = peer1.peer_id();
                 move |storage| {
-                    layout::References::new::<ext::Oid, _, _>(
+                    layout::References::new::<git2::Oid, _, _>(
                         storage,
                         &urn,
                         remote,
@@ -232,7 +223,7 @@ fn threes_a_crowd() {
                 let delegate = proj.owner.urn();
                 let remote = peer2.peer_id();
                 move |storage| {
-                    layout::References::new::<ext::Oid, _, _>(
+                    layout::References::new::<git2::Oid, _, _>(
                         storage,
                         &urn,
                         remote,

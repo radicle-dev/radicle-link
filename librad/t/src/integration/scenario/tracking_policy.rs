@@ -3,17 +3,16 @@
 
 use std::{convert::TryInto, ops::Index as _};
 
-use blocking::unblock;
-use git_ref_format::RefString;
+use git_ref_format::{lit, Qualified, RefString};
 use it_helpers::{
-    fixed::{self, TestPerson, TestProject},
+    fixed::{TestPerson, TestProject},
     layout,
     testnet,
+    working_copy::WorkingCopy,
 };
 use librad::{
     self,
     git::{refs::Refs, tracking},
-    git_ext as ext,
     reflike,
 };
 use test_helpers::logging;
@@ -76,15 +75,14 @@ fn cannot_ignore_delegate() {
             .unwrap_or_else(|| "mistress".to_owned())
             .try_into()
             .unwrap();
-        let repo = fixed::repository(peer1.peer_id());
-        let commit_id = unblock(fixed::commit(
-            (*peer1).clone(),
-            repo,
-            &proj.project,
-            &proj.owner,
-            default_branch.clone(),
-        ))
-        .await;
+
+        let commit_id = {
+            let mut working_copy = WorkingCopy::new(&proj, peer1).unwrap();
+            let branch = Qualified::from(lit::refs_heads(default_branch.clone()));
+            working_copy
+                .commit_and_push("peer 1 commit", branch)
+                .unwrap()
+        };
 
         let expected_urn = proj.project.urn().with_path(
             reflike!("refs/remotes")
@@ -173,7 +171,7 @@ fn ignore_tracking() {
             .await
             .unwrap()
             .unwrap();
-        let pers = peer2
+        let _pers = peer2
             .using_storage(move |storage| -> anyhow::Result<TestPerson> {
                 let person = TestPerson::create(storage)?;
                 let local = person.local(storage)?;
@@ -194,15 +192,14 @@ fn ignore_tracking() {
             .unwrap_or_else(|| "mistress".to_owned())
             .try_into()
             .unwrap();
-        let repo = fixed::repository(peer2.peer_id());
-        let commit_id = unblock(fixed::commit(
-            (*peer2).clone(),
-            repo,
-            &proj.project,
-            &pers.owner,
-            default_branch.clone(),
-        ))
-        .await;
+
+        let commit_id = {
+            let branch = Qualified::from(lit::refs_heads(default_branch.clone()));
+            let mut working_copy = WorkingCopy::new(&proj, peer2).unwrap();
+            working_copy
+                .commit_and_push("peer 2 commit", branch)
+                .unwrap()
+        };
 
         let expected_urn = proj.project.urn().with_path(
             reflike!("refs/remotes")
@@ -297,7 +294,7 @@ fn ignore_transitive_tracking() {
             .unwrap()
             .unwrap();
         proj.pull(peer1, peer2).await.unwrap();
-        let pers = peer2
+        let _pers = peer2
             .using_storage(move |storage| -> anyhow::Result<TestPerson> {
                 let person = TestPerson::create(storage)?;
                 let local = person.local(storage)?;
@@ -318,15 +315,15 @@ fn ignore_transitive_tracking() {
             .unwrap_or_else(|| "mistress".to_owned())
             .try_into()
             .unwrap();
-        let repo = fixed::repository(peer2.peer_id());
-        let commit_id = unblock(fixed::commit(
-            (*peer2).clone(),
-            repo,
-            &proj.project,
-            &pers.owner,
-            default_branch.clone(),
-        ))
-        .await;
+
+        let commit_id = {
+            let branch = Qualified::from(lit::refs_heads(default_branch.clone()));
+            let mut working_copy = WorkingCopy::new(&proj, peer2).unwrap();
+            working_copy
+                .commit_and_push("peer 2 commit", branch)
+                .unwrap()
+        };
+
         let expected_urn = proj.project.urn().with_path(
             reflike!("refs/remotes")
                 .join(peer2.peer_id())
@@ -372,7 +369,7 @@ fn ignore_transitive_tracking() {
                 let delegate = proj.owner.urn();
                 let remote = peer2.peer_id();
                 move |storage| {
-                    layout::References::new::<ext::Oid, _, _>(
+                    layout::References::new::<git2::Oid, _, _>(
                         storage,
                         &urn,
                         remote,

@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use git_ref_format::{lit, name, refspec, Qualified, RefStr, RefString};
 
 use librad::{
@@ -86,6 +84,7 @@ impl WorkingRemote {
 /// representing the local Peer ID - which is called "rad".
 pub struct WorkingCopy<'a, S, G> {
     repo: git2::Repository,
+    _repo_path: tempfile::TempDir,
     peer: &'a Peer<S, G>,
     project: &'a TestProject,
 }
@@ -97,17 +96,18 @@ where
 {
     /// Create a new working copy. This initializes a git repository and then
     /// fetches the state of the local peer into `refs/remotes/rad/*`.
-    pub fn new<P: AsRef<Path>>(
+    pub fn new(
         project: &'a TestProject,
-        repo_path: P,
         peer: &'a Peer<S, G>,
     ) -> Result<WorkingCopy<'a, S, G>, anyhow::Error> {
+        let repo_path = tempfile::tempdir()?;
         let repo = git2::Repository::init(repo_path.as_ref())?;
 
         let mut copy = WorkingCopy {
             peer,
             project,
             repo,
+            _repo_path: repo_path,
         };
         copy.fetch(WorkingRemote::Rad)?;
         Ok(copy)
@@ -188,6 +188,16 @@ where
                 &parents,
             )
             .map_err(anyhow::Error::from)
+    }
+
+    pub fn commit_and_push(
+        &mut self,
+        message: &str,
+        on_branch: Qualified,
+    ) -> Result<git2::Oid, anyhow::Error> {
+        let id = self.commit(message, on_branch)?;
+        self.push()?;
+        Ok(id)
     }
 
     /// Create a branch at `refs/heads/<branch>` which tracks the given remote.
