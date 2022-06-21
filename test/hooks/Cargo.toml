@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "echo-data",
+  "echo-forever",
+  "echo-track",
+]

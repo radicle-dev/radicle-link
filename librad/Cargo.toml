@@ -106,6 +106,9 @@ features = ["git-ref-format"]
 path = "../link-git"
 features = ["git2"]
 
+[dependencies.link-hooks]
+path = "../link-hooks"
+
 [dependencies.link-identities]
 path = "../link-identities"
 

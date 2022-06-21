@@ -14,6 +14,10 @@ pub fn gen_oid(kind: git2::ObjectType) -> impl Strategy<Value = Oid> {
         .prop_map(move |bytes| git2::Oid::hash_object(kind, &bytes).map(Oid::from).unwrap())
 }
 
+pub fn gen_oid_with_zero(kind: git2::ObjectType) -> impl Strategy<Value = Oid> {
+    prop_oneof![gen_oid(kind), Just(git2::Oid::zero().into()),]
+}
+
 pub fn gen_urn() -> impl Strategy<Value = Urn<Oid>> {
     (
         gen_oid(git2::ObjectType::Tree),

@@ -26,6 +26,7 @@ pub struct Paths {
     cob_cache_dir: PathBuf,
     socket_dir: PathBuf,
     seeds_file: PathBuf,
+    hooks_dir: PathBuf,
 }
 
 impl Paths {
@@ -46,6 +47,7 @@ impl Paths {
             cob_cache_dir: cache_dir.join("cob-cache"),
             socket_dir: socket_dir()?,
             seeds_file: config_dir.join("seeds"),
+            hooks_dir: data_dir.join("hooks"),
         }
         .init()
     }
@@ -53,6 +55,7 @@ impl Paths {
     /// All paths are contained in the given directory.
     pub fn from_root(root: impl AsRef<Path>) -> Result<Self, io::Error> {
         let root = root.as_ref();
+
         Self {
             keys_dir: root.join("keys"),
             git_dir: root.join("git"),
@@ -60,6 +63,7 @@ impl Paths {
             cob_cache_dir: root.join("cob-cache"),
             socket_dir: socket_dir()?,
             seeds_file: root.join("seeds"),
+            hooks_dir: root.join("hooks"),
         }
         .init()
     }
@@ -80,6 +84,10 @@ impl Paths {
         &self.cob_cache_dir
     }
 
+    pub fn hooks_dir(&self) -> &Path {
+        &self.hooks_dir
+    }
+
     pub fn all_dirs(&self) -> impl Iterator<Item = &Path> {
         // Nb. this pattern match is here to keep the map consistent with the
         // struct fields
@@ -88,6 +96,7 @@ impl Paths {
             git_dir,
             git_includes_dir,
             cob_cache_dir,
+            hooks_dir,
             socket_dir: _,
             seeds_file: _,
         } = self;
@@ -97,6 +106,7 @@ impl Paths {
             git_dir.as_path(),
             git_includes_dir.as_path(),
             cob_cache_dir.as_path(),
+            hooks_dir.as_path(),
         ]
         .into_iter()
     }
