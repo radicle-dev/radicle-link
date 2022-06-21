@@ -38,7 +38,6 @@ pub enum Init {
     #[error(transparent)]
     Cache(#[from] Box<cache::urns::Error>),
 
-    #[cfg(feature = "replication-v3")]
     #[error(transparent)]
     Replication(#[from] replication::error::Init),
 }

@@ -22,11 +22,11 @@ tasks:
       nix-shell default.nix --run "cargo deny check sources"
   - build: |
       cd radicle-link/
-      nix-shell default.nix --run ./scripts/ci/build-repl3
+      nix-shell default.nix --run ./scripts/ci/build
       nix-shell default.nix --run ./scripts/ci/build-bins
   - test: |
       cd radicle-link/
-      nix-shell default.nix --run ./scripts/ci/test-repl3
+      nix-shell default.nix --run ./scripts/ci/test
       nix-shell default.nix --run ./cli/lnk-clib/t/test-sd-socket-activation.sh
   - docs: |
       cd radicle-link/

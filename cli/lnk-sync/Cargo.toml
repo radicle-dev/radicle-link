@@ -32,7 +32,6 @@ features = ["serde"]
 
 [dependencies.librad]
 path = "../../librad"
-features = ["replication-v3"]
 
 [dependencies.link-replication]
 path = "../../link-replication"

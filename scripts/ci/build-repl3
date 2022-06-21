@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -eoux pipefail
-
-cargo build --tests --examples --workspace --features replication-v3

@@ -16,7 +16,6 @@ use crate::{
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Init {
-    #[cfg(feature = "replication-v3")]
     #[error(transparent)]
     Replication(#[from] replication::error::Init),
 }

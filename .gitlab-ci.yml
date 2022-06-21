@@ -31,7 +31,6 @@ build-stable:
     - apt-get install -y cmake
   script:
     - ./scripts/ci/build
-    - ./scripts/ci/build-repl3
     - ./scripts/ci/build-bins
 
 test-stable:
@@ -43,7 +42,6 @@ test-stable:
     - cargo install cargo-nextest
   script:
     - ./scripts/ci/test
-    - ./scripts/ci/test-repl3
 
 build-nightly:
   stage: build
@@ -53,7 +51,6 @@ build-nightly:
     - apt-get install -y cmake
   script:
     - ./scripts/ci/build
-    - ./scripts/ci/build-repl3
     - ./scripts/ci/build-bins
   allow_failure: true
 
@@ -66,7 +63,6 @@ test-nightly:
     - cargo install cargo-nextest
   script:
     - ./scripts/ci/test
-    - ./scripts/ci/test-repl3
   allow_failure: true
 
 docs:

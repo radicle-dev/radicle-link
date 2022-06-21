@@ -259,15 +259,6 @@ where
     Guard: RequestPullGuard,
     Disco: futures::Stream<Item = (PeerId, Vec<SocketAddr>)> + Send + 'static,
 {
-    #[cfg(not(feature = "replication-v3"))]
-    let git_factory = {
-        use crate::git::p2p::transport::{self, GitStreamFactory};
-
-        let gf = Arc::new(Box::new(state.clone()) as Box<dyn GitStreamFactory>);
-        transport::register().register_stream_factory(state.local_id, Arc::downgrade(&gf));
-        gf
-    };
-
     let endpoint = state.endpoint.clone();
     let spawner = state.spawner.clone();
 
@@ -286,8 +277,6 @@ where
         let endpoint = endpoint.clone();
         async move {
             let res = io::connections::incoming(state, incoming).await;
-            #[cfg(not(feature = "replication-v3"))]
-            drop(git_factory);
             tracing::debug!("waiting on idle connections...");
             endpoint.wait_idle().await;
             drop(tasks);

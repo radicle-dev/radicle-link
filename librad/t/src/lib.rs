@@ -10,9 +10,6 @@ extern crate lazy_static;
 #[cfg(test)]
 #[macro_use]
 extern crate nonzero_ext;
-#[cfg(all(test, not(feature = "replication-v3")))]
-#[macro_use]
-extern crate radicle_macros;
 #[cfg(test)]
 #[macro_use]
 extern crate tracing;

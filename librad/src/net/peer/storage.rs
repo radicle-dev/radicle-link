@@ -12,8 +12,6 @@ use git_ext::{self as ext, reference};
 use link_async::Spawner;
 use nonzero_ext::nonzero;
 
-#[cfg(feature = "replication-v3")]
-use crate::net::protocol::TinCans;
 use crate::{
     git::{
         storage::{self, Pool, PoolError, PooledRef, ReadOnlyStorage as _},
@@ -22,7 +20,7 @@ use crate::{
     },
     identities::urn,
     net::{
-        protocol::{broadcast, cache, gossip},
+        protocol::{broadcast, cache, gossip, Connected, TinCans},
         replication::{self, Replication},
     },
     rate_limit::{Keyed, RateLimiter},
@@ -44,7 +42,6 @@ pub struct Storage {
     rate: Arc<RateLimiter<Keyed<(PeerId, Urn)>>>,
     exec: Arc<Spawner>,
     repl: Replication,
-    #[cfg(feature = "replication-v3")]
     tins: TinCans,
 }
 
@@ -55,7 +52,7 @@ impl Storage {
         pool: Pool<storage::Storage>,
         urns: cache::urns::Filter,
         repl: Replication,
-        #[cfg(feature = "replication-v3")] tins: TinCans,
+        tins: TinCans,
     ) -> Self {
         Self {
             pool,
@@ -66,7 +63,6 @@ impl Storage {
             )),
             exec,
             repl,
-            #[cfg(feature = "replication-v3")]
             tins,
         }
     }
@@ -95,27 +91,14 @@ impl Storage {
             return Err(Error::RateLimited { remote_peer, urn });
         }
 
-        #[cfg(feature = "replication-v3")]
-        {
-            use crate::net::protocol::Connected;
-
-            match self.tins.connect(from).await {
-                None => Err(Error::NoConnection { remote_peer }),
-                Some(Connected(conn)) => {
-                    self.repl
-                        .replicate(&self.exec, git, conn, urn, None)
-                        .err_into::<Error>()
-                        .await
-                },
-            }
-        }
-        #[cfg(not(feature = "replication-v3"))]
-        {
-            drop(git);
-            self.repl
-                .replicate(&self.exec, &self.pool, from, urn, None)
-                .err_into::<Error>()
-                .await
+        match self.tins.connect(from).await {
+            None => Err(Error::NoConnection { remote_peer }),
+            Some(Connected(conn)) => {
+                self.repl
+                    .replicate(&self.exec, git, conn, urn, None)
+                    .err_into::<Error>()
+                    .await
+            },
         }
     }
 

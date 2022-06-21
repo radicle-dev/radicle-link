@@ -25,8 +25,6 @@ use crate::{
 };
 
 pub mod config;
-#[cfg(not(feature = "replication-v3"))]
-pub mod fetcher;
 pub mod glob;
 pub mod pool;
 pub mod read;

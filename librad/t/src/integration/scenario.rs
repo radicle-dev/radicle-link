@@ -8,10 +8,8 @@ mod collaborative_objects;
 mod default_branch_head;
 mod menage;
 mod passive_replication;
-#[cfg(feature = "replication-v3")]
 mod prune;
 mod tracked_references;
-#[cfg(feature = "replication-v3")]
 mod tracking_policy;
 mod updated_delegate;
 mod working_copy;
