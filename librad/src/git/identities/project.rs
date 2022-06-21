@@ -8,6 +8,8 @@ use std::{convert::TryFrom, fmt::Debug};
 use either::Either;
 use git_ext::{is_not_found_err, OneLevel};
 
+pub mod heads;
+
 use super::{
     super::{
         refs::Refs as Sigrefs,

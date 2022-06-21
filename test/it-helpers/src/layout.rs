@@ -1,7 +1,10 @@
 // Copyright © 2022 The Radicle Link Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::fmt::{self, Debug, Display};
+use std::{
+    borrow::Borrow,
+    fmt::{self, Debug, Display},
+};
 
 use librad::{
     git::{
@@ -132,7 +135,7 @@ impl References {
         commits: C,
     ) -> Result<Self, anyhow::Error>
     where
-        Oid: AsRef<git2::Oid> + Debug,
+        Oid: Borrow<git2::Oid> + Debug,
         D: IntoIterator<Item = Urn>,
         C: IntoIterator<Item = (Urn, Oid)>,
     {
@@ -143,7 +146,7 @@ impl References {
         let commits = commits
             .into_iter()
             .map(|(urn, oid)| {
-                let oid: ext::Oid = (*oid.as_ref()).into();
+                let oid: ext::Oid = (*oid.borrow()).into();
                 Commit::new(storage, urn, oid)
             })
             .collect::<Result<_, _>>()?;

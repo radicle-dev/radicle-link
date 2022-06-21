@@ -25,15 +25,11 @@ use futures::{
     stream::{FuturesUnordered, StreamExt},
     FutureExt,
 };
-use librad::git::{
-    storage::{pool::Pool, Storage},
-    Urn,
-};
+use librad::git::storage::{pool::Pool, Storage};
 use link_async::{Spawner, Task};
-use link_git::service::SshService;
 use tracing::instrument;
 
-use crate::{git_subprocess, hooks::Hooks};
+use crate::{git_subprocess, hooks::Hooks, ssh_service};
 
 const MAX_IN_FLIGHT_GITS: usize = 10;
 
@@ -69,7 +65,7 @@ enum Message<Id> {
 /// sent on a separate channel, which allows us to exert backpressure on
 /// incoming exec requests.
 struct ExecGit<Id, Reply, Signer> {
-    service: SshService<Urn>,
+    service: ssh_service::SshService,
     channel: Id,
     handle: Reply,
     hooks: Hooks<Signer>,
@@ -112,7 +108,7 @@ where
         &self,
         channel: Id,
         handle: Reply,
-        service: SshService<Urn>,
+        service: ssh_service::SshService,
         hooks: Hooks<Signer>,
     ) -> Result<(), ProcessesLoopGone> {
         self.exec_git_send
@@ -215,7 +211,13 @@ where
     }
 
     #[instrument(skip(self, handle, hooks))]
-    fn exec_git(&mut self, id: Id, handle: Reply, service: SshService<Urn>, hooks: Hooks<S>) {
+    fn exec_git(
+        &mut self,
+        id: Id,
+        handle: Reply,
+        service: ssh_service::SshService,
+        hooks: Hooks<S>,
+    ) {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         let task = self.spawner.spawn({
             let spawner = self.spawner.clone();

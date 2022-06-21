@@ -56,5 +56,6 @@ pub enum Command {
     /// Manage your Radicle profiles
     Profile(lnk_profile::cli::args::Args),
     /// Sync with your configured seeds
+    #[clap(flatten)]
     Sync(lnk_sync::cli::args::Args),
 }

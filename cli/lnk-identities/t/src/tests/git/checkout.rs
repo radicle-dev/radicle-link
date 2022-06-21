@@ -48,7 +48,13 @@ fn local_checkout() -> anyhow::Result<()> {
     };
 
     let local = Local::new(&proj.project, temp.path().to_path_buf());
-    let repo = checkout(settings, &proj.project, Either::Left(local))?;
+    let repo = checkout(
+        &paths,
+        settings,
+        &storage,
+        &proj.project,
+        Either::Left(local),
+    )?;
     let branch = proj.project.subject().default_branch.as_ref().unwrap();
     assert_head(&repo, branch)?;
     assert_remote(&repo, branch, &LocalUrl::from(proj.project.urn()))?;
@@ -102,9 +108,17 @@ fn remote_checkout() {
             signer: peer2.signer().clone().into(),
         };
 
+        let paths = peer2.protocol_config().paths.clone();
         let remote = (proj.owner.clone(), peer1.peer_id());
         let peer = Peer::new(&proj.project, remote, temp.path().to_path_buf()).unwrap();
-        let repo = checkout(settings, &proj.project, Either::Right(peer)).unwrap();
+        let repo = peer2
+            .using_storage({
+                let proj = proj.project.clone();
+                move |s| checkout(&paths, settings, s, &proj, Either::Right(peer))
+            })
+            .await
+            .unwrap()
+            .unwrap();
         let branch = proj.project.subject().default_branch.as_ref().unwrap();
         assert_head(&repo, branch).unwrap();
         assert_remote(&repo, branch, &LocalUrl::from(proj.project.urn())).unwrap();

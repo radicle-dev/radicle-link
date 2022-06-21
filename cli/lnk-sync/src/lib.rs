@@ -17,6 +17,7 @@ use librad::{
 use lnk_clib::seed::{Seed, Seeds};
 
 pub mod cli;
+mod forked;
 pub mod replication;
 pub mod request_pull;
 

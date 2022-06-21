@@ -8,17 +8,13 @@ use std::{fmt, marker::PhantomData, path::PathBuf};
 use serde::{Deserialize, Serialize};
 
 use librad::{
-    canonical::Cstring,
     git::local::{transport::CanOpenStorage, url::LocalUrl},
     git_ext,
     std_ext::result::ResultExt as _,
 };
 use std_ext::Void;
 
-use crate::{
-    field::{HasBranch, HasName},
-    git,
-};
+use crate::{field::HasBranch, git};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -47,20 +43,10 @@ pub struct Existing<V, P> {
     valid: V,
 }
 
-impl<V, P: HasName> Existing<V, P> {
-    pub fn name(&self) -> &Cstring {
-        self.payload.name()
-    }
-}
-
 type Invalid = PhantomData<Void>;
 
-impl<P: HasName + HasBranch> Existing<Invalid, P> {
+impl<P: HasBranch> Existing<Invalid, P> {
     pub fn new(payload: P, path: PathBuf) -> Self {
-        // Note(finto): The current behaviour in Upstream is that an existing repository
-        // is initialised with the suffix of the path is the name of the project.
-        // Perhaps this should just be done upstream and no assumptions made here.
-        let path = path.join(payload.name().as_str());
         Self {
             payload,
             path,
@@ -116,6 +102,7 @@ impl<P: HasBranch> Existing<Valid, P> {
         );
         let _remote = git::validation::remote(&repo, &url)?;
         git::setup_remote(&repo, open_storage, url, &self.payload.branch_or_default())?;
+
         Ok(repo)
     }
 }

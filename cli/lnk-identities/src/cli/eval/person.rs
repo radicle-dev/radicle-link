@@ -24,7 +24,7 @@ use lnk_clib::{
     storage::{self, ssh},
 };
 
-use crate::{cli::args::person::*, display, person};
+use crate::{cli::args::person::*, display, person, working_copy_dir::WorkingCopyDir};
 
 pub fn eval(profile: &Profile, sock: SshAuthSock, opts: Options) -> anyhow::Result<()> {
     match opts {
@@ -138,12 +138,13 @@ fn eval_checkout(
     profile: &Profile,
     sock: SshAuthSock,
     urn: Urn,
-    path: PathBuf,
+    path: Option<PathBuf>,
     peer: Option<PeerId>,
 ) -> anyhow::Result<()> {
     let paths = profile.paths();
     let (signer, storage) = ssh::storage(profile, sock)?;
-    let repo = person::checkout(&storage, paths.clone(), signer, &urn, peer, path)?;
+    let checkout_path = WorkingCopyDir::at_or_current_dir(path)?;
+    let repo = person::checkout(&storage, paths.clone(), signer, &urn, peer, checkout_path)?;
     println!("working copy created at `{}`", repo.path().display());
     Ok(())
 }

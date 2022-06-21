@@ -31,6 +31,7 @@ pub mod git_subprocess;
 pub mod hooks;
 mod processes;
 mod server;
+mod ssh_service;
 
 #[derive(thiserror::Error, Debug)]
 pub enum RunError {

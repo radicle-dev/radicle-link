@@ -3,9 +3,11 @@
 
 use std::sync::Arc;
 
+use lnk_identities::working_copy_dir::WorkingCopyDir;
 use tokio::runtime::Runtime;
 
 use librad::{
+    git::{identities::project::heads, storage::ReadOnlyStorage},
     net::{
         self,
         peer::{client, Client},
@@ -20,7 +22,7 @@ use lnk_clib::{
     seed::{self, Seeds},
 };
 
-use crate::{cli::args::Args, sync};
+use crate::{cli::args::Args, forked, sync};
 
 pub fn main(
     args: Args,
@@ -48,7 +50,7 @@ pub fn main(
             user_storage: client::config::Storage::default(),
             network: Network::default(),
         };
-        let endpoint = quic::SendOnly::new(signer, Network::default()).await?;
+        let endpoint = quic::SendOnly::new(signer.clone(), Network::default()).await?;
         let client = Client::new(config, spawner, endpoint)?;
         let seeds = {
             let seeds_file = profile.paths().seeds_file();
@@ -70,8 +72,49 @@ pub fn main(
 
             seeds
         };
-        let synced = sync(&client, args.urn, seeds, args.mode).await;
-        println!("{}", serde_json::to_string(&synced)?);
+        match args {
+            Args::Sync { urn, mode } => {
+                let synced = sync(&client, urn, seeds, mode).await;
+                println!("{}", serde_json::to_string(&synced)?);
+            },
+            Args::Clone { urn, path, peer } => {
+                let storage = librad::git::Storage::open(paths, signer.clone())?;
+
+                let already_had_urn = storage.has_urn(&urn)?;
+                let path = WorkingCopyDir::at_or_current_dir(path)?;
+                println!("cloning urn {} into {}", urn, path);
+                println!("syncing monorepo with seeds");
+                sync(&client, urn.clone(), seeds, crate::Mode::Fetch).await;
+
+                if !already_had_urn {
+                    // This is the first time we've seen this project, so we set the default head
+
+                    let vp = librad::git::identities::project::verify(&storage, &urn)?
+                        .ok_or_else(|| anyhow::anyhow!("no such project"))?;
+
+                    if peer.is_none() {
+                        match heads::set_default_head(&storage, vp) {
+                            Ok(_) => {},
+                            Err(heads::error::SetDefaultBranch::Forked(forks)) => {
+                                let error = forked::ForkError::from_forked(&storage, forks);
+                                println!("{}", error);
+                                return Ok(());
+                            },
+                            Err(e) => anyhow::bail!("error setting HEAD for project: {}", e),
+                        }
+                    }
+                }
+                let repo = lnk_identities::project::checkout(
+                    &storage,
+                    paths.clone(),
+                    signer,
+                    &urn,
+                    peer,
+                    path,
+                )?;
+                println!("working copy created at `{}`", repo.path().display());
+            },
+        }
         Ok(())
     })
 }
