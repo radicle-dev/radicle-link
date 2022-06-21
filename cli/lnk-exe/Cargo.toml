@@ -38,3 +38,7 @@ default-features = false
 [dependencies.tokio]
 version = "1.17"
 features = ["rt"]
+
+[dependencies.tracing-subscriber]
+version = "0.3.0"
+features = ["std", "env-filter", "fmt"]
