@@ -6,10 +6,11 @@
 use thiserror::Error;
 
 use librad::{
-    git::{storage::Storage, tracking, Urn},
+    git::{identities, storage::Storage, tracking, Urn},
     paths::Paths,
     PeerId,
 };
+use std_ext::result::ResultExt as _;
 
 use crate::git::include;
 
@@ -26,27 +27,59 @@ pub enum Error {
     Untrack(#[from] tracking::error::Untrack),
 }
 
-// TODO(finto): allow specification of Config
-// TODO(finto): perhaps we want a flag to force track?
-pub fn track(storage: &Storage, paths: &Paths, urn: &Urn, peer: PeerId) -> Result<(), Error> {
-    let _tracked = tracking::track(
-        storage,
-        urn,
-        Some(peer),
-        tracking::Config::default(),
-        tracking::policy::Track::Any,
-    )?;
-    include::update(storage, paths, urn)?;
-    Ok(())
+/// Track the given `urn` and `peer`. This will call
+/// [`include::update`] for modifying the include file for the given
+/// identity. If the `urn` does not exist in the storage, then no
+/// action will be take for the include file.
+///
+/// See [`tracking::track`] for more on the semantics of tracking.
+pub fn track(
+    storage: &Storage,
+    paths: &Paths,
+    urn: &Urn,
+    peer: Option<PeerId>,
+    config: Option<tracking::Config>,
+    policy: tracking::policy::Track,
+) -> Result<Result<tracking::Ref, tracking::PreviousError>, Error> {
+    let tracked = tracking::track(storage, urn, peer, config.unwrap_or_default(), policy)?;
+    include::update(storage, paths, urn)
+        .map(|path| tracing::info!(?path, "updated include file"))
+        .or_matches::<Error, _, _>(is_not_found, || {
+            tracing::warn!(%urn, "could not update include file, the URN did not exist");
+            Ok(())
+        })?;
+    Ok(tracked)
 }
 
-pub fn untrack(storage: &Storage, paths: &Paths, urn: &Urn, peer: PeerId) -> Result<(), Error> {
-    let _untracked = tracking::untrack(
-        storage,
-        urn,
-        peer,
-        tracking::UntrackArgs::new(tracking::policy::Untrack::Any),
-    )?;
-    include::update(storage, paths, urn)?;
-    Ok(())
+/// Track the given `urn` and `peer`. This will call
+/// [`include::update`] for modifying the include file for the given
+/// identity. If the `urn` does not exist in the storage, then no
+/// action will be take for the include file.
+///
+/// See [`tracking::untrack`] for more on the semantics of untracking.
+pub fn untrack(
+    storage: &Storage,
+    paths: &Paths,
+    urn: &Urn,
+    peer: PeerId,
+    args: tracking::UntrackArgs,
+) -> Result<Result<tracking::Untracked<String>, tracking::PreviousError>, Error> {
+    let untracked = tracking::untrack(storage, urn, peer, args)?;
+    include::update(storage, paths, urn)
+        .map(|path| tracing::info!(?path, "updated include file"))
+        .or_matches::<Error, _, _>(is_not_found, || {
+            tracing::warn!(%urn, "could not update include file, the URN did not exist");
+            Ok(())
+        })?;
+    Ok(untracked)
+}
+
+fn is_not_found(err: &include::Error) -> bool {
+    matches!(
+        err,
+        include::Error::Identities(identities::error::Error::NotFound(_))
+            | include::Error::Relations(identities::relations::Error::Identities(
+                identities::error::Error::NotFound(_),
+            ))
+    )
 }
