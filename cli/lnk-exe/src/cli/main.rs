@@ -10,6 +10,8 @@ use super::args::{self, Args};
 pub fn main() -> anyhow::Result<()> {
     let Args { global, command } = Args::parse();
 
+    tracing_subscriber::fmt::init();
+
     // TODO: provide Runtime trait in lnk-clib to allow different runtimes
     let runtime = tokio::runtime::Builder::new_current_thread()
         .thread_name("lnk")

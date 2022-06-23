@@ -1,0 +1,6 @@
+[Unit]
+Description=lnk git daemon
+
+[Service]
+ExecStart=<your lnk-gitd> --linger-timeout 10000 --push-seeds --fetch-seeds
+Environment=RUST_LOG=info

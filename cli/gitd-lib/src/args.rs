@@ -19,8 +19,8 @@ use crate::{
 
 #[derive(Debug, Parser)]
 pub struct Args {
-    /// The path to use `LNK_HOME`.
-    pub lnk_home: PathBuf,
+    /// The path to use as `LNK_HOME`, if not set defaults to ProjectDirs.
+    pub lnk_home: Option<PathBuf>,
     #[clap(short)]
     /// The socket address to start the gitd server on.
     pub addr: Option<SocketAddr>,
@@ -61,7 +61,7 @@ impl Args {
         self,
         spawner: Arc<link_async::Spawner>,
     ) -> Result<Config<BoxedSigner>, Error> {
-        let home = LnkHome::Root(self.lnk_home);
+        let home = self.lnk_home.map(LnkHome::Root).unwrap_or(LnkHome::ProjectDirs);
         let profile = Profile::from_home(&home, None)?;
         let signer = spawner
             .blocking({
