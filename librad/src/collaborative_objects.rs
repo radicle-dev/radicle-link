@@ -29,7 +29,7 @@ pub use cob::{
 use link_crypto::BoxedSigner;
 use link_identities::git::{SomeIdentity, Urn};
 
-mod error {
+pub mod error {
     use super::RefsError;
     use crate::git::identities::Error as IdentitiesError;
     use cob::error::SchemaParse;
