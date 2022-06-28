@@ -61,7 +61,10 @@ impl Args {
         self,
         spawner: Arc<link_async::Spawner>,
     ) -> Result<Config<BoxedSigner>, Error> {
-        let home = self.lnk_home.map(LnkHome::Root).unwrap_or(LnkHome::ProjectDirs);
+        let home = self
+            .lnk_home
+            .map(LnkHome::Root)
+            .unwrap_or(LnkHome::ProjectDirs);
         let profile = Profile::from_home(&home, None)?;
         let signer = spawner
             .blocking({
