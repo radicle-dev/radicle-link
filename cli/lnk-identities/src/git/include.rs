@@ -54,9 +54,12 @@ where
         tracked
             .into_iter()
             .filter_map(|peer| {
-                relations::Peer::replicated_remote(peer).map(|(p, u)| {
-                    git_ext::RefLike::try_from(u.person().subject().name.to_string())
-                        .map(|r| (r, p))
+                peer.remote().map(|(peer, status)| match status {
+                    relations::Status::NotReplicated => Ok((None, peer)),
+                    relations::Status::Replicated(relations::Replicated { user }) => {
+                        git_ext::RefLike::try_from(user.person().subject().name.to_string())
+                            .map(|handle| (Some(handle), peer))
+                    },
                 })
             })
             .collect::<Result<Vec<_>, _>>()?,

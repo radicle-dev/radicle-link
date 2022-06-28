@@ -35,7 +35,6 @@ const LINGLING_SEED: [u8; 32] = [
 lazy_static! {
     static ref LYLA_HANDLE: ext::RefLike = reflike!("lyla");
     static ref ROVER_HANDLE: ext::RefLike = reflike!("rover");
-    static ref LINGLING_HANDLE: ext::RefLike = reflike!("lingling");
     static ref LOCAL_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(LOCAL_SEED));
     static ref LYLA_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(LYLA_SEED));
     static ref ROVER_PEER_ID: PeerId = PeerId::from(SecretKey::from_seed(ROVER_SEED));
@@ -113,11 +112,11 @@ fn can_create_and_update() -> Result<(), Error> {
     );
 
     // The tracking graph changed entirely.
-    let remote_lingling = format!("{}@{}", *LINGLING_HANDLE, *LINGLING_PEER_ID);
+    let remote_lingling = format!("{}", *LINGLING_PEER_ID);
 
     {
         let mut include = Include::new(tmp_dir.path().to_path_buf(), url.clone());
-        include.add_remote(url, *LINGLING_PEER_ID, (*LINGLING_HANDLE).clone());
+        include.add_remote(url, *LINGLING_PEER_ID, None);
         include.save()?;
     };
 
