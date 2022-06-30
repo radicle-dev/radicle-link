@@ -4,17 +4,13 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 use super::{
-    schema_change,
     AuthorizingIdentity,
     Change,
     CollaborativeObject,
     IdentityStorage,
     ObjectId,
-    Schema,
-    SchemaChange,
     TypeName,
 };
-use link_identities::git::Urn;
 use petgraph::{
     visit::{EdgeRef, Topo, Walker},
     EdgeDirection,
@@ -34,14 +30,6 @@ pub enum Error {
     MissingRevision(git2::Oid),
     #[error(transparent)]
     Git(#[from] git2::Error),
-    #[error(transparent)]
-    LoadSchema(#[from] schema_change::error::Load),
-    #[error("schema change is authorized by an incorrect identity URN, expected {expected} but was {actual}")]
-    SchemaAuthorizingUrnIncorrect { expected: Urn, actual: Urn },
-    #[error("no authorizing identity found for schema change")]
-    NoSchemaAuthorizingIdentityFound,
-    #[error("invalid signature on schema change")]
-    InvalidSchemaSignatures,
 }
 
 /// The graph of changes for a particular collaborative object
@@ -50,7 +38,6 @@ pub(super) struct ChangeGraph<'a> {
     object_id: ObjectId,
     authorizing_identity: &'a dyn AuthorizingIdentity,
     graph: petgraph::Graph<Change, ()>,
-    schema_change: SchemaChange,
 }
 
 impl<'a> ChangeGraph<'a> {
@@ -119,12 +106,8 @@ impl<'a> ChangeGraph<'a> {
             let first_node = &self.graph[*root];
             first_node.typename().clone()
         };
-        let evaluating = evaluation::Evaluating::new(
-            identities,
-            self.authorizing_identity,
-            self.repo,
-            self.schema().clone(),
-        );
+        let evaluating =
+            evaluation::Evaluating::new(identities, self.authorizing_identity, self.repo);
         let topo = Topo::new(&self.graph);
         let items = topo.iter(&self.graph).map(|idx| {
             let node = &self.graph[idx];
@@ -143,7 +126,6 @@ impl<'a> ChangeGraph<'a> {
             typename,
             history,
             id: self.object_id,
-            schema: self.schema_change.schema().clone(),
         }
     }
 
@@ -165,14 +147,6 @@ impl<'a> ChangeGraph<'a> {
     pub(super) fn graphviz(&self) -> String {
         let for_display = self.graph.map(|_ix, n| n.to_string(), |_ix, _e| "");
         petgraph::dot::Dot::new(&for_display).to_string()
-    }
-
-    pub(super) fn schema_commit(&self) -> git2::Oid {
-        self.schema_change.commit()
-    }
-
-    pub(super) fn schema(&self) -> &Schema {
-        self.schema_change.schema()
     }
 }
 
@@ -209,7 +183,7 @@ impl GraphBuilder {
             .parents()
             .filter_map(|parent| {
                 if parent.id() != author_commit
-                    && parent.id() != schema_commit
+                    && Some(parent.id()) != schema_commit
                     && parent.id() != authorizing_identity_commit
                     && !self.has_edge(parent.id(), commit.id())
                 {
@@ -243,15 +217,14 @@ impl GraphBuilder {
         object_id: ObjectId,
         authorizing_identity: &'b dyn AuthorizingIdentity,
     ) -> Result<Option<ChangeGraph<'b>>, Error> {
-        if let Some(root) = self.graph.externals(petgraph::Direction::Incoming).next() {
-            let root_change = &self.graph[root];
-            let schema_change = SchemaChange::load(root_change.schema_commit(), repo)?;
-            if !schema_change.valid_signatures() {
-                return Err(Error::InvalidSchemaSignatures);
-            }
+        if self
+            .graph
+            .externals(petgraph::Direction::Incoming)
+            .next()
+            .is_some()
+        {
             Ok(Some(ChangeGraph {
                 repo,
-                schema_change,
                 object_id,
                 authorizing_identity,
                 graph: self.graph,

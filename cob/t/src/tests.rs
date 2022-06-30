@@ -5,7 +5,6 @@
 
 mod cache;
 mod cached_change_graph;
-mod schema;
 
 use cob::TypeName;
 use std::str::FromStr;

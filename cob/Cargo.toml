@@ -18,7 +18,6 @@ thiserror = "1.0"
 toml = "0.5"
 tracing = "0.1"
 either = "1.6"
-lru = "0.7.1"
 multihash = "0.11"
 multibase = "0.9"
 lazy_static = "1.4"
@@ -33,11 +32,6 @@ version = "0.13.24"
 default-features = false
 features = ["vendored-libgit2"]
 
-[dependencies.jsonschema]
-version = "~0.13"
-default-features = false
-features = []
-
 [dependencies.link-crypto]
 path = "../link-crypto"
 
@@ -49,7 +43,3 @@ path = "../git-trailers"
 
 [dependencies.radicle-git-ext]
 path = "../git-ext"
-
-[dependencies.automerge]
-git = "https://github.com/automerge/automerge-rs.git"
-rev = "e72571962b51c2f0726fb534890ef3b4f7c74dfc"

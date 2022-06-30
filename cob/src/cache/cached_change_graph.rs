@@ -3,19 +3,11 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use crate::{
-    validated_automerge::error::ProposalError,
-    EntryContents,
-    History,
-    ObjectId,
-    Schema,
-    TypeName,
-    ValidatedAutomerge,
-};
+use crate::{EntryContents, History, ObjectId, TypeName};
 
 use link_identities::git::Urn;
 
-use std::{cell::RefCell, collections::BTreeSet, ops::ControlFlow, rc::Rc};
+use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
 
 /// A CBOR encoding of the change graph which was loaded when the heads of the
 /// change graph were `refs`. The `history` contains the bytes of each change
@@ -27,11 +19,6 @@ pub struct CachedChangeGraph {
     #[n(1)]
     #[cbor(with = "encoding::oids")]
     pub refs: BTreeSet<git2::Oid>,
-    #[n(2)]
-    #[cbor(with = "encoding::oid")]
-    pub schema_commit: git2::Oid,
-    #[n(3)]
-    pub schema: Schema,
     #[n(4)]
     #[cbor(with = "encoding::typename")]
     pub typename: TypeName,
@@ -45,8 +32,6 @@ pub struct CachedChangeGraph {
 impl CachedChangeGraph {
     pub fn new(
         tips: impl IntoIterator<Item = git2::Oid>,
-        schema: Schema,
-        schema_commit: git2::Oid,
         history: History,
         typename: TypeName,
         object_id: ObjectId,
@@ -54,9 +39,7 @@ impl CachedChangeGraph {
     ) -> Rc<RefCell<CachedChangeGraph>> {
         let g = CachedChangeGraph {
             history,
-            schema,
             refs: tips.into_iter().collect(),
-            schema_commit,
             typename,
             object_id,
             authorizing_identity_urn,
@@ -66,32 +49,6 @@ impl CachedChangeGraph {
 
     pub fn history(&self) -> &History {
         &self.history
-    }
-
-    pub(crate) fn propose_change(&mut self, change: &EntryContents) -> Result<(), ProposalError> {
-        match change {
-            EntryContents::Automerge(change_bytes) => {
-                let mut validated = self.history.traverse(
-                    ValidatedAutomerge::new(self.schema.clone()),
-                    |mut doc, entry| {
-                        // This unwrap should be safe as we only save things in the cache when we've
-                        // validated them
-                        doc.propose_change(entry.contents().as_ref()).unwrap();
-                        ControlFlow::Continue(doc)
-                    },
-                );
-                validated.propose_change(change_bytes)?;
-            },
-        }
-        Ok(())
-    }
-
-    pub fn schema(&self) -> &Schema {
-        &self.schema
-    }
-
-    pub fn schema_commit(&self) -> git2::Oid {
-        self.schema_commit
     }
 
     pub fn tips(&self) -> BTreeSet<git2::Oid> {
@@ -130,8 +87,6 @@ impl CachedChangeGraph {
 }
 
 mod encoding {
-    use crate::Schema;
-    use std::convert::TryFrom;
 
     struct Json(serde_json::Value);
 
@@ -152,44 +107,6 @@ mod encoding {
             let bvec: minicbor::bytes::ByteVec = serde_json::to_vec(&self.0).unwrap().into();
             e.encode(bvec)?;
             Ok(())
-        }
-    }
-
-    impl minicbor::Encode for Schema {
-        fn encode<W: minicbor::encode::Write>(
-            &self,
-            e: &mut minicbor::Encoder<W>,
-        ) -> Result<(), minicbor::encode::Error<W::Error>> {
-            e.encode(self.json_bytes())?;
-            Ok(())
-        }
-    }
-
-    impl<'b> minicbor::Decode<'b> for Schema {
-        fn decode(d: &mut minicbor::Decoder<'b>) -> Result<Self, minicbor::decode::Error> {
-            let bytes: Vec<u8> = d.decode()?;
-            Schema::try_from(&bytes[..])
-                .map_err(|_| minicbor::decode::Error::Message("invalid schema JSON"))
-        }
-    }
-
-    pub(super) mod oid {
-        use minicbor::{
-            decode::{Decode, Decoder, Error as DecodeError},
-            encode::{Encode, Encoder, Error as EncodeError, Write},
-        };
-        use radicle_git_ext::Oid;
-
-        pub fn encode<W: Write>(
-            v: &git2::Oid,
-            e: &mut Encoder<W>,
-        ) -> Result<(), EncodeError<W::Error>> {
-            Oid::from(*v).encode(e)
-        }
-
-        pub fn decode(d: &mut Decoder<'_>) -> Result<git2::Oid, DecodeError> {
-            let ext = Oid::decode(d)?;
-            Ok(ext.into())
         }
     }
 

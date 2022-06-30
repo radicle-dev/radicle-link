@@ -35,20 +35,6 @@ macro_rules! assert_state {
 }
 
 lazy_static! {
-    static ref SCHEMA: serde_json::Value = serde_json::json!({
-        "$vocabulary": {
-            "https://alexjg.github.io/automerge-jsonschema/spec": true,
-        },
-        "type": "object",
-        "properties": {
-            "items": {
-                "type": "array",
-                "items": {
-                    "type": "string",
-                }
-            }
-        }
-    });
     static ref TYPENAME: TypeName = FromStr::from_str("xyz.radicle.testobject").unwrap();
     static ref KEY_ONE: SecretKey = SecretKey::from_seed([
         100, 107, 14, 43, 237, 25, 113, 215, 236, 197, 160, 60, 169, 174, 81, 58, 143, 74, 42, 201,
@@ -199,7 +185,6 @@ fn collab_object_crud() {
                                 history: init_history(),
                                 message: Some("first change".to_string()),
                                 typename: TYPENAME.clone(),
-                                schema_json: SCHEMA.clone(),
                             },
                         )
                         .unwrap()

@@ -18,8 +18,6 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    SchemaParse(#[from] super::schema::error::Parse),
-    #[error(transparent)]
     Git(#[from] git2::Error),
     #[error(transparent)]
     MinicborDecode(#[from] minicbor::decode::Error),
@@ -36,10 +34,6 @@ pub trait Cache {
     /// are changed then we will not see those changes. However, we specify
     /// in the RFC that any peer updating a change must update their ref to
     /// the object, so this should not be a problem.
-    ///
-    /// We return an `Rc<RefCell<CachedChangeGraph>>`. This is so that changes
-    /// can be made by calling `CachedChangeGraph::propose_change`, which
-    /// mutates the `CachedChangeGraph`.
     fn load(
         &mut self,
         oid: ObjectId,
@@ -64,8 +58,7 @@ pub trait Cache {
 ///
 /// Each file contains a CBOR encoding of a `CachedChangeGraph`. This file
 /// contains the OIDs of the tips of the graph that were used to generate the
-/// object, the validated automerge history that was generated using those tips,
-/// the schema and the schema commit OID.
+/// object and the individual automerge change blobs.
 ///
 /// The `v1` directory means we can easily add a `v2` if we need to change the
 /// cache layout in backwards incompatible ways.

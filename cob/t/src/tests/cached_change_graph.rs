@@ -3,8 +3,8 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use cob::{internals::CachedChangeGraph, Schema};
-use std::{collections::BTreeSet, convert::TryFrom};
+use cob::internals::CachedChangeGraph;
+use std::collections::BTreeSet;
 
 use minicbor::Decode;
 
@@ -14,21 +14,9 @@ use crate::helpers::random_history;
 fn test_cached_change_graph_encode_decode() {
     let commit = git2::Oid::from_str("f41a052ad0a6b8a17ddae486cf2322cc48215222").unwrap();
     let some_urn = radicle_git_ext::Oid::from(commit).into();
-    let schema = Schema::try_from(&serde_json::json!({
-        "$vocabulary": {
-            "https://alexjg.github.io/automerge-jsonschema/spec": true,
-        },
-        "type": "object",
-        "properties": {
-            "name": {"type": "string"}
-        }
-    }))
-    .unwrap();
     let g = CachedChangeGraph {
         history: random_history("somename"),
         refs: BTreeSet::new(),
-        schema_commit: commit,
-        schema,
         object_id: commit.into(),
         typename: "some.type.name".parse().unwrap(),
         authorizing_identity_urn: some_urn,

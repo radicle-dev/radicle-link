@@ -3,15 +3,11 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use super::{
-    change_metadata::{self, ChangeMetadata, CreateMetadataArgs},
-    trailers,
-    EntryContents,
-    HistoryType,
-    TypeName,
-};
+use super::{trailers, EntryContents, HistoryType, TypeName};
 
+use git_trailers::{parse as parse_trailers, OwnedTrailer};
 use link_crypto::BoxedSigner;
+use link_identities::sign::Signatures;
 
 use std::{convert::TryFrom, fmt};
 
@@ -21,14 +17,28 @@ use serde::{Deserialize, Serialize};
 /// is specified in the RFC (docs/rfc/0662-collaborative-objects.adoc)
 /// under "Change Commits".
 pub struct Change {
-    /// The OID of the parent commit which points at the schema_commit
-    schema_commit: git2::Oid,
+    /// The commit where this change lives
+    commit: git2::Oid,
+    /// The OID of the tree the commit points at, we need this to validate the
+    /// signatures
+    revision: git2::Oid,
+    /// The signatures of this change
+    signatures: Signatures,
+    /// The OID of the parent commit of this change which points at the author
+    /// identity
+    author_commit: git2::Oid,
+    /// The OID of the parent commit of this change which points at a schema.
+    /// Schemas are no longer used but older implementations include a
+    /// schema commit as a parent of the change and to stay backwards
+    /// compatible we must exclude these commits when loading a change.
+    schema_commit: Option<git2::Oid>,
+    /// The OID of the parent commit which points at the identity this change
+    /// was authorized with respect to at the time the change was authored.
+    authorizing_identity_commit: git2::Oid,
     /// The manifest
     manifest: Manifest,
     /// The actual changes this change carries
     contents: EntryContents,
-    /// The metadata for this change
-    metadata: change_metadata::ChangeMetadata,
 }
 
 impl fmt::Display for Change {
@@ -38,9 +48,10 @@ impl fmt::Display for Change {
 }
 
 pub mod error {
-    use super::{change_metadata, trailers};
+    use super::trailers;
+    use git_trailers::Error as TrailerError;
     use link_crypto::BoxedSignError;
-    use link_identities::git::error::Signatures;
+    use link_identities::sign::error::Signatures;
     use thiserror::Error;
 
     #[derive(Debug, Error)]
@@ -49,8 +60,6 @@ pub mod error {
         Git(#[from] git2::Error),
         #[error(transparent)]
         Signer(#[from] BoxedSignError),
-        #[error(transparent)]
-        Metadata(#[from] change_metadata::CreateError),
     }
 
     #[derive(Debug, Error)]
@@ -70,14 +79,21 @@ pub mod error {
         #[error("./change was not a blob")]
         ChangeNotBlob,
         #[error(transparent)]
-        InvalidMetadata(#[from] change_metadata::LoadError),
-        #[error(transparent)]
         SchemaCommitTrailer(#[from] trailers::error::InvalidSchemaTrailer),
+        #[error(transparent)]
+        AuthorTrailer(#[from] trailers::error::InvalidAuthorTrailer),
+        #[error(transparent)]
+        AuthorizingIdentityTrailer(
+            #[from] super::trailers::error::InvalidAuthorizingIdentityTrailer,
+        ),
+        #[error("non utf-8 characters in commit message")]
+        Utf8,
+        #[error(transparent)]
+        Trailer(#[from] TrailerError),
     }
 }
 
 pub struct NewChangeSpec {
-    pub(crate) schema_commit: git2::Oid,
     pub(crate) typename: TypeName,
     pub(crate) tips: Option<Vec<git2::Oid>>,
     pub(crate) message: Option<String>,
@@ -90,8 +106,8 @@ const CHANGE_BLOB_NAME: &str = "change";
 impl Change {
     /// Create a change in the git repo according to the spec
     pub fn create(
-        authorizing_identity_commit: git2::Oid,
-        author_identity_commit: git2::Oid,
+        authorizing_identity_commit_id: git2::Oid,
+        author_identity_commit_id: git2::Oid,
         repo: &git2::Repository,
         signer: &BoxedSigner,
         spec: NewChangeSpec,
@@ -116,35 +132,80 @@ impl Change {
         tb.insert(CHANGE_BLOB_NAME, change_blob, git2::FileMode::Blob.into())?;
 
         let revision = tb.write()?;
+        let tree = repo.find_tree(revision)?;
 
-        let schema_trailer = trailers::SchemaCommitTrailer::from(spec.schema_commit).into();
+        let author_commit = repo.find_commit(author_identity_commit_id)?;
+        let author = repo.signature()?;
 
-        let mut tips = spec.tips.clone().unwrap_or_default();
-        tips.push(spec.schema_commit);
-        tips.push(authorizing_identity_commit);
+        let authorizing_identity_commit = repo.find_commit(authorizing_identity_commit_id)?;
 
-        let metadata = ChangeMetadata::create(CreateMetadataArgs {
-            revision,
-            tips,
-            message: spec.message.unwrap_or_else(|| "new change".to_string()),
-            extra_trailers: vec![schema_trailer],
-            authorizing_identity_commit,
-            author_identity_commit,
-            signer: signer.clone(),
-            repo,
-        })?;
+        let signatures = link_identities::git::sign(signer, revision.into())?.into();
+        let mut parent_commits = spec
+            .tips
+            .iter()
+            .flat_map(|cs| cs.iter())
+            .map(|o| repo.find_commit(*o))
+            .collect::<Result<Vec<git2::Commit>, git2::Error>>()?;
+        parent_commits.push(authorizing_identity_commit);
+        parent_commits.push(author_commit);
+
+        let trailers = vec![
+            super::trailers::AuthorCommitTrailer::from(author_identity_commit_id).into(),
+            super::trailers::AuthorizingIdentityCommitTrailer::from(authorizing_identity_commit_id)
+                .into(),
+        ];
+
+        let commit = repo.commit(
+            None,
+            &author,
+            &author,
+            &link_identities::git::sign::CommitMessage::new(
+                spec.message
+                    .unwrap_or_else(|| "new change".to_string())
+                    .as_str(),
+                &signatures,
+                trailers,
+            )
+            .to_string(),
+            &tree,
+            &(parent_commits.iter().collect::<Vec<&git2::Commit>>())[..],
+        )?;
 
         Ok(Change {
-            schema_commit: spec.schema_commit,
+            schema_commit: None,
             manifest,
             contents: spec.contents,
-            metadata,
+            commit,
+            signatures,
+            authorizing_identity_commit: authorizing_identity_commit_id,
+            author_commit: author_identity_commit_id,
+            revision,
         })
     }
 
     /// Load a change from the given commit
     pub fn load(repo: &git2::Repository, commit: &git2::Commit) -> Result<Change, error::Load> {
-        let metadata = ChangeMetadata::try_from(commit)?;
+        let trailers = commit
+            .message()
+            .ok_or(error::Load::Utf8)
+            .and_then(|s| parse_trailers(s, ":").map_err(|e| e.into()))?;
+        let owned_trailers: Vec<OwnedTrailer> = trailers.iter().map(OwnedTrailer::from).collect();
+        let author_commit_trailer =
+            super::trailers::AuthorCommitTrailer::try_from(&owned_trailers[..])?;
+        let authorizing_identity_trailer =
+            super::trailers::AuthorizingIdentityCommitTrailer::try_from(&owned_trailers[..])?;
+
+        // We no longer support schema parents but to remain backwards compatible we
+        // still load the commit trailer so we know to omit the schema parent
+        // commits when evaluating old object histories which still have a
+        // schema parent commit
+        let schema_commit_trailer =
+            match super::trailers::SchemaCommitTrailer::try_from(&owned_trailers[..]) {
+                Ok(t) => Some(t),
+                Err(super::trailers::error::InvalidSchemaTrailer::NoTrailer) => None,
+                Err(e) => return Err(e.into()),
+            };
+        let signatures = Signatures::try_from(trailers)?;
 
         let tree = commit.tree()?;
         let manifest_tree_entry = tree
@@ -170,23 +231,24 @@ impl Change {
             },
         };
 
-        let schema_commit_trailer =
-            trailers::SchemaCommitTrailer::try_from(&metadata.trailers[..])?;
-
         Ok(Change {
-            schema_commit: schema_commit_trailer.oid(),
             manifest,
             contents,
-            metadata,
+            commit: commit.id(),
+            schema_commit: schema_commit_trailer.map(|s| s.oid()),
+            author_commit: author_commit_trailer.oid(),
+            authorizing_identity_commit: authorizing_identity_trailer.oid(),
+            signatures,
+            revision: tree.id(),
         })
     }
 
     pub fn commit(&self) -> &git2::Oid {
-        &self.metadata.commit
+        &self.commit
     }
 
     pub fn author_commit(&self) -> git2::Oid {
-        self.metadata.author_commit
+        self.author_commit
     }
 
     pub fn typename(&self) -> &TypeName {
@@ -197,16 +259,21 @@ impl Change {
         &self.contents
     }
 
-    pub fn schema_commit(&self) -> git2::Oid {
+    pub fn schema_commit(&self) -> Option<git2::Oid> {
         self.schema_commit
     }
 
     pub fn authorizing_identity_commit(&self) -> git2::Oid {
-        self.metadata.authorizing_identity_commit
+        self.authorizing_identity_commit
     }
 
     pub fn valid_signatures(&self) -> bool {
-        self.metadata.valid_signatures()
+        for (key, sig) in self.signatures.iter() {
+            if !key.verify(sig, self.revision.as_bytes()) {
+                return false;
+            }
+        }
+        true
     }
 }
 
