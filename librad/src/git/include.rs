@@ -81,7 +81,10 @@ impl<Path> Include<Path> {
         }
     }
 
-    pub fn add_remote(&mut self, url: LocalUrl, peer: PeerId, handle: impl Into<ext::RefLike>) {
+    pub fn add_remote<H>(&mut self, url: LocalUrl, peer: PeerId, handle: H)
+    where
+        H: Into<Option<ext::RefLike>>,
+    {
         let remote = Self::build_remote(url, peer, handle);
         self.remotes.push(remote);
     }
@@ -148,12 +151,12 @@ impl<Path> Include<Path> {
     pub fn from_tracked_persons<R, I>(path: Path, local_url: LocalUrl, tracked: I) -> Self
     where
         Path: Debug,
-        R: Into<ext::RefLike>,
+        R: Into<Option<ext::RefLike>>,
         I: IntoIterator<Item = (R, PeerId)>,
     {
         let remotes = tracked
             .into_iter()
-            .map(|(handle, peer)| Self::build_remote(local_url.clone(), peer, handle.into()))
+            .map(|(handle, peer)| Self::build_remote(local_url.clone(), peer, handle))
             .collect();
         tracing::trace!("computed remotes: {:?}", remotes);
 
@@ -164,14 +167,15 @@ impl<Path> Include<Path> {
         }
     }
 
-    fn build_remote(
-        url: LocalUrl,
-        peer: PeerId,
-        handle: impl Into<ext::RefLike>,
-    ) -> Remote<LocalUrl> {
-        let handle = handle.into();
-        let name = ext::RefLike::try_from(format!("{}@{}", handle, peer))
-            .expect("handle and peer are reflike");
+    fn build_remote<H>(url: LocalUrl, peer: PeerId, handle: H) -> Remote<LocalUrl>
+    where
+        H: Into<Option<ext::RefLike>>,
+    {
+        let name = match handle.into() {
+            Some(handle) => ext::RefLike::try_from(format!("{}@{}", handle, peer))
+                .expect("handle and peer are reflike"),
+            None => ext::RefLike::from(peer),
+        };
         Remote::new(url, name.clone()).with_fetchspecs(vec![Refspec {
             src: Reference::heads(Flat, peer),
             dst: GenericRef::heads(Flat, name),

@@ -92,6 +92,20 @@ impl<U> Peer<Status<U>> {
             Self::Local { .. } | Self::Remote { .. } => None,
         }
     }
+
+    pub fn local(self) -> Option<(PeerId, Status<U>)> {
+        match self {
+            Peer::Local { peer_id, status } => Some((peer_id, status)),
+            Peer::Remote { .. } => None,
+        }
+    }
+
+    pub fn remote(self) -> Option<(PeerId, Status<U>)> {
+        match self {
+            Peer::Local { .. } => None,
+            Peer::Remote { peer_id, status } => Some((peer_id, status)),
+        }
+    }
 }
 
 impl<S> Peer<S> {
