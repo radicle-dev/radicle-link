@@ -17,10 +17,10 @@
         "homepage": "",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "ab19261c41b8fbf830d2dba5453ea50cddbb98a2",
-        "sha256": "01mildfm5nmnvkz9yb0pqfc29az9r3cl88qwgxv4vivz8jwjk5ib",
+        "rev": "399c514226ac48d7855838d0777f47f2fa59730a",
+        "sha256": "0c1nka1sxfprf457wapk5pydbfxbspjblys44d2kxfkczad246v5",
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/ab19261c41b8fbf830d2dba5453ea50cddbb98a2.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs/archive/399c514226ac48d7855838d0777f47f2fa59730a.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "rust-overlay": {
@@ -29,10 +29,10 @@
         "homepage": "",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "6ae180c1af192475b29e269f10d9da2d5abec4f0",
-        "sha256": "03s2bz2fcw2v0a26kmr5vqi3b9wmrl79vhaccpbyp3d3ygj68d79",
+        "rev": "8b4c5bef319198920fd03a916dd5f6600147358b",
+        "sha256": "1mvaqkjrxqgvpqja8qa33r8vb59q8hwyh1y3sg3nqxh1lvsw63n6",
         "type": "tarball",
-        "url": "https://github.com/oxalica/rust-overlay/archive/6ae180c1af192475b29e269f10d9da2d5abec4f0.tar.gz",
+        "url": "https://github.com/oxalica/rust-overlay/archive/8b4c5bef319198920fd03a916dd5f6600147358b.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
