@@ -10,7 +10,7 @@ use either::Either;
 
 use librad::{
     crypto::PublicKey,
-    git::Urn,
+    git::{self, Urn},
     identities::{
         git::Revision,
         payload::{self, KeyOrUrn},
@@ -681,9 +681,19 @@ pub mod tracking {
         #[clap(long)]
         pub urn: Urn,
 
-        /// the peer to track
+        /// the peer to track, if not provided the default tracking relationship
+        /// will be created
         #[clap(long)]
-        pub peer: PeerId,
+        pub peer: Option<PeerId>,
+
+        /// the configuration to use when tracking the given peer, if none is
+        /// provided the default configuration will be used
+        #[clap(long)]
+        pub config: Option<git::tracking::Config>,
+
+        /// create the tracking relationship even if one already existed
+        #[clap(long, short)]
+        pub force: bool,
     }
 
     /// untrack a peer's gossip for a Radicle URN
@@ -696,6 +706,11 @@ pub mod tracking {
         /// the peer to untrack
         #[clap(long)]
         pub peer: PeerId,
+
+        /// prune any references for the provided `--urn` and `--peer` from the
+        /// storage
+        #[clap(long)]
+        pub prune: bool,
     }
 }
 
