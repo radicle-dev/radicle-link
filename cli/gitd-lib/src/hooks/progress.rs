@@ -3,7 +3,7 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::fmt;
+use std::fmt::{self, Write as _};
 
 use git_ref_format::{name, Component, RefString};
 use librad::{
@@ -76,7 +76,7 @@ impl<'a> From<Namespaced<'a, request_pull::Success>> for Progress {
             for updated in &ns.payload.refs {
                 let name = updated.name.strip_prefix(&prefix).unwrap_or(&updated.name);
                 let target = updated.oid;
-                progress.push_str(&format!("+{name}->{target}\n"))
+                let _ = writeln!(progress, "+{name}->{target}");
             }
         }
 
@@ -85,7 +85,7 @@ impl<'a> From<Namespaced<'a, request_pull::Success>> for Progress {
             progress.push_str("pruned references:\n");
             for pruned in &ns.payload.pruned {
                 let name = pruned.strip_prefix(&prefix).unwrap_or(pruned);
-                progress.push_str(&format!("-{name}\n"));
+                let _ = writeln!(progress, "-{name}");
             }
         }
 
@@ -168,7 +168,7 @@ impl<'a> From<Namespaced<'a, replication::Success>> for Progress {
             progress.push('\n');
             progress.push_str("storage validation errors:\n");
             for error in errors {
-                progress.push_str(&format!("{}\n", error));
+                let _ = writeln!(progress, "{}", error);
             }
         }
 
@@ -177,7 +177,7 @@ impl<'a> From<Namespaced<'a, replication::Success>> for Progress {
             progress.push('\n');
             progress.push_str("new identities discovered:\n");
             for urn in urns {
-                progress.push_str(&format!("{}\n", *urn));
+                let _ = writeln!(progress, "{}", *urn);
             }
         }
 
