@@ -110,6 +110,7 @@ pub mod project {
         List(List),
         Update(Update),
         Checkout(Checkout),
+        Delegates(Delegates),
         Diff(Diff),
         Accept(Accept),
         Tracked(Tracked),
@@ -267,6 +268,18 @@ pub mod project {
         pub peer: Option<PeerId>,
     }
 
+    /// list the delegates of the Radicle project
+    #[derive(Debug, Parser)]
+    pub struct Delegates {
+        /// the Radicle URN of the project
+        #[clap(long)]
+        pub urn: Urn,
+
+        /// the peer's version of the project
+        #[clap(long)]
+        pub peer: Option<PeerId>,
+    }
+
     /// review the difference between the local Radicle project and a peer's
     #[derive(Debug, Parser)]
     pub struct Diff {
@@ -322,6 +335,7 @@ pub mod person {
         List(List),
         Update(Update),
         Checkout(Checkout),
+        Delegates(Delegates),
         Diff(Diff),
         Accept(Accept),
         Tracked(Tracked),
@@ -451,6 +465,18 @@ pub mod person {
         /// the peer for which the initial working copy is based off. Note that
         /// if this value is not provided, or the value that is provided is the
         /// local peer, then the local version of the person is checked out.
+        #[clap(long)]
+        pub peer: Option<PeerId>,
+    }
+
+    /// list the delegates of the Radicle person
+    #[derive(Debug, Parser)]
+    pub struct Delegates {
+        /// the Radicle URN of the person
+        #[clap(long)]
+        pub urn: Urn,
+
+        /// the peer's version of the person
         #[clap(long)]
         pub peer: Option<PeerId>,
     }

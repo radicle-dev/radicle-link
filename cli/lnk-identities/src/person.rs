@@ -217,3 +217,15 @@ where
     let _guard = get(storage, urn)?.ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
     Ok(identities::relations::tracked(storage, urn)?)
 }
+
+pub fn delegates<S, P>(storage: &S, urn: &Urn, peer: P) -> Result<Vec<PublicKey>, Error>
+where
+    S: AsRef<ReadOnly>,
+    P: Into<Option<PeerId>>,
+{
+    let urn = Urn::try_from(Reference::rad_id(Namespace::from(urn)).with_remote(peer)).unwrap();
+    let project = identities::person::verify(storage, &urn)?
+        .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
+    let delegations = project.delegations();
+    Ok(delegations.iter().copied().collect())
+}

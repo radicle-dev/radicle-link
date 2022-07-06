@@ -26,7 +26,12 @@ use lnk_clib::{
     storage::{self, ssh},
 };
 
-use crate::{cli::args::project::*, display, project, working_copy_dir::WorkingCopyDir};
+use crate::{
+    cli::{self, args::project::*},
+    display,
+    project,
+    working_copy_dir::WorkingCopyDir,
+};
 
 pub fn eval(profile: &Profile, sock: SshAuthSock, opts: Options) -> anyhow::Result<()> {
     match opts {
@@ -48,6 +53,7 @@ pub fn eval(profile: &Profile, sock: SshAuthSock, opts: Options) -> anyhow::Resu
             eval_accept(profile, sock, urn, peer, force)?
         },
         Options::Tracked(Tracked { urn }) => eval_tracked(profile, urn)?,
+        Options::Delegates(Delegates { urn, peer }) => eval_delegates(profile, urn, peer)?,
     }
 
     Ok(())
@@ -161,6 +167,18 @@ fn eval_tracked(profile: &Profile, urn: Urn) -> anyhow::Result<()> {
         .map(|peer| peer.map(|status| status.map(display::Persona::from)))
         .collect::<Vec<_>>();
     println!("{}", serde_json::to_string(&peers)?);
+    Ok(())
+}
+
+fn eval_delegates(profile: &Profile, urn: Urn, peer: Option<PeerId>) -> anyhow::Result<()> {
+    use cli::fmt::Delegate;
+
+    let storage = storage::read_only(profile)?;
+    let delegates = project::delegates(&storage, &urn, peer)?
+        .into_iter()
+        .map(|del| del.either(Delegate::direct, Delegate::indirect))
+        .collect::<Vec<_>>();
+    println!("{}", serde_json::to_string(&delegates)?);
     Ok(())
 }
 

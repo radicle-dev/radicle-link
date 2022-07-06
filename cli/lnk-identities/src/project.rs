@@ -25,6 +25,7 @@ use librad::{
     },
     paths::Paths,
     PeerId,
+    PublicKey,
 };
 
 use crate::{
@@ -281,4 +282,23 @@ where
     // ensure that the URN exists and is indeed a project
     let _guard = get(storage, urn)?.ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
     Ok(identities::relations::tracked(storage, urn)?)
+}
+
+pub fn delegates<S, P>(
+    storage: &S,
+    urn: &Urn,
+    peer: P,
+) -> Result<Vec<Either<PublicKey, Urn>>, Error>
+where
+    S: AsRef<ReadOnly>,
+    P: Into<Option<PeerId>>,
+{
+    let urn = Urn::try_from(Reference::rad_id(Namespace::from(urn)).with_remote(peer)).unwrap();
+    let project = identities::project::verify(storage, &urn)?
+        .ok_or_else(|| identities::Error::NotFound(urn.clone()))?;
+    let delegations = project.delegations();
+    Ok(delegations
+        .iter()
+        .map(|del| del.map_left(|key| *key).map_right(|id| id.urn()))
+        .collect())
 }
