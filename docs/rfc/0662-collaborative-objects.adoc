@@ -15,9 +15,7 @@ exactly what such metadata look like, different organisations and people will
 have different requirements and one of the promises of decentralisation is to
 increase user choice. Therefore we should remain agnostic at the protocol level
 about exactly what such metadata looks like, instead we should build a single
-API for applications to use metadata associated with a project. The schemas and
-interpretations of these data types then become composable at the application
-layer.
+API for applications to use metadata associated with a project. 
 
 == Design Goals
 
@@ -60,70 +58,8 @@ that the application communicates with a radicle implementation via an HTTP
 RPC. However, the HTTP RPC is not a proposal of this RFC, the proposed API will
 be specified in terms of `radicle-link` later in this document.
 
-The first thing the developer must do is decide on the schema of their data and
-represent it as a JSON schema. We use this simple schema:
-
-[source,json]
-----
-{
-    "$vocabulary": {
-        "https://alexjg.github.io/automerge-jsonschema/spec": true
-    },
-    "type": "object",
-    "properties": {
-        "id": {
-            "type": "string"
-        },
-        "title": {
-            "type": "string",
-            "automerge_type": "text"
-        },
-        "description": {
-            "type": "string",
-            "automerge_type": "text"
-        },
-        "author": {
-            "description": "The radicle URN of the author of the issue",
-            "type": "string"
-        },
-        "comments": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "text": {
-                        "type": "string"
-                    },
-                    "id": "string",
-                    "author": {
-                        "type": "string",
-                        "description": "Radicle URN of the author of the comment"
-                    }
-                }
-            }
-        }
-    }
-}
-----
-
-An issue consists of a title, description, and author. This schema may well be
-the subject of its own mini standardisation process as it is very likely that
-many different applications will want to interoperate with the same issue
-model. The important thing is that this standardisation process can happen
-independently of the radicle protocol. Note the `$vocabulary`, this is a
-vocabulary which only contains keywords which can be used in a CRDT such as 
-automerge.
-
-In addition to the schema, the developer must choose a name for their type.
-This is similar to an XML namespace and probably standardised as part of the
-same process which produces the schema. In this case let's choose
-`xyz.radicle.issue` as the type name.
-
-This schema ensures that the data is well formed. In this iteration of 
-collaborative objects, only project maintainers can modify an issue, we assume
-that project maintainers can be trusted not to modify the issue in malicious
-ways.
-
+The developer must choose a name for their type. This is similar to an XML
+namespace. In this case let's choose `xyz.radicle.issue` as the type name.
 
 === Creating an issue
 
@@ -151,7 +87,6 @@ with the following content:
 ----
 {
     "typename": "xyz.radicle.issue",
-    "schema": <the schema above>,
     "auth_policy": "<the policy above>",
     "history": {
         "type": "automerge",
@@ -160,10 +95,9 @@ with the following content:
 }
 ----
 
-This endpoint returns an error if the data does not match the schema. Otherwise 
-the endpoint returns an identifier for the newly created object and announces
-the new data to the network, anyone tracking the project will pull those 
-changes.
+Otherwise the endpoint returns an identifier for the newly created object and
+announces the new data to the network, anyone tracking the project will pull
+those changes.
 
 === Retrieving an issue
 
@@ -184,7 +118,6 @@ This will return something like this:
     {
         "id": "<some long string>",
         "typename": "xyz.radicle.issue",
-        "schema": <the schema above>,
         "data": {
             "title": "Librad doesn't implement the metadata RFC",
             "description": "It's in the name",
@@ -244,9 +177,7 @@ the following contents:
 }
 ----
 
-This endpoint will return an error if the change does not match the schema of
-the object. Otherwise the change will be merged in to the object and announced
-to the network.
+The change will be merged in to the object and announced to the network.
 
 == Implementation
 
@@ -305,13 +236,11 @@ Therefore a valid change commit must have four trailers:
 * `X-Rad-Author`, this is the multibase-multihash of the parent commit which
   references the author identity. We use this trailer to avoid following the
   author commit reference when constructing the automerge change graph
-* `X-Rad-Schema`, this is the multibase-multihash of the parent commit which contains 
-  the schema of this object. See <<Schema Commits>>.
+* `X-Rad-Schema`, this is the multibase-multihash of the parent commit which
+  contains the schema of this object. See <<Schema Commits>>. This trailer is
+  retained for backwards compatibility and MUST be omitted in new changes
 * `X-Rad-Authorizing-Identity`, the multibase-multihash of the parent commit
   which points to the identity which authorizes this change.
-
-Furthermore a change commit MUST be signed by a delegate of the authorizing
-identity.
 
 ==== `manifest.toml`
 
@@ -323,11 +252,6 @@ Specifically it will contain:
   CRDT implementations in the future.
 
 
-Each object is also created with a JSON schema. The schema is represented by an
-initial `schema.json` and a series of schema migrations which extend that
-initial schema. Schema migrations will not be addressed in detail in this RFC
-but we will show their feasibility.
-
 ==== `change`
 
 This is the automerge change which this commit introduces. It is a binary file
@@ -337,17 +261,11 @@ referenced by the parents of the commit.
 
 === Object IDs
 
-We require that there only be one root of the change graph we're replicating.
-Whilst we could merge change graphs with multiple roots this would be insecure.
-Imagine that an honest peer creates an object, if an attacker could create 
-another root node in the change graph and arrange for it to come before the
-honest root in a topological sort then the attacker could override the schema
-and other properties of the object.
-
-To have a single root we need an object ID which is derived from the attributes
-of the object, that way an attacker cannot manipulate the attributes of an
-object with the same ID. We achieve this by using the hash of the initial
-commit of the object as the ID.
+We require that there only be one root of the change graph we're replicating. To
+have a single root we need an object ID which is derived from the attributes of
+the object, that way an attacker cannot manipulate the attributes of an object
+with the same ID. We achieve this by using the hash of the initial commit of the
+object as the ID.
 
 It is entirely plausible that a peer would create two distinct objects with
 identical initial states. Under many content addressing schemes this would lead
@@ -365,12 +283,10 @@ ID in this reference is a multibase-multihash encoding of the object ID using
 the base32-z encoding.
 
 At this point we have the hash linked graph of automerge changes, but we need
-to make sure that the merged document is authenticated and valid with respect
-to it's schema. To do this we start at the root of the hash graph and walk
-down the tree. As we encounter each change we check it's signature, apply it
-and check that the new document does not violate the schema. If it does violate
-the schema we discard the change and all dependent changes. Finally, we have an
-authenticated document which respects a given schema.
+to make sure that the merged document is authenticated. To do this we start at
+the root of the hash graph and walk down the tree. As we encounter each change
+we check it's signature and discard it if it is not valid, otherwise we merge it
+with the document state.
 
 It is important to note that this merging is at this point not stored in the
 repository - it can be performed in memory and may be cached. The result is
@@ -406,58 +322,19 @@ ID.
 
 To make a change to an object we load the existing messages for an object. The 
 application developer provides us with the binary representation of the change
-to that object. We apply the change and ensure that the new object state still
-matches the object schema. At this point the state of the object may depend on
-many contributions from the tracking graph - not just the ones in our own view
-of the project. We now create a commit with our new change in it, referencing
-all the commits containing the direct dependencies of the change as parents.
+to that object. At this point the state of the object may depend on many
+contributions from the tracking graph - not just the ones in our own view of the
+project. We now create a commit with our new change in it, referencing all the
+commits containing the direct dependencies of the change as parents.
 
 === Schema Commits
 
-Schemas are important for the interoperability of the system. We need
-applications to be able to rely on the data they are working with being valid,
-otherwise we impose the problem of schema validation on application developers.
-
-Schemas will need to be able to change over time. Schema migration is out of 
-scope for this RFC but we need a minimal mechanism to support it in future. To
-this end schemas are represented using their own hash graph. For the purposes
-of this RFC a schema is a commit with a tree that contains a `schema.json` and
-a `m̀anifest.toml` blob:
-
-[source]
-----
-|
-|-- schema.json
-|-- manifest.toml
-----
-
-`schema.json` contains a draft 2020-12 JSON schema. This schema MUST use the
-https://alexjg.github.io/automerge-jsonschema/spec[Automerge JSON schema vocabulary],
-which specifies a subset of the keywords from the JSON schema spec which 
-distribute across the merge operation and therefore can be used to validate
-automerge documents.
-
-`manifest.toml` is a TOML file with the following contents:
-
-[source,toml]
-----
-type: jsonschema
-version: 1
-----
-
-This can be extended in future by creating schema commits that reference this
-schema commit and add migrations.
-
-As with change commits the schema commit is signed and references an author
-commit, therefore the commit has two trailers:
-
-- `X-Rad-Author`
-- `X-Rad-Signature`
-
-With the same definition as for change commits.
-
-Change commits have a schema commit as one of their parents and reference that
-commit via the `X-Rad-Schema` trailer.
+An earlier version of this RFC specified a separate schema which a collaborative
+object should respect. This schema was encoded as a commit which each change in
+a collaborative object referenced in it's parents. We no longer include a schema
+but in order to remain compatible with older objects implementations MUST parse
+the `X-Rad-Schema` trailer in order to discard this parent when evaluating the
+change graph of an object.
 
 
 === Strange Perspectives
@@ -482,7 +359,7 @@ The APIs librad will provide:
   applications which wish to write data
 * update an object by providing the bytes of an automerge change which updates
   the document
-* create a new object from a JSON object, a JSON schema, and a type name
+* create a new object from a JSON object, and a type name
   
 Note that I am referring to "the binary representation of an automerge x" 
 because the automerge API works in terms of binary changes.
@@ -503,11 +380,9 @@ enum History {
 
 struct ObjectId(String);
 struct TypeName(String);
-struct Schema(..);
 
 struct CollaborativeObject {
     typename: TypeName,
-    schema: Schema,
     id: ObjectId,
     author: Person, 
     json: serde_json::Value,
@@ -517,7 +392,6 @@ struct CollaborativeObject {
 struct NewObjectSpec {
     typename: TypeName,
     history: History,
-    schema_json: serde_json::Value,
 }
 
 impl CollaborativeObjectStore {
@@ -538,16 +412,9 @@ a few core extensions with librad - issues for example.
 
 == Further work
 
-This RFC limits participants in collaborative objects to project maintainers.
-This is a significant limitation, we can't reproduce the common behaviour of
-many issue trackers where an issue can be created by anyone. In order to allow
-this behaviour we need the ability to make authorization decisions about 
-different parts of the document. One way to achieve this would be by adding an
-authorization logic a la https://content.iospress.com/articles/journal-of-computer-security/jcs364[SecPAL]
-to the collaborative object definition. This would be used in a similar manner
-to the schema to validate that changes to a document are authorized by the 
-authorization logic.
-
+This RFC does not specify authorization logic and applications must instead
+implement this themselves. It may be possible to implement a general
+authorization DSL in librad, freeing applications of this logic. 
 
 [[alt-approaches,Alternative Approaches]]
 ==  Alternative Approaches

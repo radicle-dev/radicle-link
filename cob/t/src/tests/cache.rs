@@ -6,27 +6,11 @@
 use cob::{
     internals::{Cache, CachedChangeGraph, FileSystemCache},
     ObjectId,
-    Schema,
 };
-use lazy_static::lazy_static;
 use rand::Rng;
-use std::{cell::RefCell, convert::TryFrom, env::temp_dir, rc::Rc};
+use std::{cell::RefCell, env::temp_dir, rc::Rc};
 
 use crate::helpers::{random_history, random_oid};
-
-lazy_static! {
-    static ref SCHEMA: Schema = Schema::try_from(&serde_json::json!({
-        "$vocabulary": {
-            "https://alexjg.github.io/automerge-jsonschema/spec": true,
-        },
-        "type": "object",
-        "properties": {
-            "name": { "type": "string" }
-        },
-        "required": ["name"]
-    }))
-    .unwrap();
-}
 
 struct CacheTestEnv {
     states: Vec<CachedChangeGraph>,
@@ -82,14 +66,11 @@ fn test_load_returns_none_if_refs_dont_match() {
 
 fn object_state(name: &'static str) -> CachedChangeGraph {
     let tips = [0..10].iter().map(|_| random_oid());
-    let schema_commit = random_oid();
     let history = random_history(name);
     let urn = radicle_git_ext::Oid::from(random_oid()).into();
     CachedChangeGraph {
         refs: tips.collect(),
         history,
-        schema_commit,
-        schema: SCHEMA.clone(),
         typename: "some.type.name".parse().unwrap(),
         object_id: random_oid().into(),
         authorizing_identity_urn: urn,

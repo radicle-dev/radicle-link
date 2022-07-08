@@ -10,18 +10,15 @@ use crate::{
     history,
     identity_storage::{lookup_authorizing_identity, lookup_person},
     pruning_fold,
-    validated_automerge::{error::ProposalError, ValidatedAutomerge},
     AuthDecision,
     AuthorizingIdentity,
     IdentityStorage,
-    Schema,
 };
 
 pub struct Evaluating<'a, I: IdentityStorage> {
     identities: &'a I,
     authorizing_identity: &'a dyn AuthorizingIdentity,
     repo: &'a git2::Repository,
-    in_progress_history: ValidatedAutomerge,
 }
 
 impl<'a, I: IdentityStorage> Evaluating<'a, I> {
@@ -29,13 +26,11 @@ impl<'a, I: IdentityStorage> Evaluating<'a, I> {
         identities: &'a I,
         authorizer: &'a dyn AuthorizingIdentity,
         repo: &'a git2::Repository,
-        schema: Schema,
     ) -> Evaluating<'a, I> {
         Evaluating {
             identities,
             authorizing_identity: authorizer,
             repo,
-            in_progress_history: ValidatedAutomerge::new(schema),
         }
     }
 
@@ -111,19 +106,6 @@ impl<'a, I: IdentityStorage> Evaluating<'a, I> {
             },
         };
 
-        // Check that the history the change carries is well formed and does not violate
-        // the schema
-        match &change.contents() {
-            history::EntryContents::Automerge(bytes) => {
-                match self.in_progress_history.propose_change(bytes) {
-                    Ok(()) => {},
-                    Err(e) => {
-                        return Err(RejectionReason::InvalidChange(e));
-                    },
-                }
-            },
-        };
-
         Ok(history::HistoryEntry::new(
             *change.commit(),
             author.urn(),
@@ -164,7 +146,6 @@ enum RejectionReason {
     Unauthorized {
         reason: &'static str,
     },
-    InvalidChange(ProposalError),
 }
 
 impl RejectionReason {
@@ -212,12 +193,6 @@ impl RejectionReason {
                     commit=?change.commit(),
                     reason,
                     "rejecting change as it was not authorized"
-                );
-            },
-            RejectionReason::InvalidChange(error) => {
-                tracing::warn!(
-                    err=?error,
-                    "rejecting invalid change"
                 );
             },
         }

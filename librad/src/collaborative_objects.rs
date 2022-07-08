@@ -10,7 +10,7 @@ use crate::git::{
     types::{Namespace, Reference, RefsCategory},
 };
 
-use std::{collections::HashMap, convert::TryFrom, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 
 pub use cob::{
     AuthorizingIdentity,
@@ -23,7 +23,6 @@ pub use cob::{
     ObjectId,
     ObjectRefs,
     RefsStorage,
-    Schema,
     TypeName,
 };
 use link_crypto::BoxedSigner;
@@ -32,7 +31,6 @@ use link_identities::git::{SomeIdentity, Urn};
 pub mod error {
     use super::RefsError;
     use crate::git::identities::Error as IdentitiesError;
-    use cob::error::SchemaParse;
     use link_identities::git::Urn;
     use thiserror::Error;
 
@@ -43,8 +41,6 @@ pub mod error {
         Cob(#[from] cob::error::Create<RefsError>),
         #[error(transparent)]
         ResolveAuth(#[from] ResolveAuthorizer),
-        #[error(transparent)]
-        InvalidSchema(#[from] SchemaParse),
     }
 
     #[allow(clippy::large_enum_variant)]
@@ -81,8 +77,6 @@ pub mod error {
 
 /// The data required to create a new object
 pub struct NewObjectSpec {
-    /// A valid JSON schema which uses the vocabulary at <https://alexjg.github.io/automerge-jsonschema/spec>
-    pub schema_json: serde_json::Value,
     /// The CRDT history to initialize this object with
     pub history: EntryContents,
     /// The typename for this object
@@ -129,7 +123,6 @@ impl<'a> CollaborativeObjects<'a> {
         within_identity: &Urn,
         spec: NewObjectSpec,
     ) -> Result<cob::CollaborativeObject, error::Create> {
-        let schema = Schema::try_from(&spec.schema_json)?;
         cob::create_object(cob::CreateObjectArgs {
             refs_storage: self,
             repo: self.store.as_raw(),
@@ -137,7 +130,6 @@ impl<'a> CollaborativeObjects<'a> {
             author: whoami,
             authorizing_identity: resolve_authorizing_identity(self.store, within_identity)?
                 .as_ref(),
-            schema,
             contents: spec.history,
             typename: spec.typename,
             message: spec.message,
