@@ -16,7 +16,7 @@ in
         cargo-deny
         cargo-nextest
         cargo-watch
-        pkgs.rust-bin.nightly."2021-12-02".rustfmt
+        pkgs.rust-bin.nightly."2022-07-01".rustfmt
 
         # hard dependencies
         cmake
