@@ -46,6 +46,7 @@ pub fn eval(profile: &Profile, sock: SshAuthSock, opts: Options) -> anyhow::Resu
             eval_accept(profile, sock, urn, peer, force)?
         },
         Options::Tracked(Tracked { urn }) => eval_tracked(profile, urn)?,
+        Options::Delegates(Delegates { urn, peer }) => eval_delegates(profile, urn, peer)?,
     }
 
     Ok(())
@@ -156,6 +157,18 @@ fn eval_tracked(profile: &Profile, urn: Urn) -> anyhow::Result<()> {
         .map(|peer| peer.map(|status| status.map(display::Persona::from)))
         .collect::<Vec<_>>();
     println!("{}", serde_json::to_string(&peers)?);
+    Ok(())
+}
+
+fn eval_delegates(profile: &Profile, urn: Urn, peer: Option<PeerId>) -> anyhow::Result<()> {
+    use crate::cli::fmt::Delegate;
+
+    let storage = storage::read_only(profile)?;
+    let delegates = person::delegates(&storage, &urn, peer)?
+        .into_iter()
+        .map(Delegate::direct)
+        .collect::<Vec<_>>();
+    println!("{}", serde_json::to_string(&delegates)?);
     Ok(())
 }
 
