@@ -111,7 +111,17 @@ fn can_see_tracked_references() {
                     quick_commit(
                         storage,
                         &urn.with_path(reflike!("refs/heads/master")),
-                        vec![("HI", tree::blob(b"Hi Bob"))].into_iter().collect(),
+                        vec![
+                            ("HI", tree::blob(b"Hi Bob")),
+                            (
+                                "src",
+                                vec![("main.rs", tree::blob(b"fn main() {}"))]
+                                    .into_iter()
+                                    .collect(),
+                            ),
+                        ]
+                        .into_iter()
+                        .collect(),
                         "say hi to bob",
                     )
                 }

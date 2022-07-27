@@ -69,11 +69,11 @@ impl Tree<'_> {
             match node {
                 Blob(data) => {
                     let oid = repo.blob(data)?;
-                    builder.insert(name.as_ref(), oid, 0o100644)?;
+                    builder.insert(name.as_ref(), oid, git2::FileMode::Blob.into())?;
                 },
                 Tree(sub) => {
                     let oid = sub.write(repo)?;
-                    builder.insert(name.as_ref(), oid, 0o04000)?;
+                    builder.insert(name.as_ref(), oid, git2::FileMode::Tree.into())?;
                 },
             }
         }
