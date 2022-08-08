@@ -77,6 +77,16 @@ where
         E: std::error::Error + Send + 'static,
         P: ProgressReporter<Error = E>,
     {
+        // update the signed refs before a possible request_pull,
+        // so that the peer can receive the latest refs.
+        let at = update_signed_refs(
+            reporter,
+            self.spawner.clone(),
+            self.pool.clone(),
+            urn.clone(),
+        )
+        .await?;
+
         if self.post_receive.request_pull {
             tracing::info!("executing request-pull");
             request_pull(reporter, &self.client, &self.seeds, urn.clone()).await?;
@@ -87,14 +97,7 @@ where
             )
             .await?;
         }
-        let at = match update_signed_refs(
-            reporter,
-            self.spawner.clone(),
-            self.pool.clone(),
-            urn.clone(),
-        )
-        .await?
-        {
+        let at = match at {
             Some(at) => at,
             None => return Ok(()),
         };
