@@ -3057,6 +3057,8 @@ dependencies = [
 [[package]]
 name = "radicle-keystore"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "128583c70269a44d3e2144585b1f41a7f43ba11a2d8580266977268004a78a7b"
 dependencies = [
  "async-trait",
  "byteorder",
