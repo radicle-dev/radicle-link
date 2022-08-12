@@ -132,8 +132,19 @@ fn env_sockets() -> Result<SyncSockets, Error> {
 fn profile_sockets(profile: &Profile, peer_id: &PeerId) -> Result<SyncSockets, Error> {
     let rpc_socket_path = profile.paths().rpc_socket(peer_id);
     let events_socket_path = profile.paths().events_socket(peer_id);
-    let rpc = StdUnixListener::bind(rpc_socket_path.as_path())?;
-    let events = StdUnixListener::bind(events_socket_path.as_path())?;
+
+    // UNIX socket needs to be unlinked if already exists.
+    nix::unistd::unlink(&rpc_socket_path).ok();
+    let rpc = StdUnixListener::bind(rpc_socket_path.as_path()).map_err(|e| {
+        tracing::error!("bind rpc_socket_path: {:?} error: {}", &rpc_socket_path, &e);
+        e
+    })?;
+    nix::unistd::unlink(&events_socket_path).ok();
+    let events = StdUnixListener::bind(events_socket_path.as_path()).map_err(|e| {
+        tracing::error!("bind events_socket_path: {:?} error: {}", &events_socket_path, &e);
+        e
+    })?;
+
     Ok(SyncSockets {
         rpc,
         events,
