@@ -2024,6 +2024,7 @@ dependencies = [
 name = "linkd"
 version = "0.1.0"
 dependencies = [
+ "git-tempfile",
  "linkd-lib",
  "tokio",
 ]

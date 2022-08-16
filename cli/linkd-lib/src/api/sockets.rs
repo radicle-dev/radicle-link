@@ -51,6 +51,7 @@ impl Sockets {
     /// this will remove the socket files which were created when the
     /// sockets were loaded.
     pub fn cleanup(&self) -> std::io::Result<()> {
+        tracing::info!("cleanup sockets");
         match &self.open_mode {
             // Do nothing, the file descriptors are cleaned up by the activation framework
             OpenMode::SocketActivated => {},
