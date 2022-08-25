@@ -217,6 +217,7 @@ fn signer_key_file() -> Result<()> {
         "linkd",
             "--protocol-listen", "localhost",
             "--signer", "key",
+            "--key-format", "binary",
             "--key-source", "file",
             "--key-file-path", "~/.config/radicle/secret.key",
     ];
@@ -268,6 +269,7 @@ fn signer_key_ephemeral() -> Result<()> {
             "--protocol-listen", "localhost",
             "--signer", "key",
             "--key-source", "ephemeral",
+            "--key-format", "binary",
     ];
     let parsed = Args::try_parse_from(iter)?;
     assert_eq!(
@@ -316,6 +318,7 @@ fn signer_key_stdin() -> Result<()> {
             "--protocol-listen", "localhost",
             "--signer", "key",
             "--key-source", "stdin",
+            "--key-format", "binary",
     ];
     let parsed = Args::try_parse_from(iter)?;
 

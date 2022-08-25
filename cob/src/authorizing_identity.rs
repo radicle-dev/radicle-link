@@ -22,7 +22,7 @@ pub trait AuthorizingIdentity: std::fmt::Debug {
 
 impl AuthorizingIdentity for VerifiedPerson {
     fn urn(&self) -> Urn {
-        let p: &Person = &*self;
+        let p: &Person = self;
         p.urn()
     }
 
@@ -44,7 +44,7 @@ impl AuthorizingIdentity for VerifiedPerson {
 
 impl AuthorizingIdentity for VerifiedProject {
     fn urn(&self) -> Urn {
-        let p: &Project = &*self;
+        let p: &Project = self;
         p.urn()
     }
 

@@ -90,7 +90,7 @@ impl TryFrom<Request> for messages::Request {
 
 // TODO: Introduce get-connected-peers, get-membership-info, and get-stats -- 2,
 // 3, and 4 respectively.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     // CBOR encode and decode maps to 1
     Announce,

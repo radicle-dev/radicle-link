@@ -51,7 +51,7 @@ impl AsRef<[u8]> for Boring {
 }
 
 /// [`Vec`] with at least 2 elements.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VecOf2<T>(Vec<T>);
 
 impl<T> From<VecOf2<T>> for Vec<T> {

@@ -21,7 +21,7 @@ pub mod error;
 ///
 /// In `git`, this is represented as a `blob`, where the previous revision
 /// `replaces` is a `tree` oid.
-#[derive(Clone, Debug, PartialEq, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
 pub struct Doc<T, D, Revision> {
     /// Protocol version. Always serialised as `0` (zero).
     pub version: u8,
@@ -131,7 +131,7 @@ impl<T, D, R> sealed::Sealed for Doc<T, D, R> {}
 /// `tree` hash. The signatures are encoded in the commit message as [trailers].
 ///
 /// [trailers]: https://git-scm.com/docs/git-interpret-trailers
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Identity<T, Revision, ContentId> {
     pub content_id: ContentId,
     pub root: Revision,
@@ -253,7 +253,7 @@ pub struct Verified;
 /// The verification status (ie. which predicates where successfully applied to
 /// `T`) is tracked on the type level, as intermediate states may have meaning
 /// elsewhere.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Verifying<T, S> {
     inner: T,
     state: PhantomData<S>,

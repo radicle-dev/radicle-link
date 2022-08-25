@@ -78,7 +78,7 @@ pub enum DecodeError {
     UnknownResponseKind(u8),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Ack,
     Success,
@@ -87,7 +87,7 @@ pub enum Kind {
     Unknown(u8),
 }
 
-#[derive(Clone, Debug, PartialEq, minicbor::Decode, minicbor::Encode)]
+#[derive(Clone, Debug, PartialEq, Eq, minicbor::Decode, minicbor::Encode)]
 #[cbor(map)]
 pub struct Headers {
     #[n(0)]

@@ -206,7 +206,7 @@ impl From<git2::Oid> for EntryId {
 }
 
 /// One entry in the dependency graph for a change
-#[derive(Clone, Debug, PartialEq, Hash, minicbor::Encode, minicbor::Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, minicbor::Encode, minicbor::Decode)]
 pub struct HistoryEntry {
     #[n(0)]
     id: EntryId,

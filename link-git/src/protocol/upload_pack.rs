@@ -14,7 +14,7 @@ use versions::Version;
 
 mod legacy;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Header {
     pub path: String,
     pub host: Option<(String, Option<u16>)>,
@@ -72,7 +72,7 @@ where
     W: AsyncWrite + Unpin,
 {
     let mut recv = BufReader::new(recv);
-    let header: Header = match recv.fill_buf().await?.get(0) {
+    let header: Header = match recv.fill_buf().await?.first() {
         // legacy clients don't send a proper pktline header :(
         Some(b'g') => {
             let mut buf = String::with_capacity(256);

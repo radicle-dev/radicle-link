@@ -142,7 +142,11 @@ fn profile_sockets(profile: &Profile, peer_id: &PeerId) -> Result<SyncSockets, E
     })?;
     nix::unistd::unlink(&events_socket_path).ok();
     let events = StdUnixListener::bind(events_socket_path.as_path()).map_err(|e| {
-        tracing::error!("bind events_socket_path: {:?} error: {}", &events_socket_path, &e);
+        tracing::error!(
+            "bind events_socket_path: {:?} error: {}",
+            &events_socket_path,
+            &e
+        );
         e
     })?;
 

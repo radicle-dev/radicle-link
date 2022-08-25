@@ -16,7 +16,7 @@ use crate::{
 use git_ext::{is_not_found_err, RefLike};
 use git_ref_format::{lit, name, Namespaced, Qualified, RefStr, RefString};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DefaultBranchHead {
     /// Not all delegates agreed on an ancestry tree. Each set of diverging
     /// delegates is included as a `Fork`

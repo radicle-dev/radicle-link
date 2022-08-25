@@ -42,7 +42,7 @@ where
     G: RequestPullGuard,
 {
     let mut mcfly = FuturesOrdered::new();
-    mcfly.push(one_tock(state.clone(), tock));
+    mcfly.push_back(one_tock(state.clone(), tock));
 
     while let Some(res) = mcfly.next().await {
         tracing::debug!("tock");
