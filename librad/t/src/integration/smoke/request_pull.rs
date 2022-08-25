@@ -34,13 +34,11 @@ fn responds_peer_and_client() {
         let responder = net.peers().index(0);
         let requester = testnet::TestClient::init().await.unwrap();
         let TestProject { project, .. } = {
-            let proj = requester
+            requester
                 .using_storage(TestProject::create)
                 .await
                 .unwrap()
-                .unwrap();
-
-            proj
+                .unwrap()
         };
 
         let mut rp = requester
@@ -81,13 +79,11 @@ fn responds_peer_and_peer() {
         let responder = net.peers().index(0);
         let requester = net.peers().index(1);
         let TestProject { project, .. } = {
-            let proj = requester
+            requester
                 .using_storage(TestProject::create)
                 .await
                 .unwrap()
-                .unwrap();
-
-            proj
+                .unwrap()
         };
 
         let mut rp = requester

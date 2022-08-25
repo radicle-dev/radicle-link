@@ -24,7 +24,7 @@ pub use metrics::Metrics;
 mod storage;
 pub use storage::{LocalStorage, PutResult};
 
-#[derive(Clone, Debug, PartialEq, minicbor::Encode, minicbor::Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, minicbor::Encode, minicbor::Decode)]
 pub enum Message<Addr, Payload> {
     #[n(0)]
     #[cbor(array)]
@@ -103,7 +103,7 @@ impl<A, P: Hash> Hash for Message<A, P> {
 // We should've defined `Message` as a flat struct with a discriminator field.
 // Since we didn't, introducing v2 extensions through an indirection is slightly
 // more convenient, as we don't have to deal with all fields being optional.
-#[derive(Clone, Debug, PartialEq, minicbor::Encode, minicbor::Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, minicbor::Encode, minicbor::Decode)]
 #[cbor(array)]
 pub struct Ext {
     /// Sequence number of the [`Message`], unique per [`Message::origin`].

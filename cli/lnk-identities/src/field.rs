@@ -148,7 +148,7 @@ pub mod person {
             Url::parse("https://radicle.xyz/link/person/default_branch").unwrap();
     }
 
-    #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     pub struct DefaultBranch {
         #[serde(rename = "default_branch")]
         pub name: Cstring,

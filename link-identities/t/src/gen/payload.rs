@@ -36,7 +36,7 @@ static UPSTREAM_USER_NAMESPACE: Lazy<Url> =
 static UPSTREAM_PROJECT_NAMESPACE: Lazy<Url> =
     Lazy::new(|| Url::parse("https://radicle.xyz/upstream/project/v1").unwrap());
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct UpstreamUser {
     #[serde(rename = "radicle-registry-name")]
     pub registered_as: Cstring,
@@ -56,7 +56,7 @@ impl HasNamespace for UpstreamUser {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct UpstreamProject {
     #[serde(rename = "radicle-registry-name")]
     pub registered_as: Cstring,

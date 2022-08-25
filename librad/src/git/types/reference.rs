@@ -27,7 +27,7 @@ pub type Many = ext::RefspecPattern;
 /// Alias for [`Many`].
 pub type Multiple = Many;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RefsCategory {
     Heads,
     Rad,
@@ -129,7 +129,7 @@ impl AsRemote for &ext::RefLike {}
 impl sealed::Sealed for ext::RefLike {}
 impl sealed::Sealed for &ext::RefLike {}
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reference<Namespace, Remote, Cardinality> {
     /// The remote portion of this reference.
     pub remote: Option<Remote>,

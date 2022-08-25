@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use super::Urn;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalUrl {
     pub urn: Urn,
     pub(super) active_index: Option<usize>,

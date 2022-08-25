@@ -388,7 +388,7 @@ impl ReadOnlyStorage for ReadOnly {
         RefLike: From<&'b Ref>,
     {
         self.backend
-            .refname_to_id(&RefLike::from(reference).to_string())
+            .refname_to_id(&RefLike::from(reference))
             .map(ext::Oid::from)
             .map_err(Error::from)
     }

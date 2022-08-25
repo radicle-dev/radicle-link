@@ -356,7 +356,7 @@ fn resolve_authorizing_identity(
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ObjRefMatch {
     Local(ObjectId),
     Remote(ObjectId),

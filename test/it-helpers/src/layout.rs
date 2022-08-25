@@ -16,7 +16,7 @@ use librad::{
     PeerId,
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct References {
     commits: Vec<Commit>,
     id: RadId,
@@ -24,7 +24,7 @@ pub struct References {
     ids: Vec<Delegate>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RadId {
     pub name: Reference<One>,
     pub target: Option<ext::Oid>,
@@ -55,7 +55,7 @@ impl Display for RadId {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RadSelf {
     pub name: Reference<One>,
     pub exists: bool,
@@ -77,7 +77,7 @@ impl Display for RadSelf {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Delegate {
     pub name: Reference<One>,
     pub exists: bool,
@@ -106,7 +106,7 @@ impl Display for Delegate {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commit {
     pub urn: Urn,
     pub oid: ext::Oid,

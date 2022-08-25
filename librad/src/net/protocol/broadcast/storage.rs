@@ -6,7 +6,7 @@
 use crate::PeerId;
 
 /// Result of applying a broadcast update to local storage.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PutResult<Update> {
     /// The `Update` was not previously seen, and applied successfully.
     ///

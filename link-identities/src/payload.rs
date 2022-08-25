@@ -53,7 +53,7 @@ lazy_static! {
 
 /// Structure `radicle-link` expects to be part of a [`Payload`] describing a
 /// personal identity.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Person {
     pub name: Cstring,
 }
@@ -62,7 +62,7 @@ impl sealed::Sealed for Person {}
 
 /// Structure `radicle-link` expects to be part of a [`Payload`] describing a
 /// project identity.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Project {
     pub name: Cstring,
     pub description: Option<Cstring>,
@@ -139,7 +139,7 @@ pub type PersonPayload = Payload<Person>;
 pub type ProjectPayload = Payload<Project>;
 
 /// [`Payload`] for which the type is not known statically.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum SomePayload {
@@ -156,7 +156,7 @@ pub enum SomePayload {
 ///
 /// For compatibility between a native extension and a runtime extension there
 /// is a `From` implementation if the type implemenets [`HasNamespace`].
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ext<T> {
     pub namespace: Url,
     pub val: T,
@@ -243,7 +243,7 @@ where
 /// Note that it is an error during deserialisation if duplicate namespaces are
 /// found in the input -- this is unlike normal JSON deserialisation, which
 /// would just treat objects as maps, retaining the last key found in the input.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Payload<T> {
     pub subject: T,
     ext: BTreeMap<Url, serde_json::Value>,
@@ -419,7 +419,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
 #[serde(untagged)]
 pub enum SomeDelegations<R, E>
 where
@@ -434,7 +434,7 @@ where
 ///
 /// This is just a set of [`PublicKey`]s. Note that it is a deserialisation
 /// error if duplicate elements are found in the input.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct PersonDelegations(NonEmptyOrderedSet<PublicKey>);
 
 impl Deref for PersonDelegations {
@@ -566,7 +566,7 @@ where
 /// Note, however, that the specification requires an additional validation step
 /// after resolving any [`Urn`] pointers -- the identity document is invalid if
 /// it contains duplicate _keys_.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectDelegations<R: Ord> {
     inner: BTreeSet<KeyOrUrn<R>>,
 }

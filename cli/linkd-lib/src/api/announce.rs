@@ -1,7 +1,7 @@
 use librad::{git::Urn, net::protocol::gossip, PeerId};
 use radicle_git_ext::Oid;
 
-#[derive(Clone, Debug, PartialEq, minicbor::Decode, minicbor::Encode)]
+#[derive(Clone, Debug, PartialEq, Eq, minicbor::Decode, minicbor::Encode)]
 pub struct Request {
     #[n(0)]
     pub urn: Urn,
@@ -19,5 +19,5 @@ impl Request {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, minicbor::Decode, minicbor::Encode)]
+#[derive(Clone, Debug, PartialEq, Eq, minicbor::Decode, minicbor::Encode)]
 pub struct Response;

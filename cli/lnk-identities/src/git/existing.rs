@@ -35,7 +35,7 @@ pub enum Error {
 }
 
 /// For construction, use [`Existing::new`] followed by [`Existing::validate`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Existing<V, P> {
     payload: P,

@@ -561,7 +561,7 @@ impl Signed<Verified> {
 
     pub fn verify(unknown: Signed<Unverified>, signer: &PeerId) -> Result<Self, signed::Error> {
         let canonical = unknown.refs.canonical_form()?;
-        if unknown.signature.verify(&canonical, &*signer) {
+        if unknown.signature.verify(&canonical, &**signer) {
             Ok(Signed {
                 refs: unknown.refs,
                 signature: unknown.signature,

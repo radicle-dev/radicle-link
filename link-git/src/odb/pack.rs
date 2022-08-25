@@ -58,7 +58,7 @@ impl AsRef<data::File> for Data {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Info {
     pub(super) hash: u64,
     pub data_path: PathBuf,

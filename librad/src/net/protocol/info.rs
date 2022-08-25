@@ -78,7 +78,7 @@ impl<Addr> From<PeerInfo<Addr>> for (PeerId, Vec<Addr>) {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Decode, Encode)]
+#[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[cbor(array)]
 pub struct GenericPeerInfo<Addr, T> {
     #[n(0)]
@@ -99,7 +99,7 @@ impl<Addr> GenericPeerInfo<Addr, PeerAdvertisement<Addr>> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Decode, Encode)]
+#[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[cbor(array)]
 pub struct PeerAdvertisement<Addr> {
     #[n(0)]

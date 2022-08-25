@@ -36,13 +36,13 @@ pub use request::Request;
 pub mod response;
 pub use response::Response;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message<Headers> {
     pub headers: Headers,
     pub payload: Option<Vec<u8>>,
 }
 
-#[derive(Debug, Clone, minicbor::Encode, minicbor::Decode, PartialEq)]
+#[derive(Debug, Clone, minicbor::Encode, minicbor::Decode, PartialEq, Eq)]
 #[cbor(transparent)]
 pub struct Progress(#[n(0)] String);
 
@@ -52,7 +52,7 @@ impl From<String> for Progress {
     }
 }
 
-#[derive(Debug, Clone, minicbor::Encode, minicbor::Decode, PartialEq)]
+#[derive(Debug, Clone, minicbor::Encode, minicbor::Decode, PartialEq, Eq)]
 #[cbor(transparent)]
 pub struct Error(#[n(0)] String);
 

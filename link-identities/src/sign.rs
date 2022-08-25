@@ -21,7 +21,7 @@ pub mod error;
 
 const TRAILER_TOKEN: &str = "X-Rad-Signature";
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Signature {
     key: PublicKey,
     sig: crypto::Signature,

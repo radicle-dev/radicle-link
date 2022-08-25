@@ -33,7 +33,7 @@ pub enum Error {
 }
 
 /// For construction, use [`New::new`] followed by [`New::validate`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct New<V, P> {
     payload: P,

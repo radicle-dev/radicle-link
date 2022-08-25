@@ -16,7 +16,7 @@ use url::Url;
 
 use crate::{identities::urn::Urn, PeerId};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitUrl<R> {
     pub local_peer: PeerId,
     pub remote_peer: PeerId,
@@ -125,7 +125,7 @@ where
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct GitUrlRef<'a, R> {
     pub local_peer: &'a PeerId,
     pub remote_peer: &'a PeerId,

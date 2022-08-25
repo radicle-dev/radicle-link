@@ -271,12 +271,12 @@ where
         let peer_branch = WorkingRemote::Peer(remote).remote_ref(branch);
         let peer_commit = self
             .repo
-            .find_reference(&peer_branch.to_string())?
+            .find_reference(peer_branch.as_ref())?
             .peel_to_commit()?;
         let local_branch = Qualified::from(lit::refs_heads(branch));
         let local_commit = self
             .repo
-            .find_reference(&local_branch.to_string())?
+            .find_reference(local_branch.as_ref())?
             .peel_to_commit()?;
 
         let message = format!("merge {} into {}", peer_branch, local_branch);

@@ -39,7 +39,7 @@ impl Default for RequestId {
     }
 }
 
-#[derive(Clone, Debug, minicbor::Decode, minicbor::Encode, PartialEq)]
+#[derive(Clone, Debug, minicbor::Decode, minicbor::Encode, PartialEq, Eq)]
 #[cbor(transparent)]
 pub struct UserAgent(#[n(0)] String);
 
@@ -61,20 +61,20 @@ impl<'a> From<&'a UserAgent> for &'a str {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestMode {
     FireAndForget,
     ReportProgress,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
     pub user_agent: UserAgent,
     pub mode: RequestMode,
     pub payload: RequestPayload,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestPayload {
     Announce(announce::Request),
     RequestPull(request_pull::Request),
@@ -92,13 +92,13 @@ impl From<request_pull::Request> for RequestPayload {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Response<P> {
     pub request_id: RequestId,
     pub payload: ResponsePayload<P>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResponsePayload<P> {
     Ack,
     Progress(String),
@@ -106,7 +106,7 @@ pub enum ResponsePayload<P> {
     Success(P),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SomeSuccess {
     Announce(announce::Response),
     RequestPull(request_pull::Response),
