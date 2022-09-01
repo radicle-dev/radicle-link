@@ -22,9 +22,12 @@ use super::{remote_git_version, transport};
 // Work around `git-upload-pack` not handling namespaces properly
 //
 // cf. https://lore.kernel.org/git/pMV5dJabxOBTD8kJBaPuWK0aS6OJhRQ7YFGwfhPCeSJEbPDrIFBza36nXBCgUCeUJWGmpjPI1rlOGvZJEh71Ruz4SqljndUwOCoBUDRHRDU=@eagain.st/
+//
+// Based on testing with git 2.25.1 in Ubuntu 20.04, this workaround is
+// not needed. Hence the checked version is lowered to 2.25.0.
 fn must_namespace(caps: &client::Capabilities) -> bool {
     static MIN_GIT_VERSION_NAMESPACES: Lazy<Version> =
-        Lazy::new(|| Version::new("2.31.0").unwrap());
+        Lazy::new(|| Version::new("2.25.0").unwrap());
 
     remote_git_version(caps)
         .map(|version| version < *MIN_GIT_VERSION_NAMESPACES)
