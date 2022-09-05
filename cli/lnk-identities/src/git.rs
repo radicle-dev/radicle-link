@@ -49,6 +49,9 @@ pub enum Error {
 
     #[error(transparent)]
     Git(#[from] git2::Error),
+
+    #[error("failed to clone project with initial branch `{0}`, the branch is missing")]
+    MissingInitialBranch(git_ext::RefLike),
 }
 
 /// Equips a repository with a rad remote for the given id. If the directory at
@@ -178,6 +181,26 @@ pub fn set_upstream<Url>(
     Ok(())
 }
 
+fn create_local_ref(
+    repo: &git2::Repository,
+    branch: git_ext::RefLike,
+    oid: git2::Oid,
+    remote: &Remote<LocalUrl>,
+    msg: &str,
+) -> Result<(), Error> {
+    let _remote_branch = repo.reference(
+        reflike!("refs/remotes")
+            .join(remote.name.clone())
+            .join(branch.clone())
+            .as_str(),
+        oid,
+        true,
+        msg,
+    )?;
+    let _local_branch = repo.reference(Qualified::from(branch).as_str(), oid, true, msg);
+    Ok(())
+}
+
 /// Clone a git repository to the `path` location, based off of the `remote`
 /// provided.
 ///
@@ -188,29 +211,39 @@ pub fn clone<F>(
     path: &Path,
     storage: F,
     mut remote: Remote<LocalUrl>,
+    init_branch: Option<&git_ext::RefLike>,
 ) -> Result<(git2::Repository, Remote<LocalUrl>), Error>
 where
     F: CanOpenStorage + 'static,
 {
     let repo = git2::Repository::init(path)?;
     remote.save(&repo)?;
-    for (reference, oid) in remote.fetch(storage, &repo, LocalFetchspec::Configured)? {
-        let msg = format!("Fetched `{}->{}`", reference, oid);
-        tracing::debug!("{}", msg);
 
-        let branch: git_ext::RefLike = OneLevel::from(reference).into();
-        let branch = branch.strip_prefix(remote.name.clone())?;
-        let branch = branch.strip_prefix(reflike!("heads")).unwrap_or(branch);
-        let _remote_branch = repo.reference(
-            reflike!("refs/remotes")
-                .join(remote.name.clone())
-                .join(branch.clone())
-                .as_str(),
-            oid,
-            true,
-            &msg,
-        )?;
-        let _local_branch = repo.reference(Qualified::from(branch).as_str(), oid, true, &msg);
+    let branches: Vec<_> = remote
+        .fetch(storage, &repo, LocalFetchspec::Configured)?
+        .map(|(reference, oid)| {
+            let msg = format!("Fetched `{}->{}`", reference, oid);
+            tracing::debug!("{}", msg);
+
+            let branch: git_ext::RefLike = OneLevel::from(reference).into();
+            let branch = branch.strip_prefix(remote.name.clone()).unwrap();
+            let branch = branch.strip_prefix(reflike!("heads")).unwrap_or(branch);
+            (branch, oid, msg)
+        })
+        .collect();
+    match init_branch {
+        Some(init_branch) => {
+            let (branch, oid, msg) = branches
+                .iter()
+                .find(|(branch, _, _)| branch == init_branch)
+                .ok_or(Error::MissingInitialBranch(init_branch.clone()))?;
+            create_local_ref(&repo, branch.clone(), *oid, &remote, msg)?;
+        },
+        None => {
+            for (branch, oid, msg) in branches {
+                create_local_ref(&repo, branch, oid, &remote, &msg)?
+            }
+        },
     }
 
     Ok((repo, remote))

@@ -139,17 +139,21 @@ where
 pub struct Local {
     url: LocalUrl,
     path: PathBuf,
+    default_branch: Option<OneLevel>,
 }
 
 impl Local {
-    pub fn new<I>(identity: &I, path: PathBuf) -> Self
+    pub fn new<I>(identity: &I, path: PathBuf) -> Result<Self, Error>
     where
-        I: HasName + HasUrn,
+        I: HasBranch + HasName + HasUrn,
     {
-        Self {
-            url: LocalUrl::from(identity.urn()),
+        let urn = identity.urn();
+        let default_branch = identity.branch();
+        Ok(Self {
+            url: LocalUrl::from(urn),
             path,
-        }
+            default_branch,
+        })
     }
 
     fn checkout<F>(self, open_storage: F) -> Result<(git2::Repository, Remote<LocalUrl>), Error>
@@ -164,7 +168,12 @@ impl Local {
                 force: Force::True,
             },
         );
-        Ok(git::clone(&self.path, open_storage, rad)?)
+        Ok(git::clone(
+            &self.path,
+            open_storage,
+            rad,
+            self.default_branch.map(|v| RefLike::from(v)).as_ref(),
+        )?)
     }
 }
 
@@ -209,7 +218,12 @@ impl Peer {
             force: Force::True,
         }]);
 
-        let (repo, _) = git::clone(&self.path, open_storage.clone(), remote)?;
+        let (repo, _) = git::clone(
+            &self.path,
+            open_storage.clone(),
+            remote,
+            Some(&RefLike::from(self.default_branch.clone())),
+        )?;
 
         // Create a rad remote and push the default branch so we can set it as the
         // upstream.
@@ -248,7 +262,7 @@ where
 {
     let path = path.resolve(identity.name());
     Ok(match remote {
-        None => Either::Left(Local::new(identity, path)),
+        None => Either::Left(Local::new(identity, path)?),
         Some(remote) => Either::Right(Peer::new(identity, remote, path)?),
     })
 }

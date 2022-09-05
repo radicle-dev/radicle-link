@@ -47,7 +47,7 @@ fn local_checkout() -> anyhow::Result<()> {
         signer: signer.into(),
     };
 
-    let local = Local::new(&proj.project, temp.path().to_path_buf());
+    let local = Local::new(&proj.project, temp.path().to_path_buf())?;
     let repo = checkout(
         &paths,
         settings,
