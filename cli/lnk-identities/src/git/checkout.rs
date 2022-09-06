@@ -143,17 +143,17 @@ pub struct Local {
 }
 
 impl Local {
-    pub fn new<I>(identity: &I, path: PathBuf) -> Result<Self, Error>
+    pub fn new<I>(identity: &I, path: PathBuf) -> Self
     where
         I: HasBranch + HasName + HasUrn,
     {
         let urn = identity.urn();
         let default_branch = identity.branch();
-        Ok(Self {
+        Self {
             url: LocalUrl::from(urn),
             path,
             default_branch,
-        })
+        }
     }
 
     fn checkout<F>(self, open_storage: F) -> Result<(git2::Repository, Remote<LocalUrl>), Error>
@@ -172,7 +172,7 @@ impl Local {
             &self.path,
             open_storage,
             rad,
-            self.default_branch.map(|v| RefLike::from(v)).as_ref(),
+            self.default_branch.map(RefLike::from).as_ref(),
         )?)
     }
 }
@@ -262,7 +262,7 @@ where
 {
     let path = path.resolve(identity.name());
     Ok(match remote {
-        None => Either::Left(Local::new(identity, path)?),
+        None => Either::Left(Local::new(identity, path)),
         Some(remote) => Either::Right(Peer::new(identity, remote, path)?),
     })
 }

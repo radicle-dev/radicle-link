@@ -236,7 +236,7 @@ where
             let (branch, oid, msg) = branches
                 .iter()
                 .find(|(branch, _, _)| branch == init_branch)
-                .ok_or(Error::MissingInitialBranch(init_branch.clone()))?;
+                .ok_or_else(|| Error::MissingInitialBranch(init_branch.clone()))?;
             create_local_ref(&repo, branch.clone(), *oid, &remote, msg)?;
         },
         None => {
