@@ -5,9 +5,7 @@
 
 use std::{
     convert::{Infallible, TryFrom},
-    error,
-    fmt,
-    iter,
+    error, fmt, iter,
     ops::Deref,
 };
 
@@ -132,8 +130,8 @@ impl sign::Signer for SecretKey {
         sign::Signer::public_key(&self)
     }
 
-    async fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
-        sign::Signer::sign(&self, data).await
+    fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
+        sign::Signer::sign(&self, data)
     }
 }
 
@@ -145,7 +143,7 @@ impl<'a> sign::Signer for &'a SecretKey {
         sign::PublicKey(ed25519::VerificationKey::from(&self.0).into())
     }
 
-    async fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
+    fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
         let signature = (*self).sign(data).0;
         Ok(sign::Signature(signature.into()))
     }

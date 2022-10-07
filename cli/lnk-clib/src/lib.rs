@@ -4,7 +4,6 @@
 // Linking Exception. For full terms see the included LICENSE file.
 
 pub mod keys;
-pub mod runtime;
 pub mod seed;
 pub mod ser;
 #[cfg(unix)]

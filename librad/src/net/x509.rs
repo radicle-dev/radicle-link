@@ -5,7 +5,6 @@
 
 use std::{convert::TryFrom as _, ops::Deref, time::Duration};
 
-use futures::executor::block_on;
 use picky_asn1::{
     bit_string::BitString,
     date::{GeneralizedTime, UTCTime},
@@ -14,20 +13,8 @@ use picky_asn1::{
 };
 use picky_asn1_der::Asn1DerError;
 use picky_asn1_x509::{
-    self as x509,
-    oids,
-    validity,
-    AlgorithmIdentifier,
-    DirectoryName,
-    ExtendedKeyUsage,
-    Extension,
-    Extensions,
-    GeneralName,
-    PublicKey,
-    SubjectPublicKeyInfo,
-    TbsCertificate,
-    Validity,
-    Version,
+    self as x509, oids, validity, AlgorithmIdentifier, DirectoryName, ExtendedKeyUsage, Extension,
+    Extensions, GeneralName, PublicKey, SubjectPublicKeyInfo, TbsCertificate, Validity, Version,
 };
 use thiserror::Error;
 use time::{Date, OffsetDateTime};
@@ -106,7 +93,7 @@ impl Certificate {
 
         let signature_value = {
             let tbs_der = picky_asn1_der::to_vec(&tbs_certificate).unwrap();
-            let signature = block_on(signer.sign(&tbs_der))?;
+            let signature = signer.sign(&tbs_der)?;
             BitString::with_bytes(signature.as_ref()).into()
         };
 

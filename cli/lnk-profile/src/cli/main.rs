@@ -5,23 +5,13 @@
 
 use std::{convert::TryInto as _, process::exit};
 
-use lnk_thrussh_agent::Constraint;
+use agent::Constraint;
 
 use librad::crypto::keystore::sign;
 use lnk_clib::keys::{self, ssh::SshAuthSock};
 
 use crate::{
-    create,
-    get,
-    list,
-    paths,
-    peer_id,
-    set,
-    ssh_add,
-    ssh_ready,
-    ssh_remove,
-    ssh_sign,
-    ssh_verify,
+    create, get, list, paths, peer_id, set, ssh_add, ssh_ready, ssh_remove, ssh_sign, ssh_verify,
 };
 
 use super::args::*;

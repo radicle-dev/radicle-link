@@ -13,7 +13,6 @@ test = false
 async-trait = "0.1"
 dyn-clone = "1.0"
 ed25519-zebra = "3.0"
-futures-lite = "1.12.0"
 multibase = "0.9"
 rand = "0.8"
 rustls = "0.19"

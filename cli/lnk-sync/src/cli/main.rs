@@ -11,8 +11,7 @@ use librad::{
     net::{
         self,
         peer::{client, Client},
-        quic,
-        Network,
+        quic, Network,
     },
     profile::{LnkHome, Profile, ProfileId},
 };
@@ -55,7 +54,7 @@ pub fn main(
         let seeds = {
             let seeds_file = profile.paths().seeds_file();
             let store = seed::store::FileStore::<String>::new(seeds_file)?;
-            let (seeds, errors) = Seeds::load(&store, None).await?;
+            let (seeds, errors) = Seeds::load(&store, None)?;
 
             for error in errors {
                 eprintln!("failed to load seed: {}", error);

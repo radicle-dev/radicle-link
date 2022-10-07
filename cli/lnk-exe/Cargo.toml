@@ -31,10 +31,6 @@ path = "../lnk-profile"
 [dependencies.lnk-sync]
 path = "../lnk-sync"
 
-[dependencies.lnk-thrussh-agent]
-version = "0.1.0"
-default-features = false
-
 [dependencies.tokio]
 version = "1.17"
 features = ["rt"]

@@ -19,8 +19,7 @@ use link_canonical::{Cjson, CjsonError};
 use serde::{
     de,
     ser::{self, SerializeStruct},
-    Deserialize,
-    Serialize,
+    Deserialize, Serialize,
 };
 use std_ext::result::ResultExt as _;
 use thiserror::Error;
@@ -406,7 +405,8 @@ impl Refs {
     where
         S: Signer,
     {
-        let signature = futures::executor::block_on(signer.sign(&self.canonical_form()?))
+        let signature = signer
+            .sign(&self.canonical_form()?)
             .map_err(|err| signing::Error::Sign(Box::new(err)))?;
         Ok(Signed {
             refs: self,
