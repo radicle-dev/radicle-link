@@ -3,12 +3,13 @@
 // This file is part of radicle-link, distributed under the GPLv3 with Radicle
 // Linking Exception. For full terms see the included LICENSE file.
 
-use std::{convert::TryFrom, fmt, io, net::SocketAddr, str::FromStr};
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::{convert::TryFrom, fmt, io, str::FromStr};
 
+use dns_lookup::lookup_host;
 use serde::Serialize;
 
 use librad::{net::discovery, PeerId};
-use tokio::net::{lookup_host, ToSocketAddrs};
 
 pub mod store;
 pub use store::Store;
@@ -72,17 +73,20 @@ where
 }
 
 impl<T> Seed<T> {
-    /// Resolve the `Seed`'s address by calling [`tokio::net::lookup_host`].
+    /// Resolve the `Seed`'s address by calling [`dns_lookup::lookup_host`].
     ///
     /// # Errors
     ///
     /// If the addresses returned by `lookup_host` are empty, this will result
     /// in an [`error::Resolve::DnsLookupFailed`].
-    pub async fn resolve(&self) -> Result<Seed<Vec<SocketAddr>>, error::Resolve>
+    pub fn resolve(&self) -> Result<Seed<Vec<SocketAddr>>, error::Resolve>
     where
         T: Clone + ToSocketAddrs + fmt::Display,
     {
-        let addrs = lookup_host(self.addrs.clone()).await?.collect::<Vec<_>>();
+        let addrs = lookup_host(&self.addrs.clone().to_string())?
+            .into_iter()
+            .map(|e| SocketAddr::new(e, 0))
+            .collect::<Vec<_>>();
         if !addrs.is_empty() {
             Ok(Seed {
                 peer: self.peer,
@@ -118,7 +122,7 @@ impl Seeds {
     ///
     /// If any seeds failed to be resolved they will be returned alongside the
     /// successful seeds.
-    pub async fn load<S, T>(
+    pub fn load<S, T>(
         store: &S,
         cutoff: impl Into<Option<usize>>,
     ) -> Result<(Seeds, Vec<error::Load>), S::Scan>
@@ -135,7 +139,7 @@ impl Seeds {
         for seed in store.scan()? {
             match seed {
                 Err(err) => failures.push(error::Load::MalformedSeed(Box::new(err))),
-                Ok(seed) => match seed.resolve().await {
+                Ok(seed) => match seed.resolve() {
                     Ok(r) => {
                         resolved.push(r);
                         if Some(resolved.len()) == cutoff {
@@ -154,14 +158,14 @@ impl Seeds {
     ///
     /// If any seeds failed to be resolved they will be returned alongside the
     /// successful seeds.
-    pub async fn resolve(
-        seeds: impl ExactSizeIterator<Item = &Seed<String>>,
+    pub fn resolve<'a>(
+        seeds: impl ExactSizeIterator<Item = &'a Seed<String>>,
     ) -> (Self, Vec<error::Resolve>) {
         let mut resolved = Vec::with_capacity(seeds.len());
         let mut failures = Vec::new();
 
         for seed in seeds {
-            match seed.resolve().await {
+            match seed.resolve() {
                 Ok(r) => resolved.push(r),
                 Err(err) => failures.push(err),
             }

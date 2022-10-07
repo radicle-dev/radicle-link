@@ -5,17 +5,14 @@
 
 use std::{error, fmt};
 
-use lnk_thrussh_agent::Constraint;
+use agent::Constraint;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
 use librad::{
     crypto::{
         keystore::{crypto::Crypto, file, FileStorage, Keystore as _},
-        IntoSecretKeyError,
-        PeerId,
-        PublicKey,
-        SecretKey,
+        IntoSecretKeyError, PeerId, PublicKey, SecretKey,
     },
     git::storage::{self, read, ReadOnly, Storage},
     paths::Paths,

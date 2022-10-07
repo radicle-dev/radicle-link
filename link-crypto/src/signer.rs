@@ -7,16 +7,16 @@
 
 use std::error::Error;
 
-use futures_lite::future::block_on;
 use keystore::sign;
 
 use crate::{keys, peer::PeerId};
 
 /// A blanket trait over [`sign::Signer`] that can be shared safely among
 /// threads.
+/// NOTE: might be redundant since `.sign` became sync
 pub trait Signer: sign::Signer + Send + Sync + dyn_clone::DynClone + 'static {
     fn sign_blocking(&self, data: &[u8]) -> Result<sign::Signature, <Self as sign::Signer>::Error> {
-        block_on(self.sign(data))
+        self.sign(data)
     }
 }
 
@@ -107,8 +107,8 @@ impl sign::Signer for BoxedSigner {
         self.signer.public_key()
     }
 
-    async fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
-        self.signer.sign(data).await
+    fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
+        self.signer.sign(data)
     }
 }
 
@@ -198,9 +198,7 @@ where
         self.signer.public_key()
     }
 
-    async fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
-        sign::Signer::sign(&self.signer, data)
-            .await
-            .map_err(BoxedSignError::from_std_error)
+    fn sign(&self, data: &[u8]) -> Result<sign::Signature, Self::Error> {
+        sign::Signer::sign(&self.signer, data).map_err(BoxedSignError::from_std_error)
     }
 }

@@ -48,10 +48,6 @@ features = ["std", "derive"]
 path    = "../lnk-clib"
 version = "0.1.0"
 
-[dependencies.lnk-thrussh-agent]
-version  = "0.1.0"
-features = [ "tokio-agent" ]
-
 [dependencies.radicle-macros]
 path = "../../macros"
 

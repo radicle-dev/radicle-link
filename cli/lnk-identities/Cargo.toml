@@ -38,10 +38,6 @@ features = ["vendored"]
 [dependencies.librad]
 path = "../../librad"
 
-[dependencies.lnk-thrussh-agent]
-version = "0.1.0"
-default-features = false
-
 [dependencies.radicle-git-ext]
 path = "../../git-ext"
 

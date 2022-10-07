@@ -8,7 +8,6 @@ use std::{convert::TryFrom, fmt::Debug, marker::PhantomData};
 use canonical::Cjson;
 use crypto::{PublicKey, Signer};
 use either::*;
-use futures_lite::future::block_on;
 use git_ext as ext;
 use multihash::Multihash;
 
@@ -850,6 +849,6 @@ pub fn sign<S>(signer: &S, rev: git_ext::Oid) -> Result<Signature, S::Error>
 where
     S: Signer,
 {
-    let sig = block_on(signer.sign(rev.as_bytes()))?;
+    let sig = signer.sign(rev.as_bytes())?;
     Ok(Signature::from((signer.public_key().into(), sig.into())))
 }
