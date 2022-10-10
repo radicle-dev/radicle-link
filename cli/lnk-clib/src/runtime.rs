@@ -57,7 +57,7 @@ impl Runtime {
                         std::mem::drop(handle);
                     });
                 }
-                join.write().await;
+                let _guard = join.write().await;
             });
         });
 

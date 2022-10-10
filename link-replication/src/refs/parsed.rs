@@ -110,7 +110,7 @@ where
                     (SIGNED_REFS, None) => Some(Left(Rad::SignedRefs)),
                     (IDS, Some(id)) => {
                         let urn = Urn::try_from_id(id.as_str()).ok()?;
-                        iter.next().is_none().then(|| Left(Rad::Ids { urn }))
+                        iter.next().is_none().then_some(Left(Rad::Ids { urn }))
                     },
 
                     _ => None,

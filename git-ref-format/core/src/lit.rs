@@ -21,7 +21,7 @@ pub trait Lit: Sized + sealed::Sealed {
 
     #[inline]
     fn from_component(c: &name::Component) -> Option<Self> {
-        (c.as_ref() == Self::NAME).then(|| Self::SELF)
+        (c.as_ref() == Self::NAME).then_some(Self::SELF)
     }
 }
 
