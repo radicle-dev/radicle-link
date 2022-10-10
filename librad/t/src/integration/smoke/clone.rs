@@ -164,7 +164,7 @@ impl Leecher<'_> {
                 (
                     host_peer,
                     supply_addr_hints
-                        .then(|| host_addrs)
+                        .then_some(host_addrs)
                         .into_iter()
                         .flatten()
                         .collect(),

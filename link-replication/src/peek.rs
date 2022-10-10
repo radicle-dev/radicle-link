@@ -19,7 +19,7 @@ pub(crate) fn ref_prefixes(id: &PeerId, remote_id: &PeerId) -> impl Iterator<Ite
         refs::scoped(id, remote_id, refs::Owned::refs_rad_self()).into(),
         refs::scoped(id, remote_id, refs::Owned::refs_rad_signed_refs()).into(),
         {
-            let scope = (id != remote_id).then(|| id);
+            let scope = (id != remote_id).then_some(id);
             RefPrefix::from_prefix(scope, refs::Prefix::RadIds)
         },
     ])

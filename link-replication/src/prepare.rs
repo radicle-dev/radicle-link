@@ -41,7 +41,7 @@ where
         .iter()
         .filter_map(|r| {
             let remote_id = r.remote_id();
-            (remote_id != local_id).then(|| (remote_id, r))
+            (remote_id != local_id).then_some((remote_id, r))
         })
         .fold(BTreeMap::new(), |mut acc, (remote_id, r)| {
             acc.entry(remote_id).or_insert_with(Vec::new).push(r);

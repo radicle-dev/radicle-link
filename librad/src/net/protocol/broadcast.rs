@@ -261,6 +261,7 @@ where
     }
 }
 
+#[allow(clippy::type_complexity)]
 #[tracing::instrument(skip(state, membership, info))]
 pub(super) async fn apply<S, T, M, F, A, P>(
     state: &State<S, T>,
